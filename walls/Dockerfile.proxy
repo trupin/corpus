@@ -1,0 +1,24 @@
+# corpus — the egress allowlist proxy.
+#
+# A tiny default-deny HTTP/S forward proxy (tinyproxy) in its own container.
+# The agent box has NO direct internet (it sits on an `internal: true` Docker
+# network) and reaches the outside ONLY through this proxy, via HTTP_PROXY /
+# HTTPS_PROXY. tinyproxy is configured FilterDefaultDeny → it forwards a
+# request ONLY if the destination host matches walls/egress/allowlist.txt.
+#
+# Self-built from debian-slim rather than pulling a third-party tinyproxy image
+# — fewer trust assumptions for the component whose entire job is to be the
+# egress wall. The config + allowlist are bind-mounted read-only at runtime
+# (see compose.yml); they are walls, so they live under walls/ and are never
+# mounted into the agent box.
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      tinyproxy \
+    && rm -rf /var/lib/apt/lists/*
+
+EXPOSE 8888
+
+# Run in the foreground (-d) so the container's lifecycle tracks the proxy.
+ENTRYPOINT ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]

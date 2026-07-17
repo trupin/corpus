@@ -1,0 +1,143 @@
+# corpus — the sandbox composition (a WALL).
+#
+# Run from the HOST, where walls/ is fully visible:
+#   docker compose -f walls/compose.yml up --build
+# (walls/up.sh wraps this with the Colima bring-up.) Compose reads this file
+# on the host, so it can bind-mount walls/egress/* into the proxy and mount the
+# sibling ../sandbox/ as the agent's /work — none of which the agent can reach.
+#
+# Topology:
+#   - agent: the whole stack (dev server + the agent loop). Sits ONLY on the
+#     `internal` network → NO direct internet. Reaches out solely via the
+#     proxy (HTTP(S)_PROXY). The agent's mount is ONLY ../sandbox/ at /work;
+#     the walls (this file, the Dockerfile, egress/, secrets/) live in the repo
+#     root alongside sandbox/, NOT inside it — so they're simply not in the
+#     mount. No overlay needed: the agent can't reach what isn't mounted.
+#   - proxy: tinyproxy default-deny egress wall. On BOTH networks: `internal`
+#     (so the agent can reach it) and `egress` (so IT can reach the allowlisted
+#     internet). Its allow-config is bind-mounted read-only.
+#   - forward: socat sidecar publishing the one dashboard port to host loopback.
+#
+# Project name is distinct from pa-sandbox, and the host port is 5174 (pa uses
+# 5173) — both sandboxes can run side by side.
+
+name: corpus-sandbox
+
+networks:
+  # The agent's network. `internal: true` = no gateway to the outside world, so
+  # the box cannot make ANY direct outbound connection (RFC1918, metadata, or
+  # public web). Its only path out is the proxy, which straddles both networks.
+  internal:
+    internal: true
+  # The proxy's path to the allowlisted internet.
+  egress: {}
+
+volumes:
+  # Linux-built deps SHADOW the bind-mounted host node_modules, so any native
+  # module compiles for the box's arch/libc and persists across restarts
+  # (a host macOS build would not load under Linux).
+  node_modules: {}
+  # Claude Code's subscription OAuth credential + CLI state. A NAMED VOLUME,
+  # not a host-home mount — so it's a host-only wall (a secret), never under
+  # /work, never agent-editable-as-config. One-time `claude` login inside the
+  # box persists here + refreshes here. See secrets/README.md.
+  claude_home: {}
+  # A dedicated GitHub deploy key (the sandbox repo only, revocable) + git
+  # identity — NOT the host ~/.ssh. Persisted across restarts.
+  ssh_home: {}
+
+services:
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    networks: [internal, egress]
+    volumes:
+      # The egress wall, read-only, into the proxy ONLY. Never into the agent.
+      - ./egress/tinyproxy.conf:/etc/tinyproxy/tinyproxy.conf:ro
+      - ./egress/allowlist.txt:/etc/tinyproxy/allowlist.txt:ro
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+
+  # ── Dashboard port-forwarder ───────────────────────────────────────────────
+  # Publishes host loopback 127.0.0.1:5174 → agent:5173 (the in-box dev
+  # server). The LAN sees nothing.
+  forward:
+    build:
+      context: .
+      dockerfile: Dockerfile.forward
+    depends_on: [agent]
+    networks: [internal, egress]
+    ports:
+      - "127.0.0.1:5174:5173"
+    command: ["-d", "TCP-LISTEN:5173,fork,reuseaddr", "TCP:agent:5173"]
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on: [proxy]
+    networks: [internal]
+    environment:
+      # All outbound from the box funnels through the allowlist proxy. NO_PROXY
+      # keeps loopback (in-box server↔server, health checks) off the proxy path.
+      HTTP_PROXY: "http://proxy:8888"
+      HTTPS_PROXY: "http://proxy:8888"
+      http_proxy: "http://proxy:8888"
+      https_proxy: "http://proxy:8888"
+      NO_PROXY: "localhost,127.0.0.1,::1"
+      no_proxy: "localhost,127.0.0.1,::1"
+      # These are compose VARIABLE SUBSTITUTIONS, sourced from walls/.env
+      # (which up.sh loads) or the shell — NOT env_file (a re-declared
+      # `environment:` key overrides env_file). Copy walls/.env.example →
+      # walls/.env to set them persistently.
+      #
+      # File-watching over the macOS↔VM virtiofs boundary does NOT receive
+      # host-side inotify events, so watcher-driven invalidation needs polling
+      # — ON by default (set to 0 in walls/.env only if native watching works
+      # in your setup). Costs some CPU.
+      CHOKIDAR_USEPOLLING: "${CHOKIDAR_USEPOLLING:-1}"
+      # Set CORPUS_RUN_WATCH=0 to NOT auto-start the dev stack on boot. boot.sh
+      # still does setup (git, ssh, deps) then idles, so you can `exec -u node
+      # agent bash` and drive it by hand. Default 1 — but boot idles gracefully
+      # while the greenfield repo has no `watch` script yet.
+      CORPUS_RUN_WATCH: "${CORPUS_RUN_WATCH:-1}"
+      # Set CORPUS_RUN_LOOP=1 to also start the agent loop (the reference
+      # agent-runner watching the event queue) after the server comes up.
+      # Default off — the loop doesn't exist until the framework does.
+      CORPUS_RUN_LOOP: "${CORPUS_RUN_LOOP:-0}"
+      # Subscription auth. `claude setup-token` mints a long-lived subscription
+      # token and authenticates via this env var. Set it in walls/.env — it's a
+      # secret, host-only, gitignored, never committed. Alternative: run the
+      # login inside the box to persist an OAuth credential into the
+      # claude_home volume instead, and leave this blank.
+      CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
+      # Optional shared-secret for the event-queue HTTP surface. When set it's
+      # also passed to the in-box agent loop so its posts carry it.
+      CORPUS_EVENT_TOKEN: "${CORPUS_EVENT_TOKEN:-}"
+      # Git identity for headless commits from inside the box.
+      GIT_AUTHOR_NAME: "${GIT_AUTHOR_NAME:-corpus agent}"
+      GIT_AUTHOR_EMAIL: "${GIT_AUTHOR_EMAIL:-agent@localhost}"
+      GIT_COMMITTER_NAME: "${GIT_AUTHOR_NAME:-corpus agent}"
+      GIT_COMMITTER_EMAIL: "${GIT_AUTHOR_EMAIL:-agent@localhost}"
+    volumes:
+      # ── The agent's entire world: ONLY sandbox/ is mounted at /work ───────
+      # sandbox/ holds the whole corpus codebase, which the agent reads/edits
+      # freely. The walls (this compose, the Dockerfile, egress/, secrets/)
+      # live in the repo root ALONGSIDE sandbox/, NOT inside it — so they are
+      # simply not in the mount. This is the invariant: the agent's mount is
+      # sandbox/, nothing above it.
+      - ../sandbox:/work
+      # Linux-built deps shadow the host's macOS node_modules.
+      - node_modules:/work/node_modules
+      # Secrets as named volumes (host-only walls), never under /work.
+      - claude_home:/home/node/.claude
+      - ssh_home:/home/node/.ssh
+    restart: unless-stopped
+    # Resource caps so a runaway loop can't starve the host. Tune in .env.
+    mem_limit: "${CORPUS_AGENT_MEM:-4g}"
+    cpus: "${CORPUS_AGENT_CPUS:-3}"

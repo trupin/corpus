@@ -1,0 +1,27 @@
+# Repo-root ignore rules. The repo is two layers (same shape as
+# personal-assistant / DASHBOARD-164):
+#   walls/    — host-only config the agent must never touch (NOT mounted into
+#               the container): the sandbox definition, egress allowlist, secrets.
+#   sandbox/  — the agent's world, mounted into the container at /work.
+# Codebase ignore rules live in sandbox/.gitignore. This file covers the walls
+# layer + machine-global noise.
+
+# Walls — host-only sandbox config that's never committed:
+#   walls/.env          host-only toggles (sourced by up.sh); template is tracked
+#   walls/secrets/*      real Claude OAuth creds / GitHub deploy keys (volumes)
+walls/.env
+walls/secrets/*
+!walls/secrets/.gitignore
+!walls/secrets/README.md
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# sandbox/ is its own repo — the agent codebase mounted at /work. This outer
+# repo is the host-only walls layer; it does not track the sandbox.
+/sandbox/

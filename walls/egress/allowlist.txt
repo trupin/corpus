@@ -1,0 +1,37 @@
+# corpus — egress allow-list (a WALL). One extended-regex per line; a
+# destination host is allowed iff it matches one of these. tinyproxy runs
+# FilterDefaultDeny, so anything not listed is refused — RFC1918, the Docker
+# network, cloud-metadata (169.254.169.254), and the rest of the public web.
+#
+# Anchored with ^...$ so a substring can't smuggle a match (e.g. a bare
+# `github.com` would also allow `evilgithub.com.attacker.net`). Subdomains are
+# allowed explicitly via `(.*\.)?`.
+#
+# GROWS ONLY via a wall-change request stamped on the host (then restart the
+# proxy: `docker compose -f walls/compose.yml restart proxy`). The agent
+# cannot edit this file — it lives in walls/, outside the mounted sandbox/.
+
+# ── Claude (subscription auth + inference) ──────────────────────────────────
+# Theo authenticates Claude Code with his MEMBERSHIP (OAuth), not an API key,
+# so both the api endpoint AND the claude.ai / claude.com / anthropic.com
+# auth + inference hosts must be reachable or the agent dies when the token
+# needs refresh.
+^api\.anthropic\.com$
+^(.*\.)?anthropic\.com$
+^(.*\.)?claude\.ai$
+^(.*\.)?claude\.com$
+^statsig\.anthropic\.com$
+^(.*\.)?sentry\.io$
+
+# ── GitHub (git push/pull, raw, API) ────────────────────────────────────────
+^github\.com$
+^api\.github\.com$
+^codeload\.github\.com$
+^(.*\.)?githubusercontent\.com$
+
+# ── npm registry (in-box `bun install` / `npm ci`) ──────────────────────────
+^registry\.npmjs\.org$
+^(.*\.)?npmjs\.org$
+
+# Deliberately NOT a broad "allow public web". Add specific hosts here via a
+# wall-change request as the framework needs them.
