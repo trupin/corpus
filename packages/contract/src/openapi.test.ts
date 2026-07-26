@@ -125,6 +125,25 @@ describe("generated OpenAPI document", () => {
     expect(spurious).toEqual([]);
   });
 
+  /**
+   * `internal_error` exists in the `ApiError` union so a server's last-resort
+   * handler can serialise a crash without mislabelling it, and *only* for that.
+   * Declaring `500` on a route would advertise an unexpected failure as a
+   * designed outcome and hand clients a branch that no handler ever promises to
+   * reach, so the response stays undeclared everywhere — deliberately.
+   */
+  it("declares 500 on no operation, since an unexpected failure is not contract surface", () => {
+    const declared: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (op?.responses?.["500"]) declared.push(endpointSignature(method, path));
+      }
+    }
+    expect(declared).toEqual([]);
+    expect(Object.keys(document.components?.schemas ?? {})).not.toContain("InternalError");
+  });
+
   it("documents the SSE stream as an event stream, not as JSON", () => {
     const ok = operation("/events", "get").responses?.["200"];
     expect(Object.keys(ok?.content ?? {})).toEqual(["text/event-stream"]);

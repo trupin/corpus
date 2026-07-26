@@ -5,6 +5,7 @@ import {
   ERROR_CODES,
   ErrorCodeSchema,
   ForbiddenErrorSchema,
+  InternalErrorSchema,
   isApiError,
   LockConflictErrorSchema,
   LockedErrorSchema,
@@ -59,6 +60,11 @@ const variants = [
     name: "LockedError",
     schema: LockedErrorSchema,
     value: { code: "locked", message: "doc_a1b2c3 is being edited.", lock },
+  },
+  {
+    name: "InternalError",
+    schema: InternalErrorSchema,
+    value: { code: "internal_error", message: "Unexpected server error." },
   },
 ] as const;
 

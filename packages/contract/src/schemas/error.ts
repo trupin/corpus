@@ -13,6 +13,7 @@ export const ERROR_CODES = [
   "not_found",
   "conflict",
   "locked",
+  "internal_error",
 ] as const;
 
 export const ErrorCodeSchema = z.enum(ERROR_CODES);
@@ -86,6 +87,28 @@ export const LockedErrorSchema = z
   })
   .openapi("LockedError");
 
+/**
+ * The catch-all body for an unexpected `500` — a bug, not a modelled outcome.
+ *
+ * Deliberately asymmetric with every other variant: the code exists so that a
+ * server's last-resort error handler can emit a body that type-checks as an
+ * `ApiError` instead of mislabelling a crash as `bad_request` or `conflict`,
+ * but **no route declares a `500` response**. That asymmetry is the invariant.
+ * A documented `500` would read as a contract promise that the call can fail
+ * that way by design, which is exactly what an unexpected failure is not; the
+ * response therefore stays undeclared, and `500` is never a shape a client
+ * should branch on beyond "the server broke".
+ *
+ * Carries no structured detail on purpose — an unexpected failure has nothing
+ * trustworthy to say about itself, and internals do not belong on the wire.
+ */
+export const InternalErrorSchema = z
+  .object({ code: z.literal("internal_error"), message: z.string() })
+  .openapi("InternalError", {
+    description:
+      "Catch-all body for an unexpected server failure. Intentionally not declared as a response by any route: the code exists so an unhandled failure can be serialised as an ApiError rather than mislabelled, while a documented 500 would wrongly present a crash as a designed outcome.",
+  });
+
 export const ApiErrorSchema = z
   .discriminatedUnion("code", [
     ValidationErrorSchema,
@@ -94,6 +117,7 @@ export const ApiErrorSchema = z
     NotFoundErrorSchema,
     ConflictErrorSchema,
     LockedErrorSchema,
+    InternalErrorSchema,
   ])
   .openapi("ApiError");
 
@@ -106,6 +130,7 @@ export type NotFoundError = z.infer<typeof NotFoundErrorSchema>;
 export type ConflictError = z.infer<typeof ConflictErrorSchema>;
 export type LockConflictError = z.infer<typeof LockConflictErrorSchema>;
 export type LockedError = z.infer<typeof LockedErrorSchema>;
+export type InternalError = z.infer<typeof InternalErrorSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 
 /** Narrows an unknown value (a caught rejection, a raw response body) to the problem shape. */

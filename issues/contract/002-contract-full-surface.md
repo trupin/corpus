@@ -393,6 +393,42 @@ npm run test:coverage  → 0   61 files, 1160 tests passed
   touched here (it is CONTRACT-001 surface and changing it changes server semantics), but
   worth a follow-up issue.
 
+### Addendum — 2026-07-26, `internal_error` (orchestrator-adjudicated micro-task, opus)
+
+SERVER-003 found that the union had no code for an unexpected `500`, so a last-resort error
+handler could not emit a body conforming to `ApiErrorSchema` without mislabelling a crash as
+`bad_request` or `conflict`. Added `internal_error` to `ERROR_CODES` and an
+`InternalErrorSchema` (`{ code: "internal_error", message }`) variant to `ApiErrorSchema`.
+
+**Invariant, recorded in the schema's `description` and pinned by a test:** the code exists so
+the body type-checks; **no route declares a `500` response**, by design — a documented `500`
+would advertise an unexpected failure as a designed outcome. New test in `src/openapi.test.ts`
+asserts no operation carries a `500` and that `InternalError` never reaches
+`components.schemas`.
+
+```
+shasum -a 256 (before regeneration)
+  f7f182c8…5b6411  packages/contract/openapi.json
+  b71d25c1…4cb594  packages/contract/src/client/schema.generated.ts
+npm run generate -w packages/contract   → 0
+shasum -a 256 (after regeneration)
+  f7f182c8…5b6411  packages/contract/openapi.json          ← byte-identical
+  b71d25c1…4cb594  packages/contract/src/client/schema.generated.ts  ← byte-identical
+
+npx vitest run packages/contract        → 0   557 tests passed (was 554; +3 for the new variant
+                                              through the describe.each, +1 500-invariant test)
+npm run build                           → 0
+npm run typecheck -w packages/contract  → 0
+npx eslint <touched files>              → 0   "No issues found"
+npx prettier --check <touched files>    → 0   "All files formatted correctly"
+node --import tsx scripts/check-generated-artifacts.ts → 0
+  ✓ API contract is up to date (openapi.json, schema.generated.ts)
+```
+
+The artifacts are unchanged because `ApiError` is not itself a referenced component — the
+document registers only the per-code variants that routes actually declare, and `InternalError`
+is declared by none. That is the invariant holding, visible in the byte hashes.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes
