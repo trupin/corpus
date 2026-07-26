@@ -1,0 +1,6 @@
+# Generated contract artifacts (SPEC.md §9.3). They are committed so consumers
+# and CI see the same API surface, but they are produced by
+# `npm run generate -w packages/contract` and must never be hand-edited —
+# marking them generated keeps them collapsed in diffs and out of language stats.
+packages/contract/openapi.json linguist-generated=true
+packages/contract/src/client/schema.generated.ts linguist-generated=true
