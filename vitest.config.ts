@@ -6,6 +6,9 @@ export default defineConfig({
       "apps/**/src/**/*.test.ts",
       "packages/**/src/**/*.test.ts",
       "plugins/**/src/**/*.test.ts",
+      // Repo tooling lives outside the workspaces (CLAUDE.md → Repository
+      // Structure) but is still tested by `npm test`.
+      "scripts/**/*.test.ts",
     ],
     exclude: ["**/node_modules/**", "**/dist/**"],
     passWithNoTests: true,

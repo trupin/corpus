@@ -1,0 +1,19 @@
+# This workspace is a git repository, and every mutation the Corpus server makes
+# is auto-committed with the acting party as git author. `git log` is therefore
+# the audit trail of the corpus itself. What follows is everything that must stay
+# out of it.
+
+# Runtime state. Everything under .corpus/ is secret (config.json holds the
+# bearer token), derived (cache.db rebuilds from the files), or transient
+# (server.pid, server.log, jobs/, locks/, attachments/, seen.json, HALT).
+.corpus/*
+
+# ...except the queue directory skeleton. The server moves event files between
+# these five directories, so a clone of this workspace has to arrive with them
+# already present. The event JSON files themselves are runtime state and stay
+# ignored; each directory's .gitkeep is what git actually tracks.
+!.corpus/queue/
+.corpus/queue/*/*.json
+
+# OS clutter that would otherwise be auto-committed alongside real edits.
+.DS_Store
