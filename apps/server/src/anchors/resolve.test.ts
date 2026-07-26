@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAnchor, resolveAnchors, sortedEntries } from "./resolve.js";
+import { resolveAnchor, resolveAnchorExact, resolveAnchors, sortedEntries } from "./resolve.js";
 
 describe("resolveAnchor — rung 1: contextual exact", () => {
   // "the rate" occurs three times; only the context disambiguates.
@@ -103,6 +103,49 @@ describe("resolveAnchor — rung 3 and rung 4", () => {
   it("returns null for an empty body or an empty exact", () => {
     expect(resolveAnchor("", { exact: "needle" })).toBeNull();
     expect(resolveAnchor("body", { exact: "" })).toBeNull();
+  });
+});
+
+describe("resolveAnchorExact — the exactness tier stops before fuzzy", () => {
+  it("resolves via rung 1 (contextual exact)", () => {
+    const body = "The plan floats the rate. We fix the rate today. Later the rate drifts.";
+    const range = resolveAnchorExact(body, {
+      exact: "the rate",
+      prefix: "We fix ",
+      suffix: " today",
+    });
+    expect(range?.start).toBe(body.indexOf("We fix the rate") + "We fix ".length);
+  });
+
+  it("resolves via rung 2 (bare unique exact) when the context is stale", () => {
+    const body = "Rewritten intro. The unique anchored fragment survives. Rewritten outro.";
+    const range = resolveAnchorExact(body, {
+      exact: "unique anchored fragment",
+      prefix: "gone ",
+      suffix: " also gone",
+    });
+    expect(body.slice(range?.start, range?.end)).toBe("unique anchored fragment");
+  });
+
+  it("returns null where resolveAnchor would fall through to fuzzy", () => {
+    // A one-character corruption: similar, but not verbatim.
+    const body = "Intro. Here the modle we assume a 30-year fixed at 6.1% holds. Outro.";
+    const selector = { exact: "the model we assume a 30-year fixed at 6.1%" };
+    expect(resolveAnchorExact(body, selector)).toBeNull();
+    expect(resolveAnchor(body, selector)).not.toBeNull();
+  });
+
+  it("returns null for a non-unique exact with stale context — never guesses between duplicates", () => {
+    const body = "A same words B ... C same words D";
+    expect(
+      resolveAnchorExact(body, { exact: "same words", prefix: "X ", suffix: " Y" }),
+    ).toBeNull();
+    expect(resolveAnchorExact(body, { exact: "same words" })).toBeNull();
+  });
+
+  it("returns null for an empty body or an empty exact", () => {
+    expect(resolveAnchorExact("", { exact: "needle" })).toBeNull();
+    expect(resolveAnchorExact("body", { exact: "" })).toBeNull();
   });
 });
 

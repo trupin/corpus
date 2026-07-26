@@ -164,17 +164,89 @@ describe("reconcileAnchors — deleted classification is verified before orphani
     expect(selector?.prefix).toBe(computeContext(newBody, start, start + SENT.length).prefix);
   });
 
-  it("re-attaches through the degenerate whitespace-slice path when the exact survives elsewhere", () => {
+  it("re-attaches through the degenerate whitespace-slice path when the exact re-appears in inserted text", () => {
     // Partial classification whose mapped slice is whitespace-only is a
-    // deletion in all but name — it gets the same re-resolution.
-    const wsOld = "AAA xx      yy BBB and elsewhere xx      yy stands.";
-    const wsNew = "AAA        BBB and elsewhere xx      yy stands.";
+    // deletion in all but name — it gets the same verification. Here the same
+    // edit that blanked the anchored occurrence typed the text back in at the
+    // end, so the unique exact match lives in inserted text: survival.
+    const wsOld = "AAA xx      yy BBB and more prose stands.";
+    const wsNew = "AAA        BBB and more prose stands. Moved: xx      yy here.";
     const { anchors, report } = reconcileAnchors(wsOld, wsNew, {
       anc_ws: capture(wsOld, "xx      yy"),
     });
     expect(report).toEqual({ unchanged: [], remapped: ["anc_ws"], orphaned: [] });
     expect(anchors["anc_ws"]?.exact).toBe("xx      yy");
-    expect(anchors["anc_ws"]?.suffix).toBe(" stands.");
+    expect(anchors["anc_ws"]?.prefix.endsWith("Moved: ")).toBe(true);
+  });
+
+  it("orphans through the degenerate whitespace-slice path when the only exact match pre-existed elsewhere", () => {
+    // Same blanking edit, but the surviving copy was already in the document
+    // before the edit — a doppelgänger, not the anchored text moving. The
+    // deletion stands (SPEC §6 step 5); the selector is preserved.
+    const wsOld = "AAA xx      yy BBB and elsewhere xx      yy stands.";
+    const wsNew = "AAA        BBB and elsewhere xx      yy stands.";
+    const input: AnchorsMap = { anc_ws: capture(wsOld, "xx      yy") };
+    const { anchors, report } = reconcileAnchors(wsOld, wsNew, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_ws"] });
+    expect(anchors["anc_ws"]).toEqual(input["anc_ws"]);
+  });
+});
+
+describe("reconcileAnchors — genuine deletions never re-attach to look-alikes (SERVER-002 FAIL-2)", () => {
+  // Evaluator round-2 scenarios: the anchored text is genuinely deleted, but a
+  // *similar sibling* (or a verbatim copy that was already there) exists.
+  // Verification of the deleted-claim is exact-only and requires the match to
+  // overlap inserted text — fuzzy similarity or a pre-existing doppelgänger
+  // must never "verify" deleted text as surviving. Expected everywhere:
+  // `orphaned`, selector byte-identical (SPEC §6 step 5, TEST-25).
+  const expectOrphan = (oldBody: string, newBody: string, exact: string): void => {
+    const input: AnchorsMap = { anc_gone: capture(oldBody, exact) };
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_gone"] });
+    expect(anchors["anc_gone"]).toEqual(input["anc_gone"]);
+  };
+
+  it("orphans a deleted paragraph despite two near-identical sibling paragraphs", () => {
+    const paragraph = (n: string) =>
+      `The ${n} paragraph discusses ${n} matters and nothing else whatsoever.`;
+    const oldBody = `\n# Doc\n\n${["alpha", "bravo", "charlie"].map(paragraph).join("\n\n")}\n`;
+    const newBody = oldBody.replace(`${paragraph("bravo")}\n\n`, "");
+    expectOrphan(oldBody, newBody, paragraph("bravo"));
+  });
+
+  it("orphans a deleted bullet despite near-identical neighbouring bullets", () => {
+    const bullet = (item: string) => `- Buy ${item} from the corner store on Tuesday.`;
+    const oldBody = `\n# Shopping\n\n${bullet("milk")}\n${bullet("bread")}\n${bullet("eggs")}\n`;
+    const newBody = oldBody.replace(`${bullet("bread")}\n`, "");
+    expectOrphan(oldBody, newBody, bullet("bread"));
+  });
+
+  it("orphans a deleted table row despite similar sibling rows", () => {
+    const oldBody = `\n# Quarters\n\n| quarter | revenue | churn |\n| ------- | ------- | ----- |\n| Q1 | 100 | 2% |\n| Q2 | 110 | 3% |\n| Q3 | 120 | 4% |\n`;
+    const newBody = oldBody.replace("| Q2 | 110 | 3% |\n", "");
+    expectOrphan(oldBody, newBody, "| Q2 | 110 | 3% |");
+  });
+
+  it("orphans a deleted sentence whose verbatim copy pre-existed elsewhere (doppelgänger)", () => {
+    // The copy resolves exactly (rung 2, unique after the deletion) — but it
+    // sits wholly in unedited text, so it is not the anchored text surviving.
+    const sentence = "The retention clause survives termination of this agreement.";
+    const oldBody = `\n# Contract\n\nOpening section.\n\n${sentence}\n\nMiddle prose about other clauses entirely.\n\nAppendix repeats it: ${sentence}\n`;
+    const newBody = oldBody.replace(`${sentence}\n\nMiddle`, "Middle");
+    expectOrphan(oldBody, newBody, sentence);
+  });
+
+  it("still re-attaches a cut-and-paste: the same exact text landing in inserted content", () => {
+    // Counterpart to the doppelgänger case — here the edit itself carries the
+    // text to its new home, so the unique exact match overlaps the insertion.
+    const sentence = "The retention clause survives termination of this agreement.";
+    const oldBody = `\n# Contract\n\nOpening section.\n\n${sentence}\n\nMiddle prose about other clauses entirely.\n`;
+    const newBody = `${oldBody.replace(`${sentence}\n\n`, "")}\nRelocated: ${sentence}\n`;
+    const input: AnchorsMap = { anc_move: capture(oldBody, sentence) };
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_move"], orphaned: [] });
+    expect(anchors["anc_move"]?.exact).toBe(sentence);
+    expect(anchors["anc_move"]?.prefix.endsWith("Relocated: ")).toBe(true);
   });
 });
 

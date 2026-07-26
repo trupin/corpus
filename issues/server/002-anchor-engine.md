@@ -393,6 +393,181 @@ benchmark (`< 1 s` for 1 MB/50 anchors/one edit) still passes.
   95.21% branches / 100% functions** (≥ 90% gate); `anchors/reconcile.ts` at
   100/100/100.
 
+### Fix loop round 2 — FAIL-2 (evaluator verdict round 2, deleted text re-attached to look-alikes)
+
+**implemented on: fable** (claude-fable-5).
+
+#### Reproduction (before any code change, 2026-07-26)
+
+All four evaluator scenarios reproduced pure-library
+(`scratchpad/repro-fail2.ts`, run with `tsx` against the current sources —
+selector built with `computeContext` on `oldBody`, anchored text then genuinely
+deleted):
+
+```
+--- deleted middle paragraph (similar siblings)
+report: {"unchanged":[],"remapped":["anc_bravox"],"orphaned":[]}
+selector preserved: false
+now quotes: "The alpha paragraph discusses alpha matters and nothing else whatsoever."
+--- deleted middle bullet (near-identical bullets)
+report: {"unchanged":[],"remapped":["anc_bread1"],"orphaned":[]}
+selector preserved: false
+now quotes: "\n- Buy milk from the corner store on Tuesday."
+--- deleted table row (similar rows)
+report: {"unchanged":[],"remapped":["anc_q2row"],"orphaned":[]}
+selector preserved: false
+now quotes: "| Q3 | 120 | 4% |"
+--- deleted sentence with a verbatim copy elsewhere
+report: {"unchanged":[],"remapped":["anc_dupli1"],"orphaned":[]}
+selector preserved: false
+now quotes: "The retention clause survives termination of this agreement."
+```
+
+Expected in every row: `orphaned`, selector byte-identical (SPEC §6 step 5,
+TEST-25). Observed: `remapped` onto a sibling/copy, historical selector
+destroyed.
+
+On-disk reproduction, bullet scenario (`scratchpad/repro-fail2-disk.ts`: real
+`mkdtemp` + `git init` workspace `corpus-s2r2-iEqWpe`, doc with `anchors:`
+frontmatter, bread bullet deleted, reconciled, written back, committed):
+
+```
+report: {"unchanged":[],"remapped":["anc_bread1"],"orphaned":[]}
+selector now on disk: {"exact":"\n- Buy milk from the corner store on Tuesday.", …}
+frontmatter rewritten: true
+--- git diff HEAD~1 -U0 ---
+-    exact: "- Buy bread from the corner store on Tuesday."
++    exact: |-
++
++      - Buy milk from the corner store on Tuesday.
+```
+
+`git diff` shows the anchor block rewritten onto the *milk* bullet — TEST-25's
+"no change whatsoever to that anchor's frontmatter block" violated. Bug
+confirmed exactly as the evaluator reported. Proceeding to fix.
+
+#### Root cause and fix
+
+Round 1 verified a `deleted` classification by re-resolving through the **full**
+§6 ladder, so rung 3 (fuzzy, threshold 0.75) could "verify" a genuinely deleted
+paragraph/bullet/row via a look-alike sibling and silently re-attach the thread,
+destroying the historical selector. The verification step exists to catch one
+thing only: **verbatim survival** that `diff_cleanupSemantic` swallowed (merged
+neighbour rewrites, cut-and-paste). Similarity is not survival.
+
+Shipped design (the adjudicated primary shape, EQUAL/INSERT distinction
+included — not the conservative fallback):
+
+- `resolve.ts`: the exactness tier (rungs 1–2) is extracted as
+  `resolveAnchorExact`; `resolveAnchor` is unchanged behaviourally (exact tier,
+  then fuzzy).
+- `diff.ts`: `OffsetMapper` gains `touchesInsertion(range)` — does a new-body
+  range contain at least one character this edit inserted (reuses the segment
+  table already built for mapping; no second diff).
+- `reconcile.ts`: a `deleted` claim (or whitespace-degenerate mapped slice)
+  re-attaches **only if** `resolveAnchorExact(newBody, selector)` finds the
+  text (rung-1 context-exact or rung-2 unique-exact — never fuzzy) **and** the
+  match overlaps inserted text. An exact match lying wholly in unedited
+  (EQUAL) text existed before the edit — a pre-existing doppelgänger of the
+  deleted range, not the range surviving — so the anchor orphans with its
+  selector preserved byte-for-byte (SPEC §6 step 5). `partial` ranges still
+  trust the mapper; already-orphaned-in-`oldBody` anchors still short-circuit.
+
+Why the primary shape and not the fallback: the fallback (exact rungs only, no
+region check) still re-attaches the evaluator's fourth scenario — a deleted
+sentence whose verbatim copy pre-existed elsewhere becomes rung-2-unique after
+the deletion. The insertion-overlap test is what separates "the edit carried
+this text here" (TEST-26's merged rewrite, cut-and-paste — re-attach) from
+"this text was already there" (doppelgänger — orphan), and it satisfies all
+five must-hold criteria simultaneously.
+
+#### Post-fix verification (2026-07-26)
+
+Four-scenario repro re-run (`scratchpad/repro-fail2.ts`) — all four now orphan
+with the selector byte-identical:
+
+```
+--- deleted middle paragraph (similar siblings)
+report: {"unchanged":[],"remapped":[],"orphaned":["anc_bravox"]}   selector preserved: true
+--- deleted middle bullet (near-identical bullets)
+report: {"unchanged":[],"remapped":[],"orphaned":["anc_bread1"]}   selector preserved: true
+--- deleted table row (similar rows)
+report: {"unchanged":[],"remapped":[],"orphaned":["anc_q2row"]}    selector preserved: true
+--- deleted sentence with a verbatim copy elsewhere
+report: {"unchanged":[],"remapped":[],"orphaned":["anc_dupli1"]}   selector preserved: true
+```
+
+On-disk bullet scenario (`scratchpad/repro-fail2-disk.ts`, real `mkdtemp` +
+`git init` workspace `corpus-s2r2-ffeMs7`, reconcile + write-back + commit):
+
+```
+report: {"unchanged":[],"remapped":[],"orphaned":["anc_bread1"]}
+frontmatter rewritten: false
+--- git diff HEAD~1 -U0 ---
+@@ -17 +16,0 @@ anchors:
+-- Buy bread from the corner store on Tuesday.
+```
+
+`git diff` shows **only** the deleted body line; the anchor's frontmatter block
+is untouched byte-for-byte — TEST-25's letter.
+
+Must-hold criteria re-verified (`scratchpad/postfix-verify.ts`):
+
+```
+=== escalating-context sequence ===
+one word before changed:                      unchanged | exact kept | context refreshed
+one word each side:                           remapped  | exact kept | context refreshed
+preceding sentence fully rewritten:           remapped  | exact kept | context refreshed
+both neighbouring sentences rewritten (T-26): remapped  | exact kept | context refreshed  → resolves {"start":83,"end":135}
+=== cut-and-paste corollary ===
+report: {"remapped":["anc_k4f7"]} | exact kept: true
+=== determinism x100 (mixed doc incl. a doppelgänger orphan) ===
+distinct serializations: 1 | report: {"unchanged":[],"remapped":["anc_s","anc_t"],"orphaned":["anc_b"]}
+```
+
+TEST-26 (round-1's fix) stays green; no row of the escalating sequence orphans;
+cut-and-paste still re-attaches (the pasted text overlaps the insertion).
+
+**Regression tests added:**
+
+- `reconcile.test.ts` — new describe "genuine deletions never re-attach to
+  look-alikes (SERVER-002 FAIL-2)": the evaluator's four scenarios (sibling
+  paragraphs, near-identical bullets, table rows, pre-existing verbatim copy),
+  each asserting `orphaned` + selector byte-identical, plus the cut-and-paste
+  counterpart as a separate test. The round-1 whitespace-degenerate test — which
+  had enshrined a doppelgänger re-attach — is split in two: re-appears-in-
+  inserted-text → remap; pre-existing copy elsewhere → orphan.
+- `reconcile.disk.test.ts` — TEST-25 extended with the similar-sibling bullet
+  fixture on disk: asserts the persisted file differs from the seeded one only
+  by the deleted body line (anchor block byte-identical).
+- `resolve.test.ts` — `resolveAnchorExact`: rung 1, rung 2, null-where-fuzzy-
+  would-match, null-for-non-unique, empty inputs.
+- `diff.test.ts` — `touchesInsertion`: inserted vs unedited vs empty ranges,
+  partial overlap with an inserted run, identical bodies.
+
+**Performance** (median of 5, 1 MB body, 50 anchors,
+`scratchpad/postfix-verify.ts`; round-1 figures from the previous log):
+
+| scenario                               | round 1   | round 2  |
+| -------------------------------------- | --------- | -------- |
+| one mid-body insertion (TEST-29 shape) | 7.0 ms    | 7.2 ms   |
+| 200 scattered edits, all 50 kept       | 14.0 ms   | 16.5 ms  |
+| whole body replaced, all 50 orphan     | 1079.6 ms | 133.5 ms |
+
+Kept-anchor paths are unchanged code; the orphan-verification worst case got
+~8× faster because verification no longer runs fuzzy (`match_main` bitap +
+candidate scoring) per anchor. Same order of magnitude everywhere.
+
+**Gate results (main tree, clean run):**
+
+- `npm run build` — PASS
+- `npm run lint` — PASS (0 problems)
+- `npm run format:check` — PASS
+- `npm run typecheck` — PASS (all workspaces)
+- `npm run test:coverage` — **822 tests passed** (55 files), combined coverage
+  **99.76% lines / 95.59% branches / 100% functions** (≥ 90% gate);
+  `anchors/reconcile.ts` at 100/100/100.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

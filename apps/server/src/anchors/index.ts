@@ -13,7 +13,7 @@ export {
 } from "./fuzzy.js";
 export type { FuzzyQuery } from "./fuzzy.js";
 export { reconcileAnchors } from "./reconcile.js";
-export { resolveAnchor, resolveAnchors } from "./resolve.js";
+export { resolveAnchor, resolveAnchorExact, resolveAnchors } from "./resolve.js";
 export type { ResolveOptions } from "./resolve.js";
 export type {
   AnchorsMap,

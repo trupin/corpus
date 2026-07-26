@@ -17,6 +17,13 @@ export type OffsetMapper = {
   mapEnd(oldOffset: number): number;
   /** How the edit touched `[start, end)`: untouched, partially edited, or no surviving character. */
   classify(range: Range): RangeClass;
+  /**
+   * Whether `[start, end)` of `newBody` contains at least one character this
+   * edit inserted. Distinguishes text the edit *brought in* (cut-and-paste, a
+   * rewrite that kept a sentence verbatim) from text that already sat there
+   * before the edit — a pre-existing doppelgänger of something deleted.
+   */
+  touchesInsertion(range: Range): boolean;
 };
 
 type Segment = {
@@ -116,5 +123,12 @@ export function computeOffsetMapper(oldBody: string, newBody: string): OffsetMap
     return touched ? "partial" : "equal";
   };
 
-  return { mapStart, mapEnd, classify };
+  const touchesInsertion = ({ start, end }: Range): boolean => {
+    if (start >= end) return false;
+    return segments.some(
+      (segment) => segment.op === DIFF_INSERT && segment.newStart < end && segment.newEnd > start,
+    );
+  };
+
+  return { mapStart, mapEnd, classify, touchesInsertion };
 }

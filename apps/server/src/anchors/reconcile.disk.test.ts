@@ -97,6 +97,39 @@ describe("M1 matrix on disk", () => {
     expect(selector).toEqual(original);
   });
 
+  it("TEST-25 extended: deleted bullet with near-identical siblings → orphaned, selector byte-identical on disk", () => {
+    // Evaluator round-2 (FAIL-2): a similar sibling must not "verify" the
+    // deleted bullet as surviving — the anchor block on disk must not change.
+    const bullet = (item: string) => `- Buy ${item} from the corner store on Tuesday.`;
+    const body = `\n# Shopping\n\n${bullet("milk")}\n${bullet("bread")}\n${bullet("eggs")}\n`;
+    const at = body.indexOf(bullet("bread"));
+    const seeded: Frontmatter = {
+      id: "doc_d4e5f6",
+      type: "note",
+      anchors: {
+        anc_bread1: {
+          exact: bullet("bread"),
+          ...computeContext(body, at, at + bullet("bread").length),
+        },
+      },
+    };
+    const file = join(workspace, "bullets.md");
+    writeDoc(file, seeded, body);
+    const seededRaw = readFileSync(file, "utf8");
+
+    const { frontmatter, body: onDisk } = readDoc(file);
+    const newBody = onDisk.replace(`${bullet("bread")}\n`, "");
+    const { anchors, report } = reconcileAnchors(onDisk, newBody, frontmatter.anchors);
+    writeDoc(file, { ...frontmatter, anchors }, newBody);
+
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_bread1"] });
+    const persistedRaw = readFileSync(file, "utf8");
+    // The whole persisted file differs from the seeded one only by the deleted
+    // body line — the anchor's frontmatter block is untouched byte-for-byte.
+    expect(persistedRaw).toBe(seededRaw.replace(`${bullet("bread")}\n`, ""));
+    expect(readDoc(file).frontmatter.anchors["anc_bread1"]).toEqual(seeded.anchors["anc_bread1"]);
+  });
+
   it("TEST-26: both neighbouring sentences rewritten → remapped, exact kept, context quotes the new surroundings", () => {
     const { report, selector, body } = runRow("context-only", (b) =>
       b

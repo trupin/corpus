@@ -8,21 +8,21 @@ export type ResolveOptions = {
 };
 
 /**
- * Resolve a text-quote selector against a body via the SPEC.md §6 ladder:
+ * Rungs 1–2 of the SPEC.md §6 ladder — the exactness tier:
  *
  * 1. Exact match of `prefix + exact + suffix` (first occurrence — with the
  *    context included, ambiguity at this level is vanishingly rare). Skipped
  *    when the selector has no context at all, since it would degenerate to a
  *    first-occurrence guess and defeat rung 2's uniqueness requirement.
  * 2. `exact` alone, when it occurs exactly once (overlapping occurrences count).
- * 3. Fuzzy: highest-similarity window at or above `FUZZY_THRESHOLD`.
- * 4. Unresolved → `null` (the thread is orphaned, never guessed at).
+ *
+ * Split out from {@link resolveAnchor} because reconciliation's deleted-claim
+ * verification must stop here: exact rungs prove *verbatim* survival, which is
+ * the only evidence strong enough to overrule the diff's word that a range was
+ * deleted. Fuzzy similarity would "find" a deleted paragraph's look-alike
+ * sibling and silently re-attach its thread.
  */
-export function resolveAnchor(
-  body: string,
-  selector: TextQuoteSelectorInput,
-  options: ResolveOptions = {},
-): Range | null {
+export function resolveAnchorExact(body: string, selector: TextQuoteSelectorInput): Range | null {
   const { exact } = selector;
   if (exact.length === 0 || body.length === 0) return null;
   const prefix = selector.prefix ?? "";
@@ -41,8 +41,33 @@ export function resolveAnchor(
     return snapRange(body, { start: first, end: first + exact.length });
   }
 
+  return null;
+}
+
+/**
+ * Resolve a text-quote selector against a body via the SPEC.md §6 ladder:
+ *
+ * 1–2. The exactness tier ({@link resolveAnchorExact}).
+ * 3. Fuzzy: highest-similarity window at or above `FUZZY_THRESHOLD`.
+ * 4. Unresolved → `null` (the thread is orphaned, never guessed at).
+ */
+export function resolveAnchor(
+  body: string,
+  selector: TextQuoteSelectorInput,
+  options: ResolveOptions = {},
+): Range | null {
+  const exactRange = resolveAnchorExact(body, selector);
+  if (exactRange !== null) return exactRange;
+
+  const { exact } = selector;
+  if (exact.length === 0 || body.length === 0) return null;
   const hint = Math.max(0, Math.min(options.hint ?? 0, body.length));
-  return findFuzzyRange(body, { exact, prefix, suffix, hint });
+  return findFuzzyRange(body, {
+    exact,
+    prefix: selector.prefix ?? "",
+    suffix: selector.suffix ?? "",
+    hint,
+  });
 }
 
 /**

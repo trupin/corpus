@@ -118,6 +118,30 @@ describe("computeOffsetMapper — classify", () => {
     expect(mapper.classify({ start: 3, end: 3 })).toBe("deleted");
   });
 
+  it("reports whether a new-body range overlaps inserted text", () => {
+    const newBody = oldBody.replace("Last sentence.", "A different closing line.");
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    // The rewritten closing line is (at least partly) inserted text…
+    expect(mapper.touchesInsertion(rangeOf(newBody, "different closing"))).toBe(true);
+    // …while untouched text and empty ranges are not.
+    expect(mapper.touchesInsertion(rangeOf(newBody, "The anchored sentence"))).toBe(false);
+    expect(mapper.touchesInsertion({ start: 3, end: 3 })).toBe(false);
+  });
+
+  it("touchesInsertion detects partial overlap with an inserted run", () => {
+    const before = "one two three";
+    const after = "one extra two three";
+    const mapper = computeOffsetMapper(before, after);
+    // A range straddling the boundary of the inserted word overlaps it.
+    expect(mapper.touchesInsertion(rangeOf(after, "extra two"))).toBe(true);
+    expect(mapper.touchesInsertion(rangeOf(after, "two three"))).toBe(false);
+  });
+
+  it("touchesInsertion is false everywhere when the bodies are identical", () => {
+    const mapper = computeOffsetMapper(oldBody, oldBody);
+    expect(mapper.touchesInsertion({ start: 0, end: oldBody.length })).toBe(false);
+  });
+
   it("survives a CRLF → LF conversion as a remap, not a wipe", () => {
     const oldCrlf = "line one\r\nline two\r\nline three\r\nline four\r\n";
     const newLf = oldCrlf.replaceAll("\r\n", "\n");
