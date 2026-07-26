@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TextQuoteSelectorSchema } from "@corpus/contract";
 import { isWellFormedText } from "./code-points.js";
 import { computeContext } from "./context.js";
+import { computeOffsetMapper } from "./diff.js";
 import { reconcileAnchors } from "./reconcile.js";
 import { resolveAnchor } from "./resolve.js";
 import type { AnchorsMap, TextQuoteSelector } from "./types.js";
@@ -250,6 +251,157 @@ describe("reconcileAnchors — genuine deletions never re-attach to look-alikes 
   });
 });
 
+describe("reconcileAnchors — partial-path slice integrity (SERVER-012)", () => {
+  // Evaluator discovery (SERVER-002 eval, round 3, observation 2): deleting a
+  // paragraph beside a near-identical paragraph that is *also edited* in the
+  // same write makes the diff align the deleted paragraph against the edited
+  // sibling. The mapper then hands each anchor a slice mapped through a
+  // DELETE+INSERT replacement that straddles its range boundary — a truncated
+  // selector (`exact: "Paragraph one now has orang"`) or the other anchor's
+  // text. Such a slice is rejected and the anchor takes the deleted-claim
+  // verification path (exact-only + insertion-overlap, fuzzy never).
+  const P1 = "Paragraph one now has apples and pears in the basket today.";
+  const P2 = "Paragraph two now has apples and pears in the basket today.";
+  const base = `\n# Doc\n\n${P1}\n\n${P2}\n\nA closing paragraph that stays put.\n`;
+  const siblingAnchors = (body: string): AnchorsMap => ({
+    anc_one1: capture(body, P1),
+    anc_two2: capture(body, P2),
+  });
+
+  it.each([
+    [
+      "delete P2, edit P1's word",
+      (b: string) => b.replace(`\n\n${P2}`, "").replace("apples", "oranges"),
+    ],
+    [
+      "delete P1, edit P2's word",
+      (b: string) => b.replace(`${P1}\n\n`, "").replace("apples", "oranges"),
+    ],
+    [
+      "delete P2, rewrite P1's tail",
+      (b: string) =>
+        b
+          .replace(`\n\n${P2}`, "")
+          .replace(
+            "apples and pears in the basket today.",
+            "oranges and figs in the basket tonight.",
+          ),
+    ],
+    [
+      "delete P1, rewrite P2's tail",
+      (b: string) =>
+        b
+          .replace(`${P1}\n\n`, "")
+          .replace(
+            "apples and pears in the basket today.",
+            "oranges and figs in the basket tonight.",
+          ),
+    ],
+  ])("never emits a truncated selector or another anchor's text: %s", (_name, edit) => {
+    const input = siblingAnchors(base);
+    const newBody = edit(base);
+    const { anchors, report } = reconcileAnchors(base, newBody, input);
+    // TEST-60: each anchor is either remapped to the full text of its range or
+    // orphaned with its selector preserved byte-for-byte — no third outcome.
+    // Here neither original text survives verbatim, so both orphan.
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_one1", "anc_two2"] });
+    expect(anchors["anc_one1"]).toEqual(input["anc_one1"]);
+    expect(anchors["anc_two2"]).toEqual(input["anc_two2"]);
+  });
+
+  it("the reproduction fixture actually exercises the straddled-partial seam", () => {
+    // Guard against fixture rot: the scenario must still classify `partial`
+    // (not `deleted`) with a boundary-straddling replacement — the exact shape
+    // the pre-fix engine turned into truncated selectors.
+    const newBody = base.replace(`\n\n${P2}`, "").replace("apples", "oranges");
+    const mapper = computeOffsetMapper(base, newBody);
+    for (const exact of [P1, P2]) {
+      const start = base.indexOf(exact);
+      const range = { start, end: start + exact.length };
+      expect(mapper.classify(range)).toBe("partial");
+      expect(mapper.straddledByReplacement(range)).toBe(true);
+    }
+  });
+
+  it("a rejected slice still verifies exactness: a pre-existing doppelgänger orphans, not re-attaches", () => {
+    // The straddled anchor's exact resolves (rung 2 — the appendix copy is
+    // unique after the deletion) but the match sits wholly in unedited text:
+    // insertion-overlap rejects it, so the deletion stands. This pins the
+    // fall-through to the adjudicated ladder — exact-only verification runs,
+    // fuzzy never (the near-identical sibling would satisfy fuzzy).
+    const oldBody = `${base}\nAppendix quotes it verbatim: ${P2} For the record.\n`;
+    const newBody = oldBody
+      .replace(`\n\n${P2}`, "")
+      .replace("apples and pears", "oranges and figs");
+    const input: AnchorsMap = { anc_two2: capture(oldBody, P2) };
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    const start = oldBody.indexOf(P2);
+    const range = { start, end: start + P2.length };
+    expect(mapper.classify(range)).toBe("partial");
+    expect(mapper.straddledByReplacement(range)).toBe(true);
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_two2"] });
+    expect(anchors["anc_two2"]).toEqual(input["anc_two2"]);
+  });
+
+  it("still re-attaches when the same write re-types the deleted paragraph in inserted text", () => {
+    // The verbatim copy lands amid enough new prose that the diff folds it
+    // into the insertion; exact-only verification finds it overlapping
+    // inserted text — survival, not a doppelgänger.
+    const newBody =
+      base.replace(`\n\n${P2}`, "").replace("apples", "oranges") +
+      `\nFreshly written framing sentence with plenty of brand-new words before the quote. ${P2} And plenty of freshly written words after the quote close this paragraph out.\n`;
+    const { anchors, report } = reconcileAnchors(base, newBody, siblingAnchors(base));
+    expect(report.orphaned).toEqual([]);
+    expect(anchors["anc_two2"]?.exact).toBe(P2);
+    expect(anchors["anc_two2"]?.prefix.endsWith("before the quote. ")).toBe(true);
+    // The surviving edited sibling keeps its own full paragraph.
+    expect(anchors["anc_one1"]?.exact).toBe(P1.replace("apples", "oranges"));
+  });
+
+  it("both near-identical siblings deleted in one write → both orphan, no cross-contamination", () => {
+    const input = siblingAnchors(base);
+    const newBody = base.replace(`${P1}\n\n${P2}\n\n`, "");
+    const { anchors, report } = reconcileAnchors(base, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_one1", "anc_two2"] });
+    expect(anchors["anc_one1"]).toEqual(input["anc_one1"]);
+    expect(anchors["anc_two2"]).toEqual(input["anc_two2"]);
+  });
+
+  const SHRINK_SENT = "We assume a 30-year fixed at 6.1% for the base case.";
+  const SHRINK_BODY = `Intro line.\n\n${SHRINK_SENT}\n\nOutro line.\n`;
+
+  it.each([
+    [
+      "in-range tail rewrite",
+      (b: string) => b.replace("for the base case.", "going forward."),
+      "We assume a 30-year fixed at 6.1% going forward.",
+    ],
+    [
+      "shrink to a few words",
+      (b: string) => b.replace(SHRINK_SENT, "We assume 6.1%."),
+      "We assume 6.1%.",
+    ],
+    [
+      "pure delete crossing the tail boundary",
+      (b: string) => b.replace(" at 6.1% for the base case.\n\nOutro line.", "."),
+      "We assume a 30-year fixed",
+    ],
+  ])("legitimate shrinking edits still remap: %s", (_name, edit, expected) => {
+    // The invariant is "the slice equals what the selector claims", not "the
+    // slice is long" — genuine shrinks (and pure deletions crossing the
+    // boundary, which involve no replacement) keep trusting the mapper.
+    const newBody = edit(SHRINK_BODY);
+    const { anchors, report } = reconcileAnchors(SHRINK_BODY, newBody, {
+      anc_s: capture(SHRINK_BODY, SHRINK_SENT),
+    });
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_s"], orphaned: [] });
+    expect(anchors["anc_s"]?.exact).toBe(expected);
+    const range = resolveAnchor(newBody, anchors["anc_s"] ?? { exact: "" });
+    expect(newBody.slice(range?.start, range?.end)).toBe(expected);
+  });
+});
+
 describe("reconcileAnchors — guarantees", () => {
   it("is deterministic: 100 runs on identical inputs serialize byte-identically", () => {
     const anchors: AnchorsMap = {
@@ -445,11 +597,73 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
         const selector = next[id];
         expect(selector).toBeDefined();
         // A surviving selector always resolves in the new body: its context and
-        // exact were taken verbatim from it.
-        expect(resolveAnchor(newBody, selector ?? { exact: "" })).not.toBeNull();
+        // exact were taken verbatim from it — and the resolved range's full
+        // text is the selector's exact, never a truncation or another range's
+        // text (SERVER-012 slice-integrity invariant, sprint-002 TEST-61).
+        const range = resolveAnchor(newBody, selector ?? { exact: "" });
+        expect(range, `seed ${run + 1}: ${id}`).not.toBeNull();
+        expect(newBody.slice(range?.start, range?.end), `seed ${run + 1}: ${id}`).toBe(
+          selector?.exact,
+        );
       }
       for (const id of report.orphaned) {
-        expect(next[id]).toEqual(normalized[id]);
+        expect(next[id], `seed ${run + 1}: ${id}`).toEqual(normalized[id]);
+      }
+      expect([...report.unchanged, ...report.remapped, ...report.orphaned].sort()).toEqual(
+        Object.keys(anchors).sort(),
+      );
+    }
+  });
+
+  it("holds slice integrity across 40 seeded edits of a body full of near-identical siblings", () => {
+    // The SERVER-012 failure shape needs look-alike blocks for the diff to
+    // cross-align, so the general invariant is also swept over a body where
+    // every paragraph has a near-identical sibling. Random deletions and
+    // replacements here routinely straddle anchor boundaries.
+    const paragraph = (n: string, k: string) =>
+      `Paragraph ${n} now has ${k} and pears in the basket today.`;
+    const body = [
+      "# Doc",
+      paragraph("one", "apples"),
+      paragraph("two", "apples"),
+      paragraph("three", "plums"),
+      paragraph("four", "plums"),
+      "A closing paragraph that stays put.",
+    ].join("\n\n");
+    const anchors: AnchorsMap = {
+      anc_p1: capture(body, paragraph("one", "apples")),
+      anc_p2: capture(body, paragraph("two", "apples")),
+      anc_p3: capture(body, paragraph("three", "plums")),
+      anc_p4: capture(body, paragraph("four", "plums")),
+    };
+    const normalized = Object.fromEntries(
+      Object.entries(anchors).map(([id, s]) => [
+        id,
+        { exact: s.exact, prefix: s.prefix ?? "", suffix: s.suffix ?? "" },
+      ]),
+    );
+    const words = ["oranges", "\n\nParagraph five now has kiwis too.", " figs ", "x"];
+    for (let run = 0; run < 40; run++) {
+      const rng = makeRng(run + 101);
+      let newBody = body;
+      const editCount = 1 + Math.floor(rng() * 3);
+      for (let e = 0; e < editCount; e++) {
+        const at = Math.floor(rng() * newBody.length);
+        const len = Math.floor(rng() * 70);
+        const word = rng() < 0.5 ? "" : (words[Math.floor(rng() * words.length)] ?? "pad");
+        newBody = `${newBody.slice(0, at)}${word}${newBody.slice(at + len)}`;
+      }
+      const { anchors: next, report } = reconcileAnchors(body, newBody, anchors);
+      for (const id of [...report.unchanged, ...report.remapped]) {
+        const selector = next[id];
+        const range = resolveAnchor(newBody, selector ?? { exact: "" });
+        expect(range, `seed ${run + 101}: ${id}`).not.toBeNull();
+        expect(newBody.slice(range?.start, range?.end), `seed ${run + 101}: ${id}`).toBe(
+          selector?.exact,
+        );
+      }
+      for (const id of report.orphaned) {
+        expect(next[id], `seed ${run + 101}: ${id}`).toEqual(normalized[id]);
       }
       expect([...report.unchanged, ...report.remapped, ...report.orphaned].sort()).toEqual(
         Object.keys(anchors).sort(),

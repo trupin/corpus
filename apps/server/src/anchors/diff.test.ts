@@ -151,3 +151,59 @@ describe("computeOffsetMapper — classify", () => {
     expect(newLf.slice(mapper.mapStart(start), mapper.mapEnd(end))).toBe("line two");
   });
 });
+
+describe("computeOffsetMapper — straddledByReplacement (SERVER-012)", () => {
+  const oldBody = "alpha bravo charlie delta echo";
+
+  it("flags a replacement whose deletion crosses the range's end", () => {
+    const newBody = oldBody.replace("bravo charlie", "wholly unrelated words");
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    expect(mapper.straddledByReplacement(rangeOf(oldBody, "alpha bravo"))).toBe(true);
+  });
+
+  it("flags a replacement whose deletion crosses the range's start", () => {
+    const newBody = oldBody.replace("bravo charlie", "wholly unrelated words");
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    expect(mapper.straddledByReplacement(rangeOf(oldBody, "charlie delta"))).toBe(true);
+  });
+
+  it("does not flag a replacement lying wholly inside the range", () => {
+    const newBody = oldBody.replace("charlie", "different");
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    expect(mapper.straddledByReplacement(rangeOf(oldBody, "bravo charlie delta"))).toBe(false);
+  });
+
+  it("does not flag a replacement whose deletion ends exactly at the range's end", () => {
+    // An in-range tail rewrite: the replacement belongs to the range alone.
+    const newBody = oldBody.replace("bravo charlie", "bravo unrelated");
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    expect(mapper.straddledByReplacement(rangeOf(oldBody, "alpha bravo charlie"))).toBe(false);
+  });
+
+  it("does not flag a pure deletion crossing the boundary — no insert, no misattribution", () => {
+    const newBody = oldBody.replace(" bravo charlie", "");
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    expect(mapper.straddledByReplacement(rangeOf(oldBody, "alpha bravo"))).toBe(false);
+  });
+
+  it("is false for empty ranges and identical bodies", () => {
+    const mapper = computeOffsetMapper(oldBody, oldBody);
+    expect(mapper.straddledByReplacement({ start: 3, end: 3 })).toBe(false);
+    expect(mapper.straddledByReplacement({ start: 0, end: oldBody.length })).toBe(false);
+  });
+
+  it("flags both anchors of the deleted-beside-edited-sibling scenario", () => {
+    // The SERVER-012 shape: the diff aligns the deleted paragraph against its
+    // near-identical edited sibling, leaving one replacement pair straddling
+    // both anchors' boundaries.
+    const p1 = "Paragraph one now has apples and pears in the basket today.";
+    const p2 = "Paragraph two now has apples and pears in the basket today.";
+    const body = `\n# Doc\n\n${p1}\n\n${p2}\n\nA closing paragraph that stays put.\n`;
+    const newBody = body.replace(`\n\n${p2}`, "").replace("apples", "oranges");
+    const mapper = computeOffsetMapper(body, newBody);
+    expect(mapper.classify(rangeOf(body, p1))).toBe("partial");
+    expect(mapper.classify(rangeOf(body, p2))).toBe("partial");
+    expect(mapper.straddledByReplacement(rangeOf(body, p1))).toBe(true);
+    expect(mapper.straddledByReplacement(rangeOf(body, p2))).toBe(true);
+  });
+});

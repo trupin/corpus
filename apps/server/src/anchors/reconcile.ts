@@ -24,7 +24,13 @@ import type {
  * - range untouched → `exact` kept, context recomputed from the new
  *   surroundings (`unchanged` when the context is identical, else `remapped`);
  * - range partially edited → the new text spanned by the mapped range becomes
- *   `exact`, context recomputed, reported `remapped`;
+ *   `exact`, context recomputed, reported `remapped` — *provided the mapped
+ *   slice is trustworthy*. When a DELETE+INSERT replacement straddles a range
+ *   boundary, the mapper grants the range replacement text that also replaces
+ *   content outside it (the diff aligns a deleted paragraph against a
+ *   near-identical edited sibling), producing truncated selectors or another
+ *   anchor's words; such a slice is rejected and the anchor takes the same
+ *   verification path as a deletion claim (SERVER-012);
  * - diff says the range was deleted (or the mapped slice degenerates to
  *   whitespace) → that claim is verified before orphaning, because
  *   `diff_cleanupSemantic` can merge two neighbouring rewrites into one
@@ -101,7 +107,8 @@ export function reconcileAnchors(
       emitAt(revived);
     };
 
-    if (mapper.classify(oldRange) === "deleted") {
+    const classification = mapper.classify(oldRange);
+    if (classification === "deleted") {
       reattachOrOrphan();
       continue;
     }
@@ -113,6 +120,17 @@ export function reconcileAnchors(
     if (isBlank(mapped)) {
       // A range edited down to nothing is a deletion in all but name — same
       // verification before orphaning.
+      reattachOrOrphan();
+      continue;
+    }
+    if (classification === "partial" && mapper.straddledByReplacement(oldRange)) {
+      // The mapped slice swallowed replacement text that also replaces content
+      // outside the range — it may be truncated or carry a neighbour's words,
+      // so the mapper's in-place-edit evidence is void. The adjudicated ladder
+      // still applies, in order: exact-only verification second, orphan last,
+      // fuzzy never (an `equal` classification can't be straddled — a
+      // boundary-straddling DELETE would have touched the range — so kept
+      // anchors never pay for this check).
       reattachOrOrphan();
       continue;
     }

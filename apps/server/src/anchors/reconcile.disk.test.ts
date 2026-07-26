@@ -130,6 +130,40 @@ describe("M1 matrix on disk", () => {
     expect(readDoc(file).frontmatter.anchors["anc_bread1"]).toEqual(seeded.anchors["anc_bread1"]);
   });
 
+  it("SERVER-012: deleting a paragraph beside its edited near-identical sibling never truncates selectors on disk", () => {
+    // Pre-fix, this write persisted `exact: Paragraph one now has orang` (a
+    // mid-word truncation) and handed anc_two2 the surviving paragraph's text.
+    // Fixed: neither original survives verbatim, so both anchors orphan and
+    // the persisted file differs from the seeded one by the body edit alone.
+    const p1 = "Paragraph one now has apples and pears in the basket today.";
+    const p2 = "Paragraph two now has apples and pears in the basket today.";
+    const body = `\n# Doc\n\n${p1}\n\n${p2}\n\nA closing paragraph that stays put.\n`;
+    const at1 = body.indexOf(p1);
+    const at2 = body.indexOf(p2);
+    const seeded: Frontmatter = {
+      id: "doc_s012aa",
+      type: "note",
+      anchors: {
+        anc_one1: { exact: p1, ...computeContext(body, at1, at1 + p1.length) },
+        anc_two2: { exact: p2, ...computeContext(body, at2, at2 + p2.length) },
+      },
+    };
+    const file = join(workspace, "siblings.md");
+    writeDoc(file, seeded, body);
+
+    const { frontmatter, body: onDisk } = readDoc(file);
+    const newBody = onDisk.replace(`\n\n${p2}`, "").replace("apples", "oranges");
+    const { anchors, report } = reconcileAnchors(onDisk, newBody, frontmatter.anchors);
+    writeDoc(file, { ...frontmatter, anchors }, newBody);
+
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_one1", "anc_two2"] });
+    // Byte-for-byte: same frontmatter as seeded, only the body edited.
+    expect(readFileSync(file, "utf8")).toBe(`---\n${stringify(seeded)}---\n${newBody}`);
+    const persisted = readDoc(file).frontmatter.anchors;
+    expect(persisted["anc_one1"]).toEqual(seeded.anchors["anc_one1"]);
+    expect(persisted["anc_two2"]).toEqual(seeded.anchors["anc_two2"]);
+  });
+
   it("TEST-26: both neighbouring sentences rewritten → remapped, exact kept, context quotes the new surroundings", () => {
     const { report, selector, body } = runRow("context-only", (b) =>
       b
