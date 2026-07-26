@@ -92,6 +92,92 @@ describe("reconcileAnchors — §15 M1 matrix", () => {
   });
 });
 
+describe("reconcileAnchors — deleted classification is verified before orphaning (SERVER-002 FAIL-1)", () => {
+  // Evaluator fixture: an anchored sentence whose two neighbouring sentences
+  // get rewritten. diff_cleanupSemantic merges the two rewrites into one
+  // delete/insert that swallows the untouched sentence, so the mapper
+  // classifies its range "deleted" — reconciliation must re-resolve through
+  // the §6 ladder instead of trusting that claim.
+  const SENT = "We assume a 30-year fixed at 6.1% for the base case.";
+  const PRE = "The finance model has three inputs that matter most.";
+  const POST = "Everything downstream depends on that number.";
+  const oldBody = `\n# Mortgage options\n\n${PRE}\n\n${SENT}\n\n${POST}\n`;
+  const input: AnchorsMap = { [ANCHOR_ID]: capture(oldBody, SENT) };
+
+  it("both neighbouring sentences rewritten → remapped, exact kept, context refreshed", () => {
+    const newBody = oldBody
+      .replace(PRE, "Completely different words now precede the quoted line here.")
+      .replace(POST, "Utterly different words now follow the quoted line as well.");
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [ANCHOR_ID], orphaned: [] });
+    const selector = anchors[ANCHOR_ID];
+    expect(selector?.exact).toBe(SENT);
+    const start = newBody.indexOf(SENT);
+    expect({ prefix: selector?.prefix, suffix: selector?.suffix }).toEqual(
+      computeContext(newBody, start, start + SENT.length),
+    );
+    // The reconciler agrees with its own resolver.
+    const range = resolveAnchor(newBody, selector ?? { exact: "" });
+    expect(newBody.slice(range?.start, range?.end)).toBe(SENT);
+  });
+
+  it("never orphans while the untouched sentence survives, across escalating context edits", () => {
+    const edits: [string, string][] = [
+      ["one word before", oldBody.replace("finance", "mortgage")],
+      ["one word each side", oldBody.replace("finance", "mortgage").replace("downstream", "later")],
+      [
+        "preceding sentence rewritten",
+        oldBody.replace(PRE, "Completely different words now precede the quoted line here."),
+      ],
+      [
+        "both neighbouring sentences rewritten",
+        oldBody
+          .replace(PRE, "Completely different words now precede the quoted line here.")
+          .replace(POST, "Utterly different words now follow the quoted line as well."),
+      ],
+    ];
+    for (const [label, newBody] of edits) {
+      const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+      expect(report.orphaned, label).toEqual([]);
+      expect(anchors[ANCHOR_ID]?.exact, label).toBe(SENT);
+    }
+  });
+
+  it("still orphans when the sentence is genuinely deleted along with both neighbours", () => {
+    const newBody = oldBody
+      .replace(`${PRE}\n\n${SENT}\n\n${POST}`, "")
+      .concat("Completely different words replace the whole section now.\n");
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: [ANCHOR_ID] });
+    expect(anchors[ANCHOR_ID]).toEqual(input[ANCHOR_ID]);
+  });
+
+  it("re-attaches a sentence cut from one place and pasted verbatim elsewhere", () => {
+    // The diff sees a deletion at the old location, but §6 defines orphaned as
+    // "no longer resolves" — a verbatim unique survivor re-attaches (rung 2).
+    const newBody = `${oldBody.replace(`${SENT}\n\n`, "")}\n${SENT}\n`;
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [ANCHOR_ID], orphaned: [] });
+    const selector = anchors[ANCHOR_ID];
+    expect(selector?.exact).toBe(SENT);
+    const start = newBody.lastIndexOf(SENT);
+    expect(selector?.prefix).toBe(computeContext(newBody, start, start + SENT.length).prefix);
+  });
+
+  it("re-attaches through the degenerate whitespace-slice path when the exact survives elsewhere", () => {
+    // Partial classification whose mapped slice is whitespace-only is a
+    // deletion in all but name — it gets the same re-resolution.
+    const wsOld = "AAA xx      yy BBB and elsewhere xx      yy stands.";
+    const wsNew = "AAA        BBB and elsewhere xx      yy stands.";
+    const { anchors, report } = reconcileAnchors(wsOld, wsNew, {
+      anc_ws: capture(wsOld, "xx      yy"),
+    });
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_ws"], orphaned: [] });
+    expect(anchors["anc_ws"]?.exact).toBe("xx      yy");
+    expect(anchors["anc_ws"]?.suffix).toBe(" stands.");
+  });
+});
+
 describe("reconcileAnchors — guarantees", () => {
   it("is deterministic: 100 runs on identical inputs serialize byte-identically", () => {
     const anchors: AnchorsMap = {

@@ -2,7 +2,13 @@ import { snapRange } from "./code-points.js";
 import { computeContext } from "./context.js";
 import { computeOffsetMapper } from "./diff.js";
 import { resolveAnchor, sortedEntries } from "./resolve.js";
-import type { AnchorsMap, ReconcileReport, ReconcileResult, TextQuoteSelector } from "./types.js";
+import type {
+  AnchorsMap,
+  Range,
+  ReconcileReport,
+  ReconcileResult,
+  TextQuoteSelector,
+} from "./types.js";
 
 /**
  * Map every anchor of a document through the `oldBody` → `newBody` edit
@@ -18,10 +24,16 @@ import type { AnchorsMap, ReconcileReport, ReconcileResult, TextQuoteSelector } 
  * - range untouched → `exact` kept, context recomputed from the new
  *   surroundings (`unchanged` when the context is identical, else `remapped`);
  * - range partially edited → the new text spanned by the mapped range becomes
- *   `exact`, context recomputed, reported `remapped` — unless the mapped slice
- *   is empty/whitespace-only, which is a deletion in all but name;
- * - range entirely deleted → the last selector is kept verbatim for
- *   history/git and the anchor is reported `orphaned`.
+ *   `exact`, context recomputed, reported `remapped`;
+ * - diff says the range was deleted (or the mapped slice degenerates to
+ *   whitespace) → that claim is verified by re-resolving the original selector
+ *   against `newBody` through the §6 ladder before orphaning. §6 defines an
+ *   orphan as a selector that *no longer resolves* — the diff is only the
+ *   mechanism, and `diff_cleanupSemantic` can merge two neighbouring rewrites
+ *   into one delete/insert that swallows untouched text between them. A
+ *   selector that still resolves re-attaches there (`remapped`); only when the
+ *   ladder also fails is the last selector kept verbatim for history/git and
+ *   the anchor reported `orphaned`.
  *
  * Never mutates its input; always returns a new map whose selectors carry
  * `prefix`/`suffix` as strings (the contract's `TextQuoteSelector` shape).
@@ -47,14 +59,43 @@ export function reconcileAnchors(
       nextAnchors[id] = selector;
       report.orphaned.push(id);
     };
+    /** Emit the selector for `[start, end)` of `newBody` and file the report bucket. */
+    const emitAt = (range: Range): void => {
+      const slice = newBody.slice(range.start, range.end);
+      const context = computeContext(newBody, range.start, range.end);
+      nextAnchors[id] = { exact: slice, ...context };
+      const untouched =
+        slice === selector.exact &&
+        context.prefix === selector.prefix &&
+        context.suffix === selector.suffix;
+      (untouched ? report.unchanged : report.remapped).push(id);
+    };
+    const isBlank = (range: Range): boolean =>
+      newBody.slice(range.start, range.end).trim().length === 0;
 
     const oldRange = resolveAnchor(oldBody, selector);
     if (oldRange === null) {
       orphan();
       continue;
     }
+
+    // The diff claims this range's text is gone. Verify against the body
+    // itself (§6: orphaned means the selector no longer resolves) before
+    // detaching the thread; the mapped start biases fuzzy tie-breaks toward
+    // where the edit left the neighbourhood.
+    const reattachOrOrphan = (): void => {
+      const revived = resolveAnchor(newBody, selector, {
+        hint: mapper.mapStart(oldRange.start),
+      });
+      if (revived === null || isBlank(revived)) {
+        orphan();
+        return;
+      }
+      emitAt(revived);
+    };
+
     if (mapper.classify(oldRange) === "deleted") {
-      orphan();
+      reattachOrOrphan();
       continue;
     }
 
@@ -62,23 +103,17 @@ export function reconcileAnchors(
       start: mapper.mapStart(oldRange.start),
       end: mapper.mapEnd(oldRange.end),
     });
-    const slice = newBody.slice(mapped.start, mapped.end);
-    if (slice.trim().length === 0) {
-      orphan();
+    if (isBlank(mapped)) {
+      // A range edited down to nothing is a deletion in all but name — same
+      // verification before orphaning.
+      reattachOrOrphan();
       continue;
     }
-
-    const context = computeContext(newBody, mapped.start, mapped.end);
-    nextAnchors[id] = { exact: slice, ...context };
     // A classification of "equal" guarantees the mapped slice is the old
-    // `exact` (all characters survive contiguously); the slice comparison is
-    // a defensive invariant, downgrading to `remapped` rather than emitting a
-    // selector that does not match the body.
-    const untouched =
-      slice === selector.exact &&
-      context.prefix === selector.prefix &&
-      context.suffix === selector.suffix;
-    (untouched ? report.unchanged : report.remapped).push(id);
+    // `exact` (all characters survive contiguously); `emitAt`'s slice
+    // comparison is a defensive invariant, downgrading to `remapped` rather
+    // than emitting a selector that does not match the body.
+    emitAt(mapped);
   }
   return { anchors: nextAnchors, report };
 }

@@ -245,6 +245,154 @@ substring stand-in that would have orphaned the anchor.
 coverage **99.75% lines / 95.6% branches / 100% functions**, `apps/server/src` at
 100/100/100.
 
+### Fix loop round 1 — FAIL-1 (evaluator verdict `issues/evals/SERVER-002-eval.md`, TEST-26)
+
+**implemented on: fable** (claude-fable-5).
+
+#### Reproduction (before any code change, 2026-07-26)
+
+Evaluator's escalating-context-edits sequence, pure-library repro
+(`node_modules/.e2e/repro26.ts`, run with `./node_modules/.bin/tsx` against the
+worktree sources — anchored sentence `SENT = "We assume a 30-year fixed at 6.1%
+for the base case."`, selector built with `computeContext` on `oldBody`):
+
+```
+--- one word before changed
+exact still present: true | classify: equal | report: unchanged
+--- one word before + one after changed
+exact still present: true | classify: equal | report: remapped
+--- preceding sentence fully rewritten
+exact still present: true | classify: equal | report: remapped
+--- both neighbouring sentences rewritten
+exact still present: true | classify: deleted | report: orphaned
+emitted exact unchanged: true
+resolves in newBody anyway: {"start":83,"end":135}
+stale prefix: "three inputs that matter most.\n\n"
+```
+
+Bug confirmed exactly as reported: the fourth edit leaves the anchored sentence
+byte-identical, yet `computeOffsetMapper(...).classify` calls its range
+`"deleted"` (`diff_cleanupSemantic` merged the two neighbouring rewrites into
+one delete/insert swallowing the untouched sentence), the report says
+`orphaned`, the selector is left stale — and `resolveAnchor(newBody, selector)`
+finds it at 83–135.
+
+On-disk reproduction with the contract's Given (`node_modules/.e2e/m1-disk-test26.ts`:
+real `mkdtemp` + `git init` workspace, doc with `anchors:` frontmatter, both
+neighbouring sentences rewritten, reconciled, written back, committed):
+
+```
+workspace: /var/folders/vt/.../corpus-t26-WsbY1Z
+report: {"unchanged":[],"remapped":[],"orphaned":["anc_k4f7"]}
+on-disk exact unchanged: true
+on-disk prefix: "three inputs that matter most.\n\n"   # stale — this text is gone
+prefix quotes new surroundings: false
+re-resolves: {"start":83,"end":135}   slices back to SENT: true
+```
+
+`git show` for the reconcile commit touches only the two rewritten body lines;
+the anchor block is untouched (stale). TEST-26 expectation (`remapped`, `exact`
+unchanged, context refreshed) violated. Reproduction complete — proceeding to fix.
+
+#### Root cause and fix
+
+`computeOffsetMapper` classifies a range `"deleted"` when no `EQUAL` character
+of the semantic-cleaned diff survives inside it. `diff_cleanupSemantic` merges
+the two neighbouring rewrites into a single delete/insert pair that swallows
+the byte-identical sentence between them, so the classification lies.
+`reconcileAnchors` trusted it and orphaned with a stale selector.
+
+Fix (in `apps/server/src/anchors/reconcile.ts` only — the mapper, resolver,
+fuzzy search and context modules are untouched): a `deleted` classification —
+and the degenerate case of a mapped slice that is empty/whitespace-only — is
+treated as a *claim* by the diff, verified before orphaning by re-resolving the
+original selector against `newBody` through the full §6 ladder
+(`resolveAnchor(newBody, selector, { hint: mapper.mapStart(oldRange.start) })`).
+§6 defines an orphan as a selector that *no longer resolves*; the diff is only
+the mechanism. If the ladder resolves, the anchor re-attaches there (`exact` =
+resolved slice, context recomputed, reported `remapped`/`unchanged` by the
+usual rule); only when the ladder also fails is the selector kept verbatim and
+the anchor orphaned. The already-orphaned-in-`oldBody` path still short-circuits
+first — an anchor dead before the edit is never re-attached (TEST-31 invariant
+re-verified). `partial` ranges with a real mapped slice keep trusting the
+mapper: the diff's in-place-edit evidence outranks a verbatim survivor
+elsewhere (prevents wrongly re-attaching to a duplicate when the user edited
+the anchored occurrence in place). Deliberate semantic consequence, tested: a
+sentence cut here and pasted verbatim elsewhere now re-attaches (rung 2)
+instead of orphaning — consistent with §6's definition.
+
+#### Post-fix verification (2026-07-26)
+
+Pure-library repro re-run (`node_modules/.e2e/repro26.ts`) — fourth row fixed,
+first three unchanged:
+
+```
+--- both neighbouring sentences rewritten
+exact still present: true | classify: deleted | report: remapped
+emitted exact unchanged: true
+resolves in newBody anyway: {"start":83,"end":135}
+```
+
+On-disk TEST-26 with the contract's Given (`node_modules/.e2e/m1-disk-test26.ts`,
+real `mkdtemp` + `git init` workspace, reconcile + write-back + commit):
+
+```
+report: {"unchanged":[],"remapped":["anc_k4f7"],"orphaned":[]}
+on-disk exact unchanged: true
+on-disk prefix: " precede the quoted line here.\n\n"    (≤ 32 units, new surroundings)
+on-disk suffix: "\n\nUtterly different words now fo"    (≤ 32 units, new surroundings)
+prefix quotes new surroundings: true
+re-resolves: {"start":83,"end":135}   slices back to SENT: true
+```
+
+`git show` for the reconcile commit now shows both rewritten body lines **and**
+the refreshed `prefix`/`suffix` lines in the `anchors:` frontmatter block
+(`doc.md | 10 +++++-----`), i.e. the selector was really rewritten on disk.
+
+**Regression tests added** (all colocated, run in the suite):
+
+- `reconcile.test.ts` — new describe block "deleted classification is verified
+  before orphaning (SERVER-002 FAIL-1)": the evaluator's exact both-neighbours
+  scenario; the escalating four-edit table as a never-orphans-while-present
+  invariant; genuine deletion alongside both rewritten neighbours still orphans
+  with the selector verbatim (the net does not over-trigger); cut-and-paste
+  re-attachment; whitespace-degenerate mapped slice re-attaching via rung 2.
+- `reconcile.disk.test.ts` — **new on-disk M1 suite** (addresses the eval's
+  discrepancy note that M1 rows were unit-only): real markdown files with
+  `anchors:` frontmatter in a real `mkdtemp` directory, read → edit →
+  reconcile → write back → re-read, for the before/after/inside/deleted rows
+  and TEST-26 with the contract's Given. The engine stays pure; the test plays
+  the server's save path.
+
+Coverage of `reconcile.ts` after the fix: 67/67 statements, 25/25 branch legs.
+
+**Performance before/after** (median of 5, same machine, 1 MB body, 50 anchors;
+"old" = pre-fix implementation benchmarked side by side,
+`node_modules/.e2e/bench.ts`):
+
+| scenario                                | old       | new       |
+| --------------------------------------- | --------- | --------- |
+| one mid-body insertion (TEST-29 shape)  | 7.0 ms    | 7.0 ms    |
+| 200 scattered edits, all 50 kept        | 14.7 ms   | 14.0 ms   |
+| whole body replaced, all 50 orphan      | 1017.5 ms | 1079.6 ms |
+
+Kept-anchor paths are byte-identical code (re-resolution only runs on
+`deleted`/blank claims). The worst case — every anchor takes the verification
+path over 1 MB of unrelated text — costs +6%, dominated by the pre-existing 1 s
+`Diff_Timeout`, not the net. No order-of-magnitude regression; the unit
+benchmark (`< 1 s` for 1 MB/50 anchors/one edit) still passes.
+
+**Gate results (this worktree, clean run):**
+
+- `npm run build` — PASS
+- `npm run lint` — PASS (0 problems)
+- `npm run format:check` — PASS
+- `npm run typecheck` — PASS (all workspaces)
+- `npm run test:coverage` — **624 tests passed** (42 files; worktree contains
+  the server + contract/kit/cli trees), combined coverage **99.72% lines /
+  95.21% branches / 100% functions** (≥ 90% gate); `anchors/reconcile.ts` at
+  100/100/100.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing
