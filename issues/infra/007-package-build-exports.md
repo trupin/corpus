@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+in_progress
 
 ## Priority
 
@@ -136,23 +136,184 @@ Not a bug — this is enabling work. (The failing cross-package import is a know
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. Must be from real E2E testing — no mocks, no test clients. Real application, real requests, real interfaces. Include specific commands run, actual outputs observed, and pass/fail conclusions. State which model the implementing agent ran on ("implemented on: opus | fable")._
-
-### Reproduction (bugs only)
-
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
-
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+**implemented on: opus.** All commands run from the worktree root
+`/Users/theophanerupin/code/corpus/.claude/worktrees/agent-a45effabc600786b6`
+against the real repo — no mocks, no stubs. Node v25.2.1, npm 11.6.2.
+
+**1. Install (`npm install`)** — `added 221 packages, and audited 227 packages in 2s`.
+The `plugins/*` glob was accepted with no package inside it. `node_modules/@corpus/`
+contains links for all five workspaces:
+
+```
+cli -> ../../apps/cli          contract -> ../../packages/contract
+kit -> ../../packages/kit      server -> ../../apps/server
+ui  -> ../../apps/ui
+```
+
+**2. Build (`npm run build`)** — contract, kit and cli each ran
+`tsc -p tsconfig.build.json`; `apps/server` and `apps/ui` were skipped by
+`--if-present`. Emit verified on disk:
+
+```
+packages/contract/dist/index.{js,js.map,d.ts,d.ts.map}
+packages/kit/dist/index.{js,js.map,d.ts,d.ts.map}
+apps/cli/dist/index.{js,js.map,d.ts,d.ts.map}
+apps/cli/dist/bin/corpus.{js,js.map,d.ts,d.ts.map}
+```
+
+`packages/contract/dist/index.d.ts` contains
+`export declare const PACKAGE_NAME = "@corpus/contract";` — declarations are real,
+and no `*.test.*` file reached any `dist/`.
+
+**3. Bin.** `apps/cli/dist/bin/corpus.js` line 1 is `#!/usr/bin/env node` — tsc
+preserves the shebang. Modes after a build:
+
+```
+$ stat -f '%Sp %N' apps/cli/dist/bin/corpus.js apps/cli/dist/index.js
+-rwxr-xr-x apps/cli/dist/bin/corpus.js
+-rw-r--r-- apps/cli/dist/index.js
+```
+
+```
+$ ls -la node_modules/.bin/corpus
+node_modules/.bin/corpus -> ../@corpus/cli/dist/bin/corpus.js
+$ ./node_modules/.bin/corpus
+corpus: no commands yet — the command surface arrives with CLI-001.
+corpus exit=0
+$ npm run --silent dev -w apps/cli          # tsx path, no build involved
+corpus: no commands yet — the command surface arrives with CLI-001.
+exit=0
+$ ./node_modules/.bin/tsx apps/server/src/index.ts
+tsx server entry exit=0
+```
+
+This exposed a real defect mid-implementation: on the first clean rebuild
+`./node_modules/.bin/corpus` failed with
+`permission denied ... corpus exit=126`, because `tsc` re-emitted the file at
+mode 644 and dropped the exec bit npm had set at install time. Fixed by appending
+`chmod +x dist/bin/corpus.js` to the cli build; the `-rwxr-xr-x` above is the
+post-fix state after `npm run clean && npm run build`.
+
+**4. Gates, from a fully clean tree** (`npm run clean` first, so every `dist/` was
+absent — proves the ordered build is self-sufficient and no gate reads stale output):
+
+```
+build      exit=0
+typecheck  exit=0     (five `tsc --noEmit` runs)
+lint       exit=0     (no output)
+format     exit=0     "All matched files use Prettier code style!"
+```
+
+`npm test`:
+
+```
+✓ packages/contract/src/index.test.ts (1 test)
+✓ packages/kit/src/index.test.ts (2 tests)
+✓ apps/server/src/index.test.ts (2 tests)
+✓ apps/cli/src/index.test.ts (3 tests)
+✓ apps/ui/src/index.test.ts (2 tests)
+Test Files  5 passed (5)   Tests  10 passed (10)
+```
+
+The 6 added tests are the cross-package resolution guards — `@corpus/contract`
+imported from server, cli, kit and ui, and `@corpus/kit` imported from ui, each
+resolving through the package `exports` map into `dist/`. This is the cross-package
+import proof, kept permanently as real tests rather than a deleted scratch file.
+
+**5. Coverage gate (`npm run test:coverage`)** — 100% statements / branches /
+functions / lines across all **five** covered source files (the bin shim is
+excluded by design, so it does not appear); the 90% thresholds pass, exit 0.
+
+**6. Negative test — is the type-checked preset actually active?** Wrote a
+temporary probe `apps/server/src/typed-lint-probe.ts` with an `async` function
+containing no `await` and a template literal interpolating an `object`.
+`npm run lint` exit 1:
+
+```
+1:8   error  Async function 'noAwaitHere' has no 'await' expression   @typescript-eslint/require-await
+10:13 error  'value' will use Object's default stringification format @typescript-eslint/no-base-to-string
+10:13 error  Invalid type "object" of template literal expression     @typescript-eslint/restrict-template-expressions
+✖ 3 problems (3 errors, 0 warnings)
+```
+
+All three rules require type information, so the preset is genuinely resolving
+projects and not silently degrading to the untyped `recommended`. Probe deleted;
+lint back to exit 0.
+
+**7. Negative test — broken exports map.** Temporarily repointed
+`packages/contract`'s `exports["."]` runtime conditions at `./dist/nope.js`.
+`npm test` exit 1, `Test Files 4 failed | 1 passed (5)`:
+
+```
+Error: Failed to resolve entry for package "@corpus/contract". The package may
+have incorrect main/module/exports specified in its package.json.
+  File: apps/cli/src/index.test.ts:2:54
+```
+
+The four failures were exactly the four consumers (server, cli, kit, ui); the
+contract's own test still passed. **`npm run typecheck` still exited 0** for the
+same broken package, because the `types` condition was untouched — so the compiler
+alone would not have caught this. That asymmetry is the argument for keeping the
+runtime resolution tests permanently. Restored → 10/10 pass.
+
+**8. Negative test — build ordering and fail-fast.** Introduced a real type error
+in `packages/contract/src/index.ts` (`export const PACKAGE_NAME: number = "..."`)
+after `npm run clean`.
+
+First measured the originally-written `-w packages/contract -w packages/kit -w apps/cli`
+list form: it reported the contract error but **still ran kit and cli afterwards**
+(exit 2 overall). Non-blocking output noise, but it buries the root cause, so the
+script was changed to an `&&` chain. Re-measured:
+
+```
+> npm run build -w packages/contract && npm run build -w packages/kit && ...
+src/index.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.
+npm error ... workspace @corpus/contract@0.0.0
+build exit=2
+
+$ ls -d packages/contract/dist packages/kit/dist apps/cli/dist
+ls: apps/cli/dist: No such file or directory
+ls: packages/kit/dist: No such file or directory
+```
+
+Neither downstream workspace ran — ordering and fail-fast both confirmed.
+Source restored → build clean.
+
+**9. Hooks**, executed directly against the real repo:
+
+```
+$ bash .githooks/pre-commit
+pre-commit ▶ build / eslint / prettier check / typecheck / unit tests
+  (5 test files, 10 tests passed)
+pre-commit ✓ all checks passed        pre-commit exit=0
+
+$ bash .githooks/pre-push
+pre-push ▶ build / eslint / prettier check / typecheck / unit tests
+  (5 test files, 10 tests passed)
+pre-push ▷ playwright e2e skipped (no specs in apps/ui/e2e/ yet)
+pre-push ✓ all checks passed          pre-push exit=0
+```
+
+Both hooks now run `build` as their first step, so the cross-workspace imports
+resolve before lint/typecheck/tests look at them.
+
+**10. Working tree** — `git status --short` shows only the intended files; no
+`dist/`, `coverage/` or `*.tsbuildinfo` leaked past `.gitignore`.
+
+**Conclusion: PASS.** All acceptance criteria verified against real command
+invocations, including three negative tests that each failed as designed before
+being restored, and one genuine defect (the stripped exec bit) found and fixed
+during verification.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

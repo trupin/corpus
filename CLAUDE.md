@@ -203,12 +203,14 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 
 - `npm install` — install all workspaces
 - `npm run setup-hooks` — one-time per clone: wires `.githooks/` (`git config core.hooksPath`)
+- `npm run build` — tsc emit for the built workspaces, in dependency order (contract → kit → apps); fails fast. `@corpus/*` imports resolve through each package's `exports` map into `dist/`, so **build before lint/typecheck/test** — the hooks and CI do this automatically
+- `npm run clean` — removes all `dist/` output and `coverage/`
 - `npm run lint` / `npm run lint:fix` — ESLint across the repo
 - `npm run format:check` / `npm run format` — Prettier
 - `npm run typecheck` — `tsc --noEmit` in every workspace
 - `npm test` — Vitest across all workspaces
 - `npm run e2e` — Playwright (requires the app; skipped automatically when no specs exist)
-- Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
+- `npm run dev -w apps/cli` — runs the `corpus` bin from source via tsx. Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
 
 ## Testing Conventions
 

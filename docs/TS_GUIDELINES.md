@@ -35,6 +35,13 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 - **Respect the dependency direction** (see CLAUDE.md): `packages/contract` ← `apps/server` / `apps/cli` / `packages/kit`; `packages/kit` ← `apps/ui`; `plugins/*` import only `@corpus/kit` and `@corpus/contract`. Never import upstream; never deep-import another workspace's `src/` (use its package entry points).
 - Named exports only. Default exports are allowed solely where a framework requires them (e.g. config files, React lazy routes).
 
+## Building & cross-workspace imports
+
+- `packages/contract`, `packages/kit` and `apps/cli` are **built** (`tsc -p tsconfig.build.json` → `dist/`, with declarations and source maps). Each workspace keeps two tsconfigs: `tsconfig.json` (typecheck only, includes tests) and `tsconfig.build.json` (emit, tests excluded). `apps/server` and `apps/ui` are still run from source in dev (`tsx` / Vite); their build steps arrive with their scaffolding issues.
+- **`@corpus/*` imports resolve through the `exports` map into `dist/`, not into `src/`.** Consequence: `npm run build` must run before `npm run typecheck`, `npm run lint` and `npm test` — the git hooks and CI do this for you; do it by hand when you run a gate directly after editing a package others import.
+- Build order is dependency order — `contract` → `kit` → apps — encoded in the root `build` script. A new workspace goes into that list at the right position.
+- Adding a cross-workspace import means adding the `@corpus/*` package to that workspace's `dependencies` (`"*"` range) so npm links it. Respect the dependency direction above.
+
 ## Naming
 
 - Files: `kebab-case.ts`. React components: `PascalCase.tsx`.
@@ -52,7 +59,8 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 ## Lint & format
 
 - ESLint (flat config, typescript-eslint) + Prettier, configured at the repo root. `npm run lint` and `npm run format:check` must pass — they run in pre-commit.
-- **Only critical rules block** (deliberate policy): the curated error set targets real bug risk — async safety (`no-floating-promises`, `no-misused-promises`, `await-thenable`) and unexplained compiler-error suppression (`ban-ts-comment`) — on top of the upstream `recommended` presets, which are mostly correctness rules (the few stylistic ones they carry, like `prefer-const`/`no-var`, are auto-fixable via `npm run lint:fix` and never require judgment). Anything needing taste or judgment lives in this document and code review; useful-but-not-critical signals (`no-explicit-any`, `no-unused-vars`) are warnings that never block a commit.
+- TS source is linted with the **type-checked** preset (`recommendedTypeChecked`, resolved via `projectService`), so rules that need type information — `no-base-to-string`, `only-throw-error`, `unbound-method`, `no-implied-eval` — are live. `disableTypeChecked` applies only to JS config files, which have no tsconfig project.
+- **Only critical rules block** (deliberate policy): the curated error set targets real bug risk — async safety (`no-floating-promises`, `no-misused-promises`, `await-thenable`) and unexplained compiler-error suppression (`ban-ts-comment`) — on top of the upstream `recommended`/`recommendedTypeChecked` presets, which are mostly correctness rules (the few stylistic ones they carry, like `prefer-const`/`no-var`, are auto-fixable via `npm run lint:fix` and never require judgment). Anything needing taste or judgment lives in this document and code review; useful-but-not-critical signals (`no-explicit-any`, `no-unused-vars`) are warnings that never block a commit — as is the `no-unsafe-*` family, which is the downstream half of `no-explicit-any` and blocks in the same cases that rule deliberately only warns about.
 - **Never fix a lint error by disabling the rule.** Fix the code. An inline suppression is a last resort and carries a justification comment.
 
 ## Coverage
