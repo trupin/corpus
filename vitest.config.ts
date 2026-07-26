@@ -7,11 +7,11 @@ export default defineConfig({
     passWithNoTests: true,
     coverage: {
       provider: "v8",
-      include: ["apps/*/src/**", "packages/*/src/**"],
+      include: ["apps/*/src/**", "packages/*/src/**", "plugins/*/src/**"],
       exclude: ["**/*.test.ts"],
-      // Raw V8 output (json) is kept so e2e coverage can be merged into the
-      // same gate once Playwright specs exist (INFRA-004); until then the
-      // unit-test run carries the combined 90% bar on its own.
+      // The json reporter emits istanbul-format coverage-final.json; INFRA-004
+      // merges e2e coverage into the same gate at that level once Playwright
+      // specs exist. Until then the unit-test run carries the 90% bar alone.
       reporter: ["text", "json-summary", "json"],
       reportsDirectory: "coverage",
       thresholds: {

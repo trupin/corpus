@@ -29,7 +29,7 @@ The 90% coverage gate currently runs on unit tests alone (there are no e2e specs
 ## Acceptance Criteria
 
 - [ ] Playwright runs collect V8 coverage from Chromium (CDP `startJSCoverage`/`stopJSCoverage` fixture or monocart reporter) for both the UI bundle (source-mapped back to `src/`) and the server process under test (`NODE_V8_COVERAGE`).
-- [ ] A merge step (e.g. `monocart-coverage-reports`) combines raw V8 output from Vitest (`coverage/`) and Playwright into one report; the 90% thresholds move to the merged report and are removed from the vitest-only run in CI.
+- [ ] A merge step (e.g. `monocart-coverage-reports`) combines Vitest's istanbul-format `coverage/coverage-final.json` with Playwright's collected coverage (raw V8 from CDP, source-mapped) into one report; the 90% thresholds move to the merged report and are removed from the vitest-only run in CI.
 - [ ] CI's `validate` job enforces the gate on the merged report; local `npm run coverage` reproduces it.
 - [ ] Per-workspace numbers visible in the report (text summary in CI logs).
 
@@ -44,7 +44,7 @@ The 90% coverage gate currently runs on unit tests alone (there are no e2e specs
 
 ### Key Implementation Details
 
-Both Vitest (v8 provider) and Chromium CDP produce V8 coverage, so a lossless merge is possible — don't convert to lcov before merging. Server-side coverage during e2e comes free via `NODE_V8_COVERAGE` env on the spawned server.
+Vitest's v8 provider emits istanbul-format JSON (the raw V8 data is converted before reporters run), while Chromium CDP and `NODE_V8_COVERAGE` produce raw V8 — so the merge happens at the istanbul level (monocart accepts both inputs and normalizes). Don't downgrade to lcov before merging. Server-side coverage during e2e comes free via `NODE_V8_COVERAGE` env on the spawned server.
 
 ### Edge Cases
 
