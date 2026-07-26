@@ -1,14 +1,16 @@
 import { expect, it } from "vitest";
 import { ACTOR_HEADER, contractRoutes } from "@corpus/contract";
 import { createCorpusClient } from "@corpus/contract/client";
-import { PACKAGE_NAME, runCli } from "./index.js";
+import { ExitCode, PACKAGE_NAME, registry, run, validateRegistry } from "./index.js";
 
 it("exports the package name", () => {
   expect(PACKAGE_NAME).toBe("@corpus/cli");
 });
 
-it("runCli returns the placeholder notice until CLI-001 lands", () => {
-  expect(runCli()).toContain("CLI-001");
+it("exports the run loop, the registry and the validation entry point", () => {
+  expect(typeof run).toBe("function");
+  expect(validateRegistry(registry)).toBe(registry);
+  expect(ExitCode.success).toBe(0);
 });
 
 it("resolves @corpus/contract through its package entry point", () => {

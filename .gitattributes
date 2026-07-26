@@ -4,3 +4,8 @@
 # marking them generated keeps them collapsed in diffs and out of language stats.
 packages/contract/openapi.json linguist-generated=true
 packages/contract/src/client/schema.generated.ts linguist-generated=true
+
+# The CLI reference (SPEC.md §2.3) is the same story for the command surface:
+# produced by `npm run docs:cli -w apps/cli` from the command registry, committed
+# so the documented surface is reviewable, never hand-edited.
+docs/cli.md linguist-generated=true

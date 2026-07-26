@@ -21,10 +21,14 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/bin/corpus.js",
+    "corpus": "node dist/bin/corpus.js",
     "dev": "tsx src/bin/corpus.ts",
+    "docs:cli": "tsx scripts/generate-docs.ts",
+    "test": "vitest run --root ../.. apps/cli",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@corpus/contract": "*"
+    "@corpus/contract": "*",
+    "zod": "^4.4.3"
   }
 }

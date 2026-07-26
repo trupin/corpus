@@ -1,0 +1,22 @@
+import { healthCommand } from "../commands/health.js";
+import type { Registry } from "./types.js";
+import { validateRegistry } from "./validate.js";
+
+export * from "./types.js";
+export { GLOBAL_FLAGS, GLOBAL_FLAG_ALIASES, GLOBAL_FLAG_NAMES } from "./globals.js";
+export { collectRegistryProblems, RegistryValidationError, validateRegistry } from "./validate.js";
+
+/**
+ * The command surface, declared once (SPEC.md §2.3). Later issues add topic
+ * modules here — `server` (CLI-002), `doc`/`thread` (CLI-003), `queue`/`lock`/
+ * `job` (CLI-004), plugin verbs (PLUGINS-001) — and get the dispatcher, all
+ * three levels of `--help`, and a `docs/cli.md` entry for free.
+ *
+ * Validation runs at module load: a malformed registry must fail before it can
+ * render misleading help.
+ */
+export const registry: Registry = validateRegistry({
+  summary: "conversations around documents, driven by an agent.",
+  commands: [healthCommand],
+  topics: [],
+});

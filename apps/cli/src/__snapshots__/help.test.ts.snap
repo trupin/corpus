@@ -1,0 +1,87 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderCommandHelp > matches its snapshot 1`] = `
+"corpus everything — Exercise every declarable flag and argument shape.
+
+Used by the parser and help tests; never registered in the real registry.
+
+Usage:
+  corpus everything <target> [note] [flags]
+
+Arguments:
+  <target>  The thing to act on.
+  [note]    An optional note.
+
+Flags:
+  -l, --loud        A boolean flag.
+  --title <text>    A string flag.
+  --count <number>  A number flag with a default. (default: 3)
+  --tag <string>    A repeatable string flag. (repeatable)
+
+Global flags:
+  --json              Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --workspace <path>  Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
+  --timeout <ms>      How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose           Include the stack trace when an unexpected internal error occurs.
+  --no-color          Never emit ANSI colour. Implied whenever stdout is not a TTY.
+  -h, --help          Show help for the current topic or command and exit.
+  --version           Print the version of the \`corpus\` tool and exit.
+
+Examples:
+  # Act loudly on doc-1.
+  corpus everything doc-1 --loud
+"
+`;
+
+exports[`renderRootHelp > matches its snapshot 1`] = `
+"corpus — a fixture surface used only by tests.
+
+Usage:
+  corpus <command> [args] [flags]
+  corpus <topic> <verb> [args] [flags]
+
+Commands:
+  everything  Exercise every declarable flag and argument shape.
+  bootstrap   Run without a workspace or a server.
+
+Topics:
+  widget  Manage widgets.
+
+Global flags:
+  --json              Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --workspace <path>  Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
+  --timeout <ms>      How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose           Include the stack trace when an unexpected internal error occurs.
+  --no-color          Never emit ANSI colour. Implied whenever stdout is not a TTY.
+  -h, --help          Show help for the current topic or command and exit.
+  --version           Print the version of the \`corpus\` tool and exit.
+
+Run \`corpus <command> --help\` or \`corpus <topic> --help\` for details.
+Full command reference: docs/cli.md in the corpus repository.
+"
+`;
+
+exports[`renderTopicHelp > matches its snapshot 1`] = `
+"corpus widget — Manage widgets.
+
+A fixture topic standing in for \`server\`, \`doc\` and friends.
+
+Usage:
+  corpus widget <verb> [args] [flags]
+
+Verbs:
+  list  List widgets.
+  show  Show one widget.
+
+Global flags:
+  --json              Write exactly one machine-readable JSON value to stdout, and failures as \`{"error":{…}}\` to stderr.
+  --workspace <path>  Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.
+  --timeout <ms>      How long to wait for the workspace server before reporting it unreachable (exit 4). (default: 10000)
+  --verbose           Include the stack trace when an unexpected internal error occurs.
+  --no-color          Never emit ANSI colour. Implied whenever stdout is not a TTY.
+  -h, --help          Show help for the current topic or command and exit.
+  --version           Print the version of the \`corpus\` tool and exit.
+
+Run \`corpus widget <verb> --help\` for a verb's arguments.
+"
+`;
