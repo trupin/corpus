@@ -80,5 +80,5 @@ Documentation issue — review-based verification. **Implemented on: fable** (sp
 - [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
-- [ ] User sign-off on the revised spec
-- [ ] Committed with `[SHARED-001]` prefix
+- [x] User sign-off on the revised spec (PR #6 merge, 2026-07-26)
+- [x] Committed with `[SHARED-001]` prefix (landed in #6, squash f805267)

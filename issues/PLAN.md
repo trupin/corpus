@@ -23,8 +23,8 @@ Domain prefixes: `SHARED` (cross-domain, orchestrator-handled), `CONTRACT`, `SER
 | INFRA-003 | PR reviewer agent, critical-only lint policy, 90% coverage gate | done | P0 | INFRA-002 |
 | INFRA-005 | Reviewer drift dimensions: interface-docs + spec-code | done | P1 | INFRA-003 |
 | INFRA-006 | Per-issue model recommendations; pr-reviewer pinned to Fable | done | P1 | INFRA-005 |
-| SHARED-001 | Revise SPEC.md for the standalone-tool architecture | in_progress | P0 | — |
-| CONTRACT-001 | Bootstrap @corpus/contract: zod-openapi routes, spec generation, typed client | todo | P0 | SHARED-001, INFRA-007 |
+| SHARED-001 | Revise SPEC.md for the standalone-tool architecture | done | P0 | — |
+| CONTRACT-001 | Bootstrap @corpus/contract: zod-openapi routes, spec generation, typed client | in_progress | P0 | SHARED-001, INFRA-007 |
 
 ---
 
@@ -34,7 +34,7 @@ Contract, core server libraries, UI shell. Filed by /decompose on 2026-07-26 aga
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| INFRA-007 | Package build & exports wiring; plugins workspace; type-aware lint | in_progress | P0 | — |
+| INFRA-007 | Package build & exports wiring; plugins workspace; type-aware lint | done | P0 | — |
 | SERVER-001 | Document model core: parse/serialize, ids, validation | todo | P0 | SHARED-001 |
 | SERVER-002 | Anchor engine: text-quote resolution + reconciliation | todo | P0 | SHARED-001 |
 | UI-001 | App scaffold + design system from design/index.html | todo | P0 | INFRA-007 |
