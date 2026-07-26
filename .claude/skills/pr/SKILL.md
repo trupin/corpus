@@ -69,13 +69,30 @@ EOF
 )"
 ```
 
-## 5. Report
+## 5. Objective Local Review (required)
+
+Spawn the **pr-reviewer** agent (`.claude/agents/pr-reviewer.md`) as a **fresh** subagent — never a fork, and never pass it implementation context beyond the PR number. In parallel, watch CI: `gh pr checks <number> --watch`.
+
+- Verdict **APPROVE** (MINOR-only findings) → proceed to landing; surface the MINOR findings to the user.
+- Verdict **REQUEST_CHANGES** → fix the CRITICAL/MAJOR findings (or present them to the user if they're judgment calls), push, and re-run the reviewer on the updated diff. Loop until APPROVE or the user explicitly waives specific findings.
+
+## 6. Land
+
+Only when BOTH are true — `CI / validate` green on the head commit AND pr-reviewer verdict APPROVE (or user waiver):
+
+```bash
+gh pr merge <number> --rebase --delete-branch
+```
+
+Then update the issue status to `done` in the issue file and `issues/PLAN.md` (trivial bookkeeping — may commit directly to main).
+
+## 7. Report
 
 Show the user:
 
-- PR URL
-- Title
-- Number of commits and files changed
+- PR URL and merge status
+- Reviewer verdict + findings summary
+- CI outcome
 - Issues referenced
 
 ## Rules
