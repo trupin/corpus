@@ -224,9 +224,26 @@ $ python3 -c "...count ': ' in line 3..."
 ```
 
 Rejecting these is the §14 "frontmatter fails to parse" rule working as
-specified, and §5 mandates a real YAML library. Escalated to the orchestrator:
+specified, and §5 mandates a real YAML library. ~~Escalated to the orchestrator:
 these are dev-harness files outside this agent's domain and need their
-descriptions quoted. PASS for the library; two harness files flagged.
+descriptions quoted.~~ PASS for the library; two harness files flagged.
+
+> **RESOLVED — the escalation above is closed** (annotated 2026-07-26, fix-loop
+> round 1). The orchestrator quoted both descriptions in commit `ac6949f`. Both
+> files parse at HEAD, so the paragraph above narrated an open escalation that
+> no longer exists. Re-verified over a copy of the repo's real markdown at
+> `/private/tmp/corpus-claude-md` (28 files: 12 `.claude/agents/*.md`, 9
+> `.claude/skills/**/SKILL.md`, 7 under `assets/workspace/`):
+>
+> ```
+> $ tsx e2e/roundtrip.ts /private/tmp/corpus-claude-md
+> round-tripped 28 files: 28 identical, 0 changed
+> $ git -C /private/tmp/corpus-claude-md status --porcelain
+> $                     # empty — 0 rejected, 0 files differ
+> ```
+>
+> 28/28 parse and round-trip byte-identically; nothing is rejected. No open
+> action remains for TEST-2.
 
 **TEST-3 — targeted mutation changes only the targeted field**, and
 **TEST-17 — reading does not materialize defaults into the file.** `title` was
@@ -547,6 +564,228 @@ confirming the real ladder is in play rather than a substring stand-in.
 `typecheck`, `test:coverage`): all PASS. **778 tests across 54 files**; combined
 coverage **99.75% lines / 95.6% branches / 100% functions** (`apps/server/src` at
 100/100/100), above the 90% gate.
+
+### Addendum — fix loop round 1: evaluator FAIL-2 / TEST-3 (2026-07-26)
+
+**implemented on: opus** (claude-opus-5, 1M context).
+
+`issues/evals/SERVER-001-eval.md` failed TEST-3: pure round-trips were byte-stable,
+but `setFrontmatterFields` re-emitted the **whole** YAML block on any single-field
+mutation, reformatting untouched lines. This is a bug, so it was reproduced E2E
+before a line of code changed.
+
+#### Reproduction (before the fix)
+
+Driver: `parseDocument` → `setFrontmatterFields` → `serializeDocument` against the
+implementation as it stood, diffing before/after line by line.
+
+```
+$ tsx <scratchpad>/repro/repro.ts
+=== MINIMAL CASE (mutate only `title`): 2 changed line(s) ===
+L4: - "title: T"
+L4: + "title: Z"
+L7: - "tags: [core]"
+L7: + "tags: [ core ]"
+
+=== GIVEN FIXTURE (mutate only `title`): 6 changed line(s) ===
+L3: - "type: note   # trailing comment"
+L3: + "type: note # trailing comment"
+L4: - "title: 'Single quoted title'"
+L4: + "title: 'Renamed by the write path'"
+L8: - "tags:   [finance,   housing]"
+L8: + "tags: [ finance, housing ]"
+L11: - "      exact: assume a 30-year fixed at 6.1%"
+L11: + "    exact: assume a 30-year fixed at 6.1%"
+L12: - "      prefix: \"the model we \""
+L12: + "    prefix: \"the model we \""
+L14: - "due:    2026-08-01"
+L14: + "due: 2026-08-01"
+
+pure round-trip minimal byte-identical: true
+pure round-trip given byte-identical: true
+```
+
+Confirmed: 2 changed lines where 1 was required (minimal), 6 where 1 was required
+(the contract's Given), while pure round-trips stayed byte-stable — exactly the
+evaluator's characterization.
+
+**Reproduced again on real files with real git**, since SERVER-005 will autosave
+through this path. A scratch workspace of 8 hand-written documents (irregular
+formatting, plugin keys, comments, a thread, CRLF, BOM, no-trailing-newline) was
+`git init`-ed and committed, then one field (`updated`) was mutated on every file
+using the pre-fix implementation:
+
+```
+$ tsx e2e/seed.ts /private/tmp/corpus-prefix-e2e
+seeded 8 files into /private/tmp/corpus-prefix-e2e
+$ git -C /private/tmp/corpus-prefix-e2e init -q && git add -A && git commit -qm seed
+$ tsx e2e/mutate-prefix.ts /private/tmp/corpus-prefix-e2e/data
+mutated `updated` on every document (pre-fix implementation)
+$ git -C /private/tmp/corpus-prefix-e2e diff --numstat
+2   2   data/docs/inbox/bom.md
+1   1   data/docs/inbox/commented.md
+2   2   data/docs/inbox/crlf.md
+2   2   data/docs/inbox/minimal.md
+6   6   data/docs/inbox/mortgage.md
+2   2   data/docs/inbox/no-trailing-newline.md
+1   1   data/docs/inbox/plugin-keys.md
+1   1   data/threads/th_x9y8.md
+```
+
+Five of eight files carry spurious diff lines; `mortgage.md` (the Given's shape)
+carries five. Bug confirmed on disk.
+
+#### Root cause
+
+`setFrontmatterFields` re-parsed the frontmatter, applied the patch to the AST, and
+let `serializeDocument` emit `yamlDoc.toString()` — the entire block, every node
+rendered by the serializer. The `yaml` package preserves comments, key order and
+scalar quoting style across that cycle, but it does **not** preserve source-level
+whitespace: flow collections are re-spaced (`[a, b]` → `[ a, b ]`), nested mappings
+are re-indented to the serializer's width, padding after a colon is collapsed, and
+inner whitespace before a trailing comment is normalized. No AST-level API restores
+those, because they are not in the AST. The prior "mutating only the nodes whose
+values actually changed" intent could not be met by re-emitting from the AST at all.
+
+#### The fix
+
+`setFrontmatterFields` now composes the result from **source text**, not from the
+serializer alone (`apps/server/src/core/document.ts`):
+
+1. Both the original and the patched document are split at top-level key
+   boundaries (`segmentTopLevelKeys`) — each key owns the lines from the start of
+   its own line to the start of the next key's line, so nested block values, blank
+   lines and trailing comments travel with the key they belong to.
+2. `spliceUntouchedKeys` rebuilds the block in the patched document's key order,
+   taking each **untouched** key's lines verbatim from the original source and only
+   the **changed** keys' lines from the serializer's output. Untouched keys are
+   matched by name in order, so duplicate keys each keep their own lines.
+3. The splice is accepted only after re-parsing it and confirming it means exactly
+   what the fully re-emitted document means. Any shape the line-oriented split
+   cannot describe honestly (flow-style mapping, explicit `? key`, a collection used
+   as a key, empty/non-mapping frontmatter) returns `null` and degrades to the old
+   full re-emit — correctness never depends on the splice succeeding, and no fixture
+   is special-cased anywhere.
+4. A patch whose values already equal what the file says is now a no-op: it returns
+   the same `ParsedDocument`, so a read-modify-write that changes nothing writes
+   nothing (no spurious auto-commit for SERVER-005).
+
+`DocumentSource.frontmatterDirty` became `frontmatterRewritten`, and
+`frontmatterText` now holds the current text rather than only the original;
+`serializeDocument` no longer consults the AST at all. §14 validation behavior and
+the structural byte-stability of pure round-trips are untouched.
+
+#### Post-fix verification
+
+Same reproduction scripts, unchanged, against the fixed library:
+
+```
+$ tsx <scratchpad>/repro/repro-wt.ts
+=== MINIMAL CASE (mutate only `title`): 1 changed line(s) ===
+L4: - "title: T"
+L4: + "title: Z"
+
+=== GIVEN FIXTURE (mutate only `title`): 1 changed line(s) ===
+L4: - "title: 'Single quoted title'"
+L4: + "title: 'Renamed by the write path'"
+
+pure round-trip minimal byte-identical: true
+pure round-trip given byte-identical: true
+
+RESULT: minimal changed=1 (want 1), given changed=1 (want 1)
+```
+
+**Real files, real git — round-trip first (TEST-1 regression guard):**
+
+```
+$ tsx e2e/seed.ts /private/tmp/corpus-server001-e2e
+seeded 8 files into /private/tmp/corpus-server001-e2e
+$ git -C /private/tmp/corpus-server001-e2e init -q && git add -A && git commit -qm seed
+$ tsx e2e/roundtrip.ts /private/tmp/corpus-server001-e2e/data
+round-tripped 8 files: 8 identical, 0 changed
+$ git -C /private/tmp/corpus-server001-e2e status --porcelain
+$                     # empty — still byte-stable
+```
+
+**Then the same one-field mutation that produced the pre-fix numbers above:**
+
+```
+$ tsx e2e/mutate.ts /private/tmp/corpus-server001-e2e/data
+mutated `updated` on every document
+$ git -C /private/tmp/corpus-server001-e2e diff --numstat
+1   1   data/docs/inbox/bom.md
+1   1   data/docs/inbox/commented.md
+1   1   data/docs/inbox/crlf.md
+1   1   data/docs/inbox/minimal.md
+1   1   data/docs/inbox/mortgage.md
+1   1   data/docs/inbox/no-trailing-newline.md
+1   1   data/docs/inbox/plugin-keys.md
+1   1   data/threads/th_x9y8.md
+```
+
+8/8 files: exactly one line replaced, down from up to six. The full `diff -U0` on
+`mortgage.md` — the file that previously lost its comment spacing, flow spacing,
+nested indentation and colon padding — is now a single hunk:
+
+```
+@@ -6 +6 @@ created: 2026-07-19T10:00:00Z
+-updated: 2026-07-19T10:00:00Z
++updated: 2026-07-26T12:00:00Z
+```
+
+**Container properties survived the mutation** (checked on the written bytes, not
+in memory):
+
+```
+$ tsx e2e/shapes.ts
+crlf.md  — every newline is CRLF: true
+crlf.md  — mutated line present: true
+bom.md   — still starts with U+FEFF: true
+noNl.md  — still has no trailing newline: true
+mortgage — untouched irregular lines survive: [ true, true, true, true, true ]
+```
+
+**Mutation over the repo's real markdown** (the 28-file copy from the TEST-2
+annotation above), mutating one field per file:
+
+```
+$ tsx e2e/mutate.ts /private/tmp/corpus-claude-md
+mutated `updated` on every document
+$ git -C /private/tmp/corpus-claude-md diff --numstat
+1  0  .claude/agents/agent-runtime-dev.md      … (21 files: key added, +1 -0)
+1  1  assets/workspace/README.md               … (7 files: key changed, +1 -1)
+```
+
+28/28 files changed exactly one line — `+1 -0` where `updated` was absent and the
+key was appended, `+1 -1` where it already existed. No collateral reformatting on
+any real repo document.
+
+#### Regression tests
+
+`apps/server/src/core/document.test.ts` gains a `setFrontmatterFields — untouched
+keys keep their bytes` suite of **17 cases, 13 of which fail against the pre-fix
+implementation** (measured by running the suite verbatim against the unmodified
+module: `13 failed | 4 passed (17)`; the 4 passing ones are the guard cases that
+were never broken — adding an absent key, and the three fallback shapes). It
+covers: the evaluator's minimal flow-collection case; the contract's Given
+asserted to exactly
+one changed line; mutating the first / middle / last key; rewriting a nested
+mapping while its neighbours stay verbatim; key removal and key addition asserted
+against the exact expected file bytes; duplicate top-level keys; CRLF; a chain of
+three successive single-field mutations; the no-op patch; explicit `null` vs.
+removal; and the three fallback shapes (flow mapping, `? key`, collection-as-key)
+asserted to still apply the patch correctly. Two new round-trip fixtures
+(`irregular inline formatting`, `duplicate top-level keys`) join the byte-stability
+matrix.
+
+#### Repo gates after the fix
+
+`npm run build`, `npm run lint`, `npm run format:check`, `npm run typecheck`,
+`npm run test:coverage` — all PASS. **797 tests across 54 files** (405 in
+`apps/server`); combined coverage **99.75% lines / 95.40% branches / 100%
+functions**, above the 90% gate; `core/document.ts` at **100% lines / 100%
+functions**, its remaining uncovered branches being the defensive `null` returns of
+the splice guards.
 
 ## Completion Checklist (domain agent)
 

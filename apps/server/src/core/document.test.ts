@@ -91,6 +91,39 @@ Body with a --- line that is not a fence.
 Still body.
 `;
 
+/**
+ * Every formatting choice a YAML serializer normalizes away, in one document:
+ * whitespace before a trailing comment, padding after a colon, inner spacing in
+ * a flow collection, and a nested mapping indented by four rather than two.
+ * A mutation must leave all of it alone — sprint-001 TEST-3's Given.
+ */
+const IRREGULAR_FORMATTING = `---
+id: doc_given001
+type: note   # trailing comment
+title: 'Single quoted title'
+created: 2026-07-19T10:00:00Z
+updated: 2026-07-19T10:00:00Z
+status: open
+tags:   [finance,   housing]
+anchors:
+  anc_k4f7:
+      exact: assume a 30-year fixed at 6.1%
+      prefix: "the model we "
+evergreen: false
+due:    2026-08-01
+---
+We assume a 30-year fixed at 6.1% which may be stale.
+`;
+
+const DUPLICATE_KEYS = `---
+id: doc_dupkey01
+type: note
+tags: [first]
+tags: [second]
+---
+Body.
+`;
+
 const NO_TRAILING_NEWLINE = `---
 id: doc_notrail1
 type: note
@@ -147,6 +180,8 @@ const FIXTURES: readonly (readonly [string, string])[] = [
   ["thread with turns", THREAD],
   ["plugin + Claude Code keys", PLUGIN_KEYS],
   ["comments and non-default key order", COMMENTED],
+  ["irregular inline formatting", IRREGULAR_FORMATTING],
+  ["duplicate top-level keys", DUPLICATE_KEYS],
   ["no trailing newline", NO_TRAILING_NEWLINE],
   ["astral-plane unicode", UNICODE],
   ["explicit nulls", EXPLICIT_NULL],
@@ -235,6 +270,143 @@ describe("parseDocument failures", () => {
 
   it("does not treat a non-mapping frontmatter as fields", () => {
     expect(parseDocument("---\n- a\n- b\n---\nBody.\n").data).toEqual({});
+  });
+});
+
+/** Lines present in `after` that differ from the line at the same index in `before`. */
+const changedLines = (before: string, after: string): string[] => {
+  const source = before.split("\n");
+  return after.split("\n").filter((line, index) => line !== source[index]);
+};
+
+describe("setFrontmatterFields — untouched keys keep their bytes", () => {
+  it("does not reformat an untouched flow collection", () => {
+    const raw = `---
+id: doc_i000001
+type: note
+title: T
+created: 2026-07-19T10:00:00Z
+updated: 2026-07-19T10:00:00Z
+tags: [core]
+---
+
+body
+`;
+    const after = serializeDocument(setFrontmatterFields(parseDocument(raw), { title: "Z" }));
+    expect(changedLines(raw, after)).toEqual(["title: Z"]);
+    expect(after).toContain("tags: [core]");
+  });
+
+  it("leaves comment spacing, colon padding, flow spacing and nested indentation alone", () => {
+    const parsed = parseDocument(IRREGULAR_FORMATTING);
+    const after = serializeDocument(
+      setFrontmatterFields(parsed, { title: "Renamed by the write path" }),
+    );
+    expect(changedLines(IRREGULAR_FORMATTING, after)).toEqual([
+      "title: 'Renamed by the write path'",
+    ]);
+  });
+
+  it.each([
+    ["a key in the middle", { status: "resolved" }, "status: resolved"],
+    ["the last key", { due: "2026-09-01" }, "due: 2026-09-01"],
+    ["the first key", { id: "doc_given002" }, "id: doc_given002"],
+  ])("rewrites only %s", (_name, patch, expected) => {
+    const after = serializeDocument(
+      setFrontmatterFields(parseDocument(IRREGULAR_FORMATTING), patch),
+    );
+    expect(changedLines(IRREGULAR_FORMATTING, after)).toEqual([expected]);
+  });
+
+  it("rewrites a nested mapping without disturbing the keys around it", () => {
+    const after = serializeDocument(
+      setFrontmatterFields(parseDocument(IRREGULAR_FORMATTING), {
+        anchors: { anc_k4f7: { exact: "a shorter selector" } },
+      }),
+    );
+    expect(after).toContain("tags:   [finance,   housing]");
+    expect(after).toContain("due:    2026-08-01");
+    expect(after).toContain("type: note   # trailing comment");
+    expect(after).toContain("    exact: a shorter selector");
+    expect(after).not.toContain("prefix:");
+  });
+
+  it("keeps the untouched keys byte-identical when a key is removed", () => {
+    const after = serializeDocument(
+      setFrontmatterFields(parseDocument(IRREGULAR_FORMATTING), { evergreen: undefined }),
+    );
+    expect(after).toBe(IRREGULAR_FORMATTING.replace("evergreen: false\n", ""));
+  });
+
+  it("keeps the untouched keys byte-identical when a key is added", () => {
+    const after = serializeDocument(
+      setFrontmatterFields(parseDocument(IRREGULAR_FORMATTING), { reviewed: null }),
+    );
+    expect(after).toBe(
+      IRREGULAR_FORMATTING.replace("---\nWe assume", "reviewed: null\n---\nWe assume"),
+    );
+  });
+
+  it("gives each duplicate key its own source lines", () => {
+    const after = serializeDocument(
+      setFrontmatterFields(parseDocument(DUPLICATE_KEYS), { type: "view" }),
+    );
+    expect(changedLines(DUPLICATE_KEYS, after)).toEqual(["type: view"]);
+  });
+
+  it("changes only the mutated line in a CRLF file", () => {
+    const raw = IRREGULAR_FORMATTING.replaceAll("\n", "\r\n");
+    const after = serializeDocument(
+      setFrontmatterFields(parseDocument(raw), { status: "archived" }),
+    );
+    expect(changedLines(raw, after)).toEqual(["status: archived\r"]);
+  });
+
+  it("stays byte-stable across a chain of single-field mutations", () => {
+    const once = setFrontmatterFields(parseDocument(IRREGULAR_FORMATTING), { status: "resolved" });
+    const twice = setFrontmatterFields(once, { title: "Renamed" });
+    const after = serializeDocument(setFrontmatterFields(twice, { evergreen: true }));
+    expect(changedLines(IRREGULAR_FORMATTING, after)).toEqual([
+      // The key's own quoting style survives the rewrite, so even the changed
+      // line stays as close to the original as it can.
+      "title: 'Renamed'",
+      "status: resolved",
+      "evergreen: true",
+    ]);
+  });
+
+  it("writes nothing when the patch matches what the file already says", () => {
+    const parsed = parseDocument(IRREGULAR_FORMATTING);
+    const patched = setFrontmatterFields(parsed, {
+      title: "Single quoted title",
+      tags: ["finance", "housing"],
+      anchors: { anc_k4f7: { exact: "assume a 30-year fixed at 6.1%", prefix: "the model we " } },
+    });
+    expect(patched).toBe(parsed);
+    expect(serializeDocument(patched)).toBe(IRREGULAR_FORMATTING);
+  });
+
+  it("treats an explicit null as a real value rather than a removal", () => {
+    const parsed = parseDocument(EXPLICIT_NULL);
+    expect(setFrontmatterFields(parsed, { due: null })).toBe(parsed);
+    expect(serializeDocument(setFrontmatterFields(parsed, { due: undefined }))).not.toContain(
+      "due:",
+    );
+  });
+
+  it("adds a key that the file wrote nowhere, even when the patch value is null", () => {
+    const after = serializeDocument(setFrontmatterFields(parseDocument(MINIMAL), { due: null }));
+    expect(after).toContain("due: null");
+  });
+
+  it.each([
+    ["flow-style frontmatter", "---\n{id: doc_flow0001, type: note}\n---\nBody.\n"],
+    ["an explicit `? key` entry", "---\n? id\n: doc_expl0001\ntype: note\n---\nBody.\n"],
+    ["a collection used as a key", "---\n? [a, b]\n: v\nid: doc_coll0001\n---\nBody.\n"],
+  ])("still applies the patch correctly to %s", (_name, raw) => {
+    const patched = setFrontmatterFields(parseDocument(raw), { type: "view" });
+    expect(patched.data["type"]).toBe("view");
+    expect(parseDocument(serializeDocument(patched)).data["type"]).toBe("view");
   });
 });
 

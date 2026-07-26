@@ -14,14 +14,28 @@ import * as YAML from "yaml";
  * It is achieved structurally rather than by comparison: a parse records the
  * exact source of each part, and serialization concatenates those parts back.
  * Only a part that was explicitly replaced is re-emitted. Frontmatter edits go
- * through {@link setFrontmatterFields}, which mutates the retained YAML AST, so
- * untouched nodes keep their original formatting.
+ * through {@link setFrontmatterFields}, which re-emits only the lines of the
+ * keys it actually changed and copies every other key's lines from the source,
+ * so untouched keys keep their original formatting *byte for byte*: not merely
+ * their comments and key order, but flow-collection spacing, indentation width,
+ * and padding around colons, none of which a YAML serializer reproduces.
  */
 
 const OPEN_FENCE = /^(-{3,})([ \t]*)(\r?\n|$)/;
 const CLOSE_FENCE = /^(-{3,})[ \t]*$/;
 /** U+FEFF, escaped rather than literal so the character stays visible in review. */
 const BOM = "\uFEFF";
+/**
+ * Duplicate keys are tolerated at the parser level so the corpus checker can
+ * report them as the specific rule they violate (SPEC.md §14) instead of
+ * collapsing every structural problem into "unparseable".
+ */
+const PARSE_OPTIONS = { uniqueKeys: false } as const;
+/**
+ * `lineWidth: 0` disables line folding: re-wrapping a long scalar would show up
+ * as a spurious diff next to the field that actually changed.
+ */
+const STRINGIFY_OPTIONS = { lineWidth: 0 } as const;
 
 export class DocumentParseError extends Error {
   override readonly name = "DocumentParseError";
@@ -40,7 +54,13 @@ type DocumentSource = {
   readonly bom: string;
   /** The opening fence line including its line ending, e.g. `"---\n"`. */
   readonly openFence: string;
-  /** Exact YAML source between the fences, including its final line ending. */
+  /**
+   * The YAML source between the fences as it currently stands, including its
+   * final line ending: the file's own bytes until a mutation, the spliced text
+   * afterwards. Once {@link DocumentSource.frontmatterRewritten} is set it is
+   * LF-normalized, and {@link serializeDocument} restores the file's own line
+   * endings.
+   */
   readonly frontmatterText: string;
   /** The closing fence line *without* its line ending, e.g. `"---"`. */
   readonly closeFence: string;
@@ -48,8 +68,8 @@ type DocumentSource = {
   readonly closeFenceEol: string;
   /** Dominant line ending, used when a mutation has to emit new text. */
   readonly eol: "\n" | "\r\n";
-  /** True once the YAML AST has been mutated and must be re-emitted. */
-  readonly frontmatterDirty: boolean;
+  /** True once a mutation replaced {@link DocumentSource.frontmatterText}. */
+  readonly frontmatterRewritten: boolean;
 };
 
 export type ParsedDocument = {
@@ -62,7 +82,7 @@ export type ParsedDocument = {
   readonly data: Record<string, unknown>;
   /** Markdown body, verbatim, without the frontmatter block. */
   readonly body: string;
-  /** Retained YAML AST — the source of round-trip fidelity across mutations. */
+  /** YAML AST of {@link DocumentSource.frontmatterText}, for structural queries. */
   readonly yaml: YAML.Document.Parsed;
   readonly source: DocumentSource;
 };
@@ -128,10 +148,7 @@ export const parseDocument = (raw: string, path?: string): ParsedDocument => {
     );
   }
 
-  // Duplicate keys are tolerated at the parser level so the corpus checker can
-  // report them as the specific rule they violate (§14) instead of collapsing
-  // every structural problem into "unparseable".
-  const yamlDoc = YAML.parseDocument(frontmatterText, { uniqueKeys: false });
+  const yamlDoc = YAML.parseDocument(frontmatterText, PARSE_OPTIONS);
   if (yamlDoc.errors.length > 0) {
     const error = yamlDoc.errors[0];
     throw new DocumentParseError(
@@ -141,14 +158,8 @@ export const parseDocument = (raw: string, path?: string): ParsedDocument => {
     );
   }
 
-  const parsed: unknown = yamlDoc.toJS({ maxAliasCount: -1 });
-  const data =
-    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-
   return {
-    data,
+    data: toPlainMapping(yamlDoc),
     body: text.slice(cursor),
     yaml: yamlDoc,
     source: {
@@ -158,66 +169,201 @@ export const parseDocument = (raw: string, path?: string): ParsedDocument => {
       closeFence,
       closeFenceEol,
       eol,
-      frontmatterDirty: false,
+      frontmatterRewritten: false,
     },
   };
 };
 
 /**
- * The frontmatter YAML source as it stands: the recorded source text while
- * untouched, the re-emitted AST once mutated. Always LF, always ending in a
- * newline — {@link serializeDocument} restores the file's own line endings.
- *
- * `lineWidth: 0` disables line folding: re-wrapping an untouched long scalar
- * would show up as a spurious diff next to the field that actually changed.
+ * The frontmatter YAML source, LF-normalized. Mutations work in LF and
+ * {@link serializeDocument} restores the file's own line endings, so a CRLF
+ * file never grows a mixed-ending frontmatter block.
  */
 const currentFrontmatterText = (parsed: ParsedDocument): string =>
-  parsed.source.frontmatterDirty
-    ? parsed.yaml.toString({ lineWidth: 0 })
-    : parsed.source.frontmatterText.replaceAll("\r\n", "\n");
+  parsed.source.frontmatterText.replaceAll("\r\n", "\n");
 
 /**
  * Serialize back to file bytes. On an untouched parse this returns the original
  * string exactly, because every part is the recorded source text.
  */
 export const serializeDocument = (parsed: ParsedDocument): string => {
-  const { bom, openFence, frontmatterText, closeFence, closeFenceEol, eol, frontmatterDirty } =
+  const { bom, openFence, frontmatterText, closeFence, closeFenceEol, eol, frontmatterRewritten } =
     parsed.source;
-  const emitted = currentFrontmatterText(parsed);
-  const frontmatter = !frontmatterDirty
-    ? frontmatterText
-    : eol === "\r\n"
-      ? emitted.replaceAll("\n", "\r\n")
-      : emitted;
+  const frontmatter =
+    frontmatterRewritten && eol === "\r\n"
+      ? frontmatterText.replaceAll("\n", "\r\n")
+      : frontmatterText;
   return `${bom}${openFence}${frontmatter}${closeFence}${closeFenceEol}${parsed.body}`;
+};
+
+/** A top-level key paired with the exact source lines it occupies. */
+type KeySegment = { readonly key: string; readonly text: string };
+
+/**
+ * The frontmatter's source split at top-level key boundaries: a `head` holding
+ * anything before the first key (leading comments, directives), then one
+ * segment per key running from the start of its own line to the start of the
+ * next key's line. Nested block values, blank lines and trailing comments
+ * therefore travel inside the segment of the key they belong to.
+ *
+ * Returns `null` for any shape a line-oriented split cannot describe honestly —
+ * a non-mapping or empty frontmatter, flow style (`{a: 1, b: 2}`), explicit
+ * `? key` entries, two keys sharing a line. Callers fall back to a full re-emit
+ * there; correctness never depends on the split succeeding.
+ */
+const segmentTopLevelKeys = (
+  src: string,
+  doc: YAML.Document.Parsed,
+): { readonly head: string; readonly segments: readonly KeySegment[] } | null => {
+  const contents: unknown = doc.contents;
+  if (!YAML.isMap(contents) || contents.flow === true) return null;
+  const starts: { key: string; lineStart: number }[] = [];
+  for (const item of contents.items) {
+    const keyNode: unknown = item.key;
+    if (!YAML.isScalar(keyNode)) return null;
+    const keyStart = keyNode.range?.[0];
+    if (keyStart === undefined) return null;
+    const lineStart = src.lastIndexOf("\n", keyStart - 1) + 1;
+    if (src.slice(lineStart, keyStart).trim() !== "") return null;
+    const previous = starts.at(-1);
+    if (previous !== undefined && lineStart <= previous.lineStart) return null;
+    starts.push({ key: String(keyNode.value), lineStart });
+  }
+  const first = starts[0];
+  if (first === undefined) return null;
+  return {
+    head: src.slice(0, first.lineStart),
+    segments: starts.map(({ key, lineStart }, index) => ({
+      key,
+      text: src.slice(lineStart, starts[index + 1]?.lineStart ?? src.length),
+    })),
+  };
+};
+
+const withTrailingNewline = (text: string): string =>
+  text === "" || text.endsWith("\n") ? text : `${text}\n`;
+
+/**
+ * Rebuild `emitted` so that every key the patch did not touch contributes its
+ * original bytes instead of the serializer's rendering of them. Untouched keys
+ * are matched by name in order, so duplicate keys (§14 reports them; the parser
+ * tolerates them) each keep their own lines.
+ *
+ * Returns `null` when either side cannot be split by key, leaving the caller
+ * with the fully re-emitted text.
+ */
+const spliceUntouchedKeys = (
+  original: { readonly src: string; readonly doc: YAML.Document.Parsed },
+  rewritten: { readonly src: string; readonly doc: YAML.Document.Parsed },
+  touched: ReadonlySet<string>,
+): string | null => {
+  const from = segmentTopLevelKeys(original.src, original.doc);
+  const to = segmentTopLevelKeys(rewritten.src, rewritten.doc);
+  if (from === null || to === null) return null;
+  const reusable = new Map<string, string[]>();
+  for (const segment of from.segments) {
+    const queue = reusable.get(segment.key);
+    if (queue === undefined) reusable.set(segment.key, [segment.text]);
+    else queue.push(segment.text);
+  }
+  const parts = [withTrailingNewline(from.head)];
+  for (const segment of to.segments) {
+    const reuse = touched.has(segment.key) ? undefined : reusable.get(segment.key)?.shift();
+    parts.push(withTrailingNewline(reuse ?? segment.text));
+  }
+  return parts.join("");
+};
+
+/** Bounded so a YAML anchor that refers to its own ancestor cannot spin forever. */
+const MAX_COMPARE_DEPTH = 32;
+
+const deepEquals = (a: unknown, b: unknown, depth = 0): boolean => {
+  if (Object.is(a, b)) return true;
+  if (depth >= MAX_COMPARE_DEPTH) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, index) => deepEquals(item, b[index], depth + 1));
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every(
+    (key) => Object.hasOwn(right, key) && deepEquals(left[key], right[key], depth + 1),
+  );
+};
+
+const toPlainMapping = (doc: YAML.Document.Parsed): Record<string, unknown> => {
+  const value: unknown = doc.toJS({ maxAliasCount: -1 });
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 };
 
 /**
  * The only supported frontmatter mutation path. A key set to `undefined` is
- * removed; every other value is written through the AST so untouched keys keep
- * their comments, order and quoting.
+ * removed; a key whose value already equals the patch's is left alone, source
+ * and all, so a read-modify-write that changes nothing writes nothing.
+ *
+ * The result re-emits only the lines of the keys that actually changed: every
+ * other key contributes its original bytes. That is stronger than what a YAML
+ * serializer can promise (it normalizes flow-collection spacing, indentation
+ * width and padding after a colon), and it is what keeps an auto-commit's diff
+ * (SPEC.md §4) limited to the fields the mutation touched. The splice is
+ * checked against the fully re-emitted document before it is accepted, so a
+ * shape it cannot describe degrades to a re-emit rather than to corruption.
  */
 export const setFrontmatterFields = (
   parsed: ParsedDocument,
   patch: Readonly<Record<string, unknown>>,
 ): ParsedDocument => {
-  const entries = Object.entries(patch);
-  if (entries.length === 0) return parsed;
-  // Re-parse rather than mutate in place: the AST is mutable, and patching the
-  // caller's copy would retroactively change what serializing *it* emits.
-  // Round-tripping YAML source through the parser is lossless, so the fresh AST
-  // carries the same comments, order and quoting as the one it replaces.
-  const yamlDoc = YAML.parseDocument(currentFrontmatterText(parsed), { uniqueKeys: false });
-  for (const [key, value] of entries) {
-    if (value === undefined) yamlDoc.delete(key);
-    else yamlDoc.set(key, value);
+  // An absent key reads as `undefined`, which no defined patch value equals, so
+  // adding a key always registers as a change.
+  const changes = Object.entries(patch).filter(([key, value]) =>
+    value === undefined ? Object.hasOwn(parsed.data, key) : !deepEquals(parsed.data[key], value),
+  );
+  if (changes.length === 0) return parsed;
+
+  const src = currentFrontmatterText(parsed);
+  // Parse twice rather than mutate in place: the AST is mutable, and patching
+  // the caller's copy would retroactively change what serializing *it* emits.
+  // The untouched copy keeps source ranges that still index into `src`.
+  const originalDoc = YAML.parseDocument(src, PARSE_OPTIONS);
+  const patchedDoc = YAML.parseDocument(src, PARSE_OPTIONS);
+  for (const [key, value] of changes) {
+    if (value === undefined) patchedDoc.delete(key);
+    else patchedDoc.set(key, value);
   }
-  const next: unknown = yamlDoc.toJS({ maxAliasCount: -1 });
+
+  const emitted = patchedDoc.toString(STRINGIFY_OPTIONS);
+  const emittedDoc = YAML.parseDocument(emitted, PARSE_OPTIONS);
+  const spliced = spliceUntouchedKeys(
+    { src, doc: originalDoc },
+    { src: emitted, doc: emittedDoc },
+    new Set(changes.map(([key]) => key)),
+  );
+
+  let text = emitted;
+  let doc = emittedDoc;
+  if (spliced !== null && spliced !== emitted) {
+    const splicedDoc = YAML.parseDocument(spliced, PARSE_OPTIONS);
+    // Reusing source lines must not change what the frontmatter *means*; if it
+    // somehow did, the re-emitted text is the trustworthy answer.
+    if (
+      splicedDoc.errors.length === 0 &&
+      deepEquals(toPlainMapping(splicedDoc), toPlainMapping(emittedDoc))
+    ) {
+      text = spliced;
+      doc = splicedDoc;
+    }
+  }
+
   return {
-    data: next !== null && typeof next === "object" ? (next as Record<string, unknown>) : {},
+    data: toPlainMapping(doc),
     body: parsed.body,
-    yaml: yamlDoc,
-    source: { ...parsed.source, frontmatterDirty: true },
+    yaml: doc,
+    source: { ...parsed.source, frontmatterText: text, frontmatterRewritten: true },
   };
 };
 
