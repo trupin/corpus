@@ -37,6 +37,7 @@ _Durable facts, decisions, and gotchas for this domain. Append as you learn; kee
 - **2026-07-26 — Workspace resolution.** Commands resolve the workspace from cwd (walk up to find the workspace config), read port + bearer token from it. `corpus init` scaffolds a new workspace: `data/`, `.corpus/`, config with generated token, git init, and copies `assets/workspace/` (product agent skills).
 - **2026-07-26 — Agent ergonomics.** The primary consumer is Claude Code. Support `--json` for structured output on every read verb; exit codes are meaningful; error for unreachable server is exactly: clear message + "run `corpus server start`". Long text input via stdin/heredoc (e.g. `corpus thread reply <id> --from agent <<'EOF' ... EOF`).
 - **2026-07-26 — All TS (Decision 6).** The spec's "plain Node ESM `.mjs`, zero deps" is superseded: the CLI is TypeScript, built like the other workspaces, shipped as the npm bin.
+- **2026-07-26 — Self-documenting command surface (no doc drift by construction).** Every command is declared once in a registry (name, args, flags, description, examples) that drives BOTH the dispatcher and all `--help` output — help cannot drift from behavior because they share the definition. A generation script emits the committed CLI reference `docs/cli.md` from the registry, drift-checked in pre-push/CI exactly like `openapi.json`. Never hand-edit generated docs; never add a command outside the registry. The pr-reviewer flags interface changes that don't move registry + docs together (MAJOR).
 
 ## Escalation
 
