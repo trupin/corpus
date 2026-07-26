@@ -41,6 +41,14 @@ The CLI is a **thin HTTP client**. It performs no file writes of any kind; every
 - [ ] Exit codes are centrally defined and documented in `docs/cli.md`: 0 success · 1 internal error · 2 usage error · 3 not in a workspace · 4 server unreachable · 5 server returned an error · 6 command-specific "check failed" (used later by `doc check` / `db doctor` in hooks).
 - [ ] Vitest suite covers registry validation, dispatcher resolution, help rendering, workspace resolution, error mapping, and docs generation idempotence.
 
+## Sprint-002 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue — implement exactly these; full rationale in `issues/sprints/sprint-002.md` §Open Conflicts:
+
+1. **`.corpus/config.json` canonical shape**: `{version: 1, port: number, host?: string (default "127.0.0.1"), token: string, dataDir?: string (default "data")}` — parse non-strictly. E2E fixtures use 32+ character tokens so hand-made workspaces are ones a real server accepts.
+2. **One built-in verb authorized**: `corpus health` — registry-visible, self-documenting in `docs/cli.md`, calls `GET /api/health` through the typed client. This is the registry→dispatch→workspace-resolution→client→socket proof. Because health is unauthenticated, the 401 mapping is proven against the test stub here and re-proven against a real guarded route in CLI-002.
+3. **CI drift step**: you are blessed to edit `.github/workflows/ci.yml` (normally infra domain) to add ONE step, `generated artifacts drift` (regenerate + `git diff --exit-code`), right after build, covering BOTH `packages/contract/openapi.json`/`schema.generated.ts` AND `docs/cli.md`. The pre-push hook and the CI step must consume one shared list (a script), not two drifting copies.
+
 ## Technical Design
 
 ### Files to Create/Modify

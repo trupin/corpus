@@ -47,6 +47,14 @@ CONTRACT-001 bootstraps `packages/contract` with a deliberately small surface (d
 - [ ] **Surface completeness test.** A test asserts the generated `openapi.json` contains exactly the pinned method+path inventory below — adding an endpoint to the spec without adding it to the contract fails a test.
 - [ ] **Round-trips.** Vitest schema round-trip tests exist for each new resource (query params, doc row, tree node, queue event, lock, job, job log line, capture result, invalidate payload, each error variant).
 
+## Sprint-002 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue — implement exactly these; full rationale in `issues/sprints/sprint-002.md` §Open Conflicts:
+
+1. **`/api/openapi.json` exemption**: the inventory/completeness test asserts over contract-declared paths only; the OpenAPI description gains one sentence naming `/api/openapi.json` as server-local introspection outside the contract (no typed-client method).
+2. **Route registration order**: static-before-parameter is pinned in `ALL_CONTRACT_ROUTES` (`reap`/`claim-all`/`halt`/`resume`/`reap-stale` before `{id}`/`{docId}` peers) and held by a test — a `docId` of `reap` must be unambiguous.
+3. **Corrections**: queue idle is `GET /api/queue/idle?timeout=` (the issue's E2E step 4 saying POST is wrong); `schemas/actor.ts`, `lock.ts`, `job.ts`, `queue.ts`, `sse.ts` are EXTENSIONS of shipped CONTRACT-001 files, not creations — the existing `ActorHeaderSchema` (optional-with-default, adjudicated) is reused, never rewritten.
+
 ## Technical Design
 
 ### Files to Create/Modify

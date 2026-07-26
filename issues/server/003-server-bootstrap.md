@@ -44,6 +44,16 @@ Stand up `apps/server` as a runnable, testable Hono application: an `OpenAPIHono
 - [ ] `SIGINT`/`SIGTERM` trigger graceful shutdown: stop accepting connections, run registered disposers, exit `0`; a hard exit backstop fires after 5 s.
 - [ ] `npm run dev -w apps/server` starts the server against a real workspace via `tsx` and logs the bound URL.
 
+## Sprint-002 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue — implement exactly these; full rationale in `issues/sprints/sprint-002.md` §Open Conflicts:
+
+1. **Health payload**: the contract wins — emit `uptimeSeconds` per the shipped `HealthSchema`, not `uptimeMs`.
+2. **Error bodies**: the contract wins, strictly — every error response is `application/json` carrying `ApiErrorSchema` (`{code, message, ...}`). RFC 9457 / `application/problem+json` is dropped from this issue entirely (no hybrid extra keys). Only the four CONTRACT-001 codes exist (`bad_request | unauthorized | not_found | locked`) — do not anticipate `forbidden`/`conflict` (they arrive with CONTRACT-002).
+3. **`.corpus/config.json` canonical shape**: `{version: 1, port: number, host?: string (loopback-only, default "127.0.0.1"), token: string, dataDir?: string (default "data")}` — parse non-strictly (unknown keys pass, absent optionals default). No `min(32)` on the reader: token strength is `corpus init`'s generator concern (CLI-002); the server MAY warn on a short token.
+4. **`GET /api/openapi.json`**: served behind the bearer guard as server-local introspection, deliberately outside the contract (no typed-client method); CONTRACT-002 documents the exemption.
+5. **`?token=` reachability**: mount the bearer guard on `/events` too; that path (only) accepts header OR `?token=`. The handler is SERVER-007's — an authenticated `/events` request gets an ApiError 404 this sprint.
+
 ## Technical Design
 
 ### Files to Create/Modify
