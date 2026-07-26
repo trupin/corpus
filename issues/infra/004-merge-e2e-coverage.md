@@ -49,7 +49,7 @@ Vitest's v8 provider emits istanbul-format JSON (the raw V8 data is converted be
 
 ### Edge Cases
 
-- Source maps must resolve the built UI bundle back to `src/` or e2e coverage lands on dist files and is dropped by the include filter.
+- Source maps must resolve built artifacts back to `src/` — the UI bundle AND the built CLI/server (their `NODE_V8_COVERAGE` output attributes to `dist/*`) — or e2e coverage is silently dropped by the `src/**` include filter.
 - Files never loaded by any test must still count as 0% (include-based, not seen-based, accounting).
 
 ## Testing Strategy
