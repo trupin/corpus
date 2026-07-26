@@ -1,0 +1,2449 @@
+<title>Corpus — UI Mockup</title>
+<style>
+  :root {
+    --bg: #F7F6F3;
+    --surface: #FFFFFF;
+    --surface-2: #EFEDE8;
+    --ink: #1D2126;
+    --ink-2: #565D66;
+    --ink-3: #9BA1A8;
+    --line: #E3E1DA;
+    --line-strong: #CFCCC2;
+    --accent: #3B5F97;
+    --accent-ink: #2E4B78;
+    --accent-wash: rgba(59, 95, 151, 0.10);
+    --signal: #C4552E;
+    --signal-wash: rgba(196, 85, 46, 0.10);
+    --sepia: #A9834B;
+    --sepia-ink: #7A6238;
+    --sepia-wash: rgba(169, 131, 75, 0.08);
+    --sepia-wash-2: rgba(169, 131, 75, 0.16);
+    --good: #4E7A46;
+    --good-wash: rgba(78, 122, 70, 0.12);
+    --shadow: 0 10px 30px rgba(29, 33, 38, 0.10);
+    --shadow-soft: 0 2px 8px rgba(29, 33, 38, 0.05);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171B; --surface: #1D2025; --surface-2: #24272D;
+      --ink: #E8E6E1; --ink-2: #A6ABB3; --ink-3: #6B717A;
+      --line: #2C2F36; --line-strong: #3A3E46;
+      --accent: #7FA1D4; --accent-ink: #A3BEE6; --accent-wash: rgba(127, 161, 212, 0.14);
+      --signal: #D97853; --signal-wash: rgba(217, 120, 83, 0.14);
+      --sepia: #B5905C; --sepia-ink: #C9A874;
+      --sepia-wash: rgba(181, 144, 92, 0.10); --sepia-wash-2: rgba(181, 144, 92, 0.20);
+      --good: #7FA877; --good-wash: rgba(127, 168, 119, 0.16);
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45); --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #F7F6F3; --surface: #FFFFFF; --surface-2: #EFEDE8;
+    --ink: #1D2126; --ink-2: #565D66; --ink-3: #9BA1A8;
+    --line: #E3E1DA; --line-strong: #CFCCC2;
+    --accent: #3B5F97; --accent-ink: #2E4B78; --accent-wash: rgba(59, 95, 151, 0.10);
+    --signal: #C4552E; --signal-wash: rgba(196, 85, 46, 0.10);
+    --sepia: #A9834B; --sepia-ink: #7A6238;
+    --sepia-wash: rgba(169, 131, 75, 0.08); --sepia-wash-2: rgba(169, 131, 75, 0.16);
+    --good: #4E7A46; --good-wash: rgba(78, 122, 70, 0.12);
+    --shadow: 0 10px 30px rgba(29, 33, 38, 0.10); --shadow-soft: 0 2px 8px rgba(29, 33, 38, 0.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171B; --surface: #1D2025; --surface-2: #24272D;
+    --ink: #E8E6E1; --ink-2: #A6ABB3; --ink-3: #6B717A;
+    --line: #2C2F36; --line-strong: #3A3E46;
+    --accent: #7FA1D4; --accent-ink: #A3BEE6; --accent-wash: rgba(127, 161, 212, 0.14);
+    --signal: #D97853; --signal-wash: rgba(217, 120, 83, 0.14);
+    --sepia: #B5905C; --sepia-ink: #C9A874;
+    --sepia-wash: rgba(181, 144, 92, 0.10); --sepia-wash-2: rgba(181, 144, 92, 0.20);
+    --good: #7FA877; --good-wash: rgba(127, 168, 119, 0.16);
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.45); --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font-family: var(--sans);
+    background: var(--bg); color: var(--ink);
+    font-size: 13.5px; line-height: 1.45; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; text-align: left; }
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  .app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ── Top bar ─────────────────────────────────────── */
+  .topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 18px; border-bottom: 1px solid var(--line);
+    background: var(--surface); flex: none;
+  }
+  .wordmark { font-family: var(--serif); font-size: 19px; font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: baseline; gap: 10px; }
+  .wordmark small { font-family: var(--mono); font-size: 10px; color: var(--ink-3); letter-spacing: 0.08em; text-transform: uppercase; }
+  .agent-pill {
+    display: flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--line);
+    padding: 4px 10px; border-radius: 99px; white-space: nowrap;
+  }
+  .agent-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); flex: none; }
+  .agent-pill .dot.busy { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-pill .dot.busy, .working-dot, .row.flash { animation: none !important; }
+    .col, .row.leaving { transition: none !important; }
+  }
+
+  .searchbar {
+    flex: 1; max-width: 620px; margin: 0 auto;
+    display: flex; align-items: center; gap: 9px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 9px; padding: 7px 12px; color: var(--ink-3);
+    cursor: text; transition: border-color 0.15s ease;
+  }
+  .searchbar:hover { border-color: var(--line-strong); }
+  .searchbar kbd { margin-left: auto; font-family: var(--mono); font-size: 10px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; color: var(--ink-3); }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; }
+  .btn-compose { display: flex; align-items: center; gap: 7px; background: var(--accent); color: var(--bg); padding: 6px 13px; border-radius: 8px; font-weight: 500; white-space: nowrap; }
+  .btn-compose kbd { font-family: var(--mono); font-size: 10px; border: 1px solid color-mix(in srgb, var(--bg) 45%, transparent); border-radius: 4px; padding: 0 5px; opacity: 0.85; }
+  .btn-queue { position: relative; color: var(--ink-2); padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); font-family: var(--mono); font-size: 11px; }
+  .btn-queue .badge { position: absolute; top: -6px; right: -6px; background: var(--signal); color: #fff; font-size: 9.5px; font-family: var(--mono); border-radius: 99px; padding: 1px 5px; }
+
+  /* ── Board ───────────────────────────────────────── */
+  .board { flex: 1; display: flex; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 16px 18px 12px; scroll-snap-type: x proximity; }
+  .board::-webkit-scrollbar { height: 10px; }
+  .board::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 99px; }
+
+  .col {
+    scroll-snap-align: start;
+    flex: none; width: 336px;
+    display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; box-shadow: var(--shadow-soft);
+    overflow: hidden; transition: width 0.25s ease, border-color 0.3s ease;
+  }
+  .col.reading { width: 560px; }
+  .col.flash { border-color: var(--accent); }
+  .col.dragging { opacity: 0.55; border-style: dashed; }
+  .col-head { cursor: grab; }
+  .col-head:active { cursor: grabbing; }
+
+  .expand { color: var(--ink-2); font-size: 14px; padding: 2px 6px; margin-left: 8px; border: 1px solid var(--line); border-radius: 6px; flex: none; }
+  .expand:hover { color: var(--accent-ink); border-color: var(--accent); }
+
+  /* ── Focus (full-screen) mode ────────────────────── */
+  .focus { position: fixed; inset: 0; z-index: 35; background: var(--bg); display: none; flex-direction: column; }
+  .focus.open { display: flex; }
+  .focus-head { display: flex; gap: 14px; align-items: center; padding: 12px 26px; border-bottom: 1px solid var(--line); background: var(--surface); flex: none; }
+  .focus-hint { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  .focus-scroll { flex: 1; overflow-y: auto; padding: 36px 48px 80px; }
+  .focus-scroll::-webkit-scrollbar { width: 10px; }
+  .focus-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+  .focus-inner { max-width: 76ch; margin: 0 auto; }
+  .focus .doc-title { font-size: 30px; }
+  .focus .doc-body { font-size: 16.5px; line-height: 1.7; max-width: 66ch; }
+  .focus .thread-card, .focus .backlinks, .focus .doc-panel, .focus .check-list, .focus .skill-fm { max-width: 66ch; }
+
+  /* ── Editing (always-on, Docs-like) ──────────────── */
+  [contenteditable] { outline: none; caret-color: var(--accent); }
+  .save-chip { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-left: 10px; white-space: nowrap; flex: none; }
+  .save-chip.saving { color: var(--sepia-ink); }
+  .save-chip.saved { color: var(--good); }
+
+  .sel-toolbar { position: fixed; z-index: 50; display: none; gap: 2px; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); padding: 4px; }
+  .sel-toolbar.open { display: flex; }
+  .sel-toolbar button { padding: 4px 10px; border-radius: 6px; font-size: 12.5px; color: var(--ink-2); }
+  .sel-toolbar button:hover { background: var(--surface-2); color: var(--ink); }
+  .sel-toolbar .comment-btn { color: var(--accent-ink); font-weight: 600; }
+  .sel-toolbar .divider { width: 1px; background: var(--line); margin: 3px 4px; }
+
+  .lock-banner { display: flex; align-items: center; gap: 10px; border: 1px solid var(--sepia-wash-2); background: var(--sepia-wash); color: var(--sepia-ink); border-radius: 10px; padding: 9px 13px; margin-bottom: 14px; font-size: 12.5px; font-family: var(--sans); max-width: 62ch; }
+  .lock-banner .working-dot { background: var(--sepia); }
+  .lock-banner button { margin-left: auto; font-family: var(--mono); font-size: 11px; border: 1px solid var(--sepia-wash-2); border-radius: 6px; padding: 3px 9px; color: var(--sepia-ink); white-space: nowrap; }
+  .lock-banner button:hover { background: var(--sepia-wash-2); }
+
+  /* collapsed comment chips (narrow/column mode) */
+  .thread-slot { margin: 4px 0 10px; }
+  .t-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--accent-ink); background: var(--accent-wash); border: 1px solid transparent; border-radius: 99px; padding: 3px 10px; cursor: pointer; }
+  .t-chip:hover { border-color: var(--accent); }
+  .t-chip.resolved-chip { color: var(--ink-3); background: var(--surface-2); }
+  .thread-slot .thread-card { display: none; }
+  .thread-slot.expanded .thread-card { display: block; }
+  .thread-slot.expanded > .t-chip { display: none; }
+  .t-collapse { margin-left: 4px; color: var(--ink-3); font-size: 13px; padding: 0 5px; line-height: 1; }
+  .t-collapse:hover { color: var(--ink); }
+
+  /* comments summary (reader header) */
+  .reader-head, .focus-head { position: relative; }
+  .comments-btn { font-family: var(--mono); font-size: 11px; color: var(--accent-ink); background: var(--accent-wash); border-radius: 99px; padding: 3px 9px; flex: none; margin-left: 8px; }
+  .comments-pop { position: absolute; top: calc(100% + 6px); right: 12px; z-index: 20; width: 300px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; display: none; }
+  .comments-pop.open { display: block; }
+  .cp-item { display: block; width: 100%; padding: 8px 10px; border-radius: 7px; }
+  .cp-item:hover { background: var(--surface-2); }
+  .cp-quote { font-family: var(--serif); font-style: italic; font-size: 12.5px; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .cp-meta { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+
+  /* focus-mode margin threads (Docs-style) — margin overrides collapse */
+  .focus-inner.with-margin { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 30px; max-width: calc(76ch + 330px); align-items: start; }
+  .focus-inner.with-margin .t-chip { display: none; }
+  .focus-margin { position: relative; }
+  .focus-margin .thread-card { display: block; position: absolute; left: 0; right: 0; margin: 0; max-width: none; }
+  .focus-margin .thread-card::before { content: ""; position: absolute; left: -23px; top: 16px; width: 23px; height: 1px; background: var(--line-strong); }
+
+  .col-head { flex: none; padding: 11px 14px 9px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+  .col-title-row { display: flex; align-items: center; gap: 8px; }
+  .col-title { font-weight: 600; font-size: 14px; }
+  .col-kind { font-family: var(--mono); font-size: 10px; color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; }
+  .col-count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .col-menu { color: var(--ink-3); font-size: 15px; line-height: 1; padding: 2px 4px; }
+  .col-add { color: var(--ink-3); font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .col-add:hover { color: var(--accent-ink); background: var(--accent-wash); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .chip { font-size: 11px; font-family: var(--mono); border: 1px solid var(--line); border-radius: 99px; padding: 2.5px 9px; color: var(--ink-2); background: var(--surface-2); white-space: nowrap; }
+  .chip.on { background: var(--accent-wash); border-color: transparent; color: var(--accent-ink); }
+  .chip.warn { background: var(--sepia-wash-2); border-color: transparent; color: var(--sepia-ink); }
+  .chip.good { background: var(--good-wash); border-color: transparent; color: var(--good); }
+  .chip.ghost { border-style: dashed; color: var(--ink-3); background: none; }
+  .sort { margin-left: auto; font-size: 11px; font-family: var(--mono); color: var(--ink-3); }
+
+  .col-list { flex: 1; overflow-y: auto; padding: 6px 8px 10px; }
+  .col-list::-webkit-scrollbar { width: 8px; }
+  .col-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+
+  /* ── Rows ────────────────────────────────────────── */
+  .row { position: relative; display: block; width: 100%; padding: 9px 10px 9px 14px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; }
+  .row:hover { background: var(--surface-2); }
+  .row + .row { margin-top: 2px; }
+  .row::before { content: ""; position: absolute; left: 4px; top: 10px; bottom: 10px; width: 3px; border-radius: 99px; background: transparent; }
+  .row-top { display: flex; align-items: baseline; gap: 7px; }
+  .row-title { font-family: var(--serif); font-size: 14.5px; font-weight: 600; }
+  .row-badges { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+  .row-excerpt { color: var(--ink-2); font-size: 12.5px; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .row-meta { display: flex; gap: 8px; align-items: center; margin-top: 5px; font-size: 11px; font-family: var(--mono); color: var(--ink-3); }
+  .type-glyph { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line); border-radius: 4px; padding: 0.5px 5px; flex: none; }
+  .unread { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10.5px; color: var(--accent-ink); background: var(--accent-wash); border-radius: 99px; padding: 1.5px 7px; }
+  .unread::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .needs-you { font-family: var(--mono); font-size: 10.5px; color: var(--signal); background: var(--signal-wash); border-radius: 99px; padding: 1.5px 7px; white-space: nowrap; }
+  .working-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; flex: none; }
+  .age { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+
+  .row.age-1 .row-title { opacity: 0.92; }
+  .row.age-2::before { background: var(--sepia); opacity: 0.45; }
+  .row.age-2 .row-title { opacity: 0.82; }
+  .row.age-2 .age { color: var(--sepia-ink); }
+  .row.age-3 { background: var(--sepia-wash); border-color: var(--sepia-wash-2); }
+  .row.age-3::before { background: var(--sepia); }
+  .row.age-3 .row-title { opacity: 0.72; }
+  .row.age-3 .age { color: var(--sepia-ink); font-weight: 600; }
+  .stale-actions { display: flex; gap: 6px; margin-top: 7px; }
+  .stale-actions button { font-size: 11px; font-family: var(--mono); border: 1px solid var(--sepia-wash-2); border-radius: 6px; padding: 3px 9px; color: var(--sepia-ink); }
+  .stale-actions button:hover { background: var(--sepia-wash-2); }
+  .stale-actions .keep { color: var(--ink-2); border-color: var(--line); }
+  .row.leaving { opacity: 0; transform: translateX(24px); transition: opacity 0.3s ease, transform 0.3s ease; }
+
+  .reason { font-size: 11px; margin-top: 5px; display: flex; gap: 6px; align-items: center; color: var(--ink-2); flex-wrap: wrap; }
+  .r-chip { font-family: var(--mono); font-size: 10px; padding: 1px 7px; border-radius: 99px; white-space: nowrap; }
+  .r-chip.r-reply { background: var(--accent-wash); color: var(--accent-ink); }
+  .r-chip.r-form { background: var(--signal-wash); color: var(--signal); }
+  .r-chip.r-stale { background: var(--sepia-wash-2); color: var(--sepia-ink); }
+
+  .todo-items { margin-top: 5px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-2); }
+  .todo-items .t { display: flex; gap: 7px; align-items: baseline; }
+  .todo-items .box { font-family: var(--mono); color: var(--ink-3); }
+  .todo-items .done { text-decoration: line-through; color: var(--ink-3); }
+
+  /* ── Reader ──────────────────────────────────────── */
+  .reader { display: none; flex-direction: column; flex: 1; min-height: 0; }
+  .col.reading .reader { display: flex; }
+  .col.reading .col-list, .col.reading .col-head .chips { display: none; }
+  .reader-head { flex: none; display: flex; align-items: center; gap: 9px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .back { color: var(--accent-ink); font-size: 13px; display: flex; align-items: center; gap: 5px; flex: none; }
+  .reader-id { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-left: auto; white-space: nowrap; }
+  .reader-scroll { flex: 1; overflow-y: auto; padding: 18px 22px 26px; }
+  .reader-scroll::-webkit-scrollbar { width: 8px; }
+  .reader-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+  .fm-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+  .doc-title { font-family: var(--serif); font-size: 24px; font-weight: 700; margin: 0 0 4px; text-wrap: balance; }
+  .doc-body { font-family: var(--serif); font-size: 15px; line-height: 1.62; max-width: 62ch; }
+  .doc-body h2 { font-size: 17px; margin: 22px 0 6px; }
+  .doc-body p { margin: 10px 0; }
+  .doc-body ul { margin: 8px 0; padding-left: 22px; }
+  .doc-body li { margin: 4px 0; }
+  .ref { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid var(--accent-wash); cursor: pointer; }
+  .ref:hover { border-bottom-color: var(--accent); }
+  .anchor-hl { background: var(--accent-wash); border-bottom: 2px solid var(--accent); padding: 0 2px; border-radius: 3px 3px 0 0; cursor: pointer; }
+  .anchor-hl.resolved { background: none; border-bottom-style: dotted; border-bottom-color: var(--ink-3); }
+  .anchor-pip { font-family: var(--mono); font-size: 10px; vertical-align: super; background: var(--accent); color: var(--bg); border-radius: 99px; padding: 0 5px; margin-left: 3px; }
+  .anchor-hl.resolved .anchor-pip { background: var(--ink-3); }
+
+  .thread-card {
+    margin: 12px 0 16px;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 10px; background: var(--surface-2);
+    padding: 12px 14px; font-family: var(--sans); font-size: 12.5px;
+    max-width: 62ch;
+  }
+  .thread-card.resolved { border-left-color: var(--ink-3); opacity: 0.75; }
+  .t-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+  .t-quote { font-family: var(--serif); font-style: italic; color: var(--ink-2); font-size: 12.5px; }
+  .t-status { margin-left: auto; }
+  .t-context { font-size: 11px; font-family: var(--mono); color: var(--ink-3); margin-bottom: 6px; }
+  .turn { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .turn:first-of-type { border-top: none; }
+  .turn-who { display: flex; gap: 8px; align-items: baseline; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  .turn-del { margin-left: auto; opacity: 0; color: var(--ink-3); font-size: 11px; padding: 0 4px; transition: opacity 0.12s ease; }
+  .turn:hover .turn-del, .turn-del:focus-visible { opacity: 1; }
+  .turn-del:hover { color: var(--signal); }
+  .turn-del.armed { opacity: 1; color: var(--signal); font-family: var(--mono); font-size: 10px; }
+  .turn-who .who { font-weight: 700; color: var(--ink-2); letter-spacing: 0.05em; text-transform: uppercase; }
+  .turn-who .who.agent { color: var(--accent-ink); }
+  .turn-body { color: var(--ink); font-family: var(--sans); }
+  .turn-trace { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+  .turn-trace::before { content: "↳ "; }
+  .working { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12px; }
+
+  .composer { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .composer input { border: none; background: none; font: inherit; color: var(--ink); width: 100%; }
+  .composer input::placeholder { color: var(--ink-3); }
+  .composer-foot { display: flex; align-items: center; gap: 10px; font-size: 10.5px; font-family: var(--mono); color: var(--ink-3); }
+  .composer-foot .toggle { cursor: pointer; }
+  .composer-foot .toggle.on { color: var(--accent-ink); }
+  .composer-foot .send { margin-left: auto; color: var(--accent-ink); font-weight: 600; }
+
+  .form-comment { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .form-opt { display: flex; gap: 9px; align-items: baseline; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; }
+  .form-opt:hover { border-color: var(--accent); }
+  .form-opt.picked { border-color: var(--accent); background: var(--accent-wash); }
+  .form-opt .price { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+  .form-submit { align-self: flex-start; margin-top: 3px; background: var(--accent); color: var(--bg); border-radius: 7px; padding: 5px 12px; font-weight: 600; font-size: 12px; }
+
+  .backlinks { margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--line); font-family: var(--sans); max-width: 62ch; }
+  .backlinks h3, .doc-panel h3 { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); margin: 0 0 8px; }
+  .backlink { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 12.5px; }
+
+  .doc-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 10px 14px; margin-bottom: 16px; display: flex; gap: 18px; align-items: center; font-family: var(--sans); }
+  .doc-panel .stat { display: flex; flex-direction: column; }
+  .doc-panel .stat b { font-size: 17px; font-family: var(--mono); }
+  .doc-panel .stat span { font-size: 10.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
+  .doc-panel .plugin-tag { margin-left: auto; }
+
+  .check-list { font-family: var(--sans); max-width: 62ch; display: flex; flex-direction: column; gap: 2px; }
+  .check { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 8px; font-size: 13.5px; cursor: pointer; }
+  .check:hover { background: var(--surface-2); }
+  .check .box { font-family: var(--mono); color: var(--accent-ink); flex: none; }
+  .check.done { color: var(--ink-3); text-decoration: line-through; }
+  .check.done .box { color: var(--good); }
+  .check .due { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--signal); white-space: nowrap; }
+  .check.done .due { color: var(--ink-3); }
+
+  .skill-fm { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); background: var(--surface-2); max-width: 62ch; }
+  .skill-fm b { color: var(--accent-ink); }
+
+  /* ── Ghost column ────────────────────────────────── */
+  .col.ghost-col { border-style: dashed; background: none; box-shadow: none; align-items: center; justify-content: center; gap: 8px; color: var(--ink-3); width: 220px; cursor: pointer; }
+  .col.ghost-col .plus { font-size: 26px; font-weight: 300; }
+  .col.ghost-col p { margin: 0; font-size: 12px; max-width: 150px; text-align: center; }
+
+  /* ── Search overlay ──────────────────────────────── */
+  .overlay { position: fixed; inset: 0; display: none; background: color-mix(in srgb, var(--ink) 18%, transparent); backdrop-filter: blur(3px); z-index: 40; }
+  .overlay.open { display: block; }
+  .search-panel { width: min(760px, calc(100vw - 48px)); margin: 7vh auto 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; max-height: 78vh; }
+  .search-input-row { display: flex; align-items: center; gap: 11px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
+  .search-input-row input { flex: 1; border: none; background: none; font-family: var(--serif); font-size: 19px; color: var(--ink); }
+  .search-filters { display: flex; gap: 5px; padding: 10px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .search-results { overflow-y: auto; padding: 8px 10px 12px; }
+  .sr-group { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); padding: 10px 10px 4px; }
+  .sr { display: block; width: 100%; padding: 9px 10px; border-radius: 8px; }
+  .sr:hover { background: var(--surface-2); }
+  .sr-title { font-family: var(--serif); font-size: 14.5px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+  .sr-snippet { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+  .sr-snippet mark { background: var(--accent-wash); color: var(--accent-ink); border-radius: 2px; padding: 0 1px; }
+  .sr-path { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
+  .search-foot { display: flex; gap: 14px; padding: 9px 18px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); background: var(--surface-2); flex-wrap: wrap; }
+  .search-foot .hint b { color: var(--ink-2); font-weight: 600; }
+  .search-foot .right { margin-left: auto; }
+
+  /* ── Compose (Ask / Capture) ─────────────────────── */
+  .compose-panel { width: min(640px, calc(100vw - 48px)); margin: 12vh auto 0; }
+  .compose-panel textarea {
+    border: none; background: none; resize: vertical;
+    font-family: var(--serif); font-size: 16px; line-height: 1.55; color: var(--ink);
+    min-height: 110px; width: 100%; padding: 16px 18px;
+  }
+  .compose-panel textarea::placeholder { color: var(--ink-3); }
+  .compose-actions { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); background: var(--surface-2); }
+  .compose-actions .hint { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  .compose-actions .spacer { flex: 1; }
+  .btn-ask { background: var(--accent); color: var(--bg); border-radius: 8px; padding: 6px 16px; font-weight: 600; }
+  .btn-capture { border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 16px; color: var(--ink-2); font-weight: 500; }
+  .btn-capture:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+  .sr-create { color: var(--accent-ink); font-weight: 600; font-family: var(--sans); font-size: 13px; }
+  .sr-create b { font-family: var(--serif); }
+  .sr.kbd { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .kbd-panel { padding: 20px 24px; }
+  .kbd-panel h3 { margin: 0 0 12px; font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); }
+  .kbd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 30px; }
+  .kbd-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 12.5px; }
+  .kbd-row .keys { display: flex; gap: 4px; min-width: 92px; flex: none; }
+  .kbd-row kbd { font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; color: var(--ink-2); }
+  .kbd-row .d { color: var(--ink-2); }
+
+  /* ── Console (bottom drawer, pushes — never overlays) ── */
+  .console { flex: none; border-top: 1px solid var(--line); background: var(--surface); }
+  .console-strip { display: flex; align-items: center; gap: 12px; padding: 7px 18px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); cursor: pointer; user-select: none; }
+  .console-strip:hover { background: var(--surface-2); }
+  .console-strip .spacer { flex: 1; }
+  .c-caret { transition: transform 0.2s ease; }
+  .console.open .c-caret { transform: rotate(180deg); }
+  .c-failed { color: var(--signal); }
+  .halt-btn { font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--line-strong); border-radius: 99px; padding: 2px 10px; color: var(--ink-2); }
+  .halt-btn.halted { background: var(--signal-wash); color: var(--signal); border-color: transparent; }
+  .console-resizer { display: none; height: 5px; cursor: ns-resize; flex: none; }
+  .console.open .console-resizer { display: block; }
+  .console-resizer:hover, .console-resizer.dragging { background: var(--accent-wash); }
+  .console-body { display: none; height: 210px; border-top: 1px solid var(--line); }
+  .console.open .console-body { display: flex; }
+  .job-list { width: 380px; flex: none; overflow-y: auto; border-right: 1px solid var(--line); padding: 6px; }
+  .job { display: flex; gap: 10px; align-items: center; width: 100%; border-radius: 8px; padding: 7px 10px; font-family: var(--mono); font-size: 11px; }
+  .job:hover { background: var(--surface-2); }
+  .job.sel { background: var(--accent-wash); }
+  .job-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .job-dot.running { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  .job-dot.pending { background: var(--sepia); }
+  .job-dot.done { background: var(--good); }
+  .job-dot.failed { background: var(--signal); }
+  .job-detail-head .ref { font-size: 11.5px; }
+  .job-title { color: var(--ink); font-family: var(--sans); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-meta { color: var(--ink-3); margin-left: auto; white-space: nowrap; }
+  .job-detail { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .job-detail-head { display: flex; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 11px; flex: none; }
+  .job-detail-head .job-title { font-size: 12.5px; }
+  .job-detail-head button { margin-left: 6px; font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 9px; color: var(--ink-2); flex: none; }
+  .job-detail-head button:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .job-log-lines { flex: 1; overflow-y: auto; padding: 10px 16px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); line-height: 1.8; }
+  .job-log-lines .err { color: var(--signal); }
+  .job-empty { padding: 20px; color: var(--ink-3); font-size: 12px; }
+
+  /* keyboard */
+  .col.kactive { box-shadow: 0 0 0 2px var(--accent-wash), var(--shadow-soft); }
+  .row.kbd { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* autocomplete */
+  .ac-menu { position: fixed; z-index: 60; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); padding: 4px; display: none; min-width: 250px; max-height: 200px; overflow-y: auto; }
+  .ac-menu.open { display: block; }
+  .ac-item { display: block; width: 100%; padding: 6px 9px; border-radius: 6px; font-size: 12.5px; }
+  .ac-item:hover { background: var(--surface-2); }
+  .ac-item .k { font-family: var(--mono); color: var(--accent-ink); }
+  .ac-item .d { font-size: 11px; color: var(--ink-3); margin-left: 6px; }
+
+  .t-resolve { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); border-radius: 99px; padding: 1.5px 8px; color: var(--good); flex: none; }
+  .t-resolve:hover { background: var(--good-wash); }
+
+  /* attachments */
+  .pending-atts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pending-atts:empty { display: none; }
+  .att-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; font-size: 11px; font-family: var(--mono); color: var(--ink-2); background: var(--surface-2); }
+  .att-chip img { height: 34px; border-radius: 4px; display: block; }
+  .att-chip button { color: var(--ink-3); font-size: 11px; padding: 0 2px; }
+  .att-chip button:hover { color: var(--signal); }
+  .clip { font-size: 13px; color: var(--ink-3); padding: 0 4px; }
+  .clip:hover { color: var(--accent-ink); }
+  .composer.dropping { border-color: var(--accent); background: var(--accent-wash); }
+  .turn-att-img { max-width: 240px; max-height: 180px; border-radius: 8px; border: 1px solid var(--line); display: block; margin-top: 6px; }
+  .att-file { display: inline-flex; gap: 6px; margin-top: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px; font-size: 11.5px; color: var(--ink-2); background: var(--surface-2); }
+
+  /* ── Toast ───────────────────────────────────────── */
+  .toast-wrap { position: fixed; bottom: 18px; right: 18px; z-index: 30; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .toast { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 10px 14px; display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-2); max-width: 360px; }
+  .toast .tick { color: var(--good); flex: none; }
+  .toast .close { color: var(--ink-3); margin-left: 4px; flex: none; }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="wordmark">Corpus <small>workbench</small></div>
+    <button class="searchbar" id="searchbar" aria-label="Search corpus">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      Search corpus — documents, threads, skills…
+      <kbd>⌘K</kbd>
+    </button>
+    <div class="topbar-actions">
+      <button class="btn-compose" id="btn-compose">＋ Ask / Capture <kbd>c</kbd></button>
+    </div>
+  </header>
+  <main class="board" id="board" aria-label="Document lists"></main>
+  <div class="console" id="console">
+    <div class="console-resizer" id="console-resizer" role="separator" aria-label="Resize console"></div>
+    <div class="console-strip" id="console-strip" role="button" tabindex="0" aria-label="Toggle console">
+      <span class="c-caret">▴</span> console
+      <span class="agent-pill" id="agent-pill"><span class="dot busy"></span><span id="agent-pill-text">agent: working · queue 2</span></span>
+      <span id="console-counts"></span>
+      <span class="spacer"></span>
+      <button class="halt-btn" id="halt-btn">HALT ○</button>
+    </div>
+    <div class="console-body" id="console-body"></div>
+  </div>
+</div>
+
+<div class="ac-menu" id="ac-menu"></div>
+<div class="ac-menu" id="newlist-menu"></div>
+
+<div class="overlay" id="kbd-overlay">
+  <div class="search-panel kbd-panel" role="dialog" aria-label="Keyboard shortcuts">
+    <h3>Keyboard</h3>
+    <div class="kbd-grid">
+      <div class="kbd-row"><span class="keys"><kbd>↑</kbd><kbd>↓</kbd></span><span class="d">move rows (also j / k)</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>↵</kbd></span><span class="d">open document</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>⇧↵</kbd></span><span class="d">open in full screen</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>esc</kbd></span><span class="d">close / back</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>←</kbd><kbd>→</kbd></span><span class="d">switch column (also [ / ])</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>⇧←</kbd><kbd>⇧→</kbd></span><span class="d">move column</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>f</kbd></span><span class="d">focus mode</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>e</kbd></span><span class="d">archive open / highlighted doc</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>r</kbd></span><span class="d">reply in open thread</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>c</kbd></span><span class="d">Ask / Capture composer</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>⌘K</kbd></span><span class="d">search</span></div>
+      <div class="kbd-row"><span class="keys"><kbd>?</kbd></span><span class="d">this cheat-sheet</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="search-overlay">
+  <div class="search-panel" role="dialog" aria-label="Search">
+    <div class="search-input-row">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <input id="search-input" value="mortgage" aria-label="Search query"/>
+      <button class="chip ghost" id="save-view-chip">save as view</button>
+    </div>
+    <div class="search-filters">
+      <span class="chip on">folder: finance/</span><span class="chip">type: any</span>
+      <span class="chip">status: open</span><span class="chip">tag</span>
+      <span class="chip">references: …</span><span class="chip warn">include archived</span>
+    </div>
+    <div class="search-results" id="search-results"></div>
+    <div class="search-foot">
+      <span class="hint"><b>↑↓</b> navigate</span>
+      <span class="hint"><b>↵</b> open in its list</span>
+      <span class="hint"><b>⇧↵</b> new list from search</span>
+      <span class="right hint"><b>@</b> agents · <b>/</b> skills · <b>[[</b> refs</span>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="compose-overlay">
+  <div class="search-panel compose-panel" role="dialog" aria-label="Ask or capture" data-dropzone="compose">
+    <textarea id="compose-text" data-composer="compose" placeholder="Ask the agent anything, or capture a thought…&#10;@ routes to a subagent · / invokes a skill · [[ links a document · paste/drop files"></textarea>
+    <div class="pending-atts" data-pending="compose" style="padding: 0 18px 8px;"></div>
+    <div class="compose-actions">
+      <button class="clip" data-attach="compose" title="Attach files from disk">📎</button>
+      <input type="file" multiple hidden data-attach-input="compose"/>
+      <span class="hint">@ agents · / skills · [[ refs · ⇧↵ newline</span>
+      <span class="spacer"></span>
+      <button class="btn-capture" id="btn-capture" title="Save to inbox/ — the agent files it">Capture ⌘↵</button>
+      <button class="btn-ask" id="btn-ask" title="Start a standalone agent thread">Ask ↵</button>
+    </div>
+  </div>
+</div>
+
+<div class="sel-toolbar" id="sel-toolbar">
+  <button data-fmt="bold" title="Bold"><b>B</b></button>
+  <button data-fmt="italic" title="Italic"><i>I</i></button>
+  <span class="divider"></span>
+  <button class="comment-btn" data-sel-comment>💬 Comment</button>
+</div>
+
+<div class="focus" id="focus-overlay">
+  <div class="focus-head">
+    <button class="back" id="focus-back" data-focus-back hidden>‹ Back</button>
+    <button class="back" data-close-focus>✕ Close</button>
+    <span class="focus-hint">esc closes · click anywhere to edit</span>
+    <span class="reader-id" id="focus-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments hidden>💬</button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button>
+  </div>
+  <div class="focus-scroll" id="focus-scroll"><div class="focus-inner" id="focus-inner"></div></div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+/* ═══════════════ STUB DATA ═══════════════ */
+
+const THREADS = {
+  th_rate: {
+    quote: "assume a 30-year fixed at 6.1%", on: "doc_mortgage", status: "open",
+    turns: [
+      { who: "user", when: "Jul 21, 10:05", body: "@agent is 6.1% still the right assumption?" },
+      { who: "agent", when: "Jul 21, 10:07", body: "Checked this week's averages — 6.4% is more representative. I updated the assumption and re-ran the payoff table.", trace: "edited this document · anchor re-matched to new text" },
+    ],
+    reply: "Re-checked today: still 6.4% (±5bp week over week). I'll flag this thread if the weekly average moves more than 25bp.",
+  },
+  th_pmi: {
+    quote: "PMI drops off automatically at 78% LTV", on: "doc_mortgage", status: "resolved",
+    turns: [
+      { who: "user", when: "Jul 18", body: "Double-check this — I thought you had to request removal at 80%." },
+      { who: "agent", when: "Jul 18", body: "Both true: you can request at 80%, it terminates automatically at 78% (Homeowners Protection Act). Reworded the sentence to say so.", trace: "edited this document" },
+    ],
+    reply: "Nothing to add — resolved.",
+  },
+  th_carrier: {
+    quote: null, on: "doc_insurance", status: "open", form: true,
+    turns: [
+      { who: "user", when: "Jul 22", body: "@agent get quotes from at least three carriers before the Oct 1 lapse." },
+      { who: "agent", when: "Jul 23, 09:12", body: "Three quotes in. Coverage is comparable ($1.2M dwelling, $300k liability); the spread is deductible and price. Which should I pursue?", attachments: [{ name: "three-quotes.pdf" }, { name: "coverage-comparison.xlsx" }] },
+    ],
+    reply: "Locked it in — I'll draft the application and note the effective date on the doc. Binder should arrive within 48h.",
+  },
+  th_rent: {
+    quote: null, on: null, status: "open", standalone: true,
+    turns: [
+      { who: "user", when: "Jul 22", body: "What's our max comfortable rent if we keep saving at the current rate?" },
+      { who: "agent", when: "Jul 22", body: "Short answer: $4,100/mo. Holding the 32% savings rate from [[doc_cashflow|Cashflow 2026]] and the emergency-fund top-up, rent can go to $4,100 before something gives. Full breakdown below — want me to turn this into a doc under finance/?" },
+      { who: "user", when: "Jul 22", body: "Yes, and link it from the home search criteria." },
+    ],
+    reply: "Done — created [[doc_rentceiling|Rent ceiling]] under finance/ and linked it from Home search criteria. This thread now references it.",
+    working: true,
+  },
+  th_skilltone: {
+    quote: "file captures without renaming them", on: "skill_comment", status: "open",
+    turns: [
+      { who: "user", when: "Jul 21", body: "This is wrong — I *want* captures retitled. My titles are throwaway; give them proper ones when filing." },
+      { who: "agent", when: "Jul 21", body: "Updated the instruction: captures get a descriptive title on filing, original text preserved in the body. Also added an example.", trace: "edited skill: comment · rollback available" },
+    ],
+    reply: "The retitling rule has applied to 4 captures since — spot-check Inbox and comment here if any title misses.",
+  },
+  th_efund: {
+    quote: "6 months of essential expenses", on: "doc_efund", status: "open",
+    turns: [
+      { who: "user", when: "Jul 19", body: "Should this be 8 months now that income is single-source?" },
+    ],
+    reply: "Reasonable. At current essentials (~$6.2k/mo) that's a $49.6k target, +$12.4k over today's. I can stage it over 6 months from the cash-sweep — want a plan in the doc?",
+    awaiting: true,
+  },
+  th_split: {
+    quote: "consolidate to two brokerages", on: "doc_brokerage", status: "open",
+    turns: [
+      { who: "user", when: "Jul 15", body: "/summarize the tradeoffs before I read the whole doc" },
+      { who: "agent", when: "Jul 15", body: "Summary: consolidation saves ~$180/yr in fees and one 1099; the cost is a 2-week ACATS window per account and losing the legacy cost-basis view at the old custodian. Details in §2–3." },
+    ],
+    reply: "Nothing new since the summary — the ACATS fee schedule is unchanged as of this week.",
+  },
+};
+
+const DOCS = {
+  doc_mortgage: {
+    type: "note", title: "Mortgage options", folder: "finance/housing", tags: ["housing"], status: "open", gdoc: "in sync",
+    updated: "2d ago · agent", excerpt: "Comparing 30-yr fixed vs 7/1 ARM for the LA purchase; rate table + payoff curves.",
+    body: [
+      "p:Comparing structures for the LA purchase, assuming a purchase price near the top of the [[doc_criteria|Home search criteria]] band and 20% down from the taxable account.",
+      "h2:Rate assumptions",
+      "p:For the base case, the model we {a:th_rate}assume a 30-year fixed at 6.4%{/a} which tracks the current Freddie Mac weekly average. The ARM scenario uses 5.6% with a 7-year fixed period and 2/1/5 caps.",
+      "thread:th_rate",
+      "p:Rate lock strategy: float until 30 days out unless the weekly average jumps 25bp, then lock immediately. The lender offers one free float-down within 60 days.",
+      "h2:PMI and down payment",
+      "p:At 20% down PMI never applies. If we go 15% to preserve cash, {a:th_pmi}PMI drops off automatically at 78% LTV{/a} — roughly 4 years at the base appreciation case — and costs ~$210/mo until then.",
+      "thread:th_pmi",
+      "h2:Payoff comparison",
+      "p:At 6.4% the fixed carries $2,703/mo P&I; the 7/1 ARM saves $214/mo but crosses over in year 9 if rates revert to the historical mean. Full amortization in [[doc_payoff|Payoff model]].",
+      "ul:Fixed 30y — $2,703/mo · total interest $541k · no reset risk|7/1 ARM — $2,489/mo · crossover year 9 · cap exposure after 2033|15y fixed — $3,610/mo · total interest $233k · cashflow-tight",
+      "p:Property tax and insurance assumptions come from [[doc_insurance|Home insurance renewal]] — that doc is flagged stale; verify the premium before deciding.",
+      "h2:Open questions",
+      "p:Whether to pay one point ($4,400) for -25bp — breakeven at 68 months, longer than our median hold. Leaning no. Also: verify the lender credits survive a float-down.",
+    ],
+    backlinks: ["doc_efund", "th_rent", "doc_payoff"],
+  },
+  doc_payoff: {
+    type: "note", title: "Payoff model", folder: "finance/housing", tags: ["housing"], status: "open",
+    updated: "4d ago", excerpt: "Amortization for both mortgage structures; crossover analysis under three rate paths.",
+    body: [
+      "p:Companion to [[doc_mortgage|Mortgage options]]. Three rate paths: flat, revert-to-mean (+180bp over 4y), and easing (-100bp over 2y).",
+      "h2:Method",
+      "p:Standard amortization with monthly compounding; ARM resets applied at the cap schedule worst case. Extra-payment scenarios assume the $214/mo ARM savings are redirected to principal.",
+      "h2:Results",
+      "ul:Flat path — ARM wins by $19.7k over 10y|Revert path — fixed wins by $31.2k; crossover year 9|Easing path — ARM wins by $44.1k; refi optionality worth ~$9k more",
+      "p:The asymmetry favors the fixed: the revert-path loss is larger than the flat-path gain, and we're not disciplined enough to bank the ARM savings monthly (see the honest note in [[doc_cashflow|Cashflow 2026]]).",
+    ],
+    backlinks: ["doc_mortgage"],
+  },
+  doc_ips: {
+    type: "note", title: "IPS — investment policy", folder: "finance/", tags: ["policy"], status: "open",
+    updated: "1w ago", excerpt: "Allocation targets, rebalancing bands, and the do-not-touch list.",
+    body: [
+      "p:The standing policy. The agent follows this when proposing anything; deviations require an explicit thread and my sign-off.",
+      "h2:Targets",
+      "ul:Equities 75% (US 45 / intl 30)|Bonds 15% — treasuries only|Cash 10% — see [[doc_efund|Emergency fund target]]",
+      "h2:Rebalancing",
+      "p:5% absolute bands, checked monthly, executed with new contributions first to avoid taxable events. Tax-loss harvest opportunistically above $3k.",
+      "h2:Do not touch",
+      "p:The legacy RSU position (concentrated, but LTCG clock runs to Nov), the 529, and anything within 30 days of a wash-sale window.",
+    ],
+    backlinks: [],
+  },
+  doc_efund: {
+    type: "note", title: "Emergency fund target", folder: "finance/", tags: [], status: "open", age: 2,
+    updated: "Apr 20 · 3mo ago", excerpt: "6 months of essentials — needs refresh after the rent change.",
+    body: [
+      "p:Target: {a:th_efund}6 months of essential expenses{/a} held in the HYSA ladder. Essentials currently $6.2k/mo per [[doc_cashflow|Cashflow 2026]].",
+      "thread:th_efund",
+      "p:Funding order: HYSA to target → then taxable per [[doc_ips|IPS]]. The ladder rungs mature monthly; auto-renew unless this doc says otherwise.",
+      "p:⚠ This doc predates the rent change in March — the essentials number and therefore the target are stale. Pending the thread above.",
+    ],
+    backlinks: ["doc_ips", "doc_mortgage"],
+  },
+  doc_cashflow: {
+    type: "note", title: "Cashflow 2026", folder: "finance/", tags: [], status: "open",
+    locked: { note: "updating monthly numbers from the statement drop" },
+    updated: "5d ago", excerpt: "Monthly in/out, savings rate, and the honest discretionary number.",
+    body: [
+      "p:Living document, agent-updated monthly from the statement drop. Savings rate holding at 32%.",
+      "h2:Monthly",
+      "ul:In — $18.4k net|Essentials — $6.2k|Discretionary — $3.1k (honest number, not the aspirational one)|Saved/invested — $5.9k",
+      "p:The discretionary line includes the things we pretend are one-offs. The agent stopped believing us in March; the number has been accurate since.",
+    ],
+    backlinks: ["doc_efund", "th_rent"],
+  },
+  doc_taxchecklist: {
+    type: "note", title: "2025 tax checklist", folder: "finance/", tags: ["tax"], status: "open", age: 3,
+    updated: "Nov 12 · 8mo ago", excerpt: "Filing done in April — most items here are settled or superseded.",
+    body: [
+      "p:Pre-filing checklist for the 2025 return. Filing was completed April 11; refund landed May 2.",
+      "ul:Gather 1099s — done|ESPP basis correction — done|Charitable receipts — done|Q4 estimated payment — paid Jan 15",
+      "p:Everything here is settled. Candidate for archive — or convert the recurring items into next year's checklist via /extract-template.",
+    ],
+    backlinks: [],
+  },
+  doc_insurance: {
+    type: "note", title: "Home insurance renewal", folder: "home/", tags: [], status: "open", age: 2,
+    updated: "Mar 12 · 4mo ago", excerpt: "Policy lapses Oct 1. Carrier comparison half-done.",
+    body: [
+      "p:Current policy (Foremost, $2,310/yr) lapses Oct 1. Renewal quote came in +22%; shopping it.",
+      "thread:th_carrier",
+      "p:Coverage floor: $1.2M dwelling replacement, $300k liability, water-backup rider. Wildfire zone rating changed this year — verify each quote actually honors the floor.",
+      "p:Once a carrier is chosen the premium feeds [[doc_mortgage|Mortgage options]] escrow math.",
+    ],
+    backlinks: ["doc_mortgage"],
+  },
+  doc_criteria: {
+    type: "note", title: "Home search criteria", folder: "home/", tags: ["housing"], status: "open", gdoc: "local changes",
+    updated: "2w ago", excerpt: "Max price banded by mortgage payment ≤ 28% of gross; neighborhoods; dealbreakers.",
+    body: [
+      "p:Price band: $980k–$1.15M, anchored by payment ≤ 28% of gross at the [[doc_mortgage|Mortgage options]] base rate. Rent alternative capped by [[doc_rentceiling|Rent ceiling]].",
+      "h2:Neighborhoods",
+      "ul:Mar Vista — first choice|Culver City — schools tiebreaker|Atwater — only under $1M",
+      "h2:Dealbreakers",
+      "ul:No major arterial|No unpermitted additions|Insurance quote must clear the wildfire floor",
+    ],
+    backlinks: ["doc_mortgage"],
+  },
+  doc_401k: {
+    type: "note", title: "Idea: consolidate 401k accounts", folder: "inbox/", tags: [], status: "open", filing: true,
+    updated: "9:14 today", excerpt: "Captured 9:14 — old employer plan still has ~$40k sitting in a target-date fund…",
+    body: [
+      "p:Captured this morning: old employer plan still has ~$40k in a 2055 target-date fund at 0.38% ER. Roll into current 401k (0.04% index menu) or IRA?",
+      "p:Agent is filing this — it will retitle, move it under finance/, and open the rollover-vs-IRA analysis as a thread.",
+    ],
+    backlinks: [],
+  },
+  doc_podcast: {
+    type: "note", title: "Podcast rec — \"Odd Lots\" housing ep", folder: "inbox/", tags: [], status: "open", age: 1,
+    updated: "3w ago", excerpt: "Listen before we revisit the LA search. Timestamped notes inside.",
+    body: [
+      "p:Recommended by Sam. Relevant to the LA search — supply-side take on why coastal inventory stays tight.",
+      "ul:14:20 — insurance withdrawal dynamics|31:05 — prop-13 lock-in effect|48:40 — ADU supply math",
+      "p:If still unlistened in a month, archive me.",
+    ],
+    backlinks: [],
+  },
+  doc_wifi: {
+    type: "note", title: "Mesh wifi upgrade", folder: "inbox/", tags: [], status: "open", age: 1,
+    updated: "1mo ago", excerpt: "Office deadzone. Eero vs Unifi; wait for the fall refresh?",
+    body: ["p:Office deadzone persists. Options: Eero Pro (easy, subscription-creep) vs Unifi (fiddly, ours). Rumored fall refresh for both — probably wait.", "p:Trigger to act: next dropped call on a work day."],
+    backlinks: [],
+  },
+  doc_brokerage: {
+    type: "note", title: "Brokerage consolidation notes", folder: "finance/", tags: [], status: "open",
+    updated: "1w ago", excerpt: "Three custodians is two too many. ACATS logistics and what we'd lose.",
+    body: [
+      "p:We hold accounts at three custodians for historical reasons. Plan: {a:th_split}consolidate to two brokerages{/a} — keep Fidelity (401k gravity) and Schwab (checking bridge).",
+      "thread:th_split",
+      "p:ACATS in-kind everything; the legacy custodian's cost-basis export needs to happen BEFORE initiating transfer (their support confirmed it's unavailable after).",
+    ],
+    backlinks: [],
+  },
+  doc_rentceiling: {
+    type: "note", title: "Rent ceiling", folder: "finance/", tags: ["housing"], status: "open",
+    updated: "1d ago · agent", excerpt: "Created by the agent from a standalone ask: $4,100/mo holding the 32% savings rate.",
+    body: [
+      "p:Created from [[th_rent|What's our max comfortable rent?]]. Ceiling: $4,100/mo holding the 32% savings rate and the emergency-fund top-up from [[doc_efund|Emergency fund target]].",
+      "ul:At $3,600 (today) — savings 32%|At $4,100 — savings 28%, floor per IPS|Above $4,400 — cuts into taxable contributions",
+    ],
+    backlinks: ["doc_criteria", "th_rent"],
+  },
+  th_rate_doc: null, // thread docs generated below
+  todo_week: {
+    type: "todo", title: "Week of Jul 20", folder: "todos/", tags: [], status: "open",
+    updated: "today", excerpt: "Renew passport · Call plumber about garage leak",
+    items: [
+      { t: "Renew passport — appointment window opens today", due: "today", done: false },
+      { t: "Call plumber about garage leak", due: "today", done: false },
+      { t: "Send lease renewal notice", done: true },
+      { t: "Book dentist (both)", due: "Fri", done: false },
+      { t: "Return library books", done: true },
+    ],
+  },
+  todo_house: {
+    type: "todo", title: "House purchase — paperwork", folder: "finance/housing", tags: ["housing"], status: "open",
+    updated: "3d ago", excerpt: "Pull credit reports · Pre-approval refresh · Insurance floor check",
+    items: [
+      { t: "Pull credit reports (all three)", done: false },
+      { t: "Pre-approval letter refresh", due: "Aug 1", done: false },
+      { t: "Cost-basis export from legacy custodian", done: false },
+      { t: "Verify insurance quotes clear wildfire floor", done: false },
+      { t: "Gift-letter template for parents' contribution", done: true },
+    ],
+  },
+  todo_maint: {
+    type: "todo", title: "Home maintenance", folder: "home/", tags: [], status: "open", age: 2,
+    updated: "2mo ago", excerpt: "Gutters · HVAC filter · Water heater flush (overdue)",
+    items: [
+      { t: "Clear gutters before rainy season", done: false },
+      { t: "HVAC filter swap", due: "monthly", done: false },
+      { t: "Water heater flush — overdue since May", done: false },
+    ],
+  },
+  skill_comment: {
+    type: "skill", title: "skill: comment", folder: ".claude/skills/", tags: [], status: "open",
+    updated: "2d ago · agent", excerpt: "How the agent handles comment.created events — reply, edit, file, steward.",
+    skillMeta: { name: "comment", description: "Handle comment.created: read thread + context, act, reply via corpus CLI." },
+    body: [
+      "p:Read the thread, its parent document, and the anchor context when present. Standalone threads have neither — the thread is the whole context; give it a good title after the first exchange.",
+      "h2:Filing captures",
+      "p:For inbox captures: {a:th_skilltone}give captures a descriptive title when filing{/a}, preserve the original text in the body, move out of inbox/, tag, and link related documents.",
+      "thread:th_skilltone",
+      "h2:Stewardship",
+      "p:While handling any comment: update stale linked docs you touch, write durable knowledge into documents, and say what you changed in the reply. Archive, never delete.",
+      "h2:Recovery",
+      "p:If an edit to this skill breaks the loop: corpus skill rollback comment — restores last-known-good from git.",
+    ],
+    backlinks: [],
+  },
+};
+
+// Thread documents (threads are documents)
+for (const [tid, th] of Object.entries(THREADS)) {
+  const titles = {
+    th_rate: "Re: rate assumptions", th_pmi: "Re: PMI removal", th_carrier: "Insurance carrier choice",
+    th_rent: "What's our max comfortable rent?", th_skilltone: "Skill tune: filing tone",
+    th_efund: "Re: emergency fund sizing", th_split: "Re: brokerage consolidation",
+  };
+  DOCS[tid] = {
+    type: "thread", thread: tid, title: titles[tid], folder: th.on ? (DOCS[th.on]?.folder || "") : "standalone",
+    status: th.status, updated: "", excerpt: "", tags: [],
+  };
+}
+delete DOCS.th_rate_doc;
+
+const COLUMNS = [
+  {
+    id: "attention", title: "Attention", kind: "view", count: "6",
+    chips: ['<span class="chip on">needs: me</span>', '<span class="chip on">status: open</span>'], sort: "last activity ↓",
+    rows: [
+      { doc: "th_rate", clearOn: "seen", badges: '<span class="unread">1</span>', reason: '<span class="r-chip r-reply">agent replied</span> on Mortgage options', meta: ["finance/", "12m ago"] },
+      { doc: "th_carrier", clearOn: "form", badges: '<span class="needs-you">form</span>', reason: '<span class="r-chip r-form">awaiting your answer</span>', meta: ["home/", "2h ago"] },
+      { doc: "todo_week", clearOn: "due", badges: '<span class="needs-you">2 due</span>', reason: '<span class="r-chip r-form">due today</span>', meta: ["todos/", "today"] },
+      { doc: "th_efund", clearOn: "seen", badges: '<span class="unread">1</span>', reason: '<span class="r-chip r-reply">agent asked back</span>', meta: ["finance/", "1d ago"] },
+      { doc: "doc_taxchecklist", stale: true, badges: '<span class="age">stale · 8mo</span>', reason: '<span class="r-chip r-stale">review: archive or act</span>' },
+      { doc: "doc_insurance", badges: '<span class="age">4mo</span>', reason: '<span class="r-chip r-stale">getting stale</span>', meta: ["home/", "updated Mar 12"] },
+    ],
+  },
+  {
+    id: "inbox", title: "Inbox", kind: "folder", count: "5",
+    chips: ['<span class="chip on">folder: inbox/</span>', '<span class="chip ghost">+ filter</span>'], sort: "created ↓",
+    rows: [
+      { doc: "doc_401k", badges: '<span class="working-dot" title="agent filing"></span>', meta: ["filing…", "just now"] },
+      { doc: "th_rent", badges: '<span class="working-dot" title="agent working"></span>', meta: ["standalone", "1d ago"] },
+      { doc: "doc_podcast", meta: ["inbox/", "3w ago"] },
+      { doc: "doc_wifi", meta: ["inbox/", "1mo ago"] },
+      { doc: "doc_rentceiling", badges: '<span class="chip good" style="font-size:10px">agent created</span>', meta: ["→ finance/", "1d ago"] },
+    ],
+  },
+  {
+    id: "finance", title: "Finance", kind: "folder", count: "11",
+    chips: ['<span class="chip on">folder: finance/</span>', '<span class="chip">tag: housing</span>'], sort: "updated ↓",
+    rows: [
+      { doc: "doc_mortgage", badges: '<span class="unread">2</span>' },
+      { doc: "doc_rentceiling" },
+      { doc: "doc_cashflow", badges: '<span class="chip warn" style="font-size:10px">🔒 agent editing</span>' },
+      { doc: "doc_payoff" },
+      { doc: "doc_ips" },
+      { doc: "doc_brokerage" },
+      { doc: "doc_efund", badges: '<span class="age">3mo</span>' },
+      { doc: "todo_house" },
+      { doc: "doc_insurance", badges: '<span class="age">4mo</span>' },
+      { doc: "doc_criteria" },
+      { doc: "doc_taxchecklist", stale: true, badges: '<span class="age">stale · 8mo</span>' },
+    ],
+  },
+  {
+    id: "threads", title: "Open threads", kind: "view · pinned", count: "7",
+    chips: ['<span class="chip on">type: thread</span>', '<span class="chip on">status: open</span>'], sort: "last turn ↓",
+    rows: [
+      { doc: "th_rate", badges: '<span class="unread">1</span>', meta: ["on Mortgage options", "12m"] },
+      { doc: "th_carrier", badges: '<span class="needs-you">form</span>', meta: ["on Home insurance renewal", "2h"] },
+      { doc: "th_rent", badges: '<span class="working-dot"></span>', meta: ["standalone", "1d"] },
+      { doc: "th_efund", badges: '<span class="unread">1</span>', meta: ["on Emergency fund target", "1d"] },
+      { doc: "th_skilltone", meta: ["on skill: comment", "2d"] },
+      { doc: "th_split", meta: ["on Brokerage consolidation", "1w"] },
+      { doc: "th_pmi", badges: '<span class="chip" style="font-size:10px">resolved</span>', meta: ["on Mortgage options", "5d"] },
+    ],
+  },
+  {
+    id: "todos", title: "Todos", kind: "plugin", count: "3 lists",
+    chips: ['<span class="chip on">type: todo</span>', '<span class="chip">due soon</span>'], sort: "due ↑",
+    rows: [
+      { doc: "todo_week", badges: '<span class="needs-you">2 due</span>' },
+      { doc: "todo_house" },
+      { doc: "todo_maint", badges: '<span class="age">2mo</span>' },
+    ],
+  },
+  {
+    id: "system", title: "Skills & agents", kind: "view", count: "1 of 9",
+    chips: ['<span class="chip on">type: skill</span>', '<span class="chip">type: agent-def</span>'], sort: "updated ↓",
+    rows: [
+      { doc: "skill_comment", badges: '<span class="unread">1</span>', meta: [".claude/skills/", "2d ago"] },
+    ],
+  },
+];
+
+/* ═══════════════ RENDERING ═══════════════ */
+
+const $board = document.getElementById("board");
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+/* pending composer attachments, keyed by thread id (survives re-renders) */
+const PENDING_ATT = {};
+function attChipHTML(a, tid, i) {
+  return `<span class="att-chip">${a.img ? `<img src="${a.img}" alt="${esc(a.name)}"/>` : "📄"} ${esc(a.name)}<button data-rm-att="${tid}:${i}" title="Remove" aria-label="Remove attachment">✕</button></span>`;
+}
+function renderPending(tid) {
+  document.querySelectorAll(`[data-pending="${tid}"]`).forEach(el =>
+    el.innerHTML = (PENDING_ATT[tid] || []).map((a, i) => attChipHTML(a, tid, i)).join(""));
+}
+function addPendingFile(tid, file) {
+  PENDING_ATT[tid] = PENDING_ATT[tid] || [];
+  const entry = { name: file.name || "pasted-image.png" };
+  PENDING_ATT[tid].push(entry);
+  if (file.type && file.type.startsWith("image/")) {
+    const rd = new FileReader();
+    rd.onload = () => { entry.img = rd.result; renderPending(tid); };
+    rd.readAsDataURL(file);
+  }
+  renderPending(tid);
+  toast(`Attached ${entry.name} — bytes land in .corpus/attachments/<thread>/<turn>/ on send.`);
+}
+
+function renderRefs(text) {
+  return text.replace(/\[\[(\w+)\|([^\]]+)\]\]/g, (_, id, label) =>
+    `<a class="ref" data-open-doc="${id}">${label}</a>`);
+}
+
+function ageClass(doc) { return doc.age ? ` age-${doc.age}` : ""; }
+
+function rowHTML(colId, r) {
+  const d = DOCS[r.doc];
+  const meta = r.meta || [d.folder, d.updated];
+  const excerpt = d.excerpt || (d.type === "thread" ? threadExcerpt(d.thread) : "");
+  let badges = r.badges || "";
+  if (state.seen && state.seen[r.doc]) badges = badges.replace(/<span class="unread">[^<]*<\/span>/, "");
+  // a doc's aggregate unread clears only when ALL its threads have actually been seen
+  if (!d.thread) {
+    const tids = docThreads(r.doc);
+    if (tids.length && tids.every(t => state.seen[t])) badges = badges.replace(/<span class="unread">[^<]*<\/span>/, "");
+  }
+  const rth = d.thread ? THREADS[d.thread] : null;
+  if (rth && rth.answered) badges = badges.replace(/<span class="needs-you">[^<]*<\/span>/, "");
+  if (d.type === "todo" && d.items) {
+    const nDue = d.items.filter(i => i.due && !i.done).length;
+    badges = badges.replace(/<span class="needs-you">[^<]*<\/span>/, nDue ? `<span class="needs-you">${nDue} due</span>` : "");
+  }
+  r = { ...r, badges };
+  let extra = "";
+  if (r.reason) extra += `<div class="reason">${r.reason}</div>`;
+  if (d.type === "todo" && colId === "todos") {
+    extra += `<div class="todo-items">` + d.items.slice(0, 3).map(i =>
+      `<div class="t${i.done ? " done" : ""}"><span class="box">${i.done ? "☑" : "☐"}</span><span class="${i.done ? "done" : ""}">${esc(i.t)}</span></div>`).join("") + `</div>`;
+  }
+  if (r.stale) extra += `<div class="stale-actions"><button data-act="archive">Archive</button><button class="keep" data-act="keep">Still current</button><button class="keep" data-act="triage">@agent triage</button></div>`;
+  return `<div class="row${ageClass(d)}" data-row-doc="${r.doc}" role="button" tabindex="0">
+    <div class="row-top"><span class="type-glyph">${d.type}</span><span class="row-title">${esc(d.title)}</span>
+      <span class="row-badges">${r.badges || ""}</span></div>
+    ${excerpt ? `<div class="row-excerpt">${esc(excerpt)}</div>` : ""}
+    ${extra}
+    ${meta && !r.stale ? `<div class="row-meta"><span>${esc(meta[0] || "")}</span><span class="age">${esc(meta[1] || "")}</span></div>` : ""}
+  </div>`;
+}
+
+function threadExcerpt(tid) {
+  const th = THREADS[tid];
+  const last = th.turns[th.turns.length - 1];
+  return `${last.who}: ${last.body.replace(/\[\[(\w+)\|([^\]]+)\]\]/g, "$2")}`;
+}
+
+function threadCardHTML(tid, opts = {}) {
+  const th = THREADS[tid];
+  const resolved = th.status === "resolved";
+  const turns = th.turns.map((t, i) => turnHTML(t, tid, i)).join("");
+  const formHTML = th.form && !th.answered ? `
+    <div class="form-comment" data-form="${tid}">
+      <label class="form-opt" data-opt="Lemonade"><input type="radio" name="f-${tid}" hidden> Lemonade — $500 deductible<span class="price">$1,840/yr</span></label>
+      <label class="form-opt" data-opt="State Farm"><input type="radio" name="f-${tid}" hidden> State Farm — $1,000 deductible<span class="price">$1,975/yr</span></label>
+      <label class="form-opt" data-opt="Chubb"><input type="radio" name="f-${tid}" hidden> Chubb — $500 ded. + extended replacement<span class="price">$2,410/yr</span></label>
+      <button class="form-submit" data-submit-form="${tid}">Answer</button>
+    </div>` : "";
+  const context = opts.context && th.on ? `<div class="t-context">on <a class="ref" data-open-doc="${th.on}">${esc(DOCS[th.on].title)}</a>${th.quote ? ` · at "${esc(th.quote)}"` : " · whole document"}</div>`
+    : opts.context && th.standalone ? `<div class="t-context">standalone thread · th_${tid.slice(3)}</div>` : "";
+  const lastWho = th.turns.length ? th.turns[th.turns.length - 1].who : null;
+  const chipLabel = `💬 ${th.turns.length}${lastWho ? ` · ${lastWho}` : " · new"}${resolved ? " · resolved" : ""}`;
+  const card = `<div class="thread-card${resolved ? " resolved" : ""}" data-thread="${tid}">
+    <div class="t-head">${th.quote ? `<span class="t-quote">"${esc(th.quote)}"</span>` : `<span class="t-quote">${th.standalone ? "standalone" : "whole-document thread"}</span>`}
+      <span class="chip t-status">${th.status}</span><button class="t-resolve" data-resolve="${tid}">${resolved ? "reopen" : "✓ resolve"}</button>${opts.bare ? "" : `<button class="t-collapse" data-collapse-slot title="Collapse">–</button>`}</div>
+    ${context}
+    <div class="turns">${turns}</div>
+    ${th.awaiting ? `<div class="working"><span class="working-dot"></span> agent is working — 1d, longer than usual</div>` : ""}
+    ${formHTML}
+    <div class="composer" data-dropzone="${tid}">
+      <div class="pending-atts" data-pending="${tid}">${(PENDING_ATT[tid] || []).map((a, i) => attChipHTML(a, tid, i)).join("")}</div>
+      <input placeholder="Reply — @ route · / skill · [[ link · paste or drop files" aria-label="Reply" data-composer="${tid}"/>
+      <div class="composer-foot"><button class="clip" data-attach="${tid}" title="Attach files from disk">📎</button><input type="file" multiple hidden data-attach-input="${tid}"/><span class="toggle on" data-toggle-agent>◉ ask agent</span><span>${resolved ? "reopens on reply" : "thread stays open"}</span><button class="send" data-send="${tid}">Reply ↵</button></div>
+    </div>
+  </div>`;
+  if (opts.bare) return card;
+  return `<div class="thread-slot" data-slot-thread="${tid}"><button class="t-chip${resolved ? " resolved-chip" : ""}" data-toggle-slot="${tid}">${chipLabel}</button>${card}</div>`;
+}
+
+function docThreads(docId) {
+  const d = DOCS[docId];
+  if (!d || !d.body) return [];
+  return d.body.filter(b => b.startsWith("thread:")).map(b => b.slice(7));
+}
+
+function turnHTML(t, tid, idx) {
+  const atts = (t.attachments || []).map(a =>
+    a.img ? `<img class="turn-att-img" src="${a.img}" alt="${esc(a.name)}"/>` : `<span class="att-file">📄 ${esc(a.name)}</span>`).join(" ");
+  const del = tid !== undefined ? `<button class="turn-del" data-del-turn="${tid}:${idx}" title="Delete comment (user-only)">✕</button>` : "";
+  return `<div class="turn">
+    <div class="turn-who"><span class="who${t.who === "agent" ? " agent" : ""}">${t.who}</span><span>${t.when || "now"}</span>${del}</div>
+    <div class="turn-body">${renderRefs(esc(t.body))}</div>
+    ${atts}
+    ${t.trace ? `<div class="turn-trace">${esc(t.trace)}</div>` : ""}
+  </div>`;
+}
+
+function bodyHTML(doc) {
+  const ed = doc.locked ? "" : ` contenteditable="true" spellcheck="false"`;
+  return doc.body.map(block => {
+    const [kind, ...rest] = block.split(":");
+    const content = rest.join(":");
+    if (kind === "h2") return `<h2${ed}>${esc(content)}</h2>`;
+    if (kind === "ul") return `<ul${ed}>${content.split("|").map(li => `<li>${renderRefs(esc(li))}</li>`).join("")}</ul>`;
+    if (kind === "thread") return threadCardHTML(content);
+    // paragraph: process anchors then refs
+    let html = esc(content).replace(/\{a:(\w+)\}(.+?)\{\/a\}/g, (_, tid, inner) => {
+      const th = THREADS[tid];
+      const resolved = th.status === "resolved";
+      return `<span class="anchor-hl${resolved ? " resolved" : ""}" data-goto-thread="${tid}">${inner}<span class="anchor-pip">${th.turns.length}</span></span>`;
+    });
+    return `<p${ed}>${renderRefs(html)}</p>`;
+  }).join("");
+}
+
+function lockBannerHTML(docId) {
+  const d = DOCS[docId];
+  if (!d.locked) return "";
+  return `<div class="lock-banner"><span class="working-dot"></span><span><b>agent is editing</b> — ${esc(d.locked.note)} · document is read-only</span><button data-force-unlock="${docId}">Force unlock</button></div>`;
+}
+
+function readerHTML(docId) {
+  const d = DOCS[docId];
+  const fm = `<div class="fm-chips">
+    <span class="chip">${d.type}</span><span class="chip">${esc(d.folder || "")}</span>
+    ${(d.tags || []).map(t => `<span class="chip">#${t}</span>`).join("")}
+    <span class="chip on">${d.status}</span>
+    ${d.updated ? `<span class="chip">updated ${esc(d.updated)}</span>` : ""}
+    ${d.gdoc ? `<span class="chip ${d.gdoc === "in sync" ? "good" : "warn"}" title="Google Doc publish state">gdoc · ${d.gdoc}</span>` : ""}
+  </div>`;
+
+  if (d.type === "thread") {
+    return fm + `<h1 class="doc-title">${esc(d.title)}</h1>
+      <div class="doc-body">${threadCardHTML(d.thread, { context: true, bare: true })}</div>`;
+  }
+  if (d.type === "todo") {
+    const open = d.items.filter(i => !i.done).length, done = d.items.filter(i => i.done).length;
+    return fm + `
+      <h1 class="doc-title">${esc(d.title)}</h1>
+      <div class="doc-panel" data-panel="${docId}"><div class="stat"><b data-stat-open>${open}</b><span>open</span></div>
+        <div class="stat"><b data-stat-done>${done}</b><span>done</span></div>
+        <span class="chip plugin-tag">plugin: todos</span></div>
+      <div class="check-list">${d.items.map((i, idx) =>
+        `<div class="check${i.done ? " done" : ""}" data-check="${docId}:${idx}"><span class="box">${i.done ? "☑" : "☐"}</span><span>${esc(i.t)}</span>${i.due ? `<span class="due">${esc(i.due)}</span>` : ""}</div>`).join("")}</div>`;
+  }
+  if (d.type === "skill") {
+    return fm + lockBannerHTML(docId) + `<h1 class="doc-title" contenteditable="true" spellcheck="false">${esc(d.title)}</h1>
+      <div class="skill-fm"><b>name:</b> ${d.skillMeta.name} · <b>description:</b> ${esc(d.skillMeta.description)}<br><b>rollback:</b> corpus skill rollback ${d.skillMeta.name} <span class="chip good" style="margin-left:6px">last-known-good ✓</span></div>
+      <div class="doc-body">${bodyHTML(d)}</div>` + backlinksHTML(d);
+  }
+  const edT = d.locked ? "" : ` contenteditable="true" spellcheck="false"`;
+  return fm + lockBannerHTML(docId) + `<h1 class="doc-title"${edT}>${esc(d.title)}</h1><div class="doc-body">${bodyHTML(d)}</div>` + backlinksHTML(d);
+}
+
+function backlinksHTML(d) {
+  if (!d.backlinks || !d.backlinks.length) return "";
+  return `<div class="backlinks"><h3>Referenced by</h3>` + d.backlinks.map(id =>
+    `<div class="backlink"><span class="type-glyph">${DOCS[id].type}</span><a class="ref" data-open-doc="${id}">${esc(DOCS[id].title)}</a></div>`).join("") + `</div>`;
+}
+
+function colHTML(col) {
+  return `<section class="col" id="col-${col.id}" aria-label="${col.title} list">
+    <div class="col-head">
+      <div class="col-title-row"><span class="col-title">${col.title}</span><span class="col-kind">${col.kind}</span>
+        <span class="col-count">${col.count}</span><button class="col-add" data-col-add aria-label="New document in this list" title="New document in this list">＋</button><button class="col-menu" aria-label="List options">⋯</button></div>
+      <div class="chips">${col.chips.join("")}<span class="sort">${col.sort}</span></div>
+    </div>
+    <div class="col-list">${visibleRows(col).map(r => rowHTML(col.id, r)).join("")}</div>
+    <div class="reader">
+      <div class="reader-head"><button class="back" data-close-reader>‹ ${col.title}</button><span class="reader-id"></span><span class="save-chip" data-save-chip></span><button class="comments-btn" data-comments hidden>💬</button><button class="expand" data-doc-menu aria-label="Document actions" title="Document actions">⋯</button><button class="expand" data-expand aria-label="Read full screen" title="Read full screen">⤢</button></div>
+      <div class="reader-scroll"></div>
+    </div>
+  </section>`;
+}
+
+/* ═══════════════ STATE (sticky) ═══════════════ */
+
+const state = JSON.parse(localStorage.getItem("corpus-mock") || "{}");
+state.open = state.open || {};
+state.nav = state.nav || {};
+state.focusNav = state.focusNav || [];
+state.seen = state.seen || {};
+state.addedCols = state.addedCols || [];
+// migrate old single-doc state to nav stacks
+for (const [colId, docId] of Object.entries(state.open)) {
+  if (docId && !(state.nav[colId] || []).length) state.nav[colId] = [{ d: docId, y: 0 }];
+}
+if (state.focus && !state.focusNav.length) state.focusNav = [{ d: state.focus, y: 0 }];
+
+const visibleRows = (col) => col.rows.filter(r =>
+  !(r.clearOn === "seen" && state.seen[r.doc]) &&
+  !(r.clearOn === "form" && (THREADS[DOCS[r.doc]?.thread]?.answered)) &&
+  !(r.clearOn === "due" && !(DOCS[r.doc]?.items || []).some(i => i.due && !i.done)));
+
+$board.innerHTML = COLUMNS.map(colHTML).join("") +
+  `<button class="col ghost-col"><span class="plus">＋</span><p>New list — a folder, a view, or any filter</p></button>`;
+
+function saveState() { localStorage.setItem("corpus-mock", JSON.stringify(state)); }
+
+const colTitle = (colId) => (COLUMNS.find(c => c.id === colId) || {}).title || "List";
+
+function openDoc(colId, docId, opts = {}) {
+  const $col = document.getElementById("col-" + colId);
+  if (!$col || !DOCS[docId]) return;
+  const stack = state.nav[colId] = state.nav[colId] || [];
+  const scrollEl = $col.querySelector(".reader-scroll");
+  if (!opts.restore) {
+    const cur = stack[stack.length - 1];
+    if (cur && state.open[colId]) cur.y = scrollEl.scrollTop;   // remember where we were
+    if (!cur || cur.d !== docId) stack.push({ d: docId, y: 0 });
+  }
+  $col.classList.add("reading");
+  scrollEl.innerHTML = readerHTML(docId);
+  scrollEl.scrollTop = opts.restore ? (opts.y || 0) : 0;
+  $col.querySelector(".reader-id").textContent = docId + " · git ✓";
+  updateCommentsBtn($col, docId);
+  const prev = stack[stack.length - 2];
+  const backBtn = $col.querySelector("[data-close-reader]");
+  backBtn.innerHTML = prev ? `‹ ${esc(DOCS[prev.d].title)}` : `‹ ${colTitle(colId)}`;
+  backBtn.title = prev ? "Back (shift-click: straight to list)" : "Back to list";
+  state.open[colId] = docId;
+  // read rule: only displayed content marks seen — the doc itself (a thread doc shows
+  // its turns), NOT its collapsed-chip threads
+  markSeen([docId]);
+  saveState();
+}
+
+function markSeen(ids) {
+  const fresh = ids.filter(id => id && !state.seen[id]);
+  if (!fresh.length) return;
+  fresh.forEach(id => { state.seen[id] = true; });
+  renderAllLists();
+  saveState();
+}
+
+function goBack(colId, toList = false) {
+  const stack = state.nav[colId] || [];
+  if (toList) stack.length = 0; else stack.pop();
+  const top = stack[stack.length - 1];
+  if (top) { openDoc(colId, top.d, { restore: true, y: top.y }); return; }
+  const $col = document.getElementById("col-" + colId);
+  $col.classList.remove("reading");
+  state.open[colId] = null;
+  saveState();
+}
+
+function updateCommentsBtn(scope, docId) {
+  const btn = scope.querySelector("[data-comments]");
+  if (!btn) return;
+  const tids = docThreads(docId);
+  btn.hidden = !tids.length;
+  btn.textContent = `💬 ${tids.length}`;
+}
+
+// find the column a doc "lives in" (first column listing it; fallback: finance)
+function homeColumn(docId) {
+  for (const col of COLUMNS) if (col.rows.some(r => r.doc === docId)) return col.id;
+  return "finance";
+}
+
+/* ── Focus (full-screen) mode ── */
+const $focus = document.getElementById("focus-overlay");
+function openFocus(docId, opts = {}) {
+  if (!docId || !DOCS[docId]) return;
+  const stack = state.focusNav = state.focusNav || [];
+  const scrollEl = document.getElementById("focus-scroll");
+  if (!opts.restore) {
+    const cur = stack[stack.length - 1];
+    if (cur && $focus.classList.contains("open")) cur.y = scrollEl.scrollTop;
+    if (!cur || cur.d !== docId) stack.push({ d: docId, y: 0 });
+  }
+  const inner = document.getElementById("focus-inner");
+  inner.className = "focus-inner";
+  inner.innerHTML = readerHTML(docId);
+  document.getElementById("focus-id").textContent = docId + " · git ✓";
+  $focus.classList.add("open");
+  scrollEl.scrollTop = opts.restore ? (opts.y || 0) : 0;
+  updateCommentsBtn($focus, docId);
+  const prev = stack[stack.length - 2];
+  const fb = document.getElementById("focus-back");
+  fb.hidden = !prev;
+  if (prev) fb.innerHTML = `‹ ${esc(DOCS[prev.d].title)}`;
+  state.focus = docId;
+  saveState();
+  requestAnimationFrame(maybeMargin);
+}
+function focusBack() {
+  const stack = state.focusNav || [];
+  stack.pop();
+  const top = stack[stack.length - 1];
+  if (top) openFocus(top.d, { restore: true, y: top.y });
+  else closeFocus();
+}
+
+/* Docs-style margin threads in focus mode */
+function maybeMargin() {
+  const d = DOCS[state.focus];
+  const inner = document.getElementById("focus-inner");
+  if (!inner || !d || (d.type !== "note" && d.type !== "skill")) return;
+  layoutMargin(inner);
+  // focus margin displays thread content → those threads are seen
+  markSeen(docThreads(state.focus));
+}
+function layoutMargin(inner) {
+  const cards = [...inner.querySelectorAll(".thread-card")];
+  if (!cards.length) return;
+  let margin = inner.querySelector(".focus-margin");
+  if (!margin) {
+    const main = document.createElement("div");
+    while (inner.firstChild) main.appendChild(inner.firstChild);
+    inner.appendChild(main);
+    margin = document.createElement("div");
+    margin.className = "focus-margin";
+    inner.appendChild(margin);
+    inner.classList.add("with-margin");
+  }
+  const main = inner.firstElementChild;
+  cards.forEach(c => margin.appendChild(c));
+  let lastBottom = 0;
+  cards
+    .map(c => {
+      const anchor = main.querySelector(`[data-goto-thread="${c.dataset.thread}"]`);
+      const top = anchor ? anchor.getBoundingClientRect().top - main.getBoundingClientRect().top : lastBottom;
+      return { c, top };
+    })
+    .sort((a, b) => a.top - b.top)
+    .forEach(({ c, top }) => {
+      const y = Math.max(top, lastBottom);
+      c.style.top = y + "px";
+      lastBottom = y + c.offsetHeight + 12;
+    });
+  margin.style.minHeight = lastBottom + "px";
+}
+
+/* ── Document creation ── */
+const COL_CREATE = {
+  attention: { kind: "note", folder: "docs/" },
+  inbox: { kind: "note", folder: "inbox/" },
+  finance: { kind: "note", folder: "finance/" },
+  threads: { kind: "ask" },
+  todos: { kind: "todo", folder: "todos/" },
+  system: { kind: "none" },
+};
+let newDocN = 0, newAskN = 0, newCapN = 0;
+
+function renderColList(colId) {
+  const col = COLUMNS.find(c => c.id === colId);
+  const $col = document.getElementById("col-" + colId);
+  if (!col || !$col) return;
+  const rows = visibleRows(col);
+  $col.querySelector(".col-list").innerHTML = rows.map(r => rowHTML(col.id, r)).join("");
+  $col.querySelector(".col-count").textContent = rows.length;
+}
+function renderAllLists() { COLUMNS.forEach(c => renderColList(c.id)); }
+
+function createNote(title, colId, folder) {
+  const id = "doc_new" + (++newDocN);
+  DOCS[id] = { type: "note", title: title || "Untitled", folder, tags: [], status: "open", updated: "just now", excerpt: "", body: ["p:"], backlinks: [] };
+  const col = COLUMNS.find(c => c.id === colId);
+  col.rows.unshift({ doc: id, meta: [folder, "just now"] });
+  renderColList(colId);
+  openDoc(colId, id);
+  requestAnimationFrame(() => {
+    const h1 = document.querySelector(`#col-${colId} .doc-title`);
+    if (h1) { h1.focus(); document.execCommand("selectAll", false, null); }
+  });
+  toast(`Created in ${folder} — no template for type "note", starting empty. Title it and just type (autosave).`);
+  return id;
+}
+
+function createTodoDoc(colId, folder) {
+  const id = "doc_new" + (++newDocN);
+  DOCS[id] = { type: "todo", title: "Untitled list", folder, tags: [], status: "open", updated: "just now", excerpt: "", items: [{ t: "First item — click to toggle", done: false }] };
+  const col = COLUMNS.find(c => c.id === colId);
+  col.rows.unshift({ doc: id, meta: [folder, "just now"] });
+  renderColList(colId);
+  openDoc(colId, id);
+  toast(`Todo document created from the todos plugin's template.`);
+}
+
+function doAsk(text) {
+  const tid = "th_ask" + (++newAskN);
+  const atts = PENDING_ATT.compose || [];
+  delete PENDING_ATT.compose;
+  renderPending("compose");
+  THREADS[tid] = {
+    quote: null, on: null, status: "open", standalone: true,
+    turns: [{ who: "user", when: "now", body: text, attachments: atts.length ? atts : undefined }],
+    reply: "Here's my take — and I've noted the durable parts. (stub: the real agent researches, replies, and may create or link documents, then gives this thread a proper title)",
+  };
+  DOCS[tid] = { type: "thread", thread: tid, title: text.slice(0, 52) + (text.length > 52 ? "…" : ""), folder: "standalone", status: "open", updated: "now", excerpt: "", tags: [] };
+  COLUMNS.find(c => c.id === "inbox").rows.unshift({ doc: tid, badges: '<span class="working-dot" title="agent working"></span>', meta: ["standalone", "now"] });
+  renderColList("inbox");
+  openDoc("inbox", tid);
+  simulateAgent(tid);
+  toast("Standalone thread created — the conversation is the document.");
+}
+
+function doCapture(text) {
+  const id = "doc_cap" + (++newCapN);
+  const tid = "th_cap" + newCapN;
+  const atts = PENDING_ATT.compose || [];
+  delete PENDING_ATT.compose;
+  renderPending("compose");
+  THREADS[tid] = {
+    quote: null, on: id, status: "open",
+    turns: [{ who: "user", when: "now", body: "@agent file this properly.", attachments: atts.length ? atts : undefined }],
+    reply: "Filed (stub): I'd retitle this descriptively, move it out of inbox/ to the right folder, tag it, and link related docs — per the /comment skill.",
+  };
+  DOCS[id] = {
+    type: "note", title: text.split(/\s+/).slice(0, 6).join(" ") + (text.split(/\s+/).length > 6 ? "…" : ""),
+    folder: "inbox/", tags: [], status: "open", updated: "just now", filing: true,
+    excerpt: text.slice(0, 90), body: ["p:" + text, "thread:" + tid], backlinks: [],
+  };
+  COLUMNS.find(c => c.id === "inbox").rows.unshift({ doc: id, badges: '<span class="working-dot" title="agent filing"></span>', meta: ["filing…", "just now"] });
+  renderColList("inbox");
+  openDoc("inbox", id);
+  simulateAgent(tid);
+  toast("Captured to inbox/ — filing thread opened, agent will retitle/move/tag.");
+}
+
+/* ── Console: jobs + logs + HALT ── */
+const JOBS = [
+  { id: "evt_9f2", status: "running", docId: "th_carrier", title: "comment.created · Insurance carrier choice", started: "09:12", log: ["09:12:01 claimed evt_9f2 (comment.created th_carrier)", "09:12:02 read thread + Home insurance renewal", "09:12:05 gathered three quotes from the doc table", "09:12:09 drafting carrier-choice form…"] },
+  { id: "evt_8d1", status: "done", docId: "doc_401k", title: "capture.filing · Idea: consolidate 401k accounts", started: "09:14", log: ["09:14:11 claimed evt_8d1 (filing)", "09:14:12 read capture text", "09:14:15 retitle → '401k consolidation'", "09:14:15 move inbox/ → finance/", "09:14:16 corpus thread reply --from agent", "09:14:16 complete · committed 41c9f2e"] },
+  { id: "evt_7aa", status: "failed", docId: "th_split", title: "comment.created · Re: brokerage consolidation", started: "08:41", log: ["08:41:03 claimed evt_7aa", "08:41:20 spawning subagent (worktree)", "08:44:10 ERR subagent timeout after 3m — no wake-back", "08:44:11 fail evt_7aa · manual retry required"] },
+];
+let halted = false, jobN = 0;
+const HALT_QUEUE = [];
+
+let selectedJobId = null;
+function renderConsole() {
+  const n = (s) => JOBS.filter(j => j.status === s).length;
+  document.getElementById("console-counts").innerHTML =
+    `${n("running")} running${n("pending") ? ` · ${n("pending")} queued` : ""} · ${n("done")} done · <span class="c-failed">${n("failed")} failed</span>`;
+  if (!JOBS.find(j => j.id === selectedJobId)) selectedJobId = JOBS[0]?.id || null;
+  const j = JOBS.find(x => x.id === selectedJobId);
+  const detail = !j ? `<div class="job-empty">No jobs yet — agent activity will stream here.</div>` : `
+    <div class="job-detail-head">
+      <span class="job-dot ${j.status}"></span>
+      <span class="job-title">${esc(j.title)}</span>
+      ${j.docId && DOCS[j.docId] ? `<button class="ref" data-job-open="${j.docId}">↗ open</button>` : ""}
+      <span class="job-meta">${j.status} · started ${j.started} · ${j.id}</span>
+      ${j.status === "failed" ? `<button data-job-retry="${j.id}">Retry</button><button data-job-abandon="${j.id}">Abandon</button>` : ""}
+    </div>
+    <div class="job-log-lines">${j.log.map(l => `<div class="${l.includes("ERR") ? "err" : ""}">${esc(l)}</div>`).join("")}</div>`;
+  document.getElementById("console-body").innerHTML = `
+    <div class="job-list">${JOBS.map(x => `
+      <button class="job${x.id === selectedJobId ? " sel" : ""}" data-job-sel="${x.id}">
+        <span class="job-dot ${x.status}"></span>
+        <span class="job-title">${esc(x.title)}</span>
+        <span class="job-meta">${x.status}</span>
+      </button>`).join("")}</div>
+    <div class="job-detail">${detail}</div>`;
+  const lines = document.querySelector(".job-log-lines");
+  if (lines) lines.scrollTop = lines.scrollHeight;
+}
+
+function startJob(title, docId) {
+  const job = { id: "evt_x" + (++jobN), status: "running", started: "now", title, docId, log: ["claimed (comment.created)"] };
+  JOBS.unshift(job);
+  selectedJobId = job.id;
+  renderConsole();
+  setTimeout(() => { job.log.push("read thread + context docs"); renderConsole(); }, 700);
+  setTimeout(() => { job.log.push("corpus thread reply --from agent"); renderConsole(); }, 1600);
+  return job;
+}
+function finishJob(job) {
+  job.status = "done";
+  job.log.push("complete · committed " + Math.random().toString(16).slice(2, 9));
+  renderConsole();
+}
+
+document.getElementById("console").addEventListener("click", (e) => {
+  if (e.target.closest("#halt-btn")) {
+    halted = !halted;
+    const b = document.getElementById("halt-btn");
+    b.classList.toggle("halted", halted);
+    b.textContent = halted ? "HALT ●" : "HALT ○";
+    setAgentPill(halted ? "halted" : "idle · queue 0", false);
+    toast(halted ? "HALT set — the orchestrator parks; nothing is claimed until resume." : "Resumed — queue processing continues.");
+    if (!halted && HALT_QUEUE.length) {
+      const deferred = HALT_QUEUE.splice(0);
+      deferred.forEach(({ job, run }) => { JOBS.splice(JOBS.indexOf(job), 1); run(); });
+      renderConsole();
+    }
+    return;
+  }
+  const jo = e.target.closest("[data-job-open]");
+  if (jo) {
+    const docId = jo.dataset.jobOpen;
+    if (!DOCS[docId]) { toast("That document no longer exists."); return; }
+    const colId = homeColumn(docId);
+    openDoc(colId, docId);
+    const $c = document.getElementById("col-" + colId);
+    $c.scrollIntoView({ behavior: "smooth", inline: "center" });
+    $c.classList.add("flash");
+    setTimeout(() => $c.classList.remove("flash"), 1500);
+    return;
+  }
+  const sel = e.target.closest("[data-job-sel]");
+  if (sel) { selectedJobId = sel.dataset.jobSel; renderConsole(); return; }
+  const r = e.target.closest("[data-job-retry]");
+  if (r) {
+    const j = JOBS.find(x => x.id === r.dataset.jobRetry);
+    j.status = "running"; j.log.push("re-queued by user"); renderConsole();
+    setTimeout(() => finishJob(j), 2600);
+    toast("Event re-queued.");
+    return;
+  }
+  const a = e.target.closest("[data-job-abandon]");
+  if (a) { JOBS.splice(JOBS.findIndex(x => x.id === a.dataset.jobAbandon), 1); renderConsole(); toast("Event abandoned — moved to queue/abandoned/."); return; }
+  if (e.target.closest("#console-strip")) {
+    const c = document.getElementById("console");
+    c.classList.toggle("open");
+    state.console = c.classList.contains("open");
+    saveState();
+  }
+});
+
+/* console height: drag the top edge */
+const consoleResizer = document.getElementById("console-resizer");
+const consoleBody = document.getElementById("console-body");
+let rzStart = null;
+consoleResizer.addEventListener("mousedown", (e) => {
+  rzStart = { y: e.clientY, h: consoleBody.offsetHeight };
+  consoleResizer.classList.add("dragging");
+  e.preventDefault();
+});
+document.addEventListener("mousemove", (e) => {
+  if (!rzStart) return;
+  const h = Math.max(120, Math.min(window.innerHeight * 0.6, rzStart.h + (rzStart.y - e.clientY)));
+  consoleBody.style.height = h + "px";
+});
+document.addEventListener("mouseup", () => {
+  if (!rzStart) return;
+  rzStart = null;
+  consoleResizer.classList.remove("dragging");
+  state.consoleH = consoleBody.offsetHeight;
+  saveState();
+});
+
+function archiveDocById(docId) {
+  const d = DOCS[docId];
+  if (!d) return;
+  d.status = "archived";
+  COLUMNS.forEach(c => { c.rows = c.rows.filter(r => r.doc !== docId); });
+  renderAllLists();
+  for (const [colId, cur] of Object.entries(state.open)) if (cur === docId) goBack(colId, true);
+  if (state.focus === docId) closeFocus();
+  toast(`Archived "${d.title}" — committed (git ✓); the archived chip reveals it.`);
+}
+
+/* thread deletion cascade: drop the thread, its anchor in the parent, and every trace */
+function removeThreadEntirely(tid) {
+  const th = THREADS[tid];
+  if (!th) return;
+  const parent = th.on ? DOCS[th.on] : null;
+  if (parent && parent.body) {
+    parent.body = parent.body
+      .filter(b => b !== "thread:" + tid)
+      .map(b => b.replace(new RegExp("\\{a:" + tid + "\\}(.*?)\\{\\/a\\}", "g"), "$1"));
+  }
+  delete THREADS[tid];
+  if (DOCS[tid]) delete DOCS[tid];
+  COLUMNS.forEach(c => { c.rows = c.rows.filter(r => r.doc !== tid); });
+  // DOM-only traces (selection-created threads): unwrap highlight, drop card
+  document.querySelectorAll(`[data-goto-thread="${tid}"]`).forEach(span => {
+    span.querySelector(".anchor-pip")?.remove();
+    span.replaceWith(...span.childNodes);
+  });
+  document.querySelectorAll(`.thread-card[data-thread="${tid}"]`).forEach(card => (card.closest(".thread-slot") || card).remove());
+  // close any reader showing the thread itself, then re-render everything
+  for (const [colId, cur] of Object.entries(state.open)) if (cur === tid) goBack(colId, true);
+  if (state.focus === tid) closeFocus();
+  refreshReaders();
+  renderAllLists();
+  for (const [colId, cur] of Object.entries(state.open)) {
+    const $c = document.getElementById("col-" + colId);
+    if (cur && $c) updateCommentsBtn($c, cur);
+  }
+  if (state.focus) updateCommentsBtn($focus, state.focus);
+}
+
+/* ── Doc menu (⋯: still current / resolve / archive / delete) ── */
+function toggleDocMenu(btn) {
+  const scope = btn.closest("#focus-overlay") || btn.closest(".col");
+  const docId = scope.id === "focus-overlay" ? state.focus : state.open[scope.id.replace("col-", "")];
+  const d = DOCS[docId];
+  if (!d) return;
+  const head = btn.parentElement;
+  let pop = head.querySelector(".comments-pop[data-dm-pop]");
+  if (!pop) { pop = document.createElement("div"); pop.className = "comments-pop"; pop.dataset.dmPop = "1"; head.appendChild(pop); }
+  if (pop.classList.contains("open")) { pop.classList.remove("open"); return; }
+  const isThread = d.type === "thread";
+  pop.innerHTML = [
+    `<button class="cp-item" data-dm-act="review" data-dm-doc="${docId}"><div class="cp-quote">Still current</div><div class="cp-meta">sets reviewed: now — resets staleness</div></button>`,
+    isThread ? `<button class="cp-item" data-dm-act="resolve" data-dm-doc="${docId}"><div class="cp-quote">${THREADS[d.thread].status === "resolved" ? "Reopen" : "Resolve"}</div><div class="cp-meta">status flip, committed</div></button>` : "",
+    `<button class="cp-item" data-dm-act="archive" data-dm-doc="${docId}"><div class="cp-quote">Archive</div><div class="cp-meta">reversible — hidden from default lists</div></button>`,
+    d.type === "note" ? `<button class="cp-item" data-dm-act="gcopy" data-dm-doc="${docId}"><div class="cp-quote">Copy for Google Docs</div><div class="cp-meta">rich HTML via the style map — paste keeps formatting</div></button>` : "",
+    d.type === "note" ? `<button class="cp-item" data-dm-act="gpush" data-dm-doc="${docId}"><div class="cp-quote">Push update to Google Doc…</div><div class="cp-meta">user-only diff sync — untouched Doc comments survive</div></button>` : "",
+    `<button class="cp-item" data-dm-act="delete" data-dm-doc="${docId}"><div class="cp-quote" style="color:var(--signal)">Delete…</div><div class="cp-meta">user-only · click twice to confirm</div></button>`,
+  ].join("");
+  pop.classList.add("open");
+}
+function docMenuAction(el) {
+  const act = el.dataset.dmAct, docId = el.dataset.dmDoc, d = DOCS[docId];
+  if (!d) return;
+  if (act === "delete" && !el.dataset.armed) {
+    el.dataset.armed = "1";
+    el.querySelector(".cp-quote").textContent = "Really delete? Click again";
+    el.querySelector(".cp-meta").textContent = "permanent · git keeps history · its threads become orphaned records";
+    return;
+  }
+  el.closest(".comments-pop").classList.remove("open");
+  const closeEverywhere = () => {
+    COLUMNS.forEach(c => { c.rows = c.rows.filter(r => r.doc !== docId); });
+    renderAllLists();
+    for (const [colId, cur] of Object.entries(state.open)) if (cur === docId) goBack(colId, true);
+    if (state.focus === docId) closeFocus();
+  };
+  if (act === "archive") { archiveDocById(docId); }
+  else if (act === "delete") {
+    if (d.type === "thread") { removeThreadEntirely(d.thread); toast(`Deleted thread "${d.title}" — anchor removed from its parent; git retains history.`); }
+    else { closeEverywhere(); delete DOCS[docId]; toast(`Deleted "${d.title}" — user-only action; git retains history.`); }
+  }
+  else if (act === "gcopy") {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = bodyHTML(d);
+    tmp.querySelectorAll(".thread-slot, .thread-card").forEach(n => n.remove());
+    tmp.querySelectorAll(".anchor-pip").forEach(n => n.remove());
+    tmp.querySelectorAll(".anchor-hl").forEach(n => n.replaceWith(...n.childNodes));
+    tmp.querySelectorAll("p, li").forEach(n => n.setAttribute("style", "font-family:Georgia,serif;font-size:11pt;line-height:1.5;"));
+    tmp.querySelectorAll("h2").forEach(n => n.setAttribute("style", "font-family:Georgia,serif;font-size:14pt;font-weight:700;"));
+    const html = `<h1 style="font-family:Georgia,serif;font-size:20pt;font-weight:700;">${esc(d.title)}</h1>` + tmp.innerHTML;
+    const write = navigator.clipboard && navigator.clipboard.write
+      ? navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([tmp.textContent], { type: "text/plain" }),
+        })])
+      : Promise.reject();
+    write.then(() => toast(`Copied "${d.title}" as rich HTML (style map applied) — paste into a Google Doc and formatting holds.`))
+      .catch(() => toast("Clipboard write blocked in this context — in the real app this copies styled HTML."));
+  }
+  else if (act === "gpush") {
+    toast(`Diff preview: 2 sections changed · 1 Doc comment sits inside a changed range and would detach. Push is user-only — the bridge applies minimal ranged edits; all other Doc comments survive.`);
+    if (d.gdoc) { d.gdoc = "in sync"; refreshReaders(); }
+  }
+  else if (act === "review") { delete d.age; renderAllLists(); toast(`reviewed: now — "${d.title}" freshness reset (committed).`); }
+  else if (act === "resolve") { const th = THREADS[d.thread]; th.status = th.status === "resolved" ? "open" : "resolved"; refreshReaders(); renderAllLists(); toast(th.status === "resolved" ? "Thread resolved." : "Thread reopened."); }
+}
+
+/* ── New list picker + extra column defs ── */
+const EXTRA_COLS = {
+  home: { id: "home", title: "Home", kind: "folder", count: "3", chips: ['<span class="chip on">folder: home/</span>'], sort: "updated ↓", rows: [{ doc: "doc_insurance", badges: '<span class="age">4mo</span>' }, { doc: "doc_criteria" }, { doc: "todo_maint", badges: '<span class="age">2mo</span>' }] },
+  resolved: { id: "resolved", title: "Resolved", kind: "view", count: "1", chips: ['<span class="chip on">type: thread</span>', '<span class="chip on">status: resolved</span>'], sort: "resolved ↓", rows: [{ doc: "th_pmi", meta: ["on Mortgage options", "5d"] }] },
+  searchm: { id: "searchm", title: "Search: mortgage", kind: "view · saved search", count: "4", chips: ['<span class="chip on">q: mortgage</span>', '<span class="chip">folder: finance/</span>'], sort: "relevance", rows: [{ doc: "doc_mortgage" }, { doc: "doc_payoff" }, { doc: "doc_criteria" }, { doc: "th_rate", meta: ["on Mortgage options", "12m"] }] },
+};
+COL_CREATE.home = { kind: "note", folder: "home/" };
+COL_CREATE.resolved = { kind: "ask" };
+COL_CREATE.searchm = { kind: "note", folder: "inbox/" };
+
+function addColumn(key, opts = {}) {
+  const def = EXTRA_COLS[key];
+  if (!def || document.getElementById("col-" + def.id)) { if (!opts.silent) toast("That list is already on the board."); return; }
+  COLUMNS.push(def);
+  const ghost = $board.querySelector(".ghost-col");
+  ghost.insertAdjacentHTML("beforebegin", colHTML(def));
+  const head = document.getElementById("col-" + def.id).querySelector(".col-head");
+  head.addEventListener("mousedown", (e) => { if (!e.target.closest("button")) head.closest(".col").draggable = true; });
+  head.addEventListener("mouseup", () => { head.closest(".col").draggable = false; });
+  if (!state.addedCols.includes(key)) state.addedCols.push(key);
+  saveState();
+  if (!opts.silent) {
+    document.getElementById("col-" + def.id).scrollIntoView({ behavior: "smooth", inline: "center" });
+    toast(`Pinned — a view document was created for "${def.title}" (pinned: true, order: last).`);
+  }
+}
+
+const newlistMenu = document.getElementById("newlist-menu");
+function showNewListMenu(e) {
+  newlistMenu.innerHTML = [
+    `<button class="ac-item" data-newlist="home">📁 Folder: home/<span class="d">3 docs</span></button>`,
+    `<button class="ac-item" data-newlist="resolved">🧵 View: resolved threads</button>`,
+    `<button class="ac-item" data-newlist="searchm">🔎 From search: "mortgage"</button>`,
+    `<div class="ac-item" style="cursor:default"><span class="d">plugin column types appear here too (e.g. a todos board)</span></div>`,
+  ].join("");
+  newlistMenu.style.left = Math.min(window.innerWidth - 280, Math.max(8, e.clientX - 40)) + "px";
+  newlistMenu.style.top = Math.min(window.innerHeight - 220, e.clientY - 10) + "px";
+  newlistMenu.classList.add("open");
+}
+newlistMenu.addEventListener("click", (e) => {
+  const it = e.target.closest("[data-newlist]");
+  if (it) { newlistMenu.classList.remove("open"); addColumn(it.dataset.newlist); }
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#newlist-menu") && !e.target.closest(".ghost-col")) newlistMenu.classList.remove("open");
+}, true);
+
+const composeOverlay = document.getElementById("compose-overlay");
+function openCompose() {
+  composeOverlay.classList.add("open");
+  setTimeout(() => document.getElementById("compose-text").focus(), 30);
+}
+function closeCompose() { composeOverlay.classList.remove("open"); }
+
+/* comments summary popover + jump */
+function toggleCommentsPop(btn) {
+  const scope = btn.closest("#focus-overlay") || btn.closest(".col");
+  const docId = scope.id === "focus-overlay" ? state.focus : state.open[scope.id.replace("col-", "")];
+  const head = btn.parentElement;
+  let pop = head.querySelector(".comments-pop");
+  if (!pop) {
+    pop = document.createElement("div");
+    pop.className = "comments-pop";
+    head.appendChild(pop);
+  }
+  if (pop.classList.contains("open")) { pop.classList.remove("open"); return; }
+  pop.innerHTML = docThreads(docId).map(tid => {
+    const th = THREADS[tid];
+    const last = th.turns[th.turns.length - 1];
+    return `<button class="cp-item" data-cp-item="${tid}">
+      <div class="cp-quote">${th.quote ? `"${esc(th.quote)}"` : "whole-document thread"}</div>
+      <div class="cp-meta">${th.turns.length} turns · last: ${last ? last.who : "—"} · ${th.status}</div></button>`;
+  }).join("") || `<div class="cp-meta" style="padding:8px 10px">No threads on this document yet — select some text to start one.</div>`;
+  pop.classList.add("open");
+}
+function jumpToThread(el, tid) {
+  const scope = el.closest("#focus-overlay") || el.closest(".col");
+  el.closest(".comments-pop").classList.remove("open");
+  const card = scope.querySelector(`.thread-card[data-thread="${tid}"]`);
+  if (!card) return;
+  card.closest(".thread-slot")?.classList.add("expanded");
+  markSeen([tid]);
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.style.borderLeftColor = "var(--signal)";
+  setTimeout(() => card.style.borderLeftColor = "", 1200);
+}
+
+/* re-render every open reader (columns + focus) preserving scroll + expansion */
+function refreshReaders() {
+  document.querySelectorAll(".col.reading").forEach($col => {
+    const colId = $col.id.replace("col-", "");
+    if (state.open[colId]) {
+      const scrollEl = $col.querySelector(".reader-scroll");
+      const y = scrollEl.scrollTop;
+      const expanded = [...scrollEl.querySelectorAll(".thread-slot.expanded")].map(s => s.dataset.slotThread);
+      scrollEl.innerHTML = readerHTML(state.open[colId]);
+      expanded.forEach(tid => scrollEl.querySelector(`.thread-slot[data-slot-thread="${tid}"]`)?.classList.add("expanded"));
+      scrollEl.scrollTop = y;
+    }
+  });
+  if (state.focus && $focus.classList.contains("open")) {
+    const scrollEl = document.getElementById("focus-scroll");
+    const y = scrollEl.scrollTop;
+    const inner = document.getElementById("focus-inner");
+    inner.className = "focus-inner";
+    inner.innerHTML = readerHTML(state.focus);
+    scrollEl.scrollTop = y;
+    requestAnimationFrame(maybeMargin);
+  }
+}
+function closeFocus() {
+  $focus.classList.remove("open");
+  state.focus = null;
+  state.focusNav = [];
+  saveState();
+}
+
+/* ── Column drag-reorder (browser-tab style) ── */
+let dragCol = null;
+function setupDrag() {
+  $board.querySelectorAll(".col:not(.ghost-col) .col-head").forEach(head => {
+    head.addEventListener("mousedown", (e) => { if (!e.target.closest("button")) head.closest(".col").draggable = true; });
+    head.addEventListener("mouseup", () => { head.closest(".col").draggable = false; });
+  });
+  $board.addEventListener("dragstart", (e) => {
+    dragCol = e.target.closest(".col");
+    if (dragCol) { dragCol.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; }
+  });
+  $board.addEventListener("dragover", (e) => {
+    if (!dragCol) return;
+    e.preventDefault();
+    const after = [...$board.querySelectorAll(".col:not(.dragging):not(.ghost-col)")]
+      .find(c => e.clientX < c.getBoundingClientRect().left + c.offsetWidth / 2);
+    $board.insertBefore(dragCol, after || $board.querySelector(".ghost-col"));
+  });
+  $board.addEventListener("dragend", () => {
+    if (!dragCol) return;
+    dragCol.classList.remove("dragging");
+    dragCol.draggable = false;
+    dragCol = null;
+    state.order = [...$board.querySelectorAll(".col:not(.ghost-col)")].map(c => c.id.replace("col-", ""));
+    saveState();
+    toast("List order saved — it'll be right here after reload.");
+  });
+}
+// restore saved order
+if (Array.isArray(state.order)) {
+  const ghost = $board.querySelector(".ghost-col");
+  state.order.forEach(id => {
+    const $col = document.getElementById("col-" + id);
+    if ($col) $board.insertBefore($col, ghost);
+  });
+}
+setupDrag();
+
+/* ═══════════════ INTERACTIONS ═══════════════ */
+
+let restored = Array.isArray(state.order);
+for (const [colId, stack] of Object.entries(state.nav)) {
+  const top = (stack || [])[stack.length - 1];
+  if (top && state.open[colId]) { openDoc(colId, top.d, { restore: true, y: top.y }); restored = true; }
+}
+if (state.focus && state.focusNav.length) {
+  const top = state.focusNav[state.focusNav.length - 1];
+  openFocus(top.d, { restore: true, y: top.y });
+  restored = true;
+}
+toast(restored
+  ? "Session restored — list order, open documents & positions as you left them."
+  : "Try it all: click into any document and type (autosave), select text → Comment, reply in threads, drag list headers, ⤢ full screen.");
+
+document.addEventListener("click", (e) => {
+  const inFocus = e.target.closest("#focus-overlay");
+  if (!inFocus && !e.target.closest("#board")) return;
+
+  const fback = e.target.closest("[data-focus-back]");
+  if (fback) { focusBack(); return; }
+
+  const closeF = e.target.closest("[data-close-focus]");
+  if (closeF) { closeFocus(); return; }
+
+  if (!e.target.closest(".comments-pop") && !e.target.closest("[data-comments]") && !e.target.closest("[data-doc-menu]"))
+    document.querySelectorAll(".comments-pop.open").forEach(p => p.classList.remove("open"));
+
+  const cbtn = e.target.closest("[data-comments]");
+  if (cbtn) { toggleCommentsPop(cbtn); return; }
+  const cpi = e.target.closest("[data-cp-item]");
+  if (cpi) { jumpToThread(cpi, cpi.dataset.cpItem); return; }
+  const tchip = e.target.closest("[data-toggle-slot]");
+  if (tchip) { tchip.closest(".thread-slot").classList.add("expanded"); markSeen([tchip.dataset.toggleSlot]); return; }
+  const tcoll = e.target.closest("[data-collapse-slot]");
+  if (tcoll && !tcoll.closest(".focus-margin")) { tcoll.closest(".thread-slot").classList.remove("expanded"); return; }
+
+  const res = e.target.closest("[data-resolve]");
+  if (res) {
+    const tid = res.dataset.resolve;
+    const th = THREADS[tid];
+    th.status = th.status === "resolved" ? "open" : "resolved";
+    if (th.isNew) {
+      const card = res.closest(".thread-card");
+      card.classList.toggle("resolved", th.status === "resolved");
+      card.querySelector(".t-status").textContent = th.status;
+      res.textContent = th.status === "resolved" ? "reopen" : "✓ resolve";
+    } else { refreshReaders(); renderAllLists(); }
+    toast(th.status === "resolved" ? "Thread resolved — collapses in the doc view, leaves open filters. Replying reopens it." : "Thread reopened.");
+    return;
+  }
+
+  const dmBtn = e.target.closest("[data-doc-menu]");
+  if (dmBtn) { toggleDocMenu(dmBtn); return; }
+  const dmAct = e.target.closest("[data-dm-act]");
+  if (dmAct) { docMenuAction(dmAct); return; }
+
+  const fu = e.target.closest("[data-force-unlock]");
+  if (fu) {
+    delete DOCS[fu.dataset.forceUnlock].locked;
+    refreshReaders();
+    toast("Lock broken — recorded in the audit trail; the agent's pending edit was re-queued.");
+    return;
+  }
+
+  const addBtn = e.target.closest("[data-col-add]");
+  if (addBtn) {
+    const colId = addBtn.closest(".col").id.replace("col-", "");
+    const cr = COL_CREATE[colId] || { kind: "note", folder: "docs/" };
+    if (cr.kind === "ask") openCompose();
+    else if (cr.kind === "todo") createTodoDoc(colId, cr.folder);
+    else if (cr.kind === "none") toast("New skills are usually born from threads — ask the agent, or drop a SKILL.md.");
+    else createNote("", colId, cr.folder);
+    return;
+  }
+  const stale = e.target.closest("[data-act]");
+  if (stale) {
+    const row = stale.closest(".row");
+    const docId = row.dataset.rowDoc;
+    const act = stale.dataset.act;
+    if (act === "archive") {
+      row.classList.add("leaving");
+      DOCS[docId].status = "archived";
+      setTimeout(() => { COLUMNS.forEach(c => { c.rows = c.rows.filter(r => r.doc !== docId); }); renderAllLists(); }, 320);
+      toast(`Archived "${DOCS[docId].title}" — committed (git ✓). Find it with the archived chip.`);
+    } else if (act === "keep") {
+      delete DOCS[docId].age;
+      COLUMNS.forEach(c => { c.rows = c.rows.filter(r => !(r.doc === docId && r.stale)); });
+      renderAllLists();
+      toast(`reviewed: now — "${DOCS[docId].title}" freshness reset (committed).`);
+    } else {
+      stale.closest(".stale-actions").innerHTML = `<span class="working" style="border:none;padding:2px 0"><span class="working-dot"></span>&nbsp;queued for agent triage…</span>`;
+      const job = startJob("triage.stale · " + DOCS[docId].title, docId);
+      setTimeout(() => {
+        finishJob(job);
+        COLUMNS.forEach(c => { c.rows = c.rows.filter(r => !(r.doc === docId && r.stale)); });
+        renderAllLists();
+        toast("Triage done — the agent reviewed it and proposed archive in a thread.");
+      }, 2600);
+      toast("Queued: agent will review this document and propose archive / update / split.");
+    }
+    e.stopPropagation(); return;
+  }
+
+  const check = e.target.closest("[data-check]");
+  if (check) {
+    const [docId, idx] = check.dataset.check.split(":");
+    const item = DOCS[docId].items[+idx];
+    item.done = !item.done;
+    check.classList.toggle("done", item.done);
+    check.querySelector(".box").textContent = item.done ? "☑" : "☐";
+    const panel = check.closest(".reader-scroll, .focus-inner").querySelector("[data-panel]");
+    if (panel) {
+      panel.querySelector("[data-stat-open]").textContent = DOCS[docId].items.filter(i => !i.done).length;
+      panel.querySelector("[data-stat-done]").textContent = DOCS[docId].items.filter(i => i.done).length;
+    }
+    renderAllLists();
+    toast(item.done ? `Done: "${item.t}" — committed (git ✓)` : `Reopened: "${item.t}"`);
+    return;
+  }
+
+  const opt = e.target.closest(".form-opt");
+  if (opt) {
+    opt.closest(".form-comment").querySelectorAll(".form-opt").forEach(o => o.classList.remove("picked"));
+    opt.classList.add("picked");
+    return;
+  }
+  const submit = e.target.closest("[data-submit-form]");
+  if (submit) {
+    const tid = submit.dataset.submitForm;
+    const th = THREADS[tid];
+    const picked = submit.closest(".form-comment").querySelector(".picked");
+    const choice = picked ? picked.dataset.opt : null;
+    if (!choice) { toast("Pick an option first."); return; }
+    th.answered = true;
+    th.turns.push({ who: "user", when: "now", body: `Chose ${choice}.` });
+    renderAllLists();
+    simulateAgent(tid, `Locking in ${choice}. I'll draft the application, set the effective date to Oct 1, and update the premium in the doc.`);
+    return;
+  }
+
+  const delTurn = e.target.closest("[data-del-turn]");
+  if (delTurn) {
+    if (!delTurn.dataset.armed) {
+      delTurn.dataset.armed = "1";
+      delTurn.classList.add("armed");
+      delTurn.textContent = "delete?";
+      return;
+    }
+    const [tid, idx] = delTurn.dataset.delTurn.split(":");
+    const th = THREADS[tid];
+    th.turns.splice(+idx, 1);
+    if (!th.turns.length) {
+      removeThreadEntirely(tid);
+      toast("Last comment deleted — thread removed, anchor entry dropped from the parent, highlight cleared.");
+      return;
+    }
+    if (th.isNew) {
+      const card = delTurn.closest(".thread-card");
+      card.querySelector(".turns").innerHTML = th.turns.map((t, i) => turnHTML(t, tid, i)).join("");
+      document.querySelectorAll(`[data-goto-thread="${tid}"] .anchor-pip`).forEach(p => p.textContent = th.turns.length);
+    } else { refreshReaders(); renderAllLists(); }
+    toast("Comment deleted — user-only action, committed; git retains the turn.");
+    return;
+  }
+
+  const attachBtn = e.target.closest("[data-attach]");
+  if (attachBtn) { attachBtn.parentElement.querySelector("[data-attach-input]").click(); return; }
+  const rmAtt = e.target.closest("[data-rm-att]");
+  if (rmAtt) {
+    const [tid, i] = rmAtt.dataset.rmAtt.split(":");
+    PENDING_ATT[tid].splice(+i, 1);
+    renderPending(tid);
+    return;
+  }
+
+  const send = e.target.closest("[data-send]");
+  if (send) {
+    const tid = send.dataset.send;
+    const input = send.closest(".thread-card").querySelector(`[data-composer="${tid}"]`);
+    const text = input.value.trim();
+    const atts = PENDING_ATT[tid] || [];
+    if (!text && !atts.length) { toast("Type a reply or attach something — try mentioning @agent."); return; }
+    THREADS[tid].turns.push({ who: "user", when: "now", body: text, attachments: atts.length ? atts : undefined });
+    delete PENDING_ATT[tid];
+    if (THREADS[tid].status === "resolved") THREADS[tid].status = "open";
+    if (THREADS[tid].isNew) simulateInline(send.closest(".thread-card"), tid);
+    else simulateAgent(tid);
+    return;
+  }
+  const toggle = e.target.closest("[data-toggle-agent]");
+  if (toggle) { toggle.classList.toggle("on"); toggle.textContent = toggle.classList.contains("on") ? "◉ ask agent" : "○ note only"; return; }
+
+  const gotoThread = e.target.closest("[data-goto-thread]");
+  if (gotoThread) {
+    const card = gotoThread.closest(".reader-scroll, .focus-inner").querySelector(`.thread-card[data-thread="${gotoThread.dataset.gotoThread}"]`);
+    if (card) {
+      card.closest(".thread-slot")?.classList.add("expanded");
+      markSeen([gotoThread.dataset.gotoThread]);
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.style.borderLeftColor = "var(--signal)";
+      setTimeout(() => card.style.borderLeftColor = "", 1200);
+    }
+    e.stopPropagation(); return;
+  }
+
+  const refOpen = e.target.closest("[data-open-doc]");
+  if (refOpen) {
+    if (inFocus) { openFocus(refOpen.dataset.openDoc); }
+    else openDoc(refOpen.closest(".col").id.replace("col-", ""), refOpen.dataset.openDoc);
+    e.stopPropagation(); return;
+  }
+
+  const expand = e.target.closest("[data-expand]");
+  if (expand) { openFocus(state.open[expand.closest(".col").id.replace("col-", "")]); return; }
+
+  const closeBtn = e.target.closest("[data-close-reader]");
+  if (closeBtn) { goBack(closeBtn.closest(".col").id.replace("col-", ""), e.shiftKey); return; }
+
+  const row = e.target.closest("[data-row-doc]");
+  if (row && !inFocus) openDoc(row.closest(".col").id.replace("col-", ""), row.dataset.rowDoc);
+});
+
+function simulateAgent(tid, cannedOverride) {
+  const refresh = refreshReaders;
+  const th = THREADS[tid];
+  if (halted) {
+    const job = { id: "evt_x" + (++jobN), status: "pending", started: "now", docId: th.on || tid, title: "comment.created · " + (DOCS[th.on]?.title || DOCS[tid]?.title || "thread"), log: ["queued — HALT active; runs on resume"] };
+    JOBS.unshift(job);
+    renderConsole();
+    refresh();
+    HALT_QUEUE.push({ job, run: () => simulateAgent(tid, cannedOverride) });
+    toast("HALT active — event queued; the agent will pick it up on resume.");
+    return;
+  }
+  th.pendingSim = true;
+  refresh();
+  document.querySelectorAll(`.thread-card[data-thread="${tid}"] .turns`).forEach(el =>
+    el.insertAdjacentHTML("afterend", `<div class="working sim"><span class="working-dot"></span> agent is working…</div>`));
+  setAgentPill("working · queue 1");
+  const job = startJob("comment.created · " + (DOCS[th.on]?.title || DOCS[tid]?.title || "thread"), th.on || tid);
+  setTimeout(() => document.querySelectorAll(".working.sim").forEach(el =>
+    el.innerHTML = `<span class="working-dot"></span> still working…`), 1500);
+  setTimeout(() => {
+    th.turns.push({ who: "agent", when: "now", body: cannedOverride || th.reply, trace: tid === "th_carrier" ? "edited Home insurance renewal · queued application draft" : undefined });
+    th.pendingSim = false;
+    finishJob(job);
+    refresh();
+    renderAllLists();
+    setAgentPill(halted ? "halted" : "idle · queue 0", false);
+    toast("Agent replied — turn appended to the thread file, committed (git ✓), SSE pushed the update.");
+  }, 2400);
+}
+
+function setAgentPill(text, busy = true) {
+  document.getElementById("agent-pill-text").textContent = "agent: " + text;
+  document.querySelector("#agent-pill .dot").classList.toggle("busy", busy);
+}
+
+/* inline agent simulation for threads created live from a selection
+   (they exist only in the DOM, so we update the card in place) */
+function simulateInline(card, tid) {
+  const th = THREADS[tid];
+  const turnsEl = card.querySelector(".turns");
+  const input = card.querySelector("input");
+  if (input) input.value = "";
+  turnsEl.innerHTML = th.turns.map((t, i) => turnHTML(t, tid, i)).join("");
+  turnsEl.insertAdjacentHTML("afterend", `<div class="working sim"><span class="working-dot"></span> agent is working…</div>`);
+  setAgentPill("working · queue 1");
+  const job = startJob("comment.created · " + (DOCS[th.on]?.title || "new thread"), th.on || tid);
+  setTimeout(() => finishJob(job), 2400);
+  setTimeout(() => {
+    th.turns.push({ who: "agent", when: "now", body: th.reply });
+    turnsEl.innerHTML = th.turns.map((t, i) => turnHTML(t, tid, i)).join("");
+    card.querySelector(".working.sim")?.remove();
+    document.querySelectorAll(`[data-goto-thread="${tid}"] .anchor-pip`).forEach(p => p.textContent = th.turns.length);
+    if (card.closest(".focus-margin")) layoutMargin(document.getElementById("focus-inner"));
+    setAgentPill(halted ? "halted" : "idle · queue 0", false);
+    toast("Agent replied — committed (git ✓).");
+  }, 2400);
+}
+
+/* ── Always-on editing: autosave simulation ── */
+let saveTimer, commitTimer;
+document.addEventListener("input", (e) => {
+  if (!e.target.closest("[contenteditable]")) return;
+  const scope = e.target.closest("#focus-overlay") || e.target.closest(".col");
+  const chip = scope && scope.querySelector("[data-save-chip]");
+  if (!chip) return;
+  chip.textContent = "saving…";
+  chip.className = "save-chip saving";
+  clearTimeout(saveTimer); clearTimeout(commitTimer);
+  saveTimer = setTimeout(() => {
+    chip.textContent = "saved · anchors ✓";
+    chip.className = "save-chip saved";
+    commitTimer = setTimeout(() => { chip.textContent = "committed · git ✓"; }, 2200);
+  }, 700);
+});
+
+/* ── Selection toolbar (format + comment) ── */
+const selToolbar = document.getElementById("sel-toolbar");
+let selRange = null, selDocId = null, newThreadN = 0;
+
+document.addEventListener("mouseup", (e) => {
+  if (e.target.closest("#sel-toolbar")) return;
+  setTimeout(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { selToolbar.classList.remove("open"); return; }
+    const range = sel.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    const el = container.nodeType === 1 ? container : container.parentElement;
+    const body = el && el.closest(".doc-body");
+    if (!body || range.toString().trim().length < 2) { selToolbar.classList.remove("open"); return; }
+    const focusEl = body.closest("#focus-overlay");
+    selDocId = focusEl ? state.focus : state.open[body.closest(".col")?.id.replace("col-", "")];
+    if (!selDocId || DOCS[selDocId]?.locked) return;
+    selRange = range.cloneRange();
+    selToolbar.classList.add("open");
+    const r = range.getBoundingClientRect();
+    const tw = selToolbar.offsetWidth || 170;
+    selToolbar.style.top = Math.max(8, r.top - 44) + "px";
+    selToolbar.style.left = Math.max(8, Math.min(window.innerWidth - tw - 8, r.left + r.width / 2 - tw / 2)) + "px";
+  }, 0);
+});
+document.addEventListener("scroll", () => selToolbar.classList.remove("open"), true);
+selToolbar.addEventListener("mousedown", (e) => e.preventDefault());
+selToolbar.addEventListener("click", (e) => {
+  const fmt = e.target.closest("[data-fmt]");
+  if (fmt) { document.execCommand(fmt.dataset.fmt); return; }
+  if (e.target.closest("[data-sel-comment]")) createThreadFromSelection();
+});
+
+function createThreadFromSelection() {
+  if (!selRange || !selDocId) return;
+  const quote = selRange.toString().trim();
+  const tid = "th_new" + (++newThreadN);
+  THREADS[tid] = {
+    quote, on: selDocId, status: "open", turns: [], isNew: true,
+    reply: "Got it — I'll address this and report back here. (stub reply; the real agent acts on the document)",
+  };
+  const span = document.createElement("span");
+  span.className = "anchor-hl";
+  span.dataset.gotoThread = tid;
+  try { selRange.surroundContents(span); }
+  catch { toast("For the mockup, select within a single run of text (no crossing bold/links)."); return; }
+  span.insertAdjacentHTML("beforeend", `<span class="anchor-pip">0</span>`);
+  const block = span.closest("p, h2, ul") || span.parentElement;
+  const inner = span.closest(".focus-inner");
+  const margin = inner && inner.querySelector(".focus-margin");
+  if (margin) {
+    margin.insertAdjacentHTML("beforeend", threadCardHTML(tid, { bare: true }));
+    layoutMargin(inner);
+  } else if (inner) {
+    // focus mode but no margin yet — this comment creates it
+    block.insertAdjacentHTML("afterend", threadCardHTML(tid, { bare: true }));
+    layoutMargin(inner);
+  } else {
+    block.insertAdjacentHTML("afterend", threadCardHTML(tid));
+    block.nextElementSibling?.classList.add("expanded");
+    const $col = block.closest(".col");
+    if ($col) updateCommentsBtn($col, selDocId);
+  }
+  window.getSelection().removeAllRanges();
+  selToolbar.classList.remove("open");
+  toast(`Comment created — anchor "${quote.slice(0, 42)}${quote.length > 42 ? "…" : ""}" written to frontmatter.`);
+  document.querySelector(`.thread-card[data-thread="${tid}"] input`)?.focus();
+}
+
+/* ── Search overlay ── */
+const overlay = document.getElementById("search-overlay");
+const SEARCH_RESULTS = [
+  ["Documents · 3", null],
+  [null, { doc: "doc_mortgage", snip: "…the base case assumes a 30-year fixed at 6.4%; the <mark>mortgage</mark> insurance question is threaded inline…", path: "finance/housing · updated 2d ago" }],
+  [null, { doc: "doc_payoff", snip: "…amortization for both <mark>mortgage</mark> structures; crossover in year 9 under reversion…", path: "finance/housing · updated 4d ago" }],
+  [null, { doc: "doc_criteria", snip: "…max price banded by <mark>mortgage</mark> payment ≤ 28% of gross…", path: "home/ · updated 2w ago" }],
+  ["Threads · 2", null],
+  [null, { doc: "th_rate", snip: "agent: …6.4% is more representative for the <mark>mortgage</mark> base case…", path: "on Mortgage options · open" }],
+  [null, { doc: "th_rent", snip: "…rent vs <mark>mortgage</mark> breakeven at current rates…", path: "standalone · 3 turns" }],
+];
+document.getElementById("search-results").innerHTML = `<button class="sr sr-create" id="sr-create" hidden></button>` + SEARCH_RESULTS.map(([group, r]) => {
+  if (group) return `<div class="sr-group">${group}</div>`;
+  const d = DOCS[r.doc];
+  return `<button class="sr" data-sr="${r.doc}">
+    <div class="sr-title"><span class="type-glyph">${d.type}</span>${esc(d.title)}</div>
+    <div class="sr-snippet">${r.snip}</div><div class="sr-path">${esc(r.path)}</div></button>`;
+}).join("");
+
+document.getElementById("searchbar").addEventListener("click", () => {
+  overlay.classList.add("open");
+  srIndex = -1;
+  overlay.querySelectorAll(".sr.kbd").forEach(i => i.classList.remove("kbd"));
+  setTimeout(() => document.getElementById("search-input").focus(), 30);
+});
+const sInput = document.getElementById("search-input");
+sInput.addEventListener("input", () => {
+  const q = sInput.value.trim();
+  const btn = document.getElementById("sr-create");
+  const exact = Object.values(DOCS).some(d => d.title.toLowerCase() === q.toLowerCase());
+  btn.hidden = q.length < 2 || exact;
+  if (!btn.hidden) btn.innerHTML = `＋ Create "<b>${esc(q)}</b>" — opens ready to edit, in inbox/`;
+});
+overlay.addEventListener("click", (e) => {
+  if (e.target.closest("#save-view-chip")) {
+    overlay.classList.remove("open");
+    addColumn("searchm");
+    return;
+  }
+  const cr = e.target.closest("#sr-create");
+  if (cr) {
+    overlay.classList.remove("open");
+    createNote(sInput.value.trim(), "inbox", "inbox/");
+    const $col = document.getElementById("col-inbox");
+    $col.scrollIntoView({ behavior: "smooth", inline: "center" });
+    $col.classList.add("flash");
+    setTimeout(() => $col.classList.remove("flash"), 1500);
+    return;
+  }
+  const sr = e.target.closest("[data-sr]");
+  if (sr) {
+    overlay.classList.remove("open");
+    const docId = sr.dataset.sr;
+    const colId = homeColumn(docId);
+    openDoc(colId, docId);
+    const $col = document.getElementById("col-" + colId);
+    $col.scrollIntoView({ behavior: "smooth", inline: "center" });
+    $col.classList.add("flash");
+    setTimeout(() => $col.classList.remove("flash"), 1500);
+    return;
+  }
+  if (e.target === overlay) overlay.classList.remove("open");
+});
+const kbdOverlay = document.getElementById("kbd-overlay");
+kbdOverlay.addEventListener("click", (e) => { if (e.target === kbdOverlay) kbdOverlay.classList.remove("open"); });
+let srIndex = -1;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (overlay.classList.contains("open")) { overlay.classList.remove("open"); e._handled = true; }
+    else if (composeOverlay.classList.contains("open")) { closeCompose(); e._handled = true; }
+    else if (kbdOverlay.classList.contains("open")) { kbdOverlay.classList.remove("open"); e._handled = true; }
+    else if ($focus.classList.contains("open")) { closeFocus(); e._handled = true; }
+  }
+  if (overlay.classList.contains("open") && ["ArrowDown", "ArrowUp", "Enter"].includes(e.key)) {
+    const items = [...overlay.querySelectorAll(".sr")].filter(i => !i.hidden);
+    if (!items.length) return;
+    e.preventDefault();
+    if (e.key === "Enter") { items[srIndex >= 0 ? srIndex : 0]?.click(); srIndex = -1; return; }
+    srIndex = e.key === "ArrowDown" ? Math.min(items.length - 1, srIndex + 1) : Math.max(0, srIndex - 1);
+    items.forEach(i => i.classList.remove("kbd"));
+    items[srIndex].classList.add("kbd");
+    items[srIndex].scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault(); overlay.classList.toggle("open");
+    if (overlay.classList.contains("open")) document.getElementById("search-input").focus();
+  }
+});
+
+document.getElementById("btn-compose").addEventListener("click", openCompose);
+document.getElementById("compose-text").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  if (e.shiftKey) return; // ⇧↵ = newline
+  e.preventDefault();
+  if (acMenu.classList.contains("open")) { acMenu.classList.remove("open"); return; }
+  document.getElementById(e.metaKey || e.ctrlKey ? "btn-capture" : "btn-ask").click();
+});
+composeOverlay.addEventListener("click", (e) => {
+  const attachBtn = e.target.closest("[data-attach]");
+  if (attachBtn) { attachBtn.parentElement.querySelector("[data-attach-input]").click(); return; }
+  const rmAtt = e.target.closest("[data-rm-att]");
+  if (rmAtt) {
+    const [tid, i] = rmAtt.dataset.rmAtt.split(":");
+    PENDING_ATT[tid].splice(+i, 1);
+    renderPending(tid);
+    return;
+  }
+  if (e.target === composeOverlay) closeCompose();
+});
+document.getElementById("btn-ask").addEventListener("click", () => {
+  const text = document.getElementById("compose-text").value.trim();
+  if (!text) { toast("Type a question or request first."); return; }
+  document.getElementById("compose-text").value = "";
+  closeCompose();
+  doAsk(text);
+});
+document.getElementById("btn-capture").addEventListener("click", () => {
+  const text = document.getElementById("compose-text").value.trim();
+  if (!text) { toast("Type the thought you want to capture first."); return; }
+  document.getElementById("compose-text").value = "";
+  closeCompose();
+  doCapture(text);
+});
+$board.addEventListener("click", (e) => {
+  const g = e.target.closest(".ghost-col");
+  if (g) { showNewListMenu(e); return; }
+  if (e.target.closest(".col-menu")) toast("List options: edit filters & sort (writes the view document), unpin, remove.");
+});
+
+/* ── Autocomplete: @ agents · / skills · [[ refs ── */
+const AC_DATA = {
+  "@": [["agent", "orchestrator decides routing"], ["audit", "adversarial reviewer"], ["financial-advisor", "personal CFO subagent"], ["frontend-dev", "UI subagent"]],
+  "/": [["summarize", "condense this doc/thread"], ["audit", "review recent changes"], ["comment", "core comment handler"], ["extract-template", "make a template from this doc"]],
+};
+const acMenu = document.getElementById("ac-menu");
+let acTarget = null, acToken = null, acItems = [];
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!(el.matches && (el.matches("[data-composer]") || el.id === "compose-text"))) return;
+  const upto = el.value.slice(0, el.selectionStart);
+  const mTrig = upto.match(/(^|\s)([@/])([\w-]*)$/);
+  const mRef = upto.match(/\[\[([^\]]*)$/);
+  if (!mTrig && !mRef) { acMenu.classList.remove("open"); return; }
+  if (mTrig) {
+    acToken = { len: 1 + mTrig[3].length };
+    acItems = AC_DATA[mTrig[2]].filter(([n]) => n.startsWith(mTrig[3]))
+      .map(([n, d]) => ({ ins: mTrig[2] + n + " ", html: `<span class="k">${mTrig[2]}${n}</span><span class="d">${d}</span>` }));
+  } else {
+    const part = mRef[1].toLowerCase();
+    acToken = { len: 2 + mRef[1].length };
+    acItems = Object.values(DOCS).filter(d => d && d.title && d.title.toLowerCase().includes(part)).slice(0, 6)
+      .map(d => ({ ins: `[[${d.title}]] `, html: `<span class="k">[[</span> ${esc(d.title)}<span class="d">${d.type}</span>` }));
+  }
+  if (!acItems.length) { acMenu.classList.remove("open"); return; }
+  acTarget = el;
+  acMenu.innerHTML = acItems.map((it, i) => `<button class="ac-item" data-ac-i="${i}">${it.html}</button>`).join("");
+  const r = el.getBoundingClientRect();
+  acMenu.style.left = r.left + "px";
+  acMenu.style.top = Math.min(window.innerHeight - 210, r.bottom + 4) + "px";
+  acMenu.classList.add("open");
+});
+acMenu.addEventListener("mousedown", (e) => e.preventDefault());
+acMenu.addEventListener("click", (e) => {
+  const it = e.target.closest("[data-ac-i]");
+  if (!it || !acTarget) return;
+  const ins = acItems[+it.dataset.acI].ins;
+  const pos = acTarget.selectionStart;
+  acTarget.value = acTarget.value.slice(0, pos - acToken.len) + ins + acTarget.value.slice(pos);
+  acMenu.classList.remove("open");
+  acTarget.focus();
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#ac-menu") && !(e.target.matches && (e.target.matches("[data-composer]") || e.target.id === "compose-text")))
+    acMenu.classList.remove("open");
+}, true);
+
+/* ── Attachment input: picker change, paste, drag-drop ── */
+document.addEventListener("change", (e) => {
+  const inp = e.target.closest && e.target.closest("[data-attach-input]");
+  if (!inp) return;
+  [...inp.files].forEach(f => addPendingFile(inp.dataset.attachInput, f));
+  inp.value = "";
+});
+document.addEventListener("paste", (e) => {
+  const comp = e.target.closest && e.target.closest("[data-composer]");
+  if (!comp) return;
+  const files = [...((e.clipboardData && e.clipboardData.files) || [])];
+  if (!files.length) return;
+  e.preventDefault();
+  files.forEach(f => addPendingFile(comp.dataset.composer, f));
+});
+document.addEventListener("dragover", (e) => {
+  if (dragCol) return; // column drag in progress
+  const z = e.target.closest && e.target.closest("[data-dropzone]");
+  if (z) { e.preventDefault(); z.classList.add("dropping"); }
+});
+document.addEventListener("dragleave", (e) => {
+  const z = e.target.closest && e.target.closest("[data-dropzone]");
+  if (z) z.classList.remove("dropping");
+});
+document.addEventListener("drop", (e) => {
+  if (dragCol) return;
+  const z = e.target.closest && e.target.closest("[data-dropzone]");
+  if (!z) return;
+  e.preventDefault();
+  z.classList.remove("dropping");
+  [...((e.dataTransfer && e.dataTransfer.files) || [])].forEach(f => addPendingFile(z.dataset.dropzone, f));
+});
+
+/* ── Keyboard scheme ── */
+let activeColId = COLUMNS[0].id, kbdIndex = -1;
+function setActiveCol(id) {
+  activeColId = id;
+  document.querySelectorAll(".col.kactive").forEach(c => c.classList.remove("kactive"));
+  document.getElementById("col-" + id)?.classList.add("kactive");
+}
+function clearKbd() { document.querySelectorAll(".row.kbd").forEach(r => r.classList.remove("kbd")); }
+$board.addEventListener("mouseover", (e) => {
+  const c = e.target.closest(".col:not(.ghost-col)");
+  if (c && c.id.replace("col-", "") !== activeColId) { setActiveCol(c.id.replace("col-", "")); kbdIndex = -1; clearKbd(); }
+});
+document.addEventListener("keydown", (e) => {
+  const t = e.target;
+  if ((t.closest && t.closest("input, textarea")) || t.isContentEditable) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const $col = document.getElementById("col-" + activeColId);
+  if (e.key === "c") { e.preventDefault(); openCompose(); return; }
+  if (e.key === "?") { e.preventDefault(); kbdOverlay.classList.toggle("open"); return; }
+  if (!$col) return;
+  const overlaysOpen = overlay.classList.contains("open") || composeOverlay.classList.contains("open") || $focus.classList.contains("open") || kbdOverlay.classList.contains("open");
+  if (e.key === "e" && !overlaysOpen) {
+    const rows = [...$col.querySelectorAll(".col-list .row")];
+    const target = state.open[activeColId] || (kbdIndex >= 0 ? rows[kbdIndex]?.dataset.rowDoc : null);
+    if (target && DOCS[target]) { kbdIndex = -1; clearKbd(); archiveDocById(target); }
+    return;
+  }
+  if (e.key === "r" && !overlaysOpen && state.open[activeColId]) {
+    let input = [...$col.querySelectorAll(".reader input[data-composer]")].find(i => i.offsetParent);
+    if (!input) {
+      const slot = $col.querySelector(".reader .thread-slot");
+      if (slot) { slot.classList.add("expanded"); markSeen([slot.dataset.slotThread]); input = slot.querySelector("input[data-composer]"); }
+    }
+    if (input) { e.preventDefault(); input.focus(); }
+    return;
+  }
+  if (e.key === "f" && state.open[activeColId] && !overlaysOpen) { openFocus(state.open[activeColId]); return; }
+  if (e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    // ⇧←/⇧→ — move the active column (keyboard equivalent of dragging its header)
+    if (overlaysOpen) return;
+    e.preventDefault();
+    const $c = document.getElementById("col-" + activeColId);
+    if (!$c) return;
+    const cols = [...$board.querySelectorAll(".col:not(.ghost-col)")];
+    const i = cols.indexOf($c);
+    if (e.key === "ArrowLeft" && i > 0) $board.insertBefore($c, cols[i - 1]);
+    else if (e.key === "ArrowRight" && i < cols.length - 1) $board.insertBefore(cols[i + 1], $c);
+    else return;
+    state.order = [...$board.querySelectorAll(".col:not(.ghost-col)")].map(c => c.id.replace("col-", ""));
+    saveState();
+    $c.scrollIntoView({ behavior: "smooth", inline: "nearest" });
+    toast("List moved — order saved (view doc order: updated).");
+    return;
+  }
+  if (e.key === "[" || e.key === "]" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    if (overlaysOpen) return;
+    e.preventDefault();
+    const dir = (e.key === "]" || e.key === "ArrowRight") ? 1 : -1;
+    const ids = [...$board.querySelectorAll(".col:not(.ghost-col)")].map(c => c.id.replace("col-", ""));
+    const i = Math.max(0, Math.min(ids.length - 1, ids.indexOf(activeColId) + dir));
+    setActiveCol(ids[i]); kbdIndex = -1; clearKbd();
+    document.getElementById("col-" + ids[i]).scrollIntoView({ behavior: "smooth", inline: "nearest" });
+    return;
+  }
+  if (e.key === "j" || e.key === "k" || e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (overlaysOpen) return;
+    e.preventDefault();
+    const rows = [...$col.querySelectorAll(".col-list .row")];
+    if (!rows.length) return;
+    const down = e.key === "j" || e.key === "ArrowDown";
+    kbdIndex = down ? Math.min(rows.length - 1, kbdIndex + 1) : Math.max(0, kbdIndex - 1);
+    clearKbd();
+    rows[kbdIndex].classList.add("kbd");
+    rows[kbdIndex].scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (e.key === "Enter") {
+    if (overlaysOpen) return;
+    const rows = [...$col.querySelectorAll(".col-list .row")];
+    const row = kbdIndex >= 0 ? rows[kbdIndex] : null;
+    if (e.shiftKey) {
+      // ⇧↵ — straight to full screen: from the highlighted row, or the column's open doc
+      const docId = row ? row.dataset.rowDoc : state.open[activeColId];
+      if (docId) openFocus(docId);
+    } else if (row) row.click();
+    return;
+  }
+  if ((e.key === "Escape" || e.key === "Backspace") && !e._handled && !overlaysOpen && state.open[activeColId]) {
+    goBack(activeColId);
+    return;
+  }
+});
+
+/* ── Boot: restore added columns, order, console ── */
+(state.addedCols || []).forEach(k => addColumn(k, { silent: true }));
+if (Array.isArray(state.order)) {
+  const ghost = $board.querySelector(".ghost-col");
+  state.order.forEach(id => { const c = document.getElementById("col-" + id); if (c) $board.insertBefore(c, ghost); });
+}
+renderAllLists();
+renderConsole();
+if (state.console) document.getElementById("console").classList.add("open");
+if (state.consoleH) consoleBody.style.height = state.consoleH + "px";
+setActiveCol(activeColId);
+
+/* ── Toasts ── */
+function toast(msg) {
+  const wrap = document.getElementById("toast-wrap");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = `<span class="tick">✓</span><span>${esc(msg)}</span><button class="close" aria-label="Dismiss">✕</button>`;
+  el.querySelector(".close").addEventListener("click", () => el.remove());
+  wrap.appendChild(el);
+  while (wrap.children.length > 3) wrap.firstChild.remove();
+  setTimeout(() => { el.style.transition = "opacity .5s"; el.style.opacity = "0"; setTimeout(() => el.remove(), 500); }, 6000);
+}
+</script>
