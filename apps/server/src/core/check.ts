@@ -62,11 +62,17 @@ export type CheckDocument =
  * Signature SERVER-002's `resolveAnchor` satisfies directly. Injected rather
  * than imported so this module stays free of the anchor engine; when it is
  * absent, resolution-dependent warnings are simply not produced.
+ *
+ * It declares exactly the two arguments the checker passes and nothing more.
+ * The checker has no `oldBody` and therefore no previous offset to offer, so
+ * naming a third parameter here would over-specify the injection point: any
+ * resolver whose third parameter is not a `number` would fail to compose even
+ * though the checker would never supply one. Extra *optional* parameters on the
+ * supplied function (the engine's `options` bag among them) remain assignable.
  */
 export type AnchorResolver = (
   body: string,
   selector: TextQuoteSelector,
-  hint?: number,
 ) => { start: number; end: number } | null;
 
 export type CheckOptions = {

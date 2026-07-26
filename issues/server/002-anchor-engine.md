@@ -189,7 +189,61 @@ Workspace: `/var/folders/.../T/corpus-e2e-anchors-2aZhnr` (mkdtemp + `git init`)
 - `npm run typecheck` — PASS (all workspaces, strict + `exactOptionalPropertyTypes`)
 - `npm run test:coverage` — **343 tests passed**, coverage all files **99.77 % lines / 94.44 % branches / 100 % functions** (≥ 90 % gate)
 
-**Sprint-001 acceptance tests:** TEST-18…TEST-32 all covered by colocated unit suites (`resolve.test.ts`, `fuzzy.test.ts`, `reconcile.test.ts`, `diff.test.ts`, `index.test.ts` purity scan) and the real-file scenarios above. TEST-62 (checker ∘ resolver composition) and TEST-64's SERVER-001-side half: **DEFERRED → sprint-001 cross-issue integration** — SERVER-001 is implemented in a parallel worktree and its checker is not present here; SERVER-002's side of the contract (`resolveAnchor(body, selector) → Range | null`, selectors emitted satisfying `TextQuoteSelectorSchema` — verified by `TextQuoteSelectorSchema.parse` in `reconcile.test.ts`) is in place.
+**Sprint-001 acceptance tests:** TEST-18…TEST-32 all covered by colocated unit suites (`resolve.test.ts`, `fuzzy.test.ts`, `reconcile.test.ts`, `diff.test.ts`, `index.test.ts` purity scan) and the real-file scenarios above. TEST-62 (checker ∘ resolver composition) and TEST-64's SERVER-001-side half: ~~**DEFERRED → sprint-001 cross-issue integration**~~ **TEST-62 VERIFIED 2026-07-26** (addendum below) — SERVER-001 was implemented in a parallel worktree and its checker was not present here; SERVER-002's side of the contract (`resolveAnchor(body, selector) → Range | null`, selectors emitted satisfying `TextQuoteSelectorSchema` — verified by `TextQuoteSelectorSchema.parse` in `reconcile.test.ts`) is in place.
+
+### Addendum — TEST-62 verified after SERVER-001 merged (2026-07-26)
+
+**implemented on: opus** (claude-opus-5, 1M context).
+
+With both worktrees merged into `phase-1-foundations`, the deferred composition check
+ran for real against SERVER-001's `checkCorpus`.
+
+**The two published signatures did not meet.** SERVER-001's `AnchorResolver` declared
+a third positional `hint?: number`; this engine publishes
+`resolveAnchor(body, selector, options?: ResolveOptions)`. Neither issue's Technical
+Design fixed the third parameter's shape — the Resolution-ladder section here only
+says "`hint` is the caller-supplied previous offset when available" — so the two
+worktrees picked different encodings and assignment failed:
+
+```
+error TS2322: Types of parameters 'options' and 'hint' are incompatible.
+  Type 'number | undefined' is not assignable to type 'ResolveOptions | undefined'.
+```
+
+**The engine was not changed.** Widening `ResolveOptions` to `number | ResolveOptions`
+purely to satisfy a caller that never supplies a hint would be an adapter in
+disguise. The fix landed on the checker instead: `AnchorResolver` now names only the
+two arguments `checkCorpus` actually passes, so any resolver with extra _optional_
+parameters — this one included — composes as published. `resolveAnchor`'s signature,
+its ladder, its thresholds and its purity are untouched by this addendum.
+
+**TEST-62 — PASS.** Colocated suite `apps/server/src/check-with-anchors.test.ts`
+(5 tests) injects `resolveAnchor` directly (`checkCorpus(docs, { resolveAnchor })`,
+property shorthand — no adapter, cast or wrapper). Real-file E2E over a scratch
+corpus on disk (throwaway `tsx` script, **not committed**), one resolvable and one
+well-formed-but-unresolvable anchor, each claimed by a thread so `anchor-unused`
+never fires:
+
+```
+documents: 3  resolver: real resolveAnchor
+errors: 0
+warnings: 1
+  WARNING anchor-unresolved data/docs/finance/mortgage.md — anchor `anc_m2n5` no longer resolves in the body; its thread is orphaned
+
+documents: 3  resolver: none      # --no-resolver
+errors: 0
+warnings: 0
+```
+
+One test drives the composition through **rung 3**: the anchored sentence is edited
+(`6.1%` → `6.4%`) so `indexOf` cannot match, and the corpus still reports zero
+warnings — the checker is exercising this engine's bounded fuzzy search, not a
+substring stand-in that would have orphaned the anchor.
+
+**Repo gates after the change**: `npm run build`, `lint`, `format:check`,
+`typecheck`, `test:coverage` all PASS — **778 tests across 54 files**, combined
+coverage **99.75% lines / 95.6% branches / 100% functions**, `apps/server/src` at
+100/100/100.
 
 ## Completion Checklist (domain agent)
 

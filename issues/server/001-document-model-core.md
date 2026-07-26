@@ -465,14 +465,8 @@ all warnings with an empty error list; the exit path is unaffected. Removing the
 resolver removes the resolution-dependent warning and still reports zero errors.
 PASS.
 
-**TEST-62 — composition with SERVER-002's resolver: DEFERRED → SERVER-002.**
-SERVER-002 has not landed in this worktree, so the real `resolveAnchor` could not
-be injected. The checker's `AnchorResolver` type is
-`(body: string, selector: TextQuoteSelector, hint?: number) => {start, end} | null`
-— structurally what SERVER-002's issue specifies, including the optional
-reconciliation `hint`. Both the E2E script and a unit test inject a
-three-parameter resolver with no adapter, cast or wrapper. Must be re-verified
-against the real engine.
+**TEST-62 — composition with SERVER-002's resolver: ~~DEFERRED → SERVER-002~~
+VERIFIED 2026-07-26** (see the addendum below).
 
 **TEST-61 — the seed documents pass the real validator: DEFERRED → AGENT-001.**
 `assets/workspace/` currently contains only `.gitkeep`; there are no seed
@@ -482,6 +476,77 @@ documents to check yet.
 npm run typecheck && npm run test:coverage`): all pass. 496 tests across 33
 files; combined coverage 99.83% lines / 95.79% branches / 100% functions, above
 the 90% gate.
+
+### Addendum — TEST-62 verified after SERVER-002 merged (2026-07-26)
+
+**implemented on: opus** (claude-opus-5, 1M context).
+
+Both issues are now merged into `phase-1-foundations`, so the deferred cross-issue
+integration check was run for real.
+
+**A genuine signature mismatch was found first.** SERVER-001 published
+`AnchorResolver` with a third positional parameter (`hint?: number`); SERVER-002
+published `resolveAnchor(body, selector, options?: ResolveOptions)` — an options
+bag. Neither issue's Technical Design mandated the third parameter's shape, so the
+two worktrees chose differently and the composition did **not** type-check:
+
+```
+$ npx tsc --noEmit -p apps/server/tsconfig.json     # probe: const p: AnchorResolver = resolveAnchor
+error TS2322: Type '(body: string, selector: TextQuoteSelectorInput, options?: ResolveOptions) => Range | null'
+  is not assignable to type 'AnchorResolver'.
+  Types of parameters 'options' and 'hint' are incompatible.
+    Type 'number | undefined' is not assignable to type 'ResolveOptions | undefined'.
+```
+
+Per sprint-001 ("a mismatch here is an integration failure, not a preference") this
+was fixed at the injection point rather than shimmed: `AnchorResolver` now declares
+only the two arguments the checker actually passes. The checker has no `oldBody` and
+therefore no previous offset to offer, so naming a third parameter over-specified
+the contract. Extra *optional* parameters on the injected function stay assignable,
+so `resolveAnchor` composes as published — and the pre-existing unit test that
+injects a three-parameter resolver still passes unchanged.
+
+**TEST-62 — the checker composes with the real anchor resolver: PASS.**
+
+Colocated suite: `apps/server/src/check-with-anchors.test.ts` (5 tests) — imports
+`resolveAnchor` from `./anchors` and `checkCorpus` from `./core`, injects it with
+object-property shorthand (`{ resolveAnchor }`), no adapter, cast or wrapper lambda.
+
+Real-file E2E: a throwaway `tsx` script (scratchpad, **not committed**) walked a real
+scratch corpus on disk — `data/docs/finance/mortgage.md` carrying two well-formed
+anchors (`anc_k4f7` resolvable, `anc_m2n5` quoting text absent from the body), plus
+`data/threads/th_x9y8.md` and `th_p3q4.md` claiming one each so `anchor-unused` never
+fires:
+
+```
+$ npx tsx <scratchpad>/e2e-test62.ts <scratchpad>/test62-ws
+documents: 3  resolver: real resolveAnchor
+errors: 0
+warnings: 1
+  WARNING anchor-unresolved data/docs/finance/mortgage.md — anchor `anc_m2n5` no longer resolves in the body; its thread is orphaned
+exit=0
+
+$ npx tsx <scratchpad>/e2e-test62.ts <scratchpad>/test62-ws --no-resolver
+documents: 3  resolver: none
+errors: 0
+warnings: 0
+exit=0
+
+$ npx tsc --noEmit --strict --module nodenext ... <scratchpad>/e2e-test62.ts
+tsc exit=0        # the injection needs no adapter
+```
+
+The resolvable anchor produces no finding; the unresolvable one produces exactly one
+warning and zero errors; removing the resolver removes the warning entirely, proving
+it came from the injected engine and not from the checker. A fifth test edits the
+anchored sentence (`6.1%` → `6.4%`) so `indexOf` cannot match and only the engine's
+rung-3 fuzzy search can place the anchor — the corpus still reports zero warnings,
+confirming the real ladder is in play rather than a substring stand-in.
+
+**Repo gates after the change** (`npm run build`, `lint`, `format:check`,
+`typecheck`, `test:coverage`): all PASS. **778 tests across 54 files**; combined
+coverage **99.75% lines / 95.6% branches / 100% functions** (`apps/server/src` at
+100/100/100), above the 90% gate.
 
 ## Completion Checklist (domain agent)
 
