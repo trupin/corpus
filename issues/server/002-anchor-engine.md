@@ -155,19 +155,49 @@ _Filled in by the implementing agent as proof-of-work. Must be from real E2E tes
 
 ### Reproduction (bugs only)
 
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+N/A — feature, not a bug.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+**implemented on: fable** (claude-fable-5), 2026-07-26.
+
+All verification ran against **real files in a real `git init` scratch workspace** (per sprint-001 Verification Environment for SERVER-002): a throwaway `tsx` script (`scratchpad/e2e-anchors.ts`, not committed) wrote a real markdown document with a real `anchors:` frontmatter block, applied concrete edits, called `reconcileAnchors`, wrote frontmatter + body back to disk, and used `git diff` as the observation instrument.
+
+Command: `./node_modules/.bin/tsx <scratchpad>/e2e-anchors.ts`
+Workspace: `/var/folders/.../T/corpus-e2e-anchors-2aZhnr` (mkdtemp + `git init`), doc `data/docs/mortgage.md` with anchor `anc_k4f7` on `exact: "assume a 30-year fixed at 6.1%"` (context captured via `computeContext`, as the server's write path will).
+
+1. **Insert paragraph above the anchor (TEST-22)** — observed:
+   `report: {"unchanged":["anc_k4f7"],"remapped":[],"orphaned":[]}`; anchor re-resolves at `{"start":181,"end":211}` slicing back to `"assume a 30-year fixed at 6.1%"`; `git diff -U0` shows **only** the two inserted body lines (`+A brand-new paragraph...`), zero changes to the anchor block. PASS.
+2. **Edit inside the anchored sentence (TEST-24)** — observed:
+   `report: {"unchanged":[],"remapped":["anc_k4f7"],"orphaned":[]}`; on-disk `git diff` shows exactly `-    exact: assume a 30-year fixed at 6.1%` / `+    exact: assume a 30-year fixed at 6.4%` plus the body line change; the refreshed selector resolves in the new body via exact match, slice `"assume a 30-year fixed at 6.4%"`. PASS.
+3. **Delete the anchored paragraph (TEST-25)** — observed:
+   `report: {"unchanged":[],"remapped":[],"orphaned":["anc_k4f7"]}`; `resolveAnchor` on the new body returns `null`; `git diff` shows **only** the two deleted body lines — the anchor's frontmatter block is byte-identical (no `exact`/`prefix`/`suffix` lines in the diff). Nothing threw. PASS.
+4. **Edit after the anchored range (TEST-23)** — observed:
+   `report: {"unchanged":["anc_k4f7"],...}`; anchor still resolves at `{"start":126,"end":156}` (same offsets as baseline); `git diff` shows only the appended body lines. PASS.
+5. **Context-only change** — covered in the unit M1 matrix (`reconcile.test.ts`): `remapped`, `exact` kept, `prefix`/`suffix` refreshed to the new surroundings and equal to `computeContext` of the new body (TEST-26). PASS.
+6. **1 MB / 50 anchors (TEST-29)** — real SPEC.md content (19 KB unit repeated past 1 MB, so all 50 markers genuinely exist), one paragraph inserted mid-body:
+   `body=1008050 chars, elapsed=5.2ms, buckets: unchanged=49 remapped=1 orphaned=0` (the one `remapped` is the anchor whose 32-unit prefix window contains the insertion — a true context refresh). The colocated Vitest benchmark (independent 1 MB fixture) also asserts `< 1000 ms`. PASS, well under a second.
+7. **Resolution sanity (projection use case)** — `resolveAnchors` over the scratch workspace prints `anc_k4f7 {"start":126,"end":156} slice="assume a 30-year fixed at 6.1%"` — offsets slice back to the quoted text. PASS.
+   `git log --oneline` in the workspace shows the baseline + one commit per scenario (9 commits), confirming every state was really written to disk and committed.
+
+**Fixture bug found during E2E (not an engine bug):** the first run of the 1 MB scenario built anchors for markers `copy 15..49` that did not exist in the body (`indexOf === -1` fed to `computeContext`), yielding garbage whole-body prefixes that the engine then legitimately fuzzy-matched (`"<!-- copy 20 -->"` ≈ `"<!-- copy 2 -->\n"` at 0.875 similarity ≥ 0.75 threshold). Fixed by capping the repeated unit so all 50 markers exist and guarding `capture` — the unit-test fixture always had this guard.
+
+**Gate results (from this worktree, clean run):**
+- `npm run build` — PASS (contract → kit → cli, dependency order)
+- `npm run lint` — PASS (0 problems)
+- `npm run format:check` — PASS
+- `npm run typecheck` — PASS (all workspaces, strict + `exactOptionalPropertyTypes`)
+- `npm run test:coverage` — **343 tests passed**, coverage all files **99.77 % lines / 94.44 % branches / 100 % functions** (≥ 90 % gate)
+
+**Sprint-001 acceptance tests:** TEST-18…TEST-32 all covered by colocated unit suites (`resolve.test.ts`, `fuzzy.test.ts`, `reconcile.test.ts`, `diff.test.ts`, `index.test.ts` purity scan) and the real-file scenarios above. TEST-62 (checker ∘ resolver composition) and TEST-64's SERVER-001-side half: **DEFERRED → sprint-001 cross-issue integration** — SERVER-001 is implemented in a parallel worktree and its checker is not present here; SERVER-002's side of the contract (`resolveAnchor(body, selector) → Range | null`, selectors emitted satisfying `TextQuoteSelectorSchema` — verified by `TextQuoteSelectorSchema.parse` in `reconcile.test.ts`) is in place.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
