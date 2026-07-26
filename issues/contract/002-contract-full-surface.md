@@ -33,6 +33,7 @@ CONTRACT-001 bootstraps `packages/contract` with a deliberately small surface (d
 - [ ] **Result rows.** The `GET /api/docs` row schema carries structured search `snippets` and an `attention` reason array; both are typed enums/discriminated shapes, not free-form strings.
 - [ ] **Tree.** `GET /api/tree` returns the `data/docs/` folder tree with names and doc counts.
 - [ ] **Capture.** `POST /api/capture` (multipart: text + attachments) is defined and returns the created inbox doc id, its filing thread id, and the enqueued event id.
+- [ ] **Doc mutations.** The §9.2 move and archive/unarchive routes are defined (path changes and `status` flips; the doc id never changes, and the route descriptions say so).
 - [ ] **Thread verbs.** `POST /api/threads/:id/seen`, `/resolve`, `/reopen`, `DELETE /api/threads/:id/turns/:ts` and `DELETE /api/docs/:id` are defined; the two deletions are marked user-only and their **cascade semantics are documented in the route descriptions** and reflected in their response schemas.
 - [ ] **Queue.** Long-poll `idle` (typed `timeout` param; `200` with events vs `204` on timeout), `claim-all` (batch), `complete`/`fail`, abandon, `reap-stale`, `halt`/`resume` (+ status read) are all defined, plus the `QueueEvent` schema (`id`, `type`, `created`, `source`, `payload`) with core types enumerated and plugin types left open.
 - [ ] **Locks.** acquire / release / break / reap / list are defined over a `Lock` schema of `{docId, holder: "user" | "agent", acquired, ttl}`.
@@ -75,8 +76,15 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 
 **Two design pins.** SPEC.md leaves two mechanisms unstated that this contract must decide once and apply everywhere. Both are recorded here so downstream issues inherit them rather than re-deciding:
 
-1. **Author attribution is a request header, not a body field.** Every mutating route declares a required `X-Corpus-Author: user | agent` header parameter (shared schema in `actor.ts`, defaulting to `user` when absent so browser clients need no ceremony). A header is used because several mutating routes are `multipart/form-data` or bodiless (`DELETE`, `POST .../resolve`), where a body field would be inconsistent or impossible; the server maps this to the git author for the auto-commit (§7 "acting party as git author"). The typed client factory injects it from a per-call option.
+1. **Author attribution is a request header, not a body field.** Every mutating route declares an **optional** `X-Corpus-Author: user | agent` header parameter (shared schema in `actor.ts`) whose documented default is `user` when absent, so browser clients need no ceremony. _(Adjudicated 2026-07-26: CONTRACT-001 flagged that "required" and "defaulting when absent" are mutually exclusive in OpenAPI and implemented optional-with-documented-default; that reading stands — do not make the header required.)_ A header is used because several mutating routes are `multipart/form-data` or bodiless (`DELETE`, `POST .../resolve`), where a body field would be inconsistent or impossible; the server maps this to the git author for the auto-commit (§7 "acting party as git author"). The typed client factory injects it from a per-call option.
 2. **`agent` in the turn-append payload means "requests the agent", not "authored by the agent".** §9.2's "agent flag" and §8's composer toggle are the *enqueue* signal; authorship comes from the header above. The field is therefore named `requestsAgent` in every request schema (turn-append, thread create, capture), and its description states plainly that it controls whether a `comment.created` event is enqueued.
+
+   **It is a tri-state: `z.boolean().optional()` with NO default.** _(Adjudicated 2026-07-26 on CONTRACT-001's pr-reviewer finding 3; CONTRACT-001 implements this for turn-append and thread create, and this issue must carry it to `POST /api/capture` and to the multipart turn-append body.)_ A `.default(false)` collapses "omitted" and "explicitly false" at parse time, which makes §8's **"note only"** toggle unexpressible: a user replying in an `engaged` thread could no longer suppress the re-trigger. The three states, which every field description must state:
+   - **omitted** → server default behavior. Thread create/capture: enqueue only on an explicit `@agent` / `@<subagent>` mention or `/<skill>` invocation. Turn append: enqueue when the thread is already `engaged`, otherwise only on such a mention or invocation.
+   - **`true`** → request the agent.
+   - **`false`** → "note only": suppress the enqueue **even when the thread is engaged**.
+
+   The corresponding `eventId` response fields describe the same three cases and state that an explicit `false` always yields `null`.
 
 **`GET /api/docs` parameter grammar.**
 
@@ -118,7 +126,7 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 - `POST /api/queue/claim-all` — atomically moves all `pending/*` to `in-progress/` and returns `{ events: QueueEvent[] }` (empty array while halted).
 - `POST /api/queue/:id/complete` — bodiless; `POST /api/queue/:id/fail` — body `{ reason?: string }`; `DELETE /api/queue/:id` — abandon (the §9.2 spelling).
 - `POST /api/queue/reap-stale` — returns `{ reaped: string[] }` (in-progress events recovered to pending).
-- `POST /api/queue/halt` and `/resume` — toggle the `.corpus/HALT` sentinel; both return `QueueStatus`. `GET /api/queue/status` returns the same `QueueStatus = { halted, pending, inProgress, failed }` — needed because the console strip reads the halted dot and queue depth on load, while SSE only signals invalidation.
+- `POST /api/queue/halt` and `/resume` — toggle the `.corpus/HALT` sentinel; both return `QueueStatus`. `GET /api/queue/status` returns the same `QueueStatus` — which CONTRACT-001 already shipped as `{ halted, pending, inProgress, processed, failed, abandoned }` (the superset §9.2's "per-status counts" requires); reuse it unchanged — needed because the console strip reads the halted dot and queue depth on load, while SSE only signals invalidation.
 
 **Locks** (§7). `Lock = { docId, holder: "user" | "agent", acquired, ttl }`.
 
@@ -180,7 +188,7 @@ Vitest in `packages/contract`:
 2. Inspect `packages/contract/openapi.json` and confirm every §9.2 endpoint is present with the expected method, including `GET /events` (as `text/event-stream`) and `GET /attachments/{path}` (binary).
 3. Hand-add a parameter to the `GET /api/docs` route, attempt `git push` without regenerating → the pre-push drift check blocks it; regenerate → push proceeds. Revert.
 4. Stand up a stub Hono app mounting the full contract (no real handlers — canned responses), then from a script: make a typed `GET /api/docs?needs=me&stale=stale&sort=-updated` call and observe typed `attention` and `snippets` on the rows; call `POST /api/queue/idle`-style long-poll and observe the `204` path returning no events without throwing; post a multipart turn via the upload helper against a stub route and observe the parsed fields; open the EventSource helper against a stub `/events` route emitting one `invalidate` frame and observe a typed query-key array.
-5. Confirm TypeScript rejects the mistakes the contract exists to prevent: `sort: "nonsense"`, a missing `X-Corpus-Author` on a mutating call where it is required, and reading `.attention` off a non-doc response — each must be a compile error, verified with `tsc` on a scratch file.
+5. Confirm TypeScript rejects the mistakes the contract exists to prevent: `sort: "nonsense"`, an invalid actor value (`X-Corpus-Author: "robot"` — the header is optional, so absence is legal, but a wrong value is a compile error), and reading `.attention` off a non-doc response — each must be a compile error, verified with `tsc` on a scratch file.
 
 ## E2E Verification Log
 _Filled in by the implementing agent as proof-of-work. Must be from real E2E

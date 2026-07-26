@@ -8,5 +8,9 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src"],
+  // `src/generation` is repo tooling behind `npm run generate`, not part of the
+  // published surface — keeping it out of dist/ keeps `openapi-typescript` a
+  // devDependency that consumers never resolve.
+  "exclude": ["src/**/*.test.ts", "src/generation/**"]
 }

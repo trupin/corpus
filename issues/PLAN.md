@@ -24,7 +24,7 @@ Domain prefixes: `SHARED` (cross-domain, orchestrator-handled), `CONTRACT`, `SER
 | INFRA-005 | Reviewer drift dimensions: interface-docs + spec-code | done | P1 | INFRA-003 |
 | INFRA-006 | Per-issue model recommendations; pr-reviewer pinned to Fable | done | P1 | INFRA-005 |
 | SHARED-001 | Revise SPEC.md for the standalone-tool architecture | done | P0 | — |
-| CONTRACT-001 | Bootstrap @corpus/contract: zod-openapi routes, spec generation, typed client | in_progress | P0 | SHARED-001, INFRA-007 |
+| CONTRACT-001 | Bootstrap @corpus/contract: zod-openapi routes, spec generation, typed client | done | P0 | SHARED-001, INFRA-007 |
 
 ---
 
@@ -94,6 +94,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | todo | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | todo | P1 | CLI-002, UI-010 |
+| CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | todo | P1 | CLI-002, AGENT-001 |
 
 ---
 
