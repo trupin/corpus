@@ -60,6 +60,7 @@ The sole-writer server and the thin-client CLI.
 | SERVER-011 | Collection query endpoint: filters + FTS + needs=me | todo | P0 | SERVER-004 |
 | CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | in_progress | P0 | CONTRACT-001, INFRA-007 |
 | SERVER-012 | Anchor engine: partial-path truncated selectors beside edited near-identical siblings | in_progress | P2 | SERVER-002 |
+| CONTRACT-003 | Request schemas with `.default()` render as required in the generated client | todo | P1 | CONTRACT-002 |
 | CLI-002 | `corpus init` + server lifecycle verbs | todo | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006 |
 | CLI-004 | Queue, lock, job verbs (agent loop surface) | todo | P0 | CLI-001, SERVER-008, SERVER-009 |
