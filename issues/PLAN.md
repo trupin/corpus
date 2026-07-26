@@ -35,10 +35,10 @@ Contract, core server libraries, UI shell. Filed by /decompose on 2026-07-26 aga
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
 | INFRA-007 | Package build & exports wiring; plugins workspace; type-aware lint | done | P0 | — |
-| SERVER-001 | Document model core: parse/serialize, ids, validation | in_progress | P0 | SHARED-001 |
-| SERVER-002 | Anchor engine: text-quote resolution + reconciliation | in_progress | P0 | SHARED-001 |
-| UI-001 | App scaffold + design system from design/index.html | in_progress | P0 | INFRA-007 |
-| AGENT-001 | Workspace template: skills layout, seed views, templates | in_progress | P1 | SHARED-001 |
+| SERVER-001 | Document model core: parse/serialize, ids, validation | done | P0 | SHARED-001 |
+| SERVER-002 | Anchor engine: text-quote resolution + reconciliation | done | P0 | SHARED-001 |
+| UI-001 | App scaffold + design system from design/index.html | done | P0 | INFRA-007 |
+| AGENT-001 | Workspace template: skills layout, seed views, templates | done | P1 | SHARED-001 |
 
 ---
 
@@ -59,6 +59,7 @@ The sole-writer server and the thin-client CLI.
 | SERVER-010 | Attachments: ingest + serving | todo | P1 | SERVER-006 |
 | SERVER-011 | Collection query endpoint: filters + FTS + needs=me | todo | P0 | SERVER-004 |
 | CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | todo | P0 | CONTRACT-001, INFRA-007 |
+| SERVER-012 | Anchor engine: partial-path truncated selectors beside edited near-identical siblings | todo | P2 | SERVER-002 |
 | CLI-002 | `corpus init` + server lifecycle verbs | todo | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006 |
 | CLI-004 | Queue, lock, job verbs (agent loop surface) | todo | P0 | CLI-001, SERVER-008, SERVER-009 |

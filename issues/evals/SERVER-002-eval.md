@@ -2,10 +2,11 @@
 
 **Date**: 2026-07-26
 **Sprint**: sprint-001 (Phase 1 — Foundations)
-**Verdict (round 2, commit 8bafa07)**: **FAIL** — round-1's TEST-26 defect is genuinely
-fixed, but the fix introduces a **more severe regression**: deleting anchored text now
-re-attaches its thread to *different* text and destroys the historical selector. See
-[Round 2](#round-2--re-evaluation-of-the-fix) at the end.
+**Verdict (round 3, commit 4296717)**: **PASS** — 15 of 15 acceptance tests pass. Both prior
+defects are closed simultaneously, the new seam discriminates correctly under adversarial
+probing, and no regression was found. See [Round 3](#round-3--re-evaluation-of-the-second-fix).
+**Verdict (round 2, commit 8bafa07)**: FAIL — round-1's TEST-26 defect fixed, but deleting
+anchored text re-attached its thread to *different* text.
 **Verdict (round 1, commit 0515dc0)**: FAIL (14 of 15; TEST-26 failed)
 
 Verification followed sprint-001's Verification Environment for SERVER-002: real markdown
@@ -313,3 +314,170 @@ visible and recoverable; a silent misattachment is neither.
 **Verdict: FAIL** — fix FAIL-2, and re-verify TEST-25 with a fixture that contains a
 **similar sibling** (a list of near-identical bullets is the cheapest one), on disk, asserting
 both the `orphaned` bucket and a `git diff` with no change to the anchor block.
+
+---
+
+# Round 3 — re-evaluation of the second fix
+
+**Date**: 2026-07-26
+**Commit under test**: `4296717 [SERVER-002] Deleted-claim verification is exact-only + insertion-overlap`
+**Verdict**: **PASS** (15 of 15)
+
+Shipped design: a `deleted` claim from the offset mapper re-attaches only when
+`resolveAnchorExact` (rungs 1–2, never fuzzy) finds the text in `newBody` **and** the match
+overlaps text this edit inserted (`OffsetMapper.touchesInsertion`); an exact match lying wholly
+inside unedited text is a pre-existing doppelgänger and orphans with the selector byte-identical.
+
+## 1. Round-2 FAIL-2 is fixed
+
+The four A/B scenarios that failed in round 2, re-run against the pre-fix engine (`0515dc0`,
+extracted and imported as a black box) and HEAD:
+
+| scenario                                                       | PRE-FIX                | round 2                     | round 3 (HEAD)         |
+| --------------------------------------------------------------- | ---------------------- | --------------------------- | ---------------------- |
+| delete the middle of three similar paragraphs                   | `orphaned`, preserved  | `remapped` onto *alpha*     | **`orphaned`, preserved** |
+| delete the middle bullet of a 3-bullet list                     | `orphaned`, preserved  | `remapped` onto *milk*      | **`orphaned`, preserved** |
+| delete the `Q2` row of a 3-row table                            | `orphaned`, preserved  | `remapped` onto `Q3`        | **`orphaned`, preserved** |
+| delete anchored text having a verbatim copy elsewhere           | `orphaned`, preserved  | `remapped` onto the copy    | **`orphaned`, preserved** |
+
+**My round-2 retest guidance, executed exactly** — TEST-25 with a similar sibling present, on
+disk, real git:
+
+```
+$ tsx node_modules/.eval/s2-t25.ts
+The user deleted the BREAD bullet. Its thread should orphan.
+report: {"unchanged":[],"remapped":[],"orphaned":["anc_bread1"]}
+selector now on disk: {"exact":"- Buy bread from the corner store on Tuesday.", …}   # byte-identical
+frontmatter rewritten: false
+--- git diff -U0 (TEST-25 requires NO change to the anchor block) ---
+   -- Buy bread from the corner store on Tuesday.
+```
+
+Body-only diff, anchor block untouched, selector preserved byte-for-byte. This is exactly what
+TEST-25 demands and what round 2 violated.
+
+## 2. Round-1 FAIL-1 stays fixed
+
+TEST-26 minimal repro: `{"remapped":["anc_k4f7"]}` with `prefix`/`suffix` equal to
+`computeContext(newBody, …)`. Escalating-context sequence — all four rows `remapped` with
+refreshed context, including "both neighbouring sentences fully rewritten". On-disk M1 matrix:
+TEST-22 `unchanged` (no frontmatter change) · TEST-23 `unchanged` · TEST-24 `remapped` with
+`exact` = the edited sentence · TEST-25 `orphaned` with a body-only diff · TEST-26 `remapped`
+with `exact` unchanged and context quoting the new surroundings. **Both defects are closed at
+once** — the two are no longer in tension.
+
+## 3. The seam does what it says
+
+Reading the decision inputs directly through the exported API:
+
+| case                                                     | `classify` | `resolveAnchorExact` | `touchesInsertion` | outcome                |
+| ---------------------------------------------------------- | ---------- | -------------------- | ------------------ | ---------------------- |
+| TEST-26 (neighbours rewritten; anchor sits inside the diff's inserted run) | `deleted`  | `{68,120}`           | **true**           | `remapped` ✓            |
+| doppelgänger (twin pre-existed in untouched text)        | `deleted`  | `{108,160}`          | **false**          | `orphaned`, preserved ✓ |
+| plain deletion, no twin anywhere                         | `deleted`  | `null`               | —                  | `orphaned`, preserved ✓ |
+
+The discrimination is principled rather than incidental: identical classification, identical
+exact-hit, opposite verdicts, decided solely by whether the surviving text is text this edit
+produced.
+
+**`resolveAnchorExact` is genuinely fuzzy-free**: on a body one character off it returns
+`null` while the full ladder returns `{8,78}`; rung-1 contextual disambiguation still works
+(3 occurrences of `the rate`, contextual selector → `{31,39}`); an ambiguous bare `exact`
+(3 occurrences, no context) → `null`, i.e. rung 2's uniqueness requirement is intact.
+
+## 4. Adversarial probing of the new seam
+
+| probe                                                             | observed                                                                 | judgment |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------- |
+| **Cut-and-paste**: anchored sentence moved down past the tail       | `remapped`, resolves to the moved text                                    | Correct — the thread follows its text, per §6's intent |
+| Cut-and-paste: moved up above the lead                              | `remapped`                                                                | Correct |
+| Cut-and-paste: moved far, extra paragraphs inserted between         | `remapped`                                                                | Correct |
+| **Copy while the original is KEPT** (copy appended)                 | `unchanged`, selector preserved, resolves to the **original**             | Correct — the anchor must not drift to a copy |
+| Copy while the original is kept (copy prepended)                    | `unchanged`, resolves to the original                                     | Correct |
+| **Delete here + identical text inserted in an unrelated section**   | `remapped` onto the inserted copy                                         | Acceptable — see note below |
+| Delete here + identical text inserted far away amid much new text   | `remapped` onto the inserted copy                                         | Acceptable — same reasoning |
+| Insertion immediately **before** the anchored text                  | `remapped`, context refreshed                                             | Correct |
+| Insertion immediately **after** the anchored text                   | `remapped`, context refreshed                                             | Correct |
+| Whole-document reshuffle (all three paragraphs reordered)           | `remapped`, resolves to the anchored text                                 | Correct |
+| Suffix-context-only edit, match wholly in unedited text             | `remapped` with `exact` kept (my probe's "expected `unchanged`" was wrong — the context did change, so `remapped` is the specified outcome) | Correct |
+| Genuine deletion, no twin                                           | `orphaned`, preserved                                                     | Correct |
+| Whole body replaced with unrelated prose                            | `orphaned`, preserved                                                     | Correct |
+| Body emptied                                                        | `orphaned`, preserved                                                     | Correct |
+| Anchored range edited down to whitespace                            | `orphaned`, preserved                                                     | Correct |
+
+**Note on "delete here + identical text inserted elsewhere".** The diff aligns the two runs and
+reports `equal`, so this never reaches the new seam at all — and it is byte-identical to the
+pre-fix engine (A/B confirmed). It is also inherent to diffing: a move and a
+delete-plus-coincidentally-retype are the same edit at the character level, and treating them
+as a move is what makes cut-and-paste work. §6 does not distinguish them. Not a defect.
+
+**Attribution check.** Most seam probes above run through `equal`/`partial`, not the
+`deleted` path. I A/B'd each against the pre-fix engine: **cut-and-paste, copy-with-original-kept,
+delete-plus-insert-elsewhere and whole-document reshuffle are byte-identical to pre-fix.** The
+fix changed only the `deleted` branch, exactly as claimed.
+
+## 5. Regression sweep — nothing moved
+
+| Probe                                                            | Result                                                                        |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| TEST-18/19/20/21 ladder, threshold from both sides               | PASS — 0.758 resolves, 0.710 does not; fuzzy deterministic over 100 calls        |
+| TEST-22…26 on disk (M1 matrix, `git diff` instrument)            | PASS — all five rows                                                             |
+| TEST-27 determinism ×100 (7 anchors incl. 2 orphaning); ×100 on a 5-anchor mixed-outcome doc; ×50 on a 1 MB body | PASS — 1 distinct serialized result in every case |
+| TEST-28 purity                                                   | PASS — imports unchanged: `diff-match-patch`, relative siblings, one **type-only** `@corpus/contract` import |
+| TEST-29 perf                                                     | PASS — 1 MB / 50 anchors **0.8 ms**; see §6                                      |
+| TEST-30 unicode safety                                           | PASS — no lone surrogates; astral-adjacent context clipped correctly              |
+| TEST-31 already-orphaned never re-attached                       | PASS — `orphaned`, selector byte-identical                                       |
+| TEST-32 input immutability                                       | PASS — input deep-equal to snapshot (also verified at 1 MB / 50 anchors); distinct object |
+| TEST-64 contract selectors                                       | PASS — boundary anchors emit contract-valid selectors                            |
+| TEST-62 composition with the checker                             | PASS — property shorthand, no adapter                                            |
+| Duplicates must not steal an in-place-edited anchor              | PASS — remaps onto the edited occurrence, not the untouched twin                 |
+| Two identical sentences, context-only edit                       | PASS — first→first, second→second                                                |
+| Repo gates                                                       | PASS — lint, format:check, typecheck (0 TS errors), **822 tests / 55 files**, coverage 99.76% lines / 95.58% branches / 100% functions; `npm run e2e` 13 passed |
+
+## 6. Performance — direction verified, headline figure not reproduced
+
+A/B, same inputs, both engines:
+
+| scenario                                                   | PRE-FIX  | HEAD     |
+| ------------------------------------------------------------ | -------- | -------- |
+| 1 MB, 50 anchors, one paragraph inserted mid-body           | 2 ms     | **1 ms** |
+| 1 MB, 50 anchors, body replaced with unrelated prose (all orphan) | 1001 ms  | 1011 ms  |
+| 1 MB, 50 anchors, whole-body CRLF conversion                | 972 ms   | **771 ms** |
+| 418 KB, 50 anchored paragraphs all genuinely deleted        | 17 ms    | **16 ms** |
+
+Perf is non-regressive and improves on two of four. I could **not** reproduce the commit's
+claimed "all-orphan worst case 1080 → 134 ms": my all-orphan construction is dominated by
+`diff_main` hitting the configured 1 s `Diff_Timeout` in *both* engines, so the per-anchor
+saving is invisible there. The claim may hold for a differently-shaped fixture; what I can
+attest is the direction — no scenario got slower by more than measurement noise.
+
+## 7. Observations for the orchestrator (not verdict-changing)
+
+1. **Render-time resolution can still land on a look-alike.** Reconciliation now correctly
+   orphans the deleted bread bullet and preserves its selector — but `resolveAnchor` (the
+   §6 ladder, rung 3 included) applied to that preserved selector against the new body still
+   returns the *milk* bullet. So SERVER-004's `anchors.resolved_offset` will be non-null and
+   the UI may render the orphaned thread anchored to the wrong bullet. This is pre-existing
+   (identical on the pre-fix engine) and §6 explicitly prescribes fuzzy as resolution rung 3,
+   so it is not a SERVER-002 defect — but the reconciler's history guarantee is only as good
+   as what the projection does with it. Worth a decision before SERVER-004.
+2. **Pre-existing `partial`-path oddity.** When a paragraph is deleted next to a
+   near-identical paragraph that is *also* edited, the mapper's `partial` alignment can emit
+   truncated selectors (`exact: "Paragraph one now"`) and hand one anchor another
+   paragraph's text. A/B confirms this is byte-identical on the pre-fix engine — untouched by
+   both fixes and outside the M1 matrix — but it is the same family of problem and deserves
+   its own issue rather than being forgotten.
+
+## Round-3 summary
+
+The second fix closes round-2's misattachment without reopening round-1's false orphan — the
+hard part, since the two pull in opposite directions. The discriminator is the right one:
+exact-only verification means fuzzy can never manufacture a re-attachment, and the
+insertion-overlap test distinguishes "this text is here because the edit put it here" from
+"this text was already there", which is exactly the difference between a moved anchor and a
+doppelgänger. I probed that seam with cut-and-paste, copy-with-original-retained,
+delete-plus-paste-elsewhere, adjacent insertions and a whole-document reshuffle, and A/B'd
+every case against the pre-fix engine to make sure nothing else shifted; determinism, purity,
+immutability, unicode safety and performance all hold.
+
+**Verdict: PASS.**

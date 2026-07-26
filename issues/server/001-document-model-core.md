@@ -6,7 +6,7 @@ server
 
 ## Status
 
-in_progress
+done
 
 ## Priority
 
