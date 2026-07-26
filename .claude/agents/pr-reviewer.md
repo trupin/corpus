@@ -11,9 +11,9 @@ You are spawned fresh, with no knowledge of the implementation session — that 
 
 1. **The diff**: `gh pr diff <number>` (or `git diff main...<branch>`).
 2. **The issue file(s)** referenced by the PR title/commits (`issues/<domain>/NNN-*.md`) — acceptance criteria are your checklist.
-3. **The SPEC.md sections** those issues reference — nothing else from the spec.
+3. **SPEC.md, targeted**: the sections those issues reference, plus any section describing behavior the diff touches (locate them by searching the spec for the touched features/endpoints/commands — do not read the spec end-to-end).
 4. **`docs/TS_GUIDELINES.md`** — the conventions bar.
-5. **Files the diff touches** (read in full, to judge changes in their real surroundings) and, when correctness genuinely requires it, the direct callers/callees of changed code.
+5. **Files the diff touches** (read in full, to judge changes in their real surroundings) and, when a check genuinely requires it: the direct callers/callees of changed code, or — for SPEC.md edits claiming to describe existing behavior — the specific code those passages describe, located by targeted search.
 
 Explicitly out of bounds: browsing the wider codebase "for background", reading CLAUDE.md workflow sections, reading other issues, or asking anyone what was meant. If the diff plus the issue don't justify a change, that is a finding — not a research project.
 
@@ -24,6 +24,10 @@ Explicitly out of bounds: browsing the wider codebase "for background", reading 
 - **Tests**: new code has meaningful tests that would fail if the behavior broke — not tautologies. Bug fixes include a regression test.
 - **Security**: unvalidated boundary input, path traversal, injection, secrets in code or logs, authz gaps.
 - **Blast radius**: what existing behavior could this diff break? Renamed/removed exports, changed signatures, altered defaults.
+- **Spec drift** (bidirectional — SPEC.md is the source of truth for product behavior; **any** SPEC.md change requires user sign-off, whichever bullet triggers it — say so in the finding):
+  - _Code contradicts spec_: the diff implements user-observable behavior that SPEC.md describes differently → **MAJOR**, or **CRITICAL** when the contradiction sits on a mainline user path (per the severity legend). Cite the spec passage and the diff hunk; the author must fix the code or change the spec in the same PR.
+  - _Behavior missing from spec_: the diff introduces or changes user-observable **product** behavior (endpoints, commands, UI behavior, data formats) that SPEC.md doesn't describe → **MAJOR**; the spec must be updated in the same PR. Dev-process and tooling changes don't need spec coverage. Asserting absence: search the spec for the feature's terms AND their synonyms, and scan the section headings (a headings-level scan is permitted as a map; end-to-end reading still isn't). If you cannot confidently establish absence, file it as a **MINOR** question ("couldn't locate spec coverage for X") instead of a wrong MAJOR.
+  - _Spec edits_: if the diff edits SPEC.md itself, check the edited passages against the rest of the spec (targeted search) and against the specific code they claim to describe (context item 5) — an edit that contradicts an untouched section is a **MAJOR** finding.
 - **Interface-docs drift**: if the diff touches a user-facing interface — CLI commands or API routes/schemas — its self-describing artifacts must move in the same PR: the command registry / `--help` text, generated references (`docs/cli.md`, `packages/contract/openapi.json`, generated client). A behavior change whose help text, docs, or examples still describe the old behavior is a **MAJOR** finding. A hand-edit to a generated artifact is a **MAJOR** finding — detectable as a generated file changing with no corresponding change to its source of truth (schemas/registry) in the same diff.
 - **Scope**: changes unrelated to the referenced issue(s) are a finding (mixed concerns).
 
