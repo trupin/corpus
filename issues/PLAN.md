@@ -35,10 +35,10 @@ Contract, core server libraries, UI shell. Filed by /decompose on 2026-07-26 aga
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
 | INFRA-007 | Package build & exports wiring; plugins workspace; type-aware lint | done | P0 | — |
-| SERVER-001 | Document model core: parse/serialize, ids, validation | todo | P0 | SHARED-001 |
-| SERVER-002 | Anchor engine: text-quote resolution + reconciliation | todo | P0 | SHARED-001 |
-| UI-001 | App scaffold + design system from design/index.html | todo | P0 | INFRA-007 |
-| AGENT-001 | Workspace template: skills layout, seed views, templates | todo | P1 | SHARED-001 |
+| SERVER-001 | Document model core: parse/serialize, ids, validation | in_progress | P0 | SHARED-001 |
+| SERVER-002 | Anchor engine: text-quote resolution + reconciliation | in_progress | P0 | SHARED-001 |
+| UI-001 | App scaffold + design system from design/index.html | in_progress | P0 | INFRA-007 |
+| AGENT-001 | Workspace template: skills layout, seed views, templates | in_progress | P1 | SHARED-001 |
 
 ---
 

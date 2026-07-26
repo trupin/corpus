@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+in_progress
 
 ## Priority
 
