@@ -1,5 +1,7 @@
 export * from "./actor.js";
 export * from "./anchor.js";
+export * from "./attachment.js";
+export * from "./capture.js";
 export * from "./doc.js";
 export * from "./error.js";
 export * from "./health.js";
@@ -7,7 +9,9 @@ export * from "./id.js";
 export * from "./job.js";
 export * from "./lock.js";
 export * from "./pagination.js";
+export * from "./query.js";
 export * from "./queue.js";
 export * from "./sse.js";
 export * from "./thread.js";
 export * from "./time.js";
+export * from "./tree.js";

@@ -38,7 +38,10 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
         "The HTTP surface of a Corpus workspace server. Generated from the `@hono/zod-openapi` route " +
         "definitions in `packages/contract` — regenerate with `npm run generate -w packages/contract` " +
         "rather than editing this document. Plugin routes mount under `/api/x/<plugin>/...` and are " +
-        "discovered at runtime, so they are deliberately absent here (SPEC.md §10).",
+        "discovered at runtime, so they are deliberately absent here (SPEC.md §10). The server also " +
+        "serves this document at `GET /api/openapi.json`, which is server-local introspection rather " +
+        "than client-facing API and is therefore likewise not declared here — no typed client method " +
+        "exists for it.",
     },
     servers: [
       { url: "http://127.0.0.1:8765", description: "Default workspace server (SPEC.md §3)." },
@@ -47,9 +50,14 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
     tags: [
       { name: "health", description: "Liveness and readiness." },
       { name: "docs", description: "The document collection and individual documents." },
+      { name: "tree", description: "The `data/docs/` folder hierarchy." },
+      { name: "capture", description: "The composer's Capture action." },
       { name: "threads", description: "Threads and their turns." },
       { name: "queue", description: "The agent-side event queue." },
+      { name: "locks", description: "Per-document edit locks." },
+      { name: "jobs", description: "Job rows and their log streams — the console feed." },
       { name: "events", description: "The SSE invalidation stream." },
+      { name: "attachments", description: "Attachment bytes." },
     ],
   });
 }

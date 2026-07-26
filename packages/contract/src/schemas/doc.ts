@@ -1,7 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { TextQuoteSelectorSchema } from "./anchor.js";
 import { AnchorIdSchema, DocumentIdSchema, ThreadIdSchema } from "./id.js";
-import { PageMetaSchema, PaginationQuerySchema } from "./pagination.js";
 import { ThreadStatusSchema } from "./thread.js";
 import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
 
@@ -28,6 +27,18 @@ export const DocStatusSchema = z.enum(DOC_STATUSES).openapi({
   description:
     "Lifecycle status; meaning is per type. Archiving is a reversible flip, never a deletion.",
 });
+
+/**
+ * Folder placement under `data/docs/`. Creation is inbox-first (SPEC.md §11
+ * "zero-form, inbox-first"), so an omitted folder lands the document in
+ * `data/docs/inbox/` rather than at the root.
+ */
+export const DEFAULT_DOC_FOLDER = "inbox";
+
+const FOLDER_DESCRIPTION =
+  "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix " +
+  `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
+  "(SPEC.md §11), and the agent files inbox arrivals per its skill.";
 
 export const DocFrontmatterSchema = z
   .object({
@@ -83,61 +94,26 @@ export const DocSchema = z
   })
   .openapi("Doc");
 
-/** List row: the projection's `documents` columns, without the body (SPEC.md §9.1). */
-export const DocSummarySchema = z
-  .object({
-    id: DocumentIdSchema,
-    type: DocTypeSchema,
-    title: z.string(),
-    path: z.string(),
-    status: DocStatusSchema,
-    tags: z.array(z.string()),
-    created: IsoDateTimeSchema,
-    updated: IsoDateTimeSchema,
-    due: IsoDateSchema.nullable(),
-    reviewed: IsoDateTimeSchema.nullable(),
-    evergreen: z.boolean(),
-    excerpt: z.string().describe("Leading plain-text excerpt of the body, for list rows."),
-  })
-  .openapi("DocSummary");
-
 /**
- * The single collection query behind every list. CONTRACT-001 declares the
- * pagination and the three filters the bootstrap surface needs; the rest of
- * SPEC.md §9.2's grammar (folder, parent, references, agent, author, since, due,
- * stale, unread, needs, sort) arrives with CONTRACT-002 without changing these.
+ * The projection's `documents` columns, without the body (SPEC.md §9.1). Spread
+ * rather than `.extend()`-ed into the list row in `query.ts`: zod-to-openapi
+ * carries a registered component name onto derived schemas, so building the row
+ * from the raw shape is the only way to get two distinctly named components.
  */
-export const DocsQuerySchema = PaginationQuerySchema.extend({
-  q: z
-    .string()
-    .min(1)
-    .optional()
-    .openapi({
-      param: { name: "q", in: "query", required: false },
-      description: "Full-text query across document titles, bodies and turn bodies.",
-    }),
-  type: z
-    .string()
-    .min(1)
-    .optional()
-    .openapi({
-      param: { name: "type", in: "query", required: false },
-      description: `Restrict to a single document type. Core values: ${CORE_DOC_TYPES.join(", ")}.`,
-    }),
-  status: z
-    .enum(DOC_STATUSES)
-    .optional()
-    .openapi({
-      param: { name: "status", in: "query", required: false },
-      description:
-        "Restrict to a status. Omitted, the result set excludes `archived` documents; passing " +
-        "`status` explicitly overrides that default.",
-    }),
-});
-
-export const DocListSchema = z
-  .object({ items: z.array(DocSummarySchema), page: PageMetaSchema })
-  .openapi("DocList");
+export const docRowBaseShape = {
+  id: DocumentIdSchema,
+  type: DocTypeSchema,
+  title: z.string(),
+  path: z.string(),
+  status: DocStatusSchema,
+  tags: z.array(z.string()),
+  created: IsoDateTimeSchema,
+  updated: IsoDateTimeSchema,
+  due: IsoDateSchema.nullable(),
+  reviewed: IsoDateTimeSchema.nullable(),
+  evergreen: z.boolean(),
+  excerpt: z.string().describe("Leading plain-text excerpt of the body, for list rows."),
+} as const;
 
 export const CreateDocRequestSchema = z
   .object({
@@ -147,7 +123,7 @@ export const CreateDocRequestSchema = z
       .string()
       .optional()
       .describe("Omit to pre-fill from the type's `template` document when one exists."),
-    folder: z.string().optional().describe("Folder under `data/docs/`; defaults to the root."),
+    folder: z.string().optional().describe(FOLDER_DESCRIPTION),
     tags: z.array(z.string()).default([]),
     status: z.enum(DOC_STATUSES).default("open"),
     due: IsoDateSchema.nullable().default(null),
@@ -170,6 +146,15 @@ export const UpdateDocRequestSchema = z
   .openapi("UpdateDocRequest");
 
 /**
+ * Moving a document rewrites its path only (SPEC.md §9.2) — the id is assigned
+ * at creation and is immutable, so every `[[ref]]`, anchor and thread `parent`
+ * survives a move untouched.
+ */
+export const MoveDocRequestSchema = z
+  .object({ folder: z.string().describe(FOLDER_DESCRIPTION) })
+  .openapi("MoveDocRequest");
+
+/**
  * Every save runs anchor reconciliation (SPEC.md §6), so the response reports
  * what moved: clients use it to refresh highlight positions and to surface
  * threads that just became detached.
@@ -189,16 +174,32 @@ export const UpdateDocResponseSchema = z
   .object({ doc: DocSchema, anchors: AnchorReconciliationSchema })
   .openapi("UpdateDocResponse");
 
+/**
+ * Deletion is user-only (SPEC.md §7, §9.2). Nothing is hard-deleted from
+ * history: git keeps the file, and the document's threads survive as orphaned
+ * records that still name it as `parent`.
+ */
+export const DeleteDocResultSchema = z
+  .object({
+    deletedId: DocumentIdSchema,
+    orphanedThreadIds: z
+      .array(ThreadIdSchema)
+      .describe(
+        "Threads that named the deleted document as `parent`. They keep that id and remain " +
+          "readable; their anchors no longer resolve. Drop their caches.",
+      ),
+  })
+  .openapi("DeleteDocResult");
+
 export type DocType = z.infer<typeof DocTypeSchema>;
 export type CoreDocType = z.infer<typeof CoreDocTypeSchema>;
 export type DocStatus = z.infer<typeof DocStatusSchema>;
 export type DocFrontmatter = z.infer<typeof DocFrontmatterSchema>;
 export type ResolvedAnchor = z.infer<typeof ResolvedAnchorSchema>;
 export type Doc = z.infer<typeof DocSchema>;
-export type DocSummary = z.infer<typeof DocSummarySchema>;
-export type DocsQuery = z.infer<typeof DocsQuerySchema>;
-export type DocList = z.infer<typeof DocListSchema>;
 export type CreateDocRequest = z.infer<typeof CreateDocRequestSchema>;
 export type UpdateDocRequest = z.infer<typeof UpdateDocRequestSchema>;
+export type MoveDocRequest = z.infer<typeof MoveDocRequestSchema>;
 export type AnchorReconciliation = z.infer<typeof AnchorReconciliationSchema>;
 export type UpdateDocResponse = z.infer<typeof UpdateDocResponseSchema>;
+export type DeleteDocResult = z.infer<typeof DeleteDocResultSchema>;

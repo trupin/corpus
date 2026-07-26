@@ -2,7 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { contractRoutes } from "../routes/index.js";
-import { createCorpusClient, isApiError } from "./index.js";
+import { createCorpusClient, isApiError, type FetchPaths, type paths } from "./index.js";
 
 const BASE_URL = "http://127.0.0.1:8765";
 const TOKEN = "workspace-token";
@@ -62,6 +62,80 @@ function createServer() {
       200,
     );
   });
+
+  app.openapi(contractRoutes.listDocs, (c) => {
+    const { limit, offset, q } = c.req.valid("query");
+    return c.json(
+      {
+        items: [
+          {
+            id: frontmatter.id,
+            type: frontmatter.type,
+            title: frontmatter.title,
+            path: "data/docs/mortgage.md",
+            status: frontmatter.status,
+            tags: frontmatter.tags,
+            created: frontmatter.created,
+            updated: frontmatter.updated,
+            due: null,
+            reviewed: null,
+            evergreen: false,
+            excerpt: "Body.",
+            attention: ["unread-reply" as const, "stale" as const],
+            snippets:
+              q === undefined
+                ? []
+                : [{ field: "title" as const, segments: [{ text: q, match: true }] }],
+          },
+        ],
+        page: { total: 1, limit, offset },
+      },
+      200,
+    );
+  });
+
+  /** The long-poll timeout: a declared `204`, which must not read as a failure. */
+  app.openapi(contractRoutes.idleQueue, (c) => c.body(null, 204));
+
+  app.openapi(contractRoutes.appendTurn, (c) => {
+    const validated = c.req.valid("form");
+    const attached = "files" in validated ? validated.files.length : 0;
+    return c.json(
+      {
+        thread: {
+          id: "th_x9y8",
+          title: "Re: rates",
+          status: "open" as const,
+          parent: frontmatter.id,
+          anchor: null,
+          agent: "engaged" as const,
+          created: "2026-07-19T10:05:00Z",
+          updated: "2026-07-19T10:09:00Z",
+          turnCount: 2,
+          lastAuthor: "user" as const,
+          lastTs: "2026-07-19T10:09:00Z",
+        },
+        turn: {
+          author: "user" as const,
+          ts: "2026-07-19T10:09:00Z",
+          body: `files=${String(attached)} actor=${c.req.header(ACTOR_HEADER) ?? ""}`,
+        },
+        eventId: null,
+      },
+      201,
+    );
+  });
+
+  app.openapi(contractRoutes.capture, (c) =>
+    c.json(
+      {
+        docId: "doc_a1b2c3",
+        threadId: "th_x9y8",
+        eventId: c.req.valid("form").requestsAgent === false ? null : "evt_7c1d",
+      },
+      201,
+    ),
+  );
 
   return app;
 }
@@ -131,5 +205,88 @@ describe("createCorpusClient", () => {
 
   it("falls back to the runtime's fetch when none is injected", () => {
     expect(() => createCorpusClient({ baseUrl: BASE_URL, token: TOKEN })).not.toThrow();
+  });
+});
+
+describe("the typed collection query", () => {
+  it("returns rows whose attention reasons and snippets are typed", async () => {
+    const { data } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { needs: "me", stale: "stale", sort: "-updated", q: "mortgage" } },
+    });
+    const row = data?.items[0];
+    expect(row?.attention).toEqual(["unread-reply", "stale"]);
+    expect(row?.snippets[0]?.segments[0]).toEqual({ text: "mortgage", match: true });
+  });
+
+  it("returns no snippets when the query carried no full-text term", async () => {
+    const { data } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { folder: "finance" } },
+    });
+    expect(data?.items[0]?.snippets).toEqual([]);
+  });
+});
+
+/**
+ * The long-poll timeout is a normal outcome, not a failure: the skill loop
+ * re-invokes on it. A client that surfaced it as an error would turn parking
+ * into an error storm.
+ */
+describe("the long-poll idle endpoint", () => {
+  it("surfaces a 204 as no data and no error, without throwing", async () => {
+    const { data, error, response } = await createTestClient().api.GET("/api/queue/idle", {
+      params: { query: {} },
+    });
+    expect(response.status).toBe(204);
+    expect(data).toBeUndefined();
+    expect(error).toBeUndefined();
+  });
+});
+
+describe("the multipart helpers on the client", () => {
+  it("posts a turn's attachments through the configured credentials", async () => {
+    const response = await createTestClient("agent").uploadTurn({
+      threadId: "th_x9y8",
+      text: "look",
+      files: [new File(["bytes"], "shot.png", { type: "image/png" })],
+    });
+    expect(response.turn.body).toBe("files=1 actor=agent");
+  });
+
+  it("captures text as an inbox document plus its filing thread", async () => {
+    const result = await createTestClient().capture({ text: "a thought" });
+    expect(result).toEqual({ docId: "doc_a1b2c3", threadId: "th_x9y8", eventId: "evt_7c1d" });
+  });
+
+  it('carries an explicit "note only" capture through to a null event', async () => {
+    const result = await createTestClient().capture({ text: "a thought", requestsAgent: false });
+    expect(result.eventId).toBeNull();
+  });
+});
+
+/**
+ * `/events` is documented in the contract and present in the generated types,
+ * but excluded from the fetch surface on purpose: `openapi-typescript` can only
+ * describe an SSE body as a string, so a `GET("/events")` method would hand
+ * callers a response they must not read that way.
+ */
+describe("the SSE stream is not part of the fetch surface", () => {
+  // Compile-time assertions: reintroducing `/events` into the fetch surface, or
+  // dropping it from the generated types, is a typecheck failure here rather
+  // than a runtime surprise for a consumer.
+  type EventsDocumented = "/events" extends keyof paths ? true : never;
+  type EventsNotFetchable = "/events" extends keyof FetchPaths ? never : true;
+
+  it("keeps /events in the generated document but out of the fetch client", () => {
+    const documented: EventsDocumented = true;
+    const notFetchable: EventsNotFetchable = true;
+    expect([documented, notFetchable]).toEqual([true, true]);
+  });
+
+  it("reaches the stream through connectEvents instead", () => {
+    const stream = createTestClient().connectEvents({
+      onInvalidate: () => undefined,
+      eventSourceFactory: () => ({ addEventListener: () => undefined, close: () => undefined }),
+    });
+    expect(stream.url).toContain("/events?token=");
   });
 });

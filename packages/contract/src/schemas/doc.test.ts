@@ -3,12 +3,11 @@ import {
   CORE_DOC_TYPES,
   CoreDocTypeSchema,
   CreateDocRequestSchema,
+  DeleteDocResultSchema,
   DocFrontmatterSchema,
-  DocListSchema,
   DocSchema,
-  DocsQuerySchema,
   DocStatusSchema,
-  DocSummarySchema,
+  MoveDocRequestSchema,
   UpdateDocRequestSchema,
   UpdateDocResponseSchema,
 } from "./doc.js";
@@ -49,21 +48,6 @@ const doc = {
   ],
 };
 
-const summary = {
-  id: "doc_a1b2c3",
-  type: "note",
-  title: "Mortgage options",
-  path: "data/docs/finance/mortgage-options.md",
-  status: "open",
-  tags: ["finance"],
-  created: "2026-07-19T10:00:00Z",
-  updated: "2026-07-19T10:42:00Z",
-  due: "2026-08-01",
-  reviewed: "2026-07-20T09:00:00Z",
-  evergreen: false,
-  excerpt: "Body is plain markdown.",
-};
-
 describe("DocFrontmatter", () => {
   it("round-trips the SPEC.md §5 canonical frontmatter", () => {
     expect(DocFrontmatterSchema.parse(frontmatter)).toEqual(frontmatter);
@@ -97,42 +81,6 @@ describe("Doc", () => {
   });
 });
 
-describe("DocSummary and DocList", () => {
-  it("round-trips a row carrying a due date and a review mark", () => {
-    expect(DocSummarySchema.parse(summary)).toEqual(summary);
-  });
-
-  it("round-trips a page of rows", () => {
-    const list = { items: [summary], page: { total: 1, limit: 50, offset: 0 } };
-    expect(DocListSchema.parse(list)).toEqual(list);
-  });
-});
-
-describe("DocsQuery", () => {
-  it("applies pagination defaults when only a filter is given", () => {
-    expect(DocsQuerySchema.parse({ type: "thread" })).toEqual({
-      type: "thread",
-      limit: 50,
-      offset: 0,
-    });
-  });
-
-  it("carries the full-text query through", () => {
-    expect(DocsQuerySchema.parse({ q: "mortgage", status: "archived" })).toMatchObject({
-      q: "mortgage",
-      status: "archived",
-    });
-  });
-
-  it("rejects an unknown status", () => {
-    expect(DocsQuerySchema.safeParse({ status: "done" }).success).toBe(false);
-  });
-
-  it("rejects an empty full-text query rather than treating it as no filter", () => {
-    expect(DocsQuerySchema.safeParse({ q: "" }).success).toBe(false);
-  });
-});
-
 describe("CreateDocRequest", () => {
   it("defaults everything the caller may omit", () => {
     expect(CreateDocRequestSchema.parse({ type: "note", title: "Untitled" })).toEqual({
@@ -147,6 +95,51 @@ describe("CreateDocRequest", () => {
 
   it("rejects an empty title", () => {
     expect(CreateDocRequestSchema.safeParse({ type: "note", title: "" }).success).toBe(false);
+  });
+
+  /**
+   * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §11)
+   * and the server's `documentPathFor` implements it. The schema leaves `folder`
+   * absent so the server owns the default — what is asserted here is that the
+   * published description says so, since that is the only place a client learns it.
+   */
+  it("documents the inbox default and both accepted folder spellings", () => {
+    const description = CreateDocRequestSchema.shape.folder.meta()?.description ?? "";
+    expect(description).toContain("`inbox`");
+    expect(description).toContain("data/docs/finance");
+    expect(description).not.toContain("defaults to the root");
+  });
+
+  it.each(["finance", "data/docs/finance"])("accepts the folder spelling %s", (folder) => {
+    expect(CreateDocRequestSchema.parse({ type: "note", title: "T", folder }).folder).toBe(folder);
+  });
+});
+
+describe("MoveDocRequest", () => {
+  it("carries only the destination folder — the id never changes", () => {
+    expect(MoveDocRequestSchema.parse({ folder: "finance" })).toEqual({ folder: "finance" });
+    expect(Object.keys(MoveDocRequestSchema.shape)).toEqual(["folder"]);
+  });
+
+  it("requires a destination", () => {
+    expect(MoveDocRequestSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("DeleteDocResult", () => {
+  it("round-trips the cascade: the deleted id and the threads it orphaned", () => {
+    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: ["th_x9y8", "th_q1w2"] };
+    expect(DeleteDocResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("round-trips a document that had no threads", () => {
+    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: [] };
+    expect(DeleteDocResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects a document id in the orphaned thread list", () => {
+    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: ["doc_zzz"] };
+    expect(DeleteDocResultSchema.safeParse(result).success).toBe(false);
   });
 });
 

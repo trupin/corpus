@@ -4,6 +4,10 @@ import {
   AppendTurnResponseSchema,
   CreateThreadRequestSchema,
   CreateThreadResponseSchema,
+  DeleteTurnResultSchema,
+  MarkSeenRequestSchema,
+  MarkSeenResultSchema,
+  MultipartAppendTurnRequestSchema,
   THREAD_AGENT_STATES,
   ThreadAgentSchema,
   ThreadSchema,
@@ -145,6 +149,116 @@ describe("AppendTurnRequest and AppendTurnResponse", () => {
   });
 });
 
+describe("MultipartAppendTurnRequest", () => {
+  const png = () => new File(["bytes"], "screenshot.png", { type: "image/png" });
+
+  it("accepts text with no files", () => {
+    expect(MultipartAppendTurnRequestSchema.parse({ text: "just a note" })).toEqual({
+      text: "just a note",
+      files: [],
+    });
+  });
+
+  /** SPEC.md §6: "a turn may be attachment-only (no text)". */
+  it("accepts a file with no text", () => {
+    const file = png();
+    const parsed = MultipartAppendTurnRequestSchema.parse({ files: file });
+    expect(parsed.files).toEqual([file]);
+    expect(parsed.text).toBeUndefined();
+  });
+
+  it("accepts text and several files together", () => {
+    const files = [png(), png()];
+    const parsed = MultipartAppendTurnRequestSchema.parse({ text: "look", files });
+    expect(parsed.files).toEqual(files);
+  });
+
+  it("rejects a turn with neither text nor files, naming the constraint", () => {
+    const result = MultipartAppendTurnRequestSchema.safeParse({});
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain("text");
+  });
+
+  it("rejects an empty text with no files, which is the same nothing", () => {
+    expect(MultipartAppendTurnRequestSchema.safeParse({ text: "" }).success).toBe(false);
+  });
+});
+
+describe("MarkSeenRequest and MarkSeenResult", () => {
+  it("accepts a bodiless mark, defaulting to the thread's last turn server-side", () => {
+    const parsed = MarkSeenRequestSchema.parse({});
+    expect(parsed).toEqual({});
+    expect(parsed.lastSeenTs).toBeUndefined();
+  });
+
+  it("carries an explicit partial-read mark through", () => {
+    expect(MarkSeenRequestSchema.parse({ lastSeenTs: "2026-07-19T10:05:00Z" })).toEqual({
+      lastSeenTs: "2026-07-19T10:05:00Z",
+    });
+  });
+
+  it("rejects a mark that is not an instant", () => {
+    expect(MarkSeenRequestSchema.safeParse({ lastSeenTs: "2026-07-19" }).success).toBe(false);
+  });
+
+  it("round-trips the recorded mark", () => {
+    const result = {
+      threadId: "th_x9y8",
+      lastSeenTs: "2026-07-19T10:07:12Z",
+      unread: false,
+    };
+    expect(MarkSeenResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("cannot report the thread as still unread after marking it seen", () => {
+    const result = { threadId: "th_x9y8", lastSeenTs: "2026-07-19T10:07:12Z", unread: true };
+    expect(MarkSeenResultSchema.safeParse(result).success).toBe(false);
+  });
+});
+
+/** SPEC.md §6's cascade, reported so the client knows which caches to drop. */
+describe("DeleteTurnResult", () => {
+  it("round-trips a turn deleted from the middle of a thread", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: false,
+      removedAnchor: null,
+      parentId: "doc_a1b2c3",
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("round-trips the full cascade: last turn, thread and anchor all gone", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: true,
+      removedAnchor: "anc_k4f7",
+      parentId: "doc_a1b2c3",
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("round-trips a standalone thread, which has no parent to update", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: true,
+      removedAnchor: null,
+      parentId: null,
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("cannot report a deletion that did not happen", () => {
+    const result = {
+      deletedTurn: false,
+      deletedThread: false,
+      removedAnchor: null,
+      parentId: null,
+    };
+    expect(DeleteTurnResultSchema.safeParse(result).success).toBe(false);
+  });
+});
+
 describe("agent participation", () => {
   it.each(THREAD_AGENT_STATES)("recognises the %s state", (state) => {
     expect(ThreadAgentSchema.parse(state)).toBe(state);
@@ -184,6 +298,39 @@ describe("requestsAgent is a tri-state enqueue signal", () => {
 
     it("rejects a non-boolean signal rather than coercing it", () => {
       expect(schema.safeParse({ ...base, requestsAgent: "false" }).success).toBe(false);
+    });
+  });
+
+  /**
+   * The multipart body carries the same tri-state over text parts. `z.coerce
+   * .boolean()` would read `"false"` as true and silently destroy the toggle,
+   * which is why the field is a string-boolean rather than a coerced one.
+   */
+  describe("MultipartAppendTurnRequest", () => {
+    const base = { text: "reply" };
+
+    it('preserves an explicit "false", which is the "note only" instruction', () => {
+      expect(
+        MultipartAppendTurnRequestSchema.parse({ ...base, requestsAgent: "false" }).requestsAgent,
+      ).toBe(false);
+    });
+
+    it('preserves an explicit "true"', () => {
+      expect(
+        MultipartAppendTurnRequestSchema.parse({ ...base, requestsAgent: "true" }).requestsAgent,
+      ).toBe(true);
+    });
+
+    it("leaves an omitted signal undefined, so the server applies its own rule", () => {
+      const parsed = MultipartAppendTurnRequestSchema.parse(base);
+      expect(parsed.requestsAgent).toBeUndefined();
+      expect("requestsAgent" in parsed).toBe(false);
+    });
+
+    it("rejects a value that is neither true nor false", () => {
+      expect(
+        MultipartAppendTurnRequestSchema.safeParse({ ...base, requestsAgent: "maybe" }).success,
+      ).toBe(false);
     });
   });
 });

@@ -1,34 +1,49 @@
 import { describe, expect, it } from "vitest";
+import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
+import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
 
 const document = buildOpenApiDocument();
 
-/** Every endpoint CONTRACT-001 declares. Growing the surface must be a deliberate edit here. */
-const EXPECTED_OPERATIONS = [
-  "get /api/docs",
-  "post /api/docs",
-  "get /api/docs/{id}",
-  "put /api/docs/{id}",
-  "get /api/health",
-  "post /api/queue/claim-all",
-  "get /api/queue/status",
-  "post /api/queue/{id}/complete",
-  "post /api/queue/{id}/fail",
-  "post /api/threads",
-  "get /api/threads/{id}",
-  "post /api/threads/{id}/turns",
-  "get /events",
-];
+const HTTP_METHODS = ["get", "post", "put", "delete", "patch"] as const;
+const MUTATING_METHODS = ["post", "put", "delete", "patch"] as const;
+
+interface Operation {
+  readonly summary?: string;
+  readonly description?: string;
+  readonly security?: unknown[];
+  readonly parameters?: {
+    name: string;
+    in: string;
+    required?: boolean;
+    description?: string;
+    schema?: { type?: string; enum?: string[]; default?: unknown };
+  }[];
+  readonly requestBody?: { content?: Record<string, unknown> };
+  readonly responses?: Record<string, { description?: string; content?: Record<string, unknown> }>;
+}
+
+/** `openapi3-ts` types the path item with an `any`-valued index signature. */
+function operation(path: string, method: string): Operation {
+  const item = document.paths?.[path] as Record<string, Operation> | undefined;
+  const found = item?.[method];
+  if (!found) throw new Error(`No ${method} ${path} in the generated document.`);
+  return found;
+}
 
 function operations(): string[] {
   const found: string[] = [];
   for (const [path, item] of Object.entries(document.paths ?? {})) {
-    for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-      if (item && method in item) found.push(`${method} ${path}`);
+    for (const method of HTTP_METHODS) {
+      if (item && method in item) found.push(endpointSignature(method, path));
     }
   }
   return found.sort();
+}
+
+function parameter(path: string, method: string, name: string) {
+  return operation(path, method).parameters?.find((entry) => entry.name === name);
 }
 
 describe("generated OpenAPI document", () => {
@@ -37,8 +52,8 @@ describe("generated OpenAPI document", () => {
     expect(document.info.version).toBe(CONTRACT_VERSION);
   });
 
-  it("declares exactly the endpoints the contract defines", () => {
-    expect(operations()).toEqual([...EXPECTED_OPERATIONS].sort());
+  it("declares exactly the endpoints the pinned inventory names", () => {
+    expect(operations()).toEqual([...ENDPOINT_INVENTORY].sort());
   });
 
   it("documents one operation per route definition", () => {
@@ -56,18 +71,18 @@ describe("generated OpenAPI document", () => {
   it.each([
     ["/api/health", "get"],
     ["/events", "get"],
-  ])("exempts %s %s from auth, as SPEC.md §2.1 allows", (path, method) => {
-    const operation = document.paths?.[path]?.[method as "get"];
-    expect(operation?.security).toEqual([]);
+    ["/api/jobs/{id}/log", "post"],
+  ])("exempts %s %s from auth, as SPEC.md §2.1 and §7 allow", (path, method) => {
+    expect(operation(path, method).security).toEqual([]);
   });
 
   it("declares 401 on every authenticated operation", () => {
     const missing: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
-      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-        const operation = item?.[method];
-        if (!operation || operation.security?.length === 0) continue;
-        if (!operation.responses?.["401"]) missing.push(`${method} ${path}`);
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op || op.security?.length === 0) continue;
+        if (!op.responses?.["401"]) missing.push(endpointSignature(method, path));
       }
     }
     expect(missing).toEqual([]);
@@ -84,13 +99,12 @@ describe("generated OpenAPI document", () => {
   it("declares 400 on every operation that validates request input", () => {
     const missing: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
-      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-        const operation = item?.[method];
-        if (!operation) continue;
-        const validatesInput =
-          (operation.parameters?.length ?? 0) > 0 || operation.requestBody !== undefined;
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op) continue;
+        const validatesInput = (op.parameters?.length ?? 0) > 0 || op.requestBody !== undefined;
         if (!validatesInput) continue;
-        if (!operation.responses?.["400"]) missing.push(`${method} ${path}`);
+        if (!op.responses?.["400"]) missing.push(endpointSignature(method, path));
       }
     }
     expect(missing).toEqual([]);
@@ -99,22 +113,20 @@ describe("generated OpenAPI document", () => {
   it("does not declare 400 on operations that take no request input", () => {
     const spurious: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
-      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-        const operation = item?.[method];
-        if (!operation) continue;
-        const validatesInput =
-          (operation.parameters?.length ?? 0) > 0 || operation.requestBody !== undefined;
-        if (!validatesInput && operation.responses?.["400"]) spurious.push(`${method} ${path}`);
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op) continue;
+        const validatesInput = (op.parameters?.length ?? 0) > 0 || op.requestBody !== undefined;
+        if (!validatesInput && op.responses?.["400"]) {
+          spurious.push(endpointSignature(method, path));
+        }
       }
     }
     expect(spurious).toEqual([]);
   });
 
   it("documents the SSE stream as an event stream, not as JSON", () => {
-    // openapi3-ts types the status-code map with an `any`-valued index
-    // signature, so the 200 entry is re-read through a minimal structural view.
-    const ok = document.paths?.["/events"]?.get?.responses?.["200"] as
-      { content?: Record<string, unknown> } | undefined;
+    const ok = operation("/events", "get").responses?.["200"];
     expect(Object.keys(ok?.content ?? {})).toEqual(["text/event-stream"]);
   });
 
@@ -134,5 +146,305 @@ describe("generated OpenAPI document", () => {
         schema.default !== undefined,
     );
     expect(corrupted.map(([name]) => name)).toEqual([]);
+  });
+
+  it("gives every operation a summary, so the document reads without the source", () => {
+    const unsummarised: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (op && !op.summary) unsummarised.push(endpointSignature(method, path));
+      }
+    }
+    expect(unsummarised).toEqual([]);
+  });
+});
+
+/** SPEC.md §9.2's parameter list, in full and typed — the point of the collection query. */
+describe("GET /api/docs parameter grammar", () => {
+  const SPEC_PARAMS = [
+    "q",
+    "type",
+    "status",
+    "tag",
+    "folder",
+    "parent",
+    "references",
+    "agent",
+    "author",
+    "since",
+    "due",
+    "stale",
+    "unread",
+    "needs",
+    "sort",
+  ];
+
+  it("declares every §9.2 parameter, plus CONTRACT-001's pagination, as optional query params", () => {
+    const params = operation("/api/docs", "get").parameters ?? [];
+    expect(params.map((entry) => entry.name)).toEqual(["limit", "offset", ...SPEC_PARAMS]);
+    for (const entry of params) {
+      expect(entry.in).toBe("query");
+      expect(entry.required).toBe(false);
+    }
+  });
+
+  it.each([
+    ["status", ["open", "resolved", "archived"]],
+    ["agent", ["none", "requested", "engaged"]],
+    ["author", ["user", "agent"]],
+    ["stale", ["aging", "stale", "very-stale"]],
+    ["needs", ["me", "unread-reply", "form", "due", "stale", "failed-job"]],
+    ["sort", ["updated", "-updated", "created", "-created", "due", "title", "relevance"]],
+  ])("types %s as a strict enum", (name, values) => {
+    expect(parameter("/api/docs", "get", name)?.schema?.enum).toEqual(values);
+  });
+
+  it("defaults sort to -updated", () => {
+    expect(parameter("/api/docs", "get", "sort")?.schema?.default).toBe("-updated");
+  });
+
+  it("leaves `type` an open string, enumerating the core values in its description", () => {
+    const param = parameter("/api/docs", "get", "type");
+    expect(param?.schema?.type).toBe("string");
+    expect(param?.schema?.enum).toBeUndefined();
+    expect(param?.description).toContain("note, thread, view, template, skill, agent-def");
+    expect(param?.description).toContain("plugins define their own");
+  });
+
+  it("types `unread` as a boolean rather than a string", () => {
+    expect(parameter("/api/docs", "get", "unread")?.schema?.type).toBe("boolean");
+  });
+
+  it.each(["parent", "agent", "author", "unread"])(
+    "documents that the thread-only filter %s no-ops for other types",
+    (name) => {
+      expect(parameter("/api/docs", "get", name)?.description).toContain("no-ops for non-thread");
+    },
+  );
+
+  it("documents the archived-by-default exclusion and how to override it", () => {
+    const description = parameter("/api/docs", "get", "status")?.description ?? "";
+    expect(description).toContain("excludes");
+    expect(description).toContain("archived");
+    expect(description).toContain("overrides");
+  });
+
+  it("documents that relevance without a query is a 400, not a silent fallback", () => {
+    expect(parameter("/api/docs", "get", "sort")?.description).toContain("`400`");
+    expect(operation("/api/docs", "get").responses?.["400"]).toBeDefined();
+  });
+});
+
+describe("author attribution", () => {
+  it("declares the optional actor header on every mutating operation", () => {
+    const problems: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of MUTATING_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op) continue;
+        const header = op.parameters?.find(
+          (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
+        );
+        const signature = endpointSignature(method, path);
+        if (!header) problems.push(`${signature}: no ${ACTOR_HEADER}`);
+        else if (header.required !== false) problems.push(`${signature}: header is required`);
+        else if (header.schema?.enum?.join(",") !== ACTORS.join(",")) {
+          problems.push(`${signature}: unexpected actor values`);
+        } else if (!header.description?.includes(DEFAULT_ACTOR)) {
+          problems.push(`${signature}: default not documented`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  /**
+   * The mechanism is uniform because several mutating routes are bodiless
+   * (`DELETE`, `POST .../resolve`) or multipart, where a body field would be
+   * impossible or inconsistent. So no request body may carry it either.
+   */
+  it("keeps the acting party out of every request body", () => {
+    const schemas = document.components?.schemas ?? {};
+    const offenders: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of MUTATING_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        for (const media of Object.values(op?.requestBody?.content ?? {})) {
+          const ref = (media as { schema?: { $ref?: string } }).schema?.$ref;
+          const name = ref?.split("/").pop();
+          const properties =
+            name === undefined
+              ? undefined
+              : (schemas[name] as { properties?: Record<string, unknown> } | undefined)?.properties;
+          for (const field of ["author", "actor", "from"]) {
+            if (properties && field in properties) {
+              offenders.push(`${endpointSignature(method, path)} → ${name}.${field}`);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it.each([
+    ["/api/docs/{id}", "delete"],
+    ["/api/threads/{id}/turns/{ts}", "delete"],
+    ["/api/locks/{docId}/break", "post"],
+  ])("declares 403 on the user-only route %s %s and says why", (path, method) => {
+    const op = operation(path, method);
+    expect(op.responses?.["403"]).toBeDefined();
+    expect(op.description).toContain(`${ACTOR_HEADER}: agent`);
+    expect(op.description).toContain("rejected");
+  });
+});
+
+describe("deletion cascades are documented", () => {
+  it("states the §6 turn-deletion cascade on the route", () => {
+    const description = operation("/api/threads/{id}/turns/{ts}", "delete").description ?? "";
+    expect(description).toContain("last");
+    expect(description).toContain("anchor entry");
+    expect(description).toContain("frontmatter");
+  });
+
+  it("states the §9.2 document-deletion cascade on the route", () => {
+    const description = operation("/api/docs/{id}", "delete").description ?? "";
+    expect(description).toContain("orphaned");
+    expect(description).toContain("git");
+  });
+
+  it("tells clients to URL-encode the ISO timestamp path parameter", () => {
+    const param = parameter("/api/threads/{id}/turns/{ts}", "delete", "ts");
+    expect(param?.description).toContain("URL-encode");
+  });
+
+  it("says the id never changes on the move and archive routes", () => {
+    for (const path of [
+      "/api/docs/{id}/move",
+      "/api/docs/{id}/archive",
+      "/api/docs/{id}/unarchive",
+    ]) {
+      expect(operation(path, "post").description).toContain("id never changes");
+    }
+  });
+
+  it("corrects the folder default to inbox everywhere it is documented", () => {
+    const serialised = JSON.stringify(document);
+    expect(serialised).not.toContain("defaults to the root");
+    expect(serialised).toContain("Defaults to `inbox`");
+    expect(serialised).toContain("data/docs/finance");
+  });
+});
+
+describe("queue long-poll", () => {
+  it("declares both outcomes, with the timeout bounded and defaulted", () => {
+    const op = operation("/api/queue/idle", "get");
+    expect(op.responses?.["200"]?.content).toBeDefined();
+    expect(op.responses?.["204"]).toBeDefined();
+    expect(op.responses?.["204"]?.content).toBeUndefined();
+    const timeout = parameter("/api/queue/idle", "get", "timeout");
+    expect(timeout?.schema?.default).toBe(480);
+    expect(timeout?.description).toContain("clamps");
+  });
+
+  it("documents that a halted queue parks for the full window", () => {
+    const description = operation("/api/queue/idle", "get").description ?? "";
+    expect(description).toContain("halted");
+    expect(description).toContain("never returns events");
+  });
+});
+
+describe("locks distinguish 409 from 423", () => {
+  it("declares 409 carrying the existing lock on acquire, and never 423", () => {
+    const op = operation("/api/locks/{docId}", "post");
+    expect(op.responses?.["201"]).toBeDefined();
+    expect(JSON.stringify(op.responses?.["409"])).toContain("LockConflictError");
+    expect(op.responses?.["423"]).toBeUndefined();
+  });
+
+  it("declares 403 on release, since only the holder may release", () => {
+    expect(operation("/api/locks/{docId}", "delete").responses?.["403"]).toBeDefined();
+  });
+
+  it.each([
+    ["/api/docs/{id}", "put"],
+    ["/api/docs/{id}", "delete"],
+    ["/api/docs/{id}/move", "post"],
+    ["/api/docs/{id}/archive", "post"],
+    ["/api/docs/{id}/unarchive", "post"],
+    ["/api/threads", "post"],
+    ["/api/threads/{id}/turns/{ts}", "delete"],
+  ])("declares 423 carrying the blocking lock on %s %s", (path, method) => {
+    expect(JSON.stringify(operation(path, method).responses?.["423"])).toContain("LockedError");
+  });
+});
+
+/** A blanket "all errors on every route" would defeat the point of a typed union. */
+describe("routes declare only the codes they can return", () => {
+  it("gives the unauthenticated health probe nothing but 200", () => {
+    expect(Object.keys(operation("/api/health", "get").responses ?? {})).toEqual(["200"]);
+  });
+
+  it.each([
+    ["/api/docs", "get"],
+    ["/api/tree", "get"],
+    ["/api/locks", "get"],
+    ["/api/jobs", "get"],
+    ["/api/jobs/{id}/log", "get"],
+    ["/api/threads/{id}", "get"],
+  ])("declares neither 409 nor 423 on the read-only route %s %s", (path, method) => {
+    const responses = operation(path, method).responses ?? {};
+    expect(responses["409"]).toBeUndefined();
+    expect(responses["423"]).toBeUndefined();
+  });
+
+  it.each([
+    ["/api/docs", "get"],
+    ["/api/tree", "get"],
+    ["/api/threads/{id}", "get"],
+  ])("declares no 403 on the read-only route %s %s", (path, method) => {
+    expect(operation(path, method).responses?.["403"]).toBeUndefined();
+  });
+});
+
+describe("multipart, attachments and the stream", () => {
+  it("offers both a JSON and a multipart body on turn-append", () => {
+    const content = operation("/api/threads/{id}/turns", "post").requestBody?.content ?? {};
+    expect(Object.keys(content)).toEqual(["application/json", "multipart/form-data"]);
+  });
+
+  it("declares capture as multipart only", () => {
+    const content = operation("/api/capture", "post").requestBody?.content ?? {};
+    expect(Object.keys(content)).toEqual(["multipart/form-data"]);
+  });
+
+  it("types the attached files as an array of binaries", () => {
+    const schemas = document.components?.schemas ?? {};
+    for (const name of ["MultipartAppendTurnRequest", "CaptureRequest"]) {
+      const files = (schemas[name] as { properties?: Record<string, unknown> } | undefined)
+        ?.properties?.["files"];
+      expect(files).toMatchObject({ type: "array", items: { type: "string", format: "binary" } });
+    }
+  });
+
+  it("declares the attachment route as binary bytes", () => {
+    const content = operation("/attachments/{path}", "get").responses?.["200"]?.content ?? {};
+    expect(Object.keys(content)).toEqual(["application/octet-stream"]);
+    expect(JSON.stringify(content)).toContain('"format":"binary"');
+  });
+
+  it("documents the SSE heartbeat, subscriber pruning and token parameter", () => {
+    const op = operation("/events", "get");
+    expect(op.description).toContain("25 s heartbeat");
+    expect(op.description).toContain("dead subscribers pruned");
+    expect(parameter("/events", "get", "token")?.in).toBe("query");
+    expect(parameter("/events", "get", "token")?.description).toContain("EventSource cannot set");
+  });
+
+  it("describes the job-log ingest as loopback-only and tokenless", () => {
+    const description = operation("/api/jobs/{id}/log", "post").description ?? "";
+    expect(description).toContain("Localhost-only");
+    expect(description).toContain("unauthenticated");
   });
 });

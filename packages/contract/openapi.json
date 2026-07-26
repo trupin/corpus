@@ -3,7 +3,7 @@
   "info": {
     "title": "Corpus API",
     "version": "0.1.0",
-    "description": "The HTTP surface of a Corpus workspace server. Generated from the `@hono/zod-openapi` route definitions in `packages/contract` — regenerate with `npm run generate -w packages/contract` rather than editing this document. Plugin routes mount under `/api/x/<plugin>/...` and are discovered at runtime, so they are deliberately absent here (SPEC.md §10)."
+    "description": "The HTTP surface of a Corpus workspace server. Generated from the `@hono/zod-openapi` route definitions in `packages/contract` — regenerate with `npm run generate -w packages/contract` rather than editing this document. Plugin routes mount under `/api/x/<plugin>/...` and are discovered at runtime, so they are deliberately absent here (SPEC.md §10). The server also serves this document at `GET /api/openapi.json`, which is server-local introspection rather than client-facing API and is therefore likewise not declared here — no typed client method exists for it."
   },
   "servers": [
     {
@@ -26,6 +26,14 @@
       "description": "The document collection and individual documents."
     },
     {
+      "name": "tree",
+      "description": "The `data/docs/` folder hierarchy."
+    },
+    {
+      "name": "capture",
+      "description": "The composer's Capture action."
+    },
+    {
       "name": "threads",
       "description": "Threads and their turns."
     },
@@ -34,8 +42,20 @@
       "description": "The agent-side event queue."
     },
     {
+      "name": "locks",
+      "description": "Per-document edit locks."
+    },
+    {
+      "name": "jobs",
+      "description": "Job rows and their log streams — the console feed."
+    },
+    {
       "name": "events",
       "description": "The SSE invalidation stream."
+    },
+    {
+      "name": "attachments",
+      "description": "Attachment bytes."
     }
   ],
   "components": {
@@ -82,7 +102,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/DocSummary"
+              "$ref": "#/components/schemas/DocRow"
             }
           },
           "page": {
@@ -94,7 +114,7 @@
           "page"
         ]
       },
-      "DocSummary": {
+      "DocRow": {
         "type": "object",
         "properties": {
           "id": {
@@ -162,6 +182,28 @@
           "excerpt": {
             "type": "string",
             "description": "Leading plain-text excerpt of the body, for list rows."
+          },
+          "attention": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "unread-reply",
+                "form",
+                "due",
+                "stale",
+                "failed-job"
+              ],
+              "description": "Why a row needs attention (SPEC.md §11)."
+            },
+            "description": "Attention reasons for this row, populated on every response rather than only under `needs=`, so any list can render reason chips. Empty when nothing applies; never contains `me`, which is the union filter and not a reason."
+          },
+          "snippets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Snippet"
+            },
+            "description": "Search highlights for this row; empty when the query carried no `q`."
           }
         },
         "required": [
@@ -176,7 +218,56 @@
           "due",
           "reviewed",
           "evergreen",
-          "excerpt"
+          "excerpt",
+          "attention",
+          "snippets"
+        ]
+      },
+      "Snippet": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "title",
+              "body",
+              "turn"
+            ],
+            "description": "Which indexed field the excerpt came from."
+          },
+          "threadId": {
+            "type": "string",
+            "pattern": "^th_[A-Za-z0-9]+$",
+            "description": "Set only for `turn` snippets, naming the thread the matching turn belongs to.",
+            "example": "th_x9y8"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SnippetSegment"
+            },
+            "description": "Alternating unmatched/matched runs; concatenating `text` yields the excerpt."
+          }
+        },
+        "required": [
+          "field",
+          "segments"
+        ]
+      },
+      "SnippetSegment": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "match": {
+            "type": "boolean",
+            "description": "True for the segments the query matched; render those highlighted."
+          }
+        },
+        "required": [
+          "text",
+          "match"
         ]
       },
       "PageMeta": {
@@ -460,24 +551,6 @@
           "orphaned"
         ]
       },
-      "NotFoundError": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "enum": [
-              "not_found"
-            ]
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ]
-      },
       "CreateDocRequest": {
         "type": "object",
         "properties": {
@@ -497,7 +570,7 @@
           },
           "folder": {
             "type": "string",
-            "description": "Folder under `data/docs/`; defaults to the root."
+            "description": "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill."
           },
           "tags": {
             "type": "array",
@@ -532,6 +605,24 @@
         "required": [
           "type",
           "title"
+        ]
+      },
+      "NotFoundError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "not_found"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
         ]
       },
       "UpdateDocResponse": {
@@ -682,6 +773,198 @@
           }
         }
       },
+      "DeleteDocResult": {
+        "type": "object",
+        "properties": {
+          "deletedId": {
+            "type": "string",
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "Identifier of any document; threads are documents too.",
+            "example": "doc_a1b2c3"
+          },
+          "orphanedThreadIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "description": "Threads that named the deleted document as `parent`. They keep that id and remain readable; their anchors no longer resolve. Drop their caches."
+          }
+        },
+        "required": [
+          "deletedId",
+          "orphanedThreadIds"
+        ]
+      },
+      "ForbiddenError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "forbidden"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "MoveDocRequest": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "description": "Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill."
+          }
+        },
+        "required": [
+          "folder"
+        ]
+      },
+      "FolderTree": {
+        "type": "object",
+        "properties": {
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FolderNode"
+            },
+            "description": "Top-level folders under `data/docs/`."
+          }
+        },
+        "required": [
+          "folders"
+        ]
+      },
+      "FolderNode": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path relative to `data/docs/`; empty for the root."
+          },
+          "name": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Documents filed directly in this folder."
+          },
+          "totalCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "`count` plus every descendant folder's count."
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FolderNode"
+            }
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "count",
+          "totalCount",
+          "children"
+        ]
+      },
+      "CaptureResult": {
+        "type": "object",
+        "properties": {
+          "docId": {
+            "type": "string",
+            "pattern": "^doc_[A-Za-z0-9]+$",
+            "description": "The created document, filed in `data/docs/inbox/`.",
+            "example": "doc_a1b2c3"
+          },
+          "threadId": {
+            "type": "string",
+            "pattern": "^th_[A-Za-z0-9]+$",
+            "description": "The whole-document filing thread created alongside it (no anchor).",
+            "example": "th_x9y8"
+          },
+          "eventId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^evt_[A-Za-z0-9]+$",
+            "description": "Enqueued `comment.created` event, so the UI can show the pending-agent indicator immediately and the console can link the job back to this capture. Null when nothing was enqueued, which an explicit `requestsAgent: false` always produces.",
+            "example": "evt_7c1d"
+          }
+        },
+        "required": [
+          "docId",
+          "threadId",
+          "eventId"
+        ]
+      },
+      "CaptureRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The captured text. Becomes the inbox document's body and its filing thread's first turn."
+          },
+          "requestsAgent": {
+            "type": "boolean",
+            "description": "Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server requests the agent — filing is the whole point of a capture — unless the text carries its own mention or skill invocation, which routes it instead. `true`: request the agent. `false`: \"note only\" — suppress the enqueue even when the thread is engaged."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "description": "Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6)."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "CreateThreadResponse": {
+        "type": "object",
+        "properties": {
+          "thread": {
+            "$ref": "#/components/schemas/Thread"
+          },
+          "anchorId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^anc_[A-Za-z0-9]+$",
+            "description": "Anchor written into the parent, when a selector was given.",
+            "example": "anc_k4f7"
+          },
+          "eventId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^evt_[A-Za-z0-9]+$",
+            "description": "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the first turn carries a mention or skill invocation; always null when `requestsAgent` was explicitly false (\"note only\").",
+            "example": "evt_7c1d"
+          }
+        },
+        "required": [
+          "thread",
+          "anchorId",
+          "eventId"
+        ]
+      },
       "Thread": {
         "type": "object",
         "properties": {
@@ -790,37 +1073,6 @@
           "author",
           "ts",
           "body"
-        ]
-      },
-      "CreateThreadResponse": {
-        "type": "object",
-        "properties": {
-          "thread": {
-            "$ref": "#/components/schemas/Thread"
-          },
-          "anchorId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^anc_[A-Za-z0-9]+$",
-            "description": "Anchor written into the parent, when a selector was given.",
-            "example": "anc_k4f7"
-          },
-          "eventId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^evt_[A-Za-z0-9]+$",
-            "description": "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the first turn carries a mention or skill invocation; always null when `requestsAgent` was explicitly false (\"note only\").",
-            "example": "evt_7c1d"
-          }
-        },
-        "required": [
-          "thread",
-          "anchorId",
-          "eventId"
         ]
       },
       "CreateThreadRequest": {
@@ -1013,6 +1265,107 @@
           "body"
         ]
       },
+      "MultipartAppendTurnRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Markdown body of the turn. Optional: a turn may be attachment-only."
+          },
+          "requestsAgent": {
+            "type": "boolean",
+            "description": "Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: \"note only\" — suppress the enqueue even when the thread is engaged."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "description": "Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6)."
+          }
+        }
+      },
+      "DeleteTurnResult": {
+        "type": "object",
+        "properties": {
+          "deletedTurn": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "deletedThread": {
+            "type": "boolean",
+            "description": "True when the deleted turn was the thread's last, taking the thread with it."
+          },
+          "removedAnchor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^anc_[A-Za-z0-9]+$",
+            "description": "Anchor entry removed from the parent's frontmatter, when the cascade reached that far.",
+            "example": "anc_k4f7"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "The thread's parent, whose frontmatter and anchor list may now differ. Null for a standalone thread.",
+            "example": "doc_a1b2c3"
+          }
+        },
+        "required": [
+          "deletedTurn",
+          "deletedThread",
+          "removedAnchor",
+          "parentId"
+        ]
+      },
+      "MarkSeenResult": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "pattern": "^th_[A-Za-z0-9]+$",
+            "description": "Identifier of a thread document.",
+            "example": "th_x9y8"
+          },
+          "lastSeenTs": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z",
+            "description": "The mark now recorded for this thread."
+          },
+          "unread": {
+            "type": "boolean",
+            "enum": [
+              false
+            ],
+            "description": "Always false: the mark is at or beyond the last turn the caller has seen."
+          }
+        },
+        "required": [
+          "threadId",
+          "lastSeenTs",
+          "unread"
+        ]
+      },
+      "MarkSeenRequest": {
+        "type": "object",
+        "properties": {
+          "lastSeenTs": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z",
+            "description": "Turn timestamp to mark seen up to. Defaults to the thread's last turn, which is what opening a thread means; pass it explicitly only to record a partial read."
+          }
+        }
+      },
       "QueueStatus": {
         "type": "object",
         "properties": {
@@ -1050,14 +1403,16 @@
           "abandoned"
         ]
       },
-      "ClaimBatch": {
+      "IdleResult": {
         "type": "object",
         "properties": {
           "events": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/QueueEvent"
-            }
+            },
+            "minItems": 1,
+            "description": "Pending events, still in `pending/`. Claim them with `POST /api/queue/claim-all`."
           }
         },
         "required": [
@@ -1102,6 +1457,38 @@
           "payload"
         ]
       },
+      "ClaimBatch": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueEvent"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "ReapStaleResult": {
+        "type": "object",
+        "properties": {
+          "reaped": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9]+$",
+              "description": "Identifier of a queue event.",
+              "example": "evt_7c1d"
+            },
+            "description": "Events recovered from `in-progress/` back to `pending/` after a crashed run."
+          }
+        },
+        "required": [
+          "reaped"
+        ]
+      },
       "FailEventRequest": {
         "type": "object",
         "properties": {
@@ -1111,6 +1498,281 @@
             "description": "Human-readable failure reason, shown in the console."
           }
         }
+      },
+      "LockList": {
+        "type": "object",
+        "properties": {
+          "locks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Lock"
+            }
+          }
+        },
+        "required": [
+          "locks"
+        ],
+        "description": "Every active lock, for hydrating lock banners on load (SPEC.md §7)."
+      },
+      "LockReapResult": {
+        "type": "object",
+        "properties": {
+          "reaped": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "description": "Documents whose expired locks were cleared."
+          }
+        },
+        "required": [
+          "reaped"
+        ]
+      },
+      "LockConflictError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "conflict"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "lock": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Lock"
+              },
+              {
+                "description": "The lock already held, and by whom."
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "lock"
+        ]
+      },
+      "AcquireLockRequest": {
+        "type": "object",
+        "properties": {
+          "ttl": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Lease in seconds; defaults to 300. A TTL is what keeps a crashed editor from wedging a document — `POST /api/locks/reap` clears expired leases."
+          }
+        }
+      },
+      "ReleaseLockResult": {
+        "type": "object",
+        "properties": {
+          "docId": {
+            "type": "string",
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "Identifier of any document; threads are documents too.",
+            "example": "doc_a1b2c3"
+          },
+          "released": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "holder": {
+            "type": "string",
+            "enum": [
+              "user",
+              "agent"
+            ],
+            "description": "The party whose lock this call cleared.",
+            "example": "user"
+          }
+        },
+        "required": [
+          "docId",
+          "released",
+          "holder"
+        ]
+      },
+      "JobList": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            },
+            "description": "Console rows, most recent first."
+          }
+        },
+        "required": [
+          "jobs"
+        ]
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "pattern": "^evt_[A-Za-z0-9]+$",
+            "description": "Identifier of a queue event.",
+            "example": "evt_7c1d"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "in-progress",
+              "processed",
+              "failed",
+              "abandoned"
+            ],
+            "description": "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in."
+          },
+          "started": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z"
+          },
+          "updated": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z"
+          },
+          "lastLine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Most recent log line, for the collapsed console row."
+          },
+          "originId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "Document or thread the job originated from, so the console can link through.",
+            "example": "doc_a1b2c3"
+          }
+        },
+        "required": [
+          "eventId",
+          "status",
+          "started",
+          "updated",
+          "lastLine",
+          "originId"
+        ]
+      },
+      "JobLog": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobLogLine"
+            },
+            "description": "Log lines from `cursor` onwards, oldest first."
+          },
+          "nextCursor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Cursor to pass on the next fetch; equals the total line count."
+          }
+        },
+        "required": [
+          "lines",
+          "nextCursor"
+        ]
+      },
+      "JobLogLine": {
+        "type": "object",
+        "properties": {
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z"
+          },
+          "line": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "line"
+        ],
+        "description": "One line of `.corpus/jobs/<eventId>.jsonl`. Always rendered as plain text, never interpreted."
+      },
+      "AppendLogResult": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "pattern": "^evt_[A-Za-z0-9]+$",
+            "description": "Identifier of a queue event.",
+            "example": "evt_7c1d"
+          },
+          "appended": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "eventId",
+          "appended"
+        ]
+      },
+      "AppendLogRequest": {
+        "type": "object",
+        "properties": {
+          "line": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One progress line. Rendered as plain text and never interpreted; the server caps its length (SPEC.md §7)."
+          }
+        },
+        "required": [
+          "line"
+        ]
+      },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "conflict"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "lock": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Lock"
+              },
+              {
+                "description": "Present when the conflict is a lock acquisition; identifies the existing holder."
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
       }
     },
     "parameters": {}
@@ -1144,6 +1806,7 @@
           "docs"
         ],
         "summary": "Query the document collection",
+        "description": "Structured filters compose with optional full-text search: values OR within a comma-separated parameter and AND across parameters. The default result set excludes `status: archived` (SPEC.md §11) unless `status` is passed explicitly. The thread-only filters — `parent`, `agent`, `author` and `unread` — no-op for non-thread types rather than erroring (SPEC.md §9.2). Every row carries its Attention reasons; rows carry search snippets when `q` is set.",
         "parameters": [
           {
             "schema": {
@@ -1174,10 +1837,10 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Full-text query across document titles, bodies and turn bodies."
+              "description": "Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry `snippets`; without `q` every row's `snippets` array is empty."
             },
             "required": false,
-            "description": "Full-text query across document titles, bodies and turn bodies.",
+            "description": "Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry `snippets`; without `q` every row's `snippets` array is empty.",
             "name": "q",
             "in": "query"
           },
@@ -1185,10 +1848,10 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Restrict to a single document type. Core values: note, thread, view, template, skill, agent-def."
+              "description": "Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because plugins define their own types (SPEC.md §5, §10)."
             },
             "required": false,
-            "description": "Restrict to a single document type. Core values: note, thread, view, template, skill, agent-def.",
+            "description": "Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because plugins define their own types (SPEC.md §5, §10).",
             "name": "type",
             "in": "query"
           },
@@ -1200,17 +1863,191 @@
                 "resolved",
                 "archived"
               ],
-              "description": "Restrict to a status. Omitted, the result set excludes `archived` documents; passing `status` explicitly overrides that default."
+              "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` is how the archived chip brings them back."
             },
             "required": false,
-            "description": "Restrict to a status. Omitted, the result set excludes `archived` documents; passing `status` explicitly overrides that default.",
+            "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` is how the archived chip brings them back.",
             "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme."
+            },
+            "required": false,
+            "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme.",
+            "name": "tag",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §11)."
+            },
+            "required": false,
+            "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §11).",
+            "name": "folder",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+              "example": "doc_a1b2c3"
+            },
+            "required": false,
+            "description": "Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "parent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Documents whose body contains `[[<id>]]`, read from the projection's `links` table (SPEC.md §9.1). Powers the backlinks panel and the `references:` filter chip.",
+              "example": "doc_a1b2c3"
+            },
+            "required": false,
+            "description": "Documents whose body contains `[[<id>]]`, read from the projection's `links` table (SPEC.md §9.1). Powers the backlinks panel and the `references:` filter chip.",
+            "name": "references",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "none",
+                "requested",
+                "engaged"
+              ],
+              "description": "Agent participation state from the thread's frontmatter (SPEC.md §6). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2)."
+            },
+            "required": false,
+            "description": "Agent participation state from the thread's frontmatter (SPEC.md §6). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "agent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "description": "Author of the thread's last turn — the \"awaiting your answer\" half of Attention. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2)."
+            },
+            "required": false,
+            "description": "Author of the thread's last turn — the \"awaiting your answer\" half of Attention. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "author",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-07-19T10:05:00Z",
+              "description": "ISO 8601 instant; matches documents whose `updated` is strictly after it. Distinct from `due`, which is a calendar date or a keyword."
+            },
+            "required": false,
+            "description": "ISO 8601 instant; matches documents whose `updated` is strictly after it. Distinct from `due`, which is a calendar date or a keyword.",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date",
+                  "example": "2026-08-01"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "overdue",
+                    "today",
+                    "week"
+                  ]
+                }
+              ],
+              "description": "Either an ISO calendar date (due on or before that date) or one of overdue, today, week. Keywords are resolved server-side against the workspace's clock."
+            },
+            "required": false,
+            "description": "Either an ISO calendar date (due on or before that date) or one of overdue, today, week. Keywords are resolved server-side against the workspace's clock.",
+            "name": "due",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "aging",
+                "stale",
+                "very-stale"
+              ],
+              "description": "Staleness tier (SPEC.md §5), selecting documents at or beyond it — `aging` includes stale and very-stale. Documents with `evergreen: true` never match."
+            },
+            "required": false,
+            "description": "Staleness tier (SPEC.md §5), selecting documents at or beyond it — `aging` includes stale and very-stale. Documents with `evergreen: true` never match.",
+            "name": "stale",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "description": "Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2)."
+            },
+            "required": false,
+            "description": "Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "unread",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "me",
+                "unread-reply",
+                "form",
+                "due",
+                "stale",
+                "failed-job"
+              ],
+              "description": "The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder."
+            },
+            "required": false,
+            "description": "The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder.",
+            "name": "needs",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "-updated",
+                "created",
+                "-created",
+                "due",
+                "title",
+                "relevance"
+              ],
+              "default": "-updated",
+              "description": "Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back."
+            },
+            "required": false,
+            "description": "Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back.",
+            "name": "sort",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Matching documents, newest-updated first.",
+            "description": "Matching documents, newest-updated first by default.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1246,7 +2083,7 @@
           "docs"
         ],
         "summary": "Create a document",
-        "description": "The body is pre-filled from the type's `template` document when one exists and no body is given (SPEC.md §9.2). The server assigns the id; it is immutable thereafter.",
+        "description": "The body is pre-filled from the type's `template` document when one exists and no body is given (SPEC.md §9.2). The server assigns the id; it is immutable thereafter. Creation is inbox-first: an omitted `folder` files the document in `data/docs/inbox/`.",
         "parameters": [
           {
             "schema": {
@@ -1466,36 +2303,158 @@
             }
           }
         }
-      }
-    },
-    "/api/threads/{id}": {
-      "get": {
+      },
+      "delete": {
         "tags": [
-          "threads"
+          "docs"
         ],
-        "summary": "Read a thread with its turns",
-        "description": "Thread *lists* go through `GET /api/docs` with `type=thread` (SPEC.md §9.2).",
+        "summary": "Delete a document (user-only)",
+        "description": "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (SPEC.md §7). Cascade: the document's threads become **orphaned records** — they keep their `parent` id and stay readable, but their anchors no longer resolve. Nothing is hard-deleted from history; git preserves the file and every version of it. Refused with `423` when the other party holds the document's edit lock.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "pattern": "^th_[A-Za-z0-9]+$",
-              "description": "Identifier of a thread document.",
-              "example": "th_x9y8"
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
             },
             "required": true,
-            "description": "Identifier of a thread document.",
+            "description": "Identifier of any document; threads are documents too.",
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
           }
         ],
         "responses": {
           "200": {
-            "description": "The thread and every turn, oldest first.",
+            "description": "The deleted id and the threads it orphaned.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Thread"
+                  "$ref": "#/components/schemas/DeleteDocResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The acting party in `x-corpus-author` may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs/{id}/move": {
+      "post": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "Move a document to another folder",
+        "description": "Rewrites the file path only (SPEC.md §9.2). **The document id never changes**, so every `[[ref]]`, anchor entry and thread `parent` keeps resolving; the projection re-maps id → path. Refused with `423` when the other party holds the document's edit lock.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveDocRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The document at its new path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Doc"
                 }
               }
             }
@@ -1526,6 +2485,294 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs/{id}/archive": {
+      "post": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "Archive a document",
+        "description": "Flips `status` to `archived` — a reversible organizational act, never a deletion (SPEC.md §7). **The document id never changes** and nothing leaves git. Archived documents drop out of the default result set of `GET /api/docs` and come back with `status=archived`. Archiving a `type: skill` document additionally moves its folder to `.claude/skills-archived/`, which disables it without unindexing it. Refused with `423` when the other party holds the lock.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document, now archived.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Doc"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs/{id}/unarchive": {
+      "post": {
+        "tags": [
+          "docs"
+        ],
+        "summary": "Restore an archived document",
+        "description": "The inverse flip, back to `status: open`. **The document id never changes.** Refused with `423` when the other party holds the document's edit lock.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document, restored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Doc"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tree": {
+      "get": {
+        "tags": [
+          "tree"
+        ],
+        "summary": "The `data/docs/` folder tree with document counts",
+        "description": "Backs folder pickers, folder columns and filter chips (SPEC.md §9.2). `count` is the documents filed directly in a folder; `totalCount` includes its descendants. Threads inherit their parent document's folder, so both are counted where they are filed.",
+        "responses": {
+          "200": {
+            "description": "The folder tree, roots first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderTree"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/capture": {
+      "post": {
+        "tags": [
+          "capture"
+        ],
+        "summary": "Capture text (and attachments) as an inbox document",
+        "description": "The composer's Capture action (SPEC.md §11): creates the document in `data/docs/inbox/` **plus** its whole-document filing thread asking the agent to retitle, move, expand and tag it, in one call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board show the pending-agent indicator immediately and the console link the job back to the capture.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created document, its filing thread, and the event.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
                 }
               }
             }
@@ -1620,13 +2867,78 @@
         }
       }
     },
+    "/api/threads/{id}": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Read a thread with its turns",
+        "description": "Thread *lists* go through `GET /api/docs` with `type=thread` (SPEC.md §9.2).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread and every turn, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{id}/turns": {
       "post": {
         "tags": [
           "threads"
         ],
         "summary": "Append a turn to a thread",
-        "description": "The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Multipart attachment uploads arrive with CONTRACT-002.",
+        "description": "The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only.",
         "parameters": [
           {
             "schema": {
@@ -1662,6 +2974,11 @@
               "schema": {
                 "$ref": "#/components/schemas/AppendTurnRequest"
               }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/MultipartAppendTurnRequest"
+              }
             }
           }
         },
@@ -1672,6 +2989,367 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AppendTurnResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{id}/turns/{ts}": {
+      "delete": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Delete a turn (user-only)",
+        "description": "**User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent never deletes turns (SPEC.md §6). Cascade: deleting a thread's **last** turn deletes the thread itself, and deleting a thread removes its anchor entry from the parent's frontmatter, so no highlight is left pointing at an empty conversation. Git retains the deleted turn. Refused with `423` when the other party holds the parent document's edit lock, since the cascade may rewrite the parent's frontmatter.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-07-19T10:05:00Z",
+              "description": "The turn's timestamp, which is its identity within the thread (SPEC.md §6). An ISO 8601 instant contains `:`, so clients must URL-encode it — `2026-07-19T10%3A05%3A00Z`."
+            },
+            "required": true,
+            "description": "The turn's timestamp, which is its identity within the thread (SPEC.md §6). An ISO 8601 instant contains `:`, so clients must URL-encode it — `2026-07-19T10%3A05%3A00Z`.",
+            "name": "ts",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the deletion cascaded to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteTurnResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The acting party in `x-corpus-author` may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{id}/resolve": {
+      "post": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Resolve a thread",
+        "description": "Sets `status: resolved`. The thread collapses in the document view and **later turns stop re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated thread summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{id}/reopen": {
+      "post": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Reopen a resolved thread",
+        "description": "Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated thread summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{id}/seen": {
+      "post": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Mark a thread read",
+        "description": "Records the last-seen mark in `.corpus/seen.json` and broadcasts an invalidation, so unread badges clear everywhere at once (SPEC.md §7). What counts as read is displayed content only — opening a parent document does not mark its collapsed-chip threads seen.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^th_[A-Za-z0-9]+$",
+              "description": "Identifier of a thread document.",
+              "example": "th_x9y8"
+            },
+            "required": true,
+            "description": "Identifier of a thread document.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkSeenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The mark now recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkSeenResult"
                 }
               }
             }
@@ -1739,6 +3417,65 @@
         }
       }
     },
+    "/api/queue/idle": {
+      "get": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Long-poll until work is available",
+        "description": "Returns `200` the instant pending work exists or arrives, and `204` with no body when the window expires (default and maximum 480 s) so the skill loop re-invokes it. Both outcomes are normal; `204` is not an error. **Idle reports availability and never claims** — follow a `200` with `POST /api/queue/claim-all`. While the queue is halted, idle parks for the full window and never returns events (SPEC.md §7).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 480,
+              "default": 480,
+              "description": "Seconds to hold the request open, 1–480 (the server clamps anything longer). Parking costs the agent zero tokens: it is blocked on a response, not looping."
+            },
+            "required": false,
+            "description": "Seconds to hold the request open, 1–480 (the server clamps anything longer). Parking costs the agent zero tokens: it is blocked on a response, not looping.",
+            "name": "timeout",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending events exist; claim them next.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdleResult"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "The window expired with nothing pending. Re-invoke to park again."
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/queue/claim-all": {
       "post": {
         "tags": [
@@ -1770,6 +3507,180 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClaimBatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/queue/reap-stale": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Recover stuck in-progress events",
+        "description": "Moves events left in `in-progress/` by a crashed run back to `pending/`, so a dead agent session cannot strand work (SPEC.md §7).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The events returned to `pending/`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReapStaleResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/queue/halt": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Halt the queue",
+        "description": "Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue status, now halted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/queue/resume": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Resume the queue",
+        "description": "Removes the `.corpus/HALT` sentinel; parked `idle` calls become live again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue status, no longer halted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueStatus"
                 }
               }
             }
@@ -1964,6 +3875,843 @@
         }
       }
     },
+    "/api/queue/{id}": {
+      "delete": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Abandon an event",
+        "description": "Moves the event to `abandoned/` — the give-up terminal state, distinct from `failed/` which a retry can pick up again (SPEC.md §7). The event file is kept; nothing is deleted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9]+$",
+              "description": "Identifier of a queue event.",
+              "example": "evt_7c1d"
+            },
+            "required": true,
+            "description": "Identifier of a queue event.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event, now in `abandoned/`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/locks": {
+      "get": {
+        "tags": [
+          "locks"
+        ],
+        "summary": "List active locks",
+        "description": "Read on load so lock banners are correct before the first SSE frame arrives; lock state is projected and broadcast like any other state (SPEC.md §7).",
+        "responses": {
+          "200": {
+            "description": "Every lock currently held.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/locks/reap": {
+      "post": {
+        "tags": [
+          "locks"
+        ],
+        "summary": "Clear expired locks",
+        "description": "Clears every lock past its TTL, so a crashed editor cannot wedge a document — the same pattern as `POST /api/queue/reap-stale` (SPEC.md §7).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The documents whose expired locks were cleared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockReapResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/locks/{docId}": {
+      "post": {
+        "tags": [
+          "locks"
+        ],
+        "summary": "Acquire a document's edit lock",
+        "description": "One holder at a time. The agent takes the lock before editing (the CLI's edit verbs do this implicitly) and the user's editor session holds it while actively editing (SPEC.md §7). Re-acquiring a lock you already hold renews its lease; a lock held by the other party is a `409` carrying that lock.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "docId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcquireLockRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The lock, now held by the acting party.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Lock"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another party already holds this document's lock; `lock` identifies the holder (SPEC.md §7).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockConflictError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "locks"
+        ],
+        "summary": "Release a document's edit lock",
+        "description": "Only the holder may release: a request whose `x-corpus-author` is not the holder is rejected with `403`. To clear somebody else's lock, break it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "docId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lock is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseLockResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The acting party in `x-corpus-author` may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/locks/{docId}/break": {
+      "post": {
+        "tags": [
+          "locks"
+        ],
+        "summary": "Force-unlock a document (user-only)",
+        "description": "The human escape hatch for a stuck agent lock — the banner's Force unlock button and `corpus lock break <docId>` (SPEC.md §7). **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`, because an agent breaking its own contention would defeat the mechanism. Breaks are recorded in the audit trail commit message, and the agent's deferred edit re-enters the queue rather than being lost.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "docId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lock is broken; `holder` names who held it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseLockResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The acting party in `x-corpus-author` may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Recent jobs for the console",
+        "description": "The console's master list: one row per queue event with its status and last log line (SPEC.md §7, §11). `originId` links each row back to the document or thread it came from.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many of the most recent jobs to return (1–200)."
+            },
+            "required": false,
+            "description": "How many of the most recent jobs to return (1–200).",
+            "name": "recent",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console rows, most recent first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/log": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "A job's log lines",
+        "description": "Reads `.corpus/jobs/<eventId>.jsonl`. SSE announces only that the log grew (SPEC.md §2.2 rule 3), so the console refetches here — pass the previous `nextCursor` to get just the new lines. Log content is always rendered as plain text, never interpreted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9]+$",
+              "description": "Identifier of a queue event.",
+              "example": "evt_7c1d"
+            },
+            "required": true,
+            "description": "Identifier of a queue event.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "description": "Lines already held by the caller; pass back `nextCursor` to fetch only new ones."
+            },
+            "required": false,
+            "description": "Lines already held by the caller; pass back `nextCursor` to fetch only new ones.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lines from the cursor onwards, plus the next cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobLog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Append a line to a job's log (loopback-only, tokenless)",
+        "description": "**Localhost-only and unauthenticated**, for Claude Code hooks such as `PostToolUse` which hold no token. Appends to the same `.corpus/jobs/<eventId>.jsonl` that `corpus job log` writes through. Hardening (SPEC.md §7): non-loopback peers and requests carrying a browser `Origin` header are rejected with `403`, line length is capped, and appends to unknown job ids are refused with `404`.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9]+$",
+              "description": "Identifier of a queue event.",
+              "example": "evt_7c1d"
+            },
+            "required": true,
+            "description": "Identifier of a queue event.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppendLogRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The line was appended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppendLogResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The acting party in `x-corpus-author` may not make this call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/retry": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Retry a failed job",
+        "description": "Returns the event to `pending/` so the agent picks it up again — the retry action in the console's detail header (SPEC.md §11).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9]+$",
+              "description": "Identifier of a queue event.",
+              "example": "evt_7c1d"
+            },
+            "required": true,
+            "description": "Identifier of a queue event.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job, queued again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with state that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/abandon": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Abandon a failed job",
+        "description": "Gives up on the job, moving its event to `abandoned/` — the other half of the console's failed-job actions. Nothing is deleted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9]+$",
+              "description": "Identifier of a queue event.",
+              "example": "evt_7c1d"
+            },
+            "required": true,
+            "description": "Identifier of a queue event.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job, abandoned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/events": {
       "get": {
         "tags": [
@@ -2009,6 +4757,72 @@
           },
           "401": {
             "description": "Missing or invalid token."
+          }
+        }
+      }
+    },
+    "/attachments/{path}": {
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Read attachment bytes",
+        "description": "Serves a file from `.corpus/attachments/`. The `path` parameter is slash-bearing (`<thread-id>/<turn-ts>/<filename>`), so servers mount it as a wildcard rather than a single segment. The declared response type is `application/octet-stream`; the actual `content-type` is sniffed from the file, so images render inline in the UI and other files download as chips.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Attachment path relative to `.corpus/attachments/`, i.e. `<thread-id>/<turn-ts>/<filename>`. Slash-bearing, so it occupies the rest of the URL path.",
+              "example": "th_x9y8/2026-07-19T10:05:00Z/screenshot.png"
+            },
+            "required": true,
+            "description": "Attachment path relative to `.corpus/attachments/`, i.e. `<thread-id>/<turn-ts>/<filename>`. Slash-bearing, so it occupies the rest of the URL path.",
+            "name": "path",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attachment bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
           }
         }
       }

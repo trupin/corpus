@@ -1,7 +1,16 @@
 import createClient, { type Client } from "openapi-fetch";
 import { ACTOR_HEADER, DEFAULT_ACTOR, type Actor } from "../actor.js";
+import type { CaptureResult } from "../schemas/capture.js";
+import type { AppendTurnResponse } from "../schemas/thread.js";
 import { createEventStream, type EventStream, type EventStreamOptions } from "./events.js";
 import type { paths } from "./schema.generated.js";
+import {
+  uploadCapture,
+  uploadTurn,
+  type CaptureUpload,
+  type TurnUpload,
+  type UploadOptions,
+} from "./upload.js";
 
 /**
  * The one client both the CLI and the UI use (SPEC.md §9.3). It is a thin,
@@ -20,11 +29,33 @@ export {
   type EventStream,
   type EventStreamOptions,
 } from "./events.js";
+export {
+  buildCaptureFormData,
+  buildTurnFormData,
+  uploadCapture,
+  uploadTurn,
+  UploadError,
+  FILES_FIELD,
+  type CaptureUpload,
+  type TurnUpload,
+  type UploadOptions,
+} from "./upload.js";
 export { isApiError, type ApiError } from "../schemas/error.js";
 export { ACTOR_HEADER, DEFAULT_ACTOR, type Actor } from "../actor.js";
 
+/**
+ * The paths the fetch client covers. `/events` is documented in the contract and
+ * present in the generated types, but excluded here on purpose: it is an SSE
+ * stream, and `openapi-typescript` can only describe its body as a string, so a
+ * `GET("/events")` method would hand callers a response they must not read that
+ * way. The stream is reached through `connectEvents` / `createEventStream`
+ * instead, which is also the only way to attach the token EventSource cannot
+ * send as a header.
+ */
+export type FetchPaths = Omit<paths, "/events">;
+
 /** The generated fetch surface: one method per HTTP verb, keyed by contract path. */
-export type CorpusApi = Client<paths>;
+export type CorpusApi = Client<FetchPaths>;
 
 export interface CorpusClientOptions {
   /** Origin of the workspace server, e.g. `http://127.0.0.1:8765`. */
@@ -50,11 +81,18 @@ export interface CorpusClient {
    * not fetch — the contract documents `GET /events`, the client wraps it.
    */
   connectEvents(options: Omit<EventStreamOptions, "baseUrl" | "token">): EventStream;
+  /**
+   * Appends a turn with attachments. Not part of `api` because `openapi-fetch`
+   * serialises JSON; multipart needs a `FormData` whose boundary the runtime owns.
+   */
+  uploadTurn(upload: TurnUpload): Promise<AppendTurnResponse>;
+  /** Captures text and attachments as an inbox document plus its filing thread. */
+  capture(upload: CaptureUpload): Promise<CaptureResult>;
 }
 
 export function createCorpusClient(options: CorpusClientOptions): CorpusClient {
   const actor = options.actor ?? DEFAULT_ACTOR;
-  const api = createClient<paths>({
+  const api = createClient<FetchPaths>({
     baseUrl: options.baseUrl,
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
@@ -71,10 +109,19 @@ export function createCorpusClient(options: CorpusClientOptions): CorpusClient {
     },
   });
 
+  const uploadOptions: UploadOptions = {
+    baseUrl: options.baseUrl,
+    token: options.token,
+    actor,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  };
+
   return {
     baseUrl: options.baseUrl,
     api,
     connectEvents: (streamOptions) =>
       createEventStream({ ...streamOptions, baseUrl: options.baseUrl, token: options.token }),
+    uploadTurn: (upload) => uploadTurn({ ...uploadOptions, ...upload }),
+    capture: (upload) => uploadCapture({ ...uploadOptions, ...upload }),
   };
 }
