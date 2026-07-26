@@ -52,7 +52,7 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 ## Lint & format
 
 - ESLint (flat config, typescript-eslint) + Prettier, configured at the repo root. `npm run lint` and `npm run format:check` must pass — they run in pre-commit.
-- **Only critical rules block** (deliberate policy): lint _errors_ are reserved for rules with real bug risk — async safety (`no-floating-promises`, `no-misused-promises`, `await-thenable`) and unexplained compiler-error suppression (`ban-ts-comment`). Everything stylistic lives in this document and code review; useful-but-not-critical signals (`no-explicit-any`, `no-unused-vars`) are warnings that never block a commit.
+- **Only critical rules block** (deliberate policy): the curated error set targets real bug risk — async safety (`no-floating-promises`, `no-misused-promises`, `await-thenable`) and unexplained compiler-error suppression (`ban-ts-comment`) — on top of the upstream `recommended` presets, which are mostly correctness rules (the few stylistic ones they carry, like `prefer-const`/`no-var`, are auto-fixable via `npm run lint:fix` and never require judgment). Anything needing taste or judgment lives in this document and code review; useful-but-not-critical signals (`no-explicit-any`, `no-unused-vars`) are warnings that never block a commit.
 - **Never fix a lint error by disabling the rule.** Fix the code. An inline suppression is a last resort and carries a justification comment.
 
 ## Coverage

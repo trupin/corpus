@@ -32,7 +32,7 @@ Three process hardenings requested by the user: (1) every PR is reviewed locally
 - [x] `/pr` skill runs the reviewer before landing; CLAUDE.md rule 3 requires it (fresh subagent, CRITICAL/MAJOR fixed or user-waived).
 - [x] `eslint.config.js`: errors only for `no-floating-promises`, `no-misused-promises`, `await-thenable` (+ upstream recommended correctness rules incl. `ban-ts-comment`); `no-explicit-any` / `no-unused-vars` downgraded to warnings; `no-non-null-assertion` and `consistent-type-imports` no longer enforced; type-checked noise preset (`no-unsafe-*`) dropped.
 - [x] `npm run test:coverage` enforces 90% thresholds (lines/statements/functions/branches, V8 provider); CI's `validate` job runs it in place of plain `npm test`.
-- [x] Raw JSON coverage output retained so e2e coverage can merge into the same gate later (INFRA-004 filed).
+- [x] JSON coverage output (istanbul-format `coverage-final.json`) retained so e2e coverage can merge into the same gate later (INFRA-004 filed).
 - [x] This PR itself is reviewed by the pr-reviewer agent before merging (dogfood proof).
 
 ## Technical Design
@@ -73,7 +73,12 @@ Local gates green under the new config; coverage run prints per-file table and e
 
 ### Post-Implementation Verification
 
-_Filled after the PR run — see PR #2 and the reviewer verdict recorded in the PR conversation/summary._
+2026-07-26, real commands and runs:
+
+- `npm run test:coverage` → all 5 workspaces at 100%, gate passes. Negative test: added `apps/server/src/uncovered.ts` (never imported) → exit 1 (thresholds violated); removed → exit 0. Include-based accounting confirmed.
+- Effective-config check (by the reviewer, independently): `no-floating-promises`/`no-misused-promises`/`await-thenable`/`ban-ts-comment` = error; `no-explicit-any`/`no-unused-vars` = warn; `no-non-null-assertion`/`consistent-type-imports` = off; `no-unsafe-*` family gone; no `--max-warnings` anywhere, so warnings cannot block.
+- PR #2 (https://github.com/trupin/corpus/pull/2): `CI / validate` green on GitHub incl. the coverage step: https://github.com/trupin/corpus/actions/runs/30206648492/job/89805791645
+- Dogfood review: pr-reviewer spawned fresh on PR #2 → verdict **APPROVE** with 4 MINOR findings (doc/config drift on preset stylistic rules, istanbul-vs-raw-V8 wording, unfilled E2E log, plugins/ missing from coverage include) — all four fixed before merge in a follow-up commit on the same PR.
 
 ## Completion Checklist (domain agent)
 
