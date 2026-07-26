@@ -34,17 +34,17 @@ INFRA-001 stood up the gates (lint, format, typecheck, test, hooks) but delibera
 
 ## Acceptance Criteria
 
-- [ ] `packages/contract` and `packages/kit` each build with `tsc` to `dist/` including `.d.ts` declaration files and source maps; `npm run build -w packages/contract` and `npm run build -w packages/kit` succeed independently.
-- [ ] Both packages declare `main`, `types`, `exports` (subpath-capable), and `files` in their `package.json`; `packages/contract` exports at least `.` and `./client` per CONTRACT-001's planned surface.
-- [ ] A workspace that imports `@corpus/contract` (a temporary import in `apps/server/src` and `apps/cli/src` is acceptable proof) **typechecks** under `npm run typecheck` and **runs** under `tsx` after `npm run build` — verified with actual command output in the E2E log.
-- [ ] `apps/cli/package.json` declares `"bin": { "corpus": "./bin/corpus.js" }` and that entry point exists and executes (a stub that prints name + version is acceptable; the real command surface is CLI-001).
-- [ ] Root `package.json` has a `build` script that builds in dependency order: `packages/contract` → `packages/kit` → apps; running it from a clean tree succeeds.
-- [ ] Root `workspaces` includes `plugins/*`; `plugins/` exists in the repo with a `.gitkeep` (or the first plugin directory) and `npm install` resolves cleanly with the added glob.
-- [ ] `eslint.config.js` applies typescript-eslint's type-aware rule set to TypeScript source; `disableTypeChecked` is scoped to JS/config files only. Any violations this surfaces are **fixed in the code**, not suppressed (per CLAUDE.md Lint Discipline).
-- [ ] `vitest.config.ts` still enforces the 90% coverage gate across the new layout: `dist/` is excluded from both `include` globs and coverage, `plugins/*/src/**` tests are collected, and `npm run test:coverage` passes.
-- [ ] `.githooks/pre-commit` and `.githooks/pre-push` both exit 0 on a clean tree after the change; `.gitignore` still covers the new `dist/` output.
-- [ ] `npm install && npm run build && npm test` is green from a clean clone (verified in a fresh `git clone` into a temp dir).
-- [ ] CLAUDE.md's Build & Dev Commands section documents `npm run build` and the build topology if commands changed.
+- [x] `packages/contract` and `packages/kit` each build with `tsc` to `dist/` including `.d.ts` declaration files and source maps; `npm run build -w packages/contract` and `npm run build -w packages/kit` succeed independently.
+- [x] Both packages declare `main`, `types`, `exports` (subpath-capable), and `files` in their `package.json`; `packages/contract` exports at least `.` and `./client` per CONTRACT-001's planned surface.
+- [x] A workspace that imports `@corpus/contract` (a temporary import in `apps/server/src` and `apps/cli/src` is acceptable proof) **typechecks** under `npm run typecheck` and **runs** under `tsx` after `npm run build` — verified with actual command output in the E2E log.
+- [x] `apps/cli/package.json` declares `"bin": { "corpus": "./bin/corpus.js" }` and that entry point exists and executes (a stub that prints name + version is acceptable; the real command surface is CLI-001).
+- [x] Root `package.json` has a `build` script that builds in dependency order: `packages/contract` → `packages/kit` → apps; running it from a clean tree succeeds.
+- [x] Root `workspaces` includes `plugins/*`; `plugins/` exists in the repo with a `.gitkeep` (or the first plugin directory) and `npm install` resolves cleanly with the added glob.
+- [x] `eslint.config.js` applies typescript-eslint's type-aware rule set to TypeScript source; `disableTypeChecked` is scoped to JS/config files only. Any violations this surfaces are **fixed in the code**, not suppressed (per CLAUDE.md Lint Discipline).
+- [x] `vitest.config.ts` still enforces the 90% coverage gate across the new layout: `dist/` is excluded from both `include` globs and coverage, `plugins/*/src/**` tests are collected, and `npm run test:coverage` passes.
+- [x] `.githooks/pre-commit` and `.githooks/pre-push` both exit 0 on a clean tree after the change; `.gitignore` still covers the new `dist/` output.
+- [x] `npm install && npm run build && npm test` is green from a clean clone (verified in a fresh `git clone` into a temp dir).
+- [x] CLAUDE.md's Build & Dev Commands section documents `npm run build` and the build topology if commands changed.
 
 ## Technical Design
 
@@ -306,6 +306,15 @@ resolve before lint/typecheck/tests look at them.
 invocations, including three negative tests that each failed as designed before
 being restored, and one genuine defect (the stripped exec bit) found and fixed
 during verification.
+
+**Review-fix addendum (orchestrator, post pr-reviewer round 1).** Two MAJOR
+findings fixed: `plugins/**/src/**/*.test.ts` added to the vitest `include`
+(tests were coverage-only before), and the `@corpus/contract/client` subpath
+now resolves via a placeholder module + `exports` entry + a resolution test in
+`apps/cli`. Fresh-clone verification (the plan's step 1, previously evidenced
+only from a cleaned worktree): `git clone -b phase-0-contract-first` into a
+temp dir → `npm install` (221 packages) → `npm run build` → `npm test` →
+**5 files / 11 tests passed** — the build needs no untracked files.
 
 ## Completion Checklist (domain agent)
 
