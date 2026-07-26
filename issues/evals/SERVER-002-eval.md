@@ -2,8 +2,11 @@
 
 **Date**: 2026-07-26
 **Sprint**: sprint-001 (Phase 1 — Foundations)
-**Verdict**: FAIL (14 of 15 acceptance tests pass; TEST-26 fails — the M1 matrix's
-context-only row)
+**Verdict (round 2, commit 8bafa07)**: **FAIL** — round-1's TEST-26 defect is genuinely
+fixed, but the fix introduces a **more severe regression**: deleting anchored text now
+re-attaches its thread to *different* text and destroys the historical selector. See
+[Round 2](#round-2--re-evaluation-of-the-fix) at the end.
+**Verdict (round 1, commit 0515dc0)**: FAIL (14 of 15; TEST-26 failed)
 
 Verification followed sprint-001's Verification Environment for SERVER-002: real markdown
 files edited on real disk in a real `git init` scratch workspace, `git diff` as the
@@ -136,3 +139,177 @@ reports a thread detached from text that never changed.
 **Verdict: FAIL** — fix FAIL-1 (classification must not call a range deleted when its
 characters survive verbatim in the new body) and re-verify TEST-26 **on disk**, with the
 contract's Given (both neighbouring sentences rewritten), not a one-word unit fixture.
+
+---
+
+# Round 2 — re-evaluation of the fix
+
+**Date**: 2026-07-26
+**Commit under test**: `8bafa07 [SERVER-002] Fix false orphan: verify deleted-claims via §6 re-resolution`
+**Verdict**: **FAIL** — round-1 FAIL-1 is fixed; a new, more severe defect is introduced.
+
+Claimed fix: a `deleted` classification from the offset mapper is now treated as a claim,
+verified by re-resolving the original selector through the §6 ladder before orphaning;
+partial ranges still trust the mapper.
+
+## 1. The round-1 failure is fixed
+
+Re-ran my exact round-1 probes.
+
+**Minimal repro** (both neighbouring sentences rewritten, anchored sentence untouched):
+
+```
+exact still present in newBody: true
+mapper.classify(anchored range): deleted        <- mapper still says deleted
+report: {"unchanged":[],"remapped":["anc_k4f7"],"orphaned":[]}
+emitted prefix: " precede the quoted line here.\n\n"
+emitted suffix: "\n\nUtterly different words now fo"
+```
+
+The emitted selector is now **exactly** the SPEC §6 step-3 expectation
+(`computeContext(newBody, …)`), and it resolves at `{"start":83,"end":135}`.
+
+**Escalating-context sequence** — all four rows now `remapped` with refreshed context, where
+round 1 orphaned the fourth:
+
+| edit                                      | round 1     | round 2    | context refreshed |
+| ----------------------------------------- | ----------- | ---------- | ----------------- |
+| one word before changed                   | `remapped`  | `remapped` | yes               |
+| one word before + one after changed       | `remapped`  | `remapped` | yes               |
+| preceding sentence fully rewritten        | `remapped`  | `remapped` | yes               |
+| **both neighbouring sentences rewritten** | `orphaned`  | `remapped` | **yes**           |
+
+**On-disk M1 matrix** (real workspace, `git diff` instrument): TEST-22 `unchanged` with no
+frontmatter change · TEST-23 `unchanged` · TEST-24 `remapped`, `exact` = the edited sentence ·
+TEST-25 `orphaned`, selector preserved, body-only diff · **TEST-26 `remapped`**, `exact`
+unchanged, `prefix`/`suffix` now quoting the new surroundings, each ≤ 32 chars. All five rows
+pass.
+
+**A/B against the pre-fix engine** (pre-fix `apps/server/src/anchors/` extracted from
+`0515dc0` and imported as a black box, same inputs):
+
+```
+[TEST-26 @ PRE-FIX] report: {"orphaned":["anc_k4f7"]}
+[TEST-26 @ HEAD   ] report: {"remapped":["anc_k4f7"]}
+```
+
+## 2. FAIL-2 (new): deleting anchored text re-attaches its thread to different text
+
+**Criterion**: SPEC §6 reconciliation step 5 — "Range entirely deleted → the anchor keeps its
+last selector (for history/git) and its thread becomes orphaned"; sprint TEST-25 — "the anchor
+is reported `orphaned`; `git diff` shows **no change whatsoever** to that anchor's frontmatter
+block — the last selector is preserved byte-for-byte for history". Also the issue's own Edge
+Cases: "fuzzy must not 'find' spurious matches".
+
+**What the fix did wrong**: verifying the `deleted` claim by re-running the **full** §6 ladder
+means rung 3 (fuzzy, threshold 0.75) is in play. A deleted paragraph that has a *similar
+sibling* anywhere in the document is therefore "verified" as still present, silently
+re-attached to the sibling, and its historical selector is **overwritten**.
+
+**The most realistic case — a deleted list item.** The user deletes the *bread* bullet from a
+shopping list; the thread hanging off it now points at *milk*:
+
+```
+$ tsx node_modules/.eval/s2-t25.ts
+The user deleted the BREAD bullet. Its thread should orphan.
+report: {"unchanged":[],"remapped":["anc_bread1"],"orphaned":[]}
+selector now on disk: {"exact":"\n- Buy milk from the corner store on Tuesday.", …}
+frontmatter rewritten: true
+--- git diff -U0 (TEST-25 requires NO change to the anchor block) ---
+   -    exact: "- Buy bread from the corner store on Tuesday."
+   -    prefix: "om the corner store on Tuesday.\n"
+   -    suffix: "\n- Buy eggs from the corner stor"
+   +    exact: |-
+   +
+   +      - Buy milk from the corner store on Tuesday.
+   +    prefix: |
+   …
+   -- Buy bread from the corner store on Tuesday.
+the thread now points at: "\n- Buy milk from the corner store on Tuesday."
+```
+
+**A/B — this is unambiguously new**, same inputs against the pre-fix engine:
+
+| scenario                                                        | PRE-FIX (`0515dc0`)                    | HEAD (`8bafa07`)                                       |
+| --------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------ |
+| delete the middle of three similar paragraphs                   | `orphaned`, selector preserved = true  | **`remapped`** onto the *alpha* paragraph's text        |
+| delete the middle bullet of a 3-bullet list                     | `orphaned`, selector preserved = true  | **`remapped`** onto the *milk* bullet                   |
+| delete the `Q2` row of a 3-row table                            | `orphaned`, selector preserved = true  | **`remapped`** onto the `Q3` row                        |
+| delete an anchored sentence that has a verbatim copy elsewhere  | `orphaned`, selector preserved = true  | **`remapped`** onto the copy                            |
+
+**Consequences**
+
+1. A thread silently attaches to content its author never commented on — worse than orphaning,
+   because orphaning is visible ("detached threads" per §6) while this is invisible and wrong.
+2. The historical selector is destroyed in git, defeating the explicit purpose of §6 step 5.
+3. TEST-25 still passes only because the sprint's fixture — and the new
+   `reconcile.disk.test.ts` — use a document with a single anchor and no similar text.
+
+**Steps to reproduce** (pure library):
+
+1. `cd /Users/theophanerupin/code/corpus`
+2. Create `node_modules/.eval/repro-fail2.ts`:
+   ```ts
+   import { reconcileAnchors, computeContext } from "@corpus/server";
+   const P = (n: string) => `The ${n} paragraph discusses ${n} matters and nothing else whatsoever.`;
+   const oldBody = `\n# Doc\n\n${["alpha", "bravo", "charlie"].map(P).join("\n\n")}\n`;
+   const newBody = oldBody.replace(P("bravo") + "\n\n", "");     // the user deletes bravo
+   const at = oldBody.indexOf(P("bravo"));
+   const sel = { exact: P("bravo"), ...computeContext(oldBody, at, at + P("bravo").length) };
+   const res = reconcileAnchors(oldBody, newBody, { anc_bravox: sel });
+   console.log(JSON.stringify(res.report));
+   console.log("selector preserved:", JSON.stringify(res.anchors.anc_bravox) === JSON.stringify(sel));
+   console.log("now quotes:", JSON.stringify(res.anchors.anc_bravox.exact));
+   ```
+3. `./node_modules/.bin/tsx node_modules/.eval/repro-fail2.ts`
+4. Observe:
+   ```
+   {"unchanged":["anc_charlx"],"remapped":["anc_alphax","anc_bravox"],"orphaned":[]}
+   selector preserved: false
+   now quotes: "The alpha paragraph discusses alpha matters and nothing else whatsoever."
+   ```
+   Expected: `anc_bravox` in `orphaned`, selector preserved, `exact` unchanged.
+
+**Direction** (behavioral, not prescriptive): the round-1 case is one where the anchored text
+survives **verbatim** — rungs 1–2 alone would have verified it. The verification step reaching
+rung 3 is what re-attaches deleted text to look-alikes.
+
+## 3. Everything else still holds
+
+| Probe                                                       | Result                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Genuine deletion, neighbours untouched                      | PASS — `orphaned`, selector preserved                                                      |
+| Genuine deletion + both neighbours rewritten                | PASS — `orphaned`, selector preserved                                                      |
+| Whole body replaced with unrelated prose                    | PASS — `orphaned`                                                                          |
+| Body emptied                                                | PASS — `orphaned`, no throw                                                                |
+| Range edited down to whitespace                             | PASS — `orphaned`, treated as deleted                                                      |
+| Duplicates elsewhere must not steal an in-place-edited anchor | PASS — remaps onto the edited first occurrence, not the untouched appendix copy           |
+| Two identical sentences, context-only edit                  | PASS — each anchor resolves to its own occurrence (first→first, second→second)              |
+| TEST-31 already-orphaned never re-attached                  | PASS — `orphaned`, selector byte-identical                                                 |
+| TEST-18/19/20/21 ladder + threshold from both sides         | PASS — unchanged (0.758 resolves, 0.710 does not)                                          |
+| TEST-27 determinism ×100 (incl. a 5-anchor mixed-outcome doc) | PASS — 1 distinct serialized result                                                       |
+| TEST-28 purity                                              | PASS — imports unchanged: `diff-match-patch`, siblings, type-only contract                 |
+| TEST-29 perf                                                | PASS — 1 MB / 50 anchors **0.9 ms** (round 1: 0.8 ms); 200 scattered edits **21.7 ms** (21.5 ms). Same order of magnitude. |
+| TEST-30 unicode safety                                      | PASS — no lone surrogates, ranges slice back well-formed                                   |
+| TEST-32 input immutability                                  | PASS — input deep-equal to snapshot, distinct object returned                              |
+| TEST-64 contract selectors                                  | PASS — boundary anchors emit contract-valid selectors                                      |
+| TEST-62 composition with the checker                        | PASS — no adapter, `tsc --strict` clean                                                    |
+| Repo gates                                                  | PASS — lint, format:check, typecheck, **807 tests / 55 files**, coverage 99.76% / 95.48% / 100% |
+
+**Note on the new `reconcile.disk.test.ts`**: it does run the M1 rows on disk, which is the
+right instinct, but its TEST-25 row uses a single-anchor document with no similar text — the
+same blind spot as the sprint fixture — so it cannot catch FAIL-2.
+
+## Round-2 summary
+
+The fix is directionally right and closes round-1's false orphan cleanly, with the on-disk M1
+matrix now fully green and no measurable cost in determinism, purity or performance. But
+verifying the mapper's `deleted` claim through the *whole* §6 ladder trades a false orphan for
+a false attachment: any deleted paragraph, bullet or table row with a similar sibling — the
+common case in real documents — is now re-attached to the wrong text and its historical
+selector overwritten, violating SPEC §6 step 5 and the letter of TEST-25. A false orphan is
+visible and recoverable; a silent misattachment is neither.
+
+**Verdict: FAIL** — fix FAIL-2, and re-verify TEST-25 with a fixture that contains a
+**similar sibling** (a list of near-identical bullets is the cheapest one), on disk, asserting
+both the `orphaned` bucket and a `git diff` with no change to the anchor block.

@@ -2,7 +2,10 @@
 
 **Date**: 2026-07-26
 **Sprint**: sprint-001 (Phase 1 — Foundations)
-**Verdict**: FAIL (16 of 17 in-scope acceptance tests pass; TEST-3 fails)
+**Verdict (round 2, commit 73bb3e7)**: **PASS** — 17 of 17 acceptance tests pass; FAIL-1 is
+fixed and 40+ adversarial probes across the new splice path found no regression. See
+[Round 2](#round-2--re-evaluation-of-the-fix) at the end.
+**Verdict (round 1, commit 0515dc0)**: FAIL (16 of 17; TEST-3 failed)
 
 Verification followed sprint-001's Verification Environment for SERVER-001: real markdown
 files on real disk in real `git init` scratch workspaces, driven by the evaluator's own
@@ -124,3 +127,128 @@ not for the mutation path the whole write layer will use.
 
 **Verdict: FAIL** — fix FAIL-1 and re-verify TEST-3 with a fixture that includes a non-empty
 flow collection and irregular inline spacing.
+
+---
+
+# Round 2 — re-evaluation of the fix
+
+**Date**: 2026-07-26
+**Commit under test**: `73bb3e7 [SERVER-001] Fix mutation reformatting untouched YAML lines`
+**Verdict**: **PASS** (17 of 17)
+
+Claimed fix: `setFrontmatterFields` splices untouched top-level keys' source lines verbatim
+and takes only changed keys from the serializer, guarded by a re-parse equivalence check;
+unspliceable shapes degrade to a full re-emit; no-op patches return the identical object.
+
+## 1. The round-1 failure, re-run exactly
+
+**The contract's Given** (YAML comments, non-alphabetical key order, single-quoted value,
+irregular spacing, a nested `anchors` block, `due:    2026-08-01`), mutating only `title` —
+round 1 changed 5 lines:
+
+```
+L4: - "title: 'Single quoted title'"
+L4: + "title: 'Renamed by the write path'"
+```
+
+**One changed line.** The `type: note   # trailing comment` line, the
+`tags:   [finance,   housing]` line, the 6-space-indented anchor block and `due:    2026-08-01`
+are now byte-identical.
+
+**My round-1 minimal case** (`tags: [core]`, mutate `title`): **1 changed line** — `tags:
+[core]` is untouched. Same for `[]`/`{}`, one-element flow seq, 2-space nested map,
+double-quoted untouched value.
+
+**Rewriting the anchors map to an identical value**: round 1 changed 6 lines; now
+**`<no line differs>`** — the no-op path holds.
+
+**The 8-document git corpus, on disk** (`git diff` as instrument): `commented.md` → only the
+`title` line; `minimal.md` → only the `updated` line, with no `tags:`/`status:`/`anchors:`/
+`due:`/`reviewed:`/`evergreen:` line materialized; `explicit-null.md` → absent from the diff
+entirely, still carrying literal `due: null`; the thread that omits `agent` → only its
+`title` line, no `agent: none` added. TEST-3 and TEST-17 both hold.
+
+## 2. Regression sweep — nothing else moved
+
+| Probe                                                            | Result                                                                                 |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| TEST-1 — 11-document corpus round-trip (BOM, CRLF, astral, comments, plugin keys, `due: null`) | PASS — `git status --porcelain` empty, 0 in-memory diffs                |
+| Adversarial round-trips (`---` in body, body starting `---`, YAML aliases, block scalars, BOM+CRLF, empty body, CRLF w/o trailing newline) | PASS — all byte-stable; all mutate in exactly 1 line |
+| TEST-4 malformed inputs                                          | PASS — unchanged messages, path + line, no unhandled throw                                |
+| TEST-5 / TEST-63 contract agreement                              | PASS — defaulted minimal still accepted by `DocFrontmatterSchema`                          |
+| TEST-11/12 ids, TEST-13 refs, TEST-14 paths + traversal          | PASS — identical results to round 1                                                        |
+| TEST-15 §14 rule matrix (12 rules + clean control)               | PASS — identical codes, identical clean control (0 errors / 0 warnings)                    |
+| TEST-16 warning/error split, with and without resolver           | PASS — identical                                                                           |
+| TEST-7/8/9/10 turns                                              | PASS — identical                                                                           |
+| TEST-61 seed corpus through the checker                          | PASS — 0 errors, 0 warnings                                                                |
+| TEST-62 composition with the real resolver                       | PASS — no adapter, `tsc --strict` clean                                                    |
+| Repo gates                                                       | PASS — lint, format:check, typecheck (0 TS errors), **807 tests / 55 files**, coverage 99.76% lines / 95.48% branches / 100% functions |
+
+## 3. Adversarial probing of the splice path itself
+
+Every case below mutates one field and asserts three things: the changed-line count, that a
+**re-parse of the output equals the pre-patch data plus the patch**, and that the rewritten
+file is **itself byte-stable** (a second round-trip is a no-op, so successive saves cannot
+drift).
+
+**16 odd frontmatter shapes — all 1 changed line, all re-parse correct, all stable:** flow
+mapping value (`query: {folder: inbox, sort: due}`), flow seq with irregular spaces, 4-space
+nested map, block scalar `|`, folded scalar `>-`, multi-line flow sequence, YAML alias/anchor
+(`&c` / `*c`), standalone comment line between keys, trailing comment after a value, blank
+line inside the frontmatter, quoted key, non-ASCII key + emoji value, a 400-character line,
+empty value, `null` / `~`, tab-indented nesting.
+
+**Line endings and BOM**: CRLF frontmatter mutates in 1 line with **`\r\n` preserved on every
+line**; a BOM file mutates in 1 line with the **BOM preserved**.
+
+**Multi-line key replacement**: patching `publish` (a 4-line nested mapping) rewrites only
+that key's lines; the neighbouring `tags: [x, y]` line stays byte-identical and the re-parse
+returns the patched value.
+
+**Adding a key**: `evergreen: true` is appended inside the fence; untouched lines byte-identical.
+
+**Deleting a key**: `{status: undefined}` removes the key entirely (re-parse: `"status" in
+data === false`); `{status: null}` writes `status: null` — absent and explicitly-null stay
+distinguishable, per §5. Neighbouring lines untouched in both.
+
+**No-op patches**: patching a field to its current value and patching `{}` both return the
+**identical object** (`===`) and serialize to byte-identical output — no empty commits.
+
+**Drift**: 5 successive mutations on a document with a trailing comment and a flow sequence
+leave exactly 1 changed line versus the original. No cumulative reformatting.
+
+**Mutation + `setBody` together**: both land, `tags` line intact.
+
+**Degradation path**: a document with a duplicate top-level key (ambiguous source lines)
+mutates correctly and the output re-parses — the fallback is safe, not lossy.
+
+**Total: 0 failures across the sweep.**
+
+## 4. Observations for the orchestrator (not verdict-changing)
+
+1. **This commit re-broke a dev-harness file.** `.claude/agents/server-dev.md` is again
+   invalid YAML 1.2 — its unquoted `description:` scalar contains a second `": "`
+   (`…sole writer of workspace data: documen…`), which YAML reads as a nested mapping. My
+   independent raw `yaml` parse rejects it too, so the library is right to. This is the exact
+   defect commit `ac6949f` had fixed; commit `73bb3e7` edited that file ("server-dev Domain
+   Knowledge records the serializer-whitespace fact") and reintroduced it. It breaks no
+   sprint test — TEST-2's assertion is that `git status` stays clean for those paths, and it
+   does, because unparseable files are skipped rather than written — but the harness file
+   should be re-quoted.
+2. **A proof-of-work claim is off by one.** The commit message states "28/28 repo markdown
+   files round-trip byte-identically". Measured across all 83 `.md` files in the repo: **27**
+   round-trip byte-identically, **0** byte-diffs, and the only frontmatter-bearing file that
+   fails to parse is the `server-dev.md` above (the remaining 54 are plain markdown with no
+   frontmatter fence, correctly rejected). The claim does not hold for the one file the
+   commit itself touched.
+
+## Round-2 summary
+
+The fix does exactly what it claims and nothing more. The round-1 failure is closed on the
+contract's own fixture, on my minimal case, and on the 8-document git corpus; the no-op path
+now produces literally zero diff; and a 40+ case sweep of the new splice path — odd YAML
+shapes, CRLF, BOM, multi-line values, key addition, key deletion, repeated mutation, the
+degradation fallback — found no regression, with re-parse equivalence and post-write stability
+holding in every case.
+
+**Verdict: PASS.**
