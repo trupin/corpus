@@ -24,6 +24,7 @@ Explicitly out of bounds: browsing the wider codebase "for background", reading 
 - **Tests**: new code has meaningful tests that would fail if the behavior broke — not tautologies. Bug fixes include a regression test.
 - **Security**: unvalidated boundary input, path traversal, injection, secrets in code or logs, authz gaps.
 - **Blast radius**: what existing behavior could this diff break? Renamed/removed exports, changed signatures, altered defaults.
+- **Interface-docs drift**: if the diff touches a user-facing interface — CLI commands, API routes/schemas, config keys — its self-describing artifacts must move in the same PR: the command registry / `--help` text, generated references (`docs/cli.md`, `packages/contract/openapi.json`, generated client). A behavior change whose help text, docs, or examples still describe the old behavior is a **MAJOR** finding; a hand-edit to a generated artifact (instead of regenerating from the source of truth) is a **MAJOR** finding.
 - **Scope**: changes unrelated to the referenced issue(s) are a finding (mixed concerns).
 
 Do NOT review style the linter owns (formatting, import order, naming taste). Do not soften findings because the code "looks intentional".

@@ -29,6 +29,7 @@ The 90% coverage gate currently runs on unit tests alone (there are no e2e specs
 ## Acceptance Criteria
 
 - [ ] Playwright runs collect V8 coverage from Chromium (CDP `startJSCoverage`/`stopJSCoverage` fixture or monocart reporter) for both the UI bundle (source-mapped back to `src/`) and the server process under test (`NODE_V8_COVERAGE`).
+- [ ] Real `corpus` CLI invocations count too: CLI processes spawned in e2e/integration tests run with `NODE_V8_COVERAGE` so `apps/cli` coverage reflects actual command executions, not just unit tests.
 - [ ] A merge step (e.g. `monocart-coverage-reports`) combines Vitest's istanbul-format `coverage/coverage-final.json` with Playwright's collected coverage (raw V8 from CDP, source-mapped) into one report; the 90% thresholds move to the merged report and are removed from the vitest-only run in CI.
 - [ ] CI's `validate` job enforces the gate on the merged report; local `npm run coverage` reproduces it.
 - [ ] Per-workspace numbers visible in the report (text summary in CI logs).
