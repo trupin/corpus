@@ -36,6 +36,10 @@ User-stated policy: don't spend Fable on tasks that don't need it — implementa
 - [x] CLAUDE.md documents the Model Policy and forbids downgrading the pr-reviewer.
 - [x] `.claude/agents/pr-reviewer.md` frontmatter pins `model: fable`.
 - [x] Open issues carry recommendations: SHARED-001 → fable (spec revision), CONTRACT-001 → opus, INFRA-004 → opus.
+- [x] Specialized agents pinned in frontmatter: spec-writer → fable; evaluator, sprint-planner, context-manager → opus; haiku carve-out documented (read-only exploration only, never writes).
+- [x] Escalation ladder documented: ambiguity → escalate, not guess; two failed evaluator/reviewer rounds → re-spawn on fable and correct the issue's recommendation.
+- [x] Orchestrator-side judgment work (adjudicating findings, /decompose, spec-change prep) named fable-tier, never delegated below.
+- [x] Implementing agents record the actual model in the E2E Verification Log (template instruction + /implement verification check).
 
 ## Technical Design
 

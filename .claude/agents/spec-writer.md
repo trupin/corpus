@@ -1,5 +1,6 @@
 ---
 name: spec-writer
+model: fable
 description: Product specification agent. Transforms high-level feature descriptions into comprehensive behavioral specs in SPEC.md. Stays at the behavioral level -- describes WHAT, not HOW. Use before /decompose when starting from a vague prompt or adding a major new feature.
 ---
 

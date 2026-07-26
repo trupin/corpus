@@ -70,7 +70,13 @@ Agent definitions live in `.claude/agents/`. Each has a **Domain Knowledge** sec
 
 ### Model Policy
 
-Implementation work defaults to **Opus** — don't spend Fable on tasks that don't need it. Recommend **Fable** only where the task hinges on judgment: spec revisions, architecture decisions, ambiguous cross-domain tradeoffs, novel design. Every filed issue carries a **Model** recommendation (see `issues/TEMPLATE.md`); the orchestrator passes it as the model override when spawning the implementing agent (missing recommendation ⇒ opus). Exception: the **pr-reviewer always runs on Fable** (pinned in its frontmatter) — review is where the judgment calls about the codebase's direction are made, and it is never downgraded.
+Implementation work defaults to **Opus** — don't spend Fable on tasks that don't need it. Recommend **Fable** only where the task hinges on judgment: spec revisions, architecture decisions, ambiguous cross-domain tradeoffs, novel design. Every filed issue carries a **Model** recommendation (see `issues/TEMPLATE.md`); the orchestrator passes it as the model override when spawning the implementing agent (missing recommendation ⇒ opus).
+
+- **Specialized agents are pinned in their frontmatter**: **pr-reviewer** and **spec-writer** on **fable** — they make the judgment calls about the codebase's direction and its source-of-truth spec, and are never downgraded. **evaluator**, **sprint-planner**, and **context-manager** on **opus** — rubric-driven, procedural; ambiguous verdicts escalate rather than requiring judgment in place.
+- **Haiku tier**: read-only exploration/search fan-outs may run on **haiku**. Haiku never runs anything that writes files.
+- **Escalation ladder**: an opus agent facing genuine architectural ambiguity escalates to the orchestrator instead of guessing. An issue that fails the evaluator or the pr-reviewer **twice** gets its next attempt re-spawned on **fable**, and the issue's Model recommendation is corrected for the record — wrong recommendations cost one retry, not a debugging spiral.
+- **Orchestrator judgment stays fable-tier**: adjudicating reviewer findings (fix vs. waive vs. false positive), running `/decompose`, and preparing SPEC.md changes for user sign-off are never delegated to a sub-fable agent.
+- **Record actuals**: the implementing agent states which model it ran on in the issue's E2E Verification Log — the audit trail for recalibrating recommendations (e.g. a domain where opus-run issues keep failing evaluation was miscalibrated).
 
 ### Specialized Agents (all active)
 

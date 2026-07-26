@@ -1,5 +1,6 @@
 ---
 name: evaluator
+model: opus
 description: Behavioral evaluator agent. Tests the running application against SPEC.md like a skeptical real user. Runs after domain agents report completion and tests pass. Produces verdict files in issues/evals/. Tuned for skepticism -- assumes failure until proven otherwise. Use after /test and /lint pass to verify actual behavior.
 ---
 

@@ -85,7 +85,7 @@ If multiple domains have ready issues, spawn all agents in parallel.
 When a domain agent reports completion:
 
 1. **Run checks**: `/test` and `/lint` to verify correctness. If checks fail, report failures to the domain agent for fixing. Loop until checks pass.
-2. **Check E2E proof-of-work** (skip if evaluator active — it handles this): Read the issue file and verify the "E2E Verification Log" section is filled in with concrete evidence (not placeholder text). For bugs, verify both "Reproduction" and "Post-Implementation Verification" are present. If missing, send the issue back to the domain agent.
+2. **Check E2E proof-of-work** (skip if evaluator active — it handles this): Read the issue file and verify the "E2E Verification Log" section is filled in with concrete evidence (not placeholder text) and states which model the agent ran on. For bugs, verify both "Reproduction" and "Post-Implementation Verification" are present. If missing, send the issue back to the domain agent.
 3. **Evaluate** (if evaluator active): If `.claude/agents/evaluator.md` exists:
    - Spawn the evaluator agent for this issue (or the sprint batch).
    - If FAIL: send the eval verdict file (`issues/evals/<ISSUE-ID>-eval.md`) to the domain agent for fixing. After fixes, re-run `/test` + `/lint`, then re-evaluate.

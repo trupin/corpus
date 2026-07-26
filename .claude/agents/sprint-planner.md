@@ -1,5 +1,6 @@
 ---
 name: sprint-planner
+model: opus
 description: Sprint contract negotiator. Before each implementation batch, produces a sprint contract defining exactly what "done" looks like in testable terms. Bridges SPEC.md (behavioral) with issue files (technical). Use before spawning domain agents when the evaluator is active and batch size > 1.
 ---
 
