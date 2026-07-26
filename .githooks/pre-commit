@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Pre-commit gate — full validation by explicit project decision (see CLAUDE.md):
-# lint + format + typecheck + unit tests. Playwright e2e runs pre-push only.
+# build + lint + format + typecheck + unit tests. Playwright e2e runs pre-push only.
+# Build runs first: cross-workspace imports (@corpus/contract, @corpus/kit)
+# resolve through each package's exports map into dist/, so lint, typecheck and
+# tests all need fresh build output to see the real types.
 # Escape hatch (documented, use sparingly): git commit --no-verify
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -15,6 +18,7 @@ step() {
   fi
 }
 
+step "build"           npm run --silent build
 step "eslint"          npm run --silent lint
 step "prettier check"  npm run --silent format:check
 step "typecheck"       npm run --silent typecheck

@@ -11,8 +11,6 @@ This file provides guidance to Claude Code when working with this repository. It
 
 **`SPEC.md` is the source of truth for all product behavior** — read the relevant section before implementing any feature. If the spec is ambiguous, clarify before coding — don't guess.
 
-> ⚠️ SPEC.md predates the standalone-tool pivot in places (notably §3 stack, §7 queue mechanics, §9 write paths). Where SPEC.md conflicts with the **Architecture Decisions** below, the decisions win until SHARED-001 (spec revision) lands.
-
 **Product vs. dev harness — do not confuse them.** The `.claude/` setup in this repo is the **development harness** for building Corpus. The _product_ also has an agent runtime (the orchestrate/comment skills that `corpus init` installs into a user's workspace) — that is product code, owned by the `agent-runtime` domain, and lives under `assets/workspace/`. We do not use Corpus to develop Corpus.
 
 ## Architecture Decisions (2026-07-26)
@@ -205,12 +203,14 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 
 - `npm install` — install all workspaces
 - `npm run setup-hooks` — one-time per clone: wires `.githooks/` (`git config core.hooksPath`)
+- `npm run build` — tsc emit for the built workspaces, in dependency order (contract → kit → apps); fails fast. `@corpus/*` imports resolve through each package's `exports` map into `dist/`, so **build before lint/typecheck/test** — the hooks and CI do this automatically
+- `npm run clean` — removes all `dist/` output and `coverage/`
 - `npm run lint` / `npm run lint:fix` — ESLint across the repo
 - `npm run format:check` / `npm run format` — Prettier
 - `npm run typecheck` — `tsc --noEmit` in every workspace
 - `npm test` — Vitest across all workspaces
 - `npm run e2e` — Playwright (requires the app; skipped automatically when no specs exist)
-- Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
+- `npm run dev -w apps/cli` — runs the `corpus` bin from source via tsx. Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
 
 ## Testing Conventions
 

@@ -3,8 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@corpus/contract": "*",
+    "@corpus/kit": "*"
   },
   "devDependencies": {
     "@playwright/test": "^1.53.0"

@@ -13,7 +13,7 @@ P0
 opus — the API surface is pinned by the revised spec; implementation is well-specified scaffolding + generation wiring.
 
 ## Dependencies
-- Depends on: SHARED-001
+- Depends on: SHARED-001, INFRA-007 (build/exports wiring — `@corpus/contract` must resolve from consumers)
 - Blocks: server scaffold, CLI scaffold, UI data layer (Phase 1 issues, to be filed by /decompose)
 
 ## Spec References

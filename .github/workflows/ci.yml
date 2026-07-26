@@ -19,6 +19,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Build first: cross-workspace imports resolve through each package's
+      # exports map into dist/, so lint/typecheck/tests need the emit to exist.
+      - run: npm run build
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck

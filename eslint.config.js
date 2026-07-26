@@ -12,6 +12,7 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/",
       "**/dist/",
+      ".claude/worktrees/",
       "**/build/",
       "**/coverage/",
       "design/",
@@ -20,7 +21,7 @@ export default tseslint.config(
     ],
   },
   eslint.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
   {
     languageOptions: {
       parserOptions: {
@@ -42,10 +43,21 @@ export default tseslint.config(
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // The `any`-propagation family: these fire wherever a value typed `any`
+      // flows onward, so they are the downstream half of `no-explicit-any`.
+      // That rule is a deliberate warning, so these match it — a blocking gate
+      // here would contradict it and would punish trust-boundary code before
+      // its Zod parse narrows the value (see docs/TS_GUIDELINES.md).
+      "@typescript-eslint/no-unsafe-argument": "warn",
+      "@typescript-eslint/no-unsafe-assignment": "warn",
+      "@typescript-eslint/no-unsafe-call": "warn",
+      "@typescript-eslint/no-unsafe-member-access": "warn",
+      "@typescript-eslint/no-unsafe-return": "warn",
     },
   },
+  // Type-aware rules need a tsconfig project; JS config files have none.
   {
-    files: ["**/*.js"],
+    files: ["**/*.js", "**/*.cjs", "**/*.mjs"],
     ...tseslint.configs.disableTypeChecked,
   },
 );
