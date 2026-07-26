@@ -171,21 +171,22 @@ All acceptance criteria met · tests pass, no regressions · typecheck passes ·
 
 **Only the orchestrator agent (you) creates commits.** Domain agents write code and run tests but never commit or push.
 
-1. **All work happens on `main`** (tracking `origin/main` at `github.com:trupin/corpus`) unless the user asks for a branch.
-2. **Commit before starting new work** — never start a task with uncommitted changes from a previous one.
-3. **Every commit message starts with `[ISSUE-ID]`.**
-4. **Commit after verification** — agent reports done AND checks pass.
-5. **One commit per issue** (or per logical batch). Never mix unrelated changes.
-6. Format:
+1. **Every significant change lands via a PR.** Any issue-worthy change happens on a branch named `<issue-id-lowercase>-<slug>` and reaches `main` (at `github.com:trupin/corpus`) only through a pull request (`/pr`). Only trivial bookkeeping (typo fixes, issue/plan status updates) may commit directly to `main`.
+2. **A PR merges only when all validation GitHub Actions are green.** The `CI / validate` workflow (lint, format, typecheck, unit tests, e2e) must pass on the PR's head commit before landing — no exceptions, no merging on "it passes locally".
+3. **Commit before starting new work** — never start a task with uncommitted changes from a previous one.
+4. **Every commit message starts with `[ISSUE-ID]`.**
+5. **Commit after verification** — agent reports done AND checks pass.
+6. **One commit per issue** (or per logical batch). Never mix unrelated changes.
+7. Format:
    ```
    [ISSUE-ID] Short imperative description
 
    - Key change 1
    - Key change 2
    ```
-7. **Stage specifically** — `git add <path>`; never `git add -A` blindly.
-8. **Never force push, amend published commits, or `reset --hard`** unless explicitly asked.
-9. **Never skip hooks** (`--no-verify`).
+8. **Stage specifically** — `git add <path>`; never `git add -A` blindly.
+9. **Never force push, amend published commits, or `reset --hard`** unless explicitly asked.
+10. **Never skip hooks** (`--no-verify`).
 
 Domain agents must never run `git commit`, `git push`, `git checkout`, `git reset`, `git stash`, or any state-changing git command.
 

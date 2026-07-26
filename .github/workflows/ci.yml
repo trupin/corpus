@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - name: e2e (Playwright)
+        run: |
+          if compgen -G "apps/ui/e2e/*.spec.ts" > /dev/null; then
+            npx playwright install --with-deps chromium
+            npm run e2e
+          else
+            echo "e2e skipped (no specs in apps/ui/e2e/ yet)"
+          fi
