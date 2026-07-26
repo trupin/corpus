@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+coverage/
+design/
+SPEC.md
+issues/
+*.generated.ts
+packages/contract/openapi.json

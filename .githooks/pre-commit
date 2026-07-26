@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pre-commit gate — full validation by explicit project decision (see CLAUDE.md):
+# lint + format + typecheck + unit tests. Playwright e2e runs pre-push only.
+# Escape hatch (documented, use sparingly): git commit --no-verify
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+fail=0
+step() {
+  local name="$1"; shift
+  echo "pre-commit ▶ $name"
+  if ! "$@"; then
+    echo "pre-commit ✗ $name failed — fix the errors above (or 'npm run lint:fix' / 'npm run format' for auto-fixables)."
+    fail=1
+  fi
+}
+
+step "eslint"          npm run --silent lint
+step "prettier check"  npm run --silent format:check
+step "typecheck"       npm run --silent typecheck
+step "unit tests"      npm test --silent
+
+if [ "$fail" -ne 0 ]; then
+  echo "pre-commit: blocked. Nothing was committed."
+  exit 1
+fi
+echo "pre-commit ✓ all checks passed"
