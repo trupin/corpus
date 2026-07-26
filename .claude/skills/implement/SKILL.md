@@ -73,7 +73,7 @@ If the ready issue is in `shared/` (e.g., SHARED-001):
 
 For each domain with ready issues:
 
-- Use the Agent tool to spawn the appropriate domain agent (defined in `.claude/agents/<domain>-dev.md`), passing the issue's **Model** recommendation as the model override (missing ⇒ opus). Never downgrade the pr-reviewer — it is pinned to fable.
+- Use the Agent tool to spawn the appropriate domain agent (defined in `.claude/agents/<domain>-dev.md`), passing the issue's **Model** recommendation as the model override (missing ⇒ opus).
 - Pass the issue ID(s) and instruct it to read the issue file, implement, test, verify E2E, and report back.
 - If a sprint contract was produced in step 3, include the contract file path so the domain agent knows what the evaluator will verify.
 - **E2E requirement**: Explicitly instruct agents to fill in the "E2E Verification Log" section of the issue file with concrete evidence. For bug fixes, they must reproduce the bug first. Remind them the evaluator will reject issues without credible proof-of-work.
@@ -89,6 +89,7 @@ When a domain agent reports completion:
 3. **Evaluate** (if evaluator active): If `.claude/agents/evaluator.md` exists:
    - Spawn the evaluator agent for this issue (or the sprint batch).
    - If FAIL: send the eval verdict file (`issues/evals/<ISSUE-ID>-eval.md`) to the domain agent for fixing. After fixes, re-run `/test` + `/lint`, then re-evaluate.
+   - After a second failed round, re-spawn the next attempt on **fable** and correct the issue's Model recommendation for the record (Model Policy escalation ladder).
    - Loop up to 3 iterations. If still failing after 3 attempts, escalate to user with the eval file.
    - If PASS: proceed.
 4. **Decide whether to audit**: Run `/audit <ISSUE-ID>` only when:

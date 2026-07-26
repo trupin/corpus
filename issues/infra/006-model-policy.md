@@ -14,7 +14,7 @@ P1
 
 ## Model
 
-opus — mechanical template/docs wiring of a user-stated policy. (Implemented directly by the orchestrator in-session.)
+opus — mechanical template/docs wiring of a user-stated policy. (In practice implemented by the orchestrator in-session, which runs on fable — see the E2E log's actuals line.)
 
 ## Dependencies
 
@@ -70,6 +70,7 @@ N/A (process/docs). Consistency check: template, skills, and CLAUDE.md name the 
 
 ### Post-Implementation Verification
 
+- **implemented on: fable** — recommendation said opus, but the orchestrator (fable, in-session) did the wiring directly rather than spawning an opus agent for a docs-only change. Recorded per the policy this issue introduces: its first rec-vs-actual data point.
 - Policy wired across template/skills/CLAUDE.md/agent frontmatter in this PR; grep-verified the default (opus) and exception (reviewer → fable) are stated identically in all four places.
 - Runtime verification deferred to the next implementation cycle (no domain-agent spawn occurs in this docs-only PR); the reviewer run on this very PR executes under the new frontmatter pin.
 
