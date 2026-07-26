@@ -333,6 +333,10 @@ $ npm run test:coverage # 264 tests pass; All files 100% stmts/branch/funcs/line
   own validator (`scripts/workspace-template.ts`) parses every template `.md` with the real
   `yaml` library and validates ids/timestamps against the shipped contract schemas as the
   interim guarantee. This issue is re-verified end to end in CLI-002.
+  **VERIFIED 2026-07-26 (evaluator):** the circular deferral (SERVER-001 → AGENT-001 → CLI-002)
+  was caught in evaluation; the evaluator ran TEST-61 itself over the merged tree — SERVER-001's
+  parser + checker over `assets/workspace/`: 0 errors, 0 warnings (issues/evals/AGENT-001-eval.md).
+  The full `corpus doc check` re-verification still lands in CLI-002.
 - **Server/board steps 4–7 of the Verification Plan → DEFERRED → CLI-002 / SERVER-003 /
   SERVER-004 / UI-003.** No server, no projection, no board exists in Phase 1: `db rebuild`,
   `db doctor`, `GET /api/docs?type=view`, `GET /api/docs?type=skill`, the three rendered
