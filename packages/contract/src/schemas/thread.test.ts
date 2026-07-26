@@ -83,13 +83,10 @@ describe("ThreadSummary", () => {
 });
 
 describe("CreateThreadRequest", () => {
-  it("defaults to a standalone note-only thread", () => {
-    expect(CreateThreadRequestSchema.parse({ body: "Ask from nowhere." })).toEqual({
-      body: "Ask from nowhere.",
-      parent: null,
-      selector: null,
-      requestsAgent: false,
-    });
+  it("defaults to a standalone thread, leaving the enqueue decision to the server", () => {
+    const parsed = CreateThreadRequestSchema.parse({ body: "Ask from nowhere." });
+    expect(parsed).toEqual({ body: "Ask from nowhere.", parent: null, selector: null });
+    expect(parsed.requestsAgent).toBeUndefined();
   });
 
   it("carries a selection so the server can write the parent's anchor entry", () => {
@@ -120,11 +117,10 @@ describe("CreateThreadResponse", () => {
 });
 
 describe("AppendTurnRequest and AppendTurnResponse", () => {
-  it("treats a turn as note-only unless it requests the agent", () => {
-    expect(AppendTurnRequestSchema.parse({ body: "just a note" })).toEqual({
-      body: "just a note",
-      requestsAgent: false,
-    });
+  it("leaves an unset enqueue signal unset, rather than deciding for the server", () => {
+    const parsed = AppendTurnRequestSchema.parse({ body: "just a note" });
+    expect(parsed).toEqual({ body: "just a note" });
+    expect("requestsAgent" in parsed).toBe(false);
   });
 
   it("round-trips the appended turn with its updated thread summary", () => {
@@ -152,5 +148,42 @@ describe("AppendTurnRequest and AppendTurnResponse", () => {
 describe("agent participation", () => {
   it.each(THREAD_AGENT_STATES)("recognises the %s state", (state) => {
     expect(ThreadAgentSchema.parse(state)).toBe(state);
+  });
+});
+
+/**
+ * SPEC.md §8: a reply in an engaged thread re-triggers the agent unless the user
+ * posts with the "note only" toggle. That toggle only exists if an explicit
+ * `false` stays distinguishable from an omitted field after validation.
+ */
+describe("requestsAgent is a tri-state enqueue signal", () => {
+  const schemas = [
+    { name: "AppendTurnRequest", schema: AppendTurnRequestSchema, base: { body: "reply" } },
+    { name: "CreateThreadRequest", schema: CreateThreadRequestSchema, base: { body: "first" } },
+  ] as const;
+
+  describe.each(schemas)("$name", ({ schema, base }) => {
+    it('preserves an explicit false, which is the "note only" instruction', () => {
+      const parsed = schema.parse({ ...base, requestsAgent: false });
+      expect(parsed.requestsAgent).toBe(false);
+    });
+
+    it("preserves an explicit true", () => {
+      expect(schema.parse({ ...base, requestsAgent: true }).requestsAgent).toBe(true);
+    });
+
+    it("leaves an omitted signal undefined, so the server applies its own rule", () => {
+      expect(schema.parse(base).requestsAgent).toBeUndefined();
+    });
+
+    it("keeps explicit false distinguishable from omission", () => {
+      const explicit = schema.parse({ ...base, requestsAgent: false });
+      const omitted = schema.parse(base);
+      expect(explicit.requestsAgent).not.toBe(omitted.requestsAgent);
+    });
+
+    it("rejects a non-boolean signal rather than coercing it", () => {
+      expect(schema.safeParse({ ...base, requestsAgent: "false" }).success).toBe(false);
+    });
   });
 });

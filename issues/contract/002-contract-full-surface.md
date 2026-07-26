@@ -79,6 +79,13 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 1. **Author attribution is a request header, not a body field.** Every mutating route declares an **optional** `X-Corpus-Author: user | agent` header parameter (shared schema in `actor.ts`) whose documented default is `user` when absent, so browser clients need no ceremony. _(Adjudicated 2026-07-26: CONTRACT-001 flagged that "required" and "defaulting when absent" are mutually exclusive in OpenAPI and implemented optional-with-documented-default; that reading stands — do not make the header required.)_ A header is used because several mutating routes are `multipart/form-data` or bodiless (`DELETE`, `POST .../resolve`), where a body field would be inconsistent or impossible; the server maps this to the git author for the auto-commit (§7 "acting party as git author"). The typed client factory injects it from a per-call option.
 2. **`agent` in the turn-append payload means "requests the agent", not "authored by the agent".** §9.2's "agent flag" and §8's composer toggle are the *enqueue* signal; authorship comes from the header above. The field is therefore named `requestsAgent` in every request schema (turn-append, thread create, capture), and its description states plainly that it controls whether a `comment.created` event is enqueued.
 
+   **It is a tri-state: `z.boolean().optional()` with NO default.** _(Adjudicated 2026-07-26 on CONTRACT-001's pr-reviewer finding 3; CONTRACT-001 implements this for turn-append and thread create, and this issue must carry it to `POST /api/capture` and to the multipart turn-append body.)_ A `.default(false)` collapses "omitted" and "explicitly false" at parse time, which makes §8's **"note only"** toggle unexpressible: a user replying in an `engaged` thread could no longer suppress the re-trigger. The three states, which every field description must state:
+   - **omitted** → server default behavior. Thread create/capture: enqueue only on an explicit `@agent` / `@<subagent>` mention or `/<skill>` invocation. Turn append: enqueue when the thread is already `engaged`, otherwise only on such a mention or invocation.
+   - **`true`** → request the agent.
+   - **`false`** → "note only": suppress the enqueue **even when the thread is engaged**.
+
+   The corresponding `eventId` response fields describe the same three cases and state that an explicit `false` always yields `null`.
+
 **`GET /api/docs` parameter grammar.**
 
 - `q` — free-text FTS across titles, bodies and turn bodies.
@@ -119,7 +126,7 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 - `POST /api/queue/claim-all` — atomically moves all `pending/*` to `in-progress/` and returns `{ events: QueueEvent[] }` (empty array while halted).
 - `POST /api/queue/:id/complete` — bodiless; `POST /api/queue/:id/fail` — body `{ reason?: string }`; `DELETE /api/queue/:id` — abandon (the §9.2 spelling).
 - `POST /api/queue/reap-stale` — returns `{ reaped: string[] }` (in-progress events recovered to pending).
-- `POST /api/queue/halt` and `/resume` — toggle the `.corpus/HALT` sentinel; both return `QueueStatus`. `GET /api/queue/status` returns the same `QueueStatus = { halted, pending, inProgress, failed }` — needed because the console strip reads the halted dot and queue depth on load, while SSE only signals invalidation.
+- `POST /api/queue/halt` and `/resume` — toggle the `.corpus/HALT` sentinel; both return `QueueStatus`. `GET /api/queue/status` returns the same `QueueStatus` — which CONTRACT-001 already shipped as `{ halted, pending, inProgress, processed, failed, abandoned }` (the superset §9.2's "per-status counts" requires); reuse it unchanged — needed because the console strip reads the halted dot and queue depth on load, while SSE only signals invalidation.
 
 **Locks** (§7). `Lock = { docId, holder: "user" | "agent", acquired, ttl }`.
 

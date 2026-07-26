@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { VALIDATION_RESPONSE } from "./responses.js";
 
 /**
  * The SSE invalidation stream (SPEC.md §9.2). Documented here so the contract
@@ -41,6 +42,7 @@ export const streamEvents = createRoute({
         },
       },
     },
+    400: VALIDATION_RESPONSE,
     401: { description: "Missing or invalid token." },
   },
 });

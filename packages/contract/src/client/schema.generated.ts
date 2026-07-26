@@ -184,6 +184,15 @@ export interface paths {
                         "application/json": components["schemas"]["Doc"];
                     };
                 };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
                 /** @description Missing or invalid workspace bearer token. */
                 401: {
                     headers: {
@@ -311,6 +320,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Thread"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
                     };
                 };
                 /** @description Missing or invalid workspace bearer token. */
@@ -578,6 +596,15 @@ export interface paths {
                         "application/json": components["schemas"]["ClaimBatch"];
                     };
                 };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
                 /** @description Missing or invalid workspace bearer token. */
                 401: {
                     headers: {
@@ -627,6 +654,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["QueueEvent"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
                     };
                 };
                 /** @description Missing or invalid workspace bearer token. */
@@ -758,6 +794,15 @@ export interface paths {
                     };
                     content: {
                         "text/event-stream": string;
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
                     };
                 };
                 /** @description Missing or invalid token. */
@@ -1100,7 +1145,7 @@ export interface components {
              */
             anchorId: string | null;
             /**
-             * @description Enqueued `comment.created` event, when the agent was requested.
+             * @description Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the first turn carries a mention or skill invocation; always null when `requestsAgent` was explicitly false ("note only").
              * @example evt_7c1d
              */
             eventId: string | null;
@@ -1134,17 +1179,14 @@ export interface components {
             title?: string;
             /** @description Body of the thread's first turn. */
             body: string;
-            /**
-             * @description True enqueues a `comment.created` event so the parked agent wakes. Independent of who authored the turn.
-             * @default false
-             */
-            requestsAgent: boolean;
+            /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues only when the body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a `/<skill>` invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
+            requestsAgent?: boolean;
         };
         AppendTurnResponse: {
             thread: components["schemas"]["ThreadSummary"];
             turn: components["schemas"]["Turn"];
             /**
-             * @description Enqueued `comment.created` event, when the agent was requested or is already engaged.
+             * @description Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the thread is already engaged; always null when `requestsAgent` was explicitly false ("note only", SPEC.md §8).
              * @example evt_7c1d
              */
             eventId: string | null;
@@ -1198,11 +1240,8 @@ export interface components {
         };
         AppendTurnRequest: {
             body: string;
-            /**
-             * @description True enqueues a `comment.created` event so the parked agent wakes. Independent of who authored the turn.
-             * @default false
-             */
-            requestsAgent: boolean;
+            /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
+            requestsAgent?: boolean;
         };
         QueueStatus: {
             /** @description True while the `.corpus/HALT` sentinel exists; claims return empty. */

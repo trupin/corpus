@@ -29,6 +29,7 @@ export const getThread = createRoute({
   request: { params: ThreadIdParamSchema },
   responses: {
     200: jsonContent(ThreadSchema, "The thread and every turn, oldest first."),
+    400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
   },

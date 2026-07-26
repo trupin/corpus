@@ -813,7 +813,7 @@
               "null"
             ],
             "pattern": "^evt_[A-Za-z0-9]+$",
-            "description": "Enqueued `comment.created` event, when the agent was requested.",
+            "description": "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the first turn carries a mention or skill invocation; always null when `requestsAgent` was explicitly false (\"note only\").",
             "example": "evt_7c1d"
           }
         },
@@ -876,8 +876,7 @@
           },
           "requestsAgent": {
             "type": "boolean",
-            "default": false,
-            "description": "True enqueues a `comment.created` event so the parked agent wakes. Independent of who authored the turn."
+            "description": "Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues only when the body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a `/<skill>` invocation. `true`: request the agent. `false`: \"note only\" — suppress the enqueue even when the thread is engaged."
           }
         },
         "required": [
@@ -899,7 +898,7 @@
               "null"
             ],
             "pattern": "^evt_[A-Za-z0-9]+$",
-            "description": "Enqueued `comment.created` event, when the agent was requested or is already engaged.",
+            "description": "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the thread is already engaged; always null when `requestsAgent` was explicitly false (\"note only\", SPEC.md §8).",
             "example": "evt_7c1d"
           }
         },
@@ -1007,8 +1006,7 @@
           },
           "requestsAgent": {
             "type": "boolean",
-            "default": false,
-            "description": "True enqueues a `comment.created` event so the parked agent wakes. Independent of who authored the turn."
+            "description": "Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: \"note only\" — suppress the enqueue even when the thread is engaged."
           }
         },
         "required": [
@@ -1340,6 +1338,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid workspace bearer token.",
             "content": {
@@ -1488,6 +1496,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
@@ -1756,6 +1774,16 @@
               }
             }
           },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Missing or invalid workspace bearer token.",
             "content": {
@@ -1811,6 +1839,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/QueueEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }
@@ -1955,6 +1993,16 @@
                 "schema": {
                   "type": "string",
                   "description": "SSE frames; `event: invalidate` frames carry an `InvalidatePayload` as JSON data."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
                 }
               }
             }

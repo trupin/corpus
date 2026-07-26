@@ -72,13 +72,23 @@ export const ThreadSummarySchema = z
  * `requestsAgent` is the *enqueue* signal (SPEC.md §8) — it decides whether a
  * `comment.created` event is written — and is deliberately distinct from
  * authorship, which travels in the `x-corpus-author` header.
+ *
+ * Tri-state, with **no default**: omitted, `true` and `false` are three
+ * different instructions and a default would collapse two of them at parse time.
+ * §8's "note only" toggle is exactly the ability to post into an *engaged*
+ * thread without re-triggering the agent, which is only expressible if an
+ * explicit `false` survives validation distinguishably from silence.
  */
-const requestsAgentField = z
-  .boolean()
-  .default(false)
-  .describe(
-    "True enqueues a `comment.created` event so the parked agent wakes. Independent of who authored the turn.",
-  );
+const requestsAgentField = (whenOmitted: string) =>
+  z
+    .boolean()
+    .optional()
+    .describe(
+      "Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. " +
+        `Omitted: ${whenOmitted} ` +
+        "`true`: request the agent. " +
+        '`false`: "note only" — suppress the enqueue even when the thread is engaged.',
+    );
 
 export const CreateThreadRequestSchema = z
   .object({
@@ -94,7 +104,10 @@ export const CreateThreadRequestSchema = z
       ),
     title: z.string().min(1).optional().describe("Defaults to the anchor quote or the first turn."),
     body: z.string().min(1).describe("Body of the thread's first turn."),
-    requestsAgent: requestsAgentField,
+    requestsAgent: requestsAgentField(
+      "the server enqueues only when the body carries an explicit `@agent` mention, a targeted " +
+        "`@<subagent>` mention or a `/<skill>` invocation.",
+    ),
   })
   .openapi("CreateThreadRequest");
 
@@ -105,7 +118,9 @@ export const CreateThreadResponseSchema = z
       "Anchor written into the parent, when a selector was given.",
     ),
     eventId: EventIdSchema.nullable().describe(
-      "Enqueued `comment.created` event, when the agent was requested.",
+      "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when " +
+        "`requestsAgent` was true, or when it was omitted and the first turn carries a mention or " +
+        'skill invocation; always null when `requestsAgent` was explicitly false ("note only").',
     ),
   })
   .openapi("CreateThreadResponse");
@@ -113,7 +128,10 @@ export const CreateThreadResponseSchema = z
 export const AppendTurnRequestSchema = z
   .object({
     body: z.string().min(1),
-    requestsAgent: requestsAgentField,
+    requestsAgent: requestsAgentField(
+      "the server enqueues when the thread is already `engaged`, and otherwise only on an explicit " +
+        "mention or skill invocation.",
+    ),
   })
   .openapi("AppendTurnRequest");
 
@@ -122,7 +140,9 @@ export const AppendTurnResponseSchema = z
     thread: ThreadSummarySchema,
     turn: TurnSchema,
     eventId: EventIdSchema.nullable().describe(
-      "Enqueued `comment.created` event, when the agent was requested or is already engaged.",
+      "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when " +
+        "`requestsAgent` was true, or when it was omitted and the thread is already engaged; " +
+        'always null when `requestsAgent` was explicitly false ("note only", SPEC.md §8).',
     ),
   })
   .openapi("AppendTurnResponse");

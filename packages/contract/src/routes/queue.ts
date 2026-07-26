@@ -47,6 +47,7 @@ export const claimAll = createRoute({
       ClaimBatchSchema,
       "The claimed events; empty while halted or when nothing is pending.",
     ),
+    400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
   },
 });
@@ -59,6 +60,7 @@ export const completeEvent = createRoute({
   request: { params: EventIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(QueueEventSchema, "The event, now in `processed/`."),
+    400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
   },

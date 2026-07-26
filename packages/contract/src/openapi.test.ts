@@ -73,6 +73,43 @@ describe("generated OpenAPI document", () => {
     expect(missing).toEqual([]);
   });
 
+  /**
+   * `@hono/zod-openapi` validates every declared path parameter, query
+   * parameter, header and body before the handler runs and answers `400` when
+   * validation fails. An operation that takes validated input but does not
+   * declare `400` therefore publishes an error union that cannot represent one
+   * of its own real responses, and the generated client silently loses the
+   * ability to narrow it.
+   */
+  it("declares 400 on every operation that validates request input", () => {
+    const missing: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
+        const operation = item?.[method];
+        if (!operation) continue;
+        const validatesInput =
+          (operation.parameters?.length ?? 0) > 0 || operation.requestBody !== undefined;
+        if (!validatesInput) continue;
+        if (!operation.responses?.["400"]) missing.push(`${method} ${path}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("does not declare 400 on operations that take no request input", () => {
+    const spurious: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
+        const operation = item?.[method];
+        if (!operation) continue;
+        const validatesInput =
+          (operation.parameters?.length ?? 0) > 0 || operation.requestBody !== undefined;
+        if (!validatesInput && operation.responses?.["400"]) spurious.push(`${method} ${path}`);
+      }
+    }
+    expect(spurious).toEqual([]);
+  });
+
   it("documents the SSE stream as an event stream, not as JSON", () => {
     // openapi3-ts types the status-code map with an `any`-valued index
     // signature, so the 200 entry is re-read through a minimal structural view.

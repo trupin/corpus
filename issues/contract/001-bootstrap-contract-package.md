@@ -171,6 +171,98 @@ $ bash .githooks/pre-push
 pre-push ✓ all checks passed
 ```
 
+### Addendum — pr-reviewer fixes on PR #7 (implemented on: opus)
+
+Two MAJOR findings from the review of commit `bbf8f5b`, both fixed and re-verified.
+
+**FINDING 2 — undeclared 400 responses.** `getDoc`, `getThread`, `claimAll`, `completeEvent` and
+`streamEvents` validate path params, the actor header or query params but declared no `400`, so their
+typed error unions could not represent a response they really return. All five now declare
+`400: VALIDATION_RESPONSE`. Two invariant tests in `src/openapi.test.ts` pin the rule in both
+directions — every operation with `parameters` or a `requestBody` declares 400, and no input-less
+operation declares it. Post-fix inventory from the regenerated `openapi.json`:
+
+```
+GET   /api/health                  input=no  400=no
+GET   /api/docs                    input=yes 400=yes
+POST  /api/docs                    input=yes 400=yes
+GET   /api/docs/{id}               input=yes 400=yes
+PUT   /api/docs/{id}               input=yes 400=yes
+GET   /api/threads/{id}            input=yes 400=yes
+POST  /api/threads                 input=yes 400=yes
+POST  /api/threads/{id}/turns      input=yes 400=yes
+GET   /api/queue/status            input=no  400=no
+POST  /api/queue/claim-all         input=yes 400=yes
+POST  /api/queue/{id}/complete     input=yes 400=yes
+POST  /api/queue/{id}/fail         input=yes 400=yes
+GET   /events                      input=yes 400=yes
+```
+
+The invariant test is a real guard, not decoration — deleting the new 400 from `getDoc` fails it by name:
+
+```
+$ npx vitest run packages/contract/src/openapi.test.ts
+1. generated OpenAPI document declares 400 on every operation that validates request input
+   AssertionError: expected [ 'get /api/docs/{id}' ] to deeply equal []
+```
+
+Driven through the typed client against a real HTTP server mounting the contract (temporary harness,
+deleted after the run; the app used a `defaultHook` rendering the contract's `ValidationError` shape):
+
+```
+F2. GET /api/docs/not-an-id -> 400
+    narrowed error.code: bad_request | issues: [{"path":"id","message":"Invalid string: must match pattern /^(doc|th)_[A-Za-z0-9]+$/"}]
+    GET /api/docs/doc_a1b2c3 -> 200 title: Mortgage options
+```
+
+`tsc --noEmit` on a scratch consumer confirms the union is genuinely narrowed rather than widened:
+
+```
+error TS2339: Property 'issues' does not exist on type ... '{ code: "unauthorized"; message: string; }'   # unnarrowed access
+error TS2367: types '"bad_request" | "unauthorized" | "not_found" | undefined' and '"locked"' have no overlap
+```
+
+The second message is the proof: `bad_request` is now in `getDoc`'s union, and only the codes that
+route can actually return are.
+
+**FINDING 3 — §8's "note only" was unexpressible.** `requestsAgent` is now a genuine tri-state,
+`z.boolean().optional()` with no default, on both `AppendTurnRequestSchema` and
+`CreateThreadRequestSchema`; each field description states all three cases, and both `eventId`
+response descriptions were rewritten to match (explicit `false` always yields `null`).
+`src/schemas/thread.test.ts` gains a table-driven block over both schemas asserting explicit-`false`
+survives as `false`, explicit-`true` as `true`, omission stays `undefined`, the two remain
+distinguishable, and a non-boolean is rejected rather than coerced. End to end against an *engaged*
+thread, with the stub server applying `body.requestsAgent ?? engaged`:
+
+```
+F3. requestsAgent omitted            -> server saw requestsAgent=undefined present=false | eventId="evt_7c1d"
+F3. requestsAgent true               -> server saw requestsAgent=true      present=true  | eventId="evt_7c1d"
+F3. requestsAgent false (note only)  -> server saw requestsAgent=false     present=true  | eventId=null
+```
+
+The third line is the behaviour that was impossible before: a user posting into an engaged thread and
+suppressing the re-trigger. CONTRACT-002's design pin 2 was amended to record the tri-state so the
+remaining request schemas (capture, multipart turn-append) inherit it.
+
+**Gate after the fixes.**
+
+```
+$ npm run build          # ok
+$ npm run lint           # 0 problems
+$ npm run format:check   # All matched files use Prettier code style!
+$ npm run typecheck      # all workspaces clean
+$ npm run test:coverage
+ Test Files  23 passed (23)
+      Tests  230 passed (230)
+All files          |     100 |      100 |     100 |     100 |
+```
+
+Drift: regeneration is a no-op against the working tree
+(`shasum` identical before/after: `2600420304ba1ecb49b620d6ed74fb042cd9c711`), so the hook's
+content guard is green. Its second guard (`git diff HEAD`) reports the regenerated artifacts as
+differing from `bbf8f5b` — correct, since these fixes are deliberately left uncommitted; it clears
+once they are committed.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

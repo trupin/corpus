@@ -46,6 +46,7 @@ export const getDoc = createRoute({
   request: { params: DocIdParamSchema },
   responses: {
     200: jsonContent(DocSchema, "Frontmatter, body, and this document's anchors."),
+    400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
   },
