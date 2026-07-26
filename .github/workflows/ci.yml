@@ -22,7 +22,8 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
-      - run: npm test
+      - name: unit tests + coverage gate (>=90%)
+        run: npm run test:coverage
       - name: e2e (Playwright)
         run: |
           if compgen -G "apps/ui/e2e/*.spec.ts" > /dev/null; then

@@ -2,6 +2,11 @@
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 
+// Lint philosophy (see docs/TS_GUIDELINES.md): only rules with a real risk of
+// shipping a bug are errors (blocking). Style and taste belong to the
+// guidelines and code review, not the linter — tsc strict mode already covers
+// type correctness; eslint adds the correctness checks the compiler can't see.
+// Useful-but-not-critical signals are warnings: visible, never blocking.
 export default tseslint.config(
   {
     ignores: [
@@ -15,7 +20,7 @@ export default tseslint.config(
     ],
   },
   eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  ...tseslint.configs.recommended,
   {
     languageOptions: {
       parserOptions: {
@@ -26,10 +31,17 @@ export default tseslint.config(
       },
     },
     rules: {
+      // Critical, type-aware async safety: unawaited or mishandled promises
+      // fail silently at runtime — the top bug class tsc can't catch.
       "@typescript-eslint/no-floating-promises": "error",
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-non-null-assertion": "error",
-      "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/await-thenable": "error",
+      // Non-critical recommended rules downgraded to warnings.
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
   {

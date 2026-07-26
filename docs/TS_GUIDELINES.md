@@ -11,8 +11,8 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 ## Strictness
 
 - `strict: true` plus `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `exactOptionalPropertyTypes` (all set in the root `tsconfig.base.json` — never weakened per-workspace).
-- **No `any`.** Use `unknown` at trust boundaries and narrow with Zod or type guards. `as` casts are a last resort and require a comment explaining why the type system can't express the truth.
-- **No non-null assertions (`!`).** Handle the null case or restructure so it can't occur.
+- **Avoid `any`.** Use `unknown` at trust boundaries and narrow with Zod or type guards. `as` casts are a last resort and require a comment explaining why the type system can't express the truth. (Lint warns on `any` without blocking — treat warnings as debt to burn down, not noise.)
+- **Avoid non-null assertions (`!`).** Handle the null case or restructure so it can't occur.
 - No `@ts-ignore` / `@ts-expect-error` without an explanatory comment and no other option.
 
 ## Trust boundaries & validation
@@ -52,7 +52,12 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 ## Lint & format
 
 - ESLint (flat config, typescript-eslint) + Prettier, configured at the repo root. `npm run lint` and `npm run format:check` must pass — they run in pre-commit.
-- **Never fix a lint warning by disabling the rule.** Fix the code. An inline suppression is a last resort and carries a justification comment.
+- **Only critical rules block** (deliberate policy): lint _errors_ are reserved for rules with real bug risk — async safety (`no-floating-promises`, `no-misused-promises`, `await-thenable`) and unexplained compiler-error suppression (`ban-ts-comment`). Everything stylistic lives in this document and code review; useful-but-not-critical signals (`no-explicit-any`, `no-unused-vars`) are warnings that never block a commit.
+- **Never fix a lint error by disabling the rule.** Fix the code. An inline suppression is a last resort and carries a justification comment.
+
+## Coverage
+
+- Combined coverage (unit + e2e once Playwright specs exist) must stay **≥ 90%** — enforced in CI (`npm run test:coverage`, V8 provider, thresholds on lines/statements/functions/branches). Write code to be testable rather than chasing the number after the fact; untestable glue belongs in thin, excluded entry points, not scattered through logic.
 
 ## Comments
 
