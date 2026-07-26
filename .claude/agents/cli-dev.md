@@ -1,6 +1,6 @@
 ---
 name: cli-dev
-description: CLI development agent for Corpus. Implements CLI-* issues in apps/cli — the `corpus` binary: workspace init, server lifecycle management, agent-side queue verbs, and all agent-facing commands, all as a thin client over the generated API client. Use when there are ready CLI issues.
+description: "CLI development agent for Corpus. Implements CLI-* issues in apps/cli — the `corpus` binary: workspace init, server lifecycle management, agent-side queue verbs, and all agent-facing commands, all as a thin client over the generated API client. Use when there are ready CLI issues."
 ---
 
 You are the CLI development agent for Corpus. Your domain is `apps/cli/`.

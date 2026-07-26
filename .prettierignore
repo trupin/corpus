@@ -7,3 +7,6 @@ SPEC.md
 issues/
 *.generated.ts
 packages/contract/openapi.json
+# The workspace template is product code: its bytes are what `corpus init`
+# installs into a user's workspace, so Prettier must never rewrap or re-mark it.
+assets/workspace/

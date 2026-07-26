@@ -6,7 +6,7 @@ agent
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -37,19 +37,19 @@ The deliverable is also a **contract for CLI-002**: the tree, the copy rules (wh
 
 ## Acceptance Criteria
 
-- [ ] `assets/workspace/` contains the full template tree (below), and every file in it is byte-for-byte what a fresh workspace should contain — no placeholder markers, no `TODO`, no `<fill me>` tokens anywhere in the tree.
-- [ ] Dot-prefixed names are **not** used in the template. `claude/` installs as `.claude/`, `gitignore` installs as `.gitignore`. `.gitkeep` is the single permitted dot-prefixed name and is filtered out during the copy. A unit test enforces both rules.
-- [ ] `claude/skills/orchestrate/SKILL.md` and `claude/skills/comment/SKILL.md` exist as valid skeletons: YAML frontmatter carrying **both** Claude Code fields (`name`, `description`) and Corpus fields (`id`, `type: skill`, `title`, `status`, `created`, `updated`, `tags`, `evergreen`), with `name` equal to the containing directory name; body contains the required section headings and the CLI-only invariant, and nothing that would mislead an operator who initializes a workspace before AGENT-002/003 land.
-- [ ] `claude/agents/` exists (empty but for `.gitkeep`) and is documented as the home of `type: agent-def` subagent-persona documents that become `@<subagent>` autocomplete targets.
-- [ ] `data/docs/inbox/` and `data/threads/` exist (empty but for `.gitkeep`) — quick creation lands in `inbox/`, threads are flat under `data/threads/`.
-- [ ] `data/docs/templates/note.md` exists as a `type: template` document with `for: note`; it is the minimum, and any additional templates follow the same shape.
-- [ ] Three seed pinned view documents exist under `data/docs/views/` as **ordinary deletable documents**: Attention (`query: { needs: me }`, `order: 1`), Inbox (`query: { folder: inbox }`, `order: 2`), Open threads (`query: { type: thread, status: open }`, `order: 3`) — each `type: view`, `pinned: true`, with a one-paragraph body explaining what the column shows.
-- [ ] Every document in the template carries complete §5 frontmatter (`id`, `type`, `title`, `created`, `updated`, `tags`, `status`, `anchors`) and `evergreen: true` (seed content must never age into Attention as stale), and every `id` is unique across the tree.
-- [ ] `gitignore` ignores `.corpus/` runtime state — `cache.db`, `jobs/`, `attachments/`, `locks/`, `seen.json`, `HALT` — while **keeping the queue directory skeleton tracked** so a clone of a workspace still has `.corpus/queue/{pending,in-progress,processed,failed,abandoned}/`.
-- [ ] `README.md` (workspace root) explains the operator loop in under a page: start the server, start `claude`, `/orchestrate`, where the board is, the HALT toggle, and the `corpus skill rollback <name>` recovery path.
-- [ ] `docs/workspace-template.md` (repo-side, **not** copied) documents the tree, the install-time rename/filter rules, and the list of things `corpus init` generates rather than copies — the contract CLI-002 implements.
-- [ ] `npm test` covers the template: required paths present, every markdown file's frontmatter parses and validates, ids unique, no dot-prefixed entries (except `.gitkeep`), no placeholder markers, seed views carry `pinned`/`order`/`query` with contiguous orders starting at 1, skill frontmatter carries both field sets with `name` matching its directory.
-- [ ] Every seed document passes `corpus doc check` in a real initialized workspace (recorded in the E2E log).
+- [x] `assets/workspace/` contains the full template tree (below), and every file in it is byte-for-byte what a fresh workspace should contain — no placeholder markers, no `TODO`, no `<fill me>` tokens anywhere in the tree.
+- [x] Dot-prefixed names are **not** used in the template. `claude/` installs as `.claude/`, `gitignore` installs as `.gitignore`. `.gitkeep` is the single permitted dot-prefixed name and is filtered out during the copy. A unit test enforces both rules.
+- [x] `claude/skills/orchestrate/SKILL.md` and `claude/skills/comment/SKILL.md` exist as valid skeletons: YAML frontmatter carrying **both** Claude Code fields (`name`, `description`) and Corpus fields (`id`, `type: skill`, `title`, `status`, `created`, `updated`, `tags`, `evergreen`), with `name` equal to the containing directory name; body contains the required section headings and the CLI-only invariant, and nothing that would mislead an operator who initializes a workspace before AGENT-002/003 land.
+- [x] `claude/agents/` exists (empty but for `.gitkeep`) and is documented as the home of `type: agent-def` subagent-persona documents that become `@<subagent>` autocomplete targets.
+- [x] `data/docs/inbox/` and `data/threads/` exist (empty but for `.gitkeep`) — quick creation lands in `inbox/`, threads are flat under `data/threads/`.
+- [x] `data/docs/templates/note.md` exists as a `type: template` document with `for: note`; it is the minimum, and any additional templates follow the same shape.
+- [x] Three seed pinned view documents exist under `data/docs/views/` as **ordinary deletable documents**: Attention (`query: { needs: me }`, `order: 1`), Inbox (`query: { folder: inbox }`, `order: 2`), Open threads (`query: { type: thread, status: open }`, `order: 3`) — each `type: view`, `pinned: true`, with a one-paragraph body explaining what the column shows.
+- [x] Every document in the template carries complete §5 frontmatter (`id`, `type`, `title`, `created`, `updated`, `tags`, `status`, `anchors`) and `evergreen: true` (seed content must never age into Attention as stale), and every `id` is unique across the tree.
+- [x] `gitignore` ignores `.corpus/` runtime state — `cache.db`, `jobs/`, `attachments/`, `locks/`, `seen.json`, `HALT` — while **keeping the queue directory skeleton tracked** so a clone of a workspace still has `.corpus/queue/{pending,in-progress,processed,failed,abandoned}/`.
+- [x] `README.md` (workspace root) explains the operator loop in under a page: start the server, start `claude`, `/orchestrate`, where the board is, the HALT toggle, and the `corpus skill rollback <name>` recovery path.
+- [x] `docs/workspace-template.md` (repo-side, **not** copied) documents the tree, the install-time rename/filter rules, and the list of things `corpus init` generates rather than copies — the contract CLI-002 implements.
+- [x] `npm test` covers the template: required paths present, every markdown file's frontmatter parses and validates, ids unique, no dot-prefixed entries (except `.gitkeep`), no placeholder markers, seed views carry `pinned`/`order`/`query` with contiguous orders starting at 1, skill frontmatter carries both field sets with `name` matching its directory.
+- [ ] Every seed document passes `corpus doc check` in a real initialized workspace (recorded in the E2E log). — **DEFERRED → CLI-002**: the CLI does not exist in Phase 1 (sprint-001 Verification Environment). Interim guarantee and the deferral rationale are in the E2E log.
 
 ## Technical Design
 
@@ -190,21 +190,243 @@ Fallback (only if CLI-002 has not landed when this issue is implemented): perfor
 
 ## E2E Verification Log
 
+**Implemented on: opus** (Opus 5, 1M context).
+
 ### Reproduction (bugs only)
 
-_[Agent fills]_
+_N/A — feature issue._
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation feature works]_
+Verification environment per `issues/sprints/sprint-001.md`: `corpus init` (CLI-002) and the
+server do not exist yet, so the "real application" for this issue is file-tree inspection of
+`assets/workspace/` plus a **simulated install** — `cp -R` + the rename/filter rules exactly
+as `docs/workspace-template.md` specifies — into scratch directories outside the repository.
+
+#### 1. Unit gate — `npm test`
+
+```
+$ npx vitest run scripts/workspace-template.test.ts
+ Test Files  1 passed (1)
+      Tests  34 passed (34)
+
+$ npm test
+ Test Files  24 passed (24)
+      Tests  264 passed (264)
+```
+
+The 34 template tests cover: exact tree contents (TEST-49), no dot-prefixed name but
+`.gitkeep` (TEST-50), no placeholder markers and no secrets/absolute paths (TEST-51), §5
+frontmatter with contract-valid ids and ISO instants (TEST-52), the three seed views
+(TEST-53), the note template's `for` (TEST-54), both skill skeletons (TEST-55), the
+`gitignore` rules (TEST-56), and the doc↔code install contract (TEST-58). Ids are validated
+against `@corpus/contract`'s shipped `DocumentIdSchema` and timestamps against
+`IsoDateTimeSchema` — no second declaration of either pattern.
+
+Adjudicated ids in use (orchestrator decision, sprint Open Conflicts item 2):
+`doc_seedattention`, `doc_seedinbox`, `doc_seedopenthreads`, `doc_seedtemplatenote`,
+`doc_skillorchestrate`, `doc_skillcomment`, plus `doc_seedreadme` for the workspace README
+(see "Deviations" below).
+
+#### 2. `gitignore` behavior in a real scratch git repository (TEST-56)
+
+```
+$ git init -q . && cp assets/workspace/gitignore .gitignore
+$ # populate the six runtime-state paths + the five queue dirs, each with a .gitkeep
+$ git check-ignore -v <path>            # runtime state — all IGNORED
+.gitignore:9:.corpus/*          .corpus/cache.db
+.gitignore:9:.corpus/*          .corpus/jobs/x.jsonl
+.gitignore:9:.corpus/*          .corpus/attachments/th_a/1/x.png
+.gitignore:9:.corpus/*          .corpus/locks/doc_a.json
+.gitignore:9:.corpus/*          .corpus/seen.json
+.gitignore:9:.corpus/*          .corpus/HALT
+.gitignore:9:.corpus/*          .corpus/config.json
+.gitignore:16:.corpus/queue/*/*.json    .corpus/queue/pending/evt_1.json
+
+$ git check-ignore -v <queue dirs>      # all five, with and without a trailing slash
+.corpus/queue/pending            not ignored
+.corpus/queue/pending/           not ignored
+.corpus/queue/pending/.gitkeep   not ignored
+  (…identically for in-progress, processed, failed, abandoned)
+
+$ git add -A && git commit -qm init && git ls-files
+.corpus/queue/abandoned/.gitkeep
+.corpus/queue/failed/.gitkeep
+.corpus/queue/in-progress/.gitkeep
+.corpus/queue/pending/.gitkeep
+.corpus/queue/processed/.gitkeep
+.gitignore
+$ git status --porcelain          # empty
+```
+
+A first draft used `.corpus/queue/*/*` + `!.corpus/queue/*/.gitkeep`; that reported the
+queue **directories themselves** as ignored when probed with a trailing slash
+(`git check-ignore -v .corpus/queue/pending/` matched `.corpus/queue/*/*`), which fails
+TEST-56's "the five queue directories remain trackable" as literally written. Narrowing the
+rule to `.corpus/queue/*/*.json` — event files are `<eventId>.json` per SPEC §7 — ignores
+the events and leaves both the directories and their `.gitkeep`s trackable under either
+probe form. Evidence above is from the corrected rule.
+
+#### 3. Simulated install (TEST-59)
+
+Executed exactly the four numbered steps of `docs/workspace-template.md` → "The install
+procedure" in an empty scratch directory outside the repository:
+
+```
+$ cp -R assets/workspace/. "$WS"/
+$ mv "$WS/claude" "$WS/.claude"; mv "$WS/gitignore" "$WS/.gitignore"
+$ find "$WS" -name '.gitkeep' -delete
+$ # step 4: generate .corpus/config.json + the queue skeleton + git init & initial commit
+$ git init -q . && git add -A && git commit -qm "corpus init"
+13 files changed, 466 insertions(+)
+
+$ find . -path ./.git -prune -o -print | sort
+./.claude/agents
+./.claude/skills/comment/SKILL.md
+./.claude/skills/orchestrate/SKILL.md
+./.corpus/config.json
+./.corpus/queue/{abandoned,failed,in-progress,pending,processed}/.gitkeep
+./.gitignore
+./data/docs/inbox
+./data/docs/templates/note.md
+./data/docs/views/{attention,inbox,open-threads}.md
+./data/threads
+./README.md
+
+$ ls -d claude gitignore 2>/dev/null           # no output — nothing left un-renamed
+$ find . -name .gitkeep -not -path './.corpus/*'   # no output — no leftover markers
+$ git status --porcelain                        # empty
+$ grep -RIn -E 'TODO|FIXME|XXX|<placeholder>|<fill me>|lorem ipsum' .   # none found
+```
+
+The installed workspace contains no secrets, no tokens, and no machine-specific paths — the
+only host-specific file, `.corpus/config.json`, was generated in step 4 and is ignored by
+the installed `.gitignore`.
+
+#### 4. Prettier never rewrites the template (TEST-60)
+
+```
+$ find assets/workspace -type f -exec shasum {} \; | sort > before.sha
+$ npm run format                       # write mode, whole repo
+$ find assets/workspace -type f -exec shasum {} \; | sort > after.sha
+$ diff before.sha after.sha            # identical — the .prettierignore entry holds
+$ npm run format:check
+All matched files use Prettier code style!
+```
+
+#### 5. Repo gate
+
+```
+$ npm run lint          # eslint . — clean
+$ npm run format:check  # clean
+$ npm run typecheck     # 5 workspaces, exit 0
+$ npx tsc -p scripts/tsconfig.json --noEmit   # exit 0
+$ npm run test:coverage # 264 tests pass; All files 100% stmts/branch/funcs/lines
+```
+
+#### Deferred verification
+
+- **`corpus doc check` on every seed document → DEFERRED → CLI-002.** The CLI does not
+  exist. The sprint's stand-in is TEST-61 (SERVER-001's `parseDocument` + corpus checker over
+  `assets/workspace/`), which is also **DEFERRED** here: SERVER-001 is being implemented in a
+  separate worktree and its document-model library is not present in this tree. This issue's
+  own validator (`scripts/workspace-template.ts`) parses every template `.md` with the real
+  `yaml` library and validates ids/timestamps against the shipped contract schemas as the
+  interim guarantee. This issue is re-verified end to end in CLI-002.
+  **VERIFIED 2026-07-26 (evaluator):** the circular deferral (SERVER-001 → AGENT-001 → CLI-002)
+  was caught in evaluation; the evaluator ran TEST-61 itself over the merged tree — SERVER-001's
+  parser + checker over `assets/workspace/`: 0 errors, 0 warnings (issues/evals/AGENT-001-eval.md).
+  The full `corpus doc check` re-verification still lands in CLI-002.
+- **Server/board steps 4–7 of the Verification Plan → DEFERRED → CLI-002 / SERVER-003 /
+  SERVER-004 / UI-003.** No server, no projection, no board exists in Phase 1: `db rebuild`,
+  `db doctor`, `GET /api/docs?type=view`, `GET /api/docs?type=skill`, the three rendered
+  columns, and deleting a seed view to prove nothing is hardwired all require them.
+- **Claude Code actually discovering the two skills → DEFERRED → AGENT-002.** Frontmatter
+  shape (`name` equal to the directory name, `description` present) is unit-asserted; a real
+  `/orchestrate` run is AGENT-002's E2E.
+- **Skill command accuracy against `docs/cli.md` → DEFERRED → AGENT-002/003.** `docs/cli.md`
+  is generated by CLI-001 and does not exist. The skeletons therefore use only verbs SPEC.md
+  names literally (§2.1, §7, §15). Two shapes were the skeletons' expectations of the CLI
+  rather than spec text and had to be confirmed when CLI-004 lands: the `--reason` flag on
+  `corpus queue fail`, and read verbs for documents/threads (deliberately written as prose,
+  not as invented command names). **Superseded by the post-review trim below** — the
+  skeletons now contain no command transcripts at all, so nothing here pins a CLI shape
+  ahead of `docs/cli.md`.
+
+#### Deviations from the issue's Technical Design
+
+- **`README.md` carries §5 frontmatter** (`doc_seedreadme`, `type: note`). The issue's tree
+  did not call for it, but TEST-52 is scoped to "every `.md` file in the template tree",
+  which includes the README. Giving it frontmatter satisfies the test, costs nothing, and is
+  consistent with the README's own first line ("Everything here is a markdown file with YAML
+  frontmatter").
+- **Seed ids** follow the orchestrator's adjudication, not the issue's `doc_seed_*` /
+  `skill_*` draft (which the shipped `DocumentIdSchema` rejects). `skill` is a document
+  type; skills carry `doc_` ids.
+- **`yaml` is not added to root `devDependencies`** — this run was instructed not to touch
+  `package.json`. It currently resolves as a transitive dependency (2.9.0, via
+  `openapi3-ts` and `vite`). Escalated to the orchestrator; see the report.
+- **`scripts/**/*.test.ts` added to `vitest.config.ts`'s `include`** — the issue assumed the
+  root config already picked `scripts/` up; it did not. Also added `scripts/tsconfig.json`
+  so eslint's type-aware rules have a project for the new files.
+
+#### Post-review trim — pr-reviewer MAJOR on PR #8 (2026-07-26)
+
+**Finding.** Both `SKILL.md` bodies shipped the full behavioral prose that sprint-001 scopes
+out of AGENT-001 ("This issue ships honest skeletons: valid frontmatter, the required section
+headings, and the CLI-only invariant — nothing that pretends the loop works yet"). The
+shipped bodies carried a routing table, concurrency/lock/HALT policy, a stewardship charter,
+operator-recovery instructions, and worked examples with concrete command transcripts —
+including `corpus queue fail <id> --reason "..."`, a CLI shape no landed code or doc confirms.
+That prose is AGENT-002's and AGENT-003's reviewed deliverable, and pinning a flag ahead of
+`docs/cli.md` (CLI-001) invites drift.
+
+**Fix (orchestrator adjudication: trim to the contracted skeleton).** Both files now contain
+only: the dual frontmatter, byte-identical to before; a two-line preamble stating the file is
+a skeleton whose instructions arrive with AGENT-002 / AGENT-003; an `## Invariants` section
+carrying the one contracted invariant (every mutation goes through the `corpus` CLI —
+workspace files are never hand-edited, the HTTP API is never called directly); and each
+remaining required heading with the single neutral line "Arrives with AGENT-00N."
+
+Removed from `orchestrate`: the purpose/when-to-run prose, the numbered invariant list beyond
+the CLI-only rule, the loop transcript, the claiming/batching, concurrency-and-ordering,
+locks-and-deferral, completing-and-failing, and "skills are documents" sections, the routing
+table, the HALT command pair, the stewardship charter, the operator-recovery block, and the
+end-to-end worked example. Removed from `comment`: the when-this-runs and inherited-invariant
+prose, the context-gathering rules, the routing-directive rules, do-the-work, inbox filing,
+the reply transcript, engagement/closure, forms, thread-stewardship, skill-genesis, and the
+worked example. Kept in both: every heading the test suite requires, so AGENT-002/003 fill
+sections rather than invent them. Zero command transcripts and zero flags remain in either
+file.
+
+**Verification.**
+
+```
+$ npx vitest run scripts/
+ PASS (34) FAIL (0)
+
+$ npx prettier --check assets/workspace/claude/skills/{orchestrate,comment}/SKILL.md
+All files formatted correctly            # exit 0
+
+$ grep -rn ' $' assets/workspace/claude/skills/*/SKILL.md   # no trailing whitespace
+```
+
+No test asserted any of the removed content, so `scripts/workspace-template.test.ts` needed
+no change: it checks the heading keywords (all retained), the CLI-only invariant regexes
+(`/`corpus` CLI/` and `/never (?:hand-)?edit(?:ed)?\b/i`, both still matched by the
+`## Invariants` sentence), the dual frontmatter, and — for `comment` — the **absence** of
+`corpus queue complete|fail`, which the trim only strengthens. TEST-55 and TEST-51 still hold:
+the bodies carry the required headings and the invariant, and read as honest, finished
+skeletons rather than a scaffold that pretends the loop works. `assets/workspace/README.md`
+was left untouched — its operator instructions are TEST-57's deliverable, not AGENT-002/003's.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

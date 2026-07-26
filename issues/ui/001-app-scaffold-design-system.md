@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -34,22 +34,22 @@ Turn `apps/ui` from a placeholder workspace into a running Vite + React 18 appli
 
 ## Acceptance Criteria
 
-- [ ] `npm run dev -w apps/ui` starts Vite on `:5173` and proxies `/api` and `/events` to `http://127.0.0.1:8765` (SSE proxying works — no response buffering).
-- [ ] `apps/ui` builds (`npm run build -w apps/ui`) and typechecks under TS strict with no `any` in app code.
-- [ ] `packages/kit/src/tokens.css` defines every token from `design/index.html` `:root` — colors (`--bg`, `--surface`, `--surface-2`, `--ink`, `--ink-2`, `--ink-3`, `--line`, `--line-strong`, `--accent`/`--accent-ink`/`--accent-wash`, `--signal`/`--signal-wash`, `--sepia`/`--sepia-ink`/`--sepia-wash`/`--sepia-wash-2`, `--good`/`--good-wash`), shadows (`--shadow`, `--shadow-soft`), and type families (`--serif`, `--sans`, `--mono`) — with identical values.
-- [ ] Theming works three ways, in this precedence: `prefers-color-scheme: dark` as the default signal, overridden by `:root[data-theme="light"]` and `:root[data-theme="dark"]`.
-- [ ] `packages/kit` exports the stylesheet (`@corpus/kit/tokens.css`) and `apps/ui` imports it once at the app root; no hard-coded hex color exists anywhere in `apps/ui/src` (lint-visible convention, checked by review).
-- [ ] A theme toggle in the top bar cycles `system → light → dark`, writes `data-theme` on `<html>` (removing the attribute for `system`), and persists the choice in `localStorage` across reloads.
-- [ ] Global base styles match the prototype: `body` uses `--sans` at `13.5px`/`1.45` on `--bg`/`--ink`, `overflow: hidden`, `box-sizing: border-box` reset, `button { font: inherit; … }` reset.
-- [ ] `:focus-visible` renders a `2px solid var(--accent)` outline with `2px` offset and `4px` radius on buttons, inputs, and `[tabindex]` elements.
-- [ ] A `@media (prefers-reduced-motion: reduce)` block disables the pulse animation and column/row transitions (same rules as the prototype).
-- [ ] Shell renders: `.topbar` with a serif wordmark ("Corpus") plus a mono uppercase eyebrow ("workbench"), a centered `.searchbar` **button** showing the placeholder copy and a `⌘K` `<kbd>` hint, and an accent `＋ Ask / Capture` button with a `c` `<kbd>` hint (both are non-functional affordances in this issue — search overlay and composer are later issues; they must not appear disabled).
-- [ ] `.board` is a horizontal scroller with `scroll-snap-type: x proximity`, `overflow-y: hidden`, the prototype's padding/gap, and the custom `10px` scrollbar thumb; it renders placeholder/empty content in this issue.
-- [ ] `.console` renders as a collapsed one-line strip pinned below the board (static placeholder text — the real console is UI-011); it is part of the flex column so it pushes the board, never overlays it.
-- [ ] React Router v6 is mounted with a single `/` route (the board); the router is in place so later issues can add routes without restructuring.
-- [ ] A `QueryClientProvider` (TanStack Query v5) wraps the app with documented defaults (`staleTime`, `refetchOnWindowFocus`) chosen to suit an SSE-invalidation model.
-- [ ] A health check (`GET /api/health` or the contract's equivalent) runs via TanStack Query on boot; a failed check renders a non-blocking "server unreachable" notice in the console strip rather than crashing the shell.
-- [ ] Playwright smoke spec in `apps/ui/e2e/` passes against the real app: the app boots, the topbar/board/console are present, and toggling the theme flips `data-theme` and a computed background color.
+- [x] `npm run dev -w apps/ui` starts Vite on `:5173` and proxies `/api` and `/events` to `http://127.0.0.1:8765` (SSE proxying works — no response buffering).
+- [x] `apps/ui` builds (`npm run build -w apps/ui`) and typechecks under TS strict with no `any` in app code.
+- [x] `packages/kit/src/tokens.css` defines every token from `design/index.html` `:root` — colors (`--bg`, `--surface`, `--surface-2`, `--ink`, `--ink-2`, `--ink-3`, `--line`, `--line-strong`, `--accent`/`--accent-ink`/`--accent-wash`, `--signal`/`--signal-wash`, `--sepia`/`--sepia-ink`/`--sepia-wash`/`--sepia-wash-2`, `--good`/`--good-wash`), shadows (`--shadow`, `--shadow-soft`), and type families (`--serif`, `--sans`, `--mono`) — with identical values.
+- [x] Theming works three ways, in this precedence: `prefers-color-scheme: dark` as the default signal, overridden by `:root[data-theme="light"]` and `:root[data-theme="dark"]`.
+- [x] `packages/kit` exports the stylesheet (`@corpus/kit/tokens.css`) and `apps/ui` imports it once at the app root; no hard-coded hex color exists anywhere in `apps/ui/src` (lint-visible convention, checked by review).
+- [x] A theme toggle in the top bar cycles `system → light → dark`, writes `data-theme` on `<html>` (removing the attribute for `system`), and persists the choice in `localStorage` across reloads.
+- [x] Global base styles match the prototype: `body` uses `--sans` at `13.5px`/`1.45` on `--bg`/`--ink`, `overflow: hidden`, `box-sizing: border-box` reset, `button { font: inherit; … }` reset.
+- [x] `:focus-visible` renders a `2px solid var(--accent)` outline with `2px` offset and `4px` radius on buttons, inputs, and `[tabindex]` elements.
+- [x] A `@media (prefers-reduced-motion: reduce)` block disables the pulse animation and column/row transitions (same rules as the prototype).
+- [x] Shell renders: `.topbar` with a serif wordmark ("Corpus") plus a mono uppercase eyebrow ("workbench"), a centered `.searchbar` **button** showing the placeholder copy and a `⌘K` `<kbd>` hint, and an accent `＋ Ask / Capture` button with a `c` `<kbd>` hint (both are non-functional affordances in this issue — search overlay and composer are later issues; they must not appear disabled).
+- [x] `.board` is a horizontal scroller with `scroll-snap-type: x proximity`, `overflow-y: hidden`, the prototype's padding/gap, and the custom `10px` scrollbar thumb; it renders placeholder/empty content in this issue.
+- [x] `.console` renders as a collapsed one-line strip pinned below the board (static placeholder text — the real console is UI-011); it is part of the flex column so it pushes the board, never overlays it.
+- [x] React Router v6 is mounted with a single `/` route (the board); the router is in place so later issues can add routes without restructuring.
+- [x] A `QueryClientProvider` (TanStack Query v5) wraps the app with documented defaults (`staleTime`, `refetchOnWindowFocus`) chosen to suit an SSE-invalidation model.
+- [x] A health check (`GET /api/health` or the contract's equivalent) runs via TanStack Query on boot; a failed check renders a non-blocking "server unreachable" notice in the console strip rather than crashing the shell.
+- [x] Playwright smoke spec in `apps/ui/e2e/` passes against the real app: the app boots, the topbar/board/console are present, and toggling the theme flips `data-theme` and a computed background color.
 
 ## Technical Design
 
@@ -139,21 +139,207 @@ conclusions. State which model the implementing agent ran on ("implemented on:
 opus | fable") — the audit trail for recalibrating Model recommendations. The
 evaluator will reject issues without credible proof._
 
+**implemented on: opus**
+
 ### Reproduction (bugs only)
 
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+N/A — feature issue, not a bug.
+
+### Verification environment
+
+Per `issues/sprints/sprint-001.md` → "Verification Environment": no Corpus server
+exists in Phase 1, so the Vite proxy was verified against the sprint's **stub
+origin** — a real Node `http` server on `127.0.0.1:8765` over a real socket,
+serving `GET /api/health` (a `HealthSchema`-shaped body) and `GET /events`
+(`text/event-stream`, `: heartbeat` comment every ~1 s). The stub lived in the
+session scratchpad and is **not committed**.
+
+One environment deviation, recorded rather than hidden: **an SSH tunnel owned by
+the developer already held `127.0.0.1:5173`** on this machine:
+
+```
+$ lsof -nP -iTCP:5173 -sTCP:LISTEN
+COMMAND   PID           USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+ssh     16094 theophanerupin   11u  IPv4 0xad73505c3a233da7      0t0  TCP 127.0.0.1:5173 (LISTEN)
+```
+
+`vite.config.ts` still pins `port: 5173, strictPort: true`, and Vite refused to
+start rather than silently drifting to 5174 — itself proof `strictPort` is set:
+
+```
+$ npm run dev -w apps/ui
+error when starting dev server:
+Error: Port 5173 is already in use
+```
+
+Verification therefore ran on `--port 5273 --strictPort`, through the same Vite
+config and the same proxy. `playwright.config.ts` reads `CORPUS_UI_PORT` for
+exactly this case and defaults to 5173. **The `:5173` binding itself is
+`DEFERRED → SERVER-003`**, when the port is free of the developer's tunnel.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+**TEST-44 — `/api` proxies through Vite** (stub origin up, dev server on :5273):
+
+```
+$ curl -sS -i http://localhost:5273/api/health
+HTTP/1.1 200 OK
+Vary: Origin
+content-type: application/json
+connection: close
+Transfer-Encoding: chunked
+
+{"status":"ok","version":"0.0.0-stub","uptimeSeconds":49.827,"workspace":"/tmp/corpus-stub-workspace"}
+```
+
+PASS — the request reached `127.0.0.1:8765` through the proxy and returned the
+stub's `HealthSchema` body verbatim.
+
+**TEST-45 — `/events` proxies without buffering.** `curl -N -i --max-time 6`,
+each line stamped with its wall-clock arrival offset:
+
+```
++0.13s  content-type: text/event-stream
++0.18s  cache-control: no-cache, no-transform
++0.31s  x-accel-buffering: no
++0.43s  : heartbeat 2026-07-26T20:04:53.853Z
++1.03s  : heartbeat 2026-07-26T20:04:54.855Z
++2.04s  : heartbeat 2026-07-26T20:04:55.857Z
++3.04s  : heartbeat 2026-07-26T20:04:56.857Z
++4.04s  : heartbeat 2026-07-26T20:04:57.859Z
++5.04s  : heartbeat 2026-07-26T20:04:58.860Z
+curl: (28) Operation timed out after 6011 milliseconds
+```
+
+PASS — first frame at **+0.43 s** (budget ~2 s), then one per second
+*incrementally*; a buffering proxy would have delivered all six at close.
+
+**Healthy-server path in a real browser** (stub up, headless Chromium):
+
+```
+console strip: ▴ / console / corpus 0.0.0-stub
+c-status     : corpus 0.0.0-stub
+c-failed cnt : 0
+uncaught     : []
+regions      : ["topbar","board","console"]
+```
+
+PASS — the health query, issued through the contract's generated typed client
+(`uiClient.api.GET("/api/health")`), reached the stub through the proxy and its
+`version` rendered in the console strip. This path is re-verified against the
+real server in **SERVER-003**.
+
+**Playwright smoke suite** (stub origin **stopped** — CI has no server either, so
+the committed suite must be green with `127.0.0.1:8765` refusing connections):
+
+```
+$ CORPUS_UI_PORT=5273 npm run e2e
+Running 13 tests using 4 workers
+  ✓ shell › boots with the three regions in document order and no uncaught error
+  ✓ shell › top bar matches the design prototype
+  ✓ shell › the not-yet-wired affordances are enabled and inert
+  ✓ shell › the board is a horizontal snap scroller that takes the flexible middle
+  ✓ shell › the console strip pushes the board and never overlays it
+  ✓ shell › no sidebar
+  ✓ theme › the toggle cycles system → light → dark → system and repaints
+  ✓ theme › the chosen theme survives a reload
+  ✓ theme › the theme is applied before the bundle runs, so no light frame is painted
+  ✓ theme › system mode follows the OS preference live, writing no attribute
+  ✓ theme › focus rings match the prototype
+  ✓ server state › a failing health check fails soft with a notice in the console strip
+  ✓ server state › an unknown route renders the shell rather than a blank page
+  13 passed (4.0s)
+```
+
+Covering TEST-33 / 34 / 35 / 36 / 37 / 38 / 39 / 42 / 46 / 48. Notes on three of
+them:
+
+- **TEST-35**: Chromium serialises the computed `scroll-snap-type` as `x`,
+  because `proximity` is the initial strictness — so the spec asserts the
+  computed axis (`/^x( proximity)?$/`) **and** that `Board.css` declares
+  `scroll-snap-type: x proximity;`. Both hold.
+- **TEST-38**: proven by blocking `/src/main.tsx` with `page.route(...).abort()`
+  and reloading — `#root` is empty (React demonstrably never ran) while
+  `data-theme` already reads `dark`, so the inline pre-paint script is what sets
+  it. The painted dark `--bg` after a normal reload is asserted separately.
+- **TEST-46**: the dev server logged the real refusal while the test passed —
+  `[vite] http proxy error: /api/health / Error: connect ECONNREFUSED
+  127.0.0.1:8765` — and the strip showed `server unreachable` with the top bar
+  and board still rendered and zero `pageerror` events.
+
+**Three real defects were found and fixed by this run** (first e2e attempt: 3
+failed / 10 passed): the suite's own `addInitScript` storage reset re-ran on
+reload and erased the value the persistence tests were checking; the
+`scroll-snap-type` serialisation above; and a background assertion in the
+blocked-bundle test that could never hold in dev, where the stylesheet ships
+inside the blocked bundle.
+
+**TEST-40 / 41 — token layer and no hard-coded colour.** `packages/kit/src/tokens.test.ts`
+(54 assertions) parses `design/index.html` and `tokens.css` and compares them
+property-by-property: all 24 `:root` tokens ported with identical values, all 21
+of the prototype's dark tokens identical in both the media query and the
+`[data-theme="dark"]` block, and the explicit theme blocks positioned after the
+media query. Colour-literal sweep:
+
+```
+$ grep -rnE "#[0-9a-fA-F]{3,8}\b|rgb\(|rgba\(|hsl\(|hsla\(" apps/ui/src
+NO COLOR LITERALS FOUND
+```
+
+**TEST-43 — reduced motion**: `apps/ui/src/app/global.css` carries the
+prototype's block selector-for-selector, `!important` included.
+
+**TEST-47 — production build and strict typecheck**, plus the rest of the gate,
+from a clean tree:
+
+```
+$ npm run build
+… contract ✓  kit ✓  cli ✓  server ✓
+> @corpus/ui@0.0.0 build   (vite build)
+✓ 215 modules transformed.
+dist/index.html                   1.42 kB │ gzip:  0.77 kB
+dist/assets/index-DBo_PnNP.css    6.01 kB │ gzip:  1.63 kB
+dist/assets/index-CRi6zNLx.js   288.23 kB │ gzip: 89.12 kB
+✓ built in 643ms
+
+$ npm run lint          → clean
+$ npm run format:check  → All matched files use Prettier code style!
+$ npm run typecheck     → 5 workspaces, no errors
+$ npm run test:coverage
+ Test Files  35 passed (35)
+      Tests  360 passed (360)
+All files          |     100 |      100 |     100 |     100 |
+ apps/ui/src       |     100 |      100 |     100 |     100 |
+ apps/ui/src/app   |     100 |      100 |     100 |     100 |
+ apps/ui/src/shell |     100 |      100 |     100 |     100 |
+```
+
+The `@corpus/kit/tokens.css` import resolves through the kit's `exports` map
+(`"./tokens.css": "./src/tokens.css"`), not a relative path — the emitted
+`index-*.css` contains the token layer.
+
+**Visual self-review against `design/index.html`**: screenshots captured at
+1440×900 in both explicit themes. Light and dark chrome match the prototype —
+serif wordmark with mono uppercase eyebrow, centred `.searchbar` chip with the
+`⌘K` key cap, accent `＋ Ask / Capture` button with its `c` cap, hairline
+`--line` borders on `--surface`, and the collapsed console strip pinned below
+the board.
+
+### Deferred verification
+
+| Check                                   | Status                                                       |
+| --------------------------------------- | ------------------------------------------------------------ |
+| `/api/health` + `/events` against the real Corpus server | `DEFERRED → SERVER-003` (no server exists in Phase 1; verified against the sprint's stub origin) |
+| Dev server bound to `:5173` specifically | `DEFERRED → SERVER-003` (port held by a developer SSH tunnel; config pins it, `strictPort` proven by the refusal above) |
+| Playwright coverage merged into the 90% gate | `DEFERRED → INFRA-004` (per sprint Out of Scope) |
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

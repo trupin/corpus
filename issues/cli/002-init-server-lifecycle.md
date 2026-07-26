@@ -72,6 +72,7 @@ Give the installed tool its two operator-facing surfaces: `corpus init`, which m
 **Multiple workspaces.** Nothing is global: pidfile, logfile, port, and token all live in the workspace's `.corpus/`. No user-level registry of workspaces — cwd resolution (CLI-001) is the only lookup mechanism.
 
 ### Edge Cases
+- **Queue skeleton must survive a clone** _(AGENT-001 handoff, 2026-07-26)_: `corpus init` places a `.gitkeep` in each `.corpus/queue/` state directory — the template's gitignore rule (`.corpus/*` + `!.corpus/queue/` + `.corpus/queue/*/*.json`) is designed around them; see `docs/workspace-template.md`. Also note `data/docs/inbox/` and `data/threads/` are created on disk but stay untracked while empty (per spec only the queue skeleton survives a clone) — init recreates them when resolving a cloned workspace.
 - `corpus init` into a directory that already has a `.git/` but no `.corpus/` → reuse the existing repo (do not re-init), still create the workspace and commit; say so in the output.
 - Target path does not exist → create it (mkdir -p); target is a file → usage error.
 - `git` binary absent → init fails with an actionable message before creating anything (probe `git --version` first).

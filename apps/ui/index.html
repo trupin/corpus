@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Corpus</title>
+    <script>
+      /*
+       * Applies the persisted theme before the first paint, so a dark-theme
+       * user never sees a light frame while the bundle loads. React re-applies
+       * the same attribute on mount; this is the pre-paint half of the same
+       * contract, which is why the key and the accepted values are duplicated
+       * from `src/shell/theme.ts` — `theme.test.ts` asserts they stay in sync.
+       *
+       * `system` is represented by the *absence* of the attribute, so the
+       * media query in `@corpus/kit/tokens.css` keeps tracking the OS live.
+       */
+      (function () {
+        try {
+          var mode = window.localStorage.getItem("corpus.theme");
+          if (mode === "light" || mode === "dark") {
+            document.documentElement.setAttribute("data-theme", mode);
+          }
+        } catch (error) {
+          /* Storage disabled (private mode, sandboxed frame): fall back to the
+             OS preference, which needs no attribute at all. */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

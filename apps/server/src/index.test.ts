@@ -1,9 +1,14 @@
 import { expect, it } from "vitest";
 import { ACTOR_HEADER, contractRoutes } from "@corpus/contract";
-import { PACKAGE_NAME } from "./index.js";
+import { PACKAGE_NAME, reconcileAnchors, resolveAnchor } from "./index.js";
 
 it("exports the package name", () => {
   expect(PACKAGE_NAME).toBe("@corpus/server");
+});
+
+it("re-exports the anchor engine surface", () => {
+  expect(typeof reconcileAnchors).toBe("function");
+  expect(typeof resolveAnchor).toBe("function");
 });
 
 // Guards the built exports map: this import resolves through

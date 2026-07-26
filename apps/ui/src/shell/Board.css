@@ -1,0 +1,30 @@
+/* The board: a horizontal strip of columns with snap scrolling (SPEC.md §11).
+   Columns themselves arrive with UI-003. */
+
+.board {
+  flex: 1;
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 16px 18px 12px;
+  scroll-snap-type: x proximity;
+}
+
+/* Chromium/WebKit only; Firefox keeps its native scrollbar, which is fine. */
+.board::-webkit-scrollbar {
+  height: 10px;
+}
+
+.board::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+}
+
+.board-empty {
+  margin: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}

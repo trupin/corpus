@@ -9,6 +9,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@corpus/contract": "*"
+    "@corpus/contract": "*",
+    "diff-match-patch": "^1.0.5",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/diff-match-patch": "^1.0.36"
   }
 }
