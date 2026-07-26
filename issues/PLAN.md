@@ -94,6 +94,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | todo | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | todo | P1 | CLI-002, UI-010 |
+| CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | todo | P1 | CLI-002, AGENT-001 |
 
 ---
 

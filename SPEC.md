@@ -31,6 +31,8 @@ Corpus is an **installed tool**: an npm package exposing the `corpus` binary, bu
 
 One machine can host any number of workspaces. Every `corpus` command resolves its workspace by walking up from the current directory to the nearest `.corpus/config.json`; each workspace has its own port and token, so multiple workspaces run their servers simultaneously without interfering.
 
+**Workspace upgrade** _[TBD: CLI-005]_. Installed skills are workspace-owned documents that the agent evolves — a tool upgrade must never silently clobber them. `corpus init` records a manifest of the template files it installed (path + content hash + tool version); `corpus workspace upgrade` three-way compares each template file (installed baseline vs. current workspace copy vs. new template): files the workspace never modified are updated in place, modified files are left untouched and reported with a diff summary, files new to the template are installed. The upgrade only ever touches template-provenance files (`.claude/` skills and personas, the workspace README/.gitignore) — never `data/` — and lands as a single attributed git commit, so `corpus skill rollback` covers a bad upgrade like any other skill change.
+
 **Server lifecycle.** Each workspace runs its own server process, managed by the CLI:
 
 - `corpus server start` — starts the server as a background daemon (pidfile and logfile under `.corpus/`), waits until it responds, and prints the board URL. Idempotent: starting an already-running server reports it and exits cleanly.
