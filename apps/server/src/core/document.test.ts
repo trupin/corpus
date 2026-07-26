@@ -273,6 +273,54 @@ describe("parseDocument failures", () => {
   });
 });
 
+/**
+ * "Billion laughs": nine nested levels of aliases, each referring to the level
+ * below nine times. The document is a few hundred bytes; expanding it fully
+ * would materialize 9^5 leaves and keep going with every level added. The
+ * `yaml` package's alias cap is what stops it, so the cap must stay enabled.
+ */
+const aliasBomb = (levels: number, fanout: number): string => {
+  const lines = [`a0: &a0 ${JSON.stringify("laugh")}`];
+  for (let level = 1; level <= levels; level += 1) {
+    const refs = Array.from({ length: fanout }, () => `*a${String(level - 1)}`).join(", ");
+    lines.push(`a${String(level)}: &a${String(level)} [${refs}]`);
+  }
+  return `---\n${lines.join("\n")}\n---\nBody.\n`;
+};
+
+describe("parseDocument alias amplification", () => {
+  it("refuses a frontmatter whose aliases expand past the cap", () => {
+    const call = () => parseDocument(aliasBomb(9, 9), "data/docs/bomb.md");
+    expect(call).toThrow(DocumentParseError);
+    expect(call).toThrow(/data\/docs\/bomb\.md:2:/);
+    expect(call).toThrow(/frontmatter aliases expand past the safe limit \(100\)/);
+    // The library's own diagnosis is carried through, not swallowed.
+    expect(call).toThrow(/resource exhaustion/);
+  });
+
+  it("fails fast instead of allocating the expansion", () => {
+    // A bomb that would materialize ~10^12 leaves if the cap were disabled;
+    // with the cap the call returns in milliseconds.
+    const started = performance.now();
+    expect(() => parseDocument(aliasBomb(12, 10))).toThrow(DocumentParseError);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it("still accepts the modest aliasing a hand-written document may use", () => {
+    const raw = `---
+id: doc_a1b2c3
+type: note
+tags: &t [finance, mortgage]
+mirror: *t
+---
+Body.
+`;
+    const parsed = parseDocument(raw, "data/docs/aliased.md");
+    expect(parsed.data["mirror"]).toEqual(["finance", "mortgage"]);
+    expect(serializeDocument(parsed)).toBe(raw);
+  });
+});
+
 /** Lines present in `after` that differ from the line at the same index in `before`. */
 const changedLines = (before: string, after: string): string[] => {
   const source = before.split("\n");

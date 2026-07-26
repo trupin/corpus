@@ -12,12 +12,21 @@ import { duplicateTurnTimestamps } from "./turns.js";
  * (SPEC.md §14). The severity split is the whole point and is not negotiable:
  *
  * - **Errors** are structural lies — a document that cannot be read, an id that
- *   two documents claim, a thread pointing at an anchor nobody wrote. These
- *   break the projection's ability to describe the corpus.
- * - **Warnings** are legitimate states of an evolving corpus. An orphaned
- *   anchor is a normal outcome of editing (§6), and a `[[ref]]` to a document
- *   that does not exist *yet* is how a corpus grows (§5). Failing on either
- *   would punish the operator for using the system as designed.
+ *   two documents claim, a thread pointing at an anchor nobody wrote, an anchor
+ *   entry no thread claims. These break the projection's ability to describe the
+ *   corpus.
+ * - **Warnings** are exactly the two states §14 carves out, and no others: an
+ *   anchor that is well-formed but no longer resolves (an orphaned thread — a
+ *   normal outcome of editing, §6), and a `[[ref]]` to a document that does not
+ *   exist *yet* (how a corpus grows, §5). Failing on either would punish the
+ *   operator for using the system as designed.
+ *
+ * An anchor entry with no thread is deliberately on the failure side: §14 lists
+ * "every anchor belongs to an existing thread" among the rules a mutation must
+ * satisfy, and §6 states the invariant it protects — deleting or resolving a
+ * thread removes its anchor entry, so "no highlight is ever left pointing at an
+ * empty conversation". A dangling highlight is structural drift, not an
+ * evolving-corpus state.
  *
  * The module is I/O-free: the caller reads files and hands over the parses. It
  * is also independent of the anchor engine — resolution arrives injected, so
@@ -34,9 +43,9 @@ export const CHECK_CODES = {
   threadParentMissing: "thread-parent-missing",
   threadAnchorMissing: "thread-anchor-missing",
   anchorClaimedTwice: "anchor-claimed-twice",
+  anchorUnused: "anchor-unused",
   duplicateTurnTimestamp: "duplicate-turn-timestamp",
   anchorUnresolved: "anchor-unresolved",
-  anchorUnused: "anchor-unused",
   refUnresolved: "ref-unresolved",
 } as const;
 
@@ -186,6 +195,12 @@ export const checkCorpus = (
   // pointing at it must not also be accused of naming a missing parent — that
   // cascade would bury the one finding that actually needs fixing.
   const knownIds = new Set<string>();
+  // Every `<parent>#<anchor>` pair any thread *writes down*, validated or not,
+  // for the same anti-cascade reason: a thread with one bad field still claims
+  // its anchor, so the parent must not additionally be accused of leaving that
+  // anchor dangling. `anchorClaims` below is the stricter, validated set and is
+  // what the duplicate-claim and missing-anchor rules judge against.
+  const declaredClaims = new Set<string>();
 
   for (const entry of documents) {
     if (!entry.ok) {
@@ -195,6 +210,13 @@ export const checkCorpus = (
     const rawId = entry.document.data["id"];
     const docId = typeof rawId === "string" ? rawId : null;
     if (docId !== null) knownIds.add(docId);
+
+    if (isThreadFrontmatter(entry.document.data)) {
+      const rawParent = entry.document.data["parent"];
+      const rawAnchor = entry.document.data["anchor"];
+      if (typeof rawParent === "string" && typeof rawAnchor === "string")
+        declaredClaims.add(`${rawParent}#${rawAnchor}`);
+    }
 
     // Anchor entries are checked against the raw mapping first: schema
     // validation would reject the whole document for one bad selector, and the
@@ -307,8 +329,8 @@ export const checkCorpus = (
 
   for (const document of loaded) {
     for (const [anchorId, selector] of Object.entries(document.frontmatter.anchors)) {
-      if (!anchorClaims.has(`${document.frontmatter.id}#${anchorId}`)) {
-        report.warn(
+      if (!declaredClaims.has(`${document.frontmatter.id}#${anchorId}`)) {
+        report.error(
           CHECK_CODES.anchorUnused,
           document.frontmatter.id,
           document.path,

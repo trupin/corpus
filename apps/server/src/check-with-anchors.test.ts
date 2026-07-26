@@ -69,8 +69,9 @@ Is that still right?
 
 /**
  * One resolvable anchor and one well-formed-but-unresolvable anchor, each
- * claimed by a thread — so `anchor-unused` never fires and the only warning
- * left on the table is the resolution-dependent one TEST-62 is about.
+ * claimed by a thread — so the `anchor-unused` *error* never fires and the only
+ * finding left on the table is the resolution-dependent warning TEST-62 is
+ * about.
  */
 const corpus = (body = PARENT_BODY) => [
   toCheckDocument(

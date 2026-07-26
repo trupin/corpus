@@ -33,15 +33,15 @@ Implement the anchor engine as pure functions in `apps/server/src/anchors/` — 
 
 ## Acceptance Criteria
 
-- [ ] `resolveAnchor(body, selector)` implements §6's ladder in order: (1) exact match of `prefix + exact + suffix`; (2) `exact` alone when it occurs exactly once; (3) fuzzy highest-similarity window above a threshold; (4) otherwise unresolved → orphaned.
-- [ ] `resolveAnchors(body, anchorsMap)` resolves a whole document's anchors in one pass and returns a map of `anchorId → { start, end } | null`.
-- [ ] `reconcileAnchors(oldBody, newBody, anchors)` returns `{ anchors, report }` where `report` is `{ unchanged: string[], remapped: string[], orphaned: string[] }`.
-- [ ] Range untouched by the edit → `exact` preserved, `prefix`/`suffix` recomputed from the new surroundings.
-- [ ] Range partially edited → the new text spanned by the mapped range becomes the new `exact`, context recomputed.
-- [ ] Range entirely deleted → the selector is left exactly as it was (history value, §6) and the anchor is reported orphaned.
-- [ ] Context windows are ~32 characters on each side, clipped at body boundaries and never splitting a surrogate pair.
-- [ ] The module is pure: no imports of `node:fs`, `node:child_process`, `better-sqlite3`, or anything in `apps/server/src/{core,projection,docs}` beyond types.
-- [ ] Unit tests cover the full §15 M1 matrix — edits **before** and **after** an anchored range keep it resolved with the same `exact`; edits **inside** the range update `exact`; **deleting** the range orphans the thread; changes to surrounding context **refresh** `prefix`/`suffix` — plus unicode, repeated identical text, and adjacent/overlapping anchors.
+- [x] `resolveAnchor(body, selector)` implements §6's ladder in order: (1) exact match of `prefix + exact + suffix`; (2) `exact` alone when it occurs exactly once; (3) fuzzy highest-similarity window above a threshold; (4) otherwise unresolved → orphaned.
+- [x] `resolveAnchors(body, anchorsMap)` resolves a whole document's anchors in one pass and returns a map of `anchorId → { start, end } | null`.
+- [x] `reconcileAnchors(oldBody, newBody, anchors)` returns `{ anchors, report }` where `report` is `{ unchanged: string[], remapped: string[], orphaned: string[] }`.
+- [x] Range untouched by the edit → `exact` preserved, `prefix`/`suffix` recomputed from the new surroundings.
+- [x] Range partially edited → the new text spanned by the mapped range becomes the new `exact`, context recomputed.
+- [x] Range entirely deleted → the selector is left exactly as it was (history value, §6) and the anchor is reported orphaned.
+- [x] Context windows are ~32 characters on each side, clipped at body boundaries and never splitting a surrogate pair.
+- [x] The module is pure: no imports of `node:fs`, `node:child_process`, `better-sqlite3`, or anything in `apps/server/src/{core,projection,docs}` beyond types.
+- [x] Unit tests cover the full §15 M1 matrix — edits **before** and **after** an anchored range keep it resolved with the same `exact`; edits **inside** the range update `exact`; **deleting** the range orphans the thread; changes to surrounding context **refresh** `prefix`/`suffix` — plus unicode, repeated identical text, and adjacent/overlapping anchors.
 
 ## Technical Design
 

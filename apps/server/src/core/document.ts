@@ -159,7 +159,7 @@ export const parseDocument = (raw: string, path?: string): ParsedDocument => {
   }
 
   return {
-    data: toPlainMapping(yamlDoc),
+    data: toPlainMapping(yamlDoc, { path, line: lineNumberAt(text, openFence.length) }),
     body: text.slice(cursor),
     yaml: yamlDoc,
     source: {
@@ -294,8 +294,38 @@ const deepEquals = (a: unknown, b: unknown, depth = 0): boolean => {
   );
 };
 
-const toPlainMapping = (doc: YAML.Document.Parsed): Record<string, unknown> => {
-  const value: unknown = doc.toJS({ maxAliasCount: -1 });
+/**
+ * The `yaml` package's alias-amplification guard, kept at the library default.
+ * Materializing a YAML mapping expands every `*alias`, so nested aliases
+ * multiply: the classic "billion laughs" document is a few hundred bytes on
+ * disk and unbounded memory in `toJS`. The server is the sole writer and parses
+ * whatever a workspace's files contain, so this cap is a real defence, not
+ * ceremony. No legitimate Corpus frontmatter comes near it — anchors and turns
+ * are written literally.
+ */
+const MAX_ALIAS_COUNT = 100;
+
+/** Where a mapping failure should be reported; the parse path knows both, mutations know neither. */
+type SourceLocation = { readonly path?: string | undefined; readonly line: number };
+
+const toPlainMapping = (
+  doc: YAML.Document.Parsed,
+  at: SourceLocation = { line: 1 },
+): Record<string, unknown> => {
+  let value: unknown;
+  try {
+    value = doc.toJS({ maxAliasCount: MAX_ALIAS_COUNT });
+  } catch (error) {
+    // The `yaml` package signals the cap with a plain `ReferenceError`. Re-throw
+    // it as this module's own error so a hostile document fails the same typed,
+    // path-and-line way as any other unreadable frontmatter instead of escaping
+    // the parse boundary as something no caller is looking for.
+    throw new DocumentParseError(
+      `frontmatter aliases expand past the safe limit (${MAX_ALIAS_COUNT}): ${String(error)}`,
+      at.path,
+      at.line,
+    );
+  }
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};

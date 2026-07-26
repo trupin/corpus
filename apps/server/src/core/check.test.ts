@@ -210,6 +210,42 @@ Body.
     const body = `## user · 2026-07-19T10:05:00Z\nOne.\n\n## agent · 2026-07-19T10:05:00Z\nTwo.\n`;
     expect(checkCorpus([doc("data/docs/notes.md", NOTE, body)]).errors).toEqual([]);
   });
+
+  it("reports an anchor entry no thread references", () => {
+    // §14 lists "every anchor belongs to an existing thread" among the failures;
+    // §6 is the invariant behind it — no highlight left on an empty conversation.
+    const report = checkCorpus(
+      [doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY)],
+      { resolveAnchor: substringResolver },
+    );
+    expect(codes(report.errors)).toEqual([CHECK_CODES.anchorUnused]);
+    expect(report.errors[0]?.severity).toBe("error");
+    expect(report.errors[0]?.docId).toBe("doc_a1b2c3");
+    expect(report.errors[0]?.detail).toContain("anc_k4f7");
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("reports the anchor as unused even when it also no longer resolves", () => {
+    const report = checkCorpus(
+      [doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, "Rewritten entirely.\n")],
+      { resolveAnchor: substringResolver },
+    );
+    expect(codes(report.errors)).toEqual([CHECK_CODES.anchorUnused]);
+    expect(codes(report.warnings)).toEqual([CHECK_CODES.anchorUnresolved]);
+  });
+
+  it("does not accuse a document whose claiming thread has invalid frontmatter", () => {
+    const report = checkCorpus(
+      [
+        doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY),
+        doc("data/threads/th_x9y8.md", { ...THREAD, agent: "napping" }, THREAD_BODY),
+      ],
+      { resolveAnchor: substringResolver },
+    );
+    // The thread's own `frontmatter-invalid` is the finding that needs fixing;
+    // cascading `anchor-unused` onto its parent would bury it.
+    expect(codes(report.errors)).toEqual([CHECK_CODES.frontmatterInvalid]);
+  });
 });
 
 describe("§14 warnings", () => {
@@ -222,15 +258,6 @@ describe("§14 warnings", () => {
     expect(report.errors).toEqual([]);
     expect(codes(report.warnings)).toEqual([CHECK_CODES.anchorUnresolved]);
     expect(report.warnings[0]?.detail).toContain("orphaned");
-  });
-
-  it("warns on an anchor entry no thread references", () => {
-    const report = checkCorpus(
-      [doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY)],
-      { resolveAnchor: substringResolver },
-    );
-    expect(report.errors).toEqual([]);
-    expect(codes(report.warnings)).toEqual([CHECK_CODES.anchorUnused]);
   });
 
   it("warns on a reference to a document that does not exist", () => {
@@ -295,6 +322,25 @@ describe("toCheckDocument", () => {
     const entry = toCheckDocument("data/docs/broken.md", "no fence");
     expect(entry.ok).toBe(false);
     if (!entry.ok) expect(entry.error).toContain("data/docs/broken.md:1:");
+  });
+
+  it("records an alias-amplification refusal as an unreadable document", () => {
+    const bomb = `---\n${["a0: &a0 laugh"]
+      .concat(
+        Array.from(
+          { length: 9 },
+          (_unused, index) =>
+            `a${String(index + 1)}: &a${String(index + 1)} [${Array.from(
+              { length: 9 },
+              () => `*a${String(index)}`,
+            ).join(", ")}]`,
+        ),
+      )
+      .join("\n")}\n---\nBody.\n`;
+    const entry = toCheckDocument("data/docs/bomb.md", bomb);
+    expect(entry.ok).toBe(false);
+    if (!entry.ok) expect(entry.error).toContain("aliases expand past the safe limit");
+    expect(codes(checkCorpus([entry]).errors)).toEqual([CHECK_CODES.frontmatterUnparseable]);
   });
 
   it("returns the parsed document on success", () => {

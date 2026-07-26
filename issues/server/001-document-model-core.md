@@ -787,6 +787,153 @@ functions**, above the 90% gate; `core/document.ts` at **100% lines / 100%
 functions**, its remaining uncovered branches being the defensive `null` returns of
 the splice guards.
 
+### Addendum — pr-reviewer findings on PR #8 (2026-07-26)
+
+**implemented on: opus** (claude-opus-5, 1M context).
+
+Two review findings on PR #8, both adjudicated by the orchestrator and fixed in
+`apps/server/src/core/`. SPEC.md was **not** changed.
+
+#### 1. MAJOR (spec drift) — `anchor-unused` was a warning; §14 makes it a failure
+
+**Reviewer finding.** The checker reported `anchor-unused` (an anchor entry with
+no thread referencing it) as a warning. §14's warning carve-out names exactly two
+categories — "Unresolvable-but-well-formed anchors (orphaned threads) and
+unresolved `[[refs]]` are warnings, not failures" — and the immediately preceding
+failure list contains "**every anchor belongs to an existing thread**". §6 states
+the invariant behind it: resolving or deleting a thread "removes its anchor entry
+from the parent's frontmatter — **no highlight is ever left pointing at an empty
+conversation**". A dangling highlight is structural drift, not an evolving-corpus
+state.
+
+**Adjudication (orchestrator).** Flip the severity to `error` to match the spec;
+leave SPEC.md alone. The module header's severity rationale was rewritten to state
+the carve-out as *exactly two* categories and to record why an unused anchor sits
+on the failure side.
+
+**Cascade suppression preserved and extended.** The unused check now judges against
+`declaredClaims` — every `<parent>#<anchor>` pair any document that declares
+`type: thread` writes down, validated or not — rather than against the validated
+`anchorClaims` map (which still backs `anchor-claimed-twice` and
+`thread-anchor-missing`). Same anti-cascade reasoning as the existing `knownIds`
+set: a thread with one bad field still *claims* its anchor, so promoting the code
+to an error must not make one invalid thread produce a second, misleading failure
+on its perfectly good parent. The existing invalid-parent suppression is unchanged
+(an invalid parent never reaches `loaded`, so its anchors are never judged).
+
+**E2E on real files.** Scratch workspace `/tmp/corpus-pr8-e2e` with a real
+`data/docs/finance/mortgage.md` (one anchor) + `data/threads/th_x9y8.md` claiming
+it, walked from disk and checked with the real `resolveAnchor` injected:
+
+```
+$ tsx scripts/check.ts /tmp/corpus-pr8-e2e          # clean control
+documents: 2
+errors: 0
+warnings: 0
+exit=0
+
+$ mv data/threads/th_x9y8.md /tmp/…                  # thread gone, highlight left behind
+$ tsx scripts/check.ts /tmp/corpus-pr8-e2e
+documents: 1
+errors: 1
+  ERROR   anchor-unused data/docs/finance/mortgage.md — anchor `anc_k4f7` has no thread referencing it
+warnings: 0
+exit=1                                               # was: warnings: 1, exit=0
+
+$ # restore the thread, then break only the *thread's* frontmatter
+$ sed -i '' 's/^agent: engaged$/agent: napping/' data/threads/th_x9y8.md
+$ tsx scripts/check.ts /tmp/corpus-pr8-e2e
+errors: 1
+  ERROR   frontmatter-invalid data/threads/th_x9y8.md — agent: Invalid option: expected one of "none"|"requested"|"engaged"
+                                                     # no cascaded anchor-unused on the parent
+
+$ # restore, then break only the *parent's* frontmatter (pre-existing suppression)
+$ tsx scripts/check.ts /tmp/corpus-pr8-e2e
+errors: 2
+  ERROR   frontmatter-invalid data/docs/finance/mortgage.md — title: …
+  ERROR   frontmatter-invalid data/docs/finance/mortgage.md — status: …
+                                                     # no anchor-unused, no thread cascade
+```
+
+The clean control still reports zero findings, the §14 failure fires when the
+highlight is genuinely dangling, and neither an invalid thread nor an invalid
+parent produces a cascaded accusation.
+
+**Tests.** `core/check.test.ts` — the old `warns on an anchor entry no thread
+references` case moved to `§14 hard failures` and now asserts
+`errors == [anchor-unused]`, `severity == "error"` and an empty warning list; two
+new cases cover the unused-*and*-unresolved document (one error + one warning, the
+two codes staying independent) and the invalid-claiming-thread cascade. The
+`§14 warnings` suite is now exactly the two carve-outs. `check-with-anchors.test.ts`
+(TEST-62) needed no behavioral change — both its anchors are claimed — only a
+comment correction. 35 tests in `check.test.ts`, all green.
+
+#### 2. MINOR (hardening) — the YAML alias-amplification guard was disabled
+
+**Reviewer finding.** `toPlainMapping` called `doc.toJS({ maxAliasCount: -1 })`,
+switching off the `yaml` package's alias-amplification cap. The server is the sole
+writer and parses whatever a workspace's files contain, so a "billion laughs"
+document sits on the parse path.
+
+**Reproduced before the fix.** A 616-byte `data/docs/bomb.md` (ten levels of
+nine-way aliases) written into the scratch workspace:
+
+```
+$ wc -c data/docs/bomb.md
+     616 data/docs/bomb.md
+$ node -e "… doc.toJS({ maxAliasCount: -1 }) …"
+PRE-FIX (maxAliasCount:-1): 616 bytes on disk -> 3486784401 leaves, 2057 ms
+$ node -e "… JSON.stringify(doc.toJS({ maxAliasCount: -1 })) …"
+PRE-FIX threw Invalid string length
+```
+
+616 bytes on disk expand to a 3.49-billion-leaf structure in ~2 s of CPU, and any
+downstream traversal of it — Zod validation, projection, a JSON response — cannot
+survive it (`JSON.stringify` throws outright).
+
+**The fix.** `MAX_ALIAS_COUNT = 100` (the library default) is passed explicitly and
+documented; the `ReferenceError` the package raises is caught and re-thrown as this
+module's own `DocumentParseError`, naming path, line and the underlying cause, so a
+hostile document fails the same typed way as any other unreadable frontmatter
+instead of escaping the parse boundary as something no caller is watching for.
+
+**Post-fix, same file:**
+
+```
+POST-FIX DocumentParseError in 5.65 ms ->
+  data/docs/bomb.md:2: frontmatter aliases expand past the safe limit (100):
+  ReferenceError: Excessive alias count indicates a resource exhaustion attack
+
+$ tsx scripts/check.ts /tmp/corpus-pr8-e2e      # bomb dropped into the real corpus
+documents: 3
+errors: 1
+  ERROR   frontmatter-unparseable data/docs/bomb.md — data/docs/bomb.md:2: frontmatter aliases expand past the safe limit (100): …
+warnings: 0
+exit=1
+```
+
+Refused in 5.65 ms instead of 2 s, reported as `frontmatter-unparseable` through
+the normal §14 path, and the other two documents in the corpus are still checked —
+one hostile file does not abort the run.
+
+**Tests.** `core/document.test.ts` gains a `parseDocument alias amplification`
+suite: an alias bomb throws `DocumentParseError` naming path, line, the cap and
+the library's own diagnosis; a larger bomb (10-way × 12 levels, ~10¹² leaves)
+fails in well under a second, so the assertion is that the cap *fired* rather than
+that the expansion merely finished; and modest, legitimate aliasing
+(`tags: &t […]` / `mirror: *t`) still parses and still round-trips byte-identically.
+`core/check.test.ts` adds the checker-level case (bomb ⇒ `frontmatterUnparseable`,
+no crash).
+
+#### Repo gates after both fixes
+
+`npm run build`, `npm run lint`, `npm run format:check`, `npm run typecheck`,
+`npm run test:coverage` — all PASS. **828 tests across 55 files**; combined
+coverage **99.76% lines / 95.63% branches / 100% functions**, above the 90% gate.
+`core/document.ts` at 100% lines / 100% functions; `core/check.ts` at 99.16%
+lines, its one uncovered pair being the pre-existing non-`DocumentParseError`
+re-throw in `toCheckDocument`.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing
