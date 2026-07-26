@@ -81,8 +81,10 @@ Spawn the **pr-reviewer** agent (`.claude/agents/pr-reviewer.md`) as a **fresh**
 Only when BOTH are true — `CI / validate` green on the head commit AND pr-reviewer verdict APPROVE (or user waiver):
 
 ```bash
-gh pr merge <number> --rebase --delete-branch
+gh pr merge <number> --squash --delete-branch
 ```
+
+Squash is the only allowed merge method (repo settings + ruleset enforce this). The squash commit uses the PR title — which must carry the `[ISSUE-ID]` — and the PR body.
 
 Then update the issue status to `done` in the issue file and `issues/PLAN.md` (trivial bookkeeping — may commit directly to main).
 
