@@ -2,3 +2,4 @@
 export const PACKAGE_NAME = "@corpus/server";
 
 export * from "./anchors/index.js";
+export * from "./core/index.js";
