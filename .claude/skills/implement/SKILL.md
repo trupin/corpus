@@ -73,7 +73,7 @@ If the ready issue is in `shared/` (e.g., SHARED-001):
 
 For each domain with ready issues:
 
-- Use the Agent tool to spawn the appropriate domain agent (defined in `.claude/agents/<domain>-dev.md`).
+- Use the Agent tool to spawn the appropriate domain agent (defined in `.claude/agents/<domain>-dev.md`), passing the issue's **Model** recommendation as the model override (missing ⇒ opus). Never downgrade the pr-reviewer — it is pinned to fable.
 - Pass the issue ID(s) and instruct it to read the issue file, implement, test, verify E2E, and report back.
 - If a sprint contract was produced in step 3, include the contract file path so the domain agent knows what the evaluator will verify.
 - **E2E requirement**: Explicitly instruct agents to fill in the "E2E Verification Log" section of the issue file with concrete evidence. For bug fixes, they must reproduce the bug first. Remind them the evaluator will reject issues without credible proof-of-work.

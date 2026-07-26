@@ -86,7 +86,7 @@ If `SPEC.md` exists and the new feature introduces behavior not yet covered:
 2. **Find the next issue number** by scanning `issues/<domain>/` for the highest NNN prefix and incrementing.
 3. **Generate a short slug** (e.g., "add retry logic" -> `add-retry-logic`).
 4. **Create the issue file** at `issues/<domain>/NNN-<slug>.md` using `issues/TEMPLATE.md`.
-5. **Fill in all sections** based on the research (for simple tasks, keep Technical Design brief — a sentence or two is fine).
+5. **Fill in all sections** based on the research (for simple tasks, keep Technical Design brief — a sentence or two is fine). Always set the **Model** recommendation: opus by default; fable only when the task hinges on judgment (spec/architecture, ambiguous tradeoffs, novel design).
 6. **Add to `issues/PLAN.md`** in the appropriate phase table.
 7. **File follow-up issues for shortcuts** (complex only). If the Technical Design takes shortcuts (stubs, hardcoded values, skipped edge cases), create follow-up issues titled `Harden: <what was cut>`, priority P2.
 8. **Report** the created issue path(s) and ID(s).

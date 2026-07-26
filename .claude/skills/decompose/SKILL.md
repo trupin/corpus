@@ -47,6 +47,7 @@ For each issue, determine:
 - **Priority**: P0 for critical path, P1 for important, P2 for polish
 - **Dependencies**: Which issues must complete first
 - **Size estimate**: S (< 1 file), M (2-5 files), L (5+ files or new subsystem)
+- **Model**: opus (default) or fable — fable only for judgment-heavy work (spec/architecture, ambiguous cross-domain tradeoffs, novel design)
 
 Organize into phases:
 

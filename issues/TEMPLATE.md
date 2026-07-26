@@ -9,6 +9,9 @@ todo | in_progress | done | blocked
 ## Priority
 P0 (critical path) | P1 (important) | P2 (nice-to-have)
 
+## Model
+opus | fable — model for the implementing agent. **Default opus.** Recommend fable only when the task hinges on deep judgment: spec/architecture work, ambiguous cross-domain tradeoffs, novel design. (PR review always runs on fable regardless of this field.)
+
 ## Dependencies
 - Depends on: [DOMAIN-NNN], ...
 - Blocks: [DOMAIN-NNN], ...
