@@ -64,7 +64,11 @@ The PR for this issue is the test: the workflow must appear, run, and pass on th
 
 ### Post-Implementation Verification
 
-_Filled after the PR run:_ see PR #1 — `CI / validate` outcome recorded in the PLAN/PR discussion. (Updated below once the run completes.)
+2026-07-26, real GitHub runs (no local simulation):
+
+- PR #1 (https://github.com/trupin/corpus/pull/1) opened from `infra-002-ci`; `validate` check ran on GitHub and passed: https://github.com/trupin/corpus/actions/runs/30206142928/job/89804434411 (`gh pr checks 1` → `validate SUCCESS`).
+- Ruleset `main-protection` (id 19767610) created on the default branch via API: PRs required, `validate` status check required, deletion + force-push blocked, repo-admin bypass for trivial direct commits.
+- Merged via `gh pr merge 1 --rebase --delete-branch` only after the check was green; landed on `main` as `c20eb09`.
 
 ## Completion Checklist (domain agent)
 
