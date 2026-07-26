@@ -48,8 +48,8 @@ The sole-writer server and the thin-client CLI.
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| CONTRACT-002 | Contract growth: full API surface (queue, locks, jobs, attachments, SSE, query params) | todo | P0 | CONTRACT-001 |
-| SERVER-003 | Server bootstrap: Hono app, config, auth, static UI | todo | P0 | CONTRACT-001 |
+| CONTRACT-002 | Contract growth: full API surface (queue, locks, jobs, attachments, SSE, query params) | in_progress | P0 | CONTRACT-001 |
+| SERVER-003 | Server bootstrap: Hono app, config, auth, static UI | in_progress | P0 | CONTRACT-001 |
 | SERVER-004 | SQLite projection: schema, projectors, FTS, rebuild/doctor | todo | P0 | SERVER-001, SERVER-003 |
 | SERVER-005 | Doc write paths + git auto-commit with author attribution | todo | P0 | SERVER-002, SERVER-004 |
 | SERVER-006 | Thread write paths: creation, turns, events, cascade | todo | P0 | SERVER-005, CONTRACT-002 |
@@ -58,8 +58,8 @@ The sole-writer server and the thin-client CLI.
 | SERVER-009 | Document locks + job logs | todo | P0 | SERVER-007, CONTRACT-002 |
 | SERVER-010 | Attachments: ingest + serving | todo | P1 | SERVER-006 |
 | SERVER-011 | Collection query endpoint: filters + FTS + needs=me | todo | P0 | SERVER-004 |
-| CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | todo | P0 | CONTRACT-001, INFRA-007 |
-| SERVER-012 | Anchor engine: partial-path truncated selectors beside edited near-identical siblings | todo | P2 | SERVER-002 |
+| CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | in_progress | P0 | CONTRACT-001, INFRA-007 |
+| SERVER-012 | Anchor engine: partial-path truncated selectors beside edited near-identical siblings | in_progress | P2 | SERVER-002 |
 | CLI-002 | `corpus init` + server lifecycle verbs | todo | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006 |
 | CLI-004 | Queue, lock, job verbs (agent loop surface) | todo | P0 | CLI-001, SERVER-008, SERVER-009 |
