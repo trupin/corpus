@@ -73,7 +73,7 @@ If the ready issue is in `shared/` (e.g., SHARED-001):
 
 For each domain with ready issues:
 
-- Use the Agent tool to spawn the appropriate domain agent (defined in `.claude/agents/<domain>-dev.md`).
+- Use the Agent tool to spawn the appropriate domain agent (defined in `.claude/agents/<domain>-dev.md`), passing the issue's **Model** recommendation as the model override (missing ⇒ opus).
 - Pass the issue ID(s) and instruct it to read the issue file, implement, test, verify E2E, and report back.
 - If a sprint contract was produced in step 3, include the contract file path so the domain agent knows what the evaluator will verify.
 - **E2E requirement**: Explicitly instruct agents to fill in the "E2E Verification Log" section of the issue file with concrete evidence. For bug fixes, they must reproduce the bug first. Remind them the evaluator will reject issues without credible proof-of-work.
@@ -85,10 +85,11 @@ If multiple domains have ready issues, spawn all agents in parallel.
 When a domain agent reports completion:
 
 1. **Run checks**: `/test` and `/lint` to verify correctness. If checks fail, report failures to the domain agent for fixing. Loop until checks pass.
-2. **Check E2E proof-of-work** (skip if evaluator active — it handles this): Read the issue file and verify the "E2E Verification Log" section is filled in with concrete evidence (not placeholder text). For bugs, verify both "Reproduction" and "Post-Implementation Verification" are present. If missing, send the issue back to the domain agent.
+2. **Check E2E proof-of-work** (skip if evaluator active — it handles this): Read the issue file and verify the "E2E Verification Log" section is filled in with concrete evidence (not placeholder text) and states which model the agent ran on. For bugs, verify both "Reproduction" and "Post-Implementation Verification" are present. If missing, send the issue back to the domain agent.
 3. **Evaluate** (if evaluator active): If `.claude/agents/evaluator.md` exists:
    - Spawn the evaluator agent for this issue (or the sprint batch).
    - If FAIL: send the eval verdict file (`issues/evals/<ISSUE-ID>-eval.md`) to the domain agent for fixing. After fixes, re-run `/test` + `/lint`, then re-evaluate.
+   - After a second failed round, re-spawn the next attempt on **fable** and correct the issue's Model recommendation for the record (Model Policy escalation ladder).
    - Loop up to 3 iterations. If still failing after 3 attempts, escalate to user with the eval file.
    - If PASS: proceed.
 4. **Decide whether to audit**: Run `/audit <ISSUE-ID>` only when:

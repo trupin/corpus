@@ -23,6 +23,7 @@ Domain prefixes: `SHARED` (cross-domain, orchestrator-handled), `CONTRACT`, `SER
 | INFRA-003 | PR reviewer agent, critical-only lint policy, 90% coverage gate | done | P0 | INFRA-002 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | todo | P1 | INFRA-003, UI scaffold |
 | INFRA-005 | Reviewer drift dimensions: interface-docs + spec-code | done | P1 | INFRA-003 |
+| INFRA-006 | Per-issue model recommendations; pr-reviewer pinned to Fable | done | P1 | INFRA-005 |
 | SHARED-001 | Revise SPEC.md for the standalone-tool architecture | todo | P0 | — |
 | CONTRACT-001 | Bootstrap @corpus/contract: zod-openapi routes, spec generation, typed client | todo | P0 | SHARED-001 |
 

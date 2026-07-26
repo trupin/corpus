@@ -68,6 +68,16 @@ This project uses a multi-domain architecture with an orchestrator pattern.
 
 Agent definitions live in `.claude/agents/`. Each has a **Domain Knowledge** section — the durable home for domain-specific facts, decisions, and gotchas. When you or a domain agent learns something domain-specific worth keeping, record it there.
 
+### Model Policy
+
+Implementation work defaults to **Opus** — don't spend Fable on tasks that don't need it. Recommend **Fable** only where the task hinges on judgment: spec revisions, architecture decisions, ambiguous cross-domain tradeoffs, novel design. Every filed issue carries a **Model** recommendation (see `issues/TEMPLATE.md`); the orchestrator passes it as the model override when spawning the implementing agent (missing recommendation ⇒ opus).
+
+- **Specialized agents are pinned in their frontmatter**: **pr-reviewer** and **spec-writer** on **fable** — they make the judgment calls about the codebase's direction and its source-of-truth spec, and are never downgraded. **evaluator**, **sprint-planner**, and **context-manager** on **opus** — rubric-driven, procedural; ambiguous verdicts escalate rather than requiring judgment in place.
+- **Haiku tier**: read-only exploration/search fan-outs may run on **haiku**. Haiku never runs anything that writes files.
+- **Escalation ladder**: an opus agent facing genuine architectural ambiguity escalates to the orchestrator instead of guessing. An issue that fails the evaluator or the pr-reviewer **twice** gets its next attempt re-spawned on **fable**, and the issue's Model recommendation is corrected for the record — wrong recommendations cost one retry, not a debugging spiral.
+- **Orchestrator judgment stays fable-tier**: adjudicating reviewer findings (fix vs. waive vs. false positive), running `/decompose`, and preparing SPEC.md changes for user sign-off are never delegated to a sub-fable agent.
+- **Record actuals**: the implementing agent states which model it ran on in the issue's E2E Verification Log — the audit trail for recalibrating recommendations (e.g. a domain where opus-run issues keep failing evaluation was miscalibrated).
+
 ### Specialized Agents (all active)
 
 | Agent               | Purpose                                                                                       |
@@ -85,7 +95,7 @@ Agent definitions live in `.claude/agents/`. Each has a **Domain Knowledge** sec
 4. **Group by domain.**
 5. **Sprint contract** _(batch > 1)_: Spawn sprint-planner to define testable "done" criteria for the batch.
 6. **Handle shared issues** (SHARED-*) yourself — they produce artifacts all domains consume (spec revisions, cross-domain decisions).
-7. **Spawn domain agents** via the Agent tool; pass issue IDs + sprint contract path. Parallelize across domains; use `isolation: "worktree"` when agents touch overlapping files.
+7. **Spawn domain agents** via the Agent tool; pass issue IDs + sprint contract path, with each issue's **Model** recommendation as the model override (missing ⇒ opus). Parallelize across domains; use `isolation: "worktree"` when agents touch overlapping files.
 8. **Verify completion**: run `/test`, `/lint` when an agent reports done.
 9. **Evaluate**: spawn the evaluator against the running app. If FAIL, send the verdict back to the domain agent. Loop up to 3 times, then escalate to user.
 10. **Audit** _(qualifying issues)_: `/audit` for P0, cross-domain, >5-file, or security-sensitive changes.
@@ -173,7 +183,7 @@ All acceptance criteria met · tests pass, no regressions · combined coverage �
 
 1. **Every significant change lands via a PR.** Any issue-worthy change happens on a branch named `<issue-id-lowercase>-<slug>` and reaches `main` (at `github.com:trupin/corpus`) only through a pull request (`/pr`). Only trivial bookkeeping (typo fixes, issue/plan status updates) may commit directly to `main`.
 2. **A PR merges only when all validation GitHub Actions are green.** The `CI / validate` workflow (lint, format, typecheck, unit tests + coverage gate, e2e) must pass on the PR's head commit before landing — no exceptions, no merging on "it passes locally". **Merges are squash-only** (`gh pr merge --squash`) — never merge commits, never rebase-merges; enforced by repo settings and the `main-protection` ruleset. The squash commit takes the PR title (which carries the `[ISSUE-ID]`) and body.
-3. **Every PR gets an objective local review before merge.** Spawn the **pr-reviewer** agent (`.claude/agents/pr-reviewer.md`) as a **fresh** subagent — never a fork — so it sees only the diff, the issue file(s), the cited spec sections, and the touched files, not the implementing conversation. CRITICAL and MAJOR findings must be fixed (and re-reviewed) or explicitly waived by the user before merging.
+3. **Every PR gets an objective local review before merge.** Spawn the **pr-reviewer** agent (`.claude/agents/pr-reviewer.md`) as a **fresh** subagent — never a fork — so it sees only the diff, the issue file(s), the cited spec sections, and the touched files, not the implementing conversation. It always runs on **Fable** (pinned in its frontmatter; never downgrade it). CRITICAL and MAJOR findings must be fixed (and re-reviewed) or explicitly waived by the user before merging.
 4. **Commit before starting new work** — never start a task with uncommitted changes from a previous one.
 5. **Every commit message starts with `[ISSUE-ID]`.**
 6. **Commit after verification** — agent reports done AND checks pass.

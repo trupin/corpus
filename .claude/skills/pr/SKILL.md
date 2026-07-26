@@ -71,10 +71,10 @@ EOF
 
 ## 5. Objective Local Review (required)
 
-Spawn the **pr-reviewer** agent (`.claude/agents/pr-reviewer.md`) as a **fresh** subagent — never a fork, and never pass it implementation context beyond the PR number. In parallel, watch CI: `gh pr checks <number> --watch`.
+Spawn the **pr-reviewer** agent (`.claude/agents/pr-reviewer.md`) as a **fresh** subagent — never a fork, and never pass it implementation context beyond the PR number. It runs on **fable** (frontmatter pin) — never override its model. In parallel, watch CI: `gh pr checks <number> --watch`.
 
 - Verdict **APPROVE** (MINOR-only findings) → proceed to landing; surface the MINOR findings to the user.
-- Verdict **REQUEST_CHANGES** → fix the CRITICAL/MAJOR findings (or present them to the user if they're judgment calls), push, and re-run the reviewer on the updated diff. Loop until APPROVE or the user explicitly waives specific findings.
+- Verdict **REQUEST_CHANGES** → fix the CRITICAL/MAJOR findings (or present them to the user if they're judgment calls), push, and re-run the reviewer on the updated diff. Loop until APPROVE or the user explicitly waives specific findings. If the PR was implemented by a domain agent and fails review **twice**, re-spawn the fix attempt on **fable** and correct the issue's Model recommendation (Model Policy escalation ladder).
 
 ## 6. Land
 

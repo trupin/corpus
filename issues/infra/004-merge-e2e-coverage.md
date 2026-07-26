@@ -12,6 +12,10 @@ todo
 
 P1
 
+## Model
+
+opus — coverage-collection plumbing with a defined design; no architectural judgment required.
+
 ## Dependencies
 
 - Depends on: INFRA-003, UI scaffold (Phase 1 — needs real e2e specs to exist)

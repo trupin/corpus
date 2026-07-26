@@ -1,5 +1,6 @@
 ---
 name: context-manager
+model: opus
 description: Context health and handoff agent. Produces structured handoff documents that enable fresh-context restarts without information loss. Use at session start (to restore), periodically (to checkpoint), and at session end (to preserve state).
 ---
 

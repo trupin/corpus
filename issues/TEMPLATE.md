@@ -9,6 +9,9 @@ todo | in_progress | done | blocked
 ## Priority
 P0 (critical path) | P1 (important) | P2 (nice-to-have)
 
+## Model
+opus | fable — model for the implementing agent. **Default opus.** Recommend fable only when the task hinges on deep judgment: spec/architecture work, ambiguous cross-domain tradeoffs, novel design. (PR review always runs on fable regardless of this field.)
+
 ## Dependencies
 - Depends on: [DOMAIN-NNN], ...
 - Blocks: [DOMAIN-NNN], ...
@@ -57,7 +60,9 @@ its real public interfaces (HTTP endpoints, CLI commands, browser UI, etc.).
 _Filled in by the implementing agent as proof-of-work. Must be from real E2E
 testing — no mocks, no test clients. Real application, real requests, real
 interfaces. Include specific commands run, actual outputs observed, and pass/fail
-conclusions. The evaluator will reject issues without credible proof._
+conclusions. State which model the implementing agent ran on ("implemented on:
+opus | fable") — the audit trail for recalibrating Model recommendations. The
+evaluator will reject issues without credible proof._
 
 ### Reproduction (bugs only)
 _[Agent fills: exact commands, observed output, confirmation bug exists]_

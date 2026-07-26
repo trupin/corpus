@@ -9,6 +9,9 @@ todo
 ## Priority
 P0
 
+## Model
+fable — full-spec architectural revision; every downstream issue inherits its judgment calls.
+
 ## Dependencies
 - Depends on: —
 - Blocks: CONTRACT-001, all Phase 1 decomposition
