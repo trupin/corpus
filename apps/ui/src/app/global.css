@@ -1,0 +1,72 @@
+/*
+ * Base styles, ported from `design/index.html` (SPEC.md §11 names it
+ * authoritative for look & feel). The tokens these rules consume live in
+ * `@corpus/kit/tokens.css`, which `main.tsx` imports first — plugins get the
+ * tokens without inheriting the app's chrome.
+ *
+ * No colour literal appears anywhere under `apps/ui/src`: every colour is a
+ * `var(--…)`, which is what makes the theme toggle total.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.45;
+  /* The board scrolls, the console drawer resizes — the page itself never
+     scrolls, or the drawer would stop being pinned to the viewport. */
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/*
+ * Prototype rule, kept selector-for-selector. `.working-dot`, `.row` and `.col`
+ * arrive with later issues; the guard is declared once, here, so no future
+ * animated element can ship without it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .agent-pill .dot.busy,
+  .working-dot,
+  .row.flash {
+    animation: none !important;
+  }
+
+  .col,
+  .row.leaving {
+    transition: none !important;
+  }
+}

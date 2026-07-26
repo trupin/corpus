@@ -11,10 +11,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./tokens.css": "./src/tokens.css",
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "src/tokens.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
