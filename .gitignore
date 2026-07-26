@@ -20,3 +20,6 @@ apps/ui/playwright-report/
 .idea/
 .vscode/
 *.swp
+
+# Agent worktrees (created by the dev harness, never repo content)
+.claude/worktrees/

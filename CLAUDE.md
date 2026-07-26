@@ -11,8 +11,6 @@ This file provides guidance to Claude Code when working with this repository. It
 
 **`SPEC.md` is the source of truth for all product behavior** — read the relevant section before implementing any feature. If the spec is ambiguous, clarify before coding — don't guess.
 
-> ⚠️ SPEC.md predates the standalone-tool pivot in places (notably §3 stack, §7 queue mechanics, §9 write paths). Where SPEC.md conflicts with the **Architecture Decisions** below, the decisions win until SHARED-001 (spec revision) lands.
-
 **Product vs. dev harness — do not confuse them.** The `.claude/` setup in this repo is the **development harness** for building Corpus. The _product_ also has an agent runtime (the orchestrate/comment skills that `corpus init` installs into a user's workspace) — that is product code, owned by the `agent-runtime` domain, and lives under `assets/workspace/`. We do not use Corpus to develop Corpus.
 
 ## Architecture Decisions (2026-07-26)
