@@ -65,7 +65,8 @@ Dogfood: each rule change is itself reviewed by the pr-reviewer under the new ru
 ### Post-Implementation Verification
 
 - PR #3 (interface-docs drift): reviewer APPROVE with 3 MINOR findings, all addressed pre-merge.
-- PR #4 (spec drift): reviewer returned REQUEST_CHANGES with 2 MAJOR + 3 MINOR — including catching that the change rode on closed INFRA-003 (this issue is the fix) and an unfollowable context grant in the spec-edits bullet. All five findings addressed; re-review verdict recorded in the PR.
+- PR #4 (spec drift), round 1: reviewer returned REQUEST_CHANGES with 2 MAJOR + 3 MINOR — including catching that the change rode on closed INFRA-003 (this issue is the fix) and an unfollowable context grant in the spec-edits bullet.
+- PR #4, round 2 (fresh reviewer instance): all five round-1 findings verified RESOLVED → **APPROVE** with 2 MINOR (this log's premature "addressed" claim — corrected here — and stale INFRA-003 branch/commit labels, neutralized by the enforced squash-only merge whose title carries `[INFRA-005]`).
 
 ## Completion Checklist (domain agent)
 
