@@ -64,7 +64,7 @@ describe("generated OpenAPI document", () => {
   it("declares 401 on every authenticated operation", () => {
     const missing: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
-      for (const method of ["get", "post", "put"] as const) {
+      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
         const operation = item?.[method];
         if (!operation || operation.security?.length === 0) continue;
         if (!operation.responses?.["401"]) missing.push(`${method} ${path}`);
