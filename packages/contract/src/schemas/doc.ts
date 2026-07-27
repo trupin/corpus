@@ -115,6 +115,12 @@ export const docRowBaseShape = {
   excerpt: z.string().describe("Leading plain-text excerpt of the body, for list rows."),
 } as const;
 
+/**
+ * Creation is zero-form (SPEC.md §11): a type and a title are the whole
+ * requirement, and everything else the server fills in. Those fields are
+ * therefore `.optional()` with their server-applied default documented, never
+ * `.default()` — see the optional-in/defaulted-out note in `./index.ts`.
+ */
 export const CreateDocRequestSchema = z
   .object({
     type: DocTypeSchema,
@@ -124,10 +130,15 @@ export const CreateDocRequestSchema = z
       .optional()
       .describe("Omit to pre-fill from the type's `template` document when one exists."),
     folder: z.string().optional().describe(FOLDER_DESCRIPTION),
-    tags: z.array(z.string()).default([]),
-    status: z.enum(DOC_STATUSES).default("open"),
-    due: IsoDateSchema.nullable().default(null),
-    evergreen: z.boolean().default(false),
+    tags: z.array(z.string()).optional().describe("Defaults to no tags."),
+    status: z.enum(DOC_STATUSES).optional().describe("Defaults to `open`."),
+    due: IsoDateSchema.nullable()
+      .optional()
+      .describe("Optional deadline. Defaults to `null` — no deadline."),
+    evergreen: z
+      .boolean()
+      .optional()
+      .describe("True opts the document out of staleness entirely. Defaults to `false`."),
   })
   .openapi("CreateDocRequest");
 

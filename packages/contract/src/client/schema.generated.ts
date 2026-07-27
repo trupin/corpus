@@ -2877,21 +2877,21 @@ export interface components {
             body?: string;
             /** @description Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill. */
             folder?: string;
-            /** @default [] */
-            tags: string[];
+            /** @description Defaults to no tags. */
+            tags?: string[];
             /**
-             * @default open
+             * @description Defaults to `open`.
              * @enum {string}
              */
-            status: "open" | "resolved" | "archived";
+            status?: "open" | "resolved" | "archived";
             /**
              * Format: date
-             * @default null
+             * @description Optional deadline. Defaults to `null` — no deadline.
              * @example 2026-08-01
              */
-            due: string | null;
-            /** @default false */
-            evergreen: boolean;
+            due?: string | null;
+            /** @description True opts the document out of staleness entirely. Defaults to `false`. */
+            evergreen?: boolean;
         };
         NotFoundError: {
             /** @enum {string} */
@@ -3077,28 +3077,18 @@ export interface components {
         };
         CreateThreadRequest: {
             /**
-             * @description Document being commented on; null creates a standalone thread.
-             * @default null
+             * @description Document being commented on. Omitted or null creates a standalone thread.
              * @example doc_a1b2c3
              */
-            parent: string | null;
-            /**
-             * @description Text-quote selector captured from the user's selection. The server writes the anchor entry into the parent's frontmatter and creates the thread file atomically. Null anchors the thread to the whole document, or to nothing when `parent` is null.
-             * @default null
-             */
-            selector: {
+            parent?: string | null;
+            /** @description Text-quote selector captured from the user's selection. The server writes the anchor entry into the parent's frontmatter and creates the thread file atomically. Omitted or null anchors the thread to the whole document, or to nothing when `parent` is null. */
+            selector?: {
                 /** @description The quoted text the thread is attached to. */
                 exact: string;
-                /**
-                 * @description Text immediately preceding `exact`, for disambiguation.
-                 * @default
-                 */
-                prefix: string;
-                /**
-                 * @description Text immediately following `exact`, for disambiguation.
-                 * @default
-                 */
-                suffix: string;
+                /** @description Text immediately preceding `exact`, for disambiguation. Omit it when there is none, which is what a quote at a document boundary produces; the server stores the empty string. */
+                prefix?: string;
+                /** @description Text immediately following `exact`, for disambiguation. Omit it when there is none, which is what a quote at a document boundary produces; the server stores the empty string. */
+                suffix?: string;
             } | null;
             /** @description Defaults to the anchor quote or the first turn. */
             title?: string;

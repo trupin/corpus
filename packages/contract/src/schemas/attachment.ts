@@ -26,6 +26,12 @@ export const AttachmentFileSchema = z
  * an array only from the second onwards, so a schema demanding an array would
  * reject exactly the common case of one attachment. The preprocess absorbs that
  * asymmetry; the published OpenAPI shape stays a plain array of binaries.
+ *
+ * The `.default([])` is not the optional-in violation it looks like (`./index.ts`):
+ * the hand-pinned `.openapi()` shape replaces the derived schema wholesale, so no
+ * `default` reaches the document and `files` stays optional in the generated
+ * client. The default lives on purely so a handler reading a fileless multipart
+ * body gets an empty array rather than `undefined`.
  */
 export const AttachmentFilesSchema = z
   .preprocess(

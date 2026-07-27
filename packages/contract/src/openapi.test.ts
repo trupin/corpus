@@ -46,6 +46,92 @@ function parameter(path: string, method: string, name: string) {
   return operation(path, method).parameters?.find((entry) => entry.name === name);
 }
 
+/** The subset of JSON Schema the walk below needs; `openapi3-ts` types it as `any`. */
+interface SchemaNode {
+  readonly $ref?: string;
+  readonly default?: unknown;
+  readonly required?: string[];
+  readonly properties?: Record<string, SchemaNode>;
+  readonly items?: SchemaNode;
+  readonly allOf?: SchemaNode[];
+  readonly anyOf?: SchemaNode[];
+  readonly oneOf?: SchemaNode[];
+}
+
+interface DefaultedProperty {
+  readonly location: string;
+  readonly required: boolean;
+}
+
+const componentSchemas = document.components?.schemas as Record<string, SchemaNode> | undefined;
+
+function collectDefaults(
+  node: SchemaNode | undefined,
+  location: string,
+  derefd: ReadonlySet<string>,
+  found: DefaultedProperty[],
+): void {
+  if (!node) return;
+
+  if (node.$ref !== undefined) {
+    const name = node.$ref.split("/").pop() ?? "";
+    // A component that refers back to itself (or a cycle through several) would
+    // otherwise recurse forever; one visit per branch is enough to see it.
+    if (derefd.has(name)) return;
+    collectDefaults(
+      componentSchemas?.[name],
+      `${location} → ${name}`,
+      new Set([...derefd, name]),
+      found,
+    );
+    return;
+  }
+
+  const required = new Set(node.required ?? []);
+  for (const [property, child] of Object.entries(node.properties ?? {})) {
+    // `Object.hasOwn`, not a truthiness check: `default: null` is a default too.
+    if (Object.hasOwn(child, "default")) {
+      found.push({ location: `${location}.${property}`, required: required.has(property) });
+    }
+    collectDefaults(child, `${location}.${property}`, derefd, found);
+  }
+
+  for (const branch of [...(node.allOf ?? []), ...(node.anyOf ?? []), ...(node.oneOf ?? [])]) {
+    collectDefaults(branch, location, derefd, found);
+  }
+  collectDefaults(node.items, `${location}[]`, derefd, found);
+}
+
+/**
+ * Every defaulted property reachable from any operation's request body,
+ * resolving component references as it goes.
+ *
+ * The rule this feeds is stricter than "`required` and `default` never
+ * overlap", and deliberately: `openapi-typescript` promotes *any* defaulted
+ * property to a required member of the generated type, whatever the `required`
+ * array says, so an omitted-from-`required` default still reaches the caller as
+ * a mandatory field. Only a request surface with no defaults at all is safe —
+ * hence optional-in, defaulted-out (`./schemas/index.ts`).
+ */
+function requestBodyDefaults(): DefaultedProperty[] {
+  const found: DefaultedProperty[] = [];
+  for (const [path, item] of Object.entries(document.paths ?? {})) {
+    for (const method of HTTP_METHODS) {
+      const op = (item as Record<string, Operation> | undefined)?.[method];
+      for (const [mediaType, media] of Object.entries(op?.requestBody?.content ?? {})) {
+        const schema = (media as { schema?: SchemaNode }).schema;
+        collectDefaults(
+          schema,
+          `${endpointSignature(method, path)} [${mediaType}]`,
+          new Set(),
+          found,
+        );
+      }
+    }
+  }
+  return found;
+}
+
 describe("generated OpenAPI document", () => {
   it("is an OpenAPI 3.1 document stamped with the contract version", () => {
     expect(document.openapi).toBe("3.1.0");
@@ -165,6 +251,15 @@ describe("generated OpenAPI document", () => {
         schema.default !== undefined,
     );
     expect(corrupted.map(([name]) => name)).toEqual([]);
+  });
+
+  it("declares no server-applied default anywhere in a request body", () => {
+    expect(requestBodyDefaults().map((entry) => entry.location)).toEqual([]);
+  });
+
+  it("lists no defaulted property in a request body's `required` array", () => {
+    const contradictory = requestBodyDefaults().filter((entry) => entry.required);
+    expect(contradictory.map((entry) => entry.location)).toEqual([]);
   });
 
   it("gives every operation a summary, so the document reads without the source", () => {

@@ -577,7 +577,7 @@
             "items": {
               "type": "string"
             },
-            "default": []
+            "description": "Defaults to no tags."
           },
           "status": {
             "type": "string",
@@ -586,7 +586,7 @@
               "resolved",
               "archived"
             ],
-            "default": "open"
+            "description": "Defaults to `open`."
           },
           "due": {
             "type": [
@@ -594,12 +594,12 @@
               "null"
             ],
             "format": "date",
-            "default": null,
-            "example": "2026-08-01"
+            "example": "2026-08-01",
+            "description": "Optional deadline. Defaults to `null` — no deadline."
           },
           "evergreen": {
             "type": "boolean",
-            "default": false
+            "description": "True opts the document out of staleness entirely. Defaults to `false`."
           }
         },
         "required": [
@@ -1084,8 +1084,7 @@
               "null"
             ],
             "pattern": "^(doc|th)_[A-Za-z0-9]+$",
-            "default": null,
-            "description": "Document being commented on; null creates a standalone thread.",
+            "description": "Document being commented on. Omitted or null creates a standalone thread.",
             "example": "doc_a1b2c3"
           },
           "selector": {
@@ -1101,20 +1100,17 @@
               },
               "prefix": {
                 "type": "string",
-                "default": "",
-                "description": "Text immediately preceding `exact`, for disambiguation."
+                "description": "Text immediately preceding `exact`, for disambiguation. Omit it when there is none, which is what a quote at a document boundary produces; the server stores the empty string."
               },
               "suffix": {
                 "type": "string",
-                "default": "",
-                "description": "Text immediately following `exact`, for disambiguation."
+                "description": "Text immediately following `exact`, for disambiguation. Omit it when there is none, which is what a quote at a document boundary produces; the server stores the empty string."
               }
             },
-            "default": null,
             "required": [
               "exact"
             ],
-            "description": "Text-quote selector captured from the user's selection. The server writes the anchor entry into the parent's frontmatter and creates the thread file atomically. Null anchors the thread to the whole document, or to nothing when `parent` is null."
+            "description": "Text-quote selector captured from the user's selection. The server writes the anchor entry into the parent's frontmatter and creates the thread file atomically. Omitted or null anchors the thread to the whole document, or to nothing when `parent` is null."
           },
           "title": {
             "type": "string",

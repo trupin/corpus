@@ -82,15 +82,43 @@ describe("Doc", () => {
 });
 
 describe("CreateDocRequest", () => {
-  it("defaults everything the caller may omit", () => {
+  /**
+   * The zero-form create (SPEC.md §11). The schema deliberately does *not*
+   * materialise `tags`/`status`/`due`/`evergreen` at parse time: a Zod default
+   * becomes a JSON Schema `default`, which `openapi-typescript` renders as a
+   * required member of the client's request type — so the caller would be forced
+   * to send the very fields the server exists to fill in (CONTRACT-003).
+   */
+  it("leaves every server-applied field absent rather than defaulting it", () => {
     expect(CreateDocRequestSchema.parse({ type: "note", title: "Untitled" })).toEqual({
       type: "note",
       title: "Untitled",
-      tags: [],
-      status: "open",
-      due: null,
-      evergreen: false,
     });
+  });
+
+  it.each(["tags", "status", "due", "evergreen"] as const)(
+    "documents the server-applied default for %s, since that is where a client learns it",
+    (field) => {
+      const description = CreateDocRequestSchema.shape[field].meta()?.description ?? "";
+      expect(description).toContain("efault");
+    },
+  );
+
+  it("still accepts every optional field when the caller does supply one", () => {
+    const request = {
+      type: "note",
+      title: "Untitled",
+      tags: ["finance"],
+      status: "archived" as const,
+      due: "2026-08-01",
+      evergreen: true,
+    };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("keeps an explicit null due distinguishable from an omitted one", () => {
+    expect(CreateDocRequestSchema.parse({ type: "note", title: "T", due: null }).due).toBeNull();
+    expect(CreateDocRequestSchema.parse({ type: "note", title: "T" }).due).toBeUndefined();
   });
 
   it("rejects an empty title", () => {

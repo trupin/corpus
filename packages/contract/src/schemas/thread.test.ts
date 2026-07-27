@@ -87,10 +87,21 @@ describe("ThreadSummary", () => {
 });
 
 describe("CreateThreadRequest", () => {
-  it("defaults to a standalone thread, leaving the enqueue decision to the server", () => {
+  /**
+   * `parent` and `selector` stay absent rather than defaulting to null, for the
+   * same reason as `CreateDocRequest`'s optional fields: a Zod default renders
+   * as a required member of the generated client type (CONTRACT-003). Omitted
+   * and explicit null mean the same thing here, so nothing is lost.
+   */
+  it("leaves parent and selector absent, which the server reads as a standalone thread", () => {
     const parsed = CreateThreadRequestSchema.parse({ body: "Ask from nowhere." });
-    expect(parsed).toEqual({ body: "Ask from nowhere.", parent: null, selector: null });
+    expect(parsed).toEqual({ body: "Ask from nowhere." });
     expect(parsed.requestsAgent).toBeUndefined();
+  });
+
+  it("accepts an explicit null parent and selector as the same instruction", () => {
+    const request = { parent: null, selector: null, body: "Ask from nowhere." };
+    expect(CreateThreadRequestSchema.parse(request)).toEqual(request);
   });
 
   it("carries a selection so the server can write the parent's anchor entry", () => {
@@ -101,6 +112,15 @@ describe("CreateThreadRequest", () => {
       requestsAgent: true,
     };
     expect(CreateThreadRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("accepts a selector carrying only its quote, leaving the context to the server", () => {
+    const parsed = CreateThreadRequestSchema.parse({
+      parent: "doc_a1b2c3",
+      selector: { exact: "6.1%" },
+      body: "@agent still right?",
+    });
+    expect(parsed.selector).toEqual({ exact: "6.1%" });
   });
 
   it("rejects an empty first turn", () => {

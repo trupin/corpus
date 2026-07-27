@@ -1,6 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { ActorSchema } from "./actor.js";
-import { TextQuoteSelectorSchema } from "./anchor.js";
+import { TextQuoteSelectorRequestSchema } from "./anchor.js";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
 import { IsoDateTimeSchema } from "./time.js";
@@ -112,14 +112,14 @@ export const THREAD_CREATE_OMITTED_BEHAVIOUR =
 export const CreateThreadRequestSchema = z
   .object({
     parent: DocumentIdSchema.nullable()
-      .default(null)
-      .describe("Document being commented on; null creates a standalone thread."),
-    selector: TextQuoteSelectorSchema.nullable()
-      .default(null)
+      .optional()
+      .describe("Document being commented on. Omitted or null creates a standalone thread."),
+    selector: TextQuoteSelectorRequestSchema.nullable()
+      .optional()
       .describe(
         "Text-quote selector captured from the user's selection. The server writes the anchor entry " +
-          "into the parent's frontmatter and creates the thread file atomically. Null anchors the " +
-          "thread to the whole document, or to nothing when `parent` is null.",
+          "into the parent's frontmatter and creates the thread file atomically. Omitted or null " +
+          "anchors the thread to the whole document, or to nothing when `parent` is null.",
       ),
     title: z.string().min(1).optional().describe("Defaults to the anchor quote or the first turn."),
     body: z.string().min(1).describe("Body of the thread's first turn."),
