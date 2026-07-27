@@ -30,6 +30,22 @@ export type TemplatePrefill = {
 type TemplateRow = { readonly path: string };
 
 /**
+ * The file named by a projection row is gone (or its directory is): the same
+ * race `DocumentParseError` already covers, arriving as an errno instead.
+ *
+ * The projection is a *derived* view, so any row can outlive its file by the
+ * width of the watcher's debounce — a template deleted or renamed out of band is
+ * the ordinary case, and it must not turn the next `POST /api/docs` into a 500
+ * (SERVER-022 finding 6). Other errnos are left to throw: a permission problem
+ * is a workspace fault an operator has to see, not a candidate to skip past.
+ */
+const isMissingFile = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error.code === "ENOENT" || error.code === "ENOTDIR");
+
+/**
  * The template for `type`, or `null` when the type has none — which SPEC.md §11
  * makes an ordinary outcome ("none → empty"), never an error.
  *
@@ -59,8 +75,9 @@ export function findTemplate(
       parsed = parseDocument(readFileSync(resolve(workspaceRoot, row.path), "utf8"), row.path);
     } catch (error) {
       // A template that cannot be read is simply not a candidate; `doc check`
-      // reports it (§14) and a create must not fail because of it.
-      if (error instanceof DocumentParseError) continue;
+      // reports it (§14) and a create must not fail because of it. That is as
+      // true of a file that has vanished as of one that no longer parses.
+      if (error instanceof DocumentParseError || isMissingFile(error)) continue;
       throw error;
     }
     if (parsed.data["for"] !== type) continue;

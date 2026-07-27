@@ -2,7 +2,7 @@ import type { QueueEventStatus, QueueStatus } from "@corpus/contract";
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { ID_PREFIXES, newId } from "../core/ids.js";
 import { formatInstant } from "../core/time.js";
-import { notFound } from "../errors.js";
+import { conflict, notFound } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import {
   NOOP_INVALIDATE,
@@ -66,6 +66,21 @@ export interface ReapResult {
   readonly reaped: string[];
   /** Events pushed past the attempt cap into `failed/`; not part of `reaped`. */
   readonly failed: string[];
+}
+
+export interface RequeueOptions {
+  /**
+   * Refuse with a `409` unless the event is in this status *at the moment the
+   * move happens*, rather than at whatever earlier moment the caller looked.
+   *
+   * The console's retry is defined for a failed job only, and it used to check
+   * that in `jobs/service.ts` before calling in here — outside this method's
+   * serialize chain. A `complete` landing in the interval moved the event to
+   * `processed/` and the requeue, which moves from wherever the event *is*,
+   * then re-ran a job that had finished (SERVER-022 finding 2). The check has
+   * to be in the same serialized step as the move to mean anything.
+   */
+  readonly onlyFrom?: QueueEventStatus | undefined;
 }
 
 /**
@@ -245,11 +260,20 @@ export class QueueService {
    * console's retry of a failed job, and a force-break re-enqueueing the edit
    * that was deferred because the lock was held. Already-pending is a no-op, so
    * repeating either is harmless.
+   *
+   * `onlyFrom` is how a caller whose verb is defined for one status only says
+   * so **inside this chain**, which is the only place the answer stays true
+   * (see {@link RequeueOptions}).
    */
-  async requeue(id: string): Promise<StoredEvent> {
+  async requeue(id: string, options: RequeueOptions = {}): Promise<StoredEvent> {
     return this.serialize(async () => {
       const from = await this.store.locate(id);
       if (from === undefined) throw notFound(`no queue event ${id}`);
+      if (options.onlyFrom !== undefined && from !== options.onlyFrom) {
+        throw conflict(
+          `queue event ${id} is ${from}; only a ${options.onlyFrom} job can be retried`,
+        );
+      }
 
       const current = await this.store.readEvent(from, id);
       if (current === undefined) throw notFound(`no queue event ${id}`);

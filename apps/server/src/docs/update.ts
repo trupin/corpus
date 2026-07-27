@@ -76,9 +76,14 @@ export async function updateDocument(
   id: string,
   patch: UpdateDocRequest,
 ): Promise<UpdateOutcome> {
-  await (workspace.assertWritable ?? (() => undefined))(id, actor);
-
   return mutex.run(id, async () => {
+    // §7's edit lock, checked **inside** the lane: a write queued behind another
+    // operation on the same document can wait arbitrarily long, and a lease the
+    // other party acquires in that interval has to refuse it (SERVER-022
+    // finding 7). Still exactly one call per verb, and still before this verb
+    // reads or writes anything.
+    await (workspace.assertWritable ?? (() => undefined))(id, actor);
+
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
     const { parsed } = loaded;
 

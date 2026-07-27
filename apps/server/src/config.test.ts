@@ -361,10 +361,45 @@ describe("loadServerConfig", () => {
     expect(config.host).toBe("0.0.0.0");
   });
 
-  it("resolves a custom dataDir against the workspace root", () => {
-    const workspace = makeWorkspace("ws", { version: 1, token: LONG_TOKEN, dataDir: "content" });
+  // SERVER-022 finding 9. `dataDir` used to be parsed, resolved and then read by
+  // nothing: `projection/roots.ts` spells `data/docs` and `data/threads` out,
+  // deliberately. A workspace configured to keep its corpus elsewhere started
+  // cleanly and kept it under `data/` anyway.
+  it.each([
+    ["a sibling directory", "content"],
+    ["a nested directory", "corpus/data"],
+    ["an absolute path", "/tmp/elsewhere"],
+    ["a parent escape", "../shared-data"],
+  ])("refuses to start when dataDir names %s", (_label, dataDir) => {
+    const workspace = makeWorkspace(`datadir-${dataDir.replace(/\W/g, "")}`, {
+      version: 1,
+      token: LONG_TOKEN,
+      dataDir,
+    });
+
+    const load = (): unknown =>
+      loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root });
+
+    expect(load).toThrow(ConfigError);
+    // The message names the field, the value it refused, and the file to edit.
+    expect(load).toThrow(/"dataDir"/);
+    expect(load).toThrow(new RegExp(JSON.stringify(dataDir).replace(/[/\\]/g, "\\$&")));
+    expect(load).toThrow(/config\.json/);
+  });
+
+  it.each([
+    ["the value `corpus init` writes", "data"],
+    ["an equivalent relative spelling", "./data"],
+    ["a trailing slash", "data/"],
+  ])("accepts %s", (_label, dataDir) => {
+    const workspace = makeWorkspace(`datadir-ok-${dataDir.replace(/\W/g, "")}`, {
+      version: 1,
+      token: LONG_TOKEN,
+      dataDir,
+    });
+
     expect(loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root }).dataDir).toBe(
-      resolve(workspace, "content"),
+      resolve(workspace, "data"),
     );
   });
 

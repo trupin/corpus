@@ -24,6 +24,7 @@ import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { parseThreadBody, type TurnAuthor } from "../core/turns.js";
+import { toIndexableText } from "../docs/fts.js";
 import type { ProjectionDb } from "./db.js";
 import { classifyPath, workspaceRelativePath, SKILL_FILENAME, type DocumentRoot } from "./roots.js";
 
@@ -357,9 +358,20 @@ function insertSearchRows(
   // their own rows, and indexing the whole file as well would return two hits
   // for one occurrence of a word (§9.1 lists titles, bodies and turn bodies as
   // three sources, not four).
-  insert.run(fields.id, "doc", fields.id, fields.title, thread === null ? body : thread.preamble);
+  //
+  // Every indexed column goes through `toIndexableText`: the snippet delimiters
+  // are the FTS layer's own markup, and text that carries them would come back
+  // from `snippet()` marked as a hit the query never produced (SERVER-022
+  // finding 11). The file itself keeps its bytes.
+  insert.run(
+    fields.id,
+    "doc",
+    fields.id,
+    toIndexableText(fields.title),
+    toIndexableText(thread === null ? body : thread.preamble),
+  );
   for (const turn of thread?.turns ?? []) {
-    insert.run(`${fields.id}#${turn.ts}`, "turn", fields.id, "", turn.body);
+    insert.run(`${fields.id}#${turn.ts}`, "turn", fields.id, "", toIndexableText(turn.body));
   }
 }
 

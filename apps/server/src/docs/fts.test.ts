@@ -7,6 +7,7 @@ import {
   SNIPPET_CLOSE,
   SNIPPET_OPEN,
   toFtsMatchExpression,
+  toIndexableText,
   toSegments,
 } from "./fts.js";
 import { queryDocs } from "./query.js";
@@ -102,6 +103,21 @@ describe("parseSnippets", () => {
   });
 });
 
+describe("toIndexableText", () => {
+  it("removes the delimiters and nothing else", () => {
+    expect(toIndexableText(`a${SNIPPET_OPEN}b${SNIPPET_CLOSE}c`)).toBe("abc");
+    expect(toIndexableText(`${SNIPPET_OPEN}${SNIPPET_OPEN}x`)).toBe("x");
+    // Every other control byte is a separator to the tokenizer and forges
+    // nothing, so it is left where the document put it.
+    expect(toIndexableText("ab\tc\nd")).toBe("ab\tc\nd");
+  });
+
+  it("returns the same string when there is nothing to strip", () => {
+    const text = "ordinary markdown — with an em dash and an emoji 🙂";
+    expect(toIndexableText(text)).toBe(text);
+  });
+});
+
 describe("full-text search over the projection", () => {
   let ws: Workspace;
   const search = (params: Record<string, string>): DocList =>
@@ -116,6 +132,26 @@ describe("full-text search over the projection", () => {
       body: "The amortization schedule is attached and runs for thirty years in total.",
     });
     ws.doc({ id: "doc_quiet", title: "Unrelated", body: "Nothing to find here." });
+    // A body carrying the snippet delimiters verbatim (SERVER-022 finding 11).
+    // Its searchable terms are unique to it, so the rest of this suite's
+    // assertions about which rows a query returns are untouched.
+    ws.doc({
+      id: "doc_forger",
+      title: `A ${SNIPPET_OPEN}forged title${SNIPPET_CLOSE}`,
+      body: `The ${SNIPPET_OPEN}forgery${SNIPPET_CLOSE} sits beside a mention of ledgerbalance.`,
+    });
+    ws.thread({
+      id: "th_forger",
+      title: "Pasted",
+      body: "Preamble.",
+      turns: [
+        {
+          author: "user",
+          ts: "2026-07-03T00:00:00Z",
+          body: `I pasted ${SNIPPET_OPEN}quotedspan${SNIPPET_CLOSE} beside reconciliationnote.`,
+        },
+      ],
+    });
     ws.thread({
       id: "th_talk",
       title: "Discussion",
@@ -180,6 +216,41 @@ describe("full-text search over the projection", () => {
 
   it("returns nothing — and no rows — for a query with no indexable token", () => {
     expect(search({ q: "*" })).toEqual({ items: [], page: { total: 0, limit: 50, offset: 0 } });
+  });
+
+  it("cannot be made to mark a span the query never matched", () => {
+    // SERVER-022 finding 11: the delimiters are the FTS layer's own markup, and
+    // `toSegments` reads whatever it finds. A body that carries them was
+    // returned with that span `match: true` for a query that never touched it.
+    const row = search({ q: "ledgerbalance" }).items.find((item) => item.id === "doc_forger");
+    expect(row).toBeDefined();
+
+    const snippets = row?.snippets ?? [];
+    const marked = snippets
+      .flatMap((snippet) => snippet.segments)
+      .filter((segment) => segment.match)
+      .map((segment) => segment.text);
+    expect(marked).toEqual(["ledgerbalance"]);
+    // No delimiter survives into a snippet, marked or not: `snippet()` only ever
+    // sees the ones it inserted. (The row's own `excerpt` still reproduces the
+    // document's bytes faithfully — the file is the source of truth, and this
+    // finding is about the *highlighting*, not about editing anyone's text.)
+    expect(JSON.stringify(snippets)).not.toContain("\\u0002");
+    expect(JSON.stringify(snippets)).not.toContain("\\u0003");
+    // …and the enclosed word is still findable — the strip removes the two
+    // characters, not the text between them.
+    expect(search({ q: "forgery" }).items.map((item) => item.id)).toEqual(["doc_forger"]);
+  });
+
+  it("cannot be made to mark a span from a pasted turn either", () => {
+    const row = search({ q: "reconciliationnote" }).items.find((item) => item.id === "th_forger");
+    expect(row).toBeDefined();
+    const marked = (row?.snippets ?? [])
+      .flatMap((snippet) => snippet.segments)
+      .filter((segment) => segment.match)
+      .map((segment) => segment.text);
+    expect(marked).toEqual(["reconciliationnote"]);
+    expect(marked).not.toContain("quotedspan");
   });
 
   it("composes search with the structured filters", () => {

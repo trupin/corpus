@@ -234,12 +234,18 @@ export function projectLock(
     removeLock(db, docId);
     return;
   }
+  // Keyed by the **filename**, never by the file's own `docId` field — the same
+  // correction `locks/store.ts` makes on the service path, and for the same
+  // reason: the path is the addressing the API uses. A file whose two disagree
+  // used to insert one row and delete another, so the row outlived its file and
+  // the document rendered read-only forever, naming a holder that had released
+  // (SERVER-022 finding 9). Only a full `db rebuild` cleared it.
   db.prepare(
     `INSERT INTO locks (doc_id, holder, acquired, ttl)
      VALUES (?, ?, ?, ?)
      ON CONFLICT(doc_id) DO UPDATE SET
        holder = excluded.holder, acquired = excluded.acquired, ttl = excluded.ttl`,
-  ).run(lock.data.docId, lock.data.holder, lock.data.acquired, lock.data.ttl);
+  ).run(docId, lock.data.holder, lock.data.acquired, lock.data.ttl);
 }
 
 export function removeLock(db: ProjectionDb, docId: string): void {

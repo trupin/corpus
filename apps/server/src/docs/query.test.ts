@@ -505,6 +505,88 @@ describe("needs — the Attention union", () => {
   });
 });
 
+describe("needs=form — what counts as an unanswered form", () => {
+  // SERVER-022 finding 3: the detector was a bare `LIKE '%```form%'` with no
+  // thread-status guard, so a turn *mentioning* a fence — or a thread the user
+  // had already resolved — sat in Attention with nothing left that could clear
+  // it. Every body below is the agent's last turn of an `agent: requested`
+  // thread, which is the shape the detector is about.
+  let forms: Workspace;
+
+  const FENCE = "```form\nprompt: Pick one\noptions: [a, b]\n```";
+
+  const seedThread = (id: string, body: string, status = "open"): void => {
+    forms.thread({
+      id,
+      parent: "doc_host",
+      agent: "requested",
+      status,
+      updated: daysAgo(3),
+      turns: [
+        { author: "user", ts: daysAgo(4), body: "Which option?" },
+        { author: "agent", ts: daysAgo(3), body },
+      ],
+    });
+  };
+
+  const flagged = (reason: string): string[] =>
+    queryDocs(forms.db, DocsQuerySchema.parse({ needs: reason, limit: "200" }), NOW)
+      .items.map((item) => item.id)
+      .sort();
+
+  beforeAll(() => {
+    forms = createWorkspace("forms");
+    forms.doc({ id: "doc_host", updated: daysAgo(3) });
+    seedThread("th_realform", `Here you go.\n\n${FENCE}\n`);
+    seedThread("th_formatstart", `${FENCE}\n`);
+    seedThread("th_crlf", `Here you go.\r\n\r\n${FENCE.replaceAll("\n", "\r\n")}\r\n`);
+    // The near misses, each of which the substring read called a form.
+    seedThread("th_formula", "Use a ```formula\nx = y\n``` block instead.");
+    seedThread("th_quoted", "The skill writes:\n\n> ```form\n> prompt: Pick one\n> ```\n");
+    seedThread("th_indented", "For example:\n\n    ```form\n    prompt: Pick one\n    ```\n");
+    seedThread("th_inline", "Answer the ```form``` I sent earlier.");
+    // A real form in a thread the user has already resolved.
+    seedThread("th_resolved", `Here you go.\n\n${FENCE}\n`, "resolved");
+    // Every thread is marked read, so `form` is the only reason any of these
+    // rows can carry and `needs=me` is exactly the form set.
+    forms.seen(
+      Object.fromEntries(
+        [
+          "th_realform",
+          "th_formatstart",
+          "th_crlf",
+          "th_formula",
+          "th_quoted",
+          "th_indented",
+          "th_inline",
+          "th_resolved",
+        ].map((id) => [id, daysAgo(2)]),
+      ),
+    );
+    forms.reproject();
+  });
+
+  afterAll(() => {
+    forms.close();
+  });
+
+  it("flags a fence that opens a block, wherever the block starts and however the file ends its lines", () => {
+    expect(flagged("form")).toEqual(["th_crlf", "th_formatstart", "th_realform"]);
+  });
+
+  it("does not flag a turn that merely mentions a fence", () => {
+    for (const id of ["th_formula", "th_quoted", "th_indented", "th_inline"]) {
+      expect(flagged("form")).not.toContain(id);
+      expect(flagged("me")).not.toContain(id);
+    }
+  });
+
+  it("lets a resolved thread out of Attention — handling the reason clears the row", () => {
+    expect(flagged("form")).not.toContain("th_resolved");
+    expect(flagged("me")).not.toContain("th_resolved");
+  });
+});
+
 describe("row fields", () => {
   const ANCHOR_QUOTE = "taxes and insurance";
   const LONG_TURN = `${"escrow ".repeat(80)}end.`;

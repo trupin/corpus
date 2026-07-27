@@ -144,14 +144,6 @@ export async function createThread(
   // vanished answers the same way.
   if (parentId !== null) loadDocument(workspace.workspaceRoot, workspace.projection, parentId);
 
-  // §7's edit lock, on the **parent's** id and only when the parent is actually
-  // written (sprint-006 Adjudication 1). Commenting is not editing: a
-  // whole-document or standalone thread never asks, and the contract declares no
-  // `423` for either.
-  if (selector !== null && parentId !== null) {
-    await (workspace.assertWritable ?? ((): void => undefined))(parentId, actor);
-  }
-
   // `CREATE_LANE` guards id minting, which is checked against the projection and
   // is therefore only sound while no other create is between its own write and
   // its re-projection. The parent's lane guards the read-modify-write of its
@@ -159,6 +151,16 @@ export async function createThread(
   // all survive. Order — reserved lane, then document — is never taken the other
   // way round anywhere, which is the deadlock discipline `runInLanes` documents.
   return runInLanes(mutex, [CREATE_LANE, parentId], async () => {
+    // §7's edit lock, on the **parent's** id and only when the parent is
+    // actually written (sprint-006 Adjudication 1). Commenting is not editing: a
+    // whole-document or standalone thread never asks, and the contract declares
+    // no `423` for either. Checked inside the lanes, so a lease the other party
+    // acquires while this comment is queued behind another one still refuses it
+    // (SERVER-022 finding 7).
+    if (selector !== null && parentId !== null) {
+      await (workspace.assertWritable ?? ((): void => undefined))(parentId, actor);
+    }
+
     const id = newId(ID_PREFIXES.thread, (candidate) => isIdTaken(workspace.projection, candidate));
     const stamp = formatInstant(workspace.now());
     // Re-read inside the lane: the copy the guard was run against may be one

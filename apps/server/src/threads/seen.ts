@@ -124,7 +124,13 @@ function recordMark(
   // with no watcher involvement and no polling.
   projectSeen(workspace.projection, workspace.corpusDir);
 
-  const keys = [DOCS_KEY, threadKey(id)];
+  // `docKey(id)` is the thread's own document key — a thread *is* a document
+  // (SPEC.md §7), and every other thread mutation announces both spellings
+  // (`threads/turns.ts`, `create.ts`, `status.ts`, `cascade.ts`). Mark-seen was
+  // the sole outlier; a standalone thread, whose parent key is absent, had no
+  // accidental substitute for it (SERVER-022 finding 8). No `["tree"]`: read
+  // state moves no folder badge.
+  const keys = [DOCS_KEY, docKey(id), threadKey(id)];
   if (thread.parent !== null) keys.push(docKey(thread.parent));
   workspace.bus.invalidate(keys);
 

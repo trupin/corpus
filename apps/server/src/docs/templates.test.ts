@@ -8,6 +8,8 @@
 // template's own frontmatter onto the instance handed every note created from
 // it `evergreen: true`, silently opting the corpus out of §5's staleness ramp.
 
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "../core/index.js";
 import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
@@ -129,6 +131,25 @@ describe("findTemplate", () => {
     // template rather than failing because an unrelated file is broken.
     expect(findTemplate(ws.root, ws.db, "note")?.body.trim()).toBe("GOOD");
   });
+
+  it("skips a template whose file has been deleted since it was projected", () => {
+    start("tmpl-enoent-race");
+    ws.write(
+      "data/docs/templates/a-gone.md",
+      loadedTemplate("note", "GONE").replace("id: doc_tmplnote", "id: doc_tmplgone"),
+    );
+    ws.write(
+      "data/docs/templates/b-good.md",
+      loadedTemplate("note", "GOOD").replace("id: doc_tmplnote", "id: doc_tmplgood"),
+    );
+    ws.reproject();
+    rmSync(join(ws.root, "data", "docs", "templates", "a-gone.md"));
+
+    // SERVER-022 finding 6: the row outlives its file for the width of the
+    // watcher's debounce, and the ENOENT escaped as a 500 on an unrelated
+    // create — a template being deleted is not a reason to refuse a `note`.
+    expect(findTemplate(ws.root, ws.db, "note")?.body.trim()).toBe("GOOD");
+  });
 });
 
 describe("POST /api/docs — template pre-fill", () => {
@@ -248,6 +269,21 @@ describe("POST /api/docs — template pre-fill", () => {
     const blank = await createDoc(ws, { type: "note", title: "Blank", body: "" });
     expect(parseDocument(ws.read(blank.path), blank.path).body.trim()).toBe("");
     expect(ws.read(blank.path)).not.toContain("TEMPLATE BODY");
+  });
+
+  it("creates without pre-fill when the only template vanished under the projection", async () => {
+    start("tmpl-enoent-create");
+    ws.write("data/docs/templates/note.md", loadedTemplate("note", "TEMPLATE BODY"));
+    ws.reproject();
+    // Deleted out of band, and the create is issued before the watcher has
+    // re-projected — the row is still there, the file is not.
+    rmSync(join(ws.root, "data", "docs", "templates", "note.md"));
+
+    const created = await createDoc(ws, { type: "note", title: "Raced" });
+
+    expect(created.body["body"]).toBe("");
+    expect(parseDocument(ws.read(created.path), created.path).body.trim()).toBe("");
+    expect(created.warnings).toEqual([]);
   });
 
   it("creates an empty-bodied document for a type with no template", async () => {

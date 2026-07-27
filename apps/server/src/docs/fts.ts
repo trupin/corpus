@@ -25,12 +25,35 @@ import {
 
 /**
  * Delimiters handed to `snippet()`, stripped again by {@link parseSnippets}.
- * ASCII STX/ETX: control characters a markdown corpus does not contain, so
- * document text cannot forge a highlight the user never searched for.
+ * ASCII STX/ETX: control characters a markdown corpus has no reason to contain
+ * — and {@link toIndexableText} is what makes "does not contain" true of the
+ * indexed text rather than merely likely.
  */
 export const SNIPPET_OPEN = "\u0002";
 export const SNIPPET_CLOSE = "\u0003";
 export const SNIPPET_ELLIPSIS = "…";
+
+/**
+ * Text as the `search` table may hold it: the two delimiters removed, so
+ * `snippet()`'s output can only carry the ones `snippet()` itself inserted.
+ *
+ * Nothing enforced that assumption before SERVER-022 finding 11 — control
+ * characters are refused only in attachment *filenames* (`attachments/chars.ts`)
+ * and `validateBeforeWrite` says nothing about body text — so a document, or a
+ * pasted turn, carrying a literal STX…ETX pair had that span returned as
+ * `match: true` for a query that never touched it. Cosmetic, but it is a
+ * document choosing what a *search result* emphasises.
+ *
+ * Stripped at index time rather than at write time: the file on disk is the
+ * source of truth and is left byte-for-byte alone (SPEC.md §4), while the FTS
+ * table is already a derived, lossy view of it. Only these two characters are
+ * touched — every other control byte is a separator to `unicode61` and forges
+ * nothing.
+ */
+export function toIndexableText(text: string): string {
+  if (!text.includes(SNIPPET_OPEN) && !text.includes(SNIPPET_CLOSE)) return text;
+  return text.replaceAll(SNIPPET_OPEN, "").replaceAll(SNIPPET_CLOSE, "");
+}
 
 /** Tokens of context `snippet()` returns around a hit. */
 export const SNIPPET_TOKENS = 12;
