@@ -68,11 +68,16 @@ export const acquireLock = createRoute({
     "One holder at a time. The agent takes the lock before editing (the CLI's edit verbs do this " +
     "implicitly) and the user's editor session holds it while actively editing (SPEC.md §7). " +
     "Re-acquiring a lock you already hold renews its lease; a lock held by the other party is a " +
-    "`409` carrying that lock.",
+    "`409` carrying that lock. The body is optional in full: a bare `POST` takes the lock for the " +
+    "default lease, and `ttl`, when given, sets a different one.",
   request: {
     params: DocIdParamSchema,
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: AcquireLockRequestSchema } } },
+    body: {
+      required: false,
+      description: "Optional lease override; omit the body entirely to take the default lease.",
+      content: { "application/json": { schema: AcquireLockRequestSchema } },
+    },
   },
   responses: {
     201: jsonContent(LockSchema, "The lock, now held by the acting party."),

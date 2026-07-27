@@ -141,7 +141,8 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            /** @description The document to create. `type` and `title` are mandatory, so the body is too. */
+            requestBody: {
                 content: {
                     "application/json": components["schemas"]["CreateDocRequest"];
                 };
@@ -242,7 +243,7 @@ export interface paths {
         };
         /**
          * Edit a document's body and frontmatter
-         * @description Runs anchor reconciliation (SPEC.md §6) in the same save and reports which anchors were remapped and which were orphaned. Refused with `423` when the other party holds the document's edit lock.
+         * @description Runs anchor reconciliation (SPEC.md §6) in the same save and reports which anchors were remapped and which were orphaned. Refused with `423` when the other party holds the document's edit lock. Every field is optional — a request names only what it changes — so an omitted body is exactly a `{}` body: a save that names no change and rewrites nothing.
          */
         put: {
             parameters: {
@@ -257,6 +258,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
+            /** @description The fields to change; omit the body entirely to change nothing. */
             requestBody?: {
                 content: {
                     "application/json": components["schemas"]["UpdateDocRequest"];
@@ -417,7 +419,8 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            /** @description The destination folder. A move names one, so the body is mandatory. */
+            requestBody: {
                 content: {
                     "application/json": components["schemas"]["MoveDocRequest"];
                 };
@@ -709,7 +712,8 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            /** @description The captured `text`, plus any `files` parts. `text` is mandatory, so the body is. */
+            requestBody: {
                 content: {
                     "multipart/form-data": components["schemas"]["CaptureRequest"];
                 };
@@ -773,7 +777,8 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            /** @description The thread and its first turn. `body` is mandatory, so the request body is too. */
+            requestBody: {
                 content: {
                     "application/json": components["schemas"]["CreateThreadRequest"];
                 };
@@ -927,6 +932,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
+            /** @description The turn, as JSON or as multipart. Omitting it entirely is never a meaningful call — the JSON form demands `body` and a multipart part carrying neither `text` nor `files` is a `400` — but it is declared optional so the two media types stay independently validated. */
             requestBody?: {
                 content: {
                     "application/json": components["schemas"]["AppendTurnRequest"];
@@ -1225,7 +1231,7 @@ export interface paths {
         put?: never;
         /**
          * Mark a thread read
-         * @description Records the last-seen mark in `.corpus/seen.json` and broadcasts an invalidation, so unread badges clear everywhere at once (SPEC.md §7). What counts as read is displayed content only — opening a parent document does not mark its collapsed-chip threads seen.
+         * @description Records the last-seen mark in `.corpus/seen.json` and broadcasts an invalidation, so unread badges clear everywhere at once (SPEC.md §7). What counts as read is displayed content only — opening a parent document does not mark its collapsed-chip threads seen. The body is optional in full: a bare `POST` marks the thread read up to its last turn, which is what opening a thread means, and `lastSeenTs`, when given, records a partial read instead.
          */
         post: {
             parameters: {
@@ -1240,6 +1246,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
+            /** @description Optional partial-read mark; omit the body entirely to mark the whole thread read. */
             requestBody?: {
                 content: {
                     "application/json": components["schemas"]["MarkSeenRequest"];
@@ -1533,7 +1540,7 @@ export interface paths {
         put?: never;
         /**
          * Halt the queue
-         * @description Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here. The body is optional in full: a bare `POST` halts, and a `reason`, when given, is recorded in the sentinel beside the halt timestamp. Halting an already-halted queue is not an error — it re-records the sentinel, so a second call may replace or add the reason.
+         * @description Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here. The body is optional in full: a bare `POST` halts, and a `reason`, when given, is recorded in the sentinel beside the halt timestamp. Halting an already-halted queue is not an error — it re-records the sentinel, so a second call may replace, add, or clear the reason: a bare re-halt rewrites the sentinel without one.
          */
         post: {
             parameters: {
@@ -1981,7 +1988,7 @@ export interface paths {
         put?: never;
         /**
          * Acquire a document's edit lock
-         * @description One holder at a time. The agent takes the lock before editing (the CLI's edit verbs do this implicitly) and the user's editor session holds it while actively editing (SPEC.md §7). Re-acquiring a lock you already hold renews its lease; a lock held by the other party is a `409` carrying that lock.
+         * @description One holder at a time. The agent takes the lock before editing (the CLI's edit verbs do this implicitly) and the user's editor session holds it while actively editing (SPEC.md §7). Re-acquiring a lock you already hold renews its lease; a lock held by the other party is a `409` carrying that lock. The body is optional in full: a bare `POST` takes the lock for the default lease, and `ttl`, when given, sets a different one.
          */
         post: {
             parameters: {
@@ -1996,6 +2003,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
+            /** @description Optional lease override; omit the body entirely to take the default lease. */
             requestBody?: {
                 content: {
                     "application/json": components["schemas"]["AcquireLockRequest"];
@@ -2343,7 +2351,8 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            /** @description The line to append. There is nothing to append without one, so the body is mandatory. */
+            requestBody: {
                 content: {
                     "application/json": components["schemas"]["AppendLogRequest"];
                 };

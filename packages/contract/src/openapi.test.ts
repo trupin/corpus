@@ -610,3 +610,181 @@ describe("multipart, attachments and the stream", () => {
     expect(description).toContain("unauthenticated");
   });
 });
+
+/**
+ * CONTRACT-004. OpenAPI reads an omitted `requestBody.required` as `false`, and
+ * `openapi-typescript` faithfully emits `requestBody?:` for it — so a mandatory
+ * body that never says it is mandatory compiles away to nothing and 400s at
+ * runtime. The rule pinned here is derived from the schemas, not from a
+ * hand-maintained list:
+ *
+ *   a body is `required: false` **iff** every field in its schema is optional
+ *   (a bare invocation is then a designed, documented call); a body with at
+ *   least one required field is `required: true`.
+ *
+ * A body offering several media types is mandatory when *any* representation
+ * demands a field: the caller still has to send one of the forms. Exactly one
+ * body cannot say so — see `RULE_EXEMPTIONS`.
+ */
+describe("request bodies declare whether they are mandatory", () => {
+  /**
+   * Bodies whose declared `required` contradicts the rule, each with the reason
+   * it has to. Keeping them here rather than in a route comment means an
+   * exemption that stops being necessary shows up as a failing test.
+   */
+  const RULE_EXEMPTIONS: Readonly<Record<string, string>> = {
+    // `@hono/zod-openapi@1.5.1` registers every media type's validator
+    // unconditionally once `required` is truthy, so a two-media-type body
+    // rejects both of its own forms. Declaring it optional is what keeps the
+    // library dispatching on `content-type`.
+    "POST /api/threads/{id}/turns": "upstream: required:true breaks multi-media validation",
+  };
+
+  interface RequestBodyFacts {
+    readonly signature: string;
+    /** `undefined` means the operation is leaning on OpenAPI's implicit default. */
+    readonly declared: boolean | undefined;
+    /** True when every field of every representation of this body is optional. */
+    readonly whollyOptional: boolean;
+    readonly description: string | undefined;
+    readonly mediaTypes: readonly string[];
+    readonly branching: readonly string[];
+  }
+
+  /** Fields a schema demands, resolving `$ref` and flattening `allOf`. */
+  function requiredFields(node: SchemaNode | undefined, derefd: ReadonlySet<string>): string[] {
+    if (!node) return [];
+
+    if (node.$ref !== undefined) {
+      const name = node.$ref.split("/").pop() ?? "";
+      // Guards against a component that refers back to itself.
+      if (derefd.has(name)) return [];
+      return requiredFields(componentSchemas?.[name], new Set([...derefd, name]));
+    }
+
+    return [
+      ...(node.required ?? []),
+      ...(node.allOf ?? []).flatMap((branch) => requiredFields(branch, derefd)),
+    ];
+  }
+
+  /**
+   * `anyOf`/`oneOf` would make "every field is optional" branch-relative, and
+   * the rule above has no answer for that. No request body uses them today; if
+   * one ever does, this reports it rather than letting the rule quietly rot.
+   */
+  function branchingSchemas(node: SchemaNode | undefined, derefd: ReadonlySet<string>): string[] {
+    if (!node) return [];
+
+    if (node.$ref !== undefined) {
+      const name = node.$ref.split("/").pop() ?? "";
+      if (derefd.has(name)) return [];
+      return branchingSchemas(componentSchemas?.[name], new Set([...derefd, name]));
+    }
+
+    const here = [...(node.anyOf ? ["anyOf"] : []), ...(node.oneOf ? ["oneOf"] : [])];
+    return [...here, ...(node.allOf ?? []).flatMap((branch) => branchingSchemas(branch, derefd))];
+  }
+
+  function requestBodies(): RequestBodyFacts[] {
+    const found: RequestBodyFacts[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const body = (item as Record<string, Operation> | undefined)?.[method]?.requestBody;
+        if (!body) continue;
+
+        const media = Object.entries(body.content ?? {}).map(
+          ([mediaType, entry]) => [mediaType, (entry as { schema?: SchemaNode }).schema] as const,
+        );
+        found.push({
+          signature: endpointSignature(method, path),
+          declared: body.required,
+          whollyOptional: media.every(
+            ([, schema]) => requiredFields(schema, new Set()).length === 0,
+          ),
+          description: body.description,
+          mediaTypes: media.map(([mediaType]) => mediaType),
+          branching: media.flatMap(([, schema]) => branchingSchemas(schema, new Set())),
+        });
+      }
+    }
+    return found.sort((a, b) => a.signature.localeCompare(b.signature));
+  }
+
+  const bodies = requestBodies();
+
+  it("finds every request body in the surface", () => {
+    // Pinned so a new body cannot slip in unexamined; the rule below is what
+    // then classifies each one.
+    expect(bodies).toHaveLength(11);
+  });
+
+  it("declares `required` explicitly on every one of them", () => {
+    const implicit = bodies.filter((body) => body.declared === undefined);
+    expect(implicit.map((body) => body.signature)).toEqual([]);
+  });
+
+  it("declares `required` exactly as the schemas dictate", () => {
+    const violations = bodies
+      .filter((body) => body.declared !== !body.whollyOptional)
+      .filter((body) => !(body.signature in RULE_EXEMPTIONS));
+    expect(
+      violations.map((body) => `${body.signature}: declared ${String(body.declared)}`),
+    ).toEqual([]);
+  });
+
+  it("keeps every exemption from the rule earned", () => {
+    // An exemption that no longer contradicts the rule is dead weight hiding a
+    // route that could now be honest.
+    const unearned = bodies.filter(
+      (body) => body.signature in RULE_EXEMPTIONS && body.declared === !body.whollyOptional,
+    );
+    expect(unearned.map((body) => body.signature)).toEqual([]);
+    expect(Object.keys(RULE_EXEMPTIONS)).toEqual(["POST /api/threads/{id}/turns"]);
+  });
+
+  it("uses no branching schema that would make the rule ambiguous", () => {
+    const branching = bodies.filter((body) => body.branching.length > 0);
+    expect(branching.map((body) => `${body.signature}: ${body.branching.join(",")}`)).toEqual([]);
+  });
+
+  it("partitions the surface into the mandatory and the omittable sets", () => {
+    const partition = Object.fromEntries(bodies.map((body) => [body.signature, body.declared]));
+    expect(partition).toEqual({
+      "POST /api/capture": true,
+      "POST /api/docs": true,
+      "POST /api/docs/{id}/move": true,
+      "POST /api/jobs/{id}/log": true,
+      "POST /api/threads": true,
+      "POST /api/locks/{docId}": false,
+      "POST /api/queue/halt": false,
+      "POST /api/queue/{id}/fail": false,
+      "POST /api/threads/{id}/seen": false,
+      "POST /api/threads/{id}/turns": false,
+      "PUT /api/docs/{id}": false,
+    });
+  });
+
+  it("treats a multipart body as a body", () => {
+    const multipart = bodies.filter((body) => body.mediaTypes.includes("multipart/form-data"));
+    expect(multipart.map((body) => body.signature)).toEqual([
+      "POST /api/capture",
+      "POST /api/threads/{id}/turns",
+    ]);
+    expect(multipart.every((body) => body.declared !== undefined)).toBe(true);
+  });
+
+  it("tells the caller, on every genuinely bare-callable body, that omitting it is a real call", () => {
+    const bare = bodies.filter((body) => body.declared === false && body.whollyOptional);
+    const undocumented = bare.filter(
+      (body) => !/omit the body entirely/i.test(body.description ?? ""),
+    );
+    expect(undocumented.map((body) => body.signature)).toEqual([]);
+  });
+
+  it("says what a bare re-halt does to a recorded reason", () => {
+    // The halt sentinel is rewritten wholesale, so a bare re-halt does not
+    // merely leave a previously recorded reason alone — it clears it.
+    expect(operation("/api/queue/halt", "post").description).toContain("replace, add, or clear");
+  });
+});

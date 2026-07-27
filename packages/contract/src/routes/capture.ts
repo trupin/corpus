@@ -16,7 +16,12 @@ export const capture = createRoute({
     "show the pending-agent indicator immediately and the console link the job back to the capture.",
   request: {
     headers: ActorHeaderSchema,
-    body: { content: { "multipart/form-data": { schema: CaptureRequestSchema } } },
+    body: {
+      required: true,
+      description:
+        "The captured `text`, plus any `files` parts. `text` is mandatory, so the body is.",
+      content: { "multipart/form-data": { schema: CaptureRequestSchema } },
+    },
   },
   responses: {
     201: jsonContent(

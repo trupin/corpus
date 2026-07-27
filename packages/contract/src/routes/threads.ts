@@ -63,7 +63,12 @@ export const createThread = createRoute({
     "since anchoring mutates the parent.",
   request: {
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: CreateThreadRequestSchema } } },
+    body: {
+      required: true,
+      description:
+        "The thread and its first turn. `body` is mandatory, so the request body is too.",
+      content: { "application/json": { schema: CreateThreadRequestSchema } },
+    },
   },
   responses: {
     201: jsonContent(
@@ -91,7 +96,23 @@ export const appendTurn = createRoute({
   request: {
     params: ThreadIdParamSchema,
     headers: ActorHeaderSchema,
+    // The one body the CONTRACT-004 rule cannot mark mandatory. `required: true`
+    // makes `@hono/zod-openapi@1.5.1` register *every* media type's validator
+    // unconditionally (`dist/index.mjs`, the `if (route.request?.body?.required)`
+    // branches), so a two-media-type body 400s whichever form the caller sends:
+    // the JSON request fails the multipart schema's refinement and the multipart
+    // request fails the JSON validator's content-type check. `required: false`
+    // restores the library's content-type dispatch. The multipart schema is also
+    // wholly optional at the JSON-Schema level — its "text or files" rule lives
+    // in a `.refine` — so the letter of the rule admits this reading. Escalated
+    // with CONTRACT-004; revisit if upstream separates doc `required` from
+    // validator registration.
     body: {
+      required: false,
+      description:
+        "The turn, as JSON or as multipart. Omitting it entirely is never a meaningful call — the " +
+        "JSON form demands `body` and a multipart part carrying neither `text` nor `files` is a " +
+        "`400` — but it is declared optional so the two media types stay independently validated.",
       content: {
         "application/json": { schema: AppendTurnRequestSchema },
         "multipart/form-data": { schema: MultipartAppendTurnRequestSchema },
@@ -172,11 +193,18 @@ export const markThreadSeen = createRoute({
   description:
     "Records the last-seen mark in `.corpus/seen.json` and broadcasts an invalidation, so unread " +
     "badges clear everywhere at once (SPEC.md §7). What counts as read is displayed content only — " +
-    "opening a parent document does not mark its collapsed-chip threads seen.",
+    "opening a parent document does not mark its collapsed-chip threads seen. The body is optional in " +
+    "full: a bare `POST` marks the thread read up to its last turn, which is what opening a thread " +
+    "means, and `lastSeenTs`, when given, records a partial read instead.",
   request: {
     params: ThreadIdParamSchema,
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: MarkSeenRequestSchema } } },
+    body: {
+      required: false,
+      description:
+        "Optional partial-read mark; omit the body entirely to mark the whole thread read.",
+      content: { "application/json": { schema: MarkSeenRequestSchema } },
+    },
   },
   responses: {
     200: jsonContent(MarkSeenResultSchema, "The mark now recorded."),

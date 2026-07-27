@@ -19,7 +19,7 @@ opus — additive schema growth with shapes pinned by SPEC §9.2/§11 and the sp
 ## Dependencies
 
 - Depends on: CONTRACT-002
-- Blocks: UI-002 (query-key vocabulary), UI-003/UI-004 (DocRow fields)
+- Blocks: UI-002 (query-key vocabulary), UI-003/UI-004 (DocRow fields), SERVER-006 (turn-append mounting helper)
 
 ## Spec References
 
@@ -36,6 +36,7 @@ Two gaps found while sprint-004 pinned SERVER-007/011 to the shipped contract: (
 - [ ] The query-key vocabulary is published in the contract (schemas/sse.ts): the closed set of key shapes (e.g. `["docs"]`, `["docs", {filter-hash}]`, `["doc", id]`, `["thread", id]`, `["tree"]`, `["queue"]`, `["jobs"]`, `["job-log", id]` — derive the actual set from SPEC §11's refetch surfaces and SERVER-007's emitter), each with a description of what emits it and what should refetch on it; exported constants/helpers so server emitter and UI bridge share one source.
 - [ ] `DocRowSchema` gains the §11 fields: staleness tier (the enum the staleness ramp renders), and for thread rows the agent-participation state and unread/awaiting affordances — nullable/absent for non-thread rows, consistent with the "thread filters no-op on non-threads" convention.
 - [ ] SERVER-011's projection query can populate every new field from existing tables (verify against the shipped schema; if a field needs data the projection lacks, flag it instead of inventing).
+- [ ] **Turn-append mounting helper** _(CONTRACT-004 escalation, 2026-07-27)_: `@hono/zod-openapi` registers hard validators for every media type when `required: true`, so the dual-media `POST /api/threads/{id}/turns` body ships as a tested `RULE_EXEMPTIONS` entry (bare call compiles). Provide a contract-owned mounting helper that keeps `required: true` in the document while dispatching validation by content-type itself, remove the exemption, and land before SERVER-006 creates call sites.
 - [ ] All standing invariants hold (400/401, no request defaults, explicit required, component purity); artifacts regenerated, byte-deterministic, drift green.
 - [ ] Round-trip tests for changed schemas; the vocabulary constants have a test pinning the closed set.
 

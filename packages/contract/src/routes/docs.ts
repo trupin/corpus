@@ -71,7 +71,11 @@ export const createDoc = createRoute({
     "an omitted `folder` files the document in `data/docs/inbox/`.",
   request: {
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: CreateDocRequestSchema } } },
+    body: {
+      required: true,
+      description: "The document to create. `type` and `title` are mandatory, so the body is too.",
+      content: { "application/json": { schema: CreateDocRequestSchema } },
+    },
   },
   responses: {
     201: jsonContent(DocSchema, "The created document."),
@@ -87,11 +91,17 @@ export const updateDoc = createRoute({
   summary: "Edit a document's body and frontmatter",
   description:
     "Runs anchor reconciliation (SPEC.md §6) in the same save and reports which anchors were remapped " +
-    "and which were orphaned. Refused with `423` when the other party holds the document's edit lock.",
+    "and which were orphaned. Refused with `423` when the other party holds the document's edit lock. " +
+    "Every field is optional — a request names only what it changes — so an omitted body is exactly a " +
+    "`{}` body: a save that names no change and rewrites nothing.",
   request: {
     params: DocIdParamSchema,
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: UpdateDocRequestSchema } } },
+    body: {
+      required: false,
+      description: "The fields to change; omit the body entirely to change nothing.",
+      content: { "application/json": { schema: UpdateDocRequestSchema } },
+    },
   },
   responses: {
     200: jsonContent(
@@ -117,7 +127,11 @@ export const moveDoc = createRoute({
   request: {
     params: DocIdParamSchema,
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: MoveDocRequestSchema } } },
+    body: {
+      required: true,
+      description: "The destination folder. A move names one, so the body is mandatory.",
+      content: { "application/json": { schema: MoveDocRequestSchema } },
+    },
   },
   responses: {
     200: jsonContent(DocSchema, "The document at its new path."),

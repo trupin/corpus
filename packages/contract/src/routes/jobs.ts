@@ -78,7 +78,12 @@ export const appendJobLog = createRoute({
   request: {
     params: JobIdParamSchema,
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: AppendLogRequestSchema } } },
+    body: {
+      required: true,
+      description:
+        "The line to append. There is nothing to append without one, so the body is mandatory.",
+      content: { "application/json": { schema: AppendLogRequestSchema } },
+    },
   },
   responses: {
     201: jsonContent(AppendLogResultSchema, "The line was appended."),

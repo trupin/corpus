@@ -109,7 +109,8 @@ export const haltQueue = createRoute({
     "its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land " +
     "here. The body is optional in full: a bare `POST` halts, and a `reason`, when given, is recorded " +
     "in the sentinel beside the halt timestamp. Halting an already-halted queue is not an error — it " +
-    "re-records the sentinel, so a second call may replace or add the reason.",
+    "re-records the sentinel, so a second call may replace, add, or clear the reason: a bare re-halt " +
+    "rewrites the sentinel without one.",
   request: {
     headers: ActorHeaderSchema,
     body: {
