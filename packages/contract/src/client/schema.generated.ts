@@ -148,13 +148,13 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description The created document. */
+                /** @description The created document, and any §14 warnings. */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Doc"];
+                        "application/json": components["schemas"]["DocMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -332,7 +332,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The deleted id and the threads it orphaned. */
+                /** @description The deleted id, the threads it orphaned, and any §14 warnings. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -426,13 +426,13 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description The document at its new path. */
+                /** @description The document at its new path, and any §14 warnings. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Doc"];
+                        "application/json": components["schemas"]["DocMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -507,13 +507,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The document, now archived. */
+                /** @description The document, now archived, and any §14 warnings. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Doc"];
+                        "application/json": components["schemas"]["DocMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -588,13 +588,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The document, restored. */
+                /** @description The document, restored, and any §14 warnings. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Doc"];
+                        "application/json": components["schemas"]["DocMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -917,7 +917,7 @@ export interface paths {
         put?: never;
         /**
          * Append a turn to a thread
-         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only.
+         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from `@corpus/contract`, which dispatches validation on `content-type`.
          */
         post: {
             parameters: {
@@ -932,8 +932,8 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            /** @description The turn, as JSON or as multipart. Omitting it entirely is never a meaningful call — the JSON form demands `body` and a multipart part carrying neither `text` nor `files` is a `400` — but it is declared optional so the two media types stay independently validated. */
-            requestBody?: {
+            /** @description The turn, as JSON or as multipart. Mandatory: the JSON form demands `body`, a multipart body carrying neither `text` nor `files` is a `400`, and a request with no body at all is not a call anyone means to make. */
+            requestBody: {
                 content: {
                     "application/json": components["schemas"]["AppendTurnRequest"];
                     "multipart/form-data": components["schemas"]["MultipartAppendTurnRequest"];
@@ -2565,6 +2565,18 @@ export interface paths {
         /**
          * Server-sent invalidation stream
          * @description Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.
+         *
+         *     The key vocabulary is **closed** — these nine shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:
+         *
+         *     - `["docs"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.
+         *     - `["docs", "<docId|threadId>"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.
+         *     - `["tree"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.
+         *     - `["threads", "<threadId>"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.
+         *     - `["queue"]` — emitted by every queue transition: enqueue, claim, complete, fail, abandon, reap, halt/resume, and a lock break that re-enqueues a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.
+         *     - `["jobs"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.
+         *     - `["jobs", "<eventId>"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.
+         *     - `["locks"]` — emitted by lock acquire, release, force-break and reap. Refetch: `GET /api/locks` — the console's held-locks list.
+         *     - `["locks", "<docId>"]` — emitted by acquire, release, force-break and reap of that one document's lock. Refetch: the open reader for that document, which renders read-only with a holder banner while held.
          */
         get: {
             parameters: {
@@ -2720,14 +2732,16 @@ export interface components {
             tags: string[];
             /**
              * Format: date-time
+             * @description When the document was created, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            created: string;
+            created: string | null;
             /**
              * Format: date-time
+             * @description When the document was last modified, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            updated: string;
+            updated: string | null;
             /**
              * Format: date
              * @example 2026-08-01
@@ -2741,6 +2755,37 @@ export interface components {
             evergreen: boolean;
             /** @description Leading plain-text excerpt of the body, for list rows. */
             excerpt: string;
+            /**
+             * @description Staleness tier from SPEC.md §5's age ramp (aging, stale, very-stale), driving the row's age rail, dimming and age chip. **`null` is fresh** — the tiers name degrees of staleness and freshness is their absence, which is also why `stale=` takes a tier and never `fresh`. Always null for `evergreen: true` documents, which opt out of staleness entirely, and for a document whose age is unknown (`updated` and `reviewed` both null): an unknown age is not an old one.
+             * @enum {string|null}
+             */
+            stale: "aging" | "stale" | "very-stale" | null;
+            /**
+             * @description The commented document, for a thread row. Null on non-threads and on standalone threads (SPEC.md §6) — those two cases are distinguished by `type`, not by this field.
+             * @example doc_a1b2c3
+             */
+            parent: string | null;
+            /**
+             * @description Agent participation state (none, requested, engaged, SPEC.md §6, §8), backing the pending-agent indicator. Null on non-threads.
+             * @enum {string|null}
+             */
+            agent: "none" | "requested" | "engaged" | null;
+            /** @description The anchored text this thread hangs off, pinned at the top of a thread row (SPEC.md §11). Null on non-threads, on whole-document threads, and on standalone threads. */
+            anchorQuote: string | null;
+            /** @description Number of turns in the thread. Null on non-threads. */
+            turnCount: number | null;
+            /**
+             * @description Author of the thread's last turn — the `author=` filter's column, and the other half of "awaiting your answer". Null on non-threads and on a thread with no turns.
+             * @example user
+             * @enum {string|null}
+             */
+            lastAuthor: "user" | "agent" | null;
+            /** @description Plain-text preview of the thread's last turn, for the row's second line (SPEC.md §11). Null on non-threads and on a thread with no turns. */
+            lastTurn: string | null;
+            /** @description True when the thread's last turn is newer than your last-seen mark (SPEC.md §7) — the unread badge. Null on non-threads. */
+            unread: boolean | null;
+            /** @description True when the agent has been drawn into an open thread and the last turn is not yet its reply — the pending-agent indicator (SPEC.md §8). Null on non-threads. */
+            awaitingAgent: boolean | null;
             /** @description Attention reasons for this row, populated on every response rather than only under `needs=`, so any list can render reason chips. Empty when nothing applies; never contains `me`, which is the union filter and not a reason. */
             attention: ("unread-reply" | "form" | "due" | "stale" | "failed-job")[];
             /** @description Search highlights for this row; empty when the query carried no `q`. */
@@ -2786,6 +2831,11 @@ export interface components {
             /** @enum {string} */
             code: "unauthorized";
             message: string;
+        };
+        DocMutationResponse: {
+            doc: components["schemas"]["Doc"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         Doc: {
             frontmatter: components["schemas"]["DocFrontmatter"];
@@ -2881,6 +2931,15 @@ export interface components {
             /** @description True when the selector did not resolve; the thread is still fully functional but detached. */
             orphaned: boolean;
         };
+        Warning: {
+            /**
+             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document.
+             * @enum {string}
+             */
+            code: "commit_failed" | "commit_skipped" | "orphaned_anchor" | "unresolved_ref";
+            /** @description Human-readable specifics — the hook's own output, the offending anchor id, the unresolved ref. Rendered verbatim in the console; never parsed. */
+            detail: string;
+        };
         CreateDocRequest: {
             /**
              * @description Document type. Core values: note, thread, view, template, skill, agent-def. Plugins define their own.
@@ -2916,6 +2975,8 @@ export interface components {
         UpdateDocResponse: {
             doc: components["schemas"]["Doc"];
             anchors: components["schemas"]["AnchorReconciliation"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         AnchorReconciliation: {
             /** @description Anchors whose selector was recomputed against the new body. */
@@ -2976,6 +3037,8 @@ export interface components {
             deletedId: string;
             /** @description Threads that named the deleted document as `parent`. They keep that id and remain readable; their anchors no longer resolve. Drop their caches. */
             orphanedThreadIds: string[];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         ForbiddenError: {
             /** @enum {string} */

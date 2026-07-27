@@ -3,6 +3,7 @@ import { formatInstant } from "../core/time.js";
 import {
   atOrBeyondSql,
   STALENESS_THRESHOLD_DAYS,
+  STALE_TIER_SQL,
   stalenessCutoffs,
   tierParam,
 } from "./staleness.js";
@@ -35,5 +36,24 @@ describe("atOrBeyondSql", () => {
   it("spells a tier as a legal parameter name", () => {
     expect(tierParam("very-stale")).toBe("very_stale");
     expect(tierParam("stale")).toBe("stale");
+  });
+});
+
+describe("STALE_TIER_SQL", () => {
+  it("tests the tiers from the worst down, so a row reports the highest it reached", () => {
+    expect(STALE_TIER_SQL.indexOf("'very-stale'")).toBeLessThan(STALE_TIER_SQL.indexOf("'stale'"));
+    expect(STALE_TIER_SQL.indexOf("'stale'")).toBeLessThan(STALE_TIER_SQL.indexOf("'aging'"));
+  });
+
+  it("is built from the filter's own predicate, so the two cannot disagree", () => {
+    for (const tier of ["aging", "stale", "very-stale"] as const) {
+      expect(STALE_TIER_SQL).toContain(`WHEN ${atOrBeyondSql(tier)} THEN '${tier}'`);
+    }
+  });
+
+  it("has no ELSE — freshness is the absence of a tier, which SQL spells NULL", () => {
+    expect(STALE_TIER_SQL).not.toContain("ELSE");
+    expect(STALE_TIER_SQL.startsWith("CASE ")).toBe(true);
+    expect(STALE_TIER_SQL.endsWith(" END")).toBe(true);
   });
 });

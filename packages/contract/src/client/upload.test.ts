@@ -1,7 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
-import { contractRoutes } from "../routes/index.js";
+import { contractRoutes, mountAppendTurn } from "../routes/index.js";
 import {
   buildCaptureFormData,
   buildTurnFormData,
@@ -39,7 +39,7 @@ const threadSummary = {
 function createServer() {
   const app = new OpenAPIHono();
 
-  app.openapi(contractRoutes.appendTurn, (c) => {
+  mountAppendTurn(app, (c) => {
     // The route declares two content types, so the validated body is their
     // union; `files` is required on the multipart half and absent from the JSON
     // half, which makes it the discriminator.

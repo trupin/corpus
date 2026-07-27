@@ -32,8 +32,35 @@ const row = {
   reviewed: "2026-07-20T09:00:00Z",
   evergreen: false,
   excerpt: "Body is plain markdown.",
+  stale: null,
+  parent: null,
+  agent: null,
+  anchorQuote: null,
+  turnCount: null,
+  lastAuthor: null,
+  lastTurn: null,
+  unread: null,
+  awaitingAgent: null,
   attention: [],
   snippets: [],
+};
+
+/** The same row as a thread: every thread-only field populated (SPEC.md §11). */
+const threadRow = {
+  ...row,
+  id: "th_x9y8",
+  type: "thread",
+  title: "Re: 30-year fixed assumption",
+  path: "data/threads/th_x9y8.md",
+  stale: "aging",
+  parent: "doc_a1b2c3",
+  agent: "engaged",
+  anchorQuote: "assume a 30-year fixed at 6.1%",
+  turnCount: 3,
+  lastAuthor: "agent",
+  lastTurn: "Rechecked against the October rate sheet.",
+  unread: true,
+  awaitingAgent: false,
 };
 
 describe("DocsQuery pagination", () => {
@@ -281,14 +308,60 @@ describe("DocRow", () => {
   });
 
   it("carries a thread row, since threads are documents", () => {
-    const thread = { ...row, id: "th_x9y8", type: "thread" };
-    expect(DocRowSchema.parse(thread).id).toBe("th_x9y8");
+    expect(DocRowSchema.parse(threadRow)).toEqual(threadRow);
+  });
+
+  it.each([
+    "stale",
+    "parent",
+    "agent",
+    "anchorQuote",
+    "turnCount",
+    "lastAuthor",
+    "lastTurn",
+    "unread",
+    "awaitingAgent",
+  ])("carries %s as null on a non-thread row rather than omitting it", (field) => {
+    expect(DocRowSchema.parse(row)).toHaveProperty(field, null);
+    const { [field]: _dropped, ...without } = row as Record<string, unknown>;
+    expect(DocRowSchema.safeParse(without).success).toBe(false);
+  });
+
+  it.each(STALE_TIERS)("round-trips the %s staleness tier", (tier) => {
+    expect(DocRowSchema.parse({ ...row, stale: tier }).stale).toBe(tier);
+  });
+
+  it("has no `fresh` tier — freshness is the absence of one", () => {
+    expect(DocRowSchema.safeParse({ ...row, stale: "fresh" }).success).toBe(false);
+    expect(DocRowSchema.parse({ ...row, stale: null }).stale).toBeNull();
+  });
+
+  it("accepts a document whose timestamps are unknown, without inventing an epoch", () => {
+    const undated = { ...row, created: null, updated: null };
+    expect(DocRowSchema.parse(undated)).toEqual(undated);
+  });
+
+  it("still rejects a malformed timestamp — nullable is not lenient", () => {
+    expect(DocRowSchema.safeParse({ ...row, updated: "yesterday" }).success).toBe(false);
+  });
+
+  it("rejects an agent state outside the thread vocabulary", () => {
+    expect(DocRowSchema.safeParse({ ...threadRow, agent: "thinking" }).success).toBe(false);
+  });
+
+  it("rejects a negative turn count", () => {
+    expect(DocRowSchema.safeParse({ ...threadRow, turnCount: -1 }).success).toBe(false);
   });
 });
 
 describe("DocList", () => {
   it("round-trips a page of rows with its meta", () => {
     const list = { items: [row], page: { total: 1, limit: 50, offset: 0 } };
+    expect(DocListSchema.parse(list)).toEqual(list);
+  });
+
+  it("round-trips a page mixing a document row and a thread row", () => {
+    const list = { items: [row, threadRow], page: { total: 2, limit: 50, offset: 0 } };
     expect(DocListSchema.parse(list)).toEqual(list);
   });
 

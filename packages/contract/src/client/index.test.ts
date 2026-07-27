@@ -1,7 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
-import { contractRoutes } from "../routes/index.js";
+import { contractRoutes, mountAppendTurn } from "../routes/index.js";
 import { createCorpusClient, isApiError, type FetchPaths, type paths } from "./index.js";
 
 const BASE_URL = "http://127.0.0.1:8765";
@@ -58,6 +58,7 @@ function createServer() {
           anchors: [],
         },
         anchors: { remapped: [], orphaned: [] },
+        warnings: [],
       },
       200,
     );
@@ -81,6 +82,15 @@ function createServer() {
             reviewed: null,
             evergreen: false,
             excerpt: "Body.",
+            stale: "aging" as const,
+            parent: null,
+            agent: null,
+            anchorQuote: null,
+            turnCount: null,
+            lastAuthor: null,
+            lastTurn: null,
+            unread: null,
+            awaitingAgent: null,
             attention: ["unread-reply" as const, "stale" as const],
             snippets:
               q === undefined
@@ -116,7 +126,7 @@ function createServer() {
     );
   });
 
-  app.openapi(contractRoutes.appendTurn, (c) => {
+  mountAppendTurn(app, (c) => {
     const validated = c.req.valid("form");
     const attached = "files" in validated ? validated.files.length : 0;
     return c.json(

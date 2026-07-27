@@ -19,13 +19,14 @@
 import {
   DEFAULT_DOC_SORT,
   NEEDS_REASONS,
+  STALE_TIERS,
   type DocList,
   type DocRow,
   type DocSort,
   type DocsQuery,
 } from "@corpus/contract";
 import { normalizeInstant } from "../core/time.js";
-import type { ProjectionDb } from "../projection/index.js";
+import { bodyExcerpt, type ProjectionDb } from "../projection/index.js";
 import {
   parseSnippets,
   SNIPPET_CLOSE,
@@ -36,25 +37,24 @@ import {
 } from "./fts.js";
 import {
   ANY_REASON_SQL,
+  AWAITING_AGENT_SQL,
   NEEDS_REASON_SQL,
   reasonColumn,
   rowAttention,
   UNREAD_SQL,
 } from "./needs.js";
-import { atOrBeyondSql, stalenessCutoffs, tierParam } from "./staleness.js";
+import { atOrBeyondSql, stalenessCutoffs, STALE_TIER_SQL, tierParam } from "./staleness.js";
 
 /** Where documents live, and therefore what `folder` is relative to (SPEC.md §4). */
 export const DOCS_ROOT = "data/docs";
 
-/**
- * Serialized `created`/`updated` for a document that carries neither. The
- * projection stores NULL (a hand-written `SKILL.md` legitimately has no
- * timestamps, SPEC.md §7) but `DocRow` declares both non-nullable, so a row has
- * to say *something*. The epoch is chosen over the file's mtime because it is
- * identical in every clone; staleness deliberately does **not** read it — an
- * unknown age is not an old one (see `staleness.ts`).
- */
-export const UNDATED_INSTANT = "1970-01-01T00:00:00Z";
+// Undated documents carry `created: null` / `updated: null` straight through
+// (CONTRACT-005): the projection stores NULL for a hand-written `SKILL.md` that
+// has no timestamps (SPEC.md §7), and `DocRow` now declares both nullable. The
+// epoch sentinel this module used to substitute is gone — "we do not know" is
+// not "1970", and a sentinel is a lie every consumer then has to special-case.
+// Staleness already read it that way: an unknown age is not an old one, so an
+// undated row is fresh (`stale: null`), never very-stale.
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DUE_WEEK_DAYS = 7;
@@ -140,9 +140,12 @@ function compileFilters(query: DocsQuery, nowMs: number): Compiled {
   const today = calendarDate(nowMs);
   const cutoffs = stalenessCutoffs(nowMs);
 
-  // Referenced by the Attention columns every response carries, so always bound.
+  // Referenced by the Attention columns and the staleness tier every response
+  // carries, so always bound. `paramsFor` then hands each statement only the
+  // cutoffs its own SQL spells — the COUNT query mentions none of them unless a
+  // filter put one in the WHERE clause.
   binder.fixed("today", today);
-  binder.fixed(`cutoff_${tierParam("stale")}`, cutoffs.stale);
+  for (const tier of STALE_TIERS) binder.fixed(`cutoff_${tierParam(tier)}`, cutoffs[tier]);
 
   if (query.type !== undefined) {
     const types = csv(query.type).map((type) => binder.next("type", type));
@@ -220,10 +223,7 @@ function compileFilters(query: DocsQuery, nowMs: number): Compiled {
     );
   }
 
-  if (query.stale !== undefined) {
-    binder.fixed(`cutoff_${tierParam(query.stale)}`, cutoffs[query.stale]);
-    conditions.push(atOrBeyondSql(query.stale));
-  }
+  if (query.stale !== undefined) conditions.push(atOrBeyondSql(query.stale));
 
   if (query.unread !== undefined) {
     conditions.push(
@@ -256,6 +256,33 @@ const ORDER_BY: Readonly<Record<DocSort, string>> = {
 const FROM_SQL = `FROM documents d
   LEFT JOIN threads t ON t.id = d.id
   LEFT JOIN seen s ON s.thread_id = d.id`;
+
+/**
+ * Two more joins the *page* needs and the COUNT does not: the anchor a thread
+ * hangs off (stored on the commented document, keyed by anchor id — SPEC.md §6)
+ * and the thread's last turn. Both are keyed on their table's full primary key,
+ * so neither can multiply a row; the COUNT deliberately keeps {@link FROM_SQL}
+ * so it does no work the total does not depend on. Nothing in the WHERE clause
+ * names either alias, which is what makes the two statements' row sets equal.
+ */
+const ROW_FROM_SQL = `${FROM_SQL}
+  LEFT JOIN anchors an ON an.doc_id = t.parent_id AND an.anchor_id = t.anchor_id
+  LEFT JOIN turns lt ON lt.thread_id = t.id AND lt.ts = t.last_ts`;
+
+/**
+ * `NULL` for a row that is not a thread, the fragment's own value otherwise —
+ * the row-shaped twin of the "thread-only filters no-op" rule. The fragment is
+ * spliced verbatim rather than restated, so the column and the filter that
+ * selects on it are the same SQL.
+ */
+const threadOnly = (sql: string): string => `CASE WHEN t.id IS NULL THEN NULL ELSE ${sql} END`;
+
+/** The §11 thread affordances and the staleness tier, as columns of the page query. */
+const ROW_COLUMNS = `${STALE_TIER_SQL} AS stale,
+         t.parent_id AS parent, t.agent AS agent, an.exact_text AS anchor_quote,
+         t.turn_count AS turn_count, t.last_author AS last_author, lt.body_md AS last_turn,
+         ${threadOnly(UNREAD_SQL)} AS unread,
+         ${threadOnly(AWAITING_AGENT_SQL)} AS awaiting_agent`;
 
 /**
  * `snippet()` is an FTS5 auxiliary function and refuses to run in an aggregate
@@ -295,7 +322,26 @@ interface RawRow {
   readonly evergreen: number;
   readonly excerpt: string;
   readonly snippets_json: string | null;
+  readonly stale: string | null;
+  readonly parent: string | null;
+  readonly agent: string | null;
+  readonly anchor_quote: string | null;
+  readonly turn_count: number | null;
+  readonly last_author: string | null;
+  readonly last_turn: string | null;
+  readonly unread: number | null;
+  readonly awaiting_agent: number | null;
 }
+
+/**
+ * The thread columns are NULL exactly when the `threads` LEFT JOIN missed, since
+ * every one of them is either `NOT NULL` in that table or wrapped in
+ * {@link threadOnly}. `t.parent_id`, `t.last_author`, `an.exact_text` and
+ * `lt.body_md` are the four that are also legitimately NULL *for a thread* — a
+ * standalone thread, a thread with no turns, a whole-document thread — which is
+ * why the contract describes each null as covering both cases.
+ */
+const asBoolean = (value: number | null): boolean | null => (value === null ? null : value !== 0);
 
 function parseTags(json: string): string[] {
   try {
@@ -318,12 +364,27 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     // inserting, so the column can only hold a declared value.
     status: row.status as DocRow["status"],
     tags: parseTags(row.tags_json),
-    created: row.created ?? UNDATED_INSTANT,
-    updated: row.updated ?? UNDATED_INSTANT,
+    created: row.created,
+    updated: row.updated,
     due: row.due,
     reviewed: row.reviewed,
     evergreen: row.evergreen !== 0,
     excerpt: row.excerpt,
+    // Same reasoning as `status`: the tier is this module's own CASE over the
+    // contract's closed enum, and `agent`/`last_author` are parsed with the
+    // contract's enums before the projection inserts them, so each column can
+    // only hold a declared value.
+    stale: row.stale as DocRow["stale"],
+    parent: row.parent,
+    agent: row.agent as DocRow["agent"],
+    anchorQuote: row.anchor_quote,
+    turnCount: row.turn_count,
+    lastAuthor: row.last_author as DocRow["lastAuthor"],
+    // Excerpted by the same rule as `body_excerpt`, so a row's two previews are
+    // trimmed and truncated alike rather than by two near-identical helpers.
+    lastTurn: row.last_turn === null ? null : bodyExcerpt(row.last_turn),
+    unread: asBoolean(row.unread),
+    awaitingAgent: asBoolean(row.awaiting_agent),
     attention: rowAttention(row),
     snippets: parseSnippets(row.snippets_json),
   };
@@ -355,8 +416,9 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
          d.status AS status, d.tags_json AS tags_json, d.created AS created, d.updated AS updated,
          d.due AS due, d.reviewed AS reviewed, d.evergreen AS evergreen, d.body_excerpt AS excerpt,
          ${searching ? "m.snippets" : "NULL"} AS snippets_json,
+         ${ROW_COLUMNS},
          ${REASON_COLUMNS}
-  ${FROM_SQL}
+  ${ROW_FROM_SQL}
   ${searching ? "JOIN m ON m.id = d.id" : ""}
   ${where}
   ORDER BY ${ORDER_BY[sort]}

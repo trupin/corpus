@@ -26,7 +26,10 @@ const MANDATORY = {
   "POST /api/threads": true satisfies BodyIsMandatory<paths["/api/threads"]["post"]>,
   // The one exemption: `@hono/zod-openapi@1.5.1` cannot validate a two-media-type
   // body that declares itself required. See `RULE_EXEMPTIONS` in ../openapi.test.ts.
-  "POST /api/threads/{id}/turns": false satisfies BodyIsMandatory<
+  // Dual-media, and mandatory since CONTRACT-005: `routes/turn-append.ts`
+  // declares `required: true` and dispatches validation on `content-type`
+  // itself, so the generated type no longer admits a bodiless call.
+  "POST /api/threads/{id}/turns": true satisfies BodyIsMandatory<
     paths["/api/threads/{id}/turns"]["post"]
   >,
   "POST /api/threads/{id}/seen": false satisfies BodyIsMandatory<
@@ -51,7 +54,7 @@ describe("the generated client types demand every mandatory body", () => {
       "POST /api/docs/{id}/move": true,
       "POST /api/capture": true,
       "POST /api/threads": true,
-      "POST /api/threads/{id}/turns": false,
+      "POST /api/threads/{id}/turns": true,
       "POST /api/threads/{id}/seen": false,
       "POST /api/queue/halt": false,
       "POST /api/queue/{id}/fail": false,

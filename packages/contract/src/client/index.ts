@@ -42,6 +42,29 @@ export {
 } from "./upload.js";
 export { isApiError, type ApiError } from "../schemas/error.js";
 export { ACTOR_HEADER, DEFAULT_ACTOR, type Actor } from "../actor.js";
+/**
+ * The SSE query-key vocabulary, re-exported here because the UI's invalidation
+ * bridge is a client concern. `../query-keys.js` imports nothing, so a consumer
+ * that wants only the key names never pulls the validator in with them.
+ */
+export {
+  DOCS_KEY,
+  JOBS_KEY,
+  LOCKS_KEY,
+  QUERY_KEY_NAMES,
+  QUERY_KEY_VOCABULARY,
+  QUEUE_KEY,
+  TREE_KEY,
+  describeQueryKeyVocabulary,
+  docKey,
+  jobKey,
+  lockKey,
+  threadKey,
+  type QueryKey,
+  type QueryKeyName,
+  type QueryKeySegment,
+  type QueryKeyShape,
+} from "../query-keys.js";
 
 /**
  * The paths the fetch client covers. `/events` is documented in the contract and

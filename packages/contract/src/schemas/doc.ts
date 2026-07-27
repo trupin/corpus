@@ -3,6 +3,7 @@ import { TextQuoteSelectorSchema } from "./anchor.js";
 import { AnchorIdSchema, DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { ThreadStatusSchema } from "./thread.js";
 import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
+import { warningsField } from "./warning.js";
 
 /**
  * Document types the product itself defines (SPEC.md §5). The wire type stays an
@@ -95,6 +96,23 @@ export const DocSchema = z
   .openapi("Doc");
 
 /**
+ * **Nullable timestamps (CONTRACT-005 decision, 2026-07-27).** A document's
+ * `created`/`updated` are legitimately absent: a hand-written `SKILL.md` carries
+ * no frontmatter timestamps, and the projection stores NULL for it. The row says
+ * `null` rather than an epoch sentinel — the sentinel is a lie every consumer
+ * then has to special-case, and "we do not know" is not "1970". Staleness treats
+ * an unknown age as **fresh** (`stale: null`), never as ancient, which is the
+ * same reading `docs/staleness.ts` already implements.
+ *
+ * Only the *row* is nullable. `DocFrontmatter` keeps both non-nullable: a
+ * document the server writes is always stamped.
+ */
+const UNDATED_DESCRIPTION = (which: string): string =>
+  `When the document was ${which}, or \`null\` when the file carries no such timestamp — a ` +
+  "hand-written skill file legitimately has none. Render it as “—” rather than " +
+  "substituting a date; staleness treats an unknown age as fresh.";
+
+/**
  * The projection's `documents` columns, without the body (SPEC.md §9.1). Spread
  * rather than `.extend()`-ed into the list row in `query.ts`: zod-to-openapi
  * carries a registered component name onto derived schemas, so building the row
@@ -107,8 +125,8 @@ export const docRowBaseShape = {
   path: z.string(),
   status: DocStatusSchema,
   tags: z.array(z.string()),
-  created: IsoDateTimeSchema,
-  updated: IsoDateTimeSchema,
+  created: IsoDateTimeSchema.nullable().describe(UNDATED_DESCRIPTION("created")),
+  updated: IsoDateTimeSchema.nullable().describe(UNDATED_DESCRIPTION("last modified")),
   due: IsoDateSchema.nullable(),
   reviewed: IsoDateTimeSchema.nullable(),
   evergreen: z.boolean(),
@@ -181,8 +199,18 @@ export const AnchorReconciliationSchema = z
   })
   .openapi("AnchorReconciliation");
 
+/**
+ * What every non-editing document mutation returns — create, move, archive,
+ * unarchive. The document is wrapped rather than returned bare so §14's
+ * warnings have somewhere to live: a hook that rejected the auto-commit, or a
+ * workspace with no git, must surface on the response and not only in a log.
+ */
+export const DocMutationResponseSchema = z
+  .object({ doc: DocSchema, warnings: warningsField })
+  .openapi("DocMutationResponse");
+
 export const UpdateDocResponseSchema = z
-  .object({ doc: DocSchema, anchors: AnchorReconciliationSchema })
+  .object({ doc: DocSchema, anchors: AnchorReconciliationSchema, warnings: warningsField })
   .openapi("UpdateDocResponse");
 
 /**
@@ -199,6 +227,7 @@ export const DeleteDocResultSchema = z
         "Threads that named the deleted document as `parent`. They keep that id and remain " +
           "readable; their anchors no longer resolve. Drop their caches.",
       ),
+    warnings: warningsField,
   })
   .openapi("DeleteDocResult");
 
@@ -212,5 +241,6 @@ export type CreateDocRequest = z.infer<typeof CreateDocRequestSchema>;
 export type UpdateDocRequest = z.infer<typeof UpdateDocRequestSchema>;
 export type MoveDocRequest = z.infer<typeof MoveDocRequestSchema>;
 export type AnchorReconciliation = z.infer<typeof AnchorReconciliationSchema>;
+export type DocMutationResponse = z.infer<typeof DocMutationResponseSchema>;
 export type UpdateDocResponse = z.infer<typeof UpdateDocResponseSchema>;
 export type DeleteDocResult = z.infer<typeof DeleteDocResultSchema>;

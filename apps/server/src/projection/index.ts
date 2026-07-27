@@ -43,6 +43,7 @@ export { clearProjection, populateFromFiles } from "./populate.js";
 export type { PopulateReport, SkippedFile } from "./populate.js";
 export {
   EXCERPT_LENGTH,
+  bodyExcerpt,
   hashContent,
   projectDocument,
   readDocumentIdentity,

@@ -5,6 +5,7 @@ import {
   CreateDocRequestSchema,
   DeleteDocResultSchema,
   DocFrontmatterSchema,
+  DocMutationResponseSchema,
   DocSchema,
   DocStatusSchema,
   MoveDocRequestSchema,
@@ -156,17 +157,30 @@ describe("MoveDocRequest", () => {
 
 describe("DeleteDocResult", () => {
   it("round-trips the cascade: the deleted id and the threads it orphaned", () => {
-    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: ["th_x9y8", "th_q1w2"] };
+    const result = {
+      deletedId: "doc_a1b2c3",
+      orphanedThreadIds: ["th_x9y8", "th_q1w2"],
+      warnings: [],
+    };
     expect(DeleteDocResultSchema.parse(result)).toEqual(result);
   });
 
   it("round-trips a document that had no threads", () => {
-    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: [] };
+    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: [], warnings: [] };
+    expect(DeleteDocResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("carries the §14 warnings of a deletion whose commit was refused", () => {
+    const result = {
+      deletedId: "doc_a1b2c3",
+      orphanedThreadIds: [],
+      warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+    };
     expect(DeleteDocResultSchema.parse(result)).toEqual(result);
   });
 
   it("rejects a document id in the orphaned thread list", () => {
-    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: ["doc_zzz"] };
+    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: ["doc_zzz"], warnings: [] };
     expect(DeleteDocResultSchema.safeParse(result).success).toBe(false);
   });
 });
@@ -183,8 +197,32 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
   });
 
   it("round-trips the anchor reconciliation report", () => {
-    const response = { doc, anchors: { remapped: ["anc_k4f7"], orphaned: [] } };
+    const response = { doc, anchors: { remapped: ["anc_k4f7"], orphaned: [] }, warnings: [] };
     expect(UpdateDocResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it("demands the warnings array rather than treating it as optional", () => {
+    const response = { doc, anchors: { remapped: [], orphaned: [] } };
+    expect(UpdateDocResponseSchema.safeParse(response).success).toBe(false);
+  });
+});
+
+describe("DocMutationResponse", () => {
+  it("wraps the document so §14 warnings have somewhere to travel", () => {
+    const response = {
+      doc,
+      warnings: [{ code: "commit_skipped" as const, detail: "workspace is not a git repository" }],
+    };
+    expect(DocMutationResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it("round-trips the ordinary case: a document and no warnings", () => {
+    const response = { doc, warnings: [] };
+    expect(DocMutationResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it("rejects a bare document, which is the pre-CONTRACT-005 shape", () => {
+    expect(DocMutationResponseSchema.safeParse(doc).success).toBe(false);
   });
 });
 

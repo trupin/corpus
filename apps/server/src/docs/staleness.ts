@@ -9,7 +9,7 @@
 // chronologically, so SQLite can do the comparison against a precomputed cutoff
 // without a date function per row.
 
-import type { StaleTier } from "@corpus/contract";
+import { STALE_TIERS, type StaleTier } from "@corpus/contract";
 import { formatInstant } from "../core/time.js";
 
 /** SPEC.md §5's default thresholds, in days, ascending. */
@@ -56,7 +56,25 @@ export function tierParam(tier: StaleTier): string {
   return tier.replace("-", "_");
 }
 
-// A TypeScript `stalenessTier(activity, evergreen, now)` deliberately does not
-// exist yet: `DocRow` carries no staleness field (sprint-004 Adjudication 2 —
-// CONTRACT-005 adds it), so the tier is only ever read as a filter, and a second
-// implementation of the ramp with no caller is a second place to drift.
+/**
+ * The tier a row *is*, for `DocRow.stale` (CONTRACT-005): the highest tier its
+ * age reaches, or NULL when it reaches none. `null` is fresh — the tiers name
+ * degrees of staleness and freshness is their absence, which is also why the
+ * `CASE` carries no `ELSE`.
+ *
+ * Composed from {@link atOrBeyondSql} in descending tier order rather than from
+ * a second comparison against the cutoffs, so the value a row reports and the
+ * `stale=` filter that selects it are *literally the same predicate*: a row the
+ * filter returns cannot fail to carry the tier, and there is no second constant
+ * to drift (sprint-004 TEST-43, extended to the column). Tier names come from
+ * the contract's own closed enum, so nothing user-supplied reaches the SQL.
+ */
+export const STALE_TIER_SQL = `CASE ${[...STALE_TIERS]
+  .reverse()
+  .map((tier) => `WHEN ${atOrBeyondSql(tier)} THEN '${tier}'`)
+  .join(" ")} END`;
+
+// A TypeScript `stalenessTier(activity, evergreen, now)` still deliberately does
+// not exist: the tier reaches a row as a column of the collection query, so a
+// second implementation of the ramp would have no caller and every opportunity
+// to drift from the one the filter uses.

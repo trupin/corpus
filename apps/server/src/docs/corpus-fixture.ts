@@ -16,6 +16,13 @@ import {
   type ProjectionDb,
 } from "../projection/index.js";
 
+/** A text-quote selector as it is written in a commented document's frontmatter (SPEC.md §6). */
+export interface SelectorSpec {
+  readonly exact: string;
+  readonly prefix?: string;
+  readonly suffix?: string;
+}
+
 export interface DocSpec {
   readonly id: string;
   /** Workspace-relative path; defaults to `data/docs/<id>.md`. */
@@ -30,6 +37,8 @@ export interface DocSpec {
   readonly reviewed?: string | null;
   readonly evergreen?: boolean;
   readonly body?: string;
+  /** Anchor entries keyed by anchor id, as the *commented* document carries them. */
+  readonly anchors?: Readonly<Record<string, SelectorSpec>>;
 }
 
 export interface TurnSpec {
@@ -58,7 +67,9 @@ function frontmatterLines(spec: DocSpec, type: string): string[] {
     `updated: ${spec.updated ?? spec.created ?? DEFAULT_INSTANT}`,
     `tags: [${(spec.tags ?? []).join(", ")}]`,
     `status: ${spec.status ?? "open"}`,
-    "anchors: {}",
+    // JSON is valid YAML flow mapping, so the selectors need no hand-rolled
+    // quoting rules to survive a body quote containing `:` or `#`.
+    `anchors: ${JSON.stringify(spec.anchors ?? {})}`,
     `due: ${yamlValue(spec.due ?? null)}`,
     `reviewed: ${yamlValue(spec.reviewed ?? null)}`,
     `evergreen: ${String(spec.evergreen ?? false)}`,

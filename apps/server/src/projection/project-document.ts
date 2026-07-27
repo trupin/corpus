@@ -196,7 +196,13 @@ export function readDocumentIdentity(
 const noIdReason = (relativePath: string): string =>
   `${relativePath}: frontmatter carries no valid \`id\` (expected doc_… or th_…)`;
 
-function bodyExcerpt(body: string): string {
+/**
+ * The leading `EXCERPT_LENGTH` characters of a body, from its first non-blank
+ * character. Exported because the collection query excerpts a thread's last turn
+ * for the row's second line (SPEC.md §11) and must do it by the same rule —
+ * a row's document preview and its turn preview trim and truncate alike.
+ */
+export function bodyExcerpt(body: string): string {
   const start = body.search(/\S/);
   return start < 0 ? "" : body.slice(start, start + EXCERPT_LENGTH);
 }

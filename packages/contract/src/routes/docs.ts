@@ -3,6 +3,7 @@ import { ActorHeaderSchema } from "../schemas/actor.js";
 import {
   CreateDocRequestSchema,
   DeleteDocResultSchema,
+  DocMutationResponseSchema,
   DocSchema,
   MoveDocRequestSchema,
   UpdateDocRequestSchema,
@@ -78,7 +79,7 @@ export const createDoc = createRoute({
     },
   },
   responses: {
-    201: jsonContent(DocSchema, "The created document."),
+    201: jsonContent(DocMutationResponseSchema, "The created document, and any §14 warnings."),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
   },
@@ -134,7 +135,10 @@ export const moveDoc = createRoute({
     },
   },
   responses: {
-    200: jsonContent(DocSchema, "The document at its new path."),
+    200: jsonContent(
+      DocMutationResponseSchema,
+      "The document at its new path, and any §14 warnings.",
+    ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
@@ -155,7 +159,10 @@ export const archiveDoc = createRoute({
     "disables it without unindexing it. Refused with `423` when the other party holds the lock.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
-    200: jsonContent(DocSchema, "The document, now archived."),
+    200: jsonContent(
+      DocMutationResponseSchema,
+      "The document, now archived, and any §14 warnings.",
+    ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
@@ -173,7 +180,7 @@ export const unarchiveDoc = createRoute({
     "when the other party holds the document's edit lock.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
-    200: jsonContent(DocSchema, "The document, restored."),
+    200: jsonContent(DocMutationResponseSchema, "The document, restored, and any §14 warnings."),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
@@ -194,7 +201,10 @@ export const deleteDoc = createRoute({
     "with `423` when the other party holds the document's edit lock.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
-    200: jsonContent(DeleteDocResultSchema, "The deleted id and the threads it orphaned."),
+    200: jsonContent(
+      DeleteDocResultSchema,
+      "The deleted id, the threads it orphaned, and any §14 warnings.",
+    ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     403: FORBIDDEN_RESPONSE,

@@ -1,9 +1,10 @@
 import { z } from "@hono/zod-openapi";
 import { ACTORS } from "../actor.js";
+import { ActorSchema } from "./actor.js";
 import { CORE_DOC_TYPES, DOC_STATUSES, docRowBaseShape } from "./doc.js";
 import { DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { PageMetaSchema, PaginationQuerySchema } from "./pagination.js";
-import { THREAD_AGENT_STATES } from "./thread.js";
+import { THREAD_AGENT_STATES, ThreadAgentSchema } from "./thread.js";
 import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
 
 /**
@@ -217,13 +218,86 @@ export const SnippetSchema = z
   .openapi("Snippet");
 
 /**
- * A row of `GET /api/docs`: the projection's document columns plus the two
- * things a list needs and a document read does not — why the row wants attention
- * and where the query matched.
+ * The §11 thread-row affordances, carried by every row and `null` on rows that
+ * are not threads.
+ *
+ * **Nullable, not optional.** A row always has the key; `null` means "not a
+ * thread", the same convention `due`/`reviewed` already use in
+ * `docRowBaseShape`. Optionality would make a missing field ambiguous between
+ * "not a thread" and "the server forgot", and would let a consumer's exhaustive
+ * render silently skip a column.
+ *
+ * The values are the same ones `DocsQuerySchema`'s thread-only filters select
+ * on — `agent`, `parent`, `author` (here `lastAuthor`) and `unread` — so a chip
+ * and the row it filters read from one vocabulary.
+ */
+const threadRowShape = {
+  parent: DocumentIdSchema.nullable().describe(
+    "The commented document, for a thread row. Null on non-threads and on standalone threads " +
+      "(SPEC.md §6) — those two cases are distinguished by `type`, not by this field.",
+  ),
+  agent: ThreadAgentSchema.nullable().describe(
+    `Agent participation state (${THREAD_AGENT_STATES.join(", ")}, SPEC.md §6, §8), backing the ` +
+      "pending-agent indicator. Null on non-threads.",
+  ),
+  anchorQuote: z
+    .string()
+    .nullable()
+    .describe(
+      "The anchored text this thread hangs off, pinned at the top of a thread row (SPEC.md §11). " +
+        "Null on non-threads, on whole-document threads, and on standalone threads.",
+    ),
+  turnCount: z
+    .number()
+    .int()
+    .min(0)
+    .nullable()
+    .describe("Number of turns in the thread. Null on non-threads."),
+  lastAuthor: ActorSchema.nullable().describe(
+    "Author of the thread's last turn — the `author=` filter's column, and the other half of " +
+      '"awaiting your answer". Null on non-threads and on a thread with no turns.',
+  ),
+  lastTurn: z
+    .string()
+    .nullable()
+    .describe(
+      "Plain-text preview of the thread's last turn, for the row's second line (SPEC.md §11). " +
+        "Null on non-threads and on a thread with no turns.",
+    ),
+  unread: z
+    .boolean()
+    .nullable()
+    .describe(
+      "True when the thread's last turn is newer than your last-seen mark (SPEC.md §7) — the " +
+        "unread badge. Null on non-threads.",
+    ),
+  awaitingAgent: z
+    .boolean()
+    .nullable()
+    .describe(
+      "True when the agent has been drawn into an open thread and the last turn is not yet its " +
+        "reply — the pending-agent indicator (SPEC.md §8). Null on non-threads.",
+    ),
+} as const;
+
+/**
+ * A row of `GET /api/docs`: the projection's document columns plus what a list
+ * needs and a document read does not — why the row wants attention, where the
+ * query matched, how stale it is, and the thread affordances §11's type-aware
+ * rows render.
  */
 export const DocRowSchema = z
   .object({
     ...docRowBaseShape,
+    stale: StaleTierSchema.nullable().describe(
+      `Staleness tier from SPEC.md §5's age ramp (${STALE_TIERS.join(", ")}), driving the row's ` +
+        "age rail, dimming and age chip. **`null` is fresh** — the tiers name degrees of " +
+        "staleness and freshness is their absence, which is also why `stale=` takes a tier and " +
+        "never `fresh`. Always null for `evergreen: true` documents, which opt out of staleness " +
+        "entirely, and for a document whose age is unknown (`updated` and `reviewed` both null): " +
+        "an unknown age is not an old one.",
+    ),
+    ...threadRowShape,
     attention: z
       .array(NeedsReasonSchema)
       .describe(

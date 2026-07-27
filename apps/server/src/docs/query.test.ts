@@ -1,8 +1,17 @@
-import { DocListSchema, DocsQuerySchema, type DocList, type DocsQuery } from "@corpus/contract";
+import {
+  DocListSchema,
+  DocsQuerySchema,
+  STALE_TIERS,
+  type DocList,
+  type DocRow,
+  type DocsQuery,
+  type StaleTier,
+} from "@corpus/contract";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatInstant } from "../core/time.js";
+import { EXCERPT_LENGTH } from "../projection/index.js";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
-import { folderPathPrefix, queryDocs, UNDATED_INSTANT } from "./query.js";
+import { folderPathPrefix, queryDocs } from "./query.js";
 
 const NOW = Date.parse("2026-07-26T12:00:00Z");
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -155,19 +164,28 @@ describe("the envelope", () => {
     const row = list.items[0];
     expect(row).toBeDefined();
     expect(Object.keys(row ?? {}).sort()).toEqual([
+      "agent",
+      "anchorQuote",
       "attention",
+      "awaitingAgent",
       "created",
       "due",
       "evergreen",
       "excerpt",
       "id",
+      "lastAuthor",
+      "lastTurn",
+      "parent",
       "path",
       "reviewed",
       "snippets",
+      "stale",
       "status",
       "tags",
       "title",
+      "turnCount",
       "type",
+      "unread",
       "updated",
     ]);
   });
@@ -310,13 +328,12 @@ describe("degenerate inputs", () => {
         .prepare("UPDATE documents SET tags_json = ?, created = NULL, updated = NULL")
         .run("{not-an-array");
       const [row] = queryDocs(damaged.db, DocsQuerySchema.parse({}), NOW).items;
-      expect(row).toMatchObject({
-        id: "doc_ok",
-        tags: [],
-        created: UNDATED_INSTANT,
-        updated: UNDATED_INSTANT,
-      });
-      // An undated document has no known age, so it is not stale either.
+      // CONTRACT-005: a missing timestamp is reported as `null`, never as an
+      // epoch sentinel — "we do not know" is not "1970".
+      expect(row).toMatchObject({ id: "doc_ok", tags: [], created: null, updated: null });
+      // An undated document has no known age, so it is neither stale nor
+      // flagged: an unknown age is not an old one.
+      expect(row?.stale).toBeNull();
       expect(row?.attention).toEqual([]);
     } finally {
       damaged.close();
@@ -484,6 +501,301 @@ describe("needs — the Attention union", () => {
       expect(attention()).toEqual([]);
     } finally {
       handled.close();
+    }
+  });
+});
+
+describe("row fields", () => {
+  const ANCHOR_QUOTE = "taxes and insurance";
+  const LONG_TURN = `${"escrow ".repeat(80)}end.`;
+  let fields: Workspace;
+
+  /** The single row for `id`, over a query that returns the whole corpus. */
+  const row = (id: string): DocRow => {
+    const found = queryDocs(fields.db, DocsQuerySchema.parse({ limit: "200" }), NOW).items.find(
+      (item) => item.id === id,
+    );
+    expect(found, `no row for ${id}`).toBeDefined();
+    return found as DocRow;
+  };
+
+  beforeAll(() => {
+    fields = createWorkspace("fields");
+    fields.doc({
+      id: "doc_parent",
+      path: "data/docs/notes/parent.md",
+      body: `Payments, ${ANCHOR_QUOTE} are escrowed.`,
+      updated: daysAgo(2),
+      anchors: {
+        anc_taxes: { exact: ANCHOR_QUOTE, prefix: "Payments, ", suffix: " are escrowed." },
+      },
+    });
+    fields.doc({ id: "doc_fresh", updated: daysAgo(1) });
+    fields.doc({ id: "doc_aging", updated: daysAgo(45) });
+    fields.doc({ id: "doc_stale", updated: daysAgo(100) });
+    fields.doc({ id: "doc_verystale", updated: daysAgo(200) });
+    fields.doc({ id: "doc_evergreen", updated: daysAgo(400), evergreen: true });
+    // A hand-written file with no timestamps at all (SPEC.md §7) — written raw
+    // because the fixture's frontmatter helper always stamps both.
+    fields.write(
+      "data/docs/notes/undated.md",
+      [
+        "---",
+        "id: doc_undated",
+        "type: note",
+        'title: "Undated"',
+        "tags: []",
+        "status: open",
+        "anchors: {}",
+        "due: null",
+        "reviewed: null",
+        "evergreen: false",
+        "---",
+        "",
+        "No timestamps at all.",
+        "",
+      ].join("\n"),
+    );
+
+    fields.thread({
+      id: "th_anchored",
+      title: "Re: escrow",
+      parent: "doc_parent",
+      anchor: "anc_taxes",
+      agent: "engaged",
+      turns: [
+        { author: "user", ts: daysAgo(4), body: "Why escrow?" },
+        { author: "agent", ts: daysAgo(3), body: "Because of taxes." },
+      ],
+    });
+    fields.thread({
+      id: "th_whole",
+      title: "Whole document",
+      parent: "doc_parent",
+      anchor: null,
+      agent: "requested",
+      turns: [{ author: "user", ts: daysAgo(1), body: "Any thoughts on this note?" }],
+    });
+    fields.thread({
+      id: "th_detached",
+      title: "Anchor gone",
+      parent: "doc_parent",
+      anchor: "anc_gone",
+      agent: "none",
+      turns: [{ author: "user", ts: daysAgo(1), body: "Detached." }],
+    });
+    fields.thread({
+      id: "th_resolved",
+      title: "Settled",
+      parent: "doc_parent",
+      agent: "engaged",
+      status: "resolved",
+      turns: [{ author: "user", ts: daysAgo(1), body: "Thanks!" }],
+    });
+    fields.thread({
+      id: "th_empty",
+      title: "Nothing said yet",
+      parent: "doc_parent",
+      agent: "none",
+      turns: [],
+    });
+    fields.thread({
+      id: "th_standalone",
+      title: "Standalone",
+      parent: null,
+      agent: "none",
+      turns: [{ author: "user", ts: daysAgo(1), body: "No parent." }],
+    });
+    fields.thread({
+      id: "th_long",
+      title: "Long",
+      parent: "doc_parent",
+      agent: "none",
+      turns: [{ author: "user", ts: daysAgo(1), body: LONG_TURN }],
+    });
+
+    fields.seen({ th_anchored: daysAgo(2) });
+    fields.reproject();
+  });
+
+  afterAll(() => {
+    fields.close();
+  });
+
+  it("carries every declared key on every row, thread or not", () => {
+    const all = queryDocs(fields.db, DocsQuerySchema.parse({ limit: "200" }), NOW);
+    expect(DocListSchema.parse(all)).toEqual(all);
+    expect(all.items.length).toBeGreaterThan(0);
+    // The page's anchor and last-turn joins are keyed on full primary keys, so
+    // they cannot multiply a row past the COUNT — which does not make them.
+    expect(all.page.total).toBe(all.items.length);
+  });
+
+  it("reports null for every thread field on a document row", () => {
+    expect(row("doc_parent")).toMatchObject({
+      parent: null,
+      agent: null,
+      anchorQuote: null,
+      turnCount: null,
+      lastAuthor: null,
+      lastTurn: null,
+      unread: null,
+      awaitingAgent: null,
+    });
+  });
+
+  it("fills a thread row from its own projected columns", () => {
+    expect(row("th_anchored")).toMatchObject({
+      parent: "doc_parent",
+      agent: "engaged",
+      anchorQuote: ANCHOR_QUOTE,
+      turnCount: 2,
+      lastAuthor: "agent",
+      lastTurn: "Because of taxes.",
+      unread: false,
+      awaitingAgent: false,
+    });
+  });
+
+  it("leaves `anchorQuote` null for a whole-document, standalone or detached thread", () => {
+    expect(row("th_whole").anchorQuote).toBeNull();
+    expect(row("th_standalone")).toMatchObject({ parent: null, anchorQuote: null });
+    // The thread names an anchor its parent's frontmatter no longer carries.
+    expect(row("th_detached")).toMatchObject({ parent: "doc_parent", anchorQuote: null });
+  });
+
+  it("reports a thread with no turns as counted-but-silent", () => {
+    expect(row("th_empty")).toMatchObject({
+      agent: "none",
+      turnCount: 0,
+      lastAuthor: null,
+      lastTurn: null,
+      unread: false,
+      awaitingAgent: false,
+    });
+  });
+
+  it("excerpts a long last turn by the same rule as the body excerpt", () => {
+    const preview = row("th_long").lastTurn;
+    expect(preview).toHaveLength(EXCERPT_LENGTH);
+    expect(LONG_TURN.startsWith(preview ?? "")).toBe(true);
+  });
+
+  it("marks a thread unread until its last turn is seen", () => {
+    // `th_anchored` has a seen mark newer than its last turn; `th_whole` has none.
+    expect(row("th_anchored").unread).toBe(false);
+    expect(row("th_whole").unread).toBe(true);
+  });
+
+  it("awaits the agent only in an open thread it was drawn into, on a user turn", () => {
+    expect(row("th_whole").awaitingAgent).toBe(true);
+    // Same shape, but resolved — a settled thread stops waiting (SPEC.md §8).
+    expect(row("th_resolved")).toMatchObject({
+      agent: "engaged",
+      lastAuthor: "user",
+      awaitingAgent: false,
+    });
+    // The agent was never drawn in.
+    expect(row("th_detached")).toMatchObject({ agent: "none", awaitingAgent: false });
+    // The last turn already is the agent's reply.
+    expect(row("th_anchored").awaitingAgent).toBe(false);
+  });
+
+  it("renders an undated document as null rather than an epoch", () => {
+    expect(row("doc_undated")).toMatchObject({ created: null, updated: null, stale: null });
+  });
+
+  it("names the tier a document has reached, and null for fresh or evergreen", () => {
+    expect(row("doc_fresh").stale).toBeNull();
+    expect(row("doc_aging").stale).toBe("aging");
+    expect(row("doc_stale").stale).toBe("stale");
+    expect(row("doc_verystale").stale).toBe("very-stale");
+    // 400 days old, but opted out entirely.
+    expect(row("doc_evergreen").stale).toBeNull();
+  });
+
+  it("keeps `awaitingAgent` in step with the `agent` and `author` filters", () => {
+    for (const item of queryDocs(fields.db, DocsQuerySchema.parse({ limit: "200" }), NOW).items) {
+      if (item.agent === null) continue;
+      expect(item.awaitingAgent).toBe(
+        item.agent !== "none" && item.lastAuthor === "user" && item.status === "open",
+      );
+    }
+  });
+});
+
+describe("field/filter agreement", () => {
+  const all = (): DocRow[] => run({ limit: "200" }).items;
+  const atOrBeyond = (tier: StaleTier | null, floor: StaleTier): boolean =>
+    tier !== null && STALE_TIERS.indexOf(tier) >= STALE_TIERS.indexOf(floor);
+
+  it.each(STALE_TIERS)("the `stale` field selects exactly what `stale=%s` returns", (tier) => {
+    const carrying = all()
+      .filter((item) => atOrBeyond(item.stale, tier))
+      .map((item) => item.id)
+      .sort();
+    expect(carrying).toEqual(ids(run({ stale: tier, limit: "200" })));
+    expect(carrying.length).toBeGreaterThan(0);
+  });
+
+  it("gives the `stale` Attention reason to exactly the rows at or beyond that tier", () => {
+    for (const item of all()) {
+      expect(item.attention.includes("stale")).toBe(atOrBeyond(item.stale, "stale"));
+    }
+  });
+
+  it.each([
+    ["agent", "engaged"],
+    ["agent", "requested"],
+    ["agent", "none"],
+  ])("the `%s` field selects exactly what `%s=%s` returns", (_field, value) => {
+    const carrying = all()
+      .filter((item) => item.agent === value)
+      .map((item) => item.id)
+      .sort();
+    expect(carrying).toEqual(ids(run({ type: "thread", agent: value, limit: "200" })));
+  });
+
+  it("the `unread` field selects exactly what `unread=` returns, in both directions", () => {
+    for (const wanted of [true, false]) {
+      const carrying = all()
+        .filter((item) => item.unread === wanted)
+        .map((item) => item.id)
+        .sort();
+      expect(carrying).toEqual(ids(run({ type: "thread", unread: String(wanted), limit: "200" })));
+      expect(carrying.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("the `lastAuthor` and `parent` fields select exactly what `author=`/`parent=` return", () => {
+    const byAuthor = all()
+      .filter((item) => item.lastAuthor === "agent")
+      .map((item) => item.id)
+      .sort();
+    expect(byAuthor).toEqual(ids(run({ type: "thread", author: "agent", limit: "200" })));
+
+    const byParent = all()
+      .filter((item) => item.parent === "doc_legal")
+      .map((item) => item.id)
+      .sort();
+    expect(byParent).toEqual(ids(run({ type: "thread", parent: "doc_legal", limit: "200" })));
+    expect(byParent.length).toBeGreaterThan(0);
+  });
+
+  it("leaves every thread field null on rows that are not threads", () => {
+    const threads = new Set(ids(run({ type: "thread", limit: "200" })));
+    for (const item of all()) {
+      if (threads.has(item.id)) continue;
+      expect(item).toMatchObject({
+        parent: null,
+        agent: null,
+        anchorQuote: null,
+        turnCount: null,
+        lastAuthor: null,
+        lastTurn: null,
+        unread: null,
+        awaitingAgent: null,
+      });
     }
   });
 });

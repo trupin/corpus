@@ -60,22 +60,25 @@ function createTestClient() {
     const request = c.req.valid("json");
     return c.json(
       {
-        frontmatter: {
-          id: "doc_a1b2c3",
-          type: request.type,
-          title: request.title,
-          created: "2026-07-19T10:00:00Z",
-          updated: "2026-07-19T10:00:00Z",
-          tags: request.tags ?? [],
-          status: request.status ?? ("open" as const),
-          anchors: {},
-          due: request.due ?? null,
-          reviewed: null,
-          evergreen: request.evergreen ?? false,
+        doc: {
+          frontmatter: {
+            id: "doc_a1b2c3",
+            type: request.type,
+            title: request.title,
+            created: "2026-07-19T10:00:00Z",
+            updated: "2026-07-19T10:00:00Z",
+            tags: request.tags ?? [],
+            status: request.status ?? ("open" as const),
+            anchors: {},
+            due: request.due ?? null,
+            reviewed: null,
+            evergreen: request.evergreen ?? false,
+          },
+          body: request.body ?? "",
+          path: `data/docs/${request.folder ?? "inbox"}/mortgage-options.md`,
+          anchors: [],
         },
-        body: request.body ?? "",
-        path: `data/docs/${request.folder ?? "inbox"}/mortgage-options.md`,
-        anchors: [],
+        warnings: [],
       },
       201,
     );
@@ -118,15 +121,16 @@ describe("request bodies never demand a server-defaulted field", () => {
     });
 
     expect(error).toBeUndefined();
-    expect(data?.frontmatter).toMatchObject({ status: "open", tags: [], due: null });
-    expect(data?.path).toBe("data/docs/inbox/mortgage-options.md");
+    expect(data?.doc.frontmatter).toMatchObject({ status: "open", tags: [], due: null });
+    expect(data?.doc.path).toBe("data/docs/inbox/mortgage-options.md");
+    expect(data?.warnings).toEqual([]);
   });
 
   it("still accepts a body that names every optional field", async () => {
     const { data } = await createTestClient().api.POST("/api/docs", { body: fullCreateDoc });
 
-    expect(data?.path).toBe("data/docs/finance/mortgage-options.md");
-    expect(data?.frontmatter.tags).toEqual(["finance"]);
+    expect(data?.doc.path).toBe("data/docs/finance/mortgage-options.md");
+    expect(data?.doc.frontmatter.tags).toEqual(["finance"]);
   });
 
   it("accepts a standalone thread with neither parent nor selector", async () => {

@@ -3,6 +3,7 @@ import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
+import { QUERY_KEY_NAMES, QUERY_KEY_VOCABULARY } from "./query-keys.js";
 
 const document = buildOpenApiDocument();
 
@@ -237,6 +238,22 @@ describe("generated OpenAPI document", () => {
   it("documents the SSE stream as an event stream, not as JSON", () => {
     const ok = operation("/events", "get").responses?.["200"];
     expect(Object.keys(ok?.content ?? {})).toEqual(["text/event-stream"]);
+  });
+
+  /**
+   * A client author reading only the generated document must learn the whole
+   * closed key vocabulary from it — which shapes exist, what emits each, and
+   * what refetches on it. Publishing the constants is half the job; this is the
+   * half that survives someone who never opens the package.
+   */
+  it("carries the whole query-key vocabulary in the SSE stream's description", () => {
+    const description = operation("/events", "get").description ?? "";
+    for (const name of QUERY_KEY_NAMES) {
+      const entry = QUERY_KEY_VOCABULARY[name];
+      expect(description, `${name}.shape`).toContain(entry.shape);
+      expect(description, `${name}.emittedBy`).toContain(entry.emittedBy);
+      expect(description, `${name}.refetchedBy`).toContain(entry.refetchedBy);
+    }
   });
 
   /**
@@ -623,8 +640,9 @@ describe("multipart, attachments and the stream", () => {
  *   least one required field is `required: true`.
  *
  * A body offering several media types is mandatory when *any* representation
- * demands a field: the caller still has to send one of the forms. Exactly one
- * body cannot say so — see `RULE_EXEMPTIONS`.
+ * demands a field: the caller still has to send one of the forms. The rule holds
+ * across the whole surface with no exemptions — `RULE_EXEMPTIONS` is kept, and
+ * asserted empty, so the next one to be proposed has to be written down here.
  */
 describe("request bodies declare whether they are mandatory", () => {
   /**
@@ -632,13 +650,7 @@ describe("request bodies declare whether they are mandatory", () => {
    * it has to. Keeping them here rather than in a route comment means an
    * exemption that stops being necessary shows up as a failing test.
    */
-  const RULE_EXEMPTIONS: Readonly<Record<string, string>> = {
-    // `@hono/zod-openapi@1.5.1` registers every media type's validator
-    // unconditionally once `required` is truthy, so a two-media-type body
-    // rejects both of its own forms. Declaring it optional is what keeps the
-    // library dispatching on `content-type`.
-    "POST /api/threads/{id}/turns": "upstream: required:true breaks multi-media validation",
-  };
+  const RULE_EXEMPTIONS: Readonly<Record<string, string>> = {};
 
   interface RequestBodyFacts {
     readonly signature: string;
@@ -733,14 +745,18 @@ describe("request bodies declare whether they are mandatory", () => {
     ).toEqual([]);
   });
 
-  it("keeps every exemption from the rule earned", () => {
-    // An exemption that no longer contradicts the rule is dead weight hiding a
-    // route that could now be honest.
+  it("earns no exemption from the rule at all", () => {
+    // The one exemption this list ever held — the dual-media turn append, which
+    // `@hono/zod-openapi@1.5.1` cannot validate when `required` is truthy — was
+    // closed by `routes/turn-append.ts`: the document declares `required: true`
+    // and the mounting helper dispatches on `content-type` itself. The list
+    // stays, asserted empty, so the next exemption has to be argued for here
+    // rather than added quietly.
     const unearned = bodies.filter(
       (body) => body.signature in RULE_EXEMPTIONS && body.declared === !body.whollyOptional,
     );
     expect(unearned.map((body) => body.signature)).toEqual([]);
-    expect(Object.keys(RULE_EXEMPTIONS)).toEqual(["POST /api/threads/{id}/turns"]);
+    expect(Object.keys(RULE_EXEMPTIONS)).toEqual([]);
   });
 
   it("uses no branching schema that would make the rule ambiguous", () => {
@@ -760,7 +776,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/queue/halt": false,
       "POST /api/queue/{id}/fail": false,
       "POST /api/threads/{id}/seen": false,
-      "POST /api/threads/{id}/turns": false,
+      "POST /api/threads/{id}/turns": true,
       "PUT /api/docs/{id}": false,
     });
   });

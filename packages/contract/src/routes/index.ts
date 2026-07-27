@@ -26,7 +26,6 @@ import {
   resumeQueue,
 } from "./queue.js";
 import {
-  appendTurn,
   createThread,
   deleteTurn,
   getThread,
@@ -34,6 +33,7 @@ import {
   reopenThread,
   resolveThread,
 } from "./threads.js";
+import { appendTurn } from "./turn-append.js";
 import { getTree } from "./tree.js";
 
 export * from "./attachments.js";
@@ -48,6 +48,7 @@ export * from "./queue.js";
 export * from "./responses.js";
 export * from "./threads.js";
 export * from "./tree.js";
+export * from "./turn-append.js";
 
 /**
  * Every route the contract declares, by name. The server registers handlers

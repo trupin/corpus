@@ -2,14 +2,11 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { ActorHeaderSchema } from "../schemas/actor.js";
 import { ThreadIdSchema } from "../schemas/id.js";
 import {
-  AppendTurnRequestSchema,
-  AppendTurnResponseSchema,
   CreateThreadRequestSchema,
   CreateThreadResponseSchema,
   DeleteTurnResultSchema,
   MarkSeenRequestSchema,
   MarkSeenResultSchema,
-  MultipartAppendTurnRequestSchema,
   ThreadSchema,
   ThreadSummarySchema,
 } from "../schemas/thread.js";
@@ -79,51 +76,6 @@ export const createThread = createRoute({
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
     423: LOCKED_RESPONSE,
-  },
-});
-
-export const appendTurn = createRoute({
-  method: "post",
-  path: "/api/threads/{id}/turns",
-  tags: ["threads"],
-  summary: "Append a turn to a thread",
-  description:
-    "The server owns the turn format and guarantees timestamps are unique and monotonic within the " +
-    "thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to " +
-    "attach files — a turn may be attachment-only, but one carrying neither text nor files is a " +
-    "`400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since " +
-    "`openapi-fetch` serialises JSON only.",
-  request: {
-    params: ThreadIdParamSchema,
-    headers: ActorHeaderSchema,
-    // The one body the CONTRACT-004 rule cannot mark mandatory. `required: true`
-    // makes `@hono/zod-openapi@1.5.1` register *every* media type's validator
-    // unconditionally (`dist/index.mjs`, the `if (route.request?.body?.required)`
-    // branches), so a two-media-type body 400s whichever form the caller sends:
-    // the JSON request fails the multipart schema's refinement and the multipart
-    // request fails the JSON validator's content-type check. `required: false`
-    // restores the library's content-type dispatch. The multipart schema is also
-    // wholly optional at the JSON-Schema level — its "text or files" rule lives
-    // in a `.refine` — so the letter of the rule admits this reading. Escalated
-    // with CONTRACT-004; revisit if upstream separates doc `required` from
-    // validator registration.
-    body: {
-      required: false,
-      description:
-        "The turn, as JSON or as multipart. Omitting it entirely is never a meaningful call — the " +
-        "JSON form demands `body` and a multipart part carrying neither `text` nor `files` is a " +
-        "`400` — but it is declared optional so the two media types stay independently validated.",
-      content: {
-        "application/json": { schema: AppendTurnRequestSchema },
-        "multipart/form-data": { schema: MultipartAppendTurnRequestSchema },
-      },
-    },
-  },
-  responses: {
-    201: jsonContent(AppendTurnResponseSchema, "The appended turn and the updated thread summary."),
-    400: VALIDATION_RESPONSE,
-    401: UNAUTHORIZED_RESPONSE,
-    404: NOT_FOUND_RESPONSE,
   },
 });
 

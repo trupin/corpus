@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INVALIDATE_EVENT, InvalidatePayloadSchema, QueryKeySchema } from "./sse.js";
+import { INVALIDATE_EVENT, InvalidatePayloadSchema, QueryKeySchema, parseQueryKey } from "./sse.js";
 
 describe("QueryKey", () => {
   it.each([[["docs"]], [["docs", { type: "thread" }]], [["threads", "th_x9y8", 2]]])(
@@ -11,6 +11,14 @@ describe("QueryKey", () => {
 
   it("rejects a key segment that is not a string, number or filter object", () => {
     expect(QueryKeySchema.safeParse(["docs", true]).success).toBe(false);
+  });
+
+  it("parses a wire key into the published, Zod-free QueryKey type", () => {
+    expect(parseQueryKey(["docs", "doc_a1b2c3"])).toEqual(["docs", "doc_a1b2c3"]);
+  });
+
+  it("throws rather than passing a malformed key on to a cache", () => {
+    expect(() => parseQueryKey("docs")).toThrow();
   });
 });
 

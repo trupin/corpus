@@ -19,6 +19,20 @@ export const UNREAD_SQL =
   "(t.id IS NOT NULL AND t.last_ts IS NOT NULL AND t.last_ts > COALESCE(s.last_seen_ts, ''))";
 
 /**
+ * The pending-agent affordance (SPEC.md §8, §11): the agent has been drawn into
+ * an open thread and the last turn is not yet its reply.
+ *
+ * It lives beside {@link UNREAD_SQL} rather than in the row builder because it
+ * is written as the conjunction of exactly the columns `agent=` and `author=`
+ * filter on (`t.agent`, `t.last_author`) — the indicator and those chips read
+ * one vocabulary, so `?agent=engaged&author=user` and the badge cannot disagree.
+ * A thread with no turns has `last_author IS NULL` and is therefore not awaiting
+ * anything: the agent is drawn in *by* a turn.
+ */
+export const AWAITING_AGENT_SQL =
+  "(t.id IS NOT NULL AND t.agent <> 'none' AND t.status = 'open' AND t.last_author = 'user')";
+
+/**
  * An unanswered form is an agent turn carrying a fenced ```form block that is
  * still the thread's last turn (SPEC.md §6) — `last_author = 'agent'` is what
  * says no user turn followed it, so no "is there a later turn" subquery is

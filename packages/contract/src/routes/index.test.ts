@@ -4,6 +4,7 @@ import { ACTOR_HEADER } from "../actor.js";
 import { CONTRACT_VERSION } from "../openapi.js";
 import { ALL_CONTRACT_ROUTES, contractRoutes } from "./index.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./inventory.js";
+import { mountAppendTurn } from "./turn-append.js";
 
 const frontmatter = {
   id: "doc_a1b2c3",
@@ -34,6 +35,15 @@ const row = {
   reviewed: null,
   evergreen: false,
   excerpt: "Body.",
+  stale: null,
+  parent: null,
+  agent: null,
+  anchorQuote: null,
+  turnCount: null,
+  lastAuthor: null,
+  lastTurn: null,
+  unread: null,
+  awaitingAgent: null,
   attention: ["unread-reply" as const, "due" as const],
   snippets: [
     {
@@ -133,24 +143,42 @@ function createStubApp() {
     const body = c.req.valid("json");
     const author = c.req.valid("header")[ACTOR_HEADER];
     return c.json(
-      { ...doc, frontmatter: { ...frontmatter, title: `${body.title} by ${author}` } },
+      {
+        doc: { ...doc, frontmatter: { ...frontmatter, title: `${body.title} by ${author}` } },
+        warnings: [],
+      },
       201,
     );
   });
   app.openapi(contractRoutes.getDoc, (c) => c.json(doc, 200));
   app.openapi(contractRoutes.updateDoc, (c) =>
-    c.json({ doc, anchors: { remapped: [], orphaned: [] } }, 200),
+    c.json({ doc, anchors: { remapped: [], orphaned: [] }, warnings: [] }, 200),
   );
   app.openapi(contractRoutes.deleteDoc, (c) =>
-    c.json({ deletedId: c.req.valid("param").id, orphanedThreadIds: ["th_x9y8"] }, 200),
+    c.json(
+      { deletedId: c.req.valid("param").id, orphanedThreadIds: ["th_x9y8"], warnings: [] },
+      200,
+    ),
   );
   app.openapi(contractRoutes.moveDoc, (c) =>
-    c.json({ ...doc, path: `data/docs/${c.req.valid("json").folder}/mortgage.md` }, 200),
+    c.json(
+      {
+        doc: { ...doc, path: `data/docs/${c.req.valid("json").folder}/mortgage.md` },
+        warnings: [],
+      },
+      200,
+    ),
   );
   app.openapi(contractRoutes.archiveDoc, (c) =>
-    c.json({ ...doc, frontmatter: { ...frontmatter, status: "archived" as const } }, 200),
+    c.json(
+      {
+        doc: { ...doc, frontmatter: { ...frontmatter, status: "archived" as const } },
+        warnings: [],
+      },
+      200,
+    ),
   );
-  app.openapi(contractRoutes.unarchiveDoc, (c) => c.json(doc, 200));
+  app.openapi(contractRoutes.unarchiveDoc, (c) => c.json({ doc, warnings: [] }, 200));
 
   app.openapi(contractRoutes.getTree, (c) =>
     c.json(
@@ -186,9 +214,7 @@ function createStubApp() {
     c.json({ thread, anchorId: "anc_k4f7", eventId: null }, 201),
   );
   app.openapi(contractRoutes.getThread, (c) => c.json(thread, 200));
-  app.openapi(contractRoutes.appendTurn, (c) =>
-    c.json({ thread: threadSummary, turn, eventId: null }, 201),
-  );
+  mountAppendTurn(app, (c) => c.json({ thread: threadSummary, turn, eventId: null }, 201));
   app.openapi(contractRoutes.deleteTurn, (c) =>
     c.json(
       {
@@ -373,8 +399,8 @@ describe("routes mounted on a Hono app", () => {
       body: JSON.stringify({ type: "note", title: "New" }),
     });
     expect(response.status).toBe(201);
-    const created = (await response.json()) as { frontmatter: { title: string } };
-    expect(created.frontmatter.title).toBe("New by user");
+    const created = (await response.json()) as { doc: { frontmatter: { title: string } } };
+    expect(created.doc.frontmatter.title).toBe("New by user");
   });
 
   it("carries an explicit agent attribution through to the handler", async () => {
@@ -383,8 +409,8 @@ describe("routes mounted on a Hono app", () => {
       headers: { "content-type": "application/json", [ACTOR_HEADER]: "agent" },
       body: JSON.stringify({ type: "note", title: "New" }),
     });
-    const created = (await response.json()) as { frontmatter: { title: string } };
-    expect(created.frontmatter.title).toBe("New by agent");
+    const created = (await response.json()) as { doc: { frontmatter: { title: string } } };
+    expect(created.doc.frontmatter.title).toBe("New by agent");
   });
 
   it("rejects an actor outside the two parties", async () => {
