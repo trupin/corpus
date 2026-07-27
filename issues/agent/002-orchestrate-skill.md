@@ -33,6 +33,8 @@ fable — the skill text IS the product agent's judgment; prompt design quality 
 
 Write the real `.claude/skills/orchestrate/SKILL.md` — the product agent's main loop, the thing the operator invokes with `/orchestrate` after starting `claude` in their workspace. It replaces the AGENT-001 skeleton at `assets/workspace/claude/skills/orchestrate/SKILL.md`.
 
+> **Attribution requirement (CLI-003 adjudication, 2026-07-27):** the CLI's `--from` default is `user` on every mutating verb — including `lock acquire`, which previously defaulted to `agent`. The skill (or the workspace's agent environment) MUST set `CORPUS_FROM=agent` (or pass `--from agent` on every call), or every agent-side write and lock will be attributed to the user in git and in lock ownership.
+
 This is prompt engineering held to the same bar as code. The skill must make an autonomous Claude Code session: park with zero token burn, claim events atomically, route each event type to the right handler, respect concurrency and lock constraints, emit progress that the console can show, drive every claimed event to a terminal state, honor the HALT kill switch, steward the corpus while it works, and never — under any circumstance — write a workspace file by hand. It must also tell the human how to recover when the loop itself is broken, since a bad edit to a core-loop skill disables the mechanism that would otherwise fix it.
 
 ## Acceptance Criteria

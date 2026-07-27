@@ -4,6 +4,11 @@ import {
   AppendTurnResponseSchema,
   CreateThreadRequestSchema,
   CreateThreadResponseSchema,
+  DeleteTurnResultSchema,
+  MarkSeenRequestSchema,
+  MarkSeenResultSchema,
+  type MarkSeenResult,
+  MultipartAppendTurnRequestSchema,
   THREAD_AGENT_STATES,
   ThreadAgentSchema,
   ThreadSchema,
@@ -83,10 +88,21 @@ describe("ThreadSummary", () => {
 });
 
 describe("CreateThreadRequest", () => {
-  it("defaults to a standalone thread, leaving the enqueue decision to the server", () => {
+  /**
+   * `parent` and `selector` stay absent rather than defaulting to null, for the
+   * same reason as `CreateDocRequest`'s optional fields: a Zod default renders
+   * as a required member of the generated client type (CONTRACT-003). Omitted
+   * and explicit null mean the same thing here, so nothing is lost.
+   */
+  it("leaves parent and selector absent, which the server reads as a standalone thread", () => {
     const parsed = CreateThreadRequestSchema.parse({ body: "Ask from nowhere." });
-    expect(parsed).toEqual({ body: "Ask from nowhere.", parent: null, selector: null });
+    expect(parsed).toEqual({ body: "Ask from nowhere." });
     expect(parsed.requestsAgent).toBeUndefined();
+  });
+
+  it("accepts an explicit null parent and selector as the same instruction", () => {
+    const request = { parent: null, selector: null, body: "Ask from nowhere." };
+    expect(CreateThreadRequestSchema.parse(request)).toEqual(request);
   });
 
   it("carries a selection so the server can write the parent's anchor entry", () => {
@@ -99,6 +115,15 @@ describe("CreateThreadRequest", () => {
     expect(CreateThreadRequestSchema.parse(request)).toEqual(request);
   });
 
+  it("accepts a selector carrying only its quote, leaving the context to the server", () => {
+    const parsed = CreateThreadRequestSchema.parse({
+      parent: "doc_a1b2c3",
+      selector: { exact: "6.1%" },
+      body: "@agent still right?",
+    });
+    expect(parsed.selector).toEqual({ exact: "6.1%" });
+  });
+
   it("rejects an empty first turn", () => {
     expect(CreateThreadRequestSchema.safeParse({ body: "" }).success).toBe(false);
   });
@@ -106,12 +131,27 @@ describe("CreateThreadRequest", () => {
 
 describe("CreateThreadResponse", () => {
   it("reports the written anchor and the enqueued event", () => {
-    const response = { thread, anchorId: "anc_k4f7", eventId: "evt_7c1d" };
+    const response = { thread, anchorId: "anc_k4f7", eventId: "evt_7c1d", warnings: [] };
     expect(CreateThreadResponseSchema.parse(response)).toEqual(response);
   });
 
   it("reports nulls when nothing was anchored and the agent was not requested", () => {
-    const response = { thread, anchorId: null, eventId: null };
+    const response = { thread, anchorId: null, eventId: null, warnings: [] };
+    expect(CreateThreadResponseSchema.parse(response)).toEqual(response);
+  });
+
+  /**
+   * The case the field exists for: anchored creation writes the parent's
+   * frontmatter, so a hook that refuses the commit leaves the parent uncommitted
+   * and the commenter has to be told (SPEC.md §14).
+   */
+  it("carries a rejected auto-commit on an anchored creation", () => {
+    const response = {
+      thread,
+      anchorId: "anc_k4f7",
+      eventId: null,
+      warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+    };
     expect(CreateThreadResponseSchema.parse(response)).toEqual(response);
   });
 });
@@ -140,8 +180,229 @@ describe("AppendTurnRequest and AppendTurnResponse", () => {
       },
       turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks" },
       eventId: null,
+      warnings: [],
     };
     expect(AppendTurnResponseSchema.parse(response)).toEqual(response);
+  });
+});
+
+describe("MultipartAppendTurnRequest", () => {
+  const png = () => new File(["bytes"], "screenshot.png", { type: "image/png" });
+
+  it("accepts text with no files", () => {
+    expect(MultipartAppendTurnRequestSchema.parse({ text: "just a note" })).toEqual({
+      text: "just a note",
+      files: [],
+    });
+  });
+
+  /** SPEC.md §6: "a turn may be attachment-only (no text)". */
+  it("accepts a file with no text", () => {
+    const file = png();
+    const parsed = MultipartAppendTurnRequestSchema.parse({ files: file });
+    expect(parsed.files).toEqual([file]);
+    expect(parsed.text).toBeUndefined();
+  });
+
+  it("accepts text and several files together", () => {
+    const files = [png(), png()];
+    const parsed = MultipartAppendTurnRequestSchema.parse({ text: "look", files });
+    expect(parsed.files).toEqual(files);
+  });
+
+  it("rejects a turn with neither text nor files, naming the constraint", () => {
+    const result = MultipartAppendTurnRequestSchema.safeParse({});
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain("text");
+  });
+
+  it("rejects an empty text with no files, which is the same nothing", () => {
+    expect(MultipartAppendTurnRequestSchema.safeParse({ text: "" }).success).toBe(false);
+  });
+});
+
+describe("MarkSeenRequest and MarkSeenResult", () => {
+  it("accepts a bodiless mark, defaulting to the thread's last turn server-side", () => {
+    const parsed = MarkSeenRequestSchema.parse({});
+    expect(parsed).toEqual({});
+    expect(parsed.lastSeenTs).toBeUndefined();
+  });
+
+  it("carries an explicit partial-read mark through", () => {
+    expect(MarkSeenRequestSchema.parse({ lastSeenTs: "2026-07-19T10:05:00Z" })).toEqual({
+      lastSeenTs: "2026-07-19T10:05:00Z",
+    });
+  });
+
+  it("rejects a mark that is not an instant", () => {
+    expect(MarkSeenRequestSchema.safeParse({ lastSeenTs: "2026-07-19" }).success).toBe(false);
+  });
+
+  it("round-trips the recorded mark", () => {
+    const result = {
+      threadId: "th_x9y8",
+      lastSeenTs: "2026-07-19T10:07:12Z",
+      unread: false,
+    };
+    expect(MarkSeenResultSchema.parse(result)).toEqual(result);
+  });
+
+  /**
+   * The request schema accepts a `lastSeenTs` before the last turn to record a
+   * partial read, after which turns remain unseen and the badge stays lit
+   * (SPEC.md §7). `unread` is the only field that can say so, which is why it is
+   * a boolean rather than `literal(false)`.
+   */
+  it("round-trips a partial mark that leaves the thread unread", () => {
+    const result = {
+      threadId: "th_x9y8",
+      // The first of the two turns: the later one is still unread.
+      lastSeenTs: "2026-07-19T10:05:00Z",
+      unread: true,
+    };
+    expect(MarkSeenResultSchema.parse(result)).toEqual(result);
+  });
+
+  /**
+   * A type-level probe, checked by `tsc --noEmit` rather than at runtime: the
+   * annotation is what fails to compile if `unread` narrows back to `false`.
+   */
+  it("makes the partial mark representable in the inferred type, not just at parse time", () => {
+    const partial: MarkSeenResult = {
+      threadId: "th_x9y8",
+      lastSeenTs: "2026-07-19T10:05:00Z",
+      unread: true,
+    };
+    expect(partial.unread).toBe(true);
+  });
+
+  it("still rejects a non-boolean unread flag rather than coercing it", () => {
+    const result = { threadId: "th_x9y8", lastSeenTs: "2026-07-19T10:07:12Z", unread: "yes" };
+    expect(MarkSeenResultSchema.safeParse(result).success).toBe(false);
+  });
+});
+
+/** SPEC.md §6's cascade, reported so the client knows which caches to drop. */
+describe("DeleteTurnResult", () => {
+  it("round-trips a turn deleted from the middle of a thread", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: false,
+      removedAnchor: null,
+      parentId: "doc_a1b2c3",
+      warnings: [],
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("round-trips the full cascade: last turn, thread and anchor all gone", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: true,
+      removedAnchor: "anc_k4f7",
+      parentId: "doc_a1b2c3",
+      warnings: [],
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("round-trips a standalone thread, which has no parent to update", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: true,
+      removedAnchor: null,
+      parentId: null,
+      warnings: [],
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  /** The cascade rewrites the parent's frontmatter, so it can warn like any write. */
+  it("carries a commit warning raised while removing the parent's anchor entry", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: true,
+      removedAnchor: "anc_k4f7",
+      parentId: "doc_a1b2c3",
+      warnings: [{ code: "commit_skipped" as const, detail: "workspace is not a git repository" }],
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("cannot report a deletion that did not happen", () => {
+    const result = {
+      deletedTurn: false,
+      deletedThread: false,
+      removedAnchor: null,
+      parentId: null,
+      warnings: [],
+    };
+    expect(DeleteTurnResultSchema.safeParse(result).success).toBe(false);
+  });
+});
+
+/**
+ * One definition, spread — not four look-alike arrays. The rule that matters to
+ * a consumer is that the key is always there, so "no warnings" is an empty array
+ * and never an absent field.
+ */
+describe("§14 warnings travel on every thread mutation", () => {
+  const shapes = [
+    {
+      name: "CreateThreadResponse",
+      schema: CreateThreadResponseSchema,
+      base: { thread, anchorId: null, eventId: null },
+    },
+    {
+      name: "AppendTurnResponse",
+      schema: AppendTurnResponseSchema,
+      base: {
+        thread: {
+          id: "th_x9y8",
+          title: "Re: 30-year fixed assumption",
+          status: "open",
+          parent: "doc_a1b2c3",
+          anchor: "anc_k4f7",
+          agent: "engaged",
+          created: "2026-07-19T10:05:00Z",
+          updated: "2026-07-19T10:09:00Z",
+          turnCount: 3,
+          lastAuthor: "user",
+          lastTs: "2026-07-19T10:09:00Z",
+        },
+        turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks" },
+        eventId: null,
+      },
+    },
+    {
+      name: "DeleteTurnResult",
+      schema: DeleteTurnResultSchema,
+      base: {
+        deletedTurn: true,
+        deletedThread: false,
+        removedAnchor: null,
+        parentId: "doc_a1b2c3",
+      },
+    },
+  ] as const;
+
+  describe.each(shapes)("$name", ({ schema, base }) => {
+    it("demands the warnings array rather than treating it as optional", () => {
+      expect(schema.safeParse(base).success).toBe(false);
+    });
+
+    it("accepts several warnings from the one mutation", () => {
+      const warnings = [
+        { code: "commit_failed" as const, detail: "pre-commit hook exited 1" },
+        { code: "orphaned_anchor" as const, detail: "anc_k4f7 no longer resolves" },
+      ];
+      expect(schema.parse({ ...base, warnings }).warnings).toEqual(warnings);
+    });
+
+    it("rejects a warning code outside the closed set", () => {
+      const warnings = [{ code: "disk_full", detail: "…" }];
+      expect(schema.safeParse({ ...base, warnings }).success).toBe(false);
+    });
   });
 });
 
@@ -184,6 +445,39 @@ describe("requestsAgent is a tri-state enqueue signal", () => {
 
     it("rejects a non-boolean signal rather than coercing it", () => {
       expect(schema.safeParse({ ...base, requestsAgent: "false" }).success).toBe(false);
+    });
+  });
+
+  /**
+   * The multipart body carries the same tri-state over text parts. `z.coerce
+   * .boolean()` would read `"false"` as true and silently destroy the toggle,
+   * which is why the field is a string-boolean rather than a coerced one.
+   */
+  describe("MultipartAppendTurnRequest", () => {
+    const base = { text: "reply" };
+
+    it('preserves an explicit "false", which is the "note only" instruction', () => {
+      expect(
+        MultipartAppendTurnRequestSchema.parse({ ...base, requestsAgent: "false" }).requestsAgent,
+      ).toBe(false);
+    });
+
+    it('preserves an explicit "true"', () => {
+      expect(
+        MultipartAppendTurnRequestSchema.parse({ ...base, requestsAgent: "true" }).requestsAgent,
+      ).toBe(true);
+    });
+
+    it("leaves an omitted signal undefined, so the server applies its own rule", () => {
+      const parsed = MultipartAppendTurnRequestSchema.parse(base);
+      expect(parsed.requestsAgent).toBeUndefined();
+      expect("requestsAgent" in parsed).toBe(false);
+    });
+
+    it("rejects a value that is neither true nor false", () => {
+      expect(
+        MultipartAppendTurnRequestSchema.safeParse({ ...base, requestsAgent: "maybe" }).success,
+      ).toBe(false);
     });
   });
 });

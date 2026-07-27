@@ -130,6 +130,127 @@ describe("M1 matrix on disk", () => {
     expect(readDoc(file).frontmatter.anchors["anc_bread1"]).toEqual(seeded.anchors["anc_bread1"]);
   });
 
+  it("SERVER-012: deleting a paragraph beside its edited near-identical sibling never truncates selectors on disk", () => {
+    // Pre-fix, this write persisted `exact: Paragraph one now has orang` (a
+    // mid-word truncation) and handed anc_two2 the surviving paragraph's text.
+    // Fixed: neither original survives verbatim, so both anchors orphan and
+    // the persisted file differs from the seeded one by the body edit alone.
+    const p1 = "Paragraph one now has apples and pears in the basket today.";
+    const p2 = "Paragraph two now has apples and pears in the basket today.";
+    const body = `\n# Doc\n\n${p1}\n\n${p2}\n\nA closing paragraph that stays put.\n`;
+    const at1 = body.indexOf(p1);
+    const at2 = body.indexOf(p2);
+    const seeded: Frontmatter = {
+      id: "doc_s012aa",
+      type: "note",
+      anchors: {
+        anc_one1: { exact: p1, ...computeContext(body, at1, at1 + p1.length) },
+        anc_two2: { exact: p2, ...computeContext(body, at2, at2 + p2.length) },
+      },
+    };
+    const file = join(workspace, "siblings.md");
+    writeDoc(file, seeded, body);
+
+    const { frontmatter, body: onDisk } = readDoc(file);
+    const newBody = onDisk.replace(`\n\n${p2}`, "").replace("apples", "oranges");
+    const { anchors, report } = reconcileAnchors(onDisk, newBody, frontmatter.anchors);
+    writeDoc(file, { ...frontmatter, anchors }, newBody);
+
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_one1", "anc_two2"] });
+    // Byte-for-byte: same frontmatter as seeded, only the body edited.
+    expect(readFileSync(file, "utf8")).toBe(`---\n${stringify(seeded)}---\n${newBody}`);
+    const persisted = readDoc(file).frontmatter.anchors;
+    expect(persisted["anc_one1"]).toEqual(seeded.anchors["anc_one1"]);
+    expect(persisted["anc_two2"]).toEqual(seeded.anchors["anc_two2"]);
+  });
+
+  it("SERVER-012 round 2: reversing near-identical paragraphs re-anchors both threads to their own paragraphs on disk", () => {
+    // Pre-fix, the reorder persisted `anc_fourth` with a 130-char exact
+    // quoting TWO paragraphs (its own plus anc_first's), the two anchors'
+    // resolved ranges overlapping on disk. Fixed: each anchor follows its own
+    // relocated paragraph.
+    const p = (o: string) => `Paragraph ${o} now has margin and cherries in the budget quarter.`;
+    const body = `\n# Doc\n\n${p("one")}\n\n${p("two")}\n\n${p("three")}\n\n${p("four")}\n\nA closing paragraph that stays put.\n`;
+    const at1 = body.indexOf(p("one"));
+    const at4 = body.indexOf(p("four"));
+    const seeded: Frontmatter = {
+      id: "doc_s012bb",
+      type: "note",
+      anchors: {
+        anc_first: { exact: p("one"), ...computeContext(body, at1, at1 + p("one").length) },
+        anc_fourth: { exact: p("four"), ...computeContext(body, at4, at4 + p("four").length) },
+      },
+    };
+    const file = join(workspace, "reorder.md");
+    writeDoc(file, seeded, body);
+
+    const { frontmatter, body: onDisk } = readDoc(file);
+    const newBody = `\n# Doc\n\n${p("four")}\n\n${p("three")}\n\n${p("two")}\n\n${p("one")}\n\nA closing paragraph that stays put.\n`;
+    const { anchors, report } = reconcileAnchors(onDisk, newBody, frontmatter.anchors);
+    writeDoc(file, { ...frontmatter, anchors }, newBody);
+
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_first", "anc_fourth"], orphaned: [] });
+    const persisted = readDoc(file);
+    const first = persisted.frontmatter.anchors["anc_first"];
+    const fourth = persisted.frontmatter.anchors["anc_fourth"];
+    expect(first?.exact).toBe(p("one"));
+    expect(fourth?.exact).toBe(p("four"));
+    const rangeFirst = first === undefined ? null : resolveAnchor(persisted.body, first);
+    const rangeFourth = fourth === undefined ? null : resolveAnchor(persisted.body, fourth);
+    expect(persisted.body.slice(rangeFirst?.start, rangeFirst?.end)).toBe(p("one"));
+    expect(persisted.body.slice(rangeFourth?.start, rangeFourth?.end)).toBe(p("four"));
+    // Disjoint on disk — the observable harm of the pre-fix superset selector.
+    expect(
+      (rangeFourth?.end ?? 0) <= (rangeFirst?.start ?? 0) ||
+        (rangeFirst?.end ?? 0) <= (rangeFourth?.start ?? 0),
+    ).toBe(true);
+  });
+
+  it("SERVER-013: swapping two wholly-distinct paragraphs keeps a lone anchor on its own text on disk", () => {
+    // The substitution class, on disk: six wholly-distinct paragraphs, one
+    // anchor on the hiring paragraph (#4), #4 and #6 swapped. Pre-fix the
+    // persisted frontmatter flipped `exact` to the CASH paragraph's text while
+    // the hiring text survived verbatim in the body (the git-observed
+    // reproduction in the issue's E2E log). Post-fix, `exact` stays
+    // byte-identical and only the context follows the paragraph's new home.
+    const HIRE =
+      "Hiring velocity stalled around the hiring committee's bar, before the budget review lands.";
+    const CASH =
+      "Cash runway stalled around nineteen months of burn, assuming no new debt this year.";
+    const paras = [
+      "Revenue grew past the enterprise tier forecast, according to the latest close.",
+      "Churn held steady near two point one percent, despite the pricing change in May.",
+      "The support backlog dropped below forty open tickets, per the operating plan.",
+      HIRE,
+      "Marketing spend shifted toward developer conferences this spring, though the data lags a week.",
+      CASH,
+    ];
+    const body = `# Q3 operations review\n\n${paras.join("\n\n")}\n`;
+    const at = body.indexOf(HIRE);
+    const seeded: Frontmatter = {
+      id: "doc_s013aa",
+      type: "note",
+      anchors: { anc_hire: { exact: HIRE, ...computeContext(body, at, at + HIRE.length) } },
+    };
+    const file = join(workspace, "substitution.md");
+    writeDoc(file, seeded, body);
+
+    const { frontmatter, body: onDisk } = readDoc(file);
+    const swapped = [...paras];
+    [swapped[3], swapped[5]] = [CASH, HIRE];
+    const newBody = `# Q3 operations review\n\n${swapped.join("\n\n")}\n`;
+    const { anchors, report } = reconcileAnchors(onDisk, newBody, frontmatter.anchors);
+    writeDoc(file, { ...frontmatter, anchors }, newBody);
+
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_hire"], orphaned: [] });
+    const persisted = readDoc(file);
+    const selector = persisted.frontmatter.anchors["anc_hire"];
+    expect(selector?.exact).toBe(HIRE);
+    const range = selector === undefined ? null : resolveAnchor(persisted.body, selector);
+    expect(range?.start).toBe(persisted.body.indexOf(HIRE));
+    expect(persisted.body.slice(range?.start, range?.end)).toBe(HIRE);
+  });
+
   it("TEST-26: both neighbouring sentences rewritten → remapped, exact kept, context quotes the new surroundings", () => {
     const { report, selector, body } = runRow("context-only", (b) =>
       b

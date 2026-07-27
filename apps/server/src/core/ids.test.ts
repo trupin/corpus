@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { AnchorIdSchema, DocIdSchema, EventIdSchema, ThreadIdSchema } from "@corpus/contract";
 import {
+  ID_ALPHABETS,
   ID_PREFIXES,
+  ID_SUFFIX_LENGTHS,
   IdGenerationError,
   MAX_ID_ATTEMPTS,
   idPrefixForDocType,
@@ -13,13 +15,34 @@ import {
   newId,
 } from "./ids.js";
 
-const GENERATED_SHAPE = /^(doc|th|anc|evt)_[a-z2-7]{8}$/;
+const generatedShape = (prefix: string, alphabet: string, length: number): RegExp =>
+  new RegExp(`^${prefix}_[${alphabet}]{${length}}$`);
 
 describe("newId", () => {
   it.each(Object.values(ID_PREFIXES))("mints a %s_* id in the generated shape", (prefix) => {
     const id = newId(prefix);
     expect(id.startsWith(`${prefix}_`)).toBe(true);
-    expect(id).toMatch(GENERATED_SHAPE);
+    expect(id).toMatch(generatedShape(prefix, ID_ALPHABETS[prefix], ID_SUFFIX_LENGTHS[prefix]));
+  });
+
+  // §6's own examples spell anchor ids in hex (`anc_k4f7` aside, the map is read
+  // by anyone editing a document by hand), and sprint-006 pins the minted shape.
+  it("mints anchor ids as 8 lowercase hex characters", () => {
+    expect(ID_ALPHABETS[ID_PREFIXES.anchor]).toBe("0123456789abcdef");
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      expect(newId(ID_PREFIXES.anchor)).toMatch(/^anc_[0-9a-f]{8}$/);
+    }
+  });
+
+  it("keeps every other kind on base32, which packs more entropy per character", () => {
+    for (const prefix of [ID_PREFIXES.doc, ID_PREFIXES.thread, ID_PREFIXES.event]) {
+      expect(ID_ALPHABETS[prefix]).toBe("abcdefghijklmnopqrstuvwxyz234567");
+    }
+  });
+
+  it("mints 12-character event ids: the queue outnumbers every other kind", () => {
+    expect(ID_SUFFIX_LENGTHS[ID_PREFIXES.event]).toBe(12);
+    expect(newId(ID_PREFIXES.event)).toMatch(/^evt_[a-z0-9]{12}$/);
   });
 
   it("mints ids the contract's schemas accept", () => {
@@ -41,7 +64,13 @@ describe("newId", () => {
       return calls <= 3;
     });
     expect(calls).toBe(4);
-    expect(id).toMatch(GENERATED_SHAPE);
+    expect(id).toMatch(
+      generatedShape(
+        ID_PREFIXES.doc,
+        ID_ALPHABETS[ID_PREFIXES.doc],
+        ID_SUFFIX_LENGTHS[ID_PREFIXES.doc],
+      ),
+    );
   });
 
   it("throws a named error after a bounded number of attempts", () => {

@@ -1,0 +1,224 @@
+import { execFileSync } from "node:child_process";
+import { closeSync, constants, openSync } from "node:fs";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { ExitCode, exitCodeFor, UsageError } from "./errors.js";
+import {
+  parseTriStateBoolean,
+  plural,
+  readAll,
+  requireBody,
+  requireFlag,
+  resolveActor,
+  resolveBody,
+  splitTags,
+  stdinCarriesABody,
+  warningSuffix,
+} from "./input.js";
+import { ParsedFlags, type FlagValue } from "./parse-args.js";
+import { createTestContext } from "./registry/fixtures.js";
+import { pipe } from "./testing/stdin.js";
+
+const flagsOf = (values: Readonly<Record<string, FlagValue>>): ParsedFlags =>
+  new ParsedFlags(new Map(Object.entries(values)));
+
+describe("resolveActor", () => {
+  it("defaults to the user, because a human typing a command is not the agent", () => {
+    expect(resolveActor(flagsOf({}), {})).toBe("user");
+  });
+
+  it("honours CORPUS_FROM, and lets --from beat it", () => {
+    expect(resolveActor(flagsOf({}), { CORPUS_FROM: "agent" })).toBe("agent");
+    expect(resolveActor(flagsOf({ from: "user" }), { CORPUS_FROM: "agent" })).toBe("user");
+    expect(resolveActor(flagsOf({ from: "agent" }), {})).toBe("agent");
+  });
+
+  it("treats an empty CORPUS_FROM as unset", () => {
+    expect(resolveActor(flagsOf({}), { CORPUS_FROM: "" })).toBe("user");
+  });
+
+  it("rejects anything else as a usage error naming the valid values", () => {
+    expect(() => resolveActor(flagsOf({ from: "robot" }), {})).toThrow(
+      /--from must be one of: user, agent/,
+    );
+    expect(() => resolveActor(flagsOf({}), { CORPUS_FROM: "robot" })).toThrow(
+      /CORPUS_FROM must be one of/,
+    );
+
+    let thrown: unknown;
+    try {
+      resolveActor(flagsOf({ from: "robot" }), {});
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UsageError);
+    expect(exitCodeFor(thrown)).toBe(ExitCode.usageError);
+  });
+});
+
+describe("resolveBody", () => {
+  it("prefers --message over --file and stdin", async () => {
+    const { context } = createTestContext({ flags: { message: "from -m", file: "/nope" } });
+    await expect(
+      resolveBody(context, { stdin: pipe("from stdin"), stdinIsBodySource: true }),
+    ).resolves.toBe("from -m");
+  });
+
+  it("prefers --file over stdin, resolving it against the invocation directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "corpus-c003-input-"));
+    await writeFile(join(dir, "body.md"), "from the file\n", "utf8");
+    const { context } = createTestContext({ flags: { file: "body.md" }, cwd: dir });
+
+    await expect(
+      resolveBody(context, { stdin: pipe("from stdin"), stdinIsBodySource: true }),
+    ).resolves.toBe("from the file\n");
+  });
+
+  it("reads piped stdin when neither flag is given", async () => {
+    const { context } = createTestContext({});
+    await expect(
+      resolveBody(context, { stdin: pipe("line one\n", "line two\n"), stdinIsBodySource: true }),
+    ).resolves.toBe("line one\nline two\n");
+  });
+
+  it("passes the bytes through verbatim — fences, form blocks and the final newline", async () => {
+    const body = "before\n\n```form\nname: x\n```\n\n~~~\nnested\n~~~\n";
+    const { context } = createTestContext({});
+    await expect(
+      resolveBody(context, { stdin: pipe(body), stdinIsBodySource: true }),
+    ).resolves.toBe(body);
+  });
+
+  it("never reads a stdin that is not a body source, so a verb cannot hang", async () => {
+    const { context } = createTestContext({});
+    await expect(
+      resolveBody(context, { stdin: pipe("would hang"), stdinIsBodySource: false }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("accepts a heredoc's regular file and a FIFO as body sources, and nothing else", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "corpus-c003-fd-"));
+    const file = join(dir, "body.md");
+    await writeFile(file, "body", "utf8");
+    const fifo = join(dir, "fifo");
+    execFileSync("mkfifo", [fifo]);
+
+    const regular = openSync(file, "r");
+    // O_NONBLOCK: opening a FIFO for reading otherwise waits for a writer.
+    const pipeEnd = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+    const nullDevice = openSync("/dev/null", "r");
+    try {
+      expect(stdinCarriesABody(regular)).toBe(true);
+      expect(stdinCarriesABody(pipeEnd)).toBe(true);
+      // A character device is neither, and neither is the socket an agent
+      // harness hands down — the case that hung a body-optional verb before
+      // this probe existed.
+      expect(stdinCarriesABody(nullDevice)).toBe(false);
+      // A closed descriptor is exactly "no body on stdin", not a crash.
+      expect(stdinCarriesABody(9999)).toBe(false);
+    } finally {
+      closeSync(regular);
+      closeSync(pipeEnd);
+      closeSync(nullDevice);
+    }
+  });
+
+  it("treats an empty pipe as no body at all", async () => {
+    const { context } = createTestContext({});
+    await expect(
+      resolveBody(context, { stdin: pipe(""), stdinIsBodySource: true }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reports an unreadable --file as a usage error, not a crash", async () => {
+    const { context } = createTestContext({ flags: { file: "/definitely/not/here.md" } });
+    const error: unknown = await resolveBody(context, { stdinIsBodySource: false }).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(UsageError);
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("cannot read --file");
+  });
+});
+
+describe("readAll", () => {
+  it("joins chunks of both kinds, decoding multi-byte characters across a split", async () => {
+    const encoded = new TextEncoder().encode("é");
+    // The split that a naive per-chunk `toString()` mangles: one character
+    // arriving as two reads, which is what a real pipe does under load.
+    async function* split(): AsyncGenerator<string | Uint8Array> {
+      yield "a";
+      yield await Promise.resolve(encoded.slice(0, 1));
+      yield encoded.slice(1);
+      yield "b";
+    }
+
+    await expect(readAll(split())).resolves.toBe("aéb");
+  });
+});
+
+describe("requireBody", () => {
+  it("rejects an absent body and an explicitly empty one with the same usage error", async () => {
+    const empty = createTestContext({ flags: { message: "" } });
+    const absent = createTestContext({});
+
+    for (const harness of [empty, absent]) {
+      const error: unknown = await requireBody(harness.context, "reply body", {
+        stdin: pipe(""),
+        stdinIsBodySource: true,
+      }).catch((cause: unknown) => cause);
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+      expect(String(error)).toContain("no reply body to send");
+    }
+  });
+
+  it("returns a body that is only whitespace — the server owns what is meaningful", async () => {
+    const { context } = createTestContext({ flags: { message: " " } });
+    await expect(requireBody(context, "reply body", { stdinIsBodySource: false })).resolves.toBe(
+      " ",
+    );
+  });
+});
+
+describe("small parsers", () => {
+  it("splits --tags on commas and drops the blanks", () => {
+    expect(splitTags("finance, housing ,")).toEqual(["finance", "housing"]);
+    expect(splitTags(undefined)).toBeUndefined();
+    expect(splitTags("")).toEqual([]);
+  });
+
+  it("keeps a true|false flag tri-state", () => {
+    expect(parseTriStateBoolean("evergreen", undefined)).toBeUndefined();
+    expect(parseTriStateBoolean("evergreen", "true")).toBe(true);
+    expect(parseTriStateBoolean("evergreen", "false")).toBe(false);
+    expect(() => parseTriStateBoolean("evergreen", "yes")).toThrow(UsageError);
+  });
+
+  it("requires a flag before sending anything", () => {
+    const { context } = createTestContext({ flags: { title: "" } });
+    expect(() => requireFlag(context, "title", "text")).toThrow(/--title is required/);
+    expect(() => requireFlag(context, "type", "type")).toThrow(UsageError);
+  });
+
+  it("folds warnings onto one line, collapsing multi-line hook output", () => {
+    expect(warningSuffix([])).toBe("");
+    expect(warningSuffix([{ code: "commit_failed", detail: "hook said\nno\n" }])).toBe(
+      " — warning: commit_failed (hook said no)",
+    );
+    expect(
+      warningSuffix([
+        { code: "commit_failed", detail: "a" },
+        { code: "unresolved_ref", detail: "b" },
+      ]),
+    ).toBe(" — 2 warnings: commit_failed, unresolved_ref");
+  });
+
+  it("pluralises counts so the one-line reports read like English", () => {
+    expect(plural(1, "anchor")).toBe("1 anchor");
+    expect(plural(2, "anchor")).toBe("2 anchors");
+    expect(plural(3, "seen", "seen")).toBe("3 seen");
+  });
+});

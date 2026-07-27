@@ -1,0 +1,120 @@
+// The console's rows: the `jobs` table joined with the `events` mirror
+// (SPEC.md §7, §9.1).
+//
+// **`status` is joined from `events`, never read from the log file** (the
+// SERVER-004 handoff, pinned): the log carries lines, the queue carries state.
+// A row therefore exists for every event — a job that never logged shows an
+// empty last line rather than disappearing from the console.
+
+import type { Job, JobLogLine, QueueEventStatus } from "@corpus/contract";
+import { DocumentIdSchema, QueueEventStatusSchema } from "@corpus/contract";
+import type { ProjectionDb } from "../projection/index.js";
+
+/**
+ * Stand-in for an instant the files do not carry. Every event the queue writes
+ * has `created` (the schema requires it), so this is reachable only for a file
+ * dropped in by hand with the field missing — and listing such an event with an
+ * unknown timestamp is better than dropping it from the console.
+ */
+export const UNKNOWN_INSTANT = "1970-01-01T00:00:00Z";
+
+/**
+ * Payload keys that can name the document or thread a job came from, in the
+ * order the console prefers them: a `comment.created` event names its thread,
+ * and the thread is where "open in its home column" should land.
+ */
+const ORIGIN_KEYS = ["threadId", "parentId", "docId"] as const;
+
+interface JobJoinRow {
+  readonly event_id: string;
+  readonly status: string;
+  readonly created: string | null;
+  readonly payload_json: string;
+  readonly started: string | null;
+  readonly updated: string | null;
+  readonly last_line: string | null;
+}
+
+/**
+ * Records one appended line against the console row, without re-reading the log
+ * file: the write path already knows the line, and a job whose file has grown to
+ * megabytes must not be re-read on every append.
+ *
+ * `started` is set once — the first line is when the job started talking — and
+ * `status` is re-joined from `events` on every write, so the row can never
+ * disagree with the queue about what state the job is in.
+ */
+export function recordJobLine(db: ProjectionDb, eventId: string, line: JobLogLine): void {
+  db.prepare(
+    `INSERT INTO jobs (event_id, status, started, updated, last_line)
+     VALUES (?, (SELECT status FROM events WHERE id = ?), ?, ?, ?)
+     ON CONFLICT(event_id) DO UPDATE SET
+       status = (SELECT status FROM events WHERE id = jobs.event_id),
+       started = COALESCE(jobs.started, excluded.started),
+       updated = excluded.updated,
+       last_line = excluded.last_line`,
+  ).run(eventId, eventId, line.ts, line.ts, line.line);
+}
+
+/** The originating document or thread, resolved through the projection; `null` when unknown. */
+export function resolveOriginId(db: ProjectionDb, payloadJson: string): string | null {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
+
+  const record = payload as Record<string, unknown>;
+  for (const key of ORIGIN_KEYS) {
+    const candidate = record[key];
+    if (typeof candidate !== "string") continue;
+    if (!DocumentIdSchema.safeParse(candidate).success) continue;
+    // Resolved through the projection: an id the corpus no longer holds is not a
+    // link the console can offer, so it reads as "no origin" rather than a dead one.
+    const row = db.prepare("SELECT 1 AS present FROM documents WHERE id = ?").get(candidate);
+    if (row !== undefined) return candidate;
+  }
+  return null;
+}
+
+function toJob(db: ProjectionDb, row: JobJoinRow): Job {
+  const status = QueueEventStatusSchema.safeParse(row.status);
+  const started = row.started ?? row.created ?? UNKNOWN_INSTANT;
+  return {
+    eventId: row.event_id,
+    // The directory a file sits in is the authority on its status, and that is
+    // what the mirror recorded; an unrecognised value can only come from a
+    // hand-made row, and `pending` is the harmless reading.
+    status: status.success ? status.data : ("pending" satisfies QueueEventStatus),
+    started,
+    updated: row.updated ?? row.created ?? started,
+    lastLine: row.last_line,
+    originId: resolveOriginId(db, row.payload_json),
+  };
+}
+
+const SELECT_JOBS = `
+  SELECT e.id AS event_id, e.status AS status, e.created AS created,
+         e.payload_json AS payload_json,
+         j.started AS started, j.updated AS updated, j.last_line AS last_line
+  FROM events e
+  LEFT JOIN jobs j ON j.event_id = e.id`;
+
+/** Console rows, most recently active first. `recent` is already range-checked by the contract. */
+export function listJobRows(db: ProjectionDb, recent: number): Job[] {
+  const rows = db
+    .prepare(
+      // The id breaks ties so a page is stable across identical timestamps —
+      // whole-second instants make ties ordinary, not exotic.
+      `${SELECT_JOBS} ORDER BY COALESCE(j.updated, e.created) DESC, e.id DESC LIMIT ?`,
+    )
+    .all(recent) as JobJoinRow[];
+  return rows.map((row) => toJob(db, row));
+}
+
+export function readJobRow(db: ProjectionDb, eventId: string): Job | undefined {
+  const row = db.prepare(`${SELECT_JOBS} WHERE e.id = ?`).get(eventId) as JobJoinRow | undefined;
+  return row === undefined ? undefined : toJob(db, row);
+}

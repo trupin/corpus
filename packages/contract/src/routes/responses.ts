@@ -1,5 +1,8 @@
 import type { z } from "@hono/zod-openapi";
 import {
+  ConflictErrorSchema,
+  ForbiddenErrorSchema,
+  LockConflictErrorSchema,
   LockedErrorSchema,
   NotFoundErrorSchema,
   UnauthorizedErrorSchema,
@@ -20,7 +23,26 @@ export const VALIDATION_RESPONSE = jsonContent(
   "The request failed schema validation; `issues` names the offending fields.",
 );
 
+/**
+ * Every route that carries it says in prose *which* actor it refuses, because
+ * `403` is about who is asking rather than about the request being malformed.
+ */
+export const FORBIDDEN_RESPONSE = jsonContent(
+  ForbiddenErrorSchema,
+  "The acting party in `x-corpus-author` may not make this call.",
+);
+
 export const NOT_FOUND_RESPONSE = jsonContent(NotFoundErrorSchema, "No such resource.");
+
+export const CONFLICT_RESPONSE = jsonContent(
+  ConflictErrorSchema,
+  "The request conflicts with state that already exists.",
+);
+
+export const LOCK_CONFLICT_RESPONSE = jsonContent(
+  LockConflictErrorSchema,
+  "Another party already holds this document's lock; `lock` identifies the holder (SPEC.md §7).",
+);
 
 export const LOCKED_RESPONSE = jsonContent(
   LockedErrorSchema,

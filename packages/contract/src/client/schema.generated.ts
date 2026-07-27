@@ -49,7 +49,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Query the document collection */
+        /**
+         * Query the document collection
+         * @description Structured filters compose with optional full-text search: values OR within a comma-separated parameter and AND across parameters. The default result set excludes `status: archived` (SPEC.md §11) unless `status` is passed explicitly. The thread-only filters — `parent`, `agent`, `author` and `unread` — no-op for non-thread types rather than erroring (SPEC.md §9.2). Every row carries its Attention reasons; rows carry search snippets when `q` is set.
+         */
         get: {
             parameters: {
                 query?: {
@@ -57,12 +60,36 @@ export interface paths {
                     limit?: number;
                     /** @description Rows to skip before collecting the page. */
                     offset?: number;
-                    /** @description Full-text query across document titles, bodies and turn bodies. */
+                    /** @description Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry `snippets`; without `q` every row's `snippets` array is empty. */
                     q?: string;
-                    /** @description Restrict to a single document type. Core values: note, thread, view, template, skill, agent-def. */
+                    /** @description Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because plugins define their own types (SPEC.md §5, §10). */
                     type?: string;
-                    /** @description Restrict to a status. Omitted, the result set excludes `archived` documents; passing `status` explicitly overrides that default. */
+                    /** @description Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` is how the archived chip brings them back. */
                     status?: "open" | "resolved" | "archived";
+                    /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
+                    tag?: string;
+                    /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §11). */
+                    folder?: string;
+                    /** @description Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
+                    parent?: string;
+                    /** @description Documents whose body contains `[[<id>]]`, read from the projection's `links` table (SPEC.md §9.1). Powers the backlinks panel and the `references:` filter chip. */
+                    references?: string;
+                    /** @description Agent participation state from the thread's frontmatter (SPEC.md §6). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
+                    agent?: "none" | "requested" | "engaged";
+                    /** @description Author of the thread's last turn — the "awaiting your answer" half of Attention. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
+                    author?: "user" | "agent";
+                    /** @description ISO 8601 instant; matches documents whose `updated` is strictly after it. Distinct from `due`, which is a calendar date or a keyword. */
+                    since?: string;
+                    /** @description Either an ISO calendar date (due on or before that date) or one of overdue, today, week. Keywords are resolved server-side against the workspace's clock. */
+                    due?: string | ("overdue" | "today" | "week");
+                    /** @description Staleness tier (SPEC.md §5), selecting documents at or beyond it — `aging` includes stale and very-stale. Documents with `evergreen: true` never match. */
+                    stale?: "aging" | "stale" | "very-stale";
+                    /** @description Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
+                    unread?: boolean;
+                    /** @description The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder. */
+                    needs?: "me" | "unread-reply" | "form" | "due" | "stale" | "failed-job";
+                    /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. */
+                    sort?: "updated" | "-updated" | "created" | "-created" | "due" | "title" | "relevance";
                 };
                 header?: never;
                 path?: never;
@@ -70,7 +97,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Matching documents, newest-updated first. */
+                /** @description Matching documents, newest-updated first by default. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -102,7 +129,7 @@ export interface paths {
         put?: never;
         /**
          * Create a document
-         * @description The body is pre-filled from the type's `template` document when one exists and no body is given (SPEC.md §9.2). The server assigns the id; it is immutable thereafter.
+         * @description The body is pre-filled from the type's `template` document when one exists and no body is given (SPEC.md §9.2). The server assigns the id; it is immutable thereafter. Creation is inbox-first: an omitted `folder` files the document in `data/docs/inbox/`.
          */
         post: {
             parameters: {
@@ -114,19 +141,20 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            /** @description The document to create. `type` and `title` are mandatory, so the body is too. */
+            requestBody: {
                 content: {
                     "application/json": components["schemas"]["CreateDocRequest"];
                 };
             };
             responses: {
-                /** @description The created document. */
+                /** @description The created document, and any §14 warnings. */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Doc"];
+                        "application/json": components["schemas"]["DocMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -215,7 +243,7 @@ export interface paths {
         };
         /**
          * Edit a document's body and frontmatter
-         * @description Runs anchor reconciliation (SPEC.md §6) in the same save and reports which anchors were remapped and which were orphaned. Refused with `423` when the other party holds the document's edit lock.
+         * @description Runs anchor reconciliation (SPEC.md §6) in the same save and reports which anchors were remapped and which were orphaned. Refused with `423` when the other party holds the document's edit lock. Every field is optional — a request names only what it changes — so an omitted body is exactly a `{}` body: a save that names no change and rewrites nothing.
          */
         put: {
             parameters: {
@@ -230,6 +258,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
+            /** @description The fields to change; omit the body entirely to change nothing. */
             requestBody?: {
                 content: {
                     "application/json": components["schemas"]["UpdateDocRequest"];
@@ -284,6 +313,524 @@ export interface paths {
             };
         };
         post?: never;
+        /**
+         * Delete a document (user-only)
+         * @description **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent archives, never deletes (SPEC.md §7). Cascade: the document's threads become **orphaned records** — they keep their `parent` id and stay readable, but their anchors no longer resolve. Nothing is hard-deleted from history; git preserves the file and every version of it. Refused with `423` when the other party holds the document's edit lock.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The deleted id, the threads it orphaned, and any §14 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeleteDocResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockedError"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a document to another folder
+         * @description Rewrites the file path only (SPEC.md §9.2). **The document id never changes**, so every `[[ref]]`, anchor entry and thread `parent` keeps resolving; the projection re-maps id → path. Refused with `423` when the other party holds the document's edit lock.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The destination folder. A move names one, so the body is mandatory. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MoveDocRequest"];
+                };
+            };
+            responses: {
+                /** @description The document at its new path, and any §14 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocMutationResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a document
+         * @description Flips `status` to `archived` — a reversible organizational act, never a deletion (SPEC.md §7). **The document id never changes** and nothing leaves git. Archived documents drop out of the default result set of `GET /api/docs` and come back with `status=archived`. Archiving a `type: skill` document additionally moves its folder to `.claude/skills-archived/`, which disables it without unindexing it. Refused with `423` when the other party holds the lock.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The document, now archived, and any §14 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocMutationResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/{id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore an archived document
+         * @description The inverse flip, back to `status: open`. **The document id never changes.** Refused with `423` when the other party holds the document's edit lock.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The document, restored, and any §14 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocMutationResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The `data/docs/` folder tree with document counts
+         * @description Backs folder pickers, folder columns and filter chips (SPEC.md §9.2). `count` is the documents filed directly in a folder; `totalCount` includes its descendants. Threads inherit their parent document's folder, so both are counted where they are filed.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The folder tree, roots first. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FolderTree"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture text (and attachments) as an inbox document
+         * @description The composer's Capture action (SPEC.md §11): creates the document in `data/docs/inbox/` **plus** its whole-document filing thread asking the agent to retitle, move, expand and tag it, in one call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board show the pending-agent indicator immediately and the console link the job back to the capture.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The captured `text`, plus any `files` parts. `text` is mandatory, so the body is. */
+            requestBody: {
+                content: {
+                    "multipart/form-data": components["schemas"]["CaptureRequest"];
+                };
+            };
+            responses: {
+                /** @description The created document, its filing thread, and the event. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CaptureResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a thread on a selection, a whole document, or standalone
+         * @description With a selector, the server writes the anchor entry into the parent's frontmatter and creates the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's edit lock, since anchoring mutates the parent.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The thread and its first turn. `body` is mandatory, so the request body is too. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateThreadRequest"];
+                };
+            };
+            responses: {
+                /** @description The created thread, its anchor, and any enqueued event. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CreateThreadResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockedError"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -359,7 +906,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/threads": {
+    "/api/threads/{id}/turns": {
         parameters: {
             query?: never;
             header?: never;
@@ -369,8 +916,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Create a thread on a selection, a whole document, or standalone
-         * @description With a selector, the server writes the anchor entry into the parent's frontmatter and creates the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's edit lock, since anchoring mutates the parent.
+         * Append a turn to a thread
+         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from `@corpus/contract`, which dispatches validation on `content-type`.
          */
         post: {
             parameters: {
@@ -379,22 +926,27 @@ export interface paths {
                     /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
                     "x-corpus-author"?: "user" | "agent";
                 };
-                path?: never;
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
                 cookie?: never;
             };
-            requestBody?: {
+            /** @description The turn, as JSON or as multipart. Mandatory: the JSON form demands `body`, a multipart body carrying neither `text` nor `files` is a `400`, and a request with no body at all is not a call anyone means to make. */
+            requestBody: {
                 content: {
-                    "application/json": components["schemas"]["CreateThreadRequest"];
+                    "application/json": components["schemas"]["AppendTurnRequest"];
+                    "multipart/form-data": components["schemas"]["MultipartAppendTurnRequest"];
                 };
             };
             responses: {
-                /** @description The created thread, its anchor, and any enqueued event. */
+                /** @description The appended turn and the updated thread summary. */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["CreateThreadResponse"];
+                        "application/json": components["schemas"]["AppendTurnResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -424,6 +976,90 @@ export interface paths {
                         "application/json": components["schemas"]["NotFoundError"];
                     };
                 };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{id}/turns/{ts}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a turn (user-only)
+         * @description **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — the agent never deletes turns (SPEC.md §6). Cascade: deleting a thread's **last** turn deletes the thread itself, and deleting a thread removes its anchor entry from the parent's frontmatter, so no highlight is left pointing at an empty conversation. Git retains the deleted turn. Refused with `423` when the other party holds the parent document's edit lock, since the cascade may rewrite the parent's frontmatter.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                    /** @description The turn's timestamp, which is its identity within the thread (SPEC.md §6). An ISO 8601 instant contains `:`, so clients must URL-encode it — `2026-07-19T10%3A05%3A00Z`. */
+                    ts: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description What the deletion cascaded to. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DeleteTurnResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
                 /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
                 423: {
                     headers: {
@@ -435,13 +1071,12 @@ export interface paths {
                 };
             };
         };
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/threads/{id}/turns": {
+    "/api/threads/{id}/resolve": {
         parameters: {
             query?: never;
             header?: never;
@@ -451,8 +1086,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Append a turn to a thread
-         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Multipart attachment uploads arrive with CONTRACT-002.
+         * Resolve a thread
+         * @description Sets `status: resolved`. The thread collapses in the document view and **later turns stop re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything.
          */
         post: {
             parameters: {
@@ -467,19 +1102,164 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["AppendTurnRequest"];
-                };
-            };
+            requestBody?: never;
             responses: {
-                /** @description The appended turn and the updated thread summary. */
-                201: {
+                /** @description The updated thread summary. */
+                200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["AppendTurnResponse"];
+                        "application/json": components["schemas"]["ThreadSummary"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen a resolved thread
+         * @description Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The updated thread summary. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ThreadSummary"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{id}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a thread read
+         * @description Records the last-seen mark in `.corpus/seen.json` and broadcasts an invalidation, so unread badges clear everywhere at once (SPEC.md §7). What counts as read is displayed content only — opening a parent document does not mark its collapsed-chip threads seen. The body is optional in full: a bare `POST` marks the thread read up to its last turn, which is what opening a thread means, and `lastSeenTs`, when given, records a partial read instead.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description Optional partial-read mark; omit the body entirely to mark the whole thread read. */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["MarkSeenRequest"];
+                };
+            };
+            responses: {
+                /** @description The mark now recorded. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MarkSeenResult"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -562,6 +1342,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/queue/idle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Long-poll until work is available
+         * @description Returns `200` the instant pending work exists or arrives, and `204` with no body when the window expires (default and maximum 480 s) so the skill loop re-invokes it. Both outcomes are normal; `204` is not an error. **Idle reports availability and never claims** — follow a `200` with `POST /api/queue/claim-all`. While the queue is halted, idle parks for the full window and never returns events (SPEC.md §7).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Seconds to hold the request open, 1–480 (480 is also the default; a longer ask is rejected with a 400 validation error, not clamped). Parking costs the agent zero tokens: it is blocked on a response, not looping. */
+                    timeout?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pending events exist; claim them next. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IdleResult"];
+                    };
+                };
+                /** @description The window expired with nothing pending. Re-invoke to park again. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queue/claim-all": {
         parameters: {
             query?: never;
@@ -594,6 +1441,191 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ClaimBatch"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/reap-stale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recover stuck in-progress events
+         * @description Moves events left in `in-progress/` by a crashed run back to `pending/`, so a dead agent session cannot strand work (SPEC.md §7).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The events returned to `pending/`. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReapStaleResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/halt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Halt the queue
+         * @description Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here. The body is optional in full: a bare `POST` halts, and a `reason`, when given, is recorded in the sentinel beside the halt timestamp. Halting an already-halted queue is not an error — it re-records the sentinel, so a second call may replace, add, or clear the reason: a bare re-halt rewrites the sentinel without one.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description Optional halt annotation; omit the body entirely to halt without a reason. */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["HaltQueueRequest"];
+                };
+            };
+            responses: {
+                /** @description The queue status, now halted. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QueueStatus"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume the queue
+         * @description Removes the `.corpus/HALT` sentinel; parked `idle` calls become live again.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The queue status, no longer halted. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QueueStatus"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -714,6 +1746,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
+            /** @description Optional failure annotation; omit the body entirely to fail without a reason. */
             requestBody?: {
                 content: {
                     "application/json": components["schemas"]["FailEventRequest"];
@@ -764,6 +1797,872 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/queue/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Abandon an event
+         * @description Moves the event to `abandoned/` — the give-up terminal state, distinct from `failed/` which a retry can pick up again (SPEC.md §7). The event file is kept; nothing is deleted.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a queue event. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The event, now in `abandoned/`. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QueueEvent"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/locks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active locks
+         * @description Read on load so lock banners are correct before the first SSE frame arrives; lock state is projected and broadcast like any other state (SPEC.md §7).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Every lock currently held. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockList"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/locks/reap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear expired locks
+         * @description Clears every lock past its TTL, so a crashed editor cannot wedge a document — the same pattern as `POST /api/queue/reap-stale` (SPEC.md §7).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The documents whose expired locks were cleared. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockReapResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/locks/{docId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acquire a document's edit lock
+         * @description One holder at a time. The agent takes the lock before editing (the CLI's edit verbs do this implicitly) and the user's editor session holds it while actively editing (SPEC.md §7). Re-acquiring a lock you already hold renews its lease; a lock held by the other party is a `409` carrying that lock. The body is optional in full: a bare `POST` takes the lock for the default lease, and `ttl`, when given, sets a different one.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    docId: string;
+                };
+                cookie?: never;
+            };
+            /** @description Optional lease override; omit the body entirely to take the default lease. */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["AcquireLockRequest"];
+                };
+            };
+            responses: {
+                /** @description The lock, now held by the acting party. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Lock"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description Another party already holds this document's lock; `lock` identifies the holder (SPEC.md §7). */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockConflictError"];
+                    };
+                };
+            };
+        };
+        /**
+         * Release a document's edit lock
+         * @description Only the holder may release: a request whose `x-corpus-author` is not the holder is rejected with `403`. To clear somebody else's lock, break it.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    docId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The lock is gone. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReleaseLockResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/locks/{docId}/break": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Force-unlock a document (user-only)
+         * @description The human escape hatch for a stuck agent lock — the banner's Force unlock button and `corpus lock break <docId>` (SPEC.md §7). **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`, because an agent breaking its own contention would defeat the mechanism. Breaks are recorded in the audit trail commit message, and the agent's deferred edit re-enters the queue rather than being lost.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    docId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The lock is broken; `holder` names who held it. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReleaseLockResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent jobs for the console
+         * @description The console's master list: one row per queue event with its status and last log line (SPEC.md §7, §11). `originId` links each row back to the document or thread it came from.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description How many of the most recent jobs to return (1–200). */
+                    recent?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Console rows, most recent first. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobList"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A job's log lines
+         * @description Reads `.corpus/jobs/<eventId>.jsonl`. SSE announces only that the log grew (SPEC.md §2.2 rule 3), so the console refetches here — pass the previous `nextCursor` to get just the new lines. Log content is always rendered as plain text, never interpreted.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Lines already held by the caller; pass back `nextCursor` to fetch only new ones. */
+                    cursor?: number;
+                };
+                header?: never;
+                path: {
+                    /** @description Identifier of a queue event. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Lines from the cursor onwards, plus the next cursor. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobLog"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Append a line to a job's log (loopback-only, tokenless)
+         * @description **Localhost-only and unauthenticated**, for Claude Code hooks such as `PostToolUse` which hold no token. Appends to the same `.corpus/jobs/<eventId>.jsonl` that `corpus job log` writes through. Hardening (SPEC.md §7): non-loopback peers and requests carrying a browser `Origin` header are rejected with `403`, line length is capped, and appends to unknown job ids are refused with `404`. The log **file** is capped too, and that cap does not fail the call: a line dropped because the log is full still answers `201`, with `appended: false`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a queue event. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The line to append. There is nothing to append without one, so the body is mandatory. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AppendLogRequest"];
+                };
+            };
+            responses: {
+                /** @description The append was accepted; `appended` says whether the line actually reached the log. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AppendLogResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a failed job
+         * @description Returns the event to `pending/` so the agent picks it up again — the retry action in the console's detail header (SPEC.md §11).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a queue event. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The job, queued again. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Job"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{id}/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Abandon a failed job
+         * @description Gives up on the job, moving its event to `abandoned/` — the other half of the console's failed-job actions. Nothing is deleted.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a queue event. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The job, abandoned. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Job"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild the projection from files
+         * @description Re-derives every row of `.corpus/cache.db` from the workspace's files alone and swaps the result in atomically, which is what makes §9.1's "derived tables only" checkable rather than merely asserted (SPEC.md §14). The rename is the commit point: an interrupted rebuild leaves the previous database intact. **Takes no request body at all** — there is nothing to configure, and a bodiless `POST` is the whole call. A rebuild of a large corpus is the longest-running call in the API; clients give it a longer timeout than the default. `rebuild` followed by a clean `doctor` is the standing invariant §14 names.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description What the rebuild wrote: per-table row counts, how long it took, and every file it skipped. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RebuildResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/doctor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check the projection against the files
+         * @description Reports every disagreement between the workspace's files and the projection's rows (SPEC.md §14). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never re-read, and a file that already has a row is never re-parsed. Nothing is mutated and no rebuild is triggered — a drifted projection is reported, never quietly repaired, because the point of the check is that drift is visible. `ok` is the verdict `corpus db doctor` turns into its exit code.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The drift report. `ok` is true exactly when `drift` is empty; a drifted projection is a `200` carrying the findings, not an error status. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DoctorReport"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -774,6 +2673,18 @@ export interface paths {
         /**
          * Server-sent invalidation stream
          * @description Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.
+         *
+         *     The key vocabulary is **closed** — these nine shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:
+         *
+         *     - `["docs"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.
+         *     - `["docs", "<docId|threadId>"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.
+         *     - `["tree"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.
+         *     - `["threads", "<threadId>"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.
+         *     - `["queue"]` — emitted by every queue transition: enqueue, claim, complete, fail, abandon, reap, halt/resume, and a lock break that re-enqueues a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.
+         *     - `["jobs"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.
+         *     - `["jobs", "<eventId>"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.
+         *     - `["locks"]` — emitted by lock acquire, release, force-break and reap. Refetch: `GET /api/locks` — the console's held-locks list.
+         *     - `["locks", "<docId>"]` — emitted by acquire, release, force-break and reap of that one document's lock. Refetch: the open reader for that document, which renders read-only with a holder banner while held.
          */
         get: {
             parameters: {
@@ -822,6 +2733,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/attachments/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read attachment bytes
+         * @description Serves a file from `.corpus/attachments/`. The `path` parameter is slash-bearing (`<thread-id>/<turn-ts>/<filename>`), so servers mount it as a wildcard rather than a single segment. The declared response type is `application/octet-stream`; the actual `content-type` is sniffed from the file, so images render inline in the UI and other files download as chips.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Attachment path relative to `.corpus/attachments/`, i.e. `<thread-id>/<turn-ts>/<filename>`. Slash-bearing, so it occupies the rest of the URL path. */
+                    path: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The attachment bytes. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -836,10 +2816,10 @@ export interface components {
             workspace: string;
         };
         DocList: {
-            items: components["schemas"]["DocSummary"][];
+            items: components["schemas"]["DocRow"][];
             page: components["schemas"]["PageMeta"];
         };
-        DocSummary: {
+        DocRow: {
             /**
              * @description Identifier of any document; threads are documents too.
              * @example doc_a1b2c3
@@ -860,14 +2840,16 @@ export interface components {
             tags: string[];
             /**
              * Format: date-time
+             * @description When the document was created, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            created: string;
+            created: string | null;
             /**
              * Format: date-time
+             * @description When the document was last modified, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            updated: string;
+            updated: string | null;
             /**
              * Format: date
              * @example 2026-08-01
@@ -881,6 +2863,60 @@ export interface components {
             evergreen: boolean;
             /** @description Leading plain-text excerpt of the body, for list rows. */
             excerpt: string;
+            /**
+             * @description Staleness tier from SPEC.md §5's age ramp (aging, stale, very-stale), driving the row's age rail, dimming and age chip. **`null` is fresh** — the tiers name degrees of staleness and freshness is their absence, which is also why `stale=` takes a tier and never `fresh`. Always null for `evergreen: true` documents, which opt out of staleness entirely, and for a document whose age is unknown (`updated` and `reviewed` both null): an unknown age is not an old one.
+             * @enum {string|null}
+             */
+            stale: "aging" | "stale" | "very-stale" | null;
+            /**
+             * @description The commented document, for a thread row. Null on non-threads and on standalone threads (SPEC.md §6) — those two cases are distinguished by `type`, not by this field.
+             * @example doc_a1b2c3
+             */
+            parent: string | null;
+            /**
+             * @description Agent participation state (none, requested, engaged, SPEC.md §6, §8), backing the pending-agent indicator. Null on non-threads.
+             * @enum {string|null}
+             */
+            agent: "none" | "requested" | "engaged" | null;
+            /** @description The anchored text this thread hangs off, pinned at the top of a thread row (SPEC.md §11). Null on non-threads, on whole-document threads, and on standalone threads. */
+            anchorQuote: string | null;
+            /** @description Number of turns in the thread. Null on non-threads. */
+            turnCount: number | null;
+            /**
+             * @description Author of the thread's last turn — the `author=` filter's column, and the other half of "awaiting your answer". Null on non-threads and on a thread with no turns.
+             * @example user
+             * @enum {string|null}
+             */
+            lastAuthor: "user" | "agent" | null;
+            /** @description Plain-text preview of the thread's last turn, for the row's second line (SPEC.md §11). Null on non-threads and on a thread with no turns. */
+            lastTurn: string | null;
+            /** @description True when the thread's last turn is newer than your last-seen mark (SPEC.md §7) — the unread badge. Null on non-threads. */
+            unread: boolean | null;
+            /** @description True when the agent has been drawn into an open thread and the last turn is not yet its reply — the pending-agent indicator (SPEC.md §8). Null on non-threads. */
+            awaitingAgent: boolean | null;
+            /** @description Attention reasons for this row, populated on every response rather than only under `needs=`, so any list can render reason chips. Empty when nothing applies; never contains `me`, which is the union filter and not a reason. */
+            attention: ("unread-reply" | "form" | "due" | "stale" | "failed-job")[];
+            /** @description Search highlights for this row; empty when the query carried no `q`. */
+            snippets: components["schemas"]["Snippet"][];
+        };
+        Snippet: {
+            /**
+             * @description Which indexed field the excerpt came from.
+             * @enum {string}
+             */
+            field: "title" | "body" | "turn";
+            /**
+             * @description Set only for `turn` snippets, naming the thread the matching turn belongs to.
+             * @example th_x9y8
+             */
+            threadId?: string;
+            /** @description Alternating unmatched/matched runs; concatenating `text` yields the excerpt. */
+            segments: components["schemas"]["SnippetSegment"][];
+        };
+        SnippetSegment: {
+            text: string;
+            /** @description True for the segments the query matched; render those highlighted. */
+            match: boolean;
         };
         PageMeta: {
             /** @description Total rows matching the query, ignoring pagination. */
@@ -904,6 +2940,11 @@ export interface components {
             code: "unauthorized";
             message: string;
         };
+        DocMutationResponse: {
+            doc: components["schemas"]["Doc"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
         Doc: {
             frontmatter: components["schemas"]["DocFrontmatter"];
             /** @description Markdown body, without the frontmatter block. */
@@ -926,14 +2967,16 @@ export interface components {
             title: string;
             /**
              * Format: date-time
+             * @description When the document was created, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            created: string;
+            created: string | null;
             /**
              * Format: date-time
+             * @description When the document was last modified, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            updated: string;
+            updated: string | null;
             tags: string[];
             /**
              * @description Lifecycle status; meaning is per type. Archiving is a reversible flip, never a deletion.
@@ -998,10 +3041,14 @@ export interface components {
             /** @description True when the selector did not resolve; the thread is still fully functional but detached. */
             orphaned: boolean;
         };
-        NotFoundError: {
-            /** @enum {string} */
-            code: "not_found";
-            message: string;
+        Warning: {
+            /**
+             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document.
+             * @enum {string}
+             */
+            code: "commit_failed" | "commit_skipped" | "orphaned_anchor" | "unresolved_ref";
+            /** @description Human-readable specifics — the hook's own output, the offending anchor id, the unresolved ref. Rendered verbatim in the console; never parsed. */
+            detail: string;
         };
         CreateDocRequest: {
             /**
@@ -1012,27 +3059,34 @@ export interface components {
             title: string;
             /** @description Omit to pre-fill from the type's `template` document when one exists. */
             body?: string;
-            /** @description Folder under `data/docs/`; defaults to the root. */
+            /** @description Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill. */
             folder?: string;
-            /** @default [] */
-            tags: string[];
+            /** @description Defaults to no tags. */
+            tags?: string[];
             /**
-             * @default open
+             * @description Defaults to `open`.
              * @enum {string}
              */
-            status: "open" | "resolved" | "archived";
+            status?: "open" | "resolved" | "archived";
             /**
              * Format: date
-             * @default null
+             * @description Optional deadline. Defaults to `null` — no deadline.
              * @example 2026-08-01
              */
-            due: string | null;
-            /** @default false */
-            evergreen: boolean;
+            due?: string | null;
+            /** @description True opts the document out of staleness entirely. Defaults to `false`. */
+            evergreen?: boolean;
+        };
+        NotFoundError: {
+            /** @enum {string} */
+            code: "not_found";
+            message: string;
         };
         UpdateDocResponse: {
             doc: components["schemas"]["Doc"];
             anchors: components["schemas"]["AnchorReconciliation"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         AnchorReconciliation: {
             /** @description Anchors whose selector was recomputed against the new body. */
@@ -1084,6 +3138,82 @@ export interface components {
              */
             reviewed?: string | null;
             evergreen?: boolean;
+        };
+        DeleteDocResult: {
+            /**
+             * @description Identifier of any document; threads are documents too.
+             * @example doc_a1b2c3
+             */
+            deletedId: string;
+            /** @description Threads that named the deleted document as `parent`. They keep that id and remain readable; their anchors no longer resolve. Drop their caches. */
+            orphanedThreadIds: string[];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        ForbiddenError: {
+            /** @enum {string} */
+            code: "forbidden";
+            message: string;
+        };
+        MoveDocRequest: {
+            /** @description Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill. */
+            folder: string;
+        };
+        FolderTree: {
+            /** @description Top-level folders under `data/docs/`. */
+            folders: components["schemas"]["FolderNode"][];
+        };
+        FolderNode: {
+            /** @description Path relative to `data/docs/`; empty for the root. */
+            path: string;
+            name: string;
+            /** @description Documents filed directly in this folder. */
+            count: number;
+            /** @description `count` plus every descendant folder's count. */
+            totalCount: number;
+            children: components["schemas"]["FolderNode"][];
+        };
+        CaptureResult: {
+            /**
+             * @description The created document, filed in `data/docs/inbox/`.
+             * @example doc_a1b2c3
+             */
+            docId: string;
+            /**
+             * @description The whole-document filing thread created alongside it (no anchor).
+             * @example th_x9y8
+             */
+            threadId: string;
+            /**
+             * @description Enqueued `comment.created` event, so the UI can show the pending-agent indicator immediately and the console can link the job back to this capture. Null when nothing was enqueued, which an explicit `requestsAgent: false` always produces.
+             * @example evt_7c1d
+             */
+            eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        CaptureRequest: {
+            /** @description The captured text. Becomes the inbox document's body and its filing thread's first turn. */
+            text: string;
+            /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server requests the agent — filing is the whole point of a capture — unless the text carries its own mention or skill invocation, which routes it instead. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
+            requestsAgent?: boolean;
+            /** @description Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6). */
+            files?: string[];
+        };
+        CreateThreadResponse: {
+            thread: components["schemas"]["Thread"];
+            /**
+             * @description Anchor written into the parent, when a selector was given.
+             * @example anc_k4f7
+             */
+            anchorId: string | null;
+            /**
+             * @description Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the first turn carries a mention or skill invocation; always null when `requestsAgent` was explicitly false ("note only").
+             * @example evt_7c1d
+             */
+            eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         Thread: {
             /**
@@ -1137,43 +3267,20 @@ export interface components {
             /** @description Markdown body of the turn, without its `## author · ts` heading. */
             body: string;
         };
-        CreateThreadResponse: {
-            thread: components["schemas"]["Thread"];
-            /**
-             * @description Anchor written into the parent, when a selector was given.
-             * @example anc_k4f7
-             */
-            anchorId: string | null;
-            /**
-             * @description Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the first turn carries a mention or skill invocation; always null when `requestsAgent` was explicitly false ("note only").
-             * @example evt_7c1d
-             */
-            eventId: string | null;
-        };
         CreateThreadRequest: {
             /**
-             * @description Document being commented on; null creates a standalone thread.
-             * @default null
+             * @description Document being commented on. Omitted or null creates a standalone thread.
              * @example doc_a1b2c3
              */
-            parent: string | null;
-            /**
-             * @description Text-quote selector captured from the user's selection. The server writes the anchor entry into the parent's frontmatter and creates the thread file atomically. Null anchors the thread to the whole document, or to nothing when `parent` is null.
-             * @default null
-             */
-            selector: {
+            parent?: string | null;
+            /** @description Text-quote selector captured from the user's selection. The server writes the anchor entry into the parent's frontmatter and creates the thread file atomically. Omitted or null anchors the thread to the whole document, or to nothing when `parent` is null. */
+            selector?: {
                 /** @description The quoted text the thread is attached to. */
                 exact: string;
-                /**
-                 * @description Text immediately preceding `exact`, for disambiguation.
-                 * @default
-                 */
-                prefix: string;
-                /**
-                 * @description Text immediately following `exact`, for disambiguation.
-                 * @default
-                 */
-                suffix: string;
+                /** @description Text immediately preceding `exact`, for disambiguation. Omit it when there is none, which is what a quote at a document boundary produces; the server stores the empty string. */
+                prefix?: string;
+                /** @description Text immediately following `exact`, for disambiguation. Omit it when there is none, which is what a quote at a document boundary produces; the server stores the empty string. */
+                suffix?: string;
             } | null;
             /** @description Defaults to the anchor quote or the first turn. */
             title?: string;
@@ -1190,6 +3297,8 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         ThreadSummary: {
             /**
@@ -1243,6 +3352,55 @@ export interface components {
             /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
             requestsAgent?: boolean;
         };
+        MultipartAppendTurnRequest: {
+            /** @description Markdown body of the turn. Optional: a turn may be attachment-only. */
+            text?: string;
+            /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues when the thread is already `engaged`, and otherwise only on an explicit mention or skill invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
+            requestsAgent?: boolean;
+            /** @description Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6). */
+            files?: string[];
+        };
+        DeleteTurnResult: {
+            /** @enum {boolean} */
+            deletedTurn: true;
+            /** @description True when the deleted turn was the thread's last, taking the thread with it. */
+            deletedThread: boolean;
+            /**
+             * @description Anchor entry removed from the parent's frontmatter, when the cascade reached that far.
+             * @example anc_k4f7
+             */
+            removedAnchor: string | null;
+            /**
+             * @description The thread's parent, whose frontmatter and anchor list may now differ. Null for a standalone thread.
+             * @example doc_a1b2c3
+             */
+            parentId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        MarkSeenResult: {
+            /**
+             * @description Identifier of a thread document.
+             * @example th_x9y8
+             */
+            threadId: string;
+            /**
+             * Format: date-time
+             * @description The mark now recorded for this thread.
+             * @example 2026-07-19T10:05:00Z
+             */
+            lastSeenTs: string;
+            /** @description Whether the thread is *still* unread after this mark — that is, whether any turn is newer than `lastSeenTs` (SPEC.md §7). False for the ordinary case of a bare `POST`, which marks the thread read up to its last turn. **True when `lastSeenTs` names an earlier turn**: a partial read leaves later turns unseen, and the badge stays lit. A client updates its unread state from this flag, not from the fact that the call succeeded. */
+            unread: boolean;
+        };
+        MarkSeenRequest: {
+            /**
+             * Format: date-time
+             * @description Turn timestamp to mark seen up to. Defaults to the thread's last turn, which is what opening a thread means; pass it explicitly only to record a partial read.
+             * @example 2026-07-19T10:05:00Z
+             */
+            lastSeenTs?: string;
+        };
         QueueStatus: {
             /** @description True while the `.corpus/HALT` sentinel exists; claims return empty. */
             halted: boolean;
@@ -1252,7 +3410,8 @@ export interface components {
             failed: number;
             abandoned: number;
         };
-        ClaimBatch: {
+        IdleResult: {
+            /** @description Pending events, still in `pending/`. Claim them with `POST /api/queue/claim-all`. */
             events: components["schemas"]["QueueEvent"][];
         };
         QueueEvent: {
@@ -1275,9 +3434,182 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        ClaimBatch: {
+            events: components["schemas"]["QueueEvent"][];
+        };
+        ReapStaleResult: {
+            /** @description Events recovered from `in-progress/` back to `pending/` after a crashed run. */
+            reaped: string[];
+        };
+        HaltQueueRequest: {
+            /** @description Human-readable halt reason, recorded in the `.corpus/HALT` sentinel. */
+            reason?: string;
+        };
         FailEventRequest: {
             /** @description Human-readable failure reason, shown in the console. */
             reason?: string;
+        };
+        /** @description Every active lock, for hydrating lock banners on load (SPEC.md §7). */
+        LockList: {
+            locks: components["schemas"]["Lock"][];
+        };
+        LockReapResult: {
+            /** @description Documents whose expired locks were cleared. */
+            reaped: string[];
+        };
+        LockConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            lock: components["schemas"]["Lock"] & unknown;
+        };
+        AcquireLockRequest: {
+            /** @description Lease in seconds; defaults to 300. A TTL is what keeps a crashed editor from wedging a document — `POST /api/locks/reap` clears expired leases. */
+            ttl?: number;
+        };
+        ReleaseLockResult: {
+            /**
+             * @description Identifier of any document; threads are documents too.
+             * @example doc_a1b2c3
+             */
+            docId: string;
+            /** @enum {boolean} */
+            released: true;
+            /**
+             * @description The party whose lock this call cleared.
+             * @example user
+             * @enum {string}
+             */
+            holder: "user" | "agent";
+        };
+        JobList: {
+            /** @description Console rows, most recent first. */
+            jobs: components["schemas"]["Job"][];
+        };
+        Job: {
+            /**
+             * @description Identifier of a queue event.
+             * @example evt_7c1d
+             */
+            eventId: string;
+            /**
+             * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in.
+             * @enum {string}
+             */
+            status: "pending" | "in-progress" | "processed" | "failed" | "abandoned";
+            /**
+             * Format: date-time
+             * @example 2026-07-19T10:05:00Z
+             */
+            started: string;
+            /**
+             * Format: date-time
+             * @example 2026-07-19T10:05:00Z
+             */
+            updated: string;
+            /** @description Most recent log line, for the collapsed console row. */
+            lastLine: string | null;
+            /**
+             * @description Document or thread the job originated from, so the console can link through.
+             * @example doc_a1b2c3
+             */
+            originId: string | null;
+        };
+        JobLog: {
+            /** @description Log lines from `cursor` onwards, oldest first. */
+            lines: components["schemas"]["JobLogLine"][];
+            /** @description Cursor to pass on the next fetch; equals the total line count. */
+            nextCursor: number;
+        };
+        /** @description One line of `.corpus/jobs/<eventId>.jsonl`. Always rendered as plain text, never interpreted. */
+        JobLogLine: {
+            /**
+             * Format: date-time
+             * @example 2026-07-19T10:05:00Z
+             */
+            ts: string;
+            line: string;
+        };
+        AppendLogResult: {
+            /**
+             * @description Identifier of a queue event.
+             * @example evt_7c1d
+             */
+            eventId: string;
+            /** @description True when the line reached the log file. **False when the log is at its size cap** and the line was dropped (SPEC.md §7): the call still succeeds with `201`, because the request was well formed and nothing about it can be retried differently — but the line is not there. A caller that reports progress from this endpoint reports the flag, not the status code. */
+            appended: boolean;
+        };
+        AppendLogRequest: {
+            /** @description One progress line. Rendered as plain text and never interpreted; the server caps its length (SPEC.md §7). */
+            line: string;
+        };
+        ConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            lock?: components["schemas"]["Lock"] & unknown;
+        };
+        RebuildResult: {
+            /** @description Absolute path of the database this rebuild produced — `.corpus/cache.db`, which the rebuild replaced atomically by rename. */
+            path: string;
+            /** @description Rows written to `documents` by this rebuild. */
+            documents: number;
+            /** @description Rows written to `threads` by this rebuild. */
+            threads: number;
+            /** @description Rows written to `turns` by this rebuild. */
+            turns: number;
+            /** @description Rows written to `anchors` by this rebuild. */
+            anchors: number;
+            /** @description Rows written to `links` by this rebuild. */
+            links: number;
+            /** @description Rows written to `events` by this rebuild. */
+            events: number;
+            /** @description Rows written to `jobs` by this rebuild. */
+            jobs: number;
+            /** @description Rows written to `locks` by this rebuild. */
+            locks: number;
+            /** @description Rows written to `seen` by this rebuild. */
+            seen: number;
+            /** @description Wall-clock time the rebuild took, so `corpus db rebuild` can report it. */
+            durationMs: number;
+            /** @description Files that are documents by location but produced no row. Empty is the good case. */
+            skipped: components["schemas"]["SkippedFile"][];
+        };
+        SkippedFile: {
+            /** @description Workspace-relative path of the file that produced no row. */
+            path: string;
+            /** @description Why it was skipped. Rendered verbatim; never parsed. */
+            reason: string;
+        };
+        DoctorReport: {
+            /** @description True exactly when `drift` is empty. The single flag `corpus db doctor` turns into its exit code, so a caller never has to re-derive the verdict from the list. */
+            ok: boolean;
+            /** @description Every disagreement found between the files and the projection. Empty when `ok`. */
+            drift: components["schemas"]["ProjectionDrift"][];
+            stats: components["schemas"]["DoctorStats"];
+        };
+        ProjectionDrift: {
+            /**
+             * @description `missing_row`: a document file exists but the projection has no row for it. `orphan_row`: the projection has a row for a path that no longer exists. `content_mismatch`: the file's bytes no longer hash to what was projected. `count_mismatch`: a table the projection keeps no per-item detail for disagrees with the files by count. `unparseable`: the file is a document by location but its frontmatter cannot be read. `duplicate_id`: two files claim one id; only the first by path order is projected.
+             * @enum {string}
+             */
+            kind: "missing_row" | "orphan_row" | "content_mismatch" | "count_mismatch" | "unparseable" | "duplicate_id";
+            /** @description Workspace-relative path this drift concerns. Null when it concerns no single file, which today is exactly `count_mismatch`. */
+            path: string | null;
+            /** @description Human-readable specifics, rendered verbatim by `corpus db doctor`; never parsed. */
+            detail: string;
+        };
+        DoctorStats: {
+            /** @description Document files found under the workspace roots. */
+            files: number;
+            /** @description `documents` rows the projection holds. */
+            documents: number;
+            /** @description Files whose bytes had to be read and hashed. Zero on a warm, untouched workspace — doctor skips any file whose size and mtime are unchanged, which is what keeps it inside a pre-commit hook's budget. */
+            hashed: number;
+            /** @description Files that had to be parsed, i.e. those with no row to explain them. */
+            parsed: number;
+            /** @description Wall-clock time the check took. */
+            durationMs: number;
         };
     };
     responses: never;

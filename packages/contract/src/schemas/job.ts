@@ -31,5 +31,103 @@ export const JobLogLineSchema = z
       "One line of `.corpus/jobs/<eventId>.jsonl`. Always rendered as plain text, never interpreted.",
   });
 
+export const DEFAULT_RECENT_JOBS = 50;
+export const MAX_RECENT_JOBS = 200;
+
+export const JobsQuerySchema = z.object({
+  recent: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_RECENT_JOBS)
+    .default(DEFAULT_RECENT_JOBS)
+    .openapi({
+      param: { name: "recent", in: "query", required: false },
+      type: "integer",
+      minimum: 1,
+      maximum: MAX_RECENT_JOBS,
+      default: DEFAULT_RECENT_JOBS,
+      description: `How many of the most recent jobs to return (1–${MAX_RECENT_JOBS}).`,
+    }),
+});
+
+export const JobListSchema = z
+  .object({ jobs: z.array(JobSchema).describe("Console rows, most recent first.") })
+  .openapi("JobList");
+
+/**
+ * The console fetches log content over HTTP and refetches on SSE invalidation
+ * (SPEC.md §7) — the stream announces that the log grew, never its contents. The
+ * cursor makes that refetch incremental instead of re-reading the whole file.
+ */
+export const JobLogQuerySchema = z.object({
+  cursor: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .openapi({
+      param: { name: "cursor", in: "query", required: false },
+      type: "integer",
+      minimum: 0,
+      default: 0,
+      description:
+        "Lines already held by the caller; pass back `nextCursor` to fetch only new ones.",
+    }),
+});
+
+export const JobLogSchema = z
+  .object({
+    lines: z.array(JobLogLineSchema).describe("Log lines from `cursor` onwards, oldest first."),
+    nextCursor: z
+      .number()
+      .int()
+      .min(0)
+      .describe("Cursor to pass on the next fetch; equals the total line count."),
+  })
+  .openapi("JobLog");
+
+export const AppendLogRequestSchema = z
+  .object({
+    line: z
+      .string()
+      .min(1)
+      .describe(
+        "One progress line. Rendered as plain text and never interpreted; the server caps its " +
+          "length (SPEC.md §7).",
+      ),
+  })
+  .openapi("AppendLogRequest");
+
+/**
+ * `appended` is a genuine boolean rather than `literal(true)`, because the
+ * server has a real way to answer no: a job log is capped at a maximum file
+ * size, and once a log reaches it every further line is dropped. That refusal
+ * still answers `201` — the request was well formed and the cap is a property
+ * of the log rather than of the call — so the status code cannot carry it, and
+ * a literal `true` would have the response assert that a dropped line was
+ * written. The one field that can be honest here is this one.
+ */
+export const AppendLogResultSchema = z
+  .object({
+    eventId: EventIdSchema,
+    appended: z
+      .boolean()
+      .describe(
+        "True when the line reached the log file. **False when the log is at its size cap** and " +
+          "the line was dropped (SPEC.md §7): the call still succeeds with `201`, because the " +
+          "request was well formed and nothing about it can be retried differently — but the line " +
+          "is not there. A caller that reports progress from this endpoint reports the flag, not " +
+          "the status code.",
+      ),
+  })
+  .openapi("AppendLogResult");
+
 export type Job = z.infer<typeof JobSchema>;
 export type JobLogLine = z.infer<typeof JobLogLineSchema>;
+export type JobsQuery = z.infer<typeof JobsQuerySchema>;
+export type JobList = z.infer<typeof JobListSchema>;
+export type JobLogQuery = z.infer<typeof JobLogQuerySchema>;
+export type JobLog = z.infer<typeof JobLogSchema>;
+export type AppendLogRequest = z.infer<typeof AppendLogRequestSchema>;
+export type AppendLogResult = z.infer<typeof AppendLogResultSchema>;

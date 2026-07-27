@@ -68,6 +68,9 @@ Build the plugin substrate: four independent discovery mechanisms (UI manifests,
 
 ### Key Implementation Details
 
+- **Template frontmatter carry-over is a plugin-design question** _(SERVER-005 template-bleed fix, 2026-07-27)_: SPEC §9.2 pins pre-fill as body-only and the server now enforces it (template frontmatter shadowing documented defaults was a bug — evergreen:true silently opted every templated note out of staleness). SPEC §11's looser "starting frontmatter/body" phrasing survives only as this open question: should plugins be able to declare SCOPED template keys (e.g. `column: research`) that carry to instances — never fields with documented server defaults? If yes, this issue designs the declaration mechanism and proposes the §11/§9.2 reconciliation as a spec clarification (user sign-off).
+
+
 **Discovery is convention, not registration.** Nothing in core enumerates plugin names. The UI globs, the server reads the directory, the CLI scans, `init` copies. Adding a plugin is `mkdir plugins/foo` plus files; removing it is `rm -rf`. Any design that requires editing a core file to add a plugin is wrong.
 
 **Why `import.meta.glob` and not runtime loading.** Vite compiles the glob at build time, so plugin code is type-checked, bundled, and tree-shaken with the app — no runtime module loader, no dynamic `import()` of untrusted paths, no separate build step per plugin. The trade-off is that a dropped-in plugin appears on the next dev-server rebuild rather than instantly; that is the accepted behavior per §10.

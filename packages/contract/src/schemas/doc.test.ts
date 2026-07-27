@@ -3,14 +3,15 @@ import {
   CORE_DOC_TYPES,
   CoreDocTypeSchema,
   CreateDocRequestSchema,
+  DeleteDocResultSchema,
   DocFrontmatterSchema,
-  DocListSchema,
+  DocMutationResponseSchema,
   DocSchema,
-  DocsQuerySchema,
   DocStatusSchema,
-  DocSummarySchema,
+  MoveDocRequestSchema,
   UpdateDocRequestSchema,
   UpdateDocResponseSchema,
+  docRowBaseShape,
 } from "./doc.js";
 
 const frontmatter = {
@@ -49,21 +50,6 @@ const doc = {
   ],
 };
 
-const summary = {
-  id: "doc_a1b2c3",
-  type: "note",
-  title: "Mortgage options",
-  path: "data/docs/finance/mortgage-options.md",
-  status: "open",
-  tags: ["finance"],
-  created: "2026-07-19T10:00:00Z",
-  updated: "2026-07-19T10:42:00Z",
-  due: "2026-08-01",
-  reviewed: "2026-07-20T09:00:00Z",
-  evergreen: false,
-  excerpt: "Body is plain markdown.",
-};
-
 describe("DocFrontmatter", () => {
   it("round-trips the SPEC.md §5 canonical frontmatter", () => {
     expect(DocFrontmatterSchema.parse(frontmatter)).toEqual(frontmatter);
@@ -81,6 +67,50 @@ describe("DocFrontmatter", () => {
     const broken = { ...frontmatter, anchors: { k4f7: { exact: "x", prefix: "", suffix: "" } } };
     expect(DocFrontmatterSchema.safeParse(broken).success).toBe(false);
   });
+
+  /**
+   * The hand-written `SKILL.md` of SPEC.md §7: no frontmatter timestamps at all.
+   * `GET /api/docs` says `null` for it (`docRowBaseShape`), so `GET /api/docs/{id}`
+   * must say `null` too — the epoch sentinel the server used to substitute made
+   * the same file read two different ages depending on the route.
+   */
+  it("round-trips an undated document, the same way the list row does", () => {
+    const undated = { ...frontmatter, created: null, updated: null };
+    expect(DocFrontmatterSchema.parse(undated)).toEqual(undated);
+  });
+
+  it("still rejects a malformed timestamp — nullable is not lenient", () => {
+    expect(DocFrontmatterSchema.safeParse({ ...frontmatter, created: "yesterday" }).success).toBe(
+      false,
+    );
+  });
+
+  it("still requires the timestamp keys to be present", () => {
+    const { created: _created, ...withoutCreated } = frontmatter;
+    expect(DocFrontmatterSchema.safeParse(withoutCreated).success).toBe(false);
+  });
+
+  it.each(["created", "updated"] as const)(
+    "tells the client to render %s as an em dash rather than substituting a date",
+    (field) => {
+      const description = DocFrontmatterSchema.shape[field].meta()?.description ?? "";
+      expect(description).toContain("—");
+      expect(description).toContain("staleness treats an unknown age as fresh");
+    },
+  );
+
+  /**
+   * The bug this closes: the two response-side shapes described the same two
+   * fields differently, so a consumer reading one route learned the wrong rule.
+   */
+  it.each(["created", "updated"] as const)(
+    "describes %s identically to the list row, since they describe the same file",
+    (field) => {
+      expect(DocFrontmatterSchema.shape[field].meta()?.description).toBe(
+        docRowBaseShape[field].meta()?.description,
+      );
+    },
+  );
 });
 
 describe("Doc", () => {
@@ -97,56 +127,106 @@ describe("Doc", () => {
   });
 });
 
-describe("DocSummary and DocList", () => {
-  it("round-trips a row carrying a due date and a review mark", () => {
-    expect(DocSummarySchema.parse(summary)).toEqual(summary);
-  });
-
-  it("round-trips a page of rows", () => {
-    const list = { items: [summary], page: { total: 1, limit: 50, offset: 0 } };
-    expect(DocListSchema.parse(list)).toEqual(list);
-  });
-});
-
-describe("DocsQuery", () => {
-  it("applies pagination defaults when only a filter is given", () => {
-    expect(DocsQuerySchema.parse({ type: "thread" })).toEqual({
-      type: "thread",
-      limit: 50,
-      offset: 0,
-    });
-  });
-
-  it("carries the full-text query through", () => {
-    expect(DocsQuerySchema.parse({ q: "mortgage", status: "archived" })).toMatchObject({
-      q: "mortgage",
-      status: "archived",
-    });
-  });
-
-  it("rejects an unknown status", () => {
-    expect(DocsQuerySchema.safeParse({ status: "done" }).success).toBe(false);
-  });
-
-  it("rejects an empty full-text query rather than treating it as no filter", () => {
-    expect(DocsQuerySchema.safeParse({ q: "" }).success).toBe(false);
-  });
-});
-
 describe("CreateDocRequest", () => {
-  it("defaults everything the caller may omit", () => {
+  /**
+   * The zero-form create (SPEC.md §11). The schema deliberately does *not*
+   * materialise `tags`/`status`/`due`/`evergreen` at parse time: a Zod default
+   * becomes a JSON Schema `default`, which `openapi-typescript` renders as a
+   * required member of the client's request type — so the caller would be forced
+   * to send the very fields the server exists to fill in (CONTRACT-003).
+   */
+  it("leaves every server-applied field absent rather than defaulting it", () => {
     expect(CreateDocRequestSchema.parse({ type: "note", title: "Untitled" })).toEqual({
       type: "note",
       title: "Untitled",
-      tags: [],
-      status: "open",
-      due: null,
-      evergreen: false,
     });
+  });
+
+  it.each(["tags", "status", "due", "evergreen"] as const)(
+    "documents the server-applied default for %s, since that is where a client learns it",
+    (field) => {
+      const description = CreateDocRequestSchema.shape[field].meta()?.description ?? "";
+      expect(description).toContain("efault");
+    },
+  );
+
+  it("still accepts every optional field when the caller does supply one", () => {
+    const request = {
+      type: "note",
+      title: "Untitled",
+      tags: ["finance"],
+      status: "archived" as const,
+      due: "2026-08-01",
+      evergreen: true,
+    };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("keeps an explicit null due distinguishable from an omitted one", () => {
+    expect(CreateDocRequestSchema.parse({ type: "note", title: "T", due: null }).due).toBeNull();
+    expect(CreateDocRequestSchema.parse({ type: "note", title: "T" }).due).toBeUndefined();
   });
 
   it("rejects an empty title", () => {
     expect(CreateDocRequestSchema.safeParse({ type: "note", title: "" }).success).toBe(false);
+  });
+
+  /**
+   * The default is `inbox`, not the root: creation is inbox-first (SPEC.md §11)
+   * and the server's `documentPathFor` implements it. The schema leaves `folder`
+   * absent so the server owns the default — what is asserted here is that the
+   * published description says so, since that is the only place a client learns it.
+   */
+  it("documents the inbox default and both accepted folder spellings", () => {
+    const description = CreateDocRequestSchema.shape.folder.meta()?.description ?? "";
+    expect(description).toContain("`inbox`");
+    expect(description).toContain("data/docs/finance");
+    expect(description).not.toContain("defaults to the root");
+  });
+
+  it.each(["finance", "data/docs/finance"])("accepts the folder spelling %s", (folder) => {
+    expect(CreateDocRequestSchema.parse({ type: "note", title: "T", folder }).folder).toBe(folder);
+  });
+});
+
+describe("MoveDocRequest", () => {
+  it("carries only the destination folder — the id never changes", () => {
+    expect(MoveDocRequestSchema.parse({ folder: "finance" })).toEqual({ folder: "finance" });
+    expect(Object.keys(MoveDocRequestSchema.shape)).toEqual(["folder"]);
+  });
+
+  it("requires a destination", () => {
+    expect(MoveDocRequestSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("DeleteDocResult", () => {
+  it("round-trips the cascade: the deleted id and the threads it orphaned", () => {
+    const result = {
+      deletedId: "doc_a1b2c3",
+      orphanedThreadIds: ["th_x9y8", "th_q1w2"],
+      warnings: [],
+    };
+    expect(DeleteDocResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("round-trips a document that had no threads", () => {
+    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: [], warnings: [] };
+    expect(DeleteDocResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("carries the §14 warnings of a deletion whose commit was refused", () => {
+    const result = {
+      deletedId: "doc_a1b2c3",
+      orphanedThreadIds: [],
+      warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+    };
+    expect(DeleteDocResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects a document id in the orphaned thread list", () => {
+    const result = { deletedId: "doc_a1b2c3", orphanedThreadIds: ["doc_zzz"], warnings: [] };
+    expect(DeleteDocResultSchema.safeParse(result).success).toBe(false);
   });
 });
 
@@ -162,8 +242,32 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
   });
 
   it("round-trips the anchor reconciliation report", () => {
-    const response = { doc, anchors: { remapped: ["anc_k4f7"], orphaned: [] } };
+    const response = { doc, anchors: { remapped: ["anc_k4f7"], orphaned: [] }, warnings: [] };
     expect(UpdateDocResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it("demands the warnings array rather than treating it as optional", () => {
+    const response = { doc, anchors: { remapped: [], orphaned: [] } };
+    expect(UpdateDocResponseSchema.safeParse(response).success).toBe(false);
+  });
+});
+
+describe("DocMutationResponse", () => {
+  it("wraps the document so §14 warnings have somewhere to travel", () => {
+    const response = {
+      doc,
+      warnings: [{ code: "commit_skipped" as const, detail: "workspace is not a git repository" }],
+    };
+    expect(DocMutationResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it("round-trips the ordinary case: a document and no warnings", () => {
+    const response = { doc, warnings: [] };
+    expect(DocMutationResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it("rejects a bare document, which is the pre-CONTRACT-005 shape", () => {
+    expect(DocMutationResponseSchema.safeParse(doc).success).toBe(false);
   });
 });
 

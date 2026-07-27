@@ -1,34 +1,143 @@
 import { describe, expect, it } from "vitest";
+import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
+import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
+import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
+import { QUERY_KEY_NAMES, QUERY_KEY_VOCABULARY } from "./query-keys.js";
 
 const document = buildOpenApiDocument();
 
-/** Every endpoint CONTRACT-001 declares. Growing the surface must be a deliberate edit here. */
-const EXPECTED_OPERATIONS = [
-  "get /api/docs",
-  "post /api/docs",
-  "get /api/docs/{id}",
-  "put /api/docs/{id}",
-  "get /api/health",
-  "post /api/queue/claim-all",
-  "get /api/queue/status",
-  "post /api/queue/{id}/complete",
-  "post /api/queue/{id}/fail",
-  "post /api/threads",
-  "get /api/threads/{id}",
-  "post /api/threads/{id}/turns",
-  "get /events",
-];
+const HTTP_METHODS = ["get", "post", "put", "delete", "patch"] as const;
+const MUTATING_METHODS = ["post", "put", "delete", "patch"] as const;
+
+interface Operation {
+  readonly summary?: string;
+  readonly description?: string;
+  readonly security?: unknown[];
+  readonly parameters?: {
+    name: string;
+    in: string;
+    required?: boolean;
+    description?: string;
+    schema?: { type?: string; enum?: string[]; default?: unknown };
+  }[];
+  readonly requestBody?: {
+    required?: boolean;
+    description?: string;
+    content?: Record<string, unknown>;
+  };
+  readonly responses?: Record<string, { description?: string; content?: Record<string, unknown> }>;
+}
+
+/** `openapi3-ts` types the path item with an `any`-valued index signature. */
+function operation(path: string, method: string): Operation {
+  const item = document.paths?.[path] as Record<string, Operation> | undefined;
+  const found = item?.[method];
+  if (!found) throw new Error(`No ${method} ${path} in the generated document.`);
+  return found;
+}
 
 function operations(): string[] {
   const found: string[] = [];
   for (const [path, item] of Object.entries(document.paths ?? {})) {
-    for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-      if (item && method in item) found.push(`${method} ${path}`);
+    for (const method of HTTP_METHODS) {
+      if (item && method in item) found.push(endpointSignature(method, path));
     }
   }
   return found.sort();
+}
+
+function parameter(path: string, method: string, name: string) {
+  return operation(path, method).parameters?.find((entry) => entry.name === name);
+}
+
+/** The subset of JSON Schema the walk below needs; `openapi3-ts` types it as `any`. */
+interface SchemaNode {
+  readonly $ref?: string;
+  readonly type?: string;
+  readonly enum?: string[];
+  readonly default?: unknown;
+  readonly required?: string[];
+  readonly properties?: Record<string, SchemaNode>;
+  readonly items?: SchemaNode;
+  readonly allOf?: SchemaNode[];
+  readonly anyOf?: SchemaNode[];
+  readonly oneOf?: SchemaNode[];
+}
+
+interface DefaultedProperty {
+  readonly location: string;
+  readonly required: boolean;
+}
+
+const componentSchemas = document.components?.schemas as Record<string, SchemaNode> | undefined;
+
+function collectDefaults(
+  node: SchemaNode | undefined,
+  location: string,
+  derefd: ReadonlySet<string>,
+  found: DefaultedProperty[],
+): void {
+  if (!node) return;
+
+  if (node.$ref !== undefined) {
+    const name = node.$ref.split("/").pop() ?? "";
+    // A component that refers back to itself (or a cycle through several) would
+    // otherwise recurse forever; one visit per branch is enough to see it.
+    if (derefd.has(name)) return;
+    collectDefaults(
+      componentSchemas?.[name],
+      `${location} → ${name}`,
+      new Set([...derefd, name]),
+      found,
+    );
+    return;
+  }
+
+  const required = new Set(node.required ?? []);
+  for (const [property, child] of Object.entries(node.properties ?? {})) {
+    // `Object.hasOwn`, not a truthiness check: `default: null` is a default too.
+    if (Object.hasOwn(child, "default")) {
+      found.push({ location: `${location}.${property}`, required: required.has(property) });
+    }
+    collectDefaults(child, `${location}.${property}`, derefd, found);
+  }
+
+  for (const branch of [...(node.allOf ?? []), ...(node.anyOf ?? []), ...(node.oneOf ?? [])]) {
+    collectDefaults(branch, location, derefd, found);
+  }
+  collectDefaults(node.items, `${location}[]`, derefd, found);
+}
+
+/**
+ * Every defaulted property reachable from any operation's request body,
+ * resolving component references as it goes.
+ *
+ * The rule this feeds is stricter than "`required` and `default` never
+ * overlap", and deliberately: `openapi-typescript` promotes *any* defaulted
+ * property to a required member of the generated type, whatever the `required`
+ * array says, so an omitted-from-`required` default still reaches the caller as
+ * a mandatory field. Only a request surface with no defaults at all is safe —
+ * hence optional-in, defaulted-out (`./schemas/index.ts`).
+ */
+function requestBodyDefaults(): DefaultedProperty[] {
+  const found: DefaultedProperty[] = [];
+  for (const [path, item] of Object.entries(document.paths ?? {})) {
+    for (const method of HTTP_METHODS) {
+      const op = (item as Record<string, Operation> | undefined)?.[method];
+      for (const [mediaType, media] of Object.entries(op?.requestBody?.content ?? {})) {
+        const schema = (media as { schema?: SchemaNode }).schema;
+        collectDefaults(
+          schema,
+          `${endpointSignature(method, path)} [${mediaType}]`,
+          new Set(),
+          found,
+        );
+      }
+    }
+  }
+  return found;
 }
 
 describe("generated OpenAPI document", () => {
@@ -37,8 +146,8 @@ describe("generated OpenAPI document", () => {
     expect(document.info.version).toBe(CONTRACT_VERSION);
   });
 
-  it("declares exactly the endpoints the contract defines", () => {
-    expect(operations()).toEqual([...EXPECTED_OPERATIONS].sort());
+  it("declares exactly the endpoints the pinned inventory names", () => {
+    expect(operations()).toEqual([...ENDPOINT_INVENTORY].sort());
   });
 
   it("documents one operation per route definition", () => {
@@ -56,18 +165,18 @@ describe("generated OpenAPI document", () => {
   it.each([
     ["/api/health", "get"],
     ["/events", "get"],
-  ])("exempts %s %s from auth, as SPEC.md §2.1 allows", (path, method) => {
-    const operation = document.paths?.[path]?.[method as "get"];
-    expect(operation?.security).toEqual([]);
+    ["/api/jobs/{id}/log", "post"],
+  ])("exempts %s %s from auth, as SPEC.md §2.1 and §7 allow", (path, method) => {
+    expect(operation(path, method).security).toEqual([]);
   });
 
   it("declares 401 on every authenticated operation", () => {
     const missing: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
-      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-        const operation = item?.[method];
-        if (!operation || operation.security?.length === 0) continue;
-        if (!operation.responses?.["401"]) missing.push(`${method} ${path}`);
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op || op.security?.length === 0) continue;
+        if (!op.responses?.["401"]) missing.push(endpointSignature(method, path));
       }
     }
     expect(missing).toEqual([]);
@@ -84,13 +193,12 @@ describe("generated OpenAPI document", () => {
   it("declares 400 on every operation that validates request input", () => {
     const missing: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
-      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-        const operation = item?.[method];
-        if (!operation) continue;
-        const validatesInput =
-          (operation.parameters?.length ?? 0) > 0 || operation.requestBody !== undefined;
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op) continue;
+        const validatesInput = (op.parameters?.length ?? 0) > 0 || op.requestBody !== undefined;
         if (!validatesInput) continue;
-        if (!operation.responses?.["400"]) missing.push(`${method} ${path}`);
+        if (!op.responses?.["400"]) missing.push(endpointSignature(method, path));
       }
     }
     expect(missing).toEqual([]);
@@ -99,23 +207,56 @@ describe("generated OpenAPI document", () => {
   it("does not declare 400 on operations that take no request input", () => {
     const spurious: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
-      for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-        const operation = item?.[method];
-        if (!operation) continue;
-        const validatesInput =
-          (operation.parameters?.length ?? 0) > 0 || operation.requestBody !== undefined;
-        if (!validatesInput && operation.responses?.["400"]) spurious.push(`${method} ${path}`);
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op) continue;
+        const validatesInput = (op.parameters?.length ?? 0) > 0 || op.requestBody !== undefined;
+        if (!validatesInput && op.responses?.["400"]) {
+          spurious.push(endpointSignature(method, path));
+        }
       }
     }
     expect(spurious).toEqual([]);
   });
 
+  /**
+   * `internal_error` exists in the `ApiError` union so a server's last-resort
+   * handler can serialise a crash without mislabelling it, and *only* for that.
+   * Declaring `500` on a route would advertise an unexpected failure as a
+   * designed outcome and hand clients a branch that no handler ever promises to
+   * reach, so the response stays undeclared everywhere — deliberately.
+   */
+  it("declares 500 on no operation, since an unexpected failure is not contract surface", () => {
+    const declared: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (op?.responses?.["500"]) declared.push(endpointSignature(method, path));
+      }
+    }
+    expect(declared).toEqual([]);
+    expect(Object.keys(document.components?.schemas ?? {})).not.toContain("InternalError");
+  });
+
   it("documents the SSE stream as an event stream, not as JSON", () => {
-    // openapi3-ts types the status-code map with an `any`-valued index
-    // signature, so the 200 entry is re-read through a minimal structural view.
-    const ok = document.paths?.["/events"]?.get?.responses?.["200"] as
-      { content?: Record<string, unknown> } | undefined;
+    const ok = operation("/events", "get").responses?.["200"];
     expect(Object.keys(ok?.content ?? {})).toEqual(["text/event-stream"]);
+  });
+
+  /**
+   * A client author reading only the generated document must learn the whole
+   * closed key vocabulary from it — which shapes exist, what emits each, and
+   * what refetches on it. Publishing the constants is half the job; this is the
+   * half that survives someone who never opens the package.
+   */
+  it("carries the whole query-key vocabulary in the SSE stream's description", () => {
+    const description = operation("/events", "get").description ?? "";
+    for (const name of QUERY_KEY_NAMES) {
+      const entry = QUERY_KEY_VOCABULARY[name];
+      expect(description, `${name}.shape`).toContain(entry.shape);
+      expect(description, `${name}.emittedBy`).toContain(entry.emittedBy);
+      expect(description, `${name}.refetchedBy`).toContain(entry.refetchedBy);
+    }
   });
 
   /**
@@ -134,5 +275,632 @@ describe("generated OpenAPI document", () => {
         schema.default !== undefined,
     );
     expect(corrupted.map(([name]) => name)).toEqual([]);
+  });
+
+  it("declares no server-applied default anywhere in a request body", () => {
+    expect(requestBodyDefaults().map((entry) => entry.location)).toEqual([]);
+  });
+
+  it("lists no defaulted property in a request body's `required` array", () => {
+    const contradictory = requestBodyDefaults().filter((entry) => entry.required);
+    expect(contradictory.map((entry) => entry.location)).toEqual([]);
+  });
+
+  it("gives every operation a summary, so the document reads without the source", () => {
+    const unsummarised: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (op && !op.summary) unsummarised.push(endpointSignature(method, path));
+      }
+    }
+    expect(unsummarised).toEqual([]);
+  });
+});
+
+/** SPEC.md §9.2's parameter list, in full and typed — the point of the collection query. */
+describe("GET /api/docs parameter grammar", () => {
+  const SPEC_PARAMS = [
+    "q",
+    "type",
+    "status",
+    "tag",
+    "folder",
+    "parent",
+    "references",
+    "agent",
+    "author",
+    "since",
+    "due",
+    "stale",
+    "unread",
+    "needs",
+    "sort",
+  ];
+
+  it("declares every §9.2 parameter, plus CONTRACT-001's pagination, as optional query params", () => {
+    const params = operation("/api/docs", "get").parameters ?? [];
+    expect(params.map((entry) => entry.name)).toEqual(["limit", "offset", ...SPEC_PARAMS]);
+    for (const entry of params) {
+      expect(entry.in).toBe("query");
+      expect(entry.required).toBe(false);
+    }
+  });
+
+  it.each([
+    ["status", ["open", "resolved", "archived"]],
+    ["agent", ["none", "requested", "engaged"]],
+    ["author", ["user", "agent"]],
+    ["stale", ["aging", "stale", "very-stale"]],
+    ["needs", ["me", "unread-reply", "form", "due", "stale", "failed-job"]],
+    ["sort", ["updated", "-updated", "created", "-created", "due", "title", "relevance"]],
+  ])("types %s as a strict enum", (name, values) => {
+    expect(parameter("/api/docs", "get", name)?.schema?.enum).toEqual(values);
+  });
+
+  it("defaults sort to -updated", () => {
+    expect(parameter("/api/docs", "get", "sort")?.schema?.default).toBe("-updated");
+  });
+
+  it("leaves `type` an open string, enumerating the core values in its description", () => {
+    const param = parameter("/api/docs", "get", "type");
+    expect(param?.schema?.type).toBe("string");
+    expect(param?.schema?.enum).toBeUndefined();
+    expect(param?.description).toContain("note, thread, view, template, skill, agent-def");
+    expect(param?.description).toContain("plugins define their own");
+  });
+
+  it("types `unread` as a boolean rather than a string", () => {
+    expect(parameter("/api/docs", "get", "unread")?.schema?.type).toBe("boolean");
+  });
+
+  it.each(["parent", "agent", "author", "unread"])(
+    "documents that the thread-only filter %s no-ops for other types",
+    (name) => {
+      expect(parameter("/api/docs", "get", name)?.description).toContain("no-ops for non-thread");
+    },
+  );
+
+  it("documents the archived-by-default exclusion and how to override it", () => {
+    const description = parameter("/api/docs", "get", "status")?.description ?? "";
+    expect(description).toContain("excludes");
+    expect(description).toContain("archived");
+    expect(description).toContain("overrides");
+  });
+
+  it("documents that relevance without a query is a 400, not a silent fallback", () => {
+    expect(parameter("/api/docs", "get", "sort")?.description).toContain("`400`");
+    expect(operation("/api/docs", "get").responses?.["400"]).toBeDefined();
+  });
+});
+
+describe("author attribution", () => {
+  it("declares the optional actor header on every mutating operation", () => {
+    const problems: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of MUTATING_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op) continue;
+        const header = op.parameters?.find(
+          (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
+        );
+        const signature = endpointSignature(method, path);
+        if (!header) problems.push(`${signature}: no ${ACTOR_HEADER}`);
+        else if (header.required !== false) problems.push(`${signature}: header is required`);
+        else if (header.schema?.enum?.join(",") !== ACTORS.join(",")) {
+          problems.push(`${signature}: unexpected actor values`);
+        } else if (!header.description?.includes(DEFAULT_ACTOR)) {
+          problems.push(`${signature}: default not documented`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  /**
+   * The mechanism is uniform because several mutating routes are bodiless
+   * (`DELETE`, `POST .../resolve`) or multipart, where a body field would be
+   * impossible or inconsistent. So no request body may carry it either.
+   */
+  it("keeps the acting party out of every request body", () => {
+    const schemas = document.components?.schemas ?? {};
+    const offenders: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of MUTATING_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        for (const media of Object.values(op?.requestBody?.content ?? {})) {
+          const ref = (media as { schema?: { $ref?: string } }).schema?.$ref;
+          const name = ref?.split("/").pop();
+          const properties =
+            name === undefined
+              ? undefined
+              : (schemas[name] as { properties?: Record<string, unknown> } | undefined)?.properties;
+          for (const field of ["author", "actor", "from"]) {
+            if (properties && field in properties) {
+              offenders.push(`${endpointSignature(method, path)} → ${name}.${field}`);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it.each([
+    ["/api/docs/{id}", "delete"],
+    ["/api/threads/{id}/turns/{ts}", "delete"],
+    ["/api/locks/{docId}/break", "post"],
+  ])("declares 403 on the user-only route %s %s and says why", (path, method) => {
+    const op = operation(path, method);
+    expect(op.responses?.["403"]).toBeDefined();
+    expect(op.description).toContain(`${ACTOR_HEADER}: agent`);
+    expect(op.description).toContain("rejected");
+  });
+});
+
+describe("deletion cascades are documented", () => {
+  it("states the §6 turn-deletion cascade on the route", () => {
+    const description = operation("/api/threads/{id}/turns/{ts}", "delete").description ?? "";
+    expect(description).toContain("last");
+    expect(description).toContain("anchor entry");
+    expect(description).toContain("frontmatter");
+  });
+
+  it("states the §9.2 document-deletion cascade on the route", () => {
+    const description = operation("/api/docs/{id}", "delete").description ?? "";
+    expect(description).toContain("orphaned");
+    expect(description).toContain("git");
+  });
+
+  it("tells clients to URL-encode the ISO timestamp path parameter", () => {
+    const param = parameter("/api/threads/{id}/turns/{ts}", "delete", "ts");
+    expect(param?.description).toContain("URL-encode");
+  });
+
+  it("says the id never changes on the move and archive routes", () => {
+    for (const path of [
+      "/api/docs/{id}/move",
+      "/api/docs/{id}/archive",
+      "/api/docs/{id}/unarchive",
+    ]) {
+      expect(operation(path, "post").description).toContain("id never changes");
+    }
+  });
+
+  it("corrects the folder default to inbox everywhere it is documented", () => {
+    const serialised = JSON.stringify(document);
+    expect(serialised).not.toContain("defaults to the root");
+    expect(serialised).toContain("Defaults to `inbox`");
+    expect(serialised).toContain("data/docs/finance");
+  });
+});
+
+describe("queue long-poll", () => {
+  it("declares both outcomes, with the timeout bounded and defaulted", () => {
+    const op = operation("/api/queue/idle", "get");
+    expect(op.responses?.["200"]?.content).toBeDefined();
+    expect(op.responses?.["204"]).toBeDefined();
+    expect(op.responses?.["204"]?.content).toBeUndefined();
+    const timeout = parameter("/api/queue/idle", "get", "timeout");
+    expect(timeout?.schema?.default).toBe(480);
+    expect(timeout?.description).toContain("400 validation error, not clamped");
+  });
+
+  it("documents that a halted queue parks for the full window", () => {
+    const description = operation("/api/queue/idle", "get").description ?? "";
+    expect(description).toContain("halted");
+    expect(description).toContain("never returns events");
+  });
+});
+
+/**
+ * Halt and fail both accept an annotation the caller may simply not have —
+ * `corpus queue halt` with no argument stays a bare `POST`. They are the only
+ * two operations whose body may be omitted in full, so they state
+ * `required: false` rather than inheriting it from OpenAPI's default, and the
+ * generated client turns that into an optional `requestBody`.
+ */
+describe("the annotatable queue verbs take an omittable body", () => {
+  it.each([
+    ["/api/queue/halt", "HaltQueueRequest"],
+    ["/api/queue/{id}/fail", "FailEventRequest"],
+  ])("declares %s's body optional and JSON-only", (path, component) => {
+    const body = operation(path, "post").requestBody;
+    expect(body?.required).toBe(false);
+    expect(Object.keys(body?.content ?? {})).toEqual(["application/json"]);
+    expect(JSON.stringify(body?.content)).toContain(`#/components/schemas/${component}`);
+  });
+
+  it.each(["HaltQueueRequest", "FailEventRequest"])(
+    "leaves every property of %s optional, so the empty object satisfies it",
+    (component) => {
+      const schema = componentSchemas?.[component];
+      expect(schema?.required).toBeUndefined();
+      expect(Object.keys(schema?.properties ?? {})).toEqual(["reason"]);
+    },
+  );
+
+  /**
+   * Taking a body makes halt an input-validating operation, and
+   * `@hono/zod-openapi` answers a bad one with a `400` — which the document must
+   * therefore declare. The blanket invariant above already enforces this; naming
+   * halt pins the specific regression the body introduced.
+   */
+  it("declares 400 on halt, now that halt validates a request body", () => {
+    expect(operation("/api/queue/halt", "post").responses?.["400"]).toBeDefined();
+  });
+
+  it("says on the halt route that the body may be omitted entirely", () => {
+    const op = operation("/api/queue/halt", "post");
+    expect(op.description).toContain("body is optional in full");
+    expect(op.requestBody?.description).toContain("omit the body entirely");
+  });
+});
+
+describe("locks distinguish 409 from 423", () => {
+  it("declares 409 carrying the existing lock on acquire, and never 423", () => {
+    const op = operation("/api/locks/{docId}", "post");
+    expect(op.responses?.["201"]).toBeDefined();
+    expect(JSON.stringify(op.responses?.["409"])).toContain("LockConflictError");
+    expect(op.responses?.["423"]).toBeUndefined();
+  });
+
+  it("declares 403 on release, since only the holder may release", () => {
+    expect(operation("/api/locks/{docId}", "delete").responses?.["403"]).toBeDefined();
+  });
+
+  it.each([
+    ["/api/docs/{id}", "put"],
+    ["/api/docs/{id}", "delete"],
+    ["/api/docs/{id}/move", "post"],
+    ["/api/docs/{id}/archive", "post"],
+    ["/api/docs/{id}/unarchive", "post"],
+    ["/api/threads", "post"],
+    ["/api/threads/{id}/turns/{ts}", "delete"],
+  ])("declares 423 carrying the blocking lock on %s %s", (path, method) => {
+    expect(JSON.stringify(operation(path, method).responses?.["423"])).toContain("LockedError");
+  });
+});
+
+/** A blanket "all errors on every route" would defeat the point of a typed union. */
+describe("routes declare only the codes they can return", () => {
+  it("gives the unauthenticated health probe nothing but 200", () => {
+    expect(Object.keys(operation("/api/health", "get").responses ?? {})).toEqual(["200"]);
+  });
+
+  it.each([
+    ["/api/docs", "get"],
+    ["/api/tree", "get"],
+    ["/api/locks", "get"],
+    ["/api/jobs", "get"],
+    ["/api/jobs/{id}/log", "get"],
+    ["/api/threads/{id}", "get"],
+  ])("declares neither 409 nor 423 on the read-only route %s %s", (path, method) => {
+    const responses = operation(path, method).responses ?? {};
+    expect(responses["409"]).toBeUndefined();
+    expect(responses["423"]).toBeUndefined();
+  });
+
+  it.each([
+    ["/api/docs", "get"],
+    ["/api/tree", "get"],
+    ["/api/threads/{id}", "get"],
+  ])("declares no 403 on the read-only route %s %s", (path, method) => {
+    expect(operation(path, method).responses?.["403"]).toBeUndefined();
+  });
+});
+
+/**
+ * CONTRACT-006. §14's "a warning on the API response" has to be true of every
+ * mutation, not only of the document ones: thread writes go through the same
+ * server pipeline, and anchored creation writes the **parent document's**
+ * frontmatter. A shape that cannot carry a warning makes §14 selectively true.
+ */
+describe("§14 warnings reach every mutation response", () => {
+  const CARRIERS = [
+    "DocMutationResponse",
+    "UpdateDocResponse",
+    "DeleteDocResult",
+    "CreateThreadResponse",
+    "AppendTurnResponse",
+    "CaptureResult",
+    "DeleteTurnResult",
+  ];
+
+  it.each(CARRIERS)("declares `warnings` required on %s", (component) => {
+    const schema = componentSchemas?.[component];
+    expect(schema?.required).toContain("warnings");
+    expect(schema?.properties?.["warnings"]).toMatchObject({
+      type: "array",
+      items: { $ref: "#/components/schemas/Warning" },
+    });
+  });
+
+  /**
+   * Pinned from the other side too: a mutation response added later without the
+   * field shows up here as an unlisted carrier rather than passing unnoticed.
+   */
+  it("finds no other component carrying a differently-shaped warnings field", () => {
+    const stray = Object.entries(componentSchemas ?? {})
+      .filter(([name]) => !CARRIERS.includes(name))
+      .filter(([, schema]) => schema.properties?.["warnings"] !== undefined);
+    expect(stray.map(([name]) => name)).toEqual([]);
+  });
+});
+
+/**
+ * SPEC.md §2.2 and §14's projection-maintenance pair. `rebuild && doctor` clean
+ * is the standing invariant v1's definition of done gates on, so both halves are
+ * contract surface rather than server-local commands.
+ */
+describe("the projection maintenance routes", () => {
+  it("takes no request input at all on the rebuild, beyond the actor header", () => {
+    const op = operation("/api/db/rebuild", "post");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters?.map((entry) => entry.name)).toEqual([ACTOR_HEADER]);
+  });
+
+  it("takes no request input at all on doctor, and therefore declares no 400", () => {
+    const op = operation("/api/db/doctor", "get");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
+  });
+
+  it.each([
+    ["/api/db/rebuild", "post"],
+    ["/api/db/doctor", "get"],
+  ])("keeps %s %s behind the bearer token", (path, method) => {
+    expect(operation(path, method).security).toBeUndefined();
+    expect(operation(path, method).responses?.["401"]).toBeDefined();
+  });
+
+  it("reports drift as a 200 rather than inventing a failure status", () => {
+    const responses = operation("/api/db/doctor", "get").responses ?? {};
+    expect(JSON.stringify(responses["200"])).toContain("DoctorReport");
+    for (const code of ["400", "409", "422", "423"]) {
+      expect(responses[code]).toBeUndefined();
+    }
+  });
+
+  it("counts every projection table the rebuild writes, so a summary can report them", () => {
+    const properties = Object.keys(componentSchemas?.["RebuildResult"]?.properties ?? {});
+    expect(properties).toEqual(["path", ...PROJECTION_COUNT_FIELDS, "durationMs", "skipped"]);
+  });
+
+  it("classifies drift by the server's own closed kind vocabulary", () => {
+    expect(componentSchemas?.["ProjectionDrift"]?.properties?.["kind"]?.enum).toEqual([
+      ...DRIFT_KINDS,
+    ]);
+  });
+
+  /** Nullable, not optional — the response-side convention this contract uses. */
+  it("always carries the drift path key, null when the drift concerns no one file", () => {
+    const drift = componentSchemas?.["ProjectionDrift"];
+    expect(drift?.required).toEqual(["kind", "path", "detail"]);
+  });
+
+  it("neither route claims to warn, because neither writes a workspace file", () => {
+    for (const component of ["RebuildResult", "DoctorReport"]) {
+      expect(componentSchemas?.[component]?.properties?.["warnings"]).toBeUndefined();
+    }
+  });
+});
+
+describe("multipart, attachments and the stream", () => {
+  it("offers both a JSON and a multipart body on turn-append", () => {
+    const content = operation("/api/threads/{id}/turns", "post").requestBody?.content ?? {};
+    expect(Object.keys(content)).toEqual(["application/json", "multipart/form-data"]);
+  });
+
+  it("declares capture as multipart only", () => {
+    const content = operation("/api/capture", "post").requestBody?.content ?? {};
+    expect(Object.keys(content)).toEqual(["multipart/form-data"]);
+  });
+
+  it("types the attached files as an array of binaries", () => {
+    const schemas = document.components?.schemas ?? {};
+    for (const name of ["MultipartAppendTurnRequest", "CaptureRequest"]) {
+      const files = (schemas[name] as { properties?: Record<string, unknown> } | undefined)
+        ?.properties?.["files"];
+      expect(files).toMatchObject({ type: "array", items: { type: "string", format: "binary" } });
+    }
+  });
+
+  it("declares the attachment route as binary bytes", () => {
+    const content = operation("/attachments/{path}", "get").responses?.["200"]?.content ?? {};
+    expect(Object.keys(content)).toEqual(["application/octet-stream"]);
+    expect(JSON.stringify(content)).toContain('"format":"binary"');
+  });
+
+  it("documents the SSE heartbeat, subscriber pruning and token parameter", () => {
+    const op = operation("/events", "get");
+    expect(op.description).toContain("25 s heartbeat");
+    expect(op.description).toContain("dead subscribers pruned");
+    expect(parameter("/events", "get", "token")?.in).toBe("query");
+    expect(parameter("/events", "get", "token")?.description).toContain("EventSource cannot set");
+  });
+
+  it("describes the job-log ingest as loopback-only and tokenless", () => {
+    const description = operation("/api/jobs/{id}/log", "post").description ?? "";
+    expect(description).toContain("Localhost-only");
+    expect(description).toContain("unauthenticated");
+  });
+});
+
+/**
+ * CONTRACT-004. OpenAPI reads an omitted `requestBody.required` as `false`, and
+ * `openapi-typescript` faithfully emits `requestBody?:` for it — so a mandatory
+ * body that never says it is mandatory compiles away to nothing and 400s at
+ * runtime. The rule pinned here is derived from the schemas, not from a
+ * hand-maintained list:
+ *
+ *   a body is `required: false` **iff** every field in its schema is optional
+ *   (a bare invocation is then a designed, documented call); a body with at
+ *   least one required field is `required: true`.
+ *
+ * A body offering several media types is mandatory when *any* representation
+ * demands a field: the caller still has to send one of the forms. The rule holds
+ * across the whole surface with no exemptions — `RULE_EXEMPTIONS` is kept, and
+ * asserted empty, so the next one to be proposed has to be written down here.
+ */
+describe("request bodies declare whether they are mandatory", () => {
+  /**
+   * Bodies whose declared `required` contradicts the rule, each with the reason
+   * it has to. Keeping them here rather than in a route comment means an
+   * exemption that stops being necessary shows up as a failing test.
+   */
+  const RULE_EXEMPTIONS: Readonly<Record<string, string>> = {};
+
+  interface RequestBodyFacts {
+    readonly signature: string;
+    /** `undefined` means the operation is leaning on OpenAPI's implicit default. */
+    readonly declared: boolean | undefined;
+    /** True when every field of every representation of this body is optional. */
+    readonly whollyOptional: boolean;
+    readonly description: string | undefined;
+    readonly mediaTypes: readonly string[];
+    readonly branching: readonly string[];
+  }
+
+  /** Fields a schema demands, resolving `$ref` and flattening `allOf`. */
+  function requiredFields(node: SchemaNode | undefined, derefd: ReadonlySet<string>): string[] {
+    if (!node) return [];
+
+    if (node.$ref !== undefined) {
+      const name = node.$ref.split("/").pop() ?? "";
+      // Guards against a component that refers back to itself.
+      if (derefd.has(name)) return [];
+      return requiredFields(componentSchemas?.[name], new Set([...derefd, name]));
+    }
+
+    return [
+      ...(node.required ?? []),
+      ...(node.allOf ?? []).flatMap((branch) => requiredFields(branch, derefd)),
+    ];
+  }
+
+  /**
+   * `anyOf`/`oneOf` would make "every field is optional" branch-relative, and
+   * the rule above has no answer for that. No request body uses them today; if
+   * one ever does, this reports it rather than letting the rule quietly rot.
+   */
+  function branchingSchemas(node: SchemaNode | undefined, derefd: ReadonlySet<string>): string[] {
+    if (!node) return [];
+
+    if (node.$ref !== undefined) {
+      const name = node.$ref.split("/").pop() ?? "";
+      if (derefd.has(name)) return [];
+      return branchingSchemas(componentSchemas?.[name], new Set([...derefd, name]));
+    }
+
+    const here = [...(node.anyOf ? ["anyOf"] : []), ...(node.oneOf ? ["oneOf"] : [])];
+    return [...here, ...(node.allOf ?? []).flatMap((branch) => branchingSchemas(branch, derefd))];
+  }
+
+  function requestBodies(): RequestBodyFacts[] {
+    const found: RequestBodyFacts[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const body = (item as Record<string, Operation> | undefined)?.[method]?.requestBody;
+        if (!body) continue;
+
+        const media = Object.entries(body.content ?? {}).map(
+          ([mediaType, entry]) => [mediaType, (entry as { schema?: SchemaNode }).schema] as const,
+        );
+        found.push({
+          signature: endpointSignature(method, path),
+          declared: body.required,
+          whollyOptional: media.every(
+            ([, schema]) => requiredFields(schema, new Set()).length === 0,
+          ),
+          description: body.description,
+          mediaTypes: media.map(([mediaType]) => mediaType),
+          branching: media.flatMap(([, schema]) => branchingSchemas(schema, new Set())),
+        });
+      }
+    }
+    return found.sort((a, b) => a.signature.localeCompare(b.signature));
+  }
+
+  const bodies = requestBodies();
+
+  it("finds every request body in the surface", () => {
+    // Pinned so a new body cannot slip in unexamined; the rule below is what
+    // then classifies each one.
+    expect(bodies).toHaveLength(11);
+  });
+
+  it("declares `required` explicitly on every one of them", () => {
+    const implicit = bodies.filter((body) => body.declared === undefined);
+    expect(implicit.map((body) => body.signature)).toEqual([]);
+  });
+
+  it("declares `required` exactly as the schemas dictate", () => {
+    const violations = bodies
+      .filter((body) => body.declared !== !body.whollyOptional)
+      .filter((body) => !(body.signature in RULE_EXEMPTIONS));
+    expect(
+      violations.map((body) => `${body.signature}: declared ${String(body.declared)}`),
+    ).toEqual([]);
+  });
+
+  it("earns no exemption from the rule at all", () => {
+    // The one exemption this list ever held — the dual-media turn append, which
+    // `@hono/zod-openapi@1.5.1` cannot validate when `required` is truthy — was
+    // closed by `routes/turn-append.ts`: the document declares `required: true`
+    // and the mounting helper dispatches on `content-type` itself. The list
+    // stays, asserted empty, so the next exemption has to be argued for here
+    // rather than added quietly.
+    const unearned = bodies.filter(
+      (body) => body.signature in RULE_EXEMPTIONS && body.declared === !body.whollyOptional,
+    );
+    expect(unearned.map((body) => body.signature)).toEqual([]);
+    expect(Object.keys(RULE_EXEMPTIONS)).toEqual([]);
+  });
+
+  it("uses no branching schema that would make the rule ambiguous", () => {
+    const branching = bodies.filter((body) => body.branching.length > 0);
+    expect(branching.map((body) => `${body.signature}: ${body.branching.join(",")}`)).toEqual([]);
+  });
+
+  it("partitions the surface into the mandatory and the omittable sets", () => {
+    const partition = Object.fromEntries(bodies.map((body) => [body.signature, body.declared]));
+    expect(partition).toEqual({
+      "POST /api/capture": true,
+      "POST /api/docs": true,
+      "POST /api/docs/{id}/move": true,
+      "POST /api/jobs/{id}/log": true,
+      "POST /api/threads": true,
+      "POST /api/locks/{docId}": false,
+      "POST /api/queue/halt": false,
+      "POST /api/queue/{id}/fail": false,
+      "POST /api/threads/{id}/seen": false,
+      "POST /api/threads/{id}/turns": true,
+      "PUT /api/docs/{id}": false,
+    });
+  });
+
+  it("treats a multipart body as a body", () => {
+    const multipart = bodies.filter((body) => body.mediaTypes.includes("multipart/form-data"));
+    expect(multipart.map((body) => body.signature)).toEqual([
+      "POST /api/capture",
+      "POST /api/threads/{id}/turns",
+    ]);
+    expect(multipart.every((body) => body.declared !== undefined)).toBe(true);
+  });
+
+  it("tells the caller, on every genuinely bare-callable body, that omitting it is a real call", () => {
+    const bare = bodies.filter((body) => body.declared === false && body.whollyOptional);
+    const undocumented = bare.filter(
+      (body) => !/omit the body entirely/i.test(body.description ?? ""),
+    );
+    expect(undocumented.map((body) => body.signature)).toEqual([]);
+  });
+
+  it("says what a bare re-halt does to a recorded reason", () => {
+    // The halt sentinel is rewritten wholesale, so a bare re-halt does not
+    // merely leave a previously recorded reason alone — it clears it.
+    expect(operation("/api/queue/halt", "post").description).toContain("replace, add, or clear");
   });
 });

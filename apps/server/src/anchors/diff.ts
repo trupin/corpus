@@ -24,6 +24,19 @@ export type OffsetMapper = {
    * before the edit — a pre-existing doppelgänger of something deleted.
    */
   touchesInsertion(range: Range): boolean;
+  /**
+   * Whether a DELETE+INSERT replacement pair straddles a boundary of the old
+   * range `[start, end)` — the DELETE strictly contains `start` or `end`. The
+   * inserted text then replaces both in-range and out-of-range content, yet
+   * `mapStart`/`mapEnd` grant it wholly to the range, so the mapped slice
+   * misattributes text: it can be a mid-word truncation, or carry a
+   * neighbour's words (the diff aligns a deleted paragraph against a
+   * near-identical *edited* sibling — SERVER-012). A slice mapped through a
+   * straddling replacement must not be trusted; boundary-respecting edits
+   * (replacements wholly inside the range, or pure deletions however far they
+   * cross the boundary) never trip this.
+   */
+  straddledByReplacement(range: Range): boolean;
 };
 
 type Segment = {
@@ -130,5 +143,17 @@ export function computeOffsetMapper(oldBody: string, newBody: string): OffsetMap
     );
   };
 
-  return { mapStart, mapEnd, classify, touchesInsertion };
+  const straddledByReplacement = ({ start, end }: Range): boolean => {
+    if (start >= end) return false;
+    return segments.some((segment, index) => {
+      if (segment.op !== DIFF_DELETE) return false;
+      const next = segments[index + 1];
+      if (next === undefined || next.op !== DIFF_INSERT) return false;
+      const strictlyInside = (offset: number): boolean =>
+        segment.oldStart < offset && offset < segment.oldEnd;
+      return strictlyInside(start) || strictlyInside(end);
+    });
+  };
+
+  return { mapStart, mapEnd, classify, touchesInsertion, straddledByReplacement };
 }

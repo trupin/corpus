@@ -22,6 +22,11 @@ jobs:
       # Build first: cross-workspace imports resolve through each package's
       # exports map into dist/, so lint/typecheck/tests need the emit to exist.
       - run: npm run build
+      # Regenerates every committed generated artifact (openapi.json,
+      # schema.generated.ts, docs/cli.md) and fails when the result differs from
+      # what was committed. Shares one inventory with .githooks/pre-push.
+      - name: generated artifacts drift
+        run: node --import tsx scripts/check-generated-artifacts.ts
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck

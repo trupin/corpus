@@ -86,6 +86,16 @@ export type AnchorResolver = (
 
 export type CheckOptions = {
   readonly resolveAnchor?: AnchorResolver;
+  /**
+   * Whether an id the passed document set does *not* contain nonetheless names
+   * a real document. `corpus doc check` hands the checker the whole workspace
+   * and needs none of this; a **save** hands it exactly one file, and without
+   * this seam every `[[ref]]` in that file would be reported unresolved purely
+   * because its target was not in the set. Injected rather than imported for
+   * the same reason as {@link AnchorResolver}: the checker stays free of the
+   * projection.
+   */
+  readonly documentExists?: (id: string) => boolean;
 };
 
 export type CheckReport = {
@@ -260,6 +270,9 @@ export const checkCorpus = (
     loaded.push({ path: entry.path, parsed: entry.document, frontmatter: validated.value });
   }
 
+  const existsInCorpus = (id: string): boolean =>
+    knownIds.has(id) || (options.documentExists?.(id) ?? false);
+
   const byId = new Map<string, LoadedDocument>();
   for (const document of loaded) {
     const existing = byId.get(document.frontmatter.id);
@@ -281,7 +294,7 @@ export const checkCorpus = (
     if (thread === null) continue;
 
     const parent = thread.parent === null ? null : byId.get(thread.parent);
-    if (thread.parent !== null && !knownIds.has(thread.parent)) {
+    if (thread.parent !== null && !existsInCorpus(thread.parent)) {
       report.error(
         CHECK_CODES.threadParentMissing,
         thread.id,
@@ -349,7 +362,7 @@ export const checkCorpus = (
     }
 
     for (const id of new Set(extractRefs(document.parsed.body).map((ref) => ref.id))) {
-      if (!knownIds.has(id)) {
+      if (!existsInCorpus(id)) {
         report.warn(
           CHECK_CODES.refUnresolved,
           document.frontmatter.id,

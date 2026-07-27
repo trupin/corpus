@@ -1,35 +1,121 @@
+import { getAttachment } from "./attachments.js";
+import { capture } from "./capture.js";
+import { doctorDb, rebuildDb } from "./db.js";
+import {
+  archiveDoc,
+  createDoc,
+  deleteDoc,
+  getDoc,
+  listDocs,
+  moveDoc,
+  unarchiveDoc,
+  updateDoc,
+} from "./docs.js";
 import { streamEvents } from "./events.js";
 import { getHealth } from "./health.js";
-import { createDoc, getDoc, listDocs, updateDoc } from "./docs.js";
-import { claimAll, completeEvent, failEvent, getQueueStatus } from "./queue.js";
-import { appendTurn, createThread, getThread } from "./threads.js";
+import { abandonJob, appendJobLog, getJobLog, listJobs, retryJob } from "./jobs.js";
+import { acquireLock, breakLock, listLocks, reapLocks, releaseLock } from "./locks.js";
+import {
+  abandonEvent,
+  claimAll,
+  completeEvent,
+  failEvent,
+  getQueueStatus,
+  haltQueue,
+  idleQueue,
+  reapStale,
+  resumeQueue,
+} from "./queue.js";
+import {
+  createThread,
+  deleteTurn,
+  getThread,
+  markThreadSeen,
+  reopenThread,
+  resolveThread,
+} from "./threads.js";
+import { appendTurn } from "./turn-append.js";
+import { getTree } from "./tree.js";
 
+export * from "./attachments.js";
+export * from "./capture.js";
+export * from "./db.js";
 export * from "./docs.js";
 export * from "./events.js";
 export * from "./health.js";
+export * from "./inventory.js";
+export * from "./jobs.js";
+export * from "./locks.js";
 export * from "./queue.js";
 export * from "./responses.js";
 export * from "./threads.js";
+export * from "./tree.js";
+export * from "./turn-append.js";
 
 /**
  * Every route the contract declares, by name. The server registers handlers
  * against these definitions (`app.openapi(contractRoutes.getDoc, handler)`), so
  * it cannot serve a shape the contract does not declare (SPEC.md §9.3).
+ *
+ * **Order is load-bearing, not cosmetic.** Several resources have a static
+ * segment competing with a path parameter for the same position — `/api/locks/
+ * reap` against `/api/locks/{docId}`, and `/api/queue/{claim-all,reap-stale,
+ * halt,resume,status,idle}` against `/api/queue/{id}`. Registering the static
+ * routes first is what makes a document literally named `reap` unambiguous; the
+ * failure mode is silent misrouting, so `index.test.ts` holds the order rather
+ * than a comment alone. It also fixes the path order of the generated document,
+ * which is what makes `openapi.json` byte-stable across runs.
  */
 export const contractRoutes = {
   getHealth,
+
   listDocs,
-  getDoc,
   createDoc,
+  getDoc,
   updateDoc,
-  getThread,
+  deleteDoc,
+  moveDoc,
+  archiveDoc,
+  unarchiveDoc,
+
+  getTree,
+  capture,
+
   createThread,
+  getThread,
   appendTurn,
+  deleteTurn,
+  resolveThread,
+  reopenThread,
+  markThreadSeen,
+
   getQueueStatus,
+  idleQueue,
   claimAll,
+  reapStale,
+  haltQueue,
+  resumeQueue,
   completeEvent,
   failEvent,
+  abandonEvent,
+
+  listLocks,
+  reapLocks,
+  acquireLock,
+  releaseLock,
+  breakLock,
+
+  listJobs,
+  getJobLog,
+  appendJobLog,
+  retryJob,
+  abandonJob,
+
+  rebuildDb,
+  doctorDb,
+
   streamEvents,
+  getAttachment,
 } as const;
 
 export type ContractRouteName = keyof typeof contractRoutes;

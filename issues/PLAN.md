@@ -48,21 +48,33 @@ The sole-writer server and the thin-client CLI.
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| CONTRACT-002 | Contract growth: full API surface (queue, locks, jobs, attachments, SSE, query params) | todo | P0 | CONTRACT-001 |
-| SERVER-003 | Server bootstrap: Hono app, config, auth, static UI | todo | P0 | CONTRACT-001 |
-| SERVER-004 | SQLite projection: schema, projectors, FTS, rebuild/doctor | todo | P0 | SERVER-001, SERVER-003 |
-| SERVER-005 | Doc write paths + git auto-commit with author attribution | todo | P0 | SERVER-002, SERVER-004 |
-| SERVER-006 | Thread write paths: creation, turns, events, cascade | todo | P0 | SERVER-005, CONTRACT-002 |
-| SERVER-007 | Watcher + SSE invalidation | todo | P0 | SERVER-004 |
-| SERVER-008 | Queue over HTTP: event store + long-poll | todo | P0 | SERVER-003, CONTRACT-002 |
-| SERVER-009 | Document locks + job logs | todo | P0 | SERVER-007, CONTRACT-002 |
-| SERVER-010 | Attachments: ingest + serving | todo | P1 | SERVER-006 |
-| SERVER-011 | Collection query endpoint: filters + FTS + needs=me | todo | P0 | SERVER-004 |
-| CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | todo | P0 | CONTRACT-001, INFRA-007 |
-| SERVER-012 | Anchor engine: partial-path truncated selectors beside edited near-identical siblings | todo | P2 | SERVER-002 |
-| CLI-002 | `corpus init` + server lifecycle verbs | todo | P0 | CLI-001, SERVER-003, AGENT-001 |
-| CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006 |
-| CLI-004 | Queue, lock, job verbs (agent loop surface) | todo | P0 | CLI-001, SERVER-008, SERVER-009 |
+| CONTRACT-002 | Contract growth: full API surface (queue, locks, jobs, attachments, SSE, query params) | done | P0 | CONTRACT-001 |
+| SERVER-003 | Server bootstrap: Hono app, config, auth, static UI | done | P0 | CONTRACT-001 |
+| SERVER-004 | SQLite projection: schema, projectors, FTS, rebuild/doctor | done | P0 | SERVER-001, SERVER-003 |
+| SERVER-005 | Doc write paths + git auto-commit with author attribution | done | P0 | SERVER-002, SERVER-004, SERVER-013 |
+| SERVER-006 | Thread write paths: creation, turns, events, cascade | done | P0 | SERVER-005, CONTRACT-002 |
+| SERVER-007 | Watcher + SSE invalidation | done | P0 | SERVER-004 |
+| SERVER-008 | Queue over HTTP: event store + long-poll | done | P0 | SERVER-003, CONTRACT-002 |
+| SERVER-009 | Document locks + job logs | done | P0 | SERVER-007, CONTRACT-002 |
+| SERVER-010 | Attachments: ingest + serving | done | P1 | SERVER-006 |
+| SERVER-011 | Collection query endpoint: filters + FTS + needs=me | done | P0 | SERVER-004 |
+| CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | done | P0 | CONTRACT-001, INFRA-007 |
+| SERVER-012 | Anchor engine: partial-path truncated selectors beside edited near-identical siblings | done | P2 | SERVER-002 |
+| CONTRACT-003 | Request schemas with `.default()` render as required in the generated client | done | P1 | CONTRACT-002 |
+| CONTRACT-004 | Mandatory request bodies are typed optional in the generated client | done | P1 | CONTRACT-002 |
+| SERVER-013 | Anchor engine: substitution class — anchors handed unrelated text while their own survives | done | P1 | SERVER-012 |
+| CONTRACT-005 | Board contract growth: query-key vocabulary, DocRow staleness + thread fields | done | P1 | CONTRACT-002 |
+| SERVER-014 | Anchor engine: duplicate-survivor policy (remap-one vs orphan) — TEST-64/66 tension | todo | P2 | SERVER-013 |
+| SERVER-015 | Populate CONTRACT-005's new DocRow fields in the collection query | done | P1 | CONTRACT-005, SERVER-011 |
+| CLI-002 | `corpus init` + server lifecycle verbs | done | P0 | CLI-001, SERVER-003, AGENT-001 |
+| CLI-003 | Doc & thread verbs | done | P0 | CLI-001, SERVER-005, SERVER-006, SERVER-017 |
+| CLI-004 | Queue, lock, job verbs (agent loop surface) | done | P0 | CLI-001, SERVER-008, SERVER-009 |
+| CONTRACT-006 | Thread-response warnings, appended honesty, db routes | done | P0 | CONTRACT-005 |
+| SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | done | P1 | SERVER-004 |
+| SERVER-018 | `["tree"]` key gaps: thread deletion + archive/unarchive | done | P2 | SERVER-006, SERVER-009 |
+| CONTRACT-010 | MarkSeen `unread` honesty + client attachment-path exclusion | done | P1 | CONTRACT-006 |
+| SERVER-021 | Capture cleanup deletes committed attachment bytes | done | P1 | SERVER-010 |
+| CLI-007 | `corpus job log` stdin-socket hang under agent harness | done | P1 | CLI-003, CLI-004 |
 
 ---
 
@@ -78,10 +90,16 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-005 | Reader, navigation stacks, doc menu, focus shell, lock banner | todo | P0 | UI-003, UI-004 |
 | UI-006 | Always-editable TipTap document editor | todo | P0 | UI-005 |
 | UI-007 | Anchored threads: highlights, comment-from-selection, chips ↔ margin cards | todo | P0 | UI-006 |
-| UI-008 | Thread view, composer, attachments, forms, read state | todo | P0 | UI-005, SERVER-010 |
+| UI-008 | Thread view, composer, attachments, forms, read state | todo | P0 | UI-005, SERVER-010, CONTRACT-007, CONTRACT-009, SERVER-016 |
 | UI-009 | Search overlay, omnibox create, save-as-view | todo | P0 | UI-003 |
 | UI-010 | Global Ask/Capture composer + keyboard scheme | todo | P1 | UI-008, UI-009 |
 | UI-011 | Console drawer: jobs master-detail, live logs, HALT | todo | P1 | UI-002, SERVER-009 |
+| CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | todo | P1 | CONTRACT-002 |
+| CONTRACT-009 | Multipart createThread + declared 413 (attachments rider) | todo | P1 | CONTRACT-002 |
+| SERVER-016 | Form answer write path (form.respond producer) | todo | P1 | CONTRACT-007, SERVER-006 |
+| SERVER-020 | Watcher path breaks the tree-key invariant (heuristic vs. signature) | todo | P2 | SERVER-018 |
+| SERVER-022 | Server hardening batch: PR #9 MINOR findings | todo | P2 | SERVER-010, SERVER-018 |
+| CLI-008 | CLI hardening batch: PR #9 MINOR findings | todo | P2 | CLI-003, CLI-004 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | todo | P1 | INFRA-003, UI-001 |
 
 ---
@@ -90,8 +108,11 @@ The board, editor, threads, console. design/index.html is authoritative for look
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| AGENT-002 | Orchestrate skill: the agent's main loop | todo | P0 | CLI-004, AGENT-001 |
-| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, AGENT-002 |
+| AGENT-002 | Orchestrate skill: the agent's main loop | todo | P0 | CLI-004, CLI-007, AGENT-001 |
+| CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | todo | P1 | CONTRACT-002 |
+| SERVER-019 | Mount validation + skill-rollback handlers | todo | P1 | CONTRACT-008 |
+| CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | todo | P1 | CLI-003, SERVER-019 |
+| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, CLI-006, AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | todo | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | todo | P1 | CLI-002, UI-010 |

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   TURN_SEPARATOR,
   appendTurn,
+  nextTurnTs,
   deleteTurn,
   duplicateTurnTimestamps,
   parseThreadBody,
@@ -84,6 +85,28 @@ a turn body
 
   it("parses turns in a CRLF body", () => {
     expect(parseTurns(THREE_TURNS.replaceAll("\n", "\r\n"))).toHaveLength(3);
+  });
+});
+
+describe("nextTurnTs", () => {
+  it("answers the stamp `appendTurn` will use, so attachments can name the directory first", () => {
+    for (const requested of [
+      "2026-07-19T10:09:00Z",
+      "2026-07-19T10:07:12Z",
+      "2026-07-19T09:00:00Z",
+    ]) {
+      const ts = nextTurnTs(THREE_TURNS, requested);
+      expect(appendTurn(THREE_TURNS, { author: "agent", text: "x", ts: requested }).turn.ts).toBe(
+        ts,
+      );
+      // Feeding the answer back is a fixed point: the bytes are written under
+      // this directory before the body that quotes it exists.
+      expect(nextTurnTs(THREE_TURNS, ts)).toBe(ts);
+    }
+  });
+
+  it("rejects a stamp that is not an instant", () => {
+    expect(() => nextTurnTs(THREE_TURNS, "not-a-date")).toThrow(TypeError);
   });
 });
 

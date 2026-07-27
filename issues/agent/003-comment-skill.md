@@ -33,6 +33,8 @@ opus — behavioral rules enumerated in §7/§8; judgment encoded in AGENT-002's
 
 Write the real `.claude/skills/comment/SKILL.md` — everything the product agent does once the orchestrate loop hands it a thread event. It replaces the AGENT-001 skeleton at `assets/workspace/claude/skills/comment/SKILL.md`.
 
+> **Attribution requirement (CLI-003 adjudication, 2026-07-27):** same as AGENT-002 — the CLI defaults `--from` to `user`; agent-side calls MUST set `CORPUS_FROM=agent` or pass `--from agent`, or thread replies and edits will be misattributed in git.
+
 This is where the system's conversational behavior lives: gathering the right context for the three thread shapes (anchored, whole-document, standalone), honoring targeted mentions and skill invocations as directives rather than hints, doing the actual work through the CLI, filing inbox captures, replying in a way that closes the loop for a waiting user, continuing through form answers, and codifying recurring patterns into skills. It inherits AGENT-002's invariants verbatim — CLI-only, archive-never-delete, defer on user locks, log progress — and adds the thread-level judgment on top.
 
 ## Acceptance Criteria

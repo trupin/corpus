@@ -4,7 +4,7 @@
 cli
 
 ## Status
-todo
+in_progress
 
 ## Priority
 P0
@@ -28,20 +28,32 @@ Give the installed tool its two operator-facing surfaces: `corpus init`, which m
 `corpus init` is the one and only place where the CLI writes to disk — it exists precisely to create the workspace the server will then own. Every command after it goes through the server.
 
 ## Acceptance Criteria
-- [ ] `corpus init [path]` (default `.`) creates: `data/docs/` (including `data/docs/inbox/` and `data/docs/templates/`), `data/threads/`, and the `.corpus/` runtime tree (`queue/{pending,in-progress,processed,failed,abandoned}/`, `locks/`, `jobs/`, `attachments/`).
-- [ ] `.corpus/config.json` is written with `{ version, port, token, dataDir }`: the token is 32 bytes of CSPRNG entropy (base64url), the port is a free port (default 8765, probing upward when taken). The file is mode `0600`.
-- [ ] The workspace is a git repository: `git init` (default branch `main`), a `.gitignore` covering runtime state (`.corpus/cache.db*`, `.corpus/jobs/`, `.corpus/attachments/`, `.corpus/seen.json`, `.corpus/locks/`, `.corpus/HALT`, `.corpus/server.pid`, `.corpus/server.log`, `.corpus/config.json`), and one initial commit authored as `user` containing the tracked tree.
-- [ ] The bundled `assets/workspace/` template is copied **verbatim** into the workspace — the product agent's `.claude/` skills (orchestrate, comment) and agent definitions, seed view documents, and document templates — resolved relative to the installed package, so it works from a global npm install as well as from the repo.
-- [ ] `corpus init` refuses to clobber: if the target already contains `.corpus/config.json` (or a non-empty `data/`), it exits non-zero with "already a Corpus workspace" and changes nothing. `--force` is **not** provided.
-- [ ] `corpus init` is atomic-ish: on any failure partway through, it removes what it created in a previously empty target and reports the underlying error (never leaves a half-workspace that `init` then refuses to fix).
-- [ ] `corpus server start` daemonizes the server: detached spawn, stdio redirected to `.corpus/server.log`, `unref()`ed so the CLI exits immediately; writes `.corpus/server.pid` (`{ pid, port, startedAt, version }`); polls the health endpoint until ready (timeout ~15 s) and prints the URL, or fails with the last lines of the log.
-- [ ] `corpus server start` is idempotent: already-running (live pid + healthy) → prints "already running on :<port> (pid N)" and exits 0.
-- [ ] `corpus server stop` sends SIGTERM, waits for exit (up to 10 s), escalates to SIGKILL, removes the pidfile; not-running → says so and exits 0.
-- [ ] `corpus server status` reports running/stopped, pid, port, health-check result, uptime, and server version; `--json` emits the same as one object. Exit 0 when running, non-zero when stopped (so scripts can gate on it).
-- [ ] `corpus server logs` prints the tail of `.corpus/server.log` (`--lines/-n`, default 50) with `--follow/-f` streaming until interrupted (clean exit 0 on SIGINT).
-- [ ] A stale pidfile (process gone, or pid reused by an unrelated process) is detected and cleaned rather than reported as "running".
-- [ ] Two workspaces initialized on the same machine get different ports and different tokens and can run their servers simultaneously; commands run in each directory reach their own server.
-- [ ] Vitest coverage for token/port generation, scaffold contents, clobber refusal, pidfile lifecycle, and stale-pid detection.
+- [x] `corpus init [path]` (default `.`) creates: `data/docs/` (including `data/docs/inbox/` and `data/docs/templates/`), `data/threads/`, and the `.corpus/` runtime tree (`queue/{pending,in-progress,processed,failed,abandoned}/`, `locks/`, `jobs/`, `attachments/`) — plus `data/docs/views/`, `.claude/skills/`, `.claude/skills-archived/` and `.claude/agents/` per adjudication 2.
+- [x] `.corpus/config.json` is written with `{ version, port, token, dataDir }`: the token is 32 bytes of CSPRNG entropy (base64url), the port is a free port (default 8765, probing upward when taken). The file is mode `0600`.
+- [x] The workspace is a git repository: `git init` (default branch `main`), a `.gitignore` covering runtime state, and one initial commit authored as `user` containing the tracked tree. _(Adjudication 1: the `.gitignore` arrives with the template copy — `init` never writes one. TEST-61 is the guard.)_
+- [x] The bundled `assets/workspace/` template is copied **verbatim** into the workspace — the product agent's `.claude/` skills (orchestrate, comment) and agent definitions, seed view documents, and document templates — resolved relative to the installed package, so it works from a global npm install as well as from the repo. _(Two-candidate resolver; the `npm pack` proof is DEFERRED → INFRA-008 per adjudication 6.)_
+- [x] `corpus init` refuses to clobber: if the target already contains `.corpus/config.json` (or a non-empty `data/`), it exits non-zero with "already a Corpus workspace" and changes nothing. `--force` is **not** provided.
+- [x] `corpus init` is atomic-ish: on any failure partway through, it removes what it created in a previously empty target and reports the underlying error (never leaves a half-workspace that `init` then refuses to fix).
+- [x] `corpus init` writes `.corpus/template-manifest.json` (path + content hash + tool version) for `corpus workspace upgrade` to compare against (adjudication 3).
+- [x] `corpus server start` daemonizes the server: detached spawn, stdio redirected to `.corpus/server.log`, `unref()`ed so the CLI exits immediately; writes `.corpus/server.pid` (`{ pid, port, startedAt, version }`); polls the health endpoint until ready (timeout ~15 s) and prints the URL, or fails with the last lines of the log. _(Adjudication 4: only `CORPUS_WORKSPACE` is added to the daemon's environment.)_
+- [x] `corpus server start` is idempotent: already-running (live pid + healthy) → prints "already running on :<port> (pid N)" and exits 0.
+- [x] `corpus server stop` sends SIGTERM, waits for exit (up to 10 s), escalates to SIGKILL, removes the pidfile; not-running → says so and exits 0.
+- [x] `corpus server status` reports running/stopped, pid, port, health-check result, uptime, and server version; `--json` emits the same as one object. Exit 0 when running, **6 when stopped** (adjudication 5) so scripts can gate on it.
+- [x] `corpus server logs` prints the tail of `.corpus/server.log` (`--lines/-n`, default 50) with `--follow/-f` streaming until interrupted (clean exit 0 on SIGINT).
+- [x] A stale pidfile (process gone, or pid reused by an unrelated process) is detected and cleaned rather than reported as "running".
+- [x] Two workspaces initialized on the same machine get different ports and different tokens and can run their servers simultaneously; commands run in each directory reach their own server.
+- [x] Vitest coverage for token/port generation, scaffold contents, clobber refusal, pidfile lifecycle, and stale-pid detection.
+
+## Sprint-003 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-003 Open Conflicts affecting this issue — implement exactly these; full reasoning in `issues/sprints/sprint-003.md`:
+
+1. **The template's gitignore wins** — `corpus init` installs the template's `gitignore` (renamed) and never writes its own; the `.corpus/*` + `!.corpus/queue/` negation design is load-bearing.
+2. **Init creates every directory the install contract implies**, including `.claude/agents/` and `.claude/skills-archived/` (the template's `.gitkeep`s are filtered on copy, so the directories are init's to make) — SERVER-004's five document roots must all exist in a fresh workspace.
+3. **Init writes the template manifest** (`.corpus/template-manifest.json`: path + content hash + tool version) per SPEC §2.1 — CLI-005 cannot retroactively learn what the original install contained.
+4. **Daemon handoff**: `corpus server start` passes no `CORPUS_TOKEN`/`CORPUS_PORT` — the server derives everything from `.corpus/config.json`; the env overrides stay reserved for tests.
+5. **`corpus server status` on a stopped server exits 6** (the command succeeded at its job of reporting).
+6. **Template resolution** uses the two-candidate resolver (repo-root `assets/workspace/` in dev, packaged path when installed); `npm pack` proof is DEFERRED → INFRA-008.
 
 ## Technical Design
 
@@ -105,20 +117,284 @@ Vitest in `apps/cli`, colocated, using real temp directories (`fs.mkdtemp`) — 
 10. Two workspaces: `corpus init` in `/tmp/wsA` and `/tmp/wsB` → different ports and tokens; start both; from each directory `corpus server status` reports its own pid/port; a request with wsA's token against wsB's port is rejected.
 
 ## E2E Verification Log
-_[Agent fills]_
+
+**Implemented on: opus.** Worktree `.claude/worktrees/cli-002`. Ports 8790–8799 only; scratch
+`mktemp -d /tmp/corpus-cli002-XXXXXX`; every process stopped by pid (no `pkill`), and
+`lsof -nP -iTCP:<port> -sTCP:LISTEN` confirmed the whole range free at the end.
 
 ### Reproduction (bugs only)
 _N/A — feature issue._
 
+### Environment
+
+`npm run build -w apps/cli`, then the **real built binary** on `PATH` via a symlink into a
+scratch bin directory rather than `npm link`:
+
+```
+ln -sf "$PWD/apps/cli/dist/bin/corpus.js" /tmp/corpus-cli002-bin/corpus
+export PATH="/tmp/corpus-cli002-bin:$PATH"
+which corpus  → /tmp/corpus-cli002-bin/corpus
+corpus --version → 0.0.0
+```
+
+Same artifact `npm link` would expose (`apps/cli/dist/bin/corpus.js`, never `tsx src/…`), but
+without mutating the machine-wide npm prefix that sibling agents share. The daemon it starts
+is the real SERVER-003 server (`apps/server/src/main.ts` through the tsx loader — the
+resolver's source layout), confirmed by `ps`:
+
+```
+25077  1  …/node --import file://…/node_modules/tsx/dist/loader.mjs …/apps/server/src/main.ts
+```
+
+**`npm pack` + global install: DEFERRED → INFRA-008** (sprint-003 Open Conflict 11,
+pre-authorized). Substitute evidence: `resolveTemplateRoot` / `resolveServerEntry` are
+two-candidate resolvers unit-tested on both layouts (`paths.test.ts`,
+`daemon.test.ts`), and the dev layout is exercised above end to end.
+
 ### Post-Implementation Verification
-_[Agent fills: application restarted, exact commands, observed output, confirmation feature works]_
+
+**TEST-58 — `init` creates the §4 tree.** `corpus init --port 8795` in an empty
+`mktemp -d`, exit 0. `find . -type d` returned all of `data/docs/{inbox,templates,views}`,
+`data/threads`, `.corpus/queue/{pending,in-progress,processed,failed,abandoned}`,
+`.corpus/{locks,jobs,attachments}`, `.claude/{skills,skills-archived,agents}`.
+
+**TEST-59 — config shape and mode.**
+
+```
+{ "version": 1, "port": 8795, "token": "j_ZwKuqJ89AXXGjR37w77cHrZDdp9FCYGQiZdHfBzas", "dataDir": "data" }
+stat -f '%Lp' .corpus/config.json → 600
+token chars: 43   entropy bytes: 32
+```
+
+Parsed by **both** readers (`tsx -e` importing each schema directly):
+`apps/server/src/config.ts`'s `WorkspaceConfigSchema` and `apps/cli/src/workspace.ts`'s both
+accept it and derive `port 8795`, `host 127.0.0.1`.
+
+**TEST-60 — template verbatim, renamed, filtered.** `diff` reported *identical* for
+`README.md`, `data/docs/templates/note.md`, all three `data/docs/views/*.md`, both
+`.claude/skills/*/SKILL.md` and `.gitignore`. `claude/` and `gitignore` do not exist in the
+workspace (renamed); `find . -name .gitkeep` returned only the five
+`.corpus/queue/<status>/.gitkeep` that `init` writes — no template `.gitkeep` was copied.
+
+**TEST-61 — only the queue skeleton is tracked.** `git ls-files | grep '^\.corpus'` listed
+exactly the five `.gitkeep`s. `git check-ignore -v` attributed
+`.corpus/{config.json,cache.db,server.pid,server.log,jobs/x.jsonl,template-manifest.json}`
+to `.gitignore:9:.corpus/*` — the **template's** file, line 9; `init` writes none.
+`git status --porcelain` empty.
+
+**TEST-62 — the skeleton survives a clone.** `git clone <ws> <clone>` →
+`find <clone>/.corpus -type d` lists all five status directories.
+
+**TEST-63 — one commit, authored as `user`, on `main`.**
+
+```
+da833b4 user <user@corpus.local> | user <user@corpus.local> | workspace: initialize corpus workspace by user
+main
+```
+
+Author *and* committer are the workspace identity regardless of the operator's global git
+config (`-c user.name=… -c user.email=… -c commit.gpgsign=false`).
+
+**TEST-64 — refuses to clobber, changes nothing.** Second `corpus init --port 8799`:
+`corpus: … is already a Corpus workspace: .corpus/config.json already exists.`, **exit 2**,
+`md5` of the config unchanged, commit count still 1. `--force` is not a flag
+(`unknown flag "--force"`, exit 2).
+
+**TEST-65 — a mid-way failure leaves nothing behind.** Injected a `.git/hooks/pre-commit`
+that exits 1: `corpus: the workspace's initial commit failed: hook refuses this commit`,
+exit 1, and `ls -A` shows only the pre-seeded `.git` — every directory and file `init`
+created was unwound. Removing the hook and re-running `corpus init` succeeded with no manual
+`rm -rf`. _(This case found a real bug during implementation: `runInit` was not passing its
+`CreatedPaths` into `scaffoldWorkspace`, so the scaffold tracked into a discarded instance
+and the unwind was a no-op. Fixed; `index.test.ts` holds it.)_
+
+**TEST-66 — an existing repository is reused.** A repo with two commits on `trunk`:
+`git: reused the existing repository, added the workspace commit`, exit 0, three commits,
+still on `trunk`, the workspace commit on top authored `user <user@corpus.local>`.
+
+**TEST-67 — path and environment errors.** (a) `corpus init deep/nested --port 8797` created
+the tree, exit 0. (b) `corpus init afile` on a regular file → `… is not a directory.`,
+**exit 2**. (c) `env -i PATH=<dir with node but no git> corpus init emptydir` →
+`` corpus: `git` was not found on PATH, and a Corpus workspace is a git repository `` with an
+install hint, exit 2, **target still empty**.
+
+**TEST-68 — `--port` honoured, occupied port fails loudly.** With a listener holding 8798:
+`corpus: port 8798 is already in use on 127.0.0.1.`, exit 2, target still empty. In another
+directory `corpus init --port 8799` wrote `"port": 8799`. `--port <n>` is registry-visible
+and documented in `docs/cli.md`.
+
+**TEST-69 / TEST-78 — two independent workspaces.** wsA `--port 8795`, wsB `--port 8796`:
+different tokens, different ports, no `~/.corpus` and no `~/.config/corpus` anywhere. Both
+started:
+
+```
+A: running — pid 27685 on :8795, corpus 0.0.0, up 0s, http://127.0.0.1:8795
+B: running — pid 27351 on :8796, corpus 0.0.0, up 13s, http://127.0.0.1:8796
+lsof: 8795 -> 27685   8796 -> 27351
+```
+
+wsA's token against wsB's port → **401**; wsB's own token → 200. Stopping A left B healthy
+(`corpus health` in A exits **4** with "run `corpus server start`"; in B it answered ok).
+
+**TEST-70 — the template manifest.** `.corpus/template-manifest.json` holds
+`{version: 1, tool: "0.0.0", installedAt: "2026-07-27T01:51:20.629Z", files: [...]}` — eight
+entries, each the post-rename workspace path plus the sha256 of the installed bytes
+(`.claude/skills/comment/SKILL.md`, `.gitignore`, the three views, …). Gitignored under
+`.corpus/*` per TEST-61.
+
+**TEST-71 — `start` daemonizes and returns immediately.**
+
+```
+corpus 0.0.0 listening on http://127.0.0.1:8795 (pid 25077)
+corpus server start  0.46s total          exit=0
+.corpus/server.pid → { "pid": 25077, "port": 8795, "startedAt": "…", "version": "0.0.0" }
+```
+
+From a **fresh shell**, `ps -p 25077 -o ppid=` → `1` (reparented; the starting shell is gone)
+and `curl -H "Authorization: Bearer $TOKEN" …/api/health` →
+`{"status":"ok","version":"0.0.0","uptimeSeconds":11.108,"workspace":"/private/tmp/…"}`.
+`corpus health` exit 0.
+
+**TEST-72 — `start` is idempotent.** `already running on :8795 (pid 25077) — http://127.0.0.1:8795`,
+exit 0, pid unchanged.
+
+**TEST-73 — a server that cannot bind fails visibly.** Port stolen between init and start:
+
+```
+corpus: the server exited during startup
+  See …/.corpus/server.log for the full log.
+  { "log": [ "--- corpus server start … pid=26568 port=8794 ---",
+             "{\"level\":\"error\",\"msg\":\"port 8794 already in use — another corpus server may be running (corpus server status)\"}" ] }
+exit=4
+```
+
+No pidfile written, and `lsof -nP -iTCP:8794 -sTCP:LISTEN` showed only the thief — no orphan
+child.
+
+**TEST-74 — `status` reports the truth and gates scripts.** Running → exit 0 and
+`running — pid 25077 on :8795, corpus 0.0.0, up 12s, http://127.0.0.1:8795`; `--json` emitted
+exactly one object carrying `running/healthy/pid/port/startedAt/uptimeSeconds/version/detail`
+and nothing else on stdout. Stopped → `not running` on stdout and **exit 6**
+(sprint adjudication 5).
+
+**TEST-75 — `logs` tails and follows.** `corpus server logs -n 20` printed the run banner
+`--- corpus server start 2026-07-27T01:52:20.418Z pid=25077 port=8795 ---` followed by the
+server's JSON lines; `-n 2` printed 2 of the file's 11 lines. `corpus server logs -f` in one
+shell while `curl` hit the server in another streamed the new lines within ~1 s, and
+`kill -INT` gave **exit 0**.
+
+**TEST-76 — `stop` is graceful, and stopping a stopped server is not an error.**
+`stopped (pid 25077)` exit 0 → `ps -p` finds nothing, `.corpus/server.pid` gone. Second
+`corpus server stop` → `not running`, exit 0.
+
+**TEST-77 — stale and reused pidfiles.** (a) After `kill -9`, the pidfile remained;
+`corpus server status` → `not running (stale pidfile removed)`, exit 6, pidfile cleaned; the
+next `corpus server start` succeeded with a new pid (26359 ≠ 26309). (b) A hand-written
+pidfile naming a live `sleep 600`: `corpus server stop` →
+`not running (stale pidfile removed) — pid 26363 is alive but is not this workspace's server, and was left alone`,
+exit 0, **the sleeper was still alive afterwards**, pidfile removed.
+
+**Nested workspace (edge case).** `corpus init inner` under an existing workspace printed
+`warning: … sits inside the workspace at …; commands run here will now resolve to the inner
+workspace (nearest ancestor wins).` and then succeeded.
+
+**Registry / docs.** `corpus --help` lists `init` and the `server` topic; `corpus server --help`
+lists `start|status|stop|logs`; `corpus init --help` renders the synopsis, `[path]` and
+`--port <n>` — all from the registry. `npm run docs:cli -w apps/cli` regenerates `docs/cli.md`
+with no content change (`scripts/check-generated-artifacts.ts` reports the CLI reference's
+regeneration as a no-op; it flags only the uncommitted-vs-HEAD diff, which the orchestrator's
+commit resolves).
+
+### Gate
+
+`npm run build` ✓ · `npm run lint` ✓ · `npm run format:check` ✓ · `npm run typecheck` ✓ ·
+`npm test` ✓ (1824 passed / 0 failed, 433 suites) · coverage **99.32 % lines, 99.51 %
+functions, 96.12 % branches** — above the 90 % gate.
+
+### Follow-up fix — ambient `GIT_*` leaked into every git invocation (2026-07-27, opus)
+
+**Found by** the orchestrator's pre-commit run: this repo's own hook runs the suite, and git
+exports `GIT_DIR`/`GIT_INDEX_FILE`/`GIT_AUTHOR_*` to the hooks it runs.
+
+**Reproduction (pre-fix).**
+`GIT_DIR=/tmp/fake-git-dir GIT_AUTHOR_NAME="Hook Leak" npx vitest run apps/cli/src/commands/init/git.test.ts`
+→ 2 failed / 6 passed: `isRepositoryRoot` false after `initRepository` (`git init` created the
+repository at the leaked `GIT_DIR`, not the scratch dir) and `commitAll` →
+`fatal: this operation must be run in a work tree`. Real impact: `corpus init` run from inside
+any git hook scaffolded, staged and committed against **that hook's repository**, attributing
+the workspace's first commit to whoever triggered it.
+
+**Fix**: `sanitizeGitEnv` (new `apps/cli/src/git-env.ts`) returns the environment minus the
+entire `GIT_` namespace — stripped by prefix, case-insensitively; the list is long and
+version-dependent, and any variable missed from a hand-written list is silently the same bug.
+`PATH`, `HOME` and everything else are preserved. Both child-spawning call sites use it:
+`runGit` (`commands/init/git.ts`), leaving the `-c user.name/user.email` arguments `commitAll`
+already passes as the sole source of attribution; and `spawnServer`
+(`commands/server/daemon.ts`), whose environment is now
+`{ ...sanitizeGitEnv(options.env), CORPUS_WORKSPACE }`. It sits at the src root, next to
+`errors.ts`/`paths.ts`, because neither feature owns it and two copies would drift.
+
+**Verification.**
+- Repro command above, post-fix: **9 passed / 0 failed** (the `sanitizeGitEnv` unit test moved to
+  `git-env.test.ts` with the function).
+- Whole CLI suite under a hostile env
+  (`GIT_DIR=… GIT_INDEX_FILE=… GIT_AUTHOR_NAME="Hook Leak" GIT_COMMITTER_NAME="Hook Leak" GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0="Hook Config" npx vitest run apps/cli`)
+  → **326 passed / 0 failed** (27 suites). Clean env: same 326.
+- New regression test (`git invocations under a hostile environment`) stubs `GIT_DIR`,
+  `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`
+  and `GIT_CONFIG_COUNT/KEY_0/VALUE_0` at a second scratch repo, restores them after, and
+  asserts the workspace got the commit under `user <user@corpus.local>` while the foreign
+  repository still has `rev-list --count --all` = 0. Confirmed it **fails without the fix** on a
+  clean ambient env (`expected false to be true`, git.test.ts:161), so it is self-contained.
+- **E2E, real CLI**: `env GIT_DIR=/tmp/…/foreign/.git GIT_WORK_TREE=… GIT_INDEX_FILE=…
+  GIT_AUTHOR_NAME="Hook Leak" GIT_COMMITTER_NAME="Hook Leak" npx tsx apps/cli/src/bin/corpus.ts
+  init /tmp/corpus-e2e-hookleak/ws` → exit 0,
+  `git: initialized on main, one commit authored as user`; `git -C ws log` →
+  `user <user@corpus.local>|user <user@corpus.local>|workspace: initialize corpu…` on `main`;
+  the foreign repo: 0 commits, `status --porcelain` empty.
+- **The daemon too** (orchestrator adjudication: fixed here, not filed — the server is the sole
+  writer and starts auto-committing at SERVER-005, so shipping the hook-leak into a long-lived
+  process alongside the short-lived fix was not defensible). New `spawnServer` regression test
+  asserts no `GIT_*` key survives into the spawn call's `env` while `PATH`, `HOME` and
+  `CORPUS_WORKSPACE` do; confirmed it fails without the fix (9 leaked keys). **E2E**:
+  `corpus server start` run with `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`/`GIT_AUTHOR_NAME`/
+  `GIT_COMMITTER_EMAIL` exported → daemon up on :8765 (pid 54706); `ps eww -p 54706` shows
+  **0** `GIT_*` variables in the live process's environment, with
+  `CORPUS_WORKSPACE=/private/tmp/corpus-e2e-daemon/ws` and `PATH` present; `corpus server stop`
+  → `stopped (pid 54706)`, exit 0; the foreign repo still 0 commits and clean.
+- `npx eslint` ✓ · `npx prettier --check` ✓ (all six changed files) ·
+  `npm run typecheck -w apps/cli` ✓.
+
+## Implementation Notes (agent, 2026-07-27)
+
+Two decisions and one hand-off the next reader needs.
+
+1. **`corpus server status` exits 6 when the server is running-but-unresponsive, too.** The AC
+   says "exit 0 when running, non-zero when stopped"; the `unowned` state (pid alive, nothing
+   answering on the recorded port) is neither. It is reported as `running: false,
+   healthy: false` with the pid named, and exits 6 — the purpose of the exit code is "so
+   scripts can gate on it", and an unresponsive server is not one a script should proceed
+   against. Documented in the verb's description and in `docs/cli.md`.
+
+2. **`.gitignore` for the workspace commit is the template's, unmodified** (adjudication 1) —
+   `corpus init` writes no `.gitignore` of its own, and TEST-61 proves the ignore rules that
+   fire come from `.gitignore:9`, the template's line.
+
+3. **Escalated — `docs/workspace-template.md` and `scripts/workspace-template.ts` need three
+   additions this issue could not make** (file scope: `apps/cli/**`, `docs/cli.md`, this
+   file). Open Conflicts 9 and 10 say the "Generated by `corpus init`" list and
+   `INIT_GENERATED` should gain `.claude/agents/`, `.claude/skills-archived/` and
+   `.corpus/template-manifest.json` **in the same commit**. `corpus init` creates and writes
+   all three; the contract document does not yet list them. `scripts/workspace-template.test.ts`
+   still passes (it compares the doc against the module, and neither changed), so this is a
+   documentation gap, not a broken check — but it belongs to agent-runtime-dev.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, security-sensitive — token generation and file permissions)

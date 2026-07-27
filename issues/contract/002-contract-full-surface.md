@@ -4,7 +4,7 @@
 contract
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -29,23 +29,39 @@ CONTRACT-001 bootstraps `packages/contract` with a deliberately small surface (d
 
 ## Acceptance Criteria
 
-- [ ] **Docs query.** `GET /api/docs` declares every parameter in §9.2 — `q`, `type`, `status`, `tag`, `folder`, `parent`, `references`, `agent`, `author`, `since`, `due`, `stale`, `unread`, `needs`, `sort` — as typed Zod params, with `z.enum` wherever the spec enumerates values and prose descriptions everywhere else. Pagination params stay exactly as CONTRACT-001 defined them; this issue does not change them.
-- [ ] **Result rows.** The `GET /api/docs` row schema carries structured search `snippets` and an `attention` reason array; both are typed enums/discriminated shapes, not free-form strings.
-- [ ] **Tree.** `GET /api/tree` returns the `data/docs/` folder tree with names and doc counts.
-- [ ] **Capture.** `POST /api/capture` (multipart: text + attachments) is defined and returns the created inbox doc id, its filing thread id, and the enqueued event id.
-- [ ] **Doc mutations.** The §9.2 move and archive/unarchive routes are defined (path changes and `status` flips; the doc id never changes, and the route descriptions say so).
-- [ ] **Folder-default correction.** `CreateDocRequestSchema.folder`'s description is corrected from "defaults to the root" to "defaults to `inbox`" — SERVER-001's `documentPathFor` implements the inbox default (adjudicated 2026-07-26: the SERVER-001 issue and sprint-001 TEST-14 agree against CONTRACT-001's description; capture semantics also land unfiled docs in `data/docs/inbox/`). The server accepts `folder` as either a bare name (`finance`) or a full prefix (`data/docs/finance`); say so in the description.
-- [ ] **Thread verbs.** `POST /api/threads/:id/seen`, `/resolve`, `/reopen`, `DELETE /api/threads/:id/turns/:ts` and `DELETE /api/docs/:id` are defined; the two deletions are marked user-only and their **cascade semantics are documented in the route descriptions** and reflected in their response schemas.
-- [ ] **Queue.** Long-poll `idle` (typed `timeout` param; `200` with events vs `204` on timeout), `claim-all` (batch), `complete`/`fail`, abandon, `reap-stale`, `halt`/`resume` (+ status read) are all defined, plus the `QueueEvent` schema (`id`, `type`, `created`, `source`, `payload`) with core types enumerated and plugin types left open.
-- [ ] **Locks.** acquire / release / break / reap / list are defined over a `Lock` schema of `{docId, holder: "user" | "agent", acquired, ttl}`.
-- [ ] **Jobs.** `GET /api/jobs?recent=`, `GET /api/jobs/:id/log`, `POST /api/jobs/:id/log` (described as localhost-only), retry and abandon are defined.
-- [ ] **Attachments.** `POST /api/threads/:id/turns` has a multipart request schema (files + text + agent flag) alongside its JSON form, and `GET /attachments/{path}` is documented as a binary response.
-- [ ] **SSE.** `GET /events` appears in `openapi.json` as a `text/event-stream` endpoint; the client exposes a **typed EventSource helper** (not a fetch call) whose `invalidate` payload is a query-key array.
-- [ ] **Author attribution.** Every mutating route carries the acting party (`user` | `agent`) by the single mechanism pinned below, applied uniformly; user-only routes document rejection of `agent`.
-- [ ] **Errors.** The typed error union covers `400` validation, `403` forbidden (user-only routes), `404`, `409` conflict, and `423` locked, with the locked variant carrying the `Lock` that blocks the write.
-- [ ] **Generation.** `npm run generate -w packages/contract` regenerates `openapi.json` and the typed client; running it twice produces identical output; the pre-push drift check stays green on a clean tree.
-- [ ] **Surface completeness test.** A test asserts the generated `openapi.json` contains exactly the pinned method+path inventory below — adding an endpoint to the spec without adding it to the contract fails a test.
-- [ ] **Round-trips.** Vitest schema round-trip tests exist for each new resource (query params, doc row, tree node, queue event, lock, job, job log line, capture result, invalidate payload, each error variant).
+- [x] **Docs query.** `GET /api/docs` declares every parameter in §9.2 — `q`, `type`, `status`, `tag`, `folder`, `parent`, `references`, `agent`, `author`, `since`, `due`, `stale`, `unread`, `needs`, `sort` — as typed Zod params, with `z.enum` wherever the spec enumerates values and prose descriptions everywhere else. Pagination params stay exactly as CONTRACT-001 defined them; this issue does not change them.
+- [x] **Result rows.** The `GET /api/docs` row schema carries structured search `snippets` and an `attention` reason array; both are typed enums/discriminated shapes, not free-form strings.
+- [x] **Tree.** `GET /api/tree` returns the `data/docs/` folder tree with names and doc counts.
+- [x] **Capture.** `POST /api/capture` (multipart: text + attachments) is defined and returns the created inbox doc id, its filing thread id, and the enqueued event id.
+- [x] **Doc mutations.** The §9.2 move and archive/unarchive routes are defined (path changes and `status` flips; the doc id never changes, and the route descriptions say so).
+- [x] **Folder-default correction.** `CreateDocRequestSchema.folder`'s description is corrected from "defaults to the root" to "defaults to `inbox`" — SERVER-001's `documentPathFor` implements the inbox default (adjudicated 2026-07-26: the SERVER-001 issue and sprint-001 TEST-14 agree against CONTRACT-001's description; capture semantics also land unfiled docs in `data/docs/inbox/`). The server accepts `folder` as either a bare name (`finance`) or a full prefix (`data/docs/finance`); say so in the description.
+- [x] **Thread verbs.** `POST /api/threads/:id/seen`, `/resolve`, `/reopen`, `DELETE /api/threads/:id/turns/:ts` and `DELETE /api/docs/:id` are defined; the two deletions are marked user-only and their **cascade semantics are documented in the route descriptions** and reflected in their response schemas.
+- [x] **Queue.** Long-poll `idle` (typed `timeout` param; `200` with events vs `204` on timeout), `claim-all` (batch), `complete`/`fail`, abandon, `reap-stale`, `halt`/`resume` (+ status read) are all defined, plus the `QueueEvent` schema (`id`, `type`, `created`, `source`, `payload`) with core types enumerated and plugin types left open.
+- [x] **Locks.** acquire / release / break / reap / list are defined over a `Lock` schema of `{docId, holder: "user" | "agent", acquired, ttl}`.
+- [x] **Jobs.** `GET /api/jobs?recent=`, `GET /api/jobs/:id/log`, `POST /api/jobs/:id/log` (described as localhost-only), retry and abandon are defined.
+- [x] **Attachments.** `POST /api/threads/:id/turns` has a multipart request schema (files + text + agent flag) alongside its JSON form, and `GET /attachments/{path}` is documented as a binary response.
+- [x] **SSE.** `GET /events` appears in `openapi.json` as a `text/event-stream` endpoint; the client exposes a **typed EventSource helper** (not a fetch call) whose `invalidate` payload is a query-key array.
+- [x] **Author attribution.** Every mutating route carries the acting party (`user` | `agent`) by the single mechanism pinned below, applied uniformly; user-only routes document rejection of `agent`.
+- [x] **Errors.** The typed error union covers `400` validation, `403` forbidden (user-only routes), `404`, `409` conflict, and `423` locked, with the locked variant carrying the `Lock` that blocks the write.
+- [x] **Generation.** `npm run generate -w packages/contract` regenerates `openapi.json` and the typed client; running it twice produces identical output; the pre-push drift check stays green on a clean tree.
+- [x] **Surface completeness test.** A test asserts the generated `openapi.json` contains exactly the pinned method+path inventory below — adding an endpoint to the spec without adding it to the contract fails a test.
+- [x] **Round-trips.** Vitest schema round-trip tests exist for each new resource (query params, doc row, tree node, queue event, lock, job, job log line, capture result, invalidate payload, each error variant).
+
+## Sprint-002 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue — implement exactly these; full rationale in `issues/sprints/sprint-002.md` §Open Conflicts:
+
+1. **`/api/openapi.json` exemption**: the inventory/completeness test asserts over contract-declared paths only; the OpenAPI description gains one sentence naming `/api/openapi.json` as server-local introspection outside the contract (no typed-client method).
+2. **Route registration order**: static-before-parameter is pinned in `ALL_CONTRACT_ROUTES` (`reap`/`claim-all`/`halt`/`resume`/`reap-stale` before `{id}`/`{docId}` peers) and held by a test — a `docId` of `reap` must be unambiguous.
+3. **Corrections**: queue idle is `GET /api/queue/idle?timeout=` (the issue's E2E step 4 saying POST is wrong); `schemas/actor.ts`, `lock.ts`, `job.ts`, `queue.ts`, `sse.ts` are EXTENSIONS of shipped CONTRACT-001 files, not creations — the existing `ActorHeaderSchema` (optional-with-default, adjudicated) is reused, never rewritten.
+
+## Sprint-002 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue — implement exactly these; full rationale in `issues/sprints/sprint-002.md` §Open Conflicts:
+
+1. **`/api/openapi.json` exemption**: the inventory/completeness test asserts over contract-declared paths only; the OpenAPI description gains one sentence naming `/api/openapi.json` as server-local introspection outside the contract (no typed-client method).
+2. **Route registration order**: static-before-parameter is pinned in `ALL_CONTRACT_ROUTES` (`reap`/`claim-all`/`halt`/`resume`/`reap-stale` before `{id}`/`{docId}` peers) and held by a test — a `docId` of `reap` must be unambiguous.
+3. **Corrections**: queue idle is `GET /api/queue/idle?timeout=` (the issue's E2E step 4 saying POST is wrong); `schemas/actor.ts`, `lock.ts`, `job.ts`, `queue.ts`, `sse.ts` are EXTENSIONS of shipped CONTRACT-001 files, not creations — the existing `ActorHeaderSchema` (optional-with-default, adjudicated) is reused, never rewritten.
 
 ## Technical Design
 
@@ -114,7 +130,8 @@ Layout follows CONTRACT-001 (`src/schemas/` + `src/routes/`, one file per resour
 
 **Thread verbs.**
 
-- `POST /api/threads/:id/seen` — body `{ lastSeenTs?: string }`, defaulting to the thread's last turn timestamp; returns `{ threadId, lastSeenTs, unread: false }`. Read state per §7.
+- `POST /api/threads/:id/seen` — body `{ lastSeenTs?: string }`, defaulting to the thread's last turn timestamp; returns ~~`{ threadId, lastSeenTs, unread: false }`~~ `{ threadId, lastSeenTs, unread: boolean }`. Read state per §7.
+  - **Superseded by [CONTRACT-010] (2026-07-27).** The `unread: false` pin above is adjudicated defective and no longer binding. It contradicts this same bullet's optional `lastSeenTs`: a mark placed before the thread's last turn is a partial read, after which later turns are unseen and the thread is — by §7's own definition — still unread. A `literal(false)` had the mutation response assert a cleared badge that the next `GET /api/docs` immediately re-raises. `MarkSeenResult.unread` is now a plain boolean reporting the state the mark actually leaves behind (same honesty class as the `appended` literal fixed by CONTRACT-006). Verifying CONTRACT-002 against this line must use the boolean, not the literal.
 - `POST /api/threads/:id/resolve` and `/reopen` — bodiless; return the updated thread summary. Resolving stops later turns from re-triggering the agent (§8) — note that in the description.
 - `DELETE /api/threads/:id/turns/:ts` — **user-only**. Description states the §6 cascade: deleting a thread's last turn deletes the thread itself, and deleting a thread removes its anchor entry from the parent's frontmatter. Response `{ deletedTurn: true, deletedThread: boolean, removedAnchor: string | null, parentId: string | null }` so the client knows which caches to drop.
 - `DELETE /api/docs/:id` — **user-only**. Description states the §9.2 cascade: the document's threads become orphaned records (they keep their `parent` id, their anchors no longer resolve), git preserves history, and nothing is hard-deleted from history. Response `{ deletedId, orphanedThreadIds: string[] }`.
@@ -198,18 +215,282 @@ interfaces. Include specific commands run, actual outputs observed, and pass/fai
 conclusions. State which model the implementing agent ran on ("implemented on:
 opus | fable")._
 
+**implemented on: opus**
+
+Environment, per `issues/sprints/sprint-002.md` § Verification Environment: the generated
+artifacts on disk, plus a **real `OpenAPIHono` app mounting the contract, bound to a real
+socket on `127.0.0.1:8965`**, driven by the **real generated client** imported through the
+published `@corpus/contract` / `@corpus/contract/client` entry points (i.e. out of `dist/`,
+after `npm run build`). No supertest-style in-memory client is used for any step below;
+`app.fetch()` appears only in the unit tests. Node v25.2.1, npm workspaces.
+
 ### Reproduction (bugs only)
-_[Agent fills: N/A — not a bug]_
+N/A — CONTRACT-002 is a feature issue, not a bug. No pre-fix reproduction applies.
 
 ### Post-Implementation Verification
-_[Agent fills: exact commands, observed output, confirmation feature works]_
+
+**Step 1 — generation is idempotent and byte-deterministic (TEST-1).**
+
+```
+$ npm run generate -w packages/contract   # run 1
+generated ./openapi.json
+generated ./src/client/schema.generated.ts
+$ shasum packages/contract/openapi.json packages/contract/src/client/schema.generated.ts
+a90388a92c641c24c4bef4091563b329d30379f8  packages/contract/openapi.json
+ff2642bc8f3a7f69701c2091c62a0d265ee918a2  packages/contract/src/client/schema.generated.ts
+                                          # runs 2 and 3 → identical hashes, verbatim
+```
+
+Three consecutive runs produced byte-identical artifacts. `git status --porcelain
+packages/contract` lists the issue's own (uncommitted) source changes and the two
+regenerated artifacts; re-running the generator adds nothing to that list. PASS.
+
+**Step 2 — the document declares exactly the pinned inventory (TEST-2).**
+
+```
+$ node -e "…enumerate paths × methods of packages/contract/openapi.json…"
+count 39
+GET /api/health · GET|POST /api/docs · GET|PUT|DELETE /api/docs/{id} ·
+POST /api/docs/{id}/move · POST /api/docs/{id}/archive · POST /api/docs/{id}/unarchive ·
+GET /api/tree · POST /api/capture · POST /api/threads · GET /api/threads/{id} ·
+POST /api/threads/{id}/turns · DELETE /api/threads/{id}/turns/{ts} ·
+POST /api/threads/{id}/{resolve,reopen,seen} · GET /api/queue/{status,idle} ·
+POST /api/queue/{claim-all,reap-stale,halt,resume} · POST /api/queue/{id}/{complete,fail} ·
+DELETE /api/queue/{id} · GET /api/locks · POST /api/locks/reap ·
+POST|DELETE /api/locks/{docId} · POST /api/locks/{docId}/break · GET /api/jobs ·
+GET|POST /api/jobs/{id}/log · POST /api/jobs/{id}/{retry,abandon} ·
+GET /events · GET /attachments/{path}
+```
+
+39 endpoints — the sprint's pinned list plus the three chosen document-mutation spellings
+(`/move`, `/archive`, `/unarchive`), which the inventory, the route definitions and
+`openapi.json` all agree on. `GET /events` carries `content: {"text/event-stream": …}` and
+`GET /attachments/{path}` carries `content: {"application/octet-stream": {schema:
+{type:"string", format:"binary"}}}`. `src/routes/inventory.test.ts` re-asserts this against
+the **committed** file on every run. PASS.
+
+**Step 3 — the drift check still blocks a stale contract (TEST-23).**
+
+The pre-push hook's `contract_drift()` first guard (regenerate, compare before/after hashes)
+was extracted verbatim to `/tmp/drift-check.sh` and run against the tree. A `driftProbe`
+query parameter was then hand-added to the `GET /api/docs` route definition without
+regenerating:
+
+```
+$ bash /tmp/drift-check.sh          # clean tree
+contract drift: clean               exit=0
+
+# after hand-adding `driftProbe` to src/routes/docs.ts:
+$ bash /tmp/drift-check.sh
+  The committed API contract is stale relative to packages/contract/src.
+  Fix: npm run generate -w packages/contract && git add packages/contract/openapi.json packages/contract/src/client/schema.generated.ts
+                                    exit=1
+$ bash /tmp/drift-check.sh          # the guard's own regenerate cleared it
+contract drift: clean               exit=0
+$ node -e "…" → driftProbe now in doc: true
+```
+
+The probe edit was then reverted and the artifacts regenerated; the hashes returned to
+`a90388a9…` / `ff2642bc…` exactly, and `driftProbe gone: true`. The hook's *second* guard
+(`git diff --exit-code HEAD -- <artifacts>`) is inert in an uncommitted worktree by
+construction — it compares against `HEAD`, and every file in this issue is still
+uncommitted — so it will exercise on the orchestrator's commit, not here. PASS.
+
+**Step 4 — real socket, real generated client (TEST-15, TEST-19, TEST-20, TEST-24).**
+
+A probe mounted the contract's route definitions on a real `OpenAPIHono`, served it over
+`node:http` on `127.0.0.1:8965` (port assigned by the sprint contract), and drove it with
+`createCorpusClient` from the built `@corpus/contract/client`. Run with
+`node --experimental-eventsource --import tsx` (the flag is required: global `EventSource`
+is behind it on Node v25.2.1). Verbatim output:
+
+```
+[probe] real Hono app listening on http://127.0.0.1:8965
+[1] status          : 200
+[1] excerpt echo    : needs=me stale=stale sort=-updated
+[1] typed attention : ["unread-reply","stale"]
+[1] typed snippets  : [{"field":"title","segments":[{"text":"Mortgage ","match":false},{"text":"options","match":true}]}]
+[2] status          : 204
+[2] data            : undefined
+[2] error           : undefined
+[3] parsed parts    : {"text":"look at this","requestsAgent":false,"files":["shot.png","notes.txt"],"auth":"Bearer e2e-workspace-token-0123456789","actor":"agent"}
+[3] eventId         : null
+[4] stream url      : http://127.0.0.1:8965/events?token=e2e-workspace-token-0123456789
+[4] typed query keys: [["docs",{"folder":"finance"}],["queue",1]]
+```
+
+- `[1]` `GET /api/docs?needs=me&stale=stale&sort=-updated` over a real socket; the client
+  types `attention` as `NeedsReason[]` and `snippets[].segments[].match` as `boolean`.
+- `[2]` the long-poll timeout resolves as `data: undefined` with **no thrown error and no
+  `error` field** — a `204` is a normal outcome, not a failure.
+- `[3]` `client.uploadTurn(...)` built the multipart body; the route's own validator parsed
+  `text`, an explicit `requestsAgent: false` (surviving as `false`, not collapsed) and two
+  repeated `files` parts, and the helper attached `Authorization: Bearer …` plus
+  `x-corpus-author: agent`. The explicit `false` produced `eventId: null`.
+- `[4]` `client.connectEvents(...)` opened a **real `EventSource`** against the stub
+  `/events` route and parsed one `invalidate` frame into a typed TanStack query-key array.
+
+PASS on all four.
+
+**Step 5 — the type system rejects what the contract exists to prevent (TEST-22).**
+
+Two scratch files were compiled with `tsc --noEmit --strict --exactOptionalPropertyTypes
+--module nodenext` against the regenerated client.
+
+Must compile (`scratch-types-ok.ts`) — omits `x-corpus-author` entirely, uses a declared
+`sort`, reads `.attention` / `.snippets[].segments[].match` off a doc row, sends an explicit
+`x-corpus-author: "user"`:
+
+```
+ok-exit=0
+```
+
+Must not compile (`scratch-types-bad.ts`):
+
+```
+scratch-types-bad.ts(8,22):  error TS2322: Type '"nonsense"' is not assignable to type
+  '"updated" | "-updated" | "created" | "-created" | "due" | "title" | "relevance" | undefined'.
+scratch-types-bad.ts(13,51): error TS2322: Type '"robot"' is not assignable to type
+  '"agent" | "user" | undefined'.
+scratch-types-bad.ts(18,37): error TS2339: Property 'attention' does not exist on type
+  '{ status: "ok"; version: string; uptimeSeconds: number; workspace: string; }'.
+bad-exit=2
+```
+
+Exactly the three intended errors, and omitting the actor header is legal. PASS. All three
+scratch files were deleted after the run; nothing outside `packages/contract/**` and this
+issue file was touched.
+
+**Repo-wide gate (from a clean build).**
+
+```
+npm run build          → 0   (contract → kit → cli → server/ui)
+npm run lint           → 0   (eslint, no suppressions added)
+npm run format:check   → 0   ("All matched files use Prettier code style!")
+npm run typecheck      → 0   (every workspace, incl. apps/cli + apps/ui against the
+                              regenerated client — no cast, no adapter shim)
+npm run test:coverage  → 0   61 files, 1160 tests passed
+                             All files 99.83% lines / 95.77% branches / 100% functions
+                             every packages/contract/src file at 100/100/100/100
+```
+
+### Deviations and notes for the orchestrator
+
+- **`AttachmentRef` was deliberately not created.** The issue's file list names it, but no
+  §9.2 endpoint can produce one: the projection's `turns` table carries only `body_md`
+  (§9.1) and §6 says attachments live in the committed markdown as relative links. A schema
+  with no producer would be dead contract surface, so `schemas/attachment.ts` ships the
+  multipart file-part primitives and the attachment path parameter instead, with the
+  reasoning recorded in the module comment.
+- **`DocSummarySchema` was replaced by `DocRowSchema`.** The row now carries `snippets` and
+  `attention`, and a base row schema with neither had no remaining consumer. No workspace
+  outside `packages/contract` referenced it (verified by grep), so no consumer smoke test
+  needed updating. `DocsQuerySchema`/`DocListSchema` moved from `schemas/doc.ts` to the new
+  `schemas/query.ts`; both are still re-exported from the package root, so consumer imports
+  are unchanged.
+- **Pre-existing wart, out of scope:** CONTRACT-001's `CreateDocRequestSchema` uses
+  `.default()` on `tags`/`status`/`due`/`evergreen`, which `openapi-typescript` renders as
+  *required* request-body fields, so a typed `POST /api/docs` must send all four. Not
+  touched here (it is CONTRACT-001 surface and changing it changes server semantics), but
+  worth a follow-up issue.
+
+### Addendum — 2026-07-26, `internal_error` (orchestrator-adjudicated micro-task, opus)
+
+SERVER-003 found that the union had no code for an unexpected `500`, so a last-resort error
+handler could not emit a body conforming to `ApiErrorSchema` without mislabelling a crash as
+`bad_request` or `conflict`. Added `internal_error` to `ERROR_CODES` and an
+`InternalErrorSchema` (`{ code: "internal_error", message }`) variant to `ApiErrorSchema`.
+
+**Invariant, recorded in the schema's `description` and pinned by a test:** the code exists so
+the body type-checks; **no route declares a `500` response**, by design — a documented `500`
+would advertise an unexpected failure as a designed outcome. New test in `src/openapi.test.ts`
+asserts no operation carries a `500` and that `InternalError` never reaches
+`components.schemas`.
+
+```
+shasum -a 256 (before regeneration)
+  f7f182c8…5b6411  packages/contract/openapi.json
+  b71d25c1…4cb594  packages/contract/src/client/schema.generated.ts
+npm run generate -w packages/contract   → 0
+shasum -a 256 (after regeneration)
+  f7f182c8…5b6411  packages/contract/openapi.json          ← byte-identical
+  b71d25c1…4cb594  packages/contract/src/client/schema.generated.ts  ← byte-identical
+
+npx vitest run packages/contract        → 0   557 tests passed (was 554; +3 for the new variant
+                                              through the describe.each, +1 500-invariant test)
+npm run build                           → 0
+npm run typecheck -w packages/contract  → 0
+npx eslint <touched files>              → 0   "No issues found"
+npx prettier --check <touched files>    → 0   "All files formatted correctly"
+node --import tsx scripts/check-generated-artifacts.ts → 0
+  ✓ API contract is up to date (openapi.json, schema.generated.ts)
+```
+
+The artifacts are unchanged because `ApiError` is not itself a referenced component — the
+document registers only the per-code variants that routes actually declare, and `InternalError`
+is declared by none. That is the invariant holding, visible in the byte hashes.
+
+### Addendum — 2026-07-26, optional halt body (orchestrator-adjudicated micro-task, opus)
+
+SERVER-008 found that `POST /api/queue/halt` declared no body, so a halt reason could not cross
+the wire even though `QueueService.halt(reason)` accepts one and the server writes
+`{reason?, at}` into the `.corpus/HALT` sentinel. Added `HaltQueueRequestSchema`
+(`{ reason?: string, min 1 }`, `.openapi("HaltQueueRequest")`) and attached it to the route as
+an **optional** `application/json` body.
+
+Invariants honoured:
+
+- **Bare POST stays valid.** The body declares `required: false`, and every property is
+  optional, so Hono's json validator (which leaves the value `{}` when no `Content-Type` is
+  sent) parses a bodiless request cleanly. `openapi-typescript` renders it `requestBody?:`, so
+  `client.api.POST("/api/queue/halt")` compiles with no second argument — pinned by a
+  compile-time probe (`undefined extends …["requestBody"]`) plus a runtime call.
+- **400 declaration.** Halt already carried the optional actor header, so it already declared
+  `400`; a named test now pins that specifically, since the body is what makes the
+  "validates-input ⇒ declares 400" invariant load-bearing here.
+- **No defaults in request bodies (CONTRACT-003).** `reason` is a plain `.optional()`, no
+  `.default()`. The document-wide `requestBodyDefaults()` invariant stays green.
+- **Named components.** `HaltQueueRequest` is a plain, non-nullable, undefaulted object, so the
+  named-component invariant is unaffected.
+
+One consistency fix rode along: `POST /api/queue/{id}/fail` also accepts an omittable body but
+inherited its optionality from OpenAPI's implicit `required: false`. It now states the flag
+explicitly, matching halt. Generated TypeScript is unchanged for it (`requestBody?:` either way)
+— only the document is more honest.
+
+```
+shasum -a 256 (after regeneration, run twice)
+  d079454565…ebdc1b2  packages/contract/openapi.json                    ← identical both runs
+  17642ed370…5ea95d   packages/contract/src/client/schema.generated.ts  ← identical both runs
+
+npx vitest run packages/contract              → 0   596 tests, 26 files, all passed
+npx vitest run packages/contract -t halt      → 0   18 matching tests passed
+npm run typecheck -w packages/contract        → 0
+npx eslint packages/contract --max-warnings 0 → 0   "No issues found"
+npx prettier --check packages/contract/**     → 0   "All matched files use Prettier code style!"
+```
+
+Drift guard verified to **fire**, not merely to pass: hand-editing `openapi.json` to
+`requestBody.required: true` made `src/generation/artifacts.test.ts` fail with
+`openapi.json is stale — run: npm run generate -w packages/contract`; the file was restored to
+the generated bytes afterwards (hash re-verified above). `scripts/check-generated-artifacts.ts`
+clears its content-hash arm (regeneration is a no-op) and then reports the expected
+`git diff HEAD` against the still-uncommitted artifacts — it goes green once the orchestrator
+commits `openapi.json` and `schema.generated.ts` with this change.
+
+**Escalation for the orchestrator (pre-existing, not touched).** Every *other* request body in
+the document also lacks `required`, so OpenAPI reads them all as optional and
+`openapi-typescript` emits `requestBody?:` even for genuinely mandatory bodies — e.g.
+`client.api.POST("/api/docs")` with no body compiles and then 400s at runtime. Fixing it means
+declaring `required: true` on ~9 operations, which tightens types that `apps/cli` and `apps/ui`
+consume; deliberately left for its own issue rather than done mid-sprint.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, cross-domain surface — every downstream domain consumes this)
