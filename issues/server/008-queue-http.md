@@ -13,7 +13,7 @@ P0
 opus — the queue mechanics are pinned by §7; the only deviation (long-poll replacing `fs.watch`) is already decided by Architecture Decision 4.
 
 ## Dependencies
-- Depends on: SERVER-003, CONTRACT-002
+- Depends on: SERVER-003, CONTRACT-002, SERVER-004 (merge order; shared app.ts + events mirror)
 - Blocks: CLI-004
 
 ## Spec References
@@ -36,6 +36,15 @@ Implement the file-backed event queue and the HTTP surface the agent drives it t
 - [ ] Halt creates the `.corpus/HALT` sentinel (with reason + timestamp), resume removes it; a status endpoint reports halted state and per-status counts.
 - [ ] Every transition updates the projection's `events` table and broadcasts an invalidation for the queue/jobs keys.
 - [ ] The queue projection is rebuilt from the directories at boot, so a server restart never loses or duplicates events.
+
+## Sprint-003 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-003 Open Conflicts affecting this issue — implement exactly these; full reasoning in `issues/sprints/sprint-003.md`:
+
+1. **The contract wins, three ways**: idle responses are the declared `IdleResult` 200 / bodiless 204 shapes (this issue's `{pending:n}`/`{timedOut:true}`/`{halted:true,events:0}` sketches are superseded); a timeout above `IdleQuerySchema`'s max(480) is a 400 from the validation hook, not a clamp; `reap-stale` takes no query parameter and returns the declared `{reaped}` shape — do not implement `?olderThan=` (it would be silently ignored, making tests false-pass).
+2. **Waiter registry gets a ~500 ms poll fallback** so a file appearing in `pending/` wakes parked waiters even with no in-process enqueue path. This is a permanent robustness feature (out-of-band event drops are as legitimate as out-of-band doc edits per §2.2 rule 1), not a temporary shim for SERVER-006's absence.
+3. **`evt_*.json` is the only thing that counts as an event, everywhere** — `.gitkeep` files in the queue directories are invisible to counts, claims, and reaps.
+4. **Merge order**: SERVER-004 lands first; this issue's Depends-on gains SERVER-004 (shared `app.ts` + events mirror).
 
 ## Technical Design
 

@@ -43,6 +43,17 @@ Give the installed tool its two operator-facing surfaces: `corpus init`, which m
 - [ ] Two workspaces initialized on the same machine get different ports and different tokens and can run their servers simultaneously; commands run in each directory reach their own server.
 - [ ] Vitest coverage for token/port generation, scaffold contents, clobber refusal, pidfile lifecycle, and stale-pid detection.
 
+## Sprint-003 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-003 Open Conflicts affecting this issue — implement exactly these; full reasoning in `issues/sprints/sprint-003.md`:
+
+1. **The template's gitignore wins** — `corpus init` installs the template's `gitignore` (renamed) and never writes its own; the `.corpus/*` + `!.corpus/queue/` negation design is load-bearing.
+2. **Init creates every directory the install contract implies**, including `.claude/agents/` and `.claude/skills-archived/` (the template's `.gitkeep`s are filtered on copy, so the directories are init's to make) — SERVER-004's five document roots must all exist in a fresh workspace.
+3. **Init writes the template manifest** (`.corpus/template-manifest.json`: path + content hash + tool version) per SPEC §2.1 — CLI-005 cannot retroactively learn what the original install contained.
+4. **Daemon handoff**: `corpus server start` passes no `CORPUS_TOKEN`/`CORPUS_PORT` — the server derives everything from `.corpus/config.json`; the env overrides stay reserved for tests.
+5. **`corpus server status` on a stopped server exits 6** (the command succeeded at its job of reporting).
+6. **Template resolution** uses the two-candidate resolver (repo-root `assets/workspace/` in dev, packaged path when installed); `npm pack` proof is DEFERRED → INFRA-008.
+
 ## Technical Design
 
 ### Files to Create/Modify

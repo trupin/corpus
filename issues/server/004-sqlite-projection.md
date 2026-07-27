@@ -46,6 +46,14 @@ Build the derived SQLite projection in `apps/server/src/projection/`: the schema
 - [ ] `doctor(config)` detects drift by (a) file counts vs. row counts per root and (b) per-file content-hash comparison, skipping hashing when size and mtime are unchanged; it returns a structured report and completes fast enough for pre-commit (target < 200 ms on a warm workspace of ~1000 documents).
 - [ ] Unit tests cover per-projector row shapes, rebuild idempotence, drift detection (each drift kind), and FTS behaviour.
 
+## Sprint-003 Adjudications (binding, 2026-07-26)
+
+Orchestrator decisions on the sprint-003 Open Conflicts affecting this issue — implement exactly these; full reasoning in `issues/sprints/sprint-003.md`:
+
+1. **Orphan look-alike: option (b), exact-only re-resolution.** `anchors.resolved_offset` is computed with `resolveAnchorExact` (rungs 1–2, never fuzzy) — NULL when exact resolution fails. Decisive argument: option (a) (sticky orphanhood) is unimplementable from files alone — orphanhood is a per-save report, not persisted state, and remembering it in SQLite would break rebuild-from-files. This also keeps projection O(cheap) across rebuilds (no bitap per orphan).
+2. **`evt_*.json` is the only thing that counts as an event, everywhere.** Every `init`-produced workspace carries `.corpus/queue/<status>/.gitkeep`; a naive `readdir` count makes `doctor` permanently report `count_mismatch` on every real workspace.
+3. **Merge order**: SERVER-004 harvests before SERVER-008 (both touch `app.ts` and the events mirror); SERVER-008's Depends-on gains SERVER-004.
+
 ## Technical Design
 
 ### Files to Create/Modify
