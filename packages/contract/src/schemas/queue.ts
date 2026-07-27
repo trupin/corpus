@@ -77,8 +77,9 @@ export const IdleResultSchema = z
 
 /**
  * Long-poll window (CLAUDE.md Architecture Decision 4). The default matches the
- * agent skill's ~8 minute rearm; the server clamps anything longer so a client
- * cannot park past the window the loop is built around.
+ * agent skill's ~8 minute rearm, and the same value bounds the ask: a longer
+ * timeout is rejected with a 400 validation error rather than silently clamped,
+ * so a client cannot park past the window the loop is built around (SPEC.md §7).
  */
 export const DEFAULT_IDLE_TIMEOUT_SECONDS = 480;
 export const MAX_IDLE_TIMEOUT_SECONDS = 480;
@@ -97,9 +98,9 @@ export const IdleQuerySchema = z.object({
       maximum: MAX_IDLE_TIMEOUT_SECONDS,
       default: DEFAULT_IDLE_TIMEOUT_SECONDS,
       description:
-        `Seconds to hold the request open, 1–${MAX_IDLE_TIMEOUT_SECONDS} (the server clamps ` +
-        "anything longer). Parking costs the agent zero tokens: it is blocked on a response, not " +
-        "looping.",
+        `Seconds to hold the request open, 1–${MAX_IDLE_TIMEOUT_SECONDS} (${MAX_IDLE_TIMEOUT_SECONDS} ` +
+        "is also the default; a longer ask is rejected with a 400 validation error, not clamped). " +
+        "Parking costs the agent zero tokens: it is blocked on a response, not looping.",
     }),
 });
 

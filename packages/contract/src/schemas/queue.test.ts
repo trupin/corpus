@@ -80,7 +80,7 @@ describe("IdleQuery", () => {
     expect(IdleQuerySchema.parse({ timeout: "30" }).timeout).toBe(30);
   });
 
-  it("clamps the ask by rejecting anything past the documented maximum", () => {
+  it("rejects anything past the documented maximum rather than clamping it", () => {
     expect(IdleQuerySchema.safeParse({ timeout: MAX_IDLE_TIMEOUT_SECONDS }).success).toBe(true);
     expect(IdleQuerySchema.safeParse({ timeout: MAX_IDLE_TIMEOUT_SECONDS + 1 }).success).toBe(
       false,

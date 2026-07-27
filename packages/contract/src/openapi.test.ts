@@ -483,7 +483,7 @@ describe("queue long-poll", () => {
     expect(op.responses?.["204"]?.content).toBeUndefined();
     const timeout = parameter("/api/queue/idle", "get", "timeout");
     expect(timeout?.schema?.default).toBe(480);
-    expect(timeout?.description).toContain("clamps");
+    expect(timeout?.description).toContain("400 validation error, not clamped");
   });
 
   it("documents that a halted queue parks for the full window", () => {

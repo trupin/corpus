@@ -3840,10 +3840,10 @@
               "minimum": 1,
               "maximum": 480,
               "default": 480,
-              "description": "Seconds to hold the request open, 1–480 (the server clamps anything longer). Parking costs the agent zero tokens: it is blocked on a response, not looping."
+              "description": "Seconds to hold the request open, 1–480 (480 is also the default; a longer ask is rejected with a 400 validation error, not clamped). Parking costs the agent zero tokens: it is blocked on a response, not looping."
             },
             "required": false,
-            "description": "Seconds to hold the request open, 1–480 (the server clamps anything longer). Parking costs the agent zero tokens: it is blocked on a response, not looping.",
+            "description": "Seconds to hold the request open, 1–480 (480 is also the default; a longer ask is rejected with a 400 validation error, not clamped). Parking costs the agent zero tokens: it is blocked on a response, not looping.",
             "name": "timeout",
             "in": "query"
           }

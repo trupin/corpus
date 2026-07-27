@@ -1356,7 +1356,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Seconds to hold the request open, 1–480 (the server clamps anything longer). Parking costs the agent zero tokens: it is blocked on a response, not looping. */
+                    /** @description Seconds to hold the request open, 1–480 (480 is also the default; a longer ask is rejected with a 400 validation error, not clamped). Parking costs the agent zero tokens: it is blocked on a response, not looping. */
                     timeout?: number;
                 };
                 header?: never;
