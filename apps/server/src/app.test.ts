@@ -116,10 +116,13 @@ describe("createServer — the mounted surface", () => {
     expect(parsed.success && parsed.data.version).toBe("9.9.9");
   });
 
-  it("mounts exactly one contract route; every other declared path 404s", async () => {
+  it("mounts health and the queue surface; every other declared path 404s", async () => {
     const { app } = createServer(makeConfig());
 
     for (const route of ALL_CONTRACT_ROUTES) {
+      // `/api/queue/*` is mounted (SERVER-008) and `idle` deliberately parks for
+      // its whole window, so the queue surface is asserted by its own specs.
+      if (route.path.startsWith("/api/queue")) continue;
       const path = route.path.replace(/\{[^}]+\}/g, "sample");
       const response = await app.request(path, {
         method: route.method.toUpperCase(),
@@ -134,6 +137,16 @@ describe("createServer — the mounted surface", () => {
       expect(response.headers.get("content-type")).toContain("application/json");
       expect(ApiErrorSchema.safeParse(await response.json()).success).toBe(true);
     }
+  });
+
+  it("mounts the queue surface and exposes the enqueue path to in-process producers", async () => {
+    const server = createServer(makeConfig());
+    await server.queue.enqueue({ type: "comment.created", source: "test", payload: {} });
+
+    const response = await server.app.request("/api/queue/status", { headers: AUTH });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ halted: false, pending: 1 });
+    await server.close();
   });
 
   it("returns a contract ApiError 404 for an unknown API path", async () => {

@@ -15,5 +15,6 @@ export * from "./middleware/auth.js";
 export * from "./middleware/localhost.js";
 export * from "./middleware/logging.js";
 export * from "./projection/index.js";
+export * from "./queue/index.js";
 export * from "./routes/health.js";
 export * from "./static-ui.js";

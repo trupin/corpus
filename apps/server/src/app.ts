@@ -23,6 +23,13 @@ import {
 import { createLogger, type Logger } from "./logger.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
+import {
+  createQueueService,
+  mountQueueRoutes,
+  type QueueInvalidate,
+  type QueueMirror,
+  type QueueService,
+} from "./queue/index.js";
 import { createHealthHandler } from "./routes/health.js";
 import { mountStaticUi } from "./static-ui.js";
 
@@ -46,6 +53,12 @@ export interface CorpusServer {
   readonly config: ServerConfig;
   readonly logger: Logger;
   /**
+   * The file-backed event queue (SPEC.md §7). Exposed so in-process producers —
+   * SERVER-006's `@agent` comments, form answers, subagent wake-backs — enqueue
+   * through the same path the HTTP surface uses, waking parked long-polls.
+   */
+  readonly queue: QueueService;
+  /**
    * Registers cleanup to run at shutdown. Later issues (the SQLite handle from
    * SERVER-004, the chokidar watcher and SSE registry from SERVER-007) attach
    * here instead of editing shutdown logic. Disposers run in reverse
@@ -59,6 +72,14 @@ export interface CorpusServer {
 export interface CreateServerDeps {
   readonly logger?: Logger;
   readonly now?: () => number;
+  /**
+   * The projection's `events` table (SERVER-004) and the SSE bus (SERVER-007).
+   * Optional so the queue works — and is testable — before either exists; the
+   * queue itself is file-backed, and the mirror is rebuilt from the directories
+   * at boot whatever is passed here.
+   */
+  readonly queueMirror?: QueueMirror | undefined;
+  readonly invalidate?: QueueInvalidate | undefined;
 }
 
 /** IPv6 literals need brackets to form a URL authority. */
@@ -133,6 +154,15 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     }),
   );
 
+  const queue = createQueueService({
+    corpusDir: config.corpusDir,
+    logger,
+    mirror: deps.queueMirror,
+    invalidate: deps.invalidate,
+    now,
+  });
+  mountQueueRoutes(app, queue);
+
   const openApiDocument = buildOpenApiDocument();
   app.get(OPENAPI_PATH, (c) => c.json(openApiDocument, 200));
 
@@ -199,6 +229,11 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
+      // Before `server.close()`, which waits for open connections: a parked
+      // long-poll is an *active* connection and would otherwise hold shutdown
+      // open for the rest of its window. Releasing the waiters lets each one
+      // answer `204` and hang up.
+      queue.close();
       const server = httpServer;
       httpServer = undefined;
       if (server !== undefined) {
@@ -227,6 +262,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     app,
     config,
     logger,
+    queue,
     registerDisposer(dispose) {
       disposers.push(dispose);
     },
