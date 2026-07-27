@@ -22,6 +22,9 @@ const BASE_URL = `http://localhost:${PORT}`;
  */
 export default defineConfig({
   testDir: "./e2e",
+  // Clears the raw V8 dump directory the coverage fixture writes into, so the
+  // merged gate (INFRA-004) never reads a previous run's entries.
+  globalSetup: "./e2e/coverage-setup.ts",
   fullyParallel: true,
   forbidOnly: process.env.CI !== undefined,
   retries: process.env.CI !== undefined ? 2 : 0,
@@ -35,7 +38,13 @@ export default defineConfig({
     command: `npm run dev -- --port ${PORT} --strictPort`,
     cwd: UI_DIR,
     url: BASE_URL,
-    reuseExistingServer: process.env.CI === undefined,
+    // Never reuse: whatever already answers on this port may be serving a
+    // different checkout, and the suite would test it and — since INFRA-004 —
+    // attribute its coverage to the merged gate. Observed live: a run in this
+    // worktree collected coverage for `apps/ui/src/dev/DataProbe.tsx`, a file
+    // that exists only in a parallel agent's worktree, with all 13 specs green.
+    // `--strictPort` now turns that into a loud port conflict instead.
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

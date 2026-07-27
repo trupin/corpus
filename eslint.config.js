@@ -15,6 +15,7 @@ export default tseslint.config(
       ".claude/worktrees/",
       "**/build/",
       "**/coverage/",
+      "**/coverage-raw/",
       "design/",
       "**/*.generated.ts",
       "packages/contract/openapi.json",

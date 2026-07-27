@@ -209,7 +209,8 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 - `npm run format:check` / `npm run format` — Prettier
 - `npm run typecheck` — `tsc --noEmit` in every workspace
 - `npm test` — Vitest across all workspaces
-- `npm run e2e` — Playwright (requires the app; skipped automatically when no specs exist)
+- `npm run e2e` — Playwright against the real Vite dev server (`apps/ui/e2e/`, 13 specs). It also collects browser-side V8 coverage for the merged gate. The dev server's port is `5173` by default; override with `CORPUS_UI_PORT` when something else holds it (`.githooks/pre-push` defaults it to `5273` so a push never fights a running dev server)
+- `npm run coverage` — the combined gate: unit → e2e → merge → **≥ 90%** on all four metrics. This is what CI enforces. `npm run test:coverage` alone emits raw coverage and enforces nothing; `npm run coverage:merge` re-runs just the merge and the gate over existing output. Thresholds and globs live in `scripts/coverage-config.ts`
 - `npm run dev -w apps/cli` — runs the `corpus` bin from source via tsx. Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
 
 ## Testing Conventions

@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+// `test` comes from the coverage fixture, not from `@playwright/test`: it is the
+// same runner plus the browser-side V8 collection the merged gate needs.
+import { expect, test } from "./coverage";
 import { DARK_BG, LIGHT_ACCENT, LIGHT_BG } from "./tokens";
 
 const boardCss = readFileSync(
