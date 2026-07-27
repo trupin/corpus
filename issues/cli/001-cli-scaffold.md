@@ -286,6 +286,22 @@ tests + coverage ✓`. Full suite: **1029 tests, 69 files, all passing**; covera
 **99.84% lines / 95.68% branches / 100% functions**, above the 90% gate. `apps/cli/src` is
 100% lines / 95.38% branches.
 
+**Post-eval edge pin (point 4), 2026-07-27 — portless config, on opus, main tree.** `port` is now
+optional (default `8765`) in `apps/cli/src/workspace.ts`, matching `apps/server/src/config.ts`.
+Real evidence with `/tmp/portless-ws/.corpus/config.json` = `{"version":1,"token":"0123…cdef"}`:
+CLI before any server was up → `corpus: server not running for this workspace — run \`corpus server
+start\`` / `  Nothing answered at http://127.0.0.1:8765.`, exit `4` (config accepted, port defaulted
+— it previously died with `workspace config is invalid: … port: Invalid input`); then the real
+server booted from that same file (`{"level":"info","msg":"listening on http://127.0.0.1:8765",…,
+"workspace":"/tmp/portless-ws"}`) and `corpus health --json` returned
+`{"status":"ok","version":"0.0.0","uptimeSeconds":8.58,"workspace":"/tmp/portless-ws"}`, exit `0`
+(human form: `ok — corpus 0.0.0, up 9s, workspace /tmp/portless-ws`). A `{"version":1,
+"host":"0.0.0.0","token":…}` workspace was likewise accepted by the reader and dialled at
+`0.0.0.0:8765` — `host` stays schema-opaque in the CLI; loopback enforcement is the server's boot
+concern. Scoped gates: `npx vitest run apps/cli` → **202 passed / 14 files**; eslint + prettier +
+`tsc --noEmit` on `apps/cli` clean; `scripts/check-generated-artifacts.ts` → `✓ CLI reference is up
+to date (docs/cli.md)` (registry surface unchanged, so no regeneration).
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

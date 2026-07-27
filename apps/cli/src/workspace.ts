@@ -18,12 +18,27 @@ export const CONFIG_DIR = ".corpus";
 export const CONFIG_FILE = "config.json";
 export const CONFIG_RELATIVE_PATH = join(CONFIG_DIR, CONFIG_FILE);
 
+export const DEFAULT_PORT = 8765;
+export const DEFAULT_HOST = "127.0.0.1";
+export const DEFAULT_DATA_DIR = "data";
+
+/**
+ * The canonical on-disk shape, pinned by Sprint-002 Adjudication 3/4 and shared
+ * with the server's reader (`apps/server/src/config.ts`): `version` and `token`
+ * are the only required keys; `port`, `host` and `dataDir` default. `{"version":
+ * 1, "token": "…"}` must therefore resolve here exactly as it boots there.
+ *
+ * `host` is schema-opaque — any non-empty string parses. Loopback enforcement is
+ * the server's boot-time concern (it is the process that binds the socket); a
+ * reader that duplicated the check would reject a config its own server accepts
+ * the day that policy changes.
+ */
 export const WorkspaceConfigSchema = z.looseObject({
   version: z.literal(1),
-  port: z.number().int().min(1).max(65535),
-  host: z.string().min(1).default("127.0.0.1"),
+  port: z.number().int().min(1).max(65535).default(DEFAULT_PORT),
+  host: z.string().min(1).default(DEFAULT_HOST),
   token: z.string().min(1),
-  dataDir: z.string().min(1).default("data"),
+  dataDir: z.string().min(1).default(DEFAULT_DATA_DIR),
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;

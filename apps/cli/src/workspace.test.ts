@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ExitCode, UsageError, WorkspaceConfigError, WorkspaceNotFoundError } from "./errors.js";
-import { findWorkspaceRoot, readWorkspaceConfig, resolveWorkspace } from "./workspace.js";
+import {
+  DEFAULT_PORT,
+  findWorkspaceRoot,
+  readWorkspaceConfig,
+  resolveWorkspace,
+} from "./workspace.js";
 
 /** A 32+ character token, so a hand-made fixture is one a real server accepts. */
 const TOKEN = "0123456789abcdef0123456789abcdef";
@@ -65,6 +70,13 @@ describe("resolveWorkspace", () => {
     expect(workspace.host).toBe("127.0.0.1");
     expect(workspace.dataDir).toBe("data");
     expect(workspace.baseUrl).toBe("http://127.0.0.1:8865");
+  });
+
+  it("talks to the default port when the config omits one", () => {
+    const root = writeWorkspace(scratch(), { version: 1, token: TOKEN });
+    const workspace = resolveWorkspace({ cwd: root, env: {} });
+    expect(workspace.port).toBe(DEFAULT_PORT);
+    expect(workspace.baseUrl).toBe(`http://127.0.0.1:${String(DEFAULT_PORT)}`);
   });
 
   it("resolves from a directory three levels below the root", () => {
@@ -156,6 +168,19 @@ describe("readWorkspaceConfig", () => {
       token: TOKEN,
     });
     expect(readWorkspaceConfig(join(root, ".corpus", "config.json")).host).toBe("127.0.0.1");
+  });
+
+  it("defaults port to 8765 for a portless config the server also accepts", () => {
+    const root = writeWorkspace(scratch(), { version: 1, token: TOKEN });
+    const config = readWorkspaceConfig(join(root, ".corpus", "config.json"));
+    expect(config.port).toBe(DEFAULT_PORT);
+    expect(config.host).toBe("127.0.0.1");
+    expect(config.dataDir).toBe("data");
+  });
+
+  it("leaves host schema-opaque: loopback enforcement is the server's boot concern", () => {
+    const root = writeWorkspace(scratch(), { version: 1, host: "0.0.0.0", token: TOKEN });
+    expect(readWorkspaceConfig(join(root, ".corpus", "config.json")).host).toBe("0.0.0.0");
   });
 
   it("accepts a short token: token strength is `corpus init`'s job, not a reader's", () => {
