@@ -165,15 +165,25 @@ describe("the mutation pipeline", () => {
 
     ws.advance(60_000);
     await ws.post(`/api/docs/${created.id}/archive`, {});
-    expect(frames[2]).toEqual([["docs"], ["docs", created.id]]);
+    // Archived documents are counted in no folder, so archiving moves the badge
+    // the tree draws — the same claim creation and deletion make (SERVER-018).
+    expect(frames[2]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
 
     ws.advance(60_000);
-    await ws.post(`/api/docs/${created.id}/move`, { folder: "finance" });
+    await ws.post(`/api/docs/${created.id}/unarchive`, {});
     expect(frames[3]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
+
+    // Live again, so the move carries its count from one folder to another. An
+    // archived document's move announces nothing, because it was counted in
+    // neither folder — `tree-key.test.ts` holds that case and the rest of the
+    // invariant.
+    ws.advance(60_000);
+    await ws.post(`/api/docs/${created.id}/move`, { folder: "finance" });
+    expect(frames[4]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
 
     ws.advance(60_000);
     await ws.del(`/api/docs/${created.id}`);
-    expect(frames[4]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
+    expect(frames[5]).toEqual([["docs"], ["docs", created.id], ["tree"]]);
 
     off();
     // Every payload is keys and nothing else — §2.2 rule 3.

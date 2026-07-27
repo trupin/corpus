@@ -108,3 +108,25 @@ export function folderTree(db: ProjectionDb): FolderTree {
       .map(freeze),
   };
 }
+
+/**
+ * A comparable snapshot of what `GET /api/tree` would answer right now.
+ *
+ * SPEC.md §9's invalidation rule for `["tree"]` is a statement about the
+ * *response*: a frame carries the key exactly when the tree a client would
+ * refetch actually changed. Deciding that from the mutation's own shape means
+ * re-deriving {@link FOLDER_PATHS_SQL}'s rules — which documents are counted,
+ * under whose folder a thread counts, what an archived row contributes — at
+ * every write site, and the moment those copies disagree with this file the
+ * board desynchronises silently. So the answer is taken from the same function
+ * the route calls, before the write and after the projection is current:
+ * `runMutation` compares two signatures and announces the difference (see
+ * `MutationPlan.mayChangeTree`).
+ *
+ * The tree is a plain data structure with a deterministic order (folders and
+ * children are sorted by name), so serialising it is a faithful identity: equal
+ * strings mean a byte-identical response.
+ */
+export function folderTreeSignature(db: ProjectionDb): string {
+  return JSON.stringify(folderTree(db));
+}

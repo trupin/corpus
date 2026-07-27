@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Actor, Doc } from "@corpus/contract";
 import { parseDocumentPath } from "../core/index.js";
-import { DOCS_KEY, TREE_KEY, docKey } from "../events/index.js";
+import { DOCS_KEY, docKey } from "../events/index.js";
 import { loadDocument, toWireDoc } from "./read.js";
 import {
   resolveFolder,
@@ -77,7 +77,10 @@ export async function moveDocument(
         commit: {
           subject: `doc move: ${loaded.path} → ${nextPath} (${id}) by ${actor}`,
         },
-        keys: [DOCS_KEY, docKey(id), TREE_KEY],
+        keys: [DOCS_KEY, docKey(id)],
+        // Usually both badges move — but an archived document counts in no
+        // folder, so moving one that carries no threads changes nothing.
+        mayChangeTree: true,
       },
     });
 

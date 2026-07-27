@@ -52,13 +52,14 @@ import {
 import { resolveAnchorExact } from "../anchors/index.js";
 import { badRequest } from "../errors.js";
 import type { InvalidationBus } from "../events/index.js";
-import { dedupeKeys } from "../events/index.js";
+import { TREE_KEY, dedupeKeys } from "../events/index.js";
 import type { AnchorChange, AutoCommitter, CommitOutcome } from "../git/index.js";
 import type { Logger } from "../logger.js";
 import { classifyPath, projectDocument, removeDocument } from "../projection/index.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { SelfWriteRegistry } from "../watcher/index.js";
 import { isIdTaken } from "./read.js";
+import { folderTreeSignature } from "./tree.js";
 
 /**
  * The §14 rules a **single** document decides on its own. The rest of the
@@ -128,6 +129,28 @@ export type MutationPlan = {
   readonly unproject: readonly string[];
   readonly commit: { readonly subject: string; readonly anchors?: AnchorChange | undefined } | null;
   readonly keys: readonly QueryKey[];
+  /**
+   * Set by any plan whose write *could* change the `data/docs/` folder tree —
+   * a create, a move, a delete, an archive, a status edit. `runMutation` then
+   * appends `TREE_KEY` to the frame **iff `GET /api/tree`'s answer actually
+   * changed**, by comparing {@link folderTreeSignature} either side of the
+   * projection.
+   *
+   * That comparison is the whole point, and it is why no write site pushes
+   * `TREE_KEY` by hand: "does this mutation move a folder badge" has no
+   * answer at the call site. A parented thread counts in its parent's folder
+   * and a standalone one counts nowhere; an archived document counts nowhere
+   * but its threads still do; deleting a document silently un-counts every
+   * thread hanging from it; moving a thread-less archived document changes
+   * nothing at all. Every one of those was either announced when nothing had
+   * changed or changed without being announced while the key was a literal in
+   * the key list (SERVER-018).
+   *
+   * Left unset — the default — for the writes that provably cannot touch the
+   * tree (a body edit, a turn, mark-seen), which also keeps the extra tree
+   * query off the autosave path.
+   */
+  readonly mayChangeTree?: boolean;
 };
 
 export type MutationResult = {
@@ -593,6 +616,11 @@ export async function runMutation(
 
   // After the commit and before the response — a hook failure must not cost the
   // projection its update, or the UI would stop showing a change that is on disk.
+  // Taken after the write and before the projection moves: the tree is derived
+  // from rows, so this is the last moment it still answers what a client
+  // fetched before the mutation.
+  const treeBefore = plan.mayChangeTree === true ? folderTreeSignature(workspace.projection) : null;
+
   for (const path of plan.unproject) {
     removeDocument(workspace.projection, abs(workspace, path));
   }
@@ -601,7 +629,9 @@ export async function runMutation(
     projectDocument(workspace.projection, abs(workspace, path));
   }
 
-  workspace.bus.invalidate(dedupeKeys(plan.keys));
+  const treeChanged =
+    treeBefore !== null && folderTreeSignature(workspace.projection) !== treeBefore;
+  workspace.bus.invalidate(dedupeKeys(treeChanged ? [...plan.keys, TREE_KEY] : plan.keys));
 
   return { changed: true, warnings: [...validationWarnings, ...warningsFor(commit)], commit };
 }

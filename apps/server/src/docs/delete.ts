@@ -22,7 +22,7 @@
 
 import type { Actor, DeleteDocResult } from "@corpus/contract";
 import { serializeDocument, setFrontmatterFields, withoutAnchorEntry } from "../core/index.js";
-import { DOCS_KEY, TREE_KEY, docKey, threadKey } from "../events/index.js";
+import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { forbidden } from "../errors.js";
 import { loadDocument, type LoadedDocument } from "./read.js";
 import {
@@ -87,7 +87,7 @@ export async function deleteDocumentLocked(
   const operations: FileOperation[] = [{ kind: "remove", path: loaded.path }];
   const stage: string[] = [loaded.path];
   const project: string[] = [];
-  const keys = [DOCS_KEY, docKey(id), TREE_KEY, ...(isThread ? [threadKey(id)] : [])];
+  const keys = [DOCS_KEY, docKey(id), ...(isThread ? [threadKey(id)] : [])];
 
   // The anchor half of the cascade. A parent that has since been deleted, or
   // whose entry someone already removed by hand, is not an error: the goal is
@@ -125,6 +125,12 @@ export async function deleteDocumentLocked(
       // The orphaned threads' rows are untouched, but every list that showed
       // them alongside their parent has to redraw.
       keys,
+      // A parented thread's deletion takes a count off its parent's folder; a
+      // standalone thread was counted nowhere and takes nothing with it.
+      // Deleting a document un-counts every thread that hung from it, and
+      // deleting an already-archived one un-counts only those threads — which
+      // is why the answer is measured rather than assembled here.
+      mayChangeTree: true,
     },
   });
 

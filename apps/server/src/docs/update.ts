@@ -139,6 +139,12 @@ export async function updateDocument(
           anchors: report,
         },
         keys: [DOCS_KEY, docKey(id)],
+        // `PUT` may set `status: archived`, and archived documents are counted
+        // in no folder — so an edit that carries a status is exactly as
+        // tree-changing as `POST /archive` (SERVER-018). Every other field the
+        // route can write is invisible to `docs/tree.ts`, and a body edit is
+        // the autosave path, which must not pay for a tree query.
+        mayChangeTree: "status" in fields,
       },
     });
 

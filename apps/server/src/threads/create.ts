@@ -37,7 +37,7 @@ import {
   anchorEntries,
   THREADS_ROOT,
 } from "../core/index.js";
-import { DOCS_KEY, TREE_KEY, docKey, threadKey } from "../events/index.js";
+import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import {
   CREATE_LANE,
   isIdTaken,
@@ -220,12 +220,7 @@ export async function createThread(
     // Second, so the rollback has something to undo: the parent is restored when
     // this write is the one that fails.
     operations.push({ kind: "write", path, content: text } as const);
-    if (parentId !== null) {
-      keys.push(docKey(parentId));
-      // A thread counts in the folder its parent is filed in (`docs/tree.ts`),
-      // so a parented thread moves a folder badge. A standalone one does not.
-      keys.push(TREE_KEY);
-    }
+    if (parentId !== null) keys.push(docKey(parentId));
 
     const result = await runMutation(workspace, {
       docId: id,
@@ -243,6 +238,11 @@ export async function createThread(
               : `comment: new thread on ${parentId} (${id}) by ${actor}`,
         },
         keys,
+        // A thread counts in the folder its parent is filed in
+        // (`docs/tree.ts`), so a parented thread moves a folder badge — unless
+        // its parent lives outside `data/docs/`, or is itself a thread. A
+        // standalone thread moves nothing.
+        mayChangeTree: true,
       },
     });
 

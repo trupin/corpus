@@ -18,7 +18,7 @@ import {
   slugifyTitle,
   THREADS_ROOT,
 } from "../core/index.js";
-import { DOCS_KEY, TREE_KEY, docKey } from "../events/index.js";
+import { DOCS_KEY, docKey } from "../events/index.js";
 import { isIdTaken, loadDocument, toWireDoc } from "./read.js";
 import { findTemplate } from "./templates.js";
 import {
@@ -120,7 +120,10 @@ export async function createDocument(
         project: [path],
         unproject: [],
         commit: { subject: `doc create: ${input.title} (${id}) by ${actor}` },
-        keys: [DOCS_KEY, docKey(id), TREE_KEY],
+        keys: [DOCS_KEY, docKey(id)],
+        // A note lands in a folder and moves its badge; a thread lands flat
+        // under `data/threads/` and moves nothing. The runner compares.
+        mayChangeTree: true,
       },
     });
 

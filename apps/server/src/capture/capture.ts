@@ -40,7 +40,7 @@ import {
   type DocumentMutex,
   type MutationResult,
 } from "../docs/index.js";
-import { DOCS_KEY, TREE_KEY, docKey, threadKey } from "../events/index.js";
+import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import {
   EVENT_SOURCE,
   decideParticipation,
@@ -179,7 +179,10 @@ export async function captureDocument(
         project: [docPath, threadPath],
         unproject: [],
         commit: { subject: `capture: ${title} (${docId}) by ${actor}` },
-        keys: [DOCS_KEY, docKey(docId), docKey(threadId), threadKey(threadId), TREE_KEY],
+        keys: [DOCS_KEY, docKey(docId), docKey(threadId), threadKey(threadId)],
+        // The captured document lands in a folder under `data/docs/`, and its
+        // filing thread counts there too.
+        mayChangeTree: true,
       },
     });
 

@@ -165,6 +165,12 @@ export async function setArchived(
           subject: `doc ${verb}: ${loaded.row.title} (${id}) by ${actor}`,
         },
         keys: [DOCS_KEY, docKey(id)],
+        // Archived documents are excluded from every folder count, so archiving
+        // and unarchiving move a folder badge in opposite directions — for a
+        // document and for a parented thread alike (SERVER-018). A skill,
+        // whose archiving relocates a folder outside `data/docs/`, moves no
+        // badge at all; the comparison tells the two apart.
+        mayChangeTree: true,
       },
     });
 
