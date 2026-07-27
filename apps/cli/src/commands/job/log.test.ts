@@ -1,22 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ExitCode, exitCodeFor, UsageError } from "../../errors.js";
+import { pipe, unreadable } from "../../testing/stdin.js";
 import {
   closeStubServers,
   jsonResponder,
   startStubServer,
   stubContext,
 } from "../../testing/stub-server.js";
-import { readAll, runJobLog } from "./log.js";
+import { runJobLog } from "./log.js";
 
 const APPENDED = { eventId: "evt_1111", appended: true };
 const ARGS = { "event-id": "evt_1111" };
-
-/** Stands in for `process.stdin`: a real async iterable of real chunks. */
-async function* piped(
-  ...chunks: readonly (string | Uint8Array)[]
-): AsyncGenerator<string | Uint8Array> {
-  for (const chunk of chunks) yield await Promise.resolve(chunk);
-}
 
 afterEach(closeStubServers);
 
@@ -47,7 +41,7 @@ describe("corpus job log", () => {
     const stub = await startStubServer(jsonResponder(201, APPENDED));
 
     const harness = stubContext(stub, { args: ARGS });
-    await runJobLog(harness.context, { stdin: piped("step 2\n") });
+    await runJobLog(harness.context, { stdin: pipe("step 2\n"), stdinIsBodySource: true });
 
     expect(JSON.parse(stub.requests[0]?.body ?? "null")).toEqual({ line: "step 2" });
     expect(harness.stdout()).toBe("");
@@ -77,22 +71,30 @@ describe("corpus job log", () => {
     const stub = await startStubServer(jsonResponder(201, APPENDED));
 
     const harness = stubContext(stub, { args: ARGS });
-    const error: unknown = await runJobLog(harness.context, { stdin: piped("\n") }).catch(
-      (cause: unknown) => cause,
-    );
+    const error: unknown = await runJobLog(harness.context, {
+      stdin: pipe("\n"),
+      stdinIsBodySource: true,
+    }).catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(UsageError);
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
     expect(stub.requests).toHaveLength(0);
   });
-});
 
-describe("readAll", () => {
-  it("joins chunks of both kinds, decoding multi-byte characters across a split", async () => {
-    const encoded = new TextEncoder().encode("é");
-    const first = encoded.slice(0, 1);
-    const second = encoded.slice(1);
+  it("never reads a stdin that carries no body, so an agent harness cannot hang it", async () => {
+    const stub = await startStubServer(jsonResponder(201, APPENDED));
 
-    await expect(readAll(piped("a", first, second, "b"))).resolves.toBe("aéb");
+    // The socket an agent harness hands down on fd 0: readable-looking, never
+    // written to, never closed. Reading it would block forever (CLI-007), so
+    // the probe says "no body" and the verb answers a usage error instead.
+    const harness = stubContext(stub, { args: ARGS });
+    const error: unknown = await runJobLog(harness.context, {
+      stdin: unreadable(),
+      stdinIsBodySource: false,
+    }).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(UsageError);
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(stub.requests).toHaveLength(0);
   });
 });

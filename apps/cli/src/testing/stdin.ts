@@ -11,3 +11,20 @@ export function pipe(...chunks: readonly string[]): AsyncIterable<string> {
     },
   };
 }
+
+/**
+ * The stdin a verb must never touch: the socket an agent harness leaves on fd 0,
+ * which in production never yields and never ends. Iterating it fails the test
+ * loudly instead of hanging it, so "this verb would have blocked forever" reads
+ * as an assertion rather than a timeout.
+ */
+export function unreadable(): AsyncIterable<string> {
+  return {
+    [Symbol.asyncIterator]: (): AsyncIterator<string> => ({
+      next: () =>
+        Promise.reject(
+          new Error("stdin was read: in production this descriptor never ends and would hang"),
+        ),
+    }),
+  };
+}

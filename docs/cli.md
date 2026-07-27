@@ -500,7 +500,7 @@ corpus job list --recent 5 --json
 
 Append a progress line to a job's log.
 
-Appends to `.corpus/jobs/<event-id>.jsonl`, which the console's drawer tails live, and answers nothing in human mode: this is called many times while working one job. Omit the line and it is read from stdin instead, so a hook or a heredoc can pipe it in. Newlines inside the line are preserved and sent as one request — the server owns the file's framing. Under `--json` the response carries `appended`, which is `false` when the log has hit its size cap and the line was dropped. An unknown event id is a server error (exit 5).
+Appends to `.corpus/jobs/<event-id>.jsonl`, which the console's drawer tails live, and answers nothing in human mode: this is called many times while working one job. Omit the line and it is read from stdin instead — but only when stdin is a pipe or a heredoc, never from a terminal or from the socket an agent harness hands down, where waiting for a line nobody is sending would hang the job (that case is a usage error, exit 2). Newlines inside the line are preserved and sent as one request — the server owns the file's framing. Under `--json` the response carries `appended`, which is `false` when the log has hit its size cap and the line was dropped. An unknown event id is a server error (exit 5).
 
 ```
 corpus job log <event-id> [line] [flags]
@@ -508,10 +508,10 @@ corpus job log <event-id> [line] [flags]
 
 **Arguments**
 
-| Argument   | Required | Description                                      |
-| ---------- | -------- | ------------------------------------------------ |
-| `event-id` | yes      | The job's event id.                              |
-| `line`     | no       | The progress line. Read from stdin when omitted. |
+| Argument   | Required | Description                                              |
+| ---------- | -------- | -------------------------------------------------------- |
+| `event-id` | yes      | The job's event id.                                      |
+| `line`     | no       | The progress line. Read from a piped stdin when omitted. |
 
 **Examples**
 

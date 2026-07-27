@@ -8,6 +8,7 @@ import { ExitCode, exitCodeFor, UsageError } from "./errors.js";
 import {
   parseTriStateBoolean,
   plural,
+  readAll,
   requireBody,
   requireFlag,
   resolveActor,
@@ -140,6 +141,22 @@ describe("resolveBody", () => {
     expect(error).toBeInstanceOf(UsageError);
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
     expect(String(error)).toContain("cannot read --file");
+  });
+});
+
+describe("readAll", () => {
+  it("joins chunks of both kinds, decoding multi-byte characters across a split", async () => {
+    const encoded = new TextEncoder().encode("é");
+    // The split that a naive per-chunk `toString()` mangles: one character
+    // arriving as two reads, which is what a real pipe does under load.
+    async function* split(): AsyncGenerator<string | Uint8Array> {
+      yield "a";
+      yield await Promise.resolve(encoded.slice(0, 1));
+      yield encoded.slice(1);
+      yield "b";
+    }
+
+    await expect(readAll(split())).resolves.toBe("aéb");
   });
 });
 
