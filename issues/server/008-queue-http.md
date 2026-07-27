@@ -252,7 +252,8 @@ file dropped into `processed/` while the server was stopped was reported at boot
 (`{"level":"error","msg":"queue boot rebuild skipped malformed events","ids":"evt_bad111111111"}`)
 and the server came up normally.
 
-**TEST-55 — mirrored before the response returns — DEFERRED → SERVER-004.** There is no
+**TEST-55 — mirrored before the response returns — DEFERRED → SERVER-004.**
+_(Deferral cleared 2026-07-26 — see the Addendum below; TEST-55 now **PASS**.)_ There is no
 `events` table in this worktree (SERVER-004 owns the schema and had not merged when this was
 implemented), so `sqlite3 … "select id,status from events"` cannot be run. Substitute
 evidence: (a) the mirror seam is called **synchronously before the response** on every path —
@@ -263,7 +264,8 @@ evidence: (a) the mirror seam is called **synchronously before the response** on
 `distinct ids: 257 of 257 rows`.
 
 **TEST-56 — a restart never loses or duplicates — PASS (directories half; SQLite half
-deferred as above).** With the server stopped, one event was hand-moved `in-progress →
+deferred as above).** _(SQLite half cleared 2026-07-26 — see the Addendum below.)_
+With the server stopped, one event was hand-moved `in-progress →
 pending`, another `pending → abandoned`, and a malformed file dropped into `processed/`.
 After restart:
 ```
@@ -292,6 +294,85 @@ otherwise have blocked for the rest of the window.)
 `npm run test:coverage` → **1805 passed / 89 files**, coverage total lines 99.6 %,
 statements 99.6 %, functions 100 %, branches 96.3 % (gate 90 %). The queue module itself:
 lines 99.4 %, branches 94.4 %.
+
+---
+
+### Addendum — 2026-07-26: the mirror is wired, TEST-55/TEST-56 cleared
+
+**implemented on: opus.** Main tree (`phase-2-server-cli`), no worktree. Port **8791** (8765
+left free), scratch workspace `WS=/tmp/corpus-wire-CH9s8s` (`mktemp -d /tmp/corpus-wire-XXXXXX`),
+real server `CORPUS_WORKSPACE=$WS ./node_modules/.bin/tsx apps/server/src/main.ts`, driven by
+real `curl` and read back with the real `sqlite3` CLI against `.corpus/cache.db`. Server
+processes stopped by pid (`kill -TERM $(cat …pid)`); no `pkill`/`killall`.
+
+**What was missing.** SERVER-004 shipped `projectEvent`/`projectQueueDir`/`removeEvent` and the
+`events` table; SERVER-008 shipped the `QueueMirror` seam defaulting to a no-op. Nothing
+connected them, so a real server left `events` empty while queue files accumulated. The wiring
+is `apps/server/src/projection/queue-mirror.ts` (`createProjectionQueueMirror(db)` — the single
+adapter turning a `StoredEvent` into an `events` row via SERVER-004's `projectEvent`), bound
+from `attachProjection` (the same `attachProjectionFn` seam SERVER-004 uses, so `createServer`
+stays a pure function of its config) through a new `QueueService.attachMirror(mirror)` that
+swaps the no-op and re-runs `rebuildQueueMirrorSync`/`replaceAllEvents` on the spot.
+
+**TEST-55 — every transition is mirrored before the response returns — PASS.** `sqlite3` run
+immediately after each `curl`, no sleep, no polling:
+```
+POST /api/queue/claim-all            → 200   select id,status from events
+                                             evt_fuwkiv4coeyp|in-progress
+                                             evt_ubrnnk2v5kyr|in-progress
+POST /api/queue/evt_ubrnnk2v5kyr/complete → 200  evt_ubrnnk2v5kyr|processed
+                                                 evt_fuwkiv4coeyp|in-progress   (sibling untouched)
+POST /api/queue/evt_fuwkiv4coeyp/fail     → 200  evt_fuwkiv4coeyp|failed
+DELETE /api/queue/evt_7tq4jzcw42bu        → 200  evt_7tq4jzcw42bu|abandoned
+POST /api/queue/reap-stale                → 200 {"reaped":["evt_usc4hnx2y3ce"]}
+                                                 evt_usc4hnx2y3ce|pending   (attempts: 1 on disk)
+```
+The `pending` leg is covered by the **boot rebuild against the real server** (below) plus the
+new integration test — `POST /api/threads` (SERVER-006) still does not exist, so there is no
+HTTP producer to drive an in-process `enqueue` from outside the process.
+
+**TEST-56 — a restart never loses or duplicates, SQLite half — PASS.** Server stopped, then
+`evt_usc4hnx2y3ce` hand-moved `pending → in-progress`, `evt_ubrnnk2v5kyr` hand-moved
+`processed → pending`, and a malformed `processed/evt_bad111111111.json` (`{ truncated`)
+dropped in. After restart, all three views compared:
+```
+GET /api/queue/status  {"halted":false,"pending":1,"inProgress":1,"processed":1,"failed":1,"abandoned":1}
+directories (evt_*)     pending=1 in-progress=1 processed=1 failed=1 abandoned=1
+select status,count(*)  abandoned|1  failed|1  in-progress|1  pending|1
+```
+Rows follow the **directory, not the file's `status` field** (`evt_ubrnnk2v5kyr` is `pending`
+in the table while its JSON still says `processed`). Boot log:
+`skipping unreadable queue event … evt_bad111111111` then
+`queue boot rebuild skipped malformed events {"ids":"evt_bad111111111"}` — the server came up
+normally.
+
+**The one-row asymmetry is real, honest, and self-healing.** SERVER-008 flagged it; it now has
+a `doctor` reading. With the corrupt file present:
+```
+{"ok":false,"drift":[{"kind":"count_mismatch",
+  "detail":".corpus/queue holds 5 evt_*.json file(s) but the projection has 4 event row(s)"}]}
+```
+`POST /api/queue/evt_bad111111111/complete` → `200 {"type":"corpus.malformed",…}`, the row
+appears as `evt_bad111111111|failed`, and `doctor` returns `{"ok":true,"drift":[]}`. Status
+counts files; the mirror carries only parseable events; the next write path reconciles them.
+
+**Known gap, not this issue's:** an event file dropped into `pending/` **out of band while the
+server runs** wakes a parked long-poll (the ~500 ms poll) but produces no `events` row until a
+claim or a restart — measured: `select count(*) … = 0` right after the drop, then
+`evt_vipyde5yis5d|in-progress` after `claim-all`. `.corpus/queue/` coverage is SERVER-007's
+watcher; until it lands, `doctor` reports that window as `count_mismatch`.
+
+**Integration test.** `apps/server/src/projection/queue-mirror.test.ts` — real temp workspace,
+real `QueueService`, real `.corpus/cache.db`, real `doctor`, no HTTP: enqueue → row + payload;
+claim/complete/fail/abandon → status column tracks and siblings are untouched; reap → back to
+`pending`; boot rebuild across a hand-moved file; corrupt file → `count_mismatch` then
+quarantined. Plus `attachProjection` wiring cases in `projection/attach.test.ts` and an
+`attachMirror` swap case in `queue/service.test.ts`.
+
+**Gate (addendum run).** `npm run build`, `npm run lint`, `npm run format:check`,
+`npm run typecheck` all clean; `npm run test:coverage` → **2113 passed / 114 files**, total
+statements 99.22 %, branches 95.9 %, functions 99.63 %, lines 99.22 % (gate 90 %);
+`queue-mirror.ts` and `attach.ts` at 100 % across the board.
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

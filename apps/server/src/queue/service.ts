@@ -11,6 +11,7 @@ import {
   rebuildQueueMirrorSync,
   type QueueInvalidate,
   type QueueMirror,
+  type QueueScanResult,
 } from "./project.js";
 import {
   QueueStore,
@@ -72,7 +73,8 @@ export interface ReapResult {
 export class QueueService {
   readonly store: QueueStore;
   private readonly logger: Logger;
-  private readonly mirror: QueueMirror;
+  /** Late-bound: see {@link attachMirror}. */
+  private mirror: QueueMirror;
   private readonly invalidate: QueueInvalidate;
   private readonly now: () => number;
   private readonly staleAfterMs: number;
@@ -98,12 +100,40 @@ export class QueueService {
     });
 
     this.store.ensureLayoutSync();
+    this.rebuildMirror();
+  }
+
+  /**
+   * Binds the projection's `events` table once it is open, and rebuilds it from
+   * the directories on the spot.
+   *
+   * The queue is built by `createServer`, which is a pure function of its config
+   * and opens no database; the projection attaches afterwards, from
+   * `lifecycle.ts`, before the socket does. So the real mirror arrives *after*
+   * the constructor's rebuild has already run against the no-op — which is why
+   * binding re-runs it rather than merely storing the reference. Nothing can
+   * have been enqueued in between (there is no socket yet), and the rebuild
+   * would cover it if something had.
+   */
+  attachMirror(mirror: QueueMirror): QueueScanResult {
+    this.mirror = mirror;
+    return this.rebuildMirror();
+  }
+
+  /**
+   * Replaces the mirror's contents with what the five directories currently
+   * hold, so a restart — or a crash halfway through a transition, or a file
+   * moved by hand while the server was down — can neither lose nor duplicate an
+   * event (sprint-003 TEST-56).
+   */
+  private rebuildMirror(): QueueScanResult {
     const scan = rebuildQueueMirrorSync(this.store, this.mirror);
     if (scan.malformed.length > 0) {
       this.logger.error("queue boot rebuild skipped malformed events", {
         ids: scan.malformed.join(","),
       });
     }
+    return scan;
   }
 
   /** Parked long-polls right now. Exposed so tests can prove none leaked. */

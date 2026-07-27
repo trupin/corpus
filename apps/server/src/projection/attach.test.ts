@@ -56,6 +56,50 @@ describe("attachProjection", () => {
     expect(db.sqlite.open).toBe(false);
   });
 
+  it("hands the queue its events mirror, so a transition lands in the table", async () => {
+    const server = createServer(makeConfig(), { logger: silentLogger });
+    const db = attachProjection(server);
+
+    const event = await server.queue.enqueue({
+      type: "comment.created",
+      source: "cli",
+      payload: {},
+    });
+    expect(db.prepare("SELECT id, status FROM events").all()).toEqual([
+      { id: event.id, status: "pending" },
+    ]);
+
+    await server.queue.claimAll();
+    expect(db.prepare("SELECT status FROM events WHERE id = ?").get(event.id)).toEqual({
+      status: "in-progress",
+    });
+
+    await server.close();
+  });
+
+  it("rebuilds the events table from a queue directory seeded while it was down", async () => {
+    mkdirSync(join(workspaceRoot, ".corpus", "queue", "pending"), { recursive: true });
+    writeFileSync(
+      join(workspaceRoot, ".corpus", "queue", "pending", "evt_seed00000000.json"),
+      JSON.stringify({
+        id: "evt_seed00000000",
+        type: "comment.created",
+        created: "2026-07-19T10:05:00Z",
+        source: "cli",
+        payload: {},
+      }),
+      "utf8",
+    );
+
+    const server = createServer(makeConfig(), { logger: silentLogger });
+    const db = attachProjection(server);
+
+    expect(db.prepare("SELECT id, status FROM events").all()).toEqual([
+      { id: "evt_seed00000000", status: "pending" },
+    ]);
+    await server.close();
+  });
+
   it("survives a second close, because disposers run once", async () => {
     const server = createServer(makeConfig(), { logger: silentLogger });
     const db = attachProjection(server);

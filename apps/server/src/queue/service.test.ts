@@ -560,6 +560,27 @@ describe("the projection mirror", () => {
     expect(service.parked).toBe(0);
   });
 
+  it("rebuilds into a mirror attached after construction, and uses it from then on", async () => {
+    const service = makeService();
+    const seeded = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+
+    // The projection opens after `createServer`, so the real mirror arrives late.
+    const late = makeMirror();
+    const scan = service.attachMirror(late);
+
+    expect(scan.malformed).toEqual([]);
+    expect(late.replacements).toHaveLength(1);
+    expect(late.replacements[0]?.map((event) => [event.id, event.status])).toEqual([
+      [seeded.id, "pending"],
+    ]);
+
+    await service.complete(seeded.id);
+    expect(late.upserts.at(-1)).toMatchObject({ id: seeded.id, status: "processed" });
+    // The mirror handed to the constructor stops receiving anything: it saw the
+    // enqueue and nothing after the swap.
+    expect(mirror.upserts.map((event) => event.status)).toEqual(["pending"]);
+  });
+
   it("runs with no mirror and no invalidation bus wired in", async () => {
     const service = createQueueService({ corpusDir, pollIntervalMs: 10 });
     services.push(service);
