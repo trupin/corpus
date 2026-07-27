@@ -29,7 +29,11 @@ export interface Output {
   emit(value: unknown): void;
   /** A human one-liner. Suppressed under `--json` so stdout stays one JSON value. */
   line(text: string): void;
-  /** Human text that is never data (help). Written to stdout in both modes. */
+  /**
+   * Text that must reach stdout in both modes. Two legitimate callers: help,
+   * which is documentation rather than data, and `queue claim-all`, whose one
+   * JSON line *is* its output in human mode too.
+   */
   write(text: string): void;
   /** Renders a failure to stderr in whichever mode is active. */
   fail(error: unknown, options: { readonly verbose: boolean }): void;

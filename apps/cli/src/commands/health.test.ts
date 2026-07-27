@@ -32,6 +32,7 @@ function clientReturning(body: unknown): { client: CliClient; calls: unknown[] }
     client: {
       baseUrl: workspace.baseUrl,
       api,
+      untimedApi: api,
       request: (call) => call(api).then((result) => result.data as never),
     },
   };

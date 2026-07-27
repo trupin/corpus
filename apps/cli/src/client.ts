@@ -23,6 +23,22 @@ export interface CliClient {
   readonly baseUrl: string;
   readonly api: CorpusApi;
   /**
+   * The same typed surface with **no transport deadline**: the caller's own
+   * `AbortSignal` is the only thing that ends the request.
+   *
+   * It exists for one shape of call — the long poll behind `corpus queue idle`,
+   * which parks for up to eight minutes. `--timeout` is a *transport* timeout
+   * (ten seconds by default, "the server did not answer") and would abort that
+   * park as if the server had died. A per-call signal cannot express the
+   * exception either: `openapi-fetch` folds it into the `Request` it builds and
+   * calls `fetch(request)` with no init, so the wrapper below never sees it and
+   * its own deadline wins.
+   *
+   * A call made through this surface without a signal never times out, so every
+   * caller passes one.
+   */
+  readonly untimedApi: CorpusApi;
+  /**
    * Runs one typed call and returns its body, or throws the mapped `CliError`.
    * Handlers write `await client.request((api) => api.GET("/api/health"))`.
    */
@@ -43,18 +59,22 @@ export function createClient(options: CreateClientOptions): CliClient {
   const fetchWithTimeout: typeof globalThis.fetch = (input, init) =>
     transport(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(timeoutMs) });
 
-  const { api } = createCorpusClient({
-    baseUrl: workspace.baseUrl,
-    token: workspace.token,
-    // The CLI is the agent's only interface (SPEC.md §2.2), so its writes are
-    // attributed to the agent in the server's git auto-commit.
-    actor: "agent",
-    fetch: fetchWithTimeout,
-  });
+  const build = (transportFetch: typeof globalThis.fetch): CorpusApi =>
+    createCorpusClient({
+      baseUrl: workspace.baseUrl,
+      token: workspace.token,
+      // The CLI is the agent's only interface (SPEC.md §2.2), so its writes are
+      // attributed to the agent in the server's git auto-commit.
+      actor: "agent",
+      fetch: transportFetch,
+    }).api;
+
+  const api = build(fetchWithTimeout);
 
   return {
     baseUrl: workspace.baseUrl,
     api,
+    untimedApi: build(transport),
     async request<Data>(call: (client: CorpusApi) => Promise<ClientResult<Data>>): Promise<Data> {
       let result: ClientResult<Data>;
       try {

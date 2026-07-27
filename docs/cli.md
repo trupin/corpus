@@ -15,6 +15,27 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [Global flags](#global-flags)
 - [`corpus health`](#corpus-health)
 - [`corpus init`](#corpus-init)
+- [`corpus job`](#corpus-job)
+  - [`corpus job abandon`](#corpus-job-abandon)
+  - [`corpus job list`](#corpus-job-list)
+  - [`corpus job log`](#corpus-job-log)
+  - [`corpus job retry`](#corpus-job-retry)
+- [`corpus lock`](#corpus-lock)
+  - [`corpus lock acquire`](#corpus-lock-acquire)
+  - [`corpus lock break`](#corpus-lock-break)
+  - [`corpus lock list`](#corpus-lock-list)
+  - [`corpus lock reap`](#corpus-lock-reap)
+  - [`corpus lock release`](#corpus-lock-release)
+- [`corpus queue`](#corpus-queue)
+  - [`corpus queue abandon`](#corpus-queue-abandon)
+  - [`corpus queue claim-all`](#corpus-queue-claim-all)
+  - [`corpus queue complete`](#corpus-queue-complete)
+  - [`corpus queue fail`](#corpus-queue-fail)
+  - [`corpus queue halt`](#corpus-queue-halt)
+  - [`corpus queue idle`](#corpus-queue-idle)
+  - [`corpus queue reap-stale`](#corpus-queue-reap-stale)
+  - [`corpus queue resume`](#corpus-queue-resume)
+  - [`corpus queue status`](#corpus-queue-status)
 - [`corpus server`](#corpus-server)
   - [`corpus server logs`](#corpus-server-logs)
   - [`corpus server start`](#corpus-server-start)
@@ -129,6 +150,517 @@ Machine-readable form. The bearer token is never printed.
 
 ```
 corpus init --json
+```
+
+## `corpus job`
+
+Follow and settle the agent's work in progress.
+
+Every queue event is a job with a live log at `.corpus/jobs/<event-id>.jsonl`. The agent appends progress lines with `corpus job log` while it works, and the console — in the board's drawer or through `corpus job list` — shows each job's status with its latest line.
+
+### `corpus job abandon`
+
+Give up on a failed job.
+
+Moves the job's event to `abandoned/` — the other half of the console's failed-job actions. Nothing is deleted; the event file and its log stay where the audit trail can see them.
+
+```
+corpus job abandon <event-id> [flags]
+```
+
+**Arguments**
+
+| Argument   | Required | Description         |
+| ---------- | -------- | ------------------- |
+| `event-id` | yes      | The job's event id. |
+
+**Examples**
+
+Stop retrying a job that cannot work.
+
+```
+corpus job abandon evt_9f2a
+```
+
+### `corpus job list`
+
+Show recent jobs and their last log line.
+
+The console's master list from the terminal: one row per queue event with its status and most recent log line, most recent first.
+
+```
+corpus job list [flags]
+```
+
+**Flags**
+
+| Flag               | Type   | Default | Description                                                                   |
+| ------------------ | ------ | ------- | ----------------------------------------------------------------------------- |
+| `--recent <count>` | number | —       | How many of the most recent jobs to show. The server applies its own default. |
+
+**Examples**
+
+What has the agent been doing?
+
+```
+corpus job list
+```
+
+One JSON value: `{"jobs":[{"eventId":"evt_9f2a","status":"processed",…}]}`.
+
+```
+corpus job list --recent 5 --json
+```
+
+### `corpus job log`
+
+Append a progress line to a job's log.
+
+Appends to `.corpus/jobs/<event-id>.jsonl`, which the console's drawer tails live, and answers nothing in human mode: this is called many times while working one job. Omit the line and it is read from stdin instead, so a hook or a heredoc can pipe it in. Newlines inside the line are preserved and sent as one request — the server owns the file's framing. Under `--json` the response carries `appended`, which is `false` when the log has hit its size cap and the line was dropped. An unknown event id is a server error (exit 5).
+
+```
+corpus job log <event-id> [line] [flags]
+```
+
+**Arguments**
+
+| Argument   | Required | Description                                      |
+| ---------- | -------- | ------------------------------------------------ |
+| `event-id` | yes      | The job's event id.                              |
+| `line`     | no       | The progress line. Read from stdin when omitted. |
+
+**Examples**
+
+Record a step while working an event.
+
+```
+corpus job log evt_9f2a "reading the thread"
+```
+
+Take the line from stdin instead of an argument — the form a hook or a heredoc pipes into.
+
+```
+corpus job log evt_9f2a < step.txt
+```
+
+### `corpus job retry`
+
+Put a failed job back in the queue.
+
+Returns the event to `pending/` so the agent picks it up again — the terminal form of the console's retry action. A job that is not in a retryable state answers `409` (exit 5).
+
+```
+corpus job retry <event-id> [flags]
+```
+
+**Arguments**
+
+| Argument   | Required | Description         |
+| ---------- | -------- | ------------------- |
+| `event-id` | yes      | The job's event id. |
+
+**Examples**
+
+Try a failed job once more.
+
+```
+corpus job retry evt_9f2a
+```
+
+## `corpus lock`
+
+Coordinate who may edit a document.
+
+Editing is coordinated by a per-document lock: the agent takes it before editing and the user's editor session holds it while typing, so a write from the other party is refused with a `423` naming the holder. Locks carry a lease, `reap` clears expired ones, and `break` is the operator's escape hatch for a lock that is stuck.
+
+### `corpus lock acquire`
+
+Take a document's edit lock.
+
+One holder at a time. Re-acquiring a lock you already hold renews its lease; a lock held by the other party answers `409` (exit 5) carrying that lock, so the caller can see who has it and until when.
+
+```
+corpus lock acquire <doc-id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `doc-id` | yes      | The document's id. |
+
+**Flags**
+
+| Flag              | Type   | Default | Description                                                                                           |
+| ----------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------- |
+| `--ttl <seconds>` | number | —       | Lease length. The server's default is 300s; a TTL is what stops a crashed session wedging a document. |
+
+**Examples**
+
+Hold a document for the default lease.
+
+```
+corpus lock acquire doc_a1b2c3
+```
+
+One JSON value: `{"docId":"doc_a1b2c3","holder":"agent","acquired":"2026-07-27T10:00:00.000Z","ttl":60}`.
+
+```
+corpus lock acquire doc_a1b2c3 --ttl 60 --json
+```
+
+### `corpus lock break`
+
+Force-unlock a document (an operator action).
+
+Clears whoever holds the document's edit lock and records the break in the audit trail. This is the one verb the CLI sends as **`user` rather than `agent`**: breaking a lock is a human recovery action, and the server refuses it from the agent precisely so that an agent cannot break its own contention. Idempotent by design — a document with no lock reports `no lock held` and exits 0, which also means an unknown document id exits 0 rather than 5.
+
+```
+corpus lock break <doc-id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description               |
+| -------- | -------- | ------------------------- |
+| `doc-id` | yes      | The locked document's id. |
+
+**Examples**
+
+Clear a lock a crashed session left behind.
+
+```
+corpus lock break doc_a1b2c3
+```
+
+One JSON value: `{"docId":"doc_a1b2c3","broken":true,"holder":"agent"}`, or `{"docId":"doc_a1b2c3","broken":false}` when nothing was held.
+
+```
+corpus lock break doc_a1b2c3 --json
+```
+
+### `corpus lock list`
+
+Show every lock currently held.
+
+Reads `GET /api/locks` — the same state the board's lock banners render, so a document that refuses a write shows up here with its holder and lease.
+
+```
+corpus lock list [flags]
+```
+
+**Examples**
+
+One line per held lock, or `no locks held.`
+
+```
+corpus lock list
+```
+
+One JSON value: `{"locks":[{"docId":"doc_a1b2c3","holder":"user",…}]}`.
+
+```
+corpus lock list --json
+```
+
+### `corpus lock reap`
+
+Clear locks that are past their lease.
+
+Releases every lock whose TTL has expired, so a crashed editor cannot wedge a document — the lock twin of `corpus queue reap-stale`. A lock still inside its lease is left alone, and a second call reports nothing cleared and exits 0.
+
+```
+corpus lock reap [flags]
+```
+
+**Examples**
+
+Clear leases left behind by a crashed session.
+
+```
+corpus lock reap
+```
+
+One JSON value: `{"reaped":["doc_a1b2c3"]}`, empty when nothing had expired.
+
+```
+corpus lock reap --json
+```
+
+### `corpus lock release`
+
+Drop a document's edit lock.
+
+Only the holder may release: a lock held by the other party answers `403` (exit 5), and a document with no lock answers `404` (exit 5). To clear somebody else's lock, break it.
+
+```
+corpus lock release <doc-id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `doc-id` | yes      | The document's id. |
+
+**Examples**
+
+Release a lock you hold.
+
+```
+corpus lock release doc_a1b2c3
+```
+
+## `corpus queue`
+
+Park on, claim and settle the agent's event queue.
+
+The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `halt` is the kill switch: it stops consumption without stopping production.
+
+### `corpus queue abandon`
+
+Give up on an event for good.
+
+Moves the event to `abandoned/` — the terminal give-up state, distinct from `failed/` which a retry can pick up again. Nothing is deleted: the event file is kept where the audit trail can still see it.
+
+```
+corpus queue abandon <event-id> [flags]
+```
+
+**Arguments**
+
+| Argument   | Required | Description                                             |
+| ---------- | -------- | ------------------------------------------------------- |
+| `event-id` | yes      | The event's id, as printed by `corpus queue claim-all`. |
+
+**Examples**
+
+Stop trying to handle an event.
+
+```
+corpus queue abandon evt_9f2a
+```
+
+### `corpus queue claim-all`
+
+Claim every pending event as one batch.
+
+Moves all `pending/*` events to `in-progress/` in a single call and prints them as **one JSON line on stdout, in both human and `--json` mode** — no prose, no summary line, no pretty-printing, and no pagination however large the batch. This command exists for machine consumption and the batch is the payload; do not add a human-readable line to it. An empty batch is still a batch: `{"events":[]}` and exit 0, which is the normal outcome when another idle client claimed first or the queue is halted. Concurrent claims never hand the same event to two callers.
+
+```
+corpus queue claim-all [flags]
+```
+
+**Examples**
+
+One JSON line: `{"events":[{"id":"evt_…","type":"comment.created",…}]}`.
+
+```
+corpus queue claim-all
+```
+
+Drive a loop over the claimed event ids.
+
+```
+corpus queue claim-all | jq -r '.events[].id'
+```
+
+### `corpus queue complete`
+
+Mark a claimed event processed.
+
+Moves the event from `in-progress/` to `processed/`. Idempotent: completing an already-completed event is not an error, so a duplicated call after a retry exits 0 like the first. The confirmation states the event's state rather than claiming a transition — the response carries no status, so the CLI cannot tell the two apart and does not pretend to. An unknown id is a server error (exit 5).
+
+```
+corpus queue complete <event-id> [flags]
+```
+
+**Arguments**
+
+| Argument   | Required | Description                                             |
+| ---------- | -------- | ------------------------------------------------------- |
+| `event-id` | yes      | The event's id, as printed by `corpus queue claim-all`. |
+
+**Examples**
+
+Finish an event that was handled.
+
+```
+corpus queue complete evt_9f2a
+```
+
+Machine-readable form: the event as one JSON value.
+
+```
+corpus queue complete evt_9f2a --json
+```
+
+### `corpus queue fail`
+
+Mark a claimed event failed.
+
+Moves the event to `failed/`, where the console can retry it — the recoverable half of giving up (`abandon` is the other). A bare `fail` sends no request body at all; `--reason` records why, and is shown in the console.
+
+```
+corpus queue fail <event-id> [flags]
+```
+
+**Arguments**
+
+| Argument   | Required | Description                                             |
+| ---------- | -------- | ------------------------------------------------------- |
+| `event-id` | yes      | The event's id, as printed by `corpus queue claim-all`. |
+
+**Flags**
+
+| Flag              | Type   | Default | Description                                                              |
+| ----------------- | ------ | ------- | ------------------------------------------------------------------------ |
+| `--reason <text>` | string | —       | Why the event failed. Omitted entirely when not given, never sent empty. |
+
+**Examples**
+
+Fail an event and say why.
+
+```
+corpus queue fail evt_9f2a --reason "the parent document was deleted"
+```
+
+Fail without an annotation.
+
+```
+corpus queue fail evt_9f2a
+```
+
+### `corpus queue halt`
+
+Stop the agent consuming events.
+
+Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns an empty batch and `idle` parks for its full window without ever returning events — but events keep enqueuing, so nothing is lost and `resume` makes them available again. Idempotent: halting an already-halted queue re-records the sentinel. A bare halt sends no body; `--reason` is recorded beside the halt timestamp so whoever finds the queue stopped can see why, and a later bare halt rewrites the sentinel without one.
+
+```
+corpus queue halt [flags]
+```
+
+**Flags**
+
+| Flag              | Type   | Default | Description                                                       |
+| ----------------- | ------ | ------- | ----------------------------------------------------------------- |
+| `--reason <text>` | string | —       | Why the queue is halted, recorded in the `.corpus/HALT` sentinel. |
+
+**Examples**
+
+Stop the agent from picking up work.
+
+```
+corpus queue halt
+```
+
+Halt with a note for whoever finds it stopped.
+
+```
+corpus queue halt --reason "migrating the corpus"
+```
+
+### `corpus queue idle`
+
+Park until work arrives, then exit.
+
+Long-polls `GET /api/queue/idle` and returns the instant a pending event exists or arrives. Parking costs the agent zero tokens and prints nothing at all: the command is blocked on a response, not looping. When the window elapses with nothing pending it exits **0** with a timeout value (`{"idle":true,"reason":"timeout"}`), so the orchestrate skill's loop simply re-invokes it — a timeout is not an error. While the queue is halted, idle parks for the full window and reports `reason: "halted"` instead, which costs one extra `GET /api/queue/status` on expiry (the `204` carries no halted indicator). **Idle observes and never claims**: the events stay in `pending/` until `corpus queue claim-all`, so a crash between the two loses nothing. Ctrl-C exits 0 with no output.
+
+```
+corpus queue idle [flags]
+```
+
+**Flags**
+
+| Flag               | Type   | Default | Description                                                                                                                                                                                                                       |
+| ------------------ | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--wait <seconds>` | number | `480`   | How long to park before exiting with a timeout. The server holds each request for at most its own maximum, so a longer window is served by successive requests. `0` is a single non-blocking probe: is anything queued right now? |
+
+**Examples**
+
+Park for the default rearm window; prints one line per event when work lands.
+
+```
+corpus queue idle
+```
+
+The agent loop's form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}]}` on work, `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` on expiry.
+
+```
+corpus queue idle --json
+```
+
+Probe the queue without blocking, for a script that must not park.
+
+```
+corpus queue idle --wait 0 --json
+```
+
+### `corpus queue reap-stale`
+
+Return events stranded by a crashed run to pending.
+
+Moves events left in `in-progress/` by an agent session that died back to `pending/`, so a crash cannot strand work. The staleness threshold belongs to the server, not to this command, so there is nothing to configure here. Reaping nothing is silent and exits 0.
+
+```
+corpus queue reap-stale [flags]
+```
+
+**Examples**
+
+Recover work stranded by a crashed agent session.
+
+```
+corpus queue reap-stale
+```
+
+One JSON value: `{"reaped":["evt_9f2a"]}`, empty when nothing was stale.
+
+```
+corpus queue reap-stale --json
+```
+
+### `corpus queue resume`
+
+Let the agent consume events again.
+
+Removes the `.corpus/HALT` sentinel. Events that arrived while halted are still pending, so the next `idle` returns them. Idempotent: resuming a running queue is not an error.
+
+```
+corpus queue resume [flags]
+```
+
+**Examples**
+
+Lift the halt.
+
+```
+corpus queue resume
+```
+
+### `corpus queue status`
+
+Show the halt state and the queue depth.
+
+Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each of `pending`, `in-progress`, `processed`, `failed` and `abandoned`.
+
+```
+corpus queue status [flags]
+```
+
+**Examples**
+
+Is the queue halted, and how deep is it?
+
+```
+corpus queue status
+```
+
+One JSON value: `{"halted":false,"pending":0,"inProgress":0,"processed":12,"failed":0,"abandoned":0}`.
+
+```
+corpus queue status --json
 ```
 
 ## `corpus server`

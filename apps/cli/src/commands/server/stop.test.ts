@@ -19,6 +19,7 @@ function client(health: Health | undefined): CliClient {
   return {
     baseUrl: "http://127.0.0.1:8790",
     api: undefined as never,
+    untimedApi: undefined as never,
     request: <T>() =>
       health === undefined
         ? Promise.reject(new ServerUnreachableError("nothing there"))

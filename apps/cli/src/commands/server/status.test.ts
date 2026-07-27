@@ -29,6 +29,7 @@ function client(health: Health | undefined): CliClient {
   return {
     baseUrl: WORKSPACE.baseUrl,
     api: undefined as never,
+    untimedApi: undefined as never,
     request: <T>() =>
       health === undefined
         ? Promise.reject(new ServerUnreachableError("nothing there"))
