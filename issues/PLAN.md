@@ -93,6 +93,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-011 | Console drawer: jobs master-detail, live logs, HALT | todo | P1 | UI-002, SERVER-009 |
 | CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | todo | P1 | CONTRACT-002 |
 | SERVER-016 | Form answer write path (form.respond producer) | todo | P1 | CONTRACT-007, SERVER-006 |
+| SERVER-020 | Watcher path breaks the tree-key invariant (heuristic vs. signature) | todo | P2 | SERVER-018 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | todo | P1 | INFRA-003, UI-001 |
 
 ---
