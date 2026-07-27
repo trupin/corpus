@@ -21,6 +21,7 @@
 //     delete.
 
 import type { Actor, DeleteDocResult } from "@corpus/contract";
+import { removeThreadAttachments } from "../attachments/index.js";
 import { serializeDocument, setFrontmatterFields, withoutAnchorEntry } from "../core/index.js";
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { forbidden } from "../errors.js";
@@ -133,6 +134,12 @@ export async function deleteDocumentLocked(
       mayChangeTree: true,
     },
   });
+
+  // After the mutation, never before: bytes removed for a deletion that then
+  // failed are unrecoverable, while bytes left behind for a moment are not.
+  // Ordinary documents have none — only threads own attachment directories
+  // (SPEC.md §6) — and removal is a no-op when the directory never existed.
+  if (isThread) removeThreadAttachments(workspace.attachmentsRoot, id);
 
   return {
     result: { deletedId: id, orphanedThreadIds, warnings: [...mutation.warnings] },

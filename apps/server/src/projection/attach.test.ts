@@ -7,6 +7,7 @@ import type { ServerConfig } from "../config.js";
 import { silentLogger } from "../logger.js";
 import { attachProjection, openWorkspaceProjection } from "./attach.js";
 import { cacheDbPath } from "./db.js";
+import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 
@@ -32,6 +33,7 @@ function makeConfig(): ServerConfig {
   return {
     workspaceRoot,
     corpusDir: join(workspaceRoot, ".corpus"),
+    attachments: DEFAULT_ATTACHMENT_LIMITS,
     dataDir: join(workspaceRoot, "data"),
     configPath: join(workspaceRoot, ".corpus", "config.json"),
     host: "127.0.0.1",

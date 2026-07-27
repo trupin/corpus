@@ -1,3 +1,4 @@
+import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +35,7 @@ function makeConfig(): ServerConfig {
   return {
     workspaceRoot,
     corpusDir: join(workspaceRoot, ".corpus"),
+    attachments: DEFAULT_ATTACHMENT_LIMITS,
     dataDir: join(workspaceRoot, "data"),
     configPath: join(workspaceRoot, ".corpus", "config.json"),
     host: "127.0.0.1",

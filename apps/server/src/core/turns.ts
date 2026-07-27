@@ -99,21 +99,33 @@ export type AppendTurnInput = {
 };
 
 /**
+ * The timestamp the next turn will carry — `requested` when it is strictly
+ * greater than every stamp already in the thread, and the bump otherwise.
+ *
+ * Split out of {@link appendTurn} because attachments need the stamp *before*
+ * the body exists: it names the directory the bytes go in, and the body then
+ * quotes that directory in its reference lines (SPEC.md §6). Deriving it twice
+ * would be two chances to disagree about which turn the bytes belong to.
+ */
+export const nextTurnTs = (body: string, requestedTs?: string): string => {
+  const latestMs = scanTurnBlocks(body).reduce<number>(
+    (latest, turn) => Math.max(latest, instantToEpochMs(turn.ts) ?? Number.NEGATIVE_INFINITY),
+    Number.NEGATIVE_INFINITY,
+  );
+  const requested = requestedTs === undefined ? nowIso() : normalizeInstant(requestedTs);
+  if (requested === null) throw new TypeError(`Not an ISO-8601 instant: ${String(requestedTs)}`);
+  const requestedMs = instantToEpochMs(requested) ?? Number.NEGATIVE_INFINITY;
+  return requestedMs > latestMs ? requested : formatInstant(latestMs + MILLISECONDS_PER_SECOND);
+};
+
+/**
  * Append a turn, guaranteeing its timestamp is strictly greater than every
  * timestamp already in the thread. A caller supplying a stale or duplicate `ts`
  * has it bumped rather than rejected: timestamps are identity (§6), and the one
  * writer of this format is the only place that invariant can be enforced.
  */
 export const appendTurn = (body: string, input: AppendTurnInput): { body: string; turn: Turn } => {
-  const latestMs = scanTurnBlocks(body).reduce<number>(
-    (latest, turn) => Math.max(latest, instantToEpochMs(turn.ts) ?? Number.NEGATIVE_INFINITY),
-    Number.NEGATIVE_INFINITY,
-  );
-  const requested = input.ts === undefined ? nowIso() : normalizeInstant(input.ts);
-  if (requested === null) throw new TypeError(`Not an ISO-8601 instant: ${String(input.ts)}`);
-  const requestedMs = instantToEpochMs(requested) ?? Number.NEGATIVE_INFINITY;
-  const ts = requestedMs > latestMs ? requested : formatInstant(latestMs + MILLISECONDS_PER_SECOND);
-
+  const ts = nextTurnTs(body, input.ts);
   const turn: Turn = { author: input.author, ts, body: input.text.trim() };
   const head = body.replace(/[ \t\r\n]*$/, "");
   return { body: head === "" ? renderTurn(turn) : `${head}\n\n${renderTurn(turn)}`, turn };

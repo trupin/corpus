@@ -21,6 +21,7 @@ import {
 } from "./errors.js";
 import { createLogger, silentLogger, type LogSink } from "./logger.js";
 import { UI_MISSING_MESSAGE } from "./static-ui.js";
+import { DEFAULT_ATTACHMENT_LIMITS } from "./attachments/index.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
@@ -39,6 +40,7 @@ function makeConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
   return {
     workspaceRoot: join(root, "ws"),
     corpusDir: join(root, "ws", ".corpus"),
+    attachments: DEFAULT_ATTACHMENT_LIMITS,
     dataDir: join(root, "ws", "data"),
     configPath: join(root, "ws", ".corpus", "config.json"),
     host: "127.0.0.1",

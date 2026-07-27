@@ -12,11 +12,26 @@
 // grows. An explicit `false` still creates both files — it is a capture the user
 // wants to file themselves, not a capture that did not happen.
 //
-// **Attachments are refused honestly** (Open Conflict 4): the multipart form is
-// parsed, a text-only capture is fully supported, and a `files` part gets a
-// `400` naming SERVER-010 rather than bytes nothing can serve.
+// **Attachments belong to the conversation, not to the document** (SPEC.md §6,
+// SERVER-010). A capture's files land on the *filing thread's* first turn —
+// `.corpus/attachments/<threadId>/<turn-ts>/` — and only that turn's body gains
+// the reference lines. The inbox document keeps the captured text alone: §6 puts
+// attachments on *turns*, and a document body quoting bytes the user attached to
+// a message would be the server inventing content. "Screenshot + one line is a
+// first-class capture" is satisfied by the thread the screenshot is attached to.
+//
+// `CaptureRequestSchema.text` stays `min(1)` and mandatory, so an
+// attachment-only capture remains a `400` — that is the contract's rule, not
+// this module's, and SERVER-010 does not change it.
 
 import type { Actor, CaptureRequest, CaptureResult } from "@corpus/contract";
+import {
+  DEFAULT_ATTACHMENT_LIMITS,
+  assertWithinLimits,
+  attachmentReferences,
+  removeTurnAttachments,
+  withAttachmentReferences,
+} from "../attachments/index.js";
 import {
   DEFAULT_DOC_FOLDER,
   DOCS_ROOT,
@@ -36,7 +51,6 @@ import {
   loadDocument,
   runMutation,
   validateBeforeWrite,
-  validationError,
   type DocumentMutex,
   type MutationResult,
 } from "../docs/index.js";
@@ -48,6 +62,7 @@ import {
   enqueueComment,
   firstProseLine,
   parseMentions,
+  storeTurnFiles,
   type ThreadsWorkspace,
 } from "../threads/index.js";
 
@@ -58,9 +73,6 @@ export const CAPTURE_DOC_TYPE = "note";
 export const CAPTURE_TITLE_LENGTH = 80;
 
 export const UNTITLED_CAPTURE = "Untitled capture";
-
-export const CAPTURE_ATTACHMENTS_DEFERRED_MESSAGE =
-  "attachments are not accepted yet: ingest and serving land in SERVER-010";
 
 /**
  * What the filing thread's first turn says. The wording is this module's; what
@@ -90,11 +102,7 @@ export async function captureDocument(
   actor: Actor,
   request: CaptureRequest,
 ): Promise<CaptureOutcome> {
-  if (request.files.length > 0) {
-    validationError(CAPTURE_ATTACHMENTS_DEFERRED_MESSAGE, [
-      { path: "files", message: CAPTURE_ATTACHMENTS_DEFERRED_MESSAGE },
-    ]);
-  }
+  assertWithinLimits(request.files, workspace.attachmentLimits ?? DEFAULT_ATTACHMENT_LIMITS);
 
   // One lane: both ids are minted against the projection and the document's
   // filename is deduped against the filesystem, so a concurrent capture of the
@@ -143,66 +151,83 @@ export async function captureDocument(
       }),
     );
 
-    const turnText = `${request.text}\n\n${FILING_REQUEST}`;
-    const { body, turn } = appendTurn("", { author: actor, text: turnText, ts: stamp });
-    const threadPath = `${THREADS_ROOT}/${threadId}.md`;
-    const threadText = serializeDocument(
-      setFrontmatterFields(emptyDocument(body), {
-        id: threadId,
-        type: "thread",
-        title: deriveThreadTitle({ parentTitle: title, body: turnText }),
-        created: stamp,
-        updated: stamp,
-        tags: [],
-        status: "open",
-        parent: docId,
-        anchor: null,
-        agent: decision.agent,
-      }),
-    );
-
-    const warnings = [
-      ...validateBeforeWrite(workspace, docPath, docText),
-      ...validateBeforeWrite(workspace, threadPath, threadText),
-    ];
-
-    const mutation = await runMutation(workspace, {
-      docId,
-      actor,
-      warnings,
-      plan: {
-        operations: [
-          { kind: "write", path: docPath, content: docText },
-          { kind: "write", path: threadPath, content: threadText },
-        ],
-        stage: [docPath, threadPath],
-        project: [docPath, threadPath],
-        unproject: [],
-        commit: { subject: `capture: ${title} (${docId}) by ${actor}` },
-        keys: [DOCS_KEY, docKey(docId), docKey(threadId), threadKey(threadId)],
-        // The captured document lands in a folder under `data/docs/`, and its
-        // filing thread counts there too.
-        mayChangeTree: true,
-      },
-    });
-
-    const eventId = decision.enqueue
-      ? await enqueueComment(workspace, {
+    // Bytes before markdown: the stamp names their directory and the turn body
+    // quotes it, so a reference can never be committed ahead of the file. A
+    // failure after this point removes them again — §6 forbids a committed
+    // reference to a file that does not exist.
+    const stored = await storeTurnFiles(workspace, threadId, stamp, request.files);
+    try {
+      const turnText = withAttachmentReferences(
+        `${request.text}\n\n${FILING_REQUEST}`,
+        attachmentReferences(
           threadId,
-          parentId: docId,
-          turnTs: turn.ts,
-          parsed,
-          source: EVENT_SOURCE.capture,
-        })
-      : null;
+          stamp,
+          stored.map((file) => file.name),
+        ),
+      );
+      const { body, turn } = appendTurn("", { author: actor, text: turnText, ts: stamp });
+      const threadPath = `${THREADS_ROOT}/${threadId}.md`;
+      const threadText = serializeDocument(
+        setFrontmatterFields(emptyDocument(body), {
+          id: threadId,
+          type: "thread",
+          title: deriveThreadTitle({ parentTitle: title, body: turnText }),
+          created: stamp,
+          updated: stamp,
+          tags: [],
+          status: "open",
+          parent: docId,
+          anchor: null,
+          agent: decision.agent,
+        }),
+      );
 
-    // Read back rather than trusting the plan: the capture answers with ids, and
-    // an id that names no readable document would be a lie the client caches.
-    loadDocument(workspace.workspaceRoot, workspace.projection, docId);
+      const warnings = [
+        ...validateBeforeWrite(workspace, docPath, docText),
+        ...validateBeforeWrite(workspace, threadPath, threadText),
+      ];
 
-    return {
-      result: { docId, threadId, eventId, warnings: [...mutation.warnings] },
-      mutation,
-    };
+      const mutation = await runMutation(workspace, {
+        docId,
+        actor,
+        warnings,
+        plan: {
+          operations: [
+            { kind: "write", path: docPath, content: docText },
+            { kind: "write", path: threadPath, content: threadText },
+          ],
+          stage: [docPath, threadPath],
+          project: [docPath, threadPath],
+          unproject: [],
+          commit: { subject: `capture: ${title} (${docId}) by ${actor}` },
+          keys: [DOCS_KEY, docKey(docId), docKey(threadId), threadKey(threadId)],
+          // The captured document lands in a folder under `data/docs/`, and its
+          // filing thread counts there too.
+          mayChangeTree: true,
+        },
+      });
+
+      const eventId = decision.enqueue
+        ? await enqueueComment(workspace, {
+            threadId,
+            parentId: docId,
+            turnTs: turn.ts,
+            parsed,
+            source: EVENT_SOURCE.capture,
+          })
+        : null;
+
+      // Read back rather than trusting the plan: the capture answers with ids, and
+      // an id that names no readable document would be a lie the client caches.
+      loadDocument(workspace.workspaceRoot, workspace.projection, docId);
+
+      return {
+        result: { docId, threadId, eventId, warnings: [...mutation.warnings] },
+        mutation,
+      };
+    } catch (error) {
+      if (stored.length > 0) removeTurnAttachments(workspace.attachmentsRoot, threadId, stamp);
+      throw error;
+    }
   });
 }

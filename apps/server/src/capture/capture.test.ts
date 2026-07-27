@@ -171,23 +171,35 @@ describe("POST /api/capture", () => {
     expect(raw.payload.skills.map((skill) => skill.name)).toEqual(["comment"]);
   });
 
-  it("refuses attachments honestly, naming the issue that will accept them", async () => {
-    const before = ws.log("%H").length;
+  // Replaces the SERVER-010 refusal: "screenshot + one line is a first-class
+  // capture" (§6) now works, and nothing in the response still names the issue.
+  it("files an attachment on the filing thread, leaving the document text alone", async () => {
     const response = await postForm(ws, "/api/capture", [
       ["text", "screenshot plus a line"],
       ["files", new File(["bytes"], "shot.png", { type: "image/png" })],
     ]);
-    const payload = (await response.json()) as { issues: { path: string; message: string }[] };
+    const payload = (await response.json()) as { docId: string; threadId: string };
 
-    expect(response.status).toBe(400);
-    expect(payload.issues[0]?.path).toBe("files");
-    expect(payload.issues[0]?.message).toContain("SERVER-010");
-    expect(ws.log("%H")).toHaveLength(before);
-    expect(inboxFiles()).toEqual([]);
+    expect(response.status).toBe(201);
+    expect(JSON.stringify(payload)).not.toContain("SERVER-010");
+
+    const turn = turnsOf(ws, payload.threadId)[0];
+    expect(turn?.body).toContain("![shot.png](attachments/");
+    expect(ws.exists(`.corpus/attachments/${payload.threadId}/${turn?.ts ?? ""}/shot.png`)).toBe(
+      true,
+    );
+    // The attachment belongs to the conversation, not to the document (§6).
+    const docPath = inboxFiles()[0] ?? "";
+    expect(ws.read(`data/docs/inbox/${docPath}`)).not.toContain("attachments/");
   });
 
-  it("refuses an empty capture", async () => {
+  it("refuses an empty capture, with or without a file", async () => {
     expect((await postForm(ws, "/api/capture", [["text", ""]])).status).toBe(400);
+    // `CaptureRequestSchema.text` is `min(1)` and mandatory: an attachment-only
+    // capture is impossible by contract, and SERVER-010 does not change that.
+    expect(
+      (await postForm(ws, "/api/capture", [["files", new File(["bytes"], "shot.png")]])).status,
+    ).toBe(400);
   });
 
   it("records the agent as the author when it captures", async () => {

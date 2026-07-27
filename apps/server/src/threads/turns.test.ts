@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ATTACHMENTS_DEFERRED_MESSAGE, turnRequestBody } from "./turns.js";
+import { turnRequestBody } from "./turns.js";
 import {
   appendTurn,
   createDoc,
@@ -148,20 +148,39 @@ describe("POST /api/threads/{id}/turns — multipart", () => {
     expect(pendingEvents(ws)).toHaveLength(before);
   });
 
-  it("refuses attachments honestly, naming the issue that will accept them", async () => {
+  // Replaces the SERVER-010 refusal this route used to answer with: the same
+  // request now succeeds, and no response body anywhere still names the issue.
+  it("accepts attachments and references them from the committed turn", async () => {
     const created = await createThread(ws, { body: "first" });
-    const before = ws.read(threadPath(created.id));
 
     const response = await postForm(ws, `/api/threads/${created.id}/turns`, [
       ["text", "with a file"],
       ["files", new File(["bytes"], "shot.png", { type: "image/png" })],
     ]);
-    const payload = (await response.json()) as { issues: { path: string; message: string }[] };
+    const payload = (await response.json()) as { turn: { ts: string; body: string } };
 
-    expect(response.status).toBe(400);
-    expect(payload.issues[0]?.path).toBe("files");
-    expect(payload.issues[0]?.message).toContain("SERVER-010");
-    expect(ws.read(threadPath(created.id))).toBe(before);
+    expect(response.status).toBe(201);
+    expect(payload.turn.body).toContain("![shot.png](attachments/");
+    expect(JSON.stringify(payload)).not.toContain("SERVER-010");
+    expect(ws.exists(`.corpus/attachments/${created.id}/${payload.turn.ts}/shot.png`)).toBe(true);
+  });
+
+  it("accepts an attachment-only turn and refuses one with neither text nor files", async () => {
+    const created = await createThread(ws, { body: "first" });
+
+    const only = await postForm(ws, `/api/threads/${created.id}/turns`, [
+      ["files", new File(["bytes"], "notes.pdf")],
+    ]);
+    const payload = (await only.json()) as { turn: { ts: string; body: string } };
+    expect(only.status).toBe(201);
+    expect(payload.turn.body).toBe(
+      `[notes.pdf](attachments/${created.id}/${encodeURIComponent(payload.turn.ts)}/notes.pdf)`,
+    );
+
+    const empty = await postForm(ws, `/api/threads/${created.id}/turns`, []);
+    const problem = (await empty.json()) as { issues: unknown[] };
+    expect(empty.status).toBe(400);
+    expect(problem.issues.length).toBeGreaterThan(0);
   });
 
   it("refuses a request that declares no validatable body", async () => {
@@ -179,21 +198,27 @@ describe("turnRequestBody", () => {
     expect(turnRequestBody({ body: "hi", requestsAgent: false })).toEqual({
       text: "hi",
       requestsAgent: false,
+      files: [],
     });
-    expect(turnRequestBody({ body: "hi" })).toEqual({ text: "hi", requestsAgent: undefined });
+    expect(turnRequestBody({ body: "hi" })).toEqual({
+      text: "hi",
+      requestsAgent: undefined,
+      files: [],
+    });
   });
 
-  it("refuses a multipart body carrying files", () => {
+  it("carries the multipart form's files through, and its absent text", () => {
     const file = new File(["bytes"], "a.png");
-    expect(() => turnRequestBody({ text: "x", files: [file] })).toThrow(
-      ATTACHMENTS_DEFERRED_MESSAGE,
-    );
-  });
-
-  // The schema's refine rejects this shape first; the rule is restated where the
-  // type can see it, and becomes reachable when SERVER-010 allows text-less turns.
-  it("refuses a multipart body with neither text nor files", () => {
-    expect(() => turnRequestBody({ files: [] })).toThrow(/needs text/);
+    expect(turnRequestBody({ text: "x", files: [file] })).toEqual({
+      text: "x",
+      requestsAgent: undefined,
+      files: [file],
+    });
+    expect(turnRequestBody({ files: [file] })).toEqual({
+      text: undefined,
+      requestsAgent: undefined,
+      files: [file],
+    });
   });
 });
 

@@ -1,3 +1,4 @@
+import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -43,6 +44,7 @@ let keys: QueryKey[];
 const config = (workspaceRoot: string): ServerConfig => ({
   workspaceRoot,
   corpusDir: join(workspaceRoot, ".corpus"),
+  attachments: DEFAULT_ATTACHMENT_LIMITS,
   dataDir: join(workspaceRoot, "data"),
   configPath: join(workspaceRoot, ".corpus", "config.json"),
   host: "127.0.0.1",

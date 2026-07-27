@@ -7,6 +7,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
+import {
+  DEFAULT_MAX_FILE_BYTES,
+  DEFAULT_MAX_REQUEST_BYTES,
+  type AttachmentLimits,
+} from "./attachments/index.js";
 import { ConfigError } from "./errors.js";
 import { LogLevelSchema, type LogLevel } from "./logger.js";
 
@@ -64,12 +69,27 @@ export function isLoopbackHost(host: string): boolean {
  * `host` is any string here; loopback-only is a *semantic* boot rule owned by
  * the component that binds (see {@link nonLoopbackBindError}).
  */
+/**
+ * Attachment upload caps (SPEC.md §6, SERVER-010). Optional with defaults, so a
+ * workspace `corpus init` created before this key existed still parses — and so
+ * an operator raising the cap for a workspace full of screenshots edits one
+ * number rather than rebuilding anything.
+ */
+export const AttachmentConfigSchema = z.object({
+  maxFileBytes: z.number().int().min(0).default(DEFAULT_MAX_FILE_BYTES),
+  maxRequestBytes: z.number().int().min(0).default(DEFAULT_MAX_REQUEST_BYTES),
+});
+
 export const WorkspaceConfigSchema = z.object({
   version: z.literal(1),
   port: z.number().int().min(1).max(65535).default(DEFAULT_PORT),
   host: z.string().default(DEFAULT_HOST),
   token: z.string().min(1),
   dataDir: z.string().min(1).default(DEFAULT_DATA_DIR),
+  attachments: AttachmentConfigSchema.default({
+    maxFileBytes: DEFAULT_MAX_FILE_BYTES,
+    maxRequestBytes: DEFAULT_MAX_REQUEST_BYTES,
+  }),
 });
 
 /**
@@ -90,6 +110,7 @@ export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 export interface ServerConfig {
   readonly workspaceRoot: string;
   readonly corpusDir: string;
+  readonly attachments: AttachmentLimits;
   readonly dataDir: string;
   readonly configPath: string;
   readonly host: string;
@@ -280,6 +301,7 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
   return {
     workspaceRoot: workspace.root,
     corpusDir: join(workspace.root, CORPUS_DIR),
+    attachments: config.attachments,
     dataDir: resolve(workspace.root, config.dataDir),
     configPath: join(workspace.root, CORPUS_DIR, CONFIG_FILE),
     host: config.host,

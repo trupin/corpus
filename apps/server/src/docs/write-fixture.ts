@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createServer, type CorpusServer } from "../app.js";
+import { DEFAULT_ATTACHMENT_LIMITS, type AttachmentLimits } from "../attachments/index.js";
 import type { ServerConfig } from "../config.js";
 import { sanitizeGitEnv } from "../git/index.js";
 import {
@@ -62,11 +63,18 @@ export interface WriteWorkspaceOptions {
    * fixture; SERVER-006's thread suites pass their own.
    */
   readonly sprint?: string | undefined;
+  /**
+   * Attachment caps, for the suites that prove the limit is read from
+   * configuration rather than hard-coded (SERVER-010). Defaults to the shipped
+   * values, so no other fixture has to know they exist.
+   */
+  readonly attachments?: AttachmentLimits | undefined;
 }
 
-const serverConfig = (workspaceRoot: string): ServerConfig => ({
+const serverConfig = (workspaceRoot: string, attachments: AttachmentLimits): ServerConfig => ({
   workspaceRoot,
   corpusDir: join(workspaceRoot, ".corpus"),
+  attachments,
   dataDir: join(workspaceRoot, "data"),
   configPath: join(workspaceRoot, ".corpus", "config.json"),
   host: "127.0.0.1",
@@ -118,7 +126,7 @@ export function createWriteWorkspace(
     );
   }
 
-  const config = serverConfig(workspaceRoot);
+  const config = serverConfig(workspaceRoot, options.attachments ?? DEFAULT_ATTACHMENT_LIMITS);
   const db = openProjection(config, { populate: false });
 
   const state = { clock: FIXTURE_NOW };

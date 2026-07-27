@@ -8,6 +8,7 @@ import type { ServerConfig } from "../config.js";
 import { silentLogger } from "../logger.js";
 import { attachProjection, openWorkspaceProjection } from "../projection/index.js";
 import { attachWatcher } from "./attach.js";
+import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
@@ -30,6 +31,7 @@ function makeConfig(): ServerConfig {
   return {
     workspaceRoot,
     corpusDir: join(workspaceRoot, ".corpus"),
+    attachments: DEFAULT_ATTACHMENT_LIMITS,
     dataDir: join(workspaceRoot, "data"),
     configPath: join(workspaceRoot, ".corpus", "config.json"),
     host: "127.0.0.1",

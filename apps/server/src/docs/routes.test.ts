@@ -5,6 +5,7 @@ import { createServer, type CorpusServer } from "../app.js";
 import type { ServerConfig } from "../config.js";
 import { formatInstant } from "../core/time.js";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
+import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
@@ -18,6 +19,7 @@ let server: CorpusServer;
 const config = (workspaceRoot: string): ServerConfig => ({
   workspaceRoot,
   corpusDir: join(workspaceRoot, ".corpus"),
+  attachments: DEFAULT_ATTACHMENT_LIMITS,
   dataDir: join(workspaceRoot, "data"),
   configPath: join(workspaceRoot, ".corpus", "config.json"),
   host: "127.0.0.1",

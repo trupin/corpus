@@ -15,6 +15,7 @@ import { createServer, type CorpusServer } from "../app.js";
 import { HaltSentinelSchema, type HaltSentinel } from "./store.js";
 import type { ServerConfig } from "../config.js";
 import { silentLogger } from "../logger.js";
+import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
@@ -26,6 +27,7 @@ function makeConfig(): ServerConfig {
   return {
     workspaceRoot: root,
     corpusDir: join(root, ".corpus"),
+    attachments: DEFAULT_ATTACHMENT_LIMITS,
     dataDir: join(root, "data"),
     configPath: join(root, ".corpus", "config.json"),
     host: "127.0.0.1",

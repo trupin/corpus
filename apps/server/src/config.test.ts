@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_ATTACHMENT_LIMITS } from "./attachments/index.js";
 import { ConfigError } from "./errors.js";
 import {
   CONFIG_RELATIVE_PATH,
@@ -76,6 +77,19 @@ describe("WorkspaceConfigSchema", () => {
       host: DEFAULT_HOST,
       token: LONG_TOKEN,
       dataDir: DEFAULT_DATA_DIR,
+      attachments: DEFAULT_ATTACHMENT_LIMITS,
+    });
+  });
+
+  it("takes attachment caps from the file, and defaults each one independently", () => {
+    const parsed = WorkspaceConfigSchema.parse({
+      version: 1,
+      token: LONG_TOKEN,
+      attachments: { maxFileBytes: 1024 },
+    });
+    expect(parsed.attachments).toEqual({
+      maxFileBytes: 1024,
+      maxRequestBytes: DEFAULT_ATTACHMENT_LIMITS.maxRequestBytes,
     });
   });
 

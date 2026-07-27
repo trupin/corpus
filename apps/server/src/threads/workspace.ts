@@ -10,6 +10,7 @@
  * marks, §7).
  */
 
+import type { AttachmentLimits } from "../attachments/index.js";
 import type { DocsWorkspace } from "../docs/index.js";
 
 /** What an enqueue answers with; only the id reaches the wire. */
@@ -35,6 +36,12 @@ export interface ThreadsWorkspace extends DocsWorkspace {
   /** `.corpus/`, which holds `seen.json`. */
   readonly corpusDir: string;
   readonly enqueue: EnqueueEvent;
+  /**
+   * Upload caps (SERVER-010). Read from `.corpus/config.json` by `createServer`;
+   * `undefined` falls back to the documented defaults, so a test workspace needs
+   * no configuration to accept an attachment.
+   */
+  readonly attachmentLimits?: AttachmentLimits | undefined;
 }
 
 /**

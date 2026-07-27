@@ -22,6 +22,7 @@
 // payload that names one.
 
 import type { Actor, DeleteTurnResult } from "@corpus/contract";
+import { removeTurnAttachments } from "../attachments/index.js";
 import {
   formatInstant,
   deleteTurn as removeTurn,
@@ -130,6 +131,12 @@ export async function deleteThreadTurn(
         keys,
       },
     });
+
+    // This turn's bytes only — sibling turns keep theirs. After the mutation,
+    // for the reason `deleteDocumentLocked` states: a deletion that failed must
+    // not have cost anyone their files. The last-turn branch above reaches
+    // `deleteDocumentLocked`, which removes the whole thread's directory.
+    removeTurnAttachments(workspace.attachmentsRoot, id, turn.ts);
 
     return {
       result: {

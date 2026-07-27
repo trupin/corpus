@@ -20,6 +20,12 @@ import {
   toHttpError,
   toValidationIssues,
 } from "./errors.js";
+import {
+  attachmentsRootOf,
+  createRawAttachmentPathGuard,
+  createUploadSizeGuard,
+  mountAttachmentRoutes,
+} from "./attachments/index.js";
 import { mountCaptureRoutes } from "./capture/index.js";
 import { createDocumentMutex, mountDocsRoutes, type DocsWorkspace } from "./docs/index.js";
 import { mountThreadRoutes, type ThreadsWorkspace } from "./threads/index.js";
@@ -212,7 +218,25 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
   const headerAuth = createBearerAuth({ token: config.token });
   app.use("/api/*", headerAuth);
+  // Both forms: `/attachments` alone is answered by the attachment route's own
+  // uniform 404 rather than the app's generic one, and a 404 that arrives
+  // *before* the token is checked would be a free existence probe.
+  app.use("/attachments", headerAuth);
   app.use("/attachments/*", headerAuth);
+
+  // Ahead of every route, and therefore ahead of the body validators: an upload
+  // whose declared size is already over the cap is refused from its headers,
+  // without buffering it.
+  app.use(
+    "/api/*",
+    createUploadSizeGuard(() => config.attachments),
+  );
+
+  // Global, and after the auth mounts so a token is still demanded where one is
+  // demanded: a dot-segment traversal under `/attachments` is resolved by the
+  // URL parser before routing, so by here it no longer matches the attachment
+  // path — the guard reads the target the client actually sent.
+  app.use("*", createRawAttachmentPathGuard());
   // `/events` is under neither guarded prefix, so it needs its own mount — and
   // it is the one path where `?token=` is accepted (SPEC.md §2.1: EventSource
   // cannot set headers).
@@ -300,6 +324,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       logger,
       now,
       assertWritable: (docId, actor) => guard.assertWritable(docId, actor),
+      attachmentsRoot: attachmentsRootOf(config.corpusDir),
     };
     // One mutex across both surfaces. Anchored thread creation and the deletion
     // cascade rewrite a *document's* frontmatter, so they contend with
@@ -316,6 +341,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       // mirrors it, invalidates and — the part a file drop cannot do — wakes
       // every parked `queue idle` (SPEC.md §7).
       enqueue: (input) => queue.enqueue(input),
+      attachmentLimits: config.attachments,
     };
     mountThreadRoutes(app, threadsWorkspace, mutex);
     mountCaptureRoutes(app, threadsWorkspace, mutex);
@@ -342,6 +368,11 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       invalidate: deps.invalidate ?? invalidate,
     });
   }
+
+  // Outside the projection block on purpose: serving bytes reads the filesystem
+  // and nothing else — no rows, no locks, no git — so a server built without a
+  // database still hands out attachments rather than 404ing them.
+  mountAttachmentRoutes(app, { attachmentsRoot: attachmentsRootOf(config.corpusDir) });
 
   const openApiDocument = buildOpenApiDocument();
   app.get(OPENAPI_PATH, (c) => c.json(openApiDocument, 200));

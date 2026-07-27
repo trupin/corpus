@@ -191,6 +191,14 @@ export interface DocsWorkspace {
    * lease into the contract's `423` (SPEC.md §7).
    */
   readonly assertWritable?: WriteGuard | undefined;
+  /**
+   * Absolute path of `.corpus/attachments` (SPEC.md §6, SERVER-010). Present on
+   * the *document* workspace rather than only the thread one because deleting a
+   * thread is `DELETE /api/docs/{id}` — one deletion path, so the cleanup hook
+   * has to hang where that path can reach it. `undefined` in tests that store
+   * no bytes, where every cleanup call is a no-op.
+   */
+  readonly attachmentsRoot?: string | undefined;
 }
 
 /** A 400 always carries `issues` — `ApiErrorSchema`'s `bad_request` variant requires it. */

@@ -17,6 +17,7 @@ import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { silentLogger } from "../logger.js";
 import { createProjectionQueueMirror } from "../projection/index.js";
 import { createRecordingCommitter, type RecordingCommitter } from "./git-fixture.js";
+import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
@@ -33,6 +34,7 @@ let keys: QueryKey[];
 const config = (workspaceRoot: string): ServerConfig => ({
   workspaceRoot,
   corpusDir: join(workspaceRoot, ".corpus"),
+  attachments: DEFAULT_ATTACHMENT_LIMITS,
   dataDir: join(workspaceRoot, "data"),
   configPath: join(workspaceRoot, ".corpus", "config.json"),
   host: "127.0.0.1",
