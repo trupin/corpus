@@ -57,6 +57,9 @@ Implement every write path that produces or mutates a thread: thread creation in
 
 ### Key Implementation Details
 
+- **`.corpus/seen.json` needs watcher coverage** _(sprint-004 evaluator, 2026-07-27)_: every other root re-projects out-of-band edits in ~3 s, but seen.json changes need a restart. When this issue lands the seen write path, add the file to the watcher's roots (or re-project seen on write) so read-state behaves like everything else.
+
+
 - **`.corpus/seen.json` shape pinned** _(SERVER-004 handoff, 2026-07-26)_: a flat `{threadId: isoInstant}` map — SERVER-004's projector already reads this shape into the `seen` table; write exactly it.
 
 

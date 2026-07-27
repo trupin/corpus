@@ -6,7 +6,7 @@ server
 
 ## Status
 
-in_progress
+done
 
 ## Priority
 
@@ -257,3 +257,13 @@ to `/tmp/corpus-s013-nrqLcz`; generator sweeps reproducible from recorded seeds
 - [ ] `/audit` run (if qualifying)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[SERVER-013]` prefix
+
+### Post-eval corrections (orchestrator, 2026-07-27)
+
+- The report's "zero flips outside the class" was overstated: independent A/B measured 34/28
+  out-of-class flips — **all recoveries** (false orphans 73→56), with the wholly-distinct
+  family at 0. The AC's intent (no out-of-class *harm*) held; the wording didn't.
+- TEST-64/TEST-66 tension (evaluator escalation): with an anchor's text surviving verbatim at
+  TWO locations, the engine remaps to one rather than orphaning, and the selector's context is
+  rewritten. Byte-identical on the round-2 engine — pre-existing policy, and "fixing" it would
+  violate TEST-66. Recorded as SERVER-014 (P2) rather than adjudicated here.
