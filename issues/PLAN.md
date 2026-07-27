@@ -54,7 +54,7 @@ The sole-writer server and the thin-client CLI.
 | SERVER-005 | Doc write paths + git auto-commit with author attribution | todo | P0 | SERVER-002, SERVER-004, SERVER-013 |
 | SERVER-006 | Thread write paths: creation, turns, events, cascade | todo | P0 | SERVER-005, CONTRACT-002 |
 | SERVER-007 | Watcher + SSE invalidation | in_progress | P0 | SERVER-004 |
-| SERVER-008 | Queue over HTTP: event store + long-poll | in_progress | P0 | SERVER-003, CONTRACT-002 |
+| SERVER-008 | Queue over HTTP: event store + long-poll | done | P0 | SERVER-003, CONTRACT-002 |
 | SERVER-009 | Document locks + job logs | todo | P0 | SERVER-007, CONTRACT-002 |
 | SERVER-010 | Attachments: ingest + serving | todo | P1 | SERVER-006 |
 | SERVER-011 | Collection query endpoint: filters + FTS + needs=me | in_progress | P0 | SERVER-004 |

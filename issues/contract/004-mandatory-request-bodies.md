@@ -36,6 +36,7 @@ Found during the halt-reason addendum: OpenAPI treats an omitted `requestBody.re
 - [ ] Invariant test: walk the document; any operation with a requestBody must carry an explicit `required` key (catches the class).
 - [ ] Compile-time probes: `POST /api/docs` (and one more mandatory-body route) without a body is a `tsc` error post-fix (reproduce compiling pre-fix first); `halt`/`fail` without a body still compile.
 - [ ] Consumers still typecheck: run the repo-wide typecheck; if `apps/cli`/`apps/ui` call sites break, they were latent runtime 400s — report them, fix only if within a one-line call-site correction, otherwise escalate.
+- [ ] **Rider (evaluator doc nit, sprint-003 round 2)**: `haltQueue`'s route description names only two of three outcomes — a bare re-halt also **clears** a previously recorded reason. Correct the text ("replace, add, or clear") while in `routes/queue.ts`; behavior is already correct.
 - [ ] Artifacts regenerated, byte-deterministic, drift check green.
 
 ## Technical Design
