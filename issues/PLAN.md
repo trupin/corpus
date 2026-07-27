@@ -70,7 +70,7 @@ The sole-writer server and the thin-client CLI.
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006, SERVER-017 |
 | CLI-004 | Queue, lock, job verbs (agent loop surface) | done | P0 | CLI-001, SERVER-008, SERVER-009 |
 | CONTRACT-006 | Thread-response warnings, appended honesty, db routes | done | P0 | CONTRACT-005 |
-| SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | in_progress | P1 | SERVER-004 |
+| SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | done | P1 | SERVER-004 |
 | SERVER-018 | Thread-delete `["tree"]` SSE key + thread-origin `originTitle` | todo | P2 | SERVER-006, SERVER-009 |
 
 ---
