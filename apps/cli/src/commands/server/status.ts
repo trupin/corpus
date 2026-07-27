@@ -2,7 +2,7 @@ import { CheckFailedError } from "../../errors.js";
 import { serverPidfilePath } from "../../paths.js";
 import type { WorkspaceCommandSpec } from "../../registry/types.js";
 import { removePidfile } from "./daemon.js";
-import { inspectServer, probeHealth, type ServerState } from "./state.js";
+import { foreignServerDetail, inspectServer, probeHealth, type ServerState } from "./state.js";
 
 /**
  * The one report shape, emitted under `--json` and rendered for humans from the
@@ -18,7 +18,7 @@ export interface ServerStatusReport {
   readonly startedAt: string | null;
   readonly uptimeSeconds: number | null;
   readonly version: string | null;
-  /** `stopped`, `stale pidfile removed`, `unowned pid` or `ok`. */
+  /** `stopped`, `stale pidfile removed`, `unowned pid`, a foreign holder, or `ok`. */
   readonly detail: string;
 }
 
@@ -68,6 +68,21 @@ export function buildReport(
         version: state.record.version,
         detail: `pid ${String(state.record.pid)} is alive but is not answering on :${String(state.record.port)}`,
       };
+    case "foreign":
+      return {
+        ...base,
+        running: false,
+        healthy: false,
+        pid: state.record.pid,
+        // The port that was probed, which is the config's — not the pidfile's.
+        // They differ exactly when the config was re-pointed after a start, and
+        // that is the case this state exists to report.
+        port: workspace.port,
+        startedAt: state.record.startedAt,
+        uptimeSeconds: null,
+        version: state.record.version,
+        detail: `pid ${String(state.record.pid)} is alive, and ${foreignServerDetail(workspace.port, state.health)}`,
+      };
     case "running":
       return {
         ...base,
@@ -81,6 +96,30 @@ export function buildReport(
         detail: "ok",
       };
   }
+}
+
+/**
+ * The exit-6 failure, phrased for the state that produced it: "not running" is
+ * misleading when a foreign server holds the port, because starting one here is
+ * not the remedy.
+ */
+function notRunning(
+  state: ServerState,
+  report: ServerStatusReport,
+  probedPort: number,
+): CheckFailedError {
+  if (state.kind === "foreign") {
+    return new CheckFailedError(
+      `the workspace server is not running, and ${foreignServerDetail(probedPort, state.health)}`,
+      { hint: "Give this workspace its own port: change `port` in .corpus/config.json." },
+    );
+  }
+  return new CheckFailedError(
+    state.kind === "unowned"
+      ? `the workspace server is not answering on :${String(report.port)}`
+      : "the workspace server is not running",
+    { hint: "Start it with `corpus server start`." },
+  );
 }
 
 export function renderReport(report: ServerStatusReport): string {
@@ -98,10 +137,11 @@ export const statusCommand: WorkspaceCommandSpec = {
   summary: "Report whether this workspace's server is running, and how it is doing.",
   description:
     "Combines the pidfile with a live `GET /api/health` so a stale or reused pid is never " +
-    "reported as running — a pidfile whose process is gone is cleaned up on the spot. Exits 0 " +
-    "when the server is running and answering, and 6 when it is not, so scripts can gate on " +
-    "it (`corpus server status || corpus server start`). Under `--json` the whole report is " +
-    "one object on stdout in both states.",
+    "reported as running — a pidfile whose process is gone is cleaned up on the spot. The health " +
+    "answer has to name **this** workspace: a server another workspace owns on the same port is " +
+    "reported as such, never as ours. Exits 0 when the server is running and answering, and 6 " +
+    "when it is not, so scripts can gate on it (`corpus server status || corpus server start`). " +
+    "Under `--json` the whole report is one object on stdout in both states.",
   args: [],
   flags: [],
   examples: [
@@ -121,7 +161,10 @@ export const statusCommand: WorkspaceCommandSpec = {
   handler: async (context) => {
     const { workspace, out, client } = context;
     const pidfilePath = serverPidfilePath(workspace.root);
-    const state = await inspectServer({ pidfilePath, probe: () => probeHealth(client) });
+    const state = await inspectServer({
+      pidfilePath,
+      probe: () => probeHealth(client, workspace.root),
+    });
 
     // Reporting the truth includes making it true: a pidfile naming a process
     // that no longer exists is cleaned here, not left for the next command.
@@ -131,13 +174,6 @@ export const statusCommand: WorkspaceCommandSpec = {
     out.emit(report);
     out.line(renderReport(report));
 
-    if (!report.running) {
-      throw new CheckFailedError(
-        state.kind === "unowned"
-          ? `the workspace server is not answering on :${String(report.port)}`
-          : "the workspace server is not running",
-        { hint: "Start it with `corpus server start`." },
-      );
-    }
+    if (!report.running) throw notRunning(state, report, workspace.port);
   },
 };

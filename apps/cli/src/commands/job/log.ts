@@ -1,5 +1,5 @@
 import { UsageError } from "../../errors.js";
-import { readAll, stdinCarriesABody, type InputDependencies } from "../../input.js";
+import { readAll, stdinCarriesABody, stdinStream, type InputDependencies } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
 /**
@@ -40,7 +40,7 @@ async function resolveLine(
 
   // Only the shell's own trailing newline is stripped: interior newlines are
   // part of the line, and framing the file is the server's job, not the CLI's.
-  return (await readAll(dependencies.stdin ?? process.stdin)).replace(/\r?\n$/, "");
+  return (await readAll(dependencies.stdin ?? stdinStream())).replace(/\r?\n$/, "");
 }
 
 export async function runJobLog(

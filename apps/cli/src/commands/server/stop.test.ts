@@ -78,6 +78,25 @@ describe("corpus server stop", () => {
     expect(existsSync(serverPidfilePath(root))).toBe(false);
   });
 
+  it("never signals a live pid because another workspace's server answered", async () => {
+    // The dangerous shape: something healthy IS on the port, so a probe that
+    // only asked "did anyone answer?" would treat `process.pid` as this
+    // workspace's server and SIGTERM the test runner.
+    const { root, output } = await stop({
+      label: "stop-foreign",
+      record: {
+        pid: process.pid,
+        port: 8790,
+        startedAt: "2026-07-26T10:00:00.000Z",
+        version: "1.2.3",
+      },
+      health: { ...HEALTH, workspace: "/elsewhere" },
+    });
+    expect(output).toContain(":8790 is held by another workspace's server (/elsewhere)");
+    expect(output).toContain("was left alone");
+    expect(existsSync(serverPidfilePath(root))).toBe(false);
+  });
+
   it("never signals a live pid that is not this workspace's server", async () => {
     // `process.pid` stands in for the reused pid: if `stop` signalled it, this
     // test process would die rather than fail.

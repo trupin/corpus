@@ -97,6 +97,25 @@ export interface InputDependencies {
 }
 
 /**
+ * The process's stdin, and whether it is a terminal — the **only** two places in
+ * the CLI that name `process.stdin`.
+ *
+ * Every command module goes through these accessors instead, and
+ * `commands/hygiene.test.ts` enforces that by scanning the sources: the
+ * socket-hang class CLI-007 closed (an agent harness's never-ending fd 0, read
+ * because "not a TTY" was mistaken for "piped") is a mistake that can only be
+ * made where `process.stdin` is reachable, so it is reachable in exactly one
+ * file. A rule with per-file exemptions decays; this one has none.
+ */
+export function stdinStream(): NodeJS.ReadStream {
+  return process.stdin;
+}
+
+export function stdinIsTTY(): boolean {
+  return process.stdin.isTTY === true;
+}
+
+/**
  * Whether stdin is a thing a body could arrive on — and the reason this is a
  * `fstat` rather than the obvious `!process.stdin.isTTY`.
  *
@@ -112,7 +131,7 @@ export interface InputDependencies {
  * nothing in this CLI's documented usage passes a body over one.
  */
 export function stdinCarriesABody(fd = 0): boolean {
-  if (process.stdin.isTTY === true) return false;
+  if (stdinIsTTY()) return false;
   try {
     const stats = fstatSync(fd);
     return stats.isFile() || stats.isFIFO();
@@ -156,7 +175,7 @@ export async function resolveBody(
 
   if (!(dependencies.stdinIsBodySource ?? stdinCarriesABody())) return undefined;
 
-  const piped = await readAll(dependencies.stdin ?? process.stdin);
+  const piped = await readAll(dependencies.stdin ?? stdinStream());
   return piped === "" ? undefined : piped;
 }
 

@@ -84,6 +84,31 @@ describe("buildReport", () => {
     expect(report).toMatchObject({ running: false, healthy: false, pid: RECORD.pid });
     expect(report.detail).toContain("is not answering on :8790");
   });
+
+  it("never presents another workspace's healthy server as this one's", () => {
+    const foreign: Health = { ...HEALTH, workspace: "/elsewhere" };
+    const report = buildReport({ kind: "foreign", record: RECORD, health: foreign }, WORKSPACE);
+    expect(report).toMatchObject({
+      running: false,
+      healthy: false,
+      pid: RECORD.pid,
+      uptimeSeconds: null,
+    });
+    expect(report.detail).toContain(":8790 is held by another workspace's server (/elsewhere)");
+  });
+
+  it("names the port it actually probed, not the one the old pidfile records", () => {
+    // The config was re-pointed after the server started, so the pidfile's port
+    // is not where the health question was asked. Reporting the pidfile's port
+    // would send the reader to look at the wrong socket.
+    const foreign: Health = { ...HEALTH, workspace: "/elsewhere" };
+    const report = buildReport(
+      { kind: "foreign", record: { ...RECORD, port: 8791 }, health: foreign },
+      WORKSPACE,
+    );
+    expect(report.port).toBe(8790);
+    expect(report.detail).toContain(":8790 is held");
+  });
 });
 
 describe("renderReport", () => {
@@ -100,20 +125,29 @@ describe("renderReport", () => {
 });
 
 describe("corpus server status", () => {
+  /**
+   * `answers` is what the server on the port says about *which* workspace it
+   * owns: `"ours"` names the temp workspace this run created, `"foreign"` names
+   * another one, and omitting it means nothing answered at all.
+   */
   async function run(options: {
     readonly label: string;
     readonly record?: PidfileRecord;
-    readonly health?: Health;
+    readonly answers?: "ours" | "foreign";
     readonly json?: boolean;
   }) {
     const root = makeTempDir(options.label);
     if (options.record !== undefined) writePidfile(serverPidfilePath(root), options.record);
     const harness = createTestContext({ json: options.json ?? false });
+    const health =
+      options.answers === undefined
+        ? undefined
+        : { ...HEALTH, workspace: options.answers === "ours" ? root : "/elsewhere" };
     const error = await statusCommand
       .handler({
         ...harness.context,
         workspace: workspaceAt(root),
-        client: client(options.health),
+        client: client(health),
         actor: DEFAULT_ACTOR,
       })
       .then(() => undefined)
@@ -122,9 +156,23 @@ describe("corpus server status", () => {
   }
 
   it("exits 0 when the server is running", async () => {
-    const { harness, error } = await run({ label: "status-up", record: RECORD, health: HEALTH });
+    const { harness, error } = await run({ label: "status-up", record: RECORD, answers: "ours" });
     expect(error).toBeUndefined();
     expect(harness.stdout()).toContain("running — pid");
+  });
+
+  it("exits 6 when the port answers for another workspace, and says whose it is", async () => {
+    const { root, harness, error } = await run({
+      label: "status-foreign",
+      record: RECORD,
+      answers: "foreign",
+    });
+    expect(exitCodeFor(error)).toBe(ExitCode.checkFailed);
+    expect(harness.stdout()).toContain("is held by another workspace's server (/elsewhere)");
+    expect((error as Error).message).toContain("another workspace's server");
+    // The pidfile names a live pid that is not the port's server; `stop` is the
+    // verb that clears it, not `status`.
+    expect(existsSync(serverPidfilePath(root))).toBe(true);
   });
 
   it("reports and exits 6 when the server is stopped", async () => {
@@ -135,7 +183,7 @@ describe("corpus server status", () => {
   });
 
   it("emits exactly one JSON value on stdout in both states", async () => {
-    const up = await run({ label: "status-json-up", record: RECORD, health: HEALTH, json: true });
+    const up = await run({ label: "status-json-up", record: RECORD, answers: "ours", json: true });
     expect(JSON.parse(up.harness.stdout())).toMatchObject({ running: true });
 
     const down = await run({ label: "status-json-down", json: true });
@@ -149,7 +197,7 @@ describe("corpus server status", () => {
     const { root, error } = await run({
       label: "status-stale",
       record: { ...RECORD, pid: 0x7ffffffe },
-      health: HEALTH,
+      answers: "ours",
     });
     expect(existsSync(serverPidfilePath(root))).toBe(false);
     expect(exitCodeFor(error)).toBe(ExitCode.checkFailed);

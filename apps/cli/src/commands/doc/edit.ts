@@ -45,6 +45,22 @@ export interface EditDependencies extends InputDependencies {
  * the current tags have to be read first. Only these two flags cost a read — a
  * plain body or title edit is exactly one request, which is what keeps a lock
  * conflict a single, un-retried failure.
+ *
+ * **This read-then-write is an accepted race, not an oversight** (CLI-008 item
+ * 3). Two concurrent `--add-tag` calls can each `GET` the same list and each
+ * `PUT` its own merge, and the second write wins with the first one's tag
+ * missing. Nothing in the CLI can close that window today: `PUT /api/docs/{id}`
+ * takes `ActorHeaderSchema` and nothing else — there is no `If-Match`, no ETag
+ * and no version anywhere in `packages/contract` or `apps/server`, so there is
+ * no conditional write to make this atomic. The only concurrency control the API
+ * offers is the `423` document lock, which serialises an *editing session*, not
+ * a one-shot tag edit, and taking a lock per `--add-tag` would make the cheap
+ * verb expensive and give it a lock to leak.
+ *
+ * The exposure is small and bounded: the window is one round trip, both writers
+ * are this single-user workspace's own, and every version is in git. Closing it
+ * properly means a conditional-write primitive on the contract — a filed
+ * CONTRACT issue, not something this verb should invent.
  */
 export function mergeTags(
   current: readonly string[],
@@ -164,7 +180,9 @@ export const editCommand: WorkspaceCommandSpec = {
     "remapped anchors moved with the text, orphaned ones name the threads that just became " +
     "detached. `--reviewed` records the current instant as a “still current” confirmation, which " +
     "is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's " +
-    "current tags first, so they cost one extra request; nothing else does. A `423` from the " +
+    "current tags first, so they cost one extra request; nothing else does — and because the API " +
+    "offers no conditional write, two tag edits racing on one document can end with only the " +
+    "later one's tag. A `423` from the " +
     "other party's edit lock is reported as a server error (exit 5) and is never retried — the " +
     "orchestrate skill defers instead. An edit that names no change at all is a usage error, not " +
     "an empty request.",
