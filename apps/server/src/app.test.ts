@@ -152,6 +152,17 @@ describe("createServer — the mounted surface", () => {
     expect((await server.app.request("/api/locks", { headers: AUTH })).status).toBe(404);
   });
 
+  it("leaves the db maintenance surface unmounted without a projection", async () => {
+    // `doctor` reads the database and `rebuild` replaces it; neither means
+    // anything on a server that was built without one.
+    const server = createServer(makeConfig());
+
+    expect((await server.app.request("/api/db/doctor", { headers: AUTH })).status).toBe(404);
+    expect(
+      (await server.app.request("/api/db/rebuild", { method: "POST", headers: AUTH })).status,
+    ).toBe(404);
+  });
+
   it("mounts the queue surface and exposes the enqueue path to in-process producers", async () => {
     const server = createServer(makeConfig());
     await server.queue.enqueue({ type: "comment.created", source: "test", payload: {} });

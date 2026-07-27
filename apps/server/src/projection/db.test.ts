@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -269,6 +277,80 @@ describe("openProjectionReadonly", () => {
     mkdirSync(config.corpusDir, { recursive: true });
     expect(() => openProjectionReadonly(config)).toThrow(ProjectionError);
     expect(() => openProjectionReadonly(config)).toThrow(/corpus db rebuild/);
+  });
+});
+
+describe("ProjectionDb.reopenAround", () => {
+  it("moves the connection under the handle, so a captured reference follows", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_aaa");
+    const db = openProjection(config);
+    // What every subsystem holds: the handle object, captured at mount time.
+    const captured = db;
+    try {
+      const before = statSync(db.path).ino;
+
+      db.reopenAround(() => {
+        // Stands in for a rebuild's commit: a different database, renamed over
+        // the path this handle was opened on.
+        const replacement = join(root, "replacement.db");
+        removeDatabaseFiles(replacement);
+        openProjectionDatabase(replacement).close();
+        renameSync(replacement, db.path);
+      });
+
+      expect(statSync(db.path).ino).not.toBe(before);
+      expect(captured.prepare("SELECT id FROM documents").all()).toEqual([]);
+      expect(captured.sqlite.open).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("clears the statement cache, which is bound to the closed connection", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_aaa");
+    const db = openProjection(config);
+    try {
+      const first = db.prepare("SELECT id FROM documents");
+      db.reopenAround(() => undefined);
+      const second = db.prepare("SELECT id FROM documents");
+      expect(second).not.toBe(first);
+      expect(second.all()).toEqual([{ id: "doc_aaa" }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reopens even when the replacement throws, because the old file is still there", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_aaa");
+    const db = openProjection(config);
+    try {
+      expect(() =>
+        db.reopenAround(() => {
+          throw new Error("rebuild blew up before its rename");
+        }),
+      ).toThrow(/blew up/);
+      expect(db.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_aaa" }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("keeps a read-only handle read-only across a reopen", () => {
+    const config = makeConfig();
+    writeDoc(config, "doc_aaa");
+    openProjection(config).close();
+
+    const db = openProjectionReadonly(config);
+    try {
+      db.reopenAround(() => undefined);
+      expect(db.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_aaa" }]);
+      expect(() => db.sqlite.exec("DELETE FROM documents")).toThrow();
+    } finally {
+      db.close();
+    }
   });
 });
 

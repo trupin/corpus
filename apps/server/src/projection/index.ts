@@ -73,6 +73,8 @@ export {
 } from "./project-runtime.js";
 export type { RuntimeCounts } from "./project-runtime.js";
 export { createProjectionQueueMirror } from "./queue-mirror.js";
+export { REBUILD_QUERY_KEYS, mountDbRoutes } from "./routes.js";
+export type { DbRoutesDeps } from "./routes.js";
 export { REBUILD_PREFIX, rebuild } from "./rebuild.js";
 export type { RebuildOptions, RebuildReport } from "./rebuild.js";
 export {

@@ -28,6 +28,8 @@ describe("projection public surface", () => {
       "clearProjection",
       "rebuild",
       "doctor",
+      "mountDbRoutes",
+      "REBUILD_QUERY_KEYS",
       "projectQueueDir",
       "projectEvent",
       "removeEvent",

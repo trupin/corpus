@@ -41,7 +41,7 @@ import {
 import { createLogger, type Logger } from "./logger.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
-import type { ProjectionDb } from "./projection/index.js";
+import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
 import {
   createQueueService,
   mountQueueRoutes,
@@ -330,6 +330,17 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
         now,
       }),
     );
+
+    // Mounted here, with the rest of the projection-backed surface: `doctor`
+    // reads the database and `rebuild` replaces it, so neither means anything on
+    // a server that was built without one.
+    mountDbRoutes(app, {
+      config,
+      projection: deps.projection,
+      queue,
+      logger,
+      invalidate: deps.invalidate ?? invalidate,
+    });
   }
 
   const openApiDocument = buildOpenApiDocument();

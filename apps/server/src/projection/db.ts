@@ -52,6 +52,28 @@ export interface ProjectionDb {
   prepare(sql: string): SqliteStatement;
   /** Runs `fn` inside a transaction, nesting safely via savepoints. */
   transaction<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R;
+  /**
+   * Closes the connection, runs `replaceFile`, then opens a fresh one at the
+   * same path — **without replacing this object**.
+   *
+   * This is the seam `POST /api/db/rebuild` needs. A rebuild commits by renaming
+   * a new database over `cache.db`, so every connection open at that moment is
+   * left bound to an inode the rename unlinked. Opening a *new* handle would not
+   * help: `createServer` hands this one object to the document routes, the lock
+   * service, the job service, the watcher and the queue's mirror at mount time,
+   * and a second object would leave all of them reading a file that no longer
+   * has a name. So the object stays and the connection under it moves.
+   *
+   * The connection is closed *before* `replaceFile` rather than after, because
+   * a rebuild also deletes the destination's `-wal`/`-shm` sidecars: a
+   * still-open connection would keep a deleted WAL alive and could recreate it,
+   * by path, over the database that just replaced it. Everything here is
+   * synchronous, so no request can observe the gap.
+   *
+   * `replaceFile` throwing still reopens — the rename is the rebuild's commit
+   * point, so a failure leaves the previous database intact and reopenable.
+   */
+  reopenAround<T>(replaceFile: () => T): T;
   close(): void;
 }
 
@@ -152,33 +174,57 @@ export function openProjectionDatabase(
   return sqlite;
 }
 
-/** Wraps a raw connection in the caching handle every projector takes. */
+/**
+ * Wraps a raw connection in the caching handle every projector takes.
+ *
+ * `reopen` says how to get a *replacement* connection for the same path; it is a
+ * parameter rather than a constant because the read-only handle `doctor` uses
+ * must not come back read-write. It is never called for the throwaway handles a
+ * rebuild opens over its temp file.
+ */
 export function createProjectionDb(
   sqlite: SqliteDatabase,
   config: ProjectionConfig,
   path: string,
   logger: Logger = silentLogger,
+  reopen: () => SqliteDatabase = () => openProjectionDatabase(path, logger),
 ): ProjectionDb {
   const statements = new Map<string, SqliteStatement>();
+  // Mutable, and read through a getter, so a subsystem that captured this handle
+  // follows a reopen instead of holding the closed connection.
+  let connection = sqlite;
+
+  const closeConnection = (): void => {
+    statements.clear();
+    if (connection.open) connection.close();
+  };
+
   return {
-    sqlite,
+    get sqlite() {
+      return connection;
+    },
     config,
     path,
     logger,
     prepare(sql) {
       const cached = statements.get(sql);
       if (cached !== undefined) return cached;
-      const statement = sqlite.prepare(sql);
+      const statement = connection.prepare(sql);
       statements.set(sql, statement);
       return statement;
     },
     transaction(fn) {
-      return sqlite.transaction(fn);
+      return connection.transaction(fn);
     },
-    close() {
-      statements.clear();
-      if (sqlite.open) sqlite.close();
+    reopenAround(replaceFile) {
+      closeConnection();
+      try {
+        return replaceFile();
+      } finally {
+        connection = reopen();
+      }
     },
+    close: closeConnection,
   };
 }
 
@@ -216,15 +262,18 @@ export function openProjection(
 /** Opens an existing `cache.db` read-only — the mode `doctor` uses (§9.1, WAL readers). */
 export function openProjectionReadonly(config: ProjectionConfig): ProjectionDb {
   const path = cacheDbPath(config);
-  let sqlite: SqliteDatabase;
-  try {
-    sqlite = new Database(path, { readonly: true, fileMustExist: true });
-  } catch (cause) {
-    throw new ProjectionError(
-      `no projection at ${path}; run \`corpus db rebuild\` to build it from the workspace's files`,
-      { cause },
-    );
-  }
-  sqlite.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
-  return createProjectionDb(sqlite, config, path);
+  const open = (): SqliteDatabase => {
+    let sqlite: SqliteDatabase;
+    try {
+      sqlite = new Database(path, { readonly: true, fileMustExist: true });
+    } catch (cause) {
+      throw new ProjectionError(
+        `no projection at ${path}; run \`corpus db rebuild\` to build it from the workspace's files`,
+        { cause },
+      );
+    }
+    sqlite.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
+    return sqlite;
+  };
+  return createProjectionDb(open(), config, path, silentLogger, open);
 }
