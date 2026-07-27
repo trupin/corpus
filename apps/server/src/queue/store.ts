@@ -153,6 +153,15 @@ export function salvageEvent(
 }
 
 /**
+ * Notified about every file the queue writes or removes, with the bytes that
+ * land (`null` for a removal). The watcher registers these as self-writes so a
+ * transition it performed is not re-projected and re-announced a second time
+ * (SPEC.md §9.1 — "server-originated writes re-project synchronously … without
+ * double-broadcasting").
+ */
+export type QueueWriteObserver = (absPath: string, content: string | null) => void;
+
+/**
  * The queue's filesystem. Every write is a temp file plus a rename inside the
  * same directory, so a concurrent reader sees either the old file or the whole
  * new one — never a truncated one.
@@ -161,7 +170,10 @@ export class QueueStore {
   readonly queueDir: string;
   readonly haltPath: string;
 
-  constructor(readonly corpusDir: string) {
+  constructor(
+    readonly corpusDir: string,
+    private readonly observeWrite?: QueueWriteObserver | undefined,
+  ) {
     this.queueDir = join(corpusDir, QUEUE_DIR_NAME);
     this.haltPath = join(corpusDir, HALT_FILE_NAME);
   }
@@ -242,6 +254,9 @@ export class QueueStore {
     const body = `${JSON.stringify({ ...event, status }, null, 2)}\n`;
     try {
       await writeFile(tmpPath, body, { encoding: "utf8", mode: 0o600 });
+      // Announced before the rename: the watcher can see the file the instant it
+      // lands, and a registration made afterwards would lose that race.
+      this.observeWrite?.(this.pathFor(status, event.id), body);
       await rename(tmpPath, this.pathFor(status, event.id));
     } catch (error) {
       await unlink(tmpPath).catch(() => undefined);
@@ -258,13 +273,25 @@ export class QueueStore {
    */
   async move(from: QueueEventStatus, to: QueueEventStatus, id: string): Promise<boolean> {
     if (from === to) return true;
+    const fromPath = this.pathFor(from, id);
+    const toPath = this.pathFor(to, id);
+    this.observeWrite?.(fromPath, null);
     try {
-      await rename(this.pathFor(from, id), this.pathFor(to, id));
-      return true;
+      await rename(fromPath, toPath);
     } catch (error) {
       if (isEnoent(error)) return false;
       throw error;
     }
+    // The moved file keeps its old bytes until `writeEvent` re-stamps it, so the
+    // intermediate state is registered too — otherwise a watcher that saw the
+    // rename before the rewrite would report a server transition as an
+    // out-of-band edit.
+    try {
+      this.observeWrite?.(toPath, await readFile(toPath, "utf8"));
+    } catch {
+      // Already re-stamped or gone; the rewrite registers the final bytes.
+    }
+    return true;
   }
 
   /** The status directory holding `id`, or `undefined` when no directory does. */

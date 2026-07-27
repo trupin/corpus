@@ -17,6 +17,7 @@ import {
   QueueStore,
   salvageEvent,
   type HaltSentinel,
+  type QueueWriteObserver,
   type ReadEventResult,
   type StoredEvent,
 } from "./store.js";
@@ -39,6 +40,8 @@ export interface QueueServiceOptions {
   readonly logger?: Logger | undefined;
   readonly mirror?: QueueMirror | undefined;
   readonly invalidate?: QueueInvalidate | undefined;
+  /** Lets the watcher recognize the queue's own writes; see {@link QueueWriteObserver}. */
+  readonly observeWrite?: QueueWriteObserver | undefined;
   /** Epoch milliseconds; injected so staleness and timestamps are testable. */
   readonly now?: (() => number) | undefined;
   readonly pollIntervalMs?: number | undefined;
@@ -84,7 +87,7 @@ export class QueueService {
   private claimChain: Promise<unknown> = Promise.resolve();
 
   constructor(options: QueueServiceOptions) {
-    this.store = new QueueStore(options.corpusDir);
+    this.store = new QueueStore(options.corpusDir, options.observeWrite);
     this.logger = options.logger ?? silentLogger;
     this.mirror = options.mirror ?? NOOP_QUEUE_MIRROR;
     this.invalidate = options.invalidate ?? NOOP_INVALIDATE;

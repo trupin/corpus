@@ -340,6 +340,93 @@ describe("runServerProcess — boot", () => {
     await server?.close();
   });
 
+  it("starts the watcher, so an out-of-band edit is projected and announced", async () => {
+    const workspace = makeWorkspace("ws-watcher");
+    mkdirSync(join(workspace, "data", "docs"), { recursive: true });
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+
+    try {
+      const batches: string[] = [];
+      server.bus.subscribe((keys) => batches.push(JSON.stringify(keys)));
+      // chokidar's `ready` says the initial scan finished, not that every OS
+      // watch is armed; a real workspace is edited seconds later, a test isn't.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      writeFileSync(
+        join(workspace, "data", "docs", "b.md"),
+        "---\nid: doc_bbb\ntype: note\ntitle: B\n---\n\nOut of band.\n",
+        "utf8",
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(batches.join(" ")).toContain('["docs","doc_bbb"]');
+        },
+        { timeout: 8000, interval: 25 },
+      );
+
+      const projected = new Database(join(workspace, ".corpus", "cache.db"), { readonly: true });
+      try {
+        expect(projected.prepare("SELECT id FROM documents WHERE id = 'doc_bbb'").all()).toEqual([
+          { id: "doc_bbb" },
+        ]);
+      } finally {
+        projected.close();
+      }
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
+
+  it("announces a queue transition exactly once — the write path, never the watcher too", async () => {
+    const workspace = makeWorkspace("ws-suppression");
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+
+    try {
+      const batches: string[] = [];
+      server.bus.subscribe((keys) => batches.push(JSON.stringify(keys)));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const event = await server.queue.enqueue({
+        type: "comment.created",
+        source: "cli",
+        payload: {},
+      });
+      await server.queue.claimAll();
+      await server.queue.complete(event.id);
+
+      // Long enough for any watcher event the three transitions produced to
+      // have been debounced, batched and — if suppression failed — broadcast.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      expect(batches).toEqual([
+        '[["queue"],["jobs"]]',
+        '[["queue"],["jobs"]]',
+        '[["queue"],["jobs"]]',
+      ]);
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
+
   it("treats a projection that cannot be opened as a boot failure", async () => {
     const workspace = makeWorkspace("ws-projection-fails");
     const h = harness();

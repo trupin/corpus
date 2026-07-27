@@ -84,28 +84,41 @@ export function removeEvent(db: ProjectionDb, id: string): void {
 }
 
 /**
- * Rebuilds `events` from the five status directories. The on-disk event file is
- * a superset of the wire shape (SERVER-008 adds transition bookkeeping), so the
- * schema parse keeps the declared fields and ignores the rest.
+ * Projects one event file into the `events` table. The on-disk event file is a
+ * superset of the wire shape (SERVER-008 adds transition bookkeeping), so the
+ * schema parse keeps the declared fields and ignores the rest. `false` means the
+ * file was unreadable or malformed — logged, skipped, never fatal.
+ *
+ * The single-file form is what the watcher (SERVER-007) uses for an `evt_*.json`
+ * that appeared out of band; the directory pass below is the boot rebuild.
  */
+export function projectEventFile(
+  db: ProjectionDb,
+  path: string,
+  status: QueueEventStatus,
+): boolean {
+  let parsed: unknown;
+  try {
+    parsed = readJsonFile(path);
+  } catch (error) {
+    db.logger.info("skipping unreadable queue event", { path, error: String(error) });
+    return false;
+  }
+  const event = QueueEventSchema.safeParse(parsed);
+  if (!event.success) {
+    db.logger.info("skipping malformed queue event", { path });
+    return false;
+  }
+  projectEvent(db, event.data, status);
+  return true;
+}
+
+/** Rebuilds `events` from the five status directories. */
 export function projectQueueDir(db: ProjectionDb, corpusDir: string): number {
   db.sqlite.exec("DELETE FROM events");
   let projected = 0;
   for (const file of listQueueEventFiles(corpusDir)) {
-    let parsed: unknown;
-    try {
-      parsed = readJsonFile(file.path);
-    } catch (error) {
-      db.logger.info("skipping unreadable queue event", { path: file.path, error: String(error) });
-      continue;
-    }
-    const event = QueueEventSchema.safeParse(parsed);
-    if (!event.success) {
-      db.logger.info("skipping malformed queue event", { path: file.path });
-      continue;
-    }
-    projectEvent(db, event.data, file.status);
-    projected += 1;
+    if (projectEventFile(db, file.path, file.status)) projected += 1;
   }
   return projected;
 }

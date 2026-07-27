@@ -121,8 +121,10 @@ describe("createServer — the mounted surface", () => {
 
     for (const route of ALL_CONTRACT_ROUTES) {
       // `/api/queue/*` is mounted (SERVER-008) and `idle` deliberately parks for
-      // its whole window, so the queue surface is asserted by its own specs.
+      // its whole window; `/events` is mounted (SERVER-007) and holds its socket
+      // open. Both surfaces are asserted by their own specs.
       if (route.path.startsWith("/api/queue")) continue;
+      if (route.path === "/events") continue;
       const path = route.path.replace(/\{[^}]+\}/g, "sample");
       const response = await app.request(path, {
         method: route.method.toUpperCase(),
@@ -181,11 +183,20 @@ describe("createServer — the mounted surface", () => {
   });
 
   it("guards /events, accepting ?token= only there", async () => {
-    const { app } = createServer(makeConfig());
+    const server = createServer(makeConfig());
+    const { app } = server;
 
     expect((await app.request("/events")).status).toBe(401);
-    expect((await app.request(`/events?token=${TOKEN}`)).status).toBe(404);
+    expect((await app.request(`/events?token=wrong-${TOKEN}`)).status).toBe(401);
+    // The query-token exemption is `/events`-only: the same form anywhere else
+    // would put the workspace token into referrers and proxy logs.
     expect((await app.request(`/api/docs?token=${TOKEN}`)).status).toBe(401);
+
+    const stream = await app.request(`/events?token=${TOKEN}`);
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get("content-type")).toContain("text/event-stream");
+    await stream.body?.cancel();
+    await server.close();
   });
 });
 

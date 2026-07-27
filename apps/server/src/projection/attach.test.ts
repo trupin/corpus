@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServer } from "../app.js";
 import type { ServerConfig } from "../config.js";
 import { silentLogger } from "../logger.js";
-import { attachProjection } from "./attach.js";
+import { attachProjection, openWorkspaceProjection } from "./attach.js";
 import { cacheDbPath } from "./db.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
@@ -44,10 +44,21 @@ function makeConfig(): ServerConfig {
   };
 }
 
+/**
+ * The lifecycle seam: the projection is opened *before* `createServer` and
+ * handed in as a dep, so the app factory never touches the filesystem
+ * (sprint-004 Adjudication 2).
+ */
+function boot() {
+  const config = makeConfig();
+  const projection = openWorkspaceProjection(config, silentLogger);
+  const server = createServer(config, { logger: silentLogger, projection });
+  return { server, db: attachProjection(server) };
+}
+
 describe("attachProjection", () => {
   it("opens the workspace's projection and closes it with the server", async () => {
-    const server = createServer(makeConfig(), { logger: silentLogger });
-    const db = attachProjection(server);
+    const { server, db } = boot();
 
     expect(existsSync(cacheDbPath(server.config))).toBe(true);
     expect(db.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_aaa" }]);
@@ -57,8 +68,7 @@ describe("attachProjection", () => {
   });
 
   it("hands the queue its events mirror, so a transition lands in the table", async () => {
-    const server = createServer(makeConfig(), { logger: silentLogger });
-    const db = attachProjection(server);
+    const { server, db } = boot();
 
     const event = await server.queue.enqueue({
       type: "comment.created",
@@ -91,8 +101,7 @@ describe("attachProjection", () => {
       "utf8",
     );
 
-    const server = createServer(makeConfig(), { logger: silentLogger });
-    const db = attachProjection(server);
+    const { server, db } = boot();
 
     expect(db.prepare("SELECT id, status FROM events").all()).toEqual([
       { id: "evt_seed00000000", status: "pending" },
@@ -100,9 +109,15 @@ describe("attachProjection", () => {
     await server.close();
   });
 
-  it("survives a second close, because disposers run once", async () => {
+  it("refuses a server built without the projection dep", () => {
     const server = createServer(makeConfig(), { logger: silentLogger });
-    const db = attachProjection(server);
+    expect(() => attachProjection(server)).toThrow(
+      /requires a server built with a `projection` dep/,
+    );
+  });
+
+  it("survives a second close, because disposers run once", async () => {
+    const { server, db } = boot();
     await server.close();
     await server.close();
     expect(db.sqlite.open).toBe(false);

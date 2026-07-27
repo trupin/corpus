@@ -3,11 +3,16 @@
 // stays a wiring shim with nothing to test and this module carries the
 // behaviour.
 
-import { createServer, type CorpusServer } from "./app.js";
+import { createServer, type CorpusServer, type CreateServerDeps } from "./app.js";
 import { loadServerConfig, type ServerConfig } from "./config.js";
 import { CorpusError, describeThrown } from "./errors.js";
 import { createLogger, type Logger } from "./logger.js";
-import { attachProjection } from "./projection/attach.js";
+import {
+  attachProjection,
+  openWorkspaceProjection,
+  type ProjectionDb,
+} from "./projection/index.js";
+import { attachWatcher } from "./watcher/index.js";
 
 export const SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"] as const;
 
@@ -84,13 +89,17 @@ export interface RunServerOptions {
   readonly cwd: string;
   readonly hooks: ProcessHooks;
   readonly logger?: Logger;
-  readonly createServerFn?: (config: ServerConfig) => CorpusServer;
+  readonly createServerFn?: (config: ServerConfig, deps: CreateServerDeps) => CorpusServer;
   /**
-   * Opens the SQLite projection and registers its disposer (SERVER-004).
-   * Injected so a test driving the lifecycle with a stand-in server does not
-   * need a real workspace on disk.
+   * Opens the SQLite projection (SERVER-004). Runs *before* `createServer`, whose
+   * `projection` dep it becomes. Injected so a test driving the lifecycle with a
+   * stand-in server does not need a real workspace on disk.
    */
+  readonly openProjectionFn?: (config: ServerConfig, logger: Logger) => ProjectionDb | undefined;
+  /** Registers the projection's disposer and binds the queue's `events` mirror. */
   readonly attachProjectionFn?: (server: CorpusServer) => void;
+  /** Starts the chokidar watcher and registers its disposer (SERVER-007). */
+  readonly attachWatcherFn?: (server: CorpusServer) => void;
   readonly gracePeriodMs?: number;
 }
 
@@ -110,6 +119,7 @@ export async function runServerProcess(
   let logger = options.logger ?? createLogger("info");
 
   let server: CorpusServer;
+  let projection: ProjectionDb | undefined;
   try {
     const args = parseServerArgs(argv);
     const config = loadServerConfig({ workspace: args.workspace, env, cwd });
@@ -117,11 +127,20 @@ export async function runServerProcess(
     for (const warning of config.warnings) {
       logger.info(`warning: ${warning}`, { configPath: config.configPath });
     }
-    server = (options.createServerFn ?? createServer)(config);
-    // Before the socket opens: a projection that cannot be built is a boot
-    // failure, and the first request must never race the initial projection.
+    // Before the socket opens, and before the app is built: a projection that
+    // cannot be built is a boot failure, the first request must never race the
+    // initial projection, and `createServer` takes the open handle as a dep
+    // rather than opening one itself.
+    projection = (options.openProjectionFn ?? openWorkspaceProjection)(config, logger);
+    server = (options.createServerFn ?? createServer)(config, { projection });
     (options.attachProjectionFn ?? attachProjection)(server);
+    // The watcher is filesystem-bound and lifecycle-scoped, so it attaches here
+    // alongside the projection; its disposer runs before the database closes.
+    (options.attachWatcherFn ?? attachWatcher)(server);
   } catch (error) {
+    // A handle opened before the failure would otherwise outlive the process's
+    // attempt to start.
+    projection?.close();
     logBootFailure(logger, error, "failed to start");
     hooks.exit(1);
     return undefined;

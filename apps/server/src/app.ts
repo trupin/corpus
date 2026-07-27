@@ -20,9 +20,16 @@ import {
   toHttpError,
   toValidationIssues,
 } from "./errors.js";
+import {
+  createInvalidationBus,
+  createSseHub,
+  mountEventStream,
+  type InvalidationBus,
+} from "./events/index.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
+import type { ProjectionDb } from "./projection/index.js";
 import {
   createQueueService,
   mountQueueRoutes,
@@ -32,6 +39,7 @@ import {
 } from "./queue/index.js";
 import { createHealthHandler } from "./routes/health.js";
 import { mountStaticUi } from "./static-ui.js";
+import { createSelfWriteRegistry, type SelfWriteRegistry } from "./watcher/index.js";
 
 /**
  * Server-local introspection: the live OpenAPI document. Deliberately outside
@@ -59,10 +67,28 @@ export interface CorpusServer {
    */
   readonly queue: QueueService;
   /**
-   * Registers cleanup to run at shutdown. Later issues (the SQLite handle from
-   * SERVER-004, the chokidar watcher and SSE registry from SERVER-007) attach
-   * here instead of editing shutdown logic. Disposers run in reverse
-   * registration order, so a subsystem is torn down before what it depends on.
+   * The SQLite projection (SERVER-004), opened by `lifecycle.ts` *before* the
+   * app is built and handed in as a dep — `createServer` receives a handle
+   * rather than opening one, which is what keeps it free of filesystem access
+   * (sprint-004 Adjudication 2). `undefined` in unit tests that need no rows.
+   */
+  readonly projection: ProjectionDb | undefined;
+  /**
+   * The one in-process invalidation emitter (SPEC.md §2.2 rule 3). Write paths
+   * and the watcher publish here; `GET /events` is a subscriber. There is
+   * deliberately no second channel.
+   */
+  readonly bus: InvalidationBus;
+  /**
+   * Lets the watcher tell the server's own writes apart from an outside
+   * editor's, so a mutation is projected and announced exactly once.
+   */
+  readonly selfWrites: SelfWriteRegistry;
+  /**
+   * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
+   * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
+   * editing shutdown logic. Disposers run in reverse registration order, so a
+   * subsystem is torn down before what it depends on.
    */
   registerDisposer(dispose: Disposer): void;
   start(): Promise<BoundAddress>;
@@ -79,7 +105,16 @@ export interface CreateServerDeps {
    * at boot whatever is passed here.
    */
   readonly queueMirror?: QueueMirror | undefined;
+  /**
+   * Overrides where queue transitions announce staleness. Defaults to the
+   * server's own bus, which is what carries them to `GET /events`; tests inject
+   * a recorder.
+   */
   readonly invalidate?: QueueInvalidate | undefined;
+  /** The open projection, per {@link CorpusServer.projection}. */
+  readonly projection?: ProjectionDb | undefined;
+  /** How often `GET /events` writes its keep-alive comment; `0` disables it. */
+  readonly heartbeatMs?: number | undefined;
 }
 
 /** IPv6 literals need brackets to form a URL authority. */
@@ -140,8 +175,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   app.use("/attachments/*", headerAuth);
   // `/events` is under neither guarded prefix, so it needs its own mount — and
   // it is the one path where `?token=` is accepted (SPEC.md §2.1: EventSource
-  // cannot set headers). The handler itself belongs to SERVER-007; until then an
-  // authenticated request here is an honest 404.
+  // cannot set headers).
   app.use("/events", createBearerAuth({ token: config.token, allowQueryToken: true }));
 
   app.openapi(
@@ -154,11 +188,27 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     }),
   );
 
+  const bus = createInvalidationBus({ logger });
+  const hub = createSseHub({
+    bus,
+    logger,
+    ...(deps.heartbeatMs === undefined ? {} : { heartbeatMs: deps.heartbeatMs }),
+  });
+  mountEventStream(app, hub);
+
+  const selfWrites = createSelfWriteRegistry();
   const queue = createQueueService({
     corpusDir: config.corpusDir,
     logger,
     mirror: deps.queueMirror,
-    invalidate: deps.invalidate,
+    invalidate:
+      deps.invalidate ??
+      ((keys) => {
+        bus.invalidate(keys);
+      }),
+    observeWrite: (path, content) => {
+      selfWrites.record(path, content);
+    },
     now,
   });
   mountQueueRoutes(app, queue);
@@ -230,10 +280,11 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       // Before `server.close()`, which waits for open connections: a parked
-      // long-poll is an *active* connection and would otherwise hold shutdown
-      // open for the rest of its window. Releasing the waiters lets each one
-      // answer `204` and hang up.
+      // long-poll and an attached SSE stream are both *active* connections and
+      // would otherwise hold shutdown open — the long-poll for the rest of its
+      // window, the stream forever. Releasing them lets each one hang up.
       queue.close();
+      await hub.close();
       const server = httpServer;
       httpServer = undefined;
       if (server !== undefined) {
@@ -263,6 +314,9 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     config,
     logger,
     queue,
+    projection: deps.projection,
+    bus,
+    selfWrites,
     registerDisposer(dispose) {
       disposers.push(dispose);
     },

@@ -16,7 +16,7 @@
  * modules directly.
  */
 
-export { attachProjection } from "./attach.js";
+export { attachProjection, openWorkspaceProjection } from "./attach.js";
 export {
   BUSY_TIMEOUT_MS,
   CACHE_DB_FILE,
@@ -58,6 +58,7 @@ export {
   isEventFile,
   listQueueEventFiles,
   projectEvent,
+  projectEventFile,
   projectJob,
   projectJobsDir,
   projectLock,

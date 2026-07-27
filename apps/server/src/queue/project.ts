@@ -1,5 +1,6 @@
 import type { QueryKey } from "@corpus/contract";
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
+import { JOBS_KEY, QUEUE_KEY } from "../events/index.js";
 import type { QueueStore, StoredEvent } from "./store.js";
 
 /**
@@ -28,7 +29,7 @@ export const NOOP_QUEUE_MIRROR: QueueMirror = {
  * announces staleness, the UI refetches). Every queue event is a job, so the
  * console's job list goes stale with the queue itself (§7).
  */
-export const QUEUE_QUERY_KEYS: readonly QueryKey[] = [["queue"], ["jobs"]];
+export const QUEUE_QUERY_KEYS: readonly QueryKey[] = [QUEUE_KEY, JOBS_KEY];
 
 export type QueueInvalidate = (keys: readonly QueryKey[]) => void;
 
