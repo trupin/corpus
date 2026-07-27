@@ -198,7 +198,25 @@ export function projectJobsDir(db: ProjectionDb, corpusDir: string): number {
 
 const LOCK_FILE = /^((?:doc|th)_[A-Za-z0-9]+)\.json$/;
 
-export function projectLock(db: ProjectionDb, corpusDir: string, docId: string): void {
+/**
+ * An expired lease is treated as absent everywhere it is read (SPEC.md §7), and
+ * the projection is no exception: a row for a lock that can no longer refuse
+ * anything would put a banner on a document nobody is editing. The file stays
+ * until `POST /api/locks/reap` unlinks it; the row goes now.
+ */
+function isLeaseExpired(acquired: string, ttlSeconds: number, nowMs: number): boolean {
+  // Negated "still live" rather than a comparison: every comparison with `NaN`
+  // is false, so an undateable `acquired` reads as expired — a lock nobody can
+  // date must not be able to wedge a document.
+  return !(nowMs < Date.parse(acquired) + ttlSeconds * 1000);
+}
+
+export function projectLock(
+  db: ProjectionDb,
+  corpusDir: string,
+  docId: string,
+  nowMs: number = Date.now(),
+): void {
   let parsed: unknown;
   try {
     parsed = readJsonFile(join(corpusDir, LOCKS_DIR, `${docId}.json`));
@@ -209,6 +227,10 @@ export function projectLock(db: ProjectionDb, corpusDir: string, docId: string):
   const lock = LockSchema.safeParse(parsed);
   if (!lock.success) {
     db.logger.info("skipping malformed lock", { docId });
+    removeLock(db, docId);
+    return;
+  }
+  if (isLeaseExpired(lock.data.acquired, lock.data.ttl, nowMs)) {
     removeLock(db, docId);
     return;
   }
@@ -224,17 +246,21 @@ export function removeLock(db: ProjectionDb, docId: string): void {
   db.prepare("DELETE FROM locks WHERE doc_id = ?").run(docId);
 }
 
-export function projectLocksDir(db: ProjectionDb, corpusDir: string): number {
+/** Rebuilds `locks` from `.corpus/locks/*.json`; the count is of rows, not files. */
+export function projectLocksDir(
+  db: ProjectionDb,
+  corpusDir: string,
+  nowMs: number = Date.now(),
+): number {
   db.sqlite.exec("DELETE FROM locks");
-  let projected = 0;
   for (const name of listFiles(join(corpusDir, LOCKS_DIR))) {
     const match = LOCK_FILE.exec(name);
     const docId = match?.[1];
     if (docId === undefined) continue;
-    projectLock(db, corpusDir, docId);
-    projected += 1;
+    projectLock(db, corpusDir, docId, nowMs);
   }
-  return projected;
+  const row = db.prepare("SELECT COUNT(*) AS n FROM locks").get() as { n: number };
+  return row.n;
 }
 
 /**

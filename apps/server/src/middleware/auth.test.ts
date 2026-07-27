@@ -12,8 +12,14 @@ vi.mock("node:crypto", async (importOriginal) => {
   return { ...actual, timingSafeEqual: timingSafeEqualSpy };
 });
 
-const { HEALTH_PATH, createBearerAuth, parseBearerHeader, timingSafeEqualString } =
-  await import("./auth.js");
+const {
+  HEALTH_PATH,
+  UNAUTHENTICATED_ROUTES,
+  createBearerAuth,
+  isUnauthenticatedRoute,
+  parseBearerHeader,
+  timingSafeEqualString,
+} = await import("./auth.js");
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 
@@ -76,7 +82,43 @@ function guardedApp(options: { allowQueryToken?: boolean } = {}): Hono {
   return app;
 }
 
+describe("the documented exceptions", () => {
+  it("is exactly two routes — the health probe and the job-log ingest", () => {
+    // SPEC.md §9.2: "all routes require the workspace bearer token except the
+    // documented exceptions (health probe; loopback job-log ingest)". A third
+    // entry here is a third hole, and this assertion is where it gets noticed.
+    expect(UNAUTHENTICATED_ROUTES.map((route) => `${route.method} ${route.path}`)).toEqual([
+      "GET /api/health",
+      "POST /api/jobs/{id}/log",
+    ]);
+  });
+
+  it.each([
+    ["GET", "/api/health", true],
+    ["POST", "/api/jobs/evt_7c1d/log", true],
+    // Method-exact: the read of the same path stays authenticated.
+    ["GET", "/api/jobs/evt_7c1d/log", false],
+    ["DELETE", "/api/jobs/evt_7c1d/log", false],
+    // Path-exact: neither the prefix nor a longer path is exempt.
+    ["POST", "/api/jobs", false],
+    ["GET", "/api/jobs", false],
+    ["POST", "/api/jobs/evt_7c1d/log/extra", false],
+    ["POST", "/api/jobs/evt_7c1d/retry", false],
+    ["POST", "/api/health", false],
+  ])("%s %s -> exempt: %s", (method, path, expected) => {
+    expect(isUnauthenticatedRoute(method, path)).toBe(expected);
+  });
+});
+
 describe("createBearerAuth", () => {
+  it("lets a tokenless POST reach the job-log ingest, and no other job route", async () => {
+    const app = guardedApp();
+
+    expect((await app.request("/api/jobs/evt_7c1d/log", { method: "POST" })).status).toBe(200);
+    expect((await app.request("/api/jobs/evt_7c1d/log")).status).toBe(401);
+    expect((await app.request("/api/jobs")).status).toBe(401);
+  });
+
   it("lets GET /api/health through with no credential at all", async () => {
     const response = await guardedApp().request(HEALTH_PATH);
     expect(response.status).toBe(200);

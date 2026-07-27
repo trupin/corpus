@@ -384,8 +384,10 @@ describe("the watcher — runtime roots", () => {
       ".corpus/locks/doc_mortgage.json",
       JSON.stringify({
         docId: "doc_mortgage",
+        // A live lease: an expired one projects no row at all (SPEC.md §7), so a
+        // fixed past instant would be testing the wrong thing here.
         holder: "user",
-        acquired: "2026-07-19T10:05:00Z",
+        acquired: `${new Date().toISOString().slice(0, 19)}Z`,
         ttl: 300,
       }),
     );

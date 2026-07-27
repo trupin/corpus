@@ -141,6 +141,17 @@ describe("createServer — the mounted surface", () => {
     }
   });
 
+  it("leaves the lock surface unmounted, and unreachable, without a projection", async () => {
+    // A lock is per-document, and "does this document exist?" is a question only
+    // the projection can answer — so no projection means no lock routes, which
+    // is an honest 404 rather than a half-wired server.
+    const server = createServer(makeConfig());
+
+    expect(server.locks).toBeUndefined();
+    expect(server.lockGuard).toBeUndefined();
+    expect((await server.app.request("/api/locks", { headers: AUTH })).status).toBe(404);
+  });
+
   it("mounts the queue surface and exposes the enqueue path to in-process producers", async () => {
     const server = createServer(makeConfig());
     await server.queue.enqueue({ type: "comment.created", source: "test", payload: {} });

@@ -8,6 +8,7 @@ import {
   HttpError,
   MAX_CAUSE_DEPTH,
   badRequest,
+  conflict,
   describeThrown,
   errorResponse,
   forbidden,
@@ -32,6 +33,7 @@ const ALL_FACTORY_ERRORS = [
   unauthorized("u"),
   forbidden("f"),
   notFound("n"),
+  conflict("c", LOCK),
   locked("l", LOCK),
   internalError(),
 ];
@@ -63,6 +65,7 @@ describe("error factories", () => {
     [unauthorized("nope"), 401, "unauthorized"],
     [forbidden("not yours"), 403, "forbidden"],
     [notFound("gone"), 404, "not_found"],
+    [conflict("already held"), 409, "conflict"],
     [locked("held", LOCK), 423, "locked"],
     [internalError(), 500, "internal_error"],
   ] as const)("maps %#: status %s / code %s", (error, status, code) => {
@@ -95,9 +98,10 @@ describe("error factories", () => {
     for (const code of emitted) {
       expect(ERROR_CODES).toContain(code);
     }
-    // Codes the contract declares but no factory covers yet (`conflict` lands
-    // with the lock routes) are allowed — the pin is one-directional.
+    // Every code the contract declares now has a factory, and no factory emits
+    // the same code twice.
     expect(new Set(emitted).size).toBe(emitted.length);
+    expect([...emitted].sort()).toEqual([...ERROR_CODES].sort());
   });
 });
 
@@ -200,5 +204,18 @@ describe("describeThrown", () => {
     expect(described.cause).toEqual({
       error: `<cause chain truncated at depth ${MAX_CAUSE_DEPTH}>`,
     });
+  });
+});
+
+describe("conflict", () => {
+  it("carries the blocking lock when there is one, and omits the key when there is not", () => {
+    expect(conflict("already held", LOCK).body).toEqual({
+      code: "conflict",
+      message: "already held",
+      lock: LOCK,
+    });
+    // Omitted rather than `undefined`: `JSON.stringify` would drop it either
+    // way, but an absent key is what the contract's optional field means.
+    expect("lock" in conflict("plain").body).toBe(false);
   });
 });

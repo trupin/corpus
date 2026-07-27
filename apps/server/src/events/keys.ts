@@ -7,27 +7,28 @@
 // consumer (`createEventStream`) validates every frame against that schema and
 // rejects it.
 //
-// The strings live here rather than in `@corpus/contract` for now; publishing
-// them as typed contract surface is a follow-up CONTRACT issue, and the E2E log
-// records the emitted vocabulary verbatim so UI-002 can mirror it meanwhile.
+// The shapes themselves are **no longer defined here**: they are the contract's
+// (`@corpus/contract` → `query-keys.ts`, the follow-up CONTRACT issue this file
+// used to promise), which is what makes "the published set is the emitted set"
+// true by construction — the UI's SSE bridge, the OpenAPI description of
+// `GET /events` and this emitter all read the same nine builders. This module
+// stays the server's import site, so nothing downstream of `../events/index.js`
+// changed, and keeps the one genuinely server-side concern: collapsing a batch
+// before it goes on the wire.
 
 import type { QueryKey } from "@corpus/contract";
 
-/** The document collection behind `GET /api/docs` — every list, board column and search. */
-export const DOCS_KEY: QueryKey = ["docs"];
-/** The `data/docs/` folder tree behind `GET /api/tree`. */
-export const TREE_KEY: QueryKey = ["tree"];
-/** Queue status and counts (SPEC.md §7). */
-export const QUEUE_KEY: QueryKey = ["queue"];
-/** The console's job rows; every queue event is a job. */
-export const JOBS_KEY: QueryKey = ["jobs"];
-/** Live lock banners (SPEC.md §7). */
-export const LOCKS_KEY: QueryKey = ["locks"];
-
-export const docKey = (docId: string): QueryKey => ["docs", docId];
-export const threadKey = (threadId: string): QueryKey => ["threads", threadId];
-export const jobKey = (eventId: string): QueryKey => ["jobs", eventId];
-export const lockKey = (docId: string): QueryKey => ["locks", docId];
+export {
+  DOCS_KEY,
+  JOBS_KEY,
+  LOCKS_KEY,
+  QUEUE_KEY,
+  TREE_KEY,
+  docKey,
+  jobKey,
+  lockKey,
+  threadKey,
+} from "@corpus/contract";
 
 /**
  * Collapses a batch's keys to one occurrence each, in first-seen order.

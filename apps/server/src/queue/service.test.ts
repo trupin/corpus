@@ -356,6 +356,51 @@ describe("complete, fail and abandon", () => {
   });
 });
 
+describe("requeue", () => {
+  it("returns an event to pending with a clean slate and wakes a parked poll", async () => {
+    const service = makeService();
+    const event = await service.enqueue({
+      type: "comment.created",
+      source: "ui",
+      payload: { a: 1 },
+    });
+    await service.claimAll();
+    await service.fail(event.id, "boom");
+    invalidations.length = 0;
+    const parked = service.idle({ timeoutMs: 2000 });
+
+    const requeued = await service.requeue(event.id);
+
+    expect(requeued).toMatchObject({ status: "pending", attempts: 0, payload: { a: 1 } });
+    // A retry is an assertion that the run can start over: the recorded failure
+    // must not travel with it.
+    expect(requeued.error).toBeUndefined();
+    const onDisk: unknown = JSON.parse(
+      readFileSync(service.store.pathFor("pending", event.id), "utf8"),
+    );
+    expect(onDisk).toMatchObject({ status: "pending", attempts: 0 });
+    expect(onDisk).not.toHaveProperty("error");
+    expect(invalidations).toContainEqual(QUEUE_QUERY_KEYS);
+    expect((await parked)?.map((pending) => pending.id)).toEqual([event.id]);
+  });
+
+  it("is a no-op for an event that is already pending", async () => {
+    const service = makeService();
+    const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+
+    expect((await service.requeue(event.id)).status).toBe("pending");
+    expect(await service.store.listIds("pending")).toEqual([event.id]);
+  });
+
+  it("404s an unknown id and quarantines a corrupt file", async () => {
+    const service = makeService();
+    await expect(service.requeue("evt_missing00000")).rejects.toMatchObject({ status: 404 });
+
+    writeFileSync(service.store.pathFor("failed", "evt_bad000000000"), "not json");
+    expect((await service.requeue("evt_bad000000000")).status).toBe("failed");
+  });
+});
+
 describe("reapStale", () => {
   it("returns stuck work to pending with an incremented attempt count", async () => {
     const service = makeService({ staleAfterMs: 1_000 });

@@ -79,6 +79,21 @@ export function notFound(message: string): HttpError {
   return new HttpError(404, { code: "not_found", message });
 }
 
+/**
+ * The request conflicts with state that already exists — deliberately distinct
+ * from 423, which refuses an unrelated *write* because a document is locked.
+ * Acquiring a lock somebody else holds is the canonical 409 and carries that
+ * lock, which is what lets a client tell "try again as a lock" from "you may not
+ * write at all" (contract: `ConflictError` / `LockConflictError`).
+ */
+export function conflict(message: string, lock?: Lock): HttpError {
+  return new HttpError(409, {
+    code: "conflict",
+    message,
+    ...(lock === undefined ? {} : { lock }),
+  });
+}
+
 export function locked(message: string, lock: Lock): HttpError {
   return new HttpError(423, { code: "locked", message, lock });
 }

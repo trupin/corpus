@@ -140,10 +140,11 @@ export type MutationResult = {
 };
 
 /**
- * The lock guard (SPEC.md §7). A no-op seam here — SERVER-009 fills it with the
- * `423 LockedError` when the *other* party holds the document's edit lock. Every
- * write verb calls it exactly once, before it reads or writes anything, so
- * there is one call site per verb and one implementation to fill.
+ * The lock guard (SPEC.md §7): it throws the `423 LockedError` when the *other*
+ * party holds the document's edit lock. Declared as a seam rather than an import
+ * of `locks/` so the pipeline stays testable without a lock store, and so there
+ * is exactly one call site per write verb — each verb calls it once, before it
+ * reads or writes anything. `locks/guard.ts` is the implementation.
  */
 export type WriteGuard = (docId: string, actor: Actor) => void | Promise<void>;
 
@@ -157,7 +158,11 @@ export interface DocsWorkspace {
   readonly bus: InvalidationBus;
   readonly logger: Logger;
   readonly now: () => number;
-  /** Defaults to {@link allowAllWrites}; SERVER-009 supplies the real guard. */
+  /**
+   * Defaults to {@link allowAllWrites}. `createServer` supplies the real one —
+   * `locks/guard.ts`'s `assertWritable`, which turns the other party's live
+   * lease into the contract's `423` (SPEC.md §7).
+   */
   readonly assertWritable?: WriteGuard | undefined;
 }
 

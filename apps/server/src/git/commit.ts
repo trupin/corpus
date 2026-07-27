@@ -39,10 +39,18 @@ export const TRAILER_DOC = "Corpus-Doc";
 export const TRAILER_ACTOR = "Corpus-Actor";
 export const TRAILER_ANCHORS = "Corpus-Anchors";
 
-/** Git identity per acting party (SPEC.md §4). Author only — never the committer. */
+/**
+ * Git identity per acting party (SPEC.md §4). Author only — never the committer.
+ *
+ * The **name is the actor string itself**, not a prettified label: `corpus init`
+ * already writes the workspace's bootstrap commit as `user <user@corpus.local>`
+ * (CLI-002, `apps/cli/src/commands/init/git.ts`), and `git log --format='%an'`
+ * has to read as one uniform "who asked for this" column from the first commit
+ * onward rather than switching spelling the moment the server takes over.
+ */
 export const ACTOR_IDENTITIES: Readonly<Record<Actor, { name: string; email: string }>> = {
-  user: { name: "Corpus User", email: "user@corpus.local" },
-  agent: { name: "Corpus Agent", email: "agent@corpus.local" },
+  user: { name: "user", email: "user@corpus.local" },
+  agent: { name: "agent", email: "agent@corpus.local" },
 };
 
 /** Used as the committer only when the workspace configures no `user.email` of its own. */
@@ -64,6 +72,13 @@ export interface CommitRequest {
   /** Workspace-relative paths (files or directories) this mutation touched. */
   readonly paths: readonly string[];
   readonly anchors?: AnchorChange | undefined;
+  /**
+   * Extra `Key: value` trailer lines appended after the standard ones. The
+   * document verbs need none — `Corpus-Doc` and `Corpus-Actor` say everything
+   * about an edit — but a lock force break also has to record *whose* lease it
+   * took away, which neither standard trailer expresses.
+   */
+  readonly trailers?: readonly string[] | undefined;
   /**
    * Commit even when the paths hold no change. The write path never needs it;
    * SERVER-009's force-break audit entry does, because `.corpus/` is gitignored
@@ -123,6 +138,7 @@ const buildTrailers = (
   actor: Actor,
   remapped: ReadonlySet<string>,
   orphaned: ReadonlySet<string>,
+  extra: readonly string[] = [],
 ): string => {
   const lines = [`${TRAILER_DOC}: ${docId}`, `${TRAILER_ACTOR}: ${actor}`];
   // Omitted entirely when nothing moved: a trailer reading `remapped=0
@@ -130,7 +146,7 @@ const buildTrailers = (
   if (remapped.size > 0 || orphaned.size > 0) {
     lines.push(`${TRAILER_ANCHORS}: remapped=${remapped.size} orphaned=${orphaned.size}`);
   }
-  return lines.join("\n");
+  return [...lines, ...extra].join("\n");
 };
 
 /** Union of the session's anchor ids; an anchor that later detached counts as orphaned only. */
@@ -315,7 +331,13 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     const target = head === null ? null : await amendTarget(request, head);
     const anchors = mergeAnchors(target === null ? null : session, request.anchors);
     const subject = target?.subject ?? request.subject;
-    const message = buildTrailers(request.docId, request.actor, anchors.remapped, anchors.orphaned);
+    const message = buildTrailers(
+      request.docId,
+      request.actor,
+      anchors.remapped,
+      anchors.orphaned,
+      request.trailers,
+    );
 
     const args = [
       ...(await committerFlags()),

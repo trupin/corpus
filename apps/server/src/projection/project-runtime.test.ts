@@ -196,22 +196,36 @@ describe("projectJobsDir", () => {
 });
 
 describe("projectLocksDir", () => {
-  const LOCK = {
-    docId: "doc_a1b2c3",
-    holder: "agent",
-    acquired: "2026-07-06T09:00:00Z",
-    ttl: 300,
-  };
+  // Fixed lease, fixed clock: a lock's row exists only while its lease runs, so
+  // every assertion here has to say *when* it is being read (SPEC.md §7).
+  const ACQUIRED = "2026-07-06T09:00:00Z";
+  const LEASE_START = Date.parse(ACQUIRED);
+  const LOCK = { docId: "doc_a1b2c3", holder: "agent", acquired: ACQUIRED, ttl: 300 };
+  const DURING_LEASE = LEASE_START + 60_000;
+  const AFTER_LEASE = LEASE_START + 301_000;
 
-  it("projects every lock file", () => {
+  it("projects every live lock file", () => {
     writeJson("locks/doc_a1b2c3.json", LOCK);
-    expect(projectLocksDir(db, corpusDir)).toBe(1);
+    expect(projectLocksDir(db, corpusDir, DURING_LEASE)).toBe(1);
     expect(db.prepare("SELECT * FROM locks").get()).toEqual({
       doc_id: "doc_a1b2c3",
       holder: "agent",
-      acquired: "2026-07-06T09:00:00Z",
+      acquired: ACQUIRED,
       ttl: 300,
     });
+  });
+
+  it("drops an expired lease even though its file is still there", () => {
+    writeJson("locks/doc_a1b2c3.json", LOCK);
+    // Expiry is evaluated on read, everywhere: a lease that has run out refuses
+    // nothing, so a banner drawn from this table would be a lie.
+    expect(projectLocksDir(db, corpusDir, AFTER_LEASE)).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
+
+    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 1 });
+    projectLock(db, corpusDir, "doc_a1b2c3", AFTER_LEASE);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
   });
 
   it("drops a lock whose file became malformed or disappeared", () => {
@@ -219,16 +233,16 @@ describe("projectLocksDir", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
 
     writeJson("locks/doc_a1b2c3.json", LOCK);
-    projectLock(db, corpusDir, "doc_a1b2c3");
+    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
     writeFileSync(join(corpusDir, "locks", "doc_a1b2c3.json"), '{"holder":"nobody"}', "utf8");
-    projectLock(db, corpusDir, "doc_a1b2c3");
+    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
     expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
   });
 
   it("ignores files that are not <docId>.json and supports explicit removal", () => {
     writeFileSync(join(corpusDir, "locks", "notes.json"), "{}", "utf8");
     writeJson("locks/doc_a1b2c3.json", LOCK);
-    expect(projectLocksDir(db, corpusDir)).toBe(1);
+    expect(projectLocksDir(db, corpusDir, DURING_LEASE)).toBe(1);
     removeLock(db, "doc_a1b2c3");
     expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
   });
@@ -270,10 +284,12 @@ describe("projectRuntime", () => {
       `${JSON.stringify({ ts: "2026-07-06T09:00:01Z", line: "go" })}\n`,
       "utf8",
     );
+    // A live lease: `projectRuntime` reads the wall clock, and only a lock that
+    // has not expired earns a row (SPEC.md §7).
     writeJson("locks/doc_a1b2c3.json", {
       docId: "doc_a1b2c3",
       holder: "user",
-      acquired: "2026-07-06T09:00:00Z",
+      acquired: `${new Date().toISOString().slice(0, 19)}Z`,
       ttl: 300,
     });
     writeJson("seen.json", { th_x9y8: "2026-07-06T09:00:00Z" });

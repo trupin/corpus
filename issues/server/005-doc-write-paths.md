@@ -442,6 +442,21 @@ untouched.
 `npm run test:coverage` → **144 files / 2 568 tests, all passing**, **statements 98.89 %, branches
 95.09 %, functions 99.34 %, lines 98.89 %** (gate 90 %, exit 0).
 
+**Amendment during the SERVER-009 harvest reconciliation (2026-07-27, opus): git author
+spelling.** The canonical identity is CLI-002's shipped `user <user@corpus.local>` /
+`agent <agent@corpus.local>` — the git **name is the actor string itself**, not `Corpus User` /
+`Corpus Agent`. `corpus init` already writes the workspace's first commit that way, and
+`git log --format='%an'` has to read as one uniform column from that commit onward. So
+`ACTOR_IDENTITIES` in `git/commit.ts` and six assertions in `docs/{move,update,delete}.test.ts`
+and `git/commit.test.ts` were changed accordingly. **Superseded by this: the Technical Design's
+"`user` → `Corpus User <user@corpus.local>`, `agent` → `Corpus Agent <agent@corpus.local>`"
+mapping, and every `Corpus User|…` / `Corpus Agent|…` line in the E2E log above** — the behaviour
+those lines recorded is unchanged, only the name half of the identity is. `FALLBACK_COMMITTER`
+(`Corpus <corpus@corpus.local>`, used only when the workspace configures no `user.email`) is not
+an actor identity and is untouched. Also mounted in that reconciliation: the `assertWritable`
+seam deferred above now carries SERVER-009's real guard — see
+`issues/server/009-locks-jobs.md` → "Harvest Reconciliation over SERVER-005".
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

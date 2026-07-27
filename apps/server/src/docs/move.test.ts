@@ -79,7 +79,7 @@ describe("POST /api/docs/{id}/move", () => {
     );
 
     const [subject] = ws.log("%an|%s");
-    expect(subject).toContain("Corpus Agent|doc move: ");
+    expect(subject).toContain("agent|doc move: ");
     expect(subject).toContain("data/docs/inbox/ledger.md");
     expect(subject).toContain("data/docs/finance/ledger.md");
     expect(subject).toContain(created.id);

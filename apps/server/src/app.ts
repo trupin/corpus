@@ -9,7 +9,7 @@
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { buildOpenApiDocument, contractRoutes } from "@corpus/contract";
+import { buildOpenApiDocument, contractRoutes, type QueryKey } from "@corpus/contract";
 import { isLoopbackHost, nonLoopbackBindError, type ServerConfig } from "./config.js";
 import {
   CorpusError,
@@ -27,7 +27,15 @@ import {
   mountEventStream,
   type InvalidationBus,
 } from "./events/index.js";
-import { createAutoCommitter, createGit } from "./git/index.js";
+import { createAutoCommitter, createGit, type AutoCommitter } from "./git/index.js";
+import { createJobService, mountJobRoutes } from "./jobs/index.js";
+import {
+  createLockGuard,
+  createLockService,
+  mountLockRoutes,
+  type LockGuard,
+  type LockService,
+} from "./locks/index.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
@@ -87,6 +95,14 @@ export interface CorpusServer {
    */
   readonly selfWrites: SelfWriteRegistry;
   /**
+   * Per-document edit locks (SPEC.md §7), and the guard the document write path
+   * calls before every write verb. `undefined` when the server was built without
+   * a projection — a lock is per-document, and "does this document exist?" is a
+   * question only the projection can answer.
+   */
+  readonly locks: LockService | undefined;
+  readonly lockGuard: LockGuard | undefined;
+  /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
    * editing shutdown logic. Disposers run in reverse registration order, so a
@@ -123,6 +139,18 @@ export interface CreateServerDeps {
   readonly projection?: ProjectionDb | undefined;
   /** How often `GET /events` writes its keep-alive comment; `0` disables it. */
   readonly heartbeatMs?: number | undefined;
+  /**
+   * The server's one git writer (SPEC.md §4). Constructed here from
+   * `config.workspaceRoot` by default — it is a command builder, not an open
+   * handle, so building it breaks none of `createServer`'s purity (sprint-005
+   * Open Conflict 12) — and injected by tests that assert what would have been
+   * committed without needing a repository.
+   *
+   * Exactly one per server: the document write path and the lock service's
+   * force-break audit entry share this instance, which is what serializes every
+   * commit the server makes on a single `.git/index` lock.
+   */
+  readonly git?: AutoCommitter | undefined;
 }
 
 /** IPv6 literals need brackets to form a URL authority. */
@@ -221,6 +249,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   });
   mountQueueRoutes(app, queue);
 
+  const invalidate = (keys: readonly QueryKey[]): void => {
+    bus.invalidate(keys);
+  };
+
+  let locks: LockService | undefined;
+  let lockGuard: LockGuard | undefined;
   if (deps.projection !== undefined) {
     // Everything the write path needs is already reachable here (sprint-005
     // Open Conflict 12: "no new deps"): the workspace root is on the config, the
@@ -228,18 +262,55 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // dep `lifecycle.ts` opened, and the git module is a pure function of the
     // root — constructing a command builder opens no handle and touches no
     // filesystem, so it does not compromise `createServer`'s purity.
+    const git =
+      deps.git ?? createAutoCommitter({ git: createGit(config.workspaceRoot), logger, now });
+
+    // Locks are built *before* the document routes, because the write pipeline
+    // takes the guard as a constructor argument: `assertWritable` is the seam
+    // SERVER-005 left in `DocsWorkspace`, and mounting it here is what turns a
+    // held lease into the contract's 423 on every write verb at once, rather
+    // than one route at a time.
+    const lockService = createLockService({
+      corpusDir: config.corpusDir,
+      projection: deps.projection,
+      queue,
+      git,
+      invalidate: deps.invalidate ?? invalidate,
+      observeWrite: (path, content) => {
+        selfWrites.record(path, content);
+      },
+      logger,
+      now,
+    });
+    const guard = createLockGuard(lockService);
+    locks = lockService;
+    lockGuard = guard;
+    mountLockRoutes(app, lockService);
+
     mountDocsRoutes(app, deps.projection, {
       now,
       workspace: {
         workspaceRoot: config.workspaceRoot,
         projection: deps.projection,
-        git: createAutoCommitter({ git: createGit(config.workspaceRoot), logger, now }),
+        git,
         selfWrites,
         bus,
         logger,
         now,
+        assertWritable: (docId, actor) => guard.assertWritable(docId, actor),
       },
     });
+
+    mountJobRoutes(
+      app,
+      createJobService({
+        corpusDir: config.corpusDir,
+        projection: deps.projection,
+        queue,
+        logger,
+        now,
+      }),
+    );
   }
 
   const openApiDocument = buildOpenApiDocument();
@@ -346,6 +417,8 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     projection: deps.projection,
     bus,
     selfWrites,
+    locks,
+    lockGuard,
     registerDisposer(dispose) {
       disposers.push(dispose);
     },

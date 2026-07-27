@@ -91,7 +91,7 @@ describe("createAutoCommitter", () => {
 
     expect(outcome.kind).toBe("committed");
     expect(r.log("%an|%ae|%cn|%s")[0]).toBe(
-      "Corpus Agent|agent@corpus.local|Workspace Owner|doc create: Note (doc_aaaa1111) by agent",
+      "agent|agent@corpus.local|Workspace Owner|doc create: Note (doc_aaaa1111) by agent",
     );
     expect(r.git("show", "--stat", "--format=", "HEAD")).toContain(DOC);
   });
@@ -122,6 +122,34 @@ describe("createAutoCommitter", () => {
     });
     body = r.git("log", "-1", "--format=%b");
     expect(body).toContain("Corpus-Anchors: remapped=1 orphaned=2");
+  });
+
+  it("appends a caller's own trailers, and commits with nothing staged when asked", async () => {
+    const r = makeRepo("extra-trailers");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    // The shape SERVER-009's force break needs: `.corpus/` is gitignored, so the
+    // audit entry stages no path at all and has to be an explicit empty commit,
+    // carrying the one fact the standard trailers cannot express.
+    const outcome = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "lock: force-break on doc_aaaa1111 (was agent) by user",
+      paths: [],
+      trailers: ["Corpus-Lock-Holder: agent"],
+      allowEmpty: true,
+      squash: false,
+    });
+
+    expect(outcome.kind).toBe("committed");
+    expect(r.log("%an|%s")[0]).toBe("user|lock: force-break on doc_aaaa1111 (was agent) by user");
+    // Appended after the standard ones, never in place of them.
+    expect(r.git("log", "-1", "--format=%b")).toBe(
+      "Corpus-Doc: doc_aaaa1111\nCorpus-Actor: user\nCorpus-Lock-Holder: agent\n\n",
+    );
+    // Empty in the git sense: a commit on top of the seed that changes no file.
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
+    expect(r.git("show", "--stat", "--format=", "HEAD").trim()).toBe("");
   });
 
   it("folds two rapid saves of one document by one author into one commit", async () => {
@@ -439,7 +467,7 @@ describe("createAutoCommitter", () => {
         paths: [DOC],
       });
       expect(outcome.kind).toBe("committed");
-      expect(r.log("%an|%cn")[0]).toBe("Corpus User|Corpus");
+      expect(r.log("%an|%cn")[0]).toBe("user|Corpus");
     } finally {
       process.env["HOME"] = home;
       if (xdg === undefined) delete process.env["XDG_CONFIG_HOME"];

@@ -239,6 +239,47 @@ export class QueueService {
   }
 
   /**
+   * Puts an event back in `pending/` from wherever it is, with a clean slate —
+   * attempts reset and any recorded error dropped, because the caller is
+   * asserting the run can start over. Two callers need it (SPEC.md §7): the
+   * console's retry of a failed job, and a force-break re-enqueueing the edit
+   * that was deferred because the lock was held. Already-pending is a no-op, so
+   * repeating either is harmless.
+   */
+  async requeue(id: string): Promise<StoredEvent> {
+    return this.serialize(async () => {
+      const from = await this.store.locate(id);
+      if (from === undefined) throw notFound(`no queue event ${id}`);
+
+      const current = await this.store.readEvent(from, id);
+      if (current === undefined) throw notFound(`no queue event ${id}`);
+      if (!current.ok) return this.quarantine(id, from, current);
+      if (from === "pending") return current.event;
+
+      if (!(await this.store.move(from, "pending", id))) {
+        throw notFound(`no queue event ${id}`);
+      }
+      // Rebuilt field by field rather than spread: `error` and `attempts` are
+      // exactly what a requeue is supposed to forget.
+      const event: StoredEvent = {
+        id: current.event.id,
+        type: current.event.type,
+        created: current.event.created,
+        source: current.event.source,
+        payload: current.event.payload,
+        status: "pending",
+        updated: formatInstant(this.now()),
+        attempts: 0,
+      };
+      await this.store.writeEvent("pending", event);
+      this.mirror.upsertEvent(event);
+      this.invalidate(QUEUE_QUERY_KEYS);
+      this.waiters.notify();
+      return event;
+    });
+  }
+
+  /**
    * Returns events stranded in `in-progress/` by a dead run to `pending/`, one
    * attempt poorer, and gives up on those past the cap. `reaped` lists only what
    * came back to `pending/` (sprint-003 adjudication 1).

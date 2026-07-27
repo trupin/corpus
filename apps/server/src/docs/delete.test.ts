@@ -79,7 +79,7 @@ describe("DELETE /api/docs/{id}", () => {
 
     // git retains the file and every version of it.
     const deletion = ws.git("log", "--diff-filter=D", "--format=%an|%s", "--", created.path).trim();
-    expect(deletion).toContain("Corpus User|doc delete: Doomed");
+    expect(deletion).toContain("user|doc delete: Doomed");
     const shas = ws.git("log", "--format=%H", "--", created.path).trim().split("\n");
     expect(ws.git("show", `${shas[1] ?? ""}:${created.path}`)).toContain("content");
 
@@ -100,7 +100,7 @@ describe("DELETE /api/docs/{id}", () => {
 
     const response = await ws.del(`/api/docs/${created.id}`);
     expect(response.status).toBe(200);
-    expect(ws.log("%an")[0]).toBe("Corpus User");
+    expect(ws.log("%an")[0]).toBe("user");
   });
 
   it("ignores a header this API does not declare", async () => {
@@ -110,7 +110,7 @@ describe("DELETE /api/docs/{id}", () => {
     // a request with no actor header — authored by `user`, not rejected.
     const response = await ws.del(`/api/docs/${created.id}`, { "X-Corpus-Actor": "agent" });
     expect(response.status).toBe(200);
-    expect(ws.log("%an")[0]).toBe("Corpus User");
+    expect(ws.log("%an")[0]).toBe("user");
   });
 
   it("404s an unknown id and 400s a malformed one", async () => {

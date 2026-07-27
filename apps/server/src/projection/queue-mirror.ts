@@ -14,9 +14,19 @@ import { toWireEvent, type QueueMirror, type StoredEvent } from "../queue/index.
 import type { ProjectionDb } from "./db.js";
 import { projectEvent } from "./project-runtime.js";
 
-/** The directory holding the file is the status, never the file's own field. */
+/**
+ * The directory holding the file is the status, never the file's own field.
+ *
+ * A transition also ages the console row: `jobs.status` is **joined from the
+ * events mirror, never read from the log file** (the SERVER-004 handoff), so
+ * failing an event has to move the row even though nothing appended a line. The
+ * refresh is limited to jobs that already have a row — a `jobs` row for an event
+ * that never logged would be invented state, and the listing left-joins for
+ * exactly that reason.
+ */
 function upsert(db: ProjectionDb, event: StoredEvent): void {
   projectEvent(db, toWireEvent(event), event.status);
+  db.prepare("UPDATE jobs SET status = ? WHERE event_id = ?").run(event.status, event.id);
 }
 
 /**

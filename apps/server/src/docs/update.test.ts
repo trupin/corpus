@@ -334,7 +334,7 @@ describe("squash-on-idle, through the API", () => {
     );
 
     const authors = ws.log("%an");
-    expect(authors[0]).toBe("Corpus Agent");
-    expect(authors[1]).toBe("Corpus User");
+    expect(authors[0]).toBe("agent");
+    expect(authors[1]).toBe("user");
   });
 });

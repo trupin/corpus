@@ -8,6 +8,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import { contractRoutes } from "@corpus/contract";
 import { errorResponse, unauthorized } from "../errors.js";
+import { createContractPathMatcher } from "./route-path.js";
 
 /**
  * The one route under a guarded prefix that is reachable without a token. Taken
@@ -15,6 +16,33 @@ import { errorResponse, unauthorized } from "../errors.js";
  * silently turn the exemption into a hole somewhere else.
  */
 export const HEALTH_PATH = contractRoutes.getHealth.path;
+
+/**
+ * Every route reachable without the workspace token, and **exactly** those
+ * (SPEC.md §9.2 — "all routes require the workspace bearer token except the
+ * documented exceptions: health probe; loopback job-log ingest").
+ *
+ * Each entry is method **and** path: the ingest is `POST /api/jobs/{id}/log`,
+ * while `GET` on the same path — reading a job's log — stays authenticated.
+ * Exempting the path would hand an unauthenticated caller the agent's console
+ * output; exempting the prefix would hand it the whole jobs surface.
+ */
+export const UNAUTHENTICATED_ROUTES = [
+  // The CLI polls this before it has read the token (SPEC.md §2.1).
+  { method: "GET", path: contractRoutes.getHealth.path },
+  // Tokenless by design, guarded instead by loopback + `Origin` refusal (§7).
+  { method: "POST", path: contractRoutes.appendJobLog.path },
+] as const;
+
+const EXEMPTIONS = UNAUTHENTICATED_ROUTES.map((route) => ({
+  method: route.method,
+  matches: createContractPathMatcher(route.path),
+}));
+
+/** Whether this exact method-and-path pair is one of the documented exceptions. */
+export function isUnauthenticatedRoute(method: string, path: string): boolean {
+  return EXEMPTIONS.some((route) => route.method === method && route.matches(path));
+}
 
 /**
  * Compares two secrets without leaking their common prefix length through
@@ -53,7 +81,7 @@ export function createBearerAuth(options: BearerAuthOptions): MiddlewareHandler 
   const { token, allowQueryToken = false } = options;
 
   return async (c, next) => {
-    if (c.req.method === "GET" && c.req.path === HEALTH_PATH) {
+    if (isUnauthenticatedRoute(c.req.method, c.req.path)) {
       return next();
     }
 

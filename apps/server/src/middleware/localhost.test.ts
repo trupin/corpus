@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { ApiErrorSchema } from "@corpus/contract";
-import { getPeerAddress, isLoopbackAddress, localhostOnly } from "./localhost.js";
+import { getPeerAddress, isLoopbackAddress, localhostOnly, noBrowserOrigin } from "./localhost.js";
 
 describe("isLoopbackAddress", () => {
   it.each([
@@ -100,5 +100,35 @@ describe("localhostOnly", () => {
       headers: { "X-Forwarded-For": "10.0.0.5" },
     });
     expect(response.status).toBe(200);
+  });
+});
+
+async function requestWithOrigin(headers: Record<string, string>): Promise<Response> {
+  const app = new Hono();
+  app.use("*", noBrowserOrigin);
+  app.all("*", (c) => c.json({ ok: true }));
+  return app.request("/api/jobs/evt_7c1d/log", { method: "POST", headers });
+}
+
+describe("noBrowserOrigin", () => {
+  it("lets through a request with no Origin — no legitimate caller sends one", async () => {
+    expect((await requestWithOrigin({})).status).toBe(200);
+  });
+
+  it.each([
+    "http://evil.example",
+    // Same-origin-looking is exactly what an attacker sends: the check is on the
+    // header's presence, never on its value.
+    "http://127.0.0.1:8765",
+    "http://localhost:8765",
+    "null",
+    "",
+  ])("refuses a request carrying Origin: %s", async (origin) => {
+    const response = await requestWithOrigin({ Origin: origin });
+
+    expect(response.status).toBe(403);
+    const parsed = ApiErrorSchema.safeParse(await response.json());
+    expect(parsed.success && parsed.data.code).toBe("forbidden");
+    expect(parsed.success && parsed.data.message).toMatch(/Origin/);
   });
 });
