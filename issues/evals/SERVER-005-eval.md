@@ -2,14 +2,17 @@
 
 **Date**: 2026-07-27
 **Sprint**: sprint-005 (TEST-1…TEST-55, plus TEST-117, TEST-121, TEST-122, TEST-124…TEST-126)
-**Verdict**: FAIL
+**Verdict**: **PASS** (round 2, at `6e23872`) — was FAIL in round 1 (at `879a443`)
 
-54 of 55 SERVER-005 criteria pass, and the sprint's centerpiece (TEST-117) passes end to end. One
-defect fails the issue: **a delete inside the squash window never records the deletion and leaks a
-staged change into the next commit anyone makes.** Everything else in this evaluation is green,
-including every hard case the sprint singled out.
+**Round 1** (HEAD `879a443`): 54 of 55 criteria passed; FAIL-1 — a delete inside the squash window
+never recorded the deletion and leaked a **staged** change into the next commit anyone made.
 
-Evaluated against the final merged state of `phase-2-server-cli` (HEAD `879a443`), on real
+**Round 2** (HEAD `6e23872`, "Amend-would-empty falls back to a fresh commit; index never left
+dirty"): **FAIL-1 is fixed**, both contamination probes are clean, four adversarial pokes at the
+new seam hold, every round-1 passing path is unchanged, and the fix additionally closed round-1's
+Note 1. **55 of 55 criteria pass.** Detail in "Round 2" below.
+
+Round 1 was evaluated against the merged state of `phase-2-server-cli` (HEAD `879a443`), on real
 `corpus init` workspaces with real servers on 127.0.0.1:8890/:8892, real git repositories, real
 `curl`, real `sqlite3`, and real `curl -N` SSE. Where sprint prose and the issue's "Sprint-005
 Adjudications" conflict, the adjudication governs.
@@ -107,7 +110,7 @@ window.
 | #       | Criterion                                | Result | Notes                                                                                                                                                            |
 | ------- | ---------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | TEST-30 | An agent actor cannot delete              | PASS   | **403** `{"code":"forbidden","message":"deletion is user-only; the agent archives, never deletes"}` — the message names the rule. File present, row intact, `HEAD` unchanged. |
-| TEST-31 | A user actor deletes, and history survives | **FAIL** | Passes when the delete falls **outside** the squash window; **fails inside it** — the deletion is never committed and `git log --diff-filter=D` finds nothing. See FAIL-1. |
+| TEST-31 | A user actor deletes, and history survives | **PASS (r2)** | Round 1: FAIL inside the squash window — the deletion was never committed. Round 2 at `6e23872`: `HEAD` advances to a real `doc delete:` commit, `--diff-filter=D` finds it, the file is absent from HEAD's tree, the index is clean, and the create commit survives unrewritten as an ancestor. |
 | TEST-32 | Deletion never cascades to threads         | PASS   | `orphanedThreadIds:["th_eval0001"]`; the `threads` row survives, still names the deleted id as `parent`, still readable. Its anchors no longer resolve. Nothing cascaded. |
 | TEST-33 | Default actor is `user`, read from the shipped header | PASS | Headerless delete succeeds as `user`. `x-corpus-author: agent` → commit authored `agent <agent@corpus.local>`. The wrong header **`X-Corpus-Actor: agent`** is treated as headerless (authored `user`) and is **not rejected**. |
 
@@ -117,7 +120,7 @@ window.
 | ------- | ----------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TEST-34 | Every verb commits with the acting party as author | PASS | Whole history: **50** `user <user@corpus.local>`, **2** `agent <agent@corpus.local>`, plus my own manual commit. **Committer is the process identity** (`Theophane Rupin`), so `%an` alone is a clean audit column, uniform from the `corpus init` commit onward (the adjudicated spelling, superseding the sprint's "Corpus User"). |
 | TEST-35 | The commit body carries machine-readable trailers | PASS  | **51 doc commits, 0 missing** `Corpus-Doc` + `Corpus-Actor`. Exactly one commit carried `Corpus-Anchors: remapped=0 orphaned=1` — and it is the right one: the trailer is **refreshed on amend** and reports the session's net anchor outcome. Commits touching no anchors carry no such trailer. |
-| TEST-36 | The commit stages only the files the mutation touched | **FAIL** | Holds for normal mutations (an unrelated dirty `README.md` stayed dirty; `git show --stat HEAD` listed only the document). **Broken by FAIL-1's staged leak**, which I observed contaminating both SERVER-009's force-break audit commit and a user's own manual `git commit`. |
+| TEST-36 | The commit stages only the files the mutation touched | **PASS (r2)** | Always held for normal mutations. Round 1: broken by FAIL-1's staged leak, observed contaminating SERVER-009's force-break audit commit and a user's own manual `git commit`. Round 2: `git diff --cached` is empty after every scenario; an operator's `git add UNRELATED.md && git commit` carries **only** `UNRELATED.md`; the force-break audit commit is **empty** again; an unrelated dirty file still stays dirty. |
 | TEST-37 | Git operations serialize; no cross-contamination | PASS   | Ten parallel PUTs alternating between two documents → **10 commits, 0 cross-contaminated**. Every commit lists exactly one path and its `Corpus-Doc` trailer matches the file in its diff. |
 | TEST-38 | The git child process runs with a sanitized environment | PASS | Server started **directly** with `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`/`GIT_AUTHOR_*`/`GIT_COMMITTER_*`/`GIT_CONFIG_COUNT|KEY_0|VALUE_0` and lowercase `git_work_tree` all aimed at a foreign repo. Commits landed in the **workspace**; the foreign repo's log was unchanged and its tree clean. Authors were `user`/`agent <@corpus.local>`, **not "Hook Leak"**. The read path (`git show HEAD:<path>`) also stayed clean. |
 
@@ -185,7 +188,7 @@ window.
 
 ## Failures
 
-### FAIL-1: A delete inside the squash window never records the deletion and leaks a staged change
+### FAIL-1: A delete inside the squash window never records the deletion and leaks a staged change — **FIXED, verified round 2**
 
 **Criterion**: TEST-31 (`git log --diff-filter=D -- <path>` shows the deletion), TEST-36 (the
 commit stages only the files the mutation touched), SPEC §4 ("`git log` doubles as the audit trail
@@ -273,16 +276,87 @@ window was built for.
 
 Independently reproduced twice, on two separate workspaces, by two separate testers.
 
+## Round 2 — re-evaluation at `6e23872`
+
+Fresh `corpus init` workspace, real server on 127.0.0.1:8890, real git, real `curl`. Every probe
+below was run by me against the running application.
+
+### The round-1 failing scenario
+
+```
+POST /api/docs {"type":"note","title":"Repro CD"}   → 201 doc_nkvy3ofs
+  create commit = 3b660f0 doc create: Repro CD (doc_nkvy3ofs) by user
+DELETE /api/docs/doc_nkvy3ofs   (same actor, <30 s)
+  → 200 {"deletedId":"doc_nkvy3ofs","orphanedThreadIds":[],"warnings":[]}     ← no commit_failed
+
+HEAD advanced to a delete commit  → 268c238 user <user@corpus.local> | doc delete: Repro CD (…) by user
+--diff-filter=D non-empty         → 268c238 doc delete: Repro CD (doc_nkvy3ofs) by user
+file absent from HEAD tree        → 0 matches
+index clean                       → git status --porcelain empty
+create commit still an ancestor   → YES, and 3b660f0 is unrewritten
+trailers                          → Corpus-Doc / Corpus-Actor
+```
+
+All five required properties hold, and the `commit_failed` warning is gone because the commit now
+actually happens.
+
+### Both contamination probes
+
+| Probe                                                                              | Round 1                                                   | Round 2                                        |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------- |
+| Operator's unrelated commit, after two `create→move→archive→unarchive→delete` chains | carried `key-vocab-probe.md` and `verb-chain.md` deletions | carries **only `UNRELATED.md`**; index was empty beforehand |
+| SERVER-009 force-break audit commit (TEST-67), staged immediately after a create→delete pair | 2 files / 28 deletions                                     | **`git show --stat --format=` is empty**        |
+
+### Adversarial pokes at the new seam
+
+| # | Poke                                                                 | Observed                                                                                                                                                                     |
+| - | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 | Two docs created in one window, then one deleted                      | Different documents correctly break the amend, so the pair never shares a commit — the premise cannot arise. 2 creates → 2 commits; the delete makes its own third commit; **pair-one untouched in HEAD's tree and still `GET` 200**; index clean. |
+| 2 | Delete-in-window when the amended commit **does** carry other content (multi-file skill-folder archive: 4 paths) | The amend is correctly **not** empty, so it amends rather than falling back: 1 commit, re-subjected `doc delete: multi`, carrying the folder move **and** the `SKILL.md` deletion. Disk, HEAD tree and projection all agree exactly (`refs/a.md` + `run.sh` present, `SKILL.md` gone; row deleted; `GET` 404). Index clean. |
+| 3 | Hook rejects the **fallback fresh commit** itself                     | 200 with an **honest** `{"code":"commit_failed","detail":"git commit failed: doc check: refusing this commit"}` (the real reason, not round 1's misleading amend text). `HEAD` unchanged, the create commit not rewritten or emptied, the file gone from disk (mutation stands), and — decisively — **`git diff --cached` is empty**. The residue is ` D` (worktree-only), *not* round 1's `D ` (staged). An operator's `git add … && git commit` afterwards carried **only their own file**. This is the same shape as TEST-44's blessed hook-rejected edit (` M`). |
+| 4 | Hook rejects a **create**                                              | `?? data/docs/inbox/hooked-create.md` — untracked, **not** staged-`A`; the mutation stands on disk, `HEAD` unchanged, and the document is readable (`GET` 200). Non-contaminating. |
+| 5 | The fallback under TEST-42's protected states                          | **Pushed upstream**: fresh delete commit; the pushed create commit survives unrewritten and is still an ancestor of `origin/main`; index clean. **Detached HEAD**: fresh delete commit; `main` byte-identical; the detached create commit not rewritten; index clean. The new plumbing query does not weaken the amend-safety guarantees. |
+
+### Amended commits are re-subjected by the latest verb
+
+```
+after create  → doc create: Subject probe (doc_63sy7zky) by user
+after edit    → doc edit: Subject probe (doc_63sy7zky) by user
+after archive → doc archive: Subject probe (doc_63sy7zky) by user
+after move    → doc move: data/docs/inbox/subject-probe.md → data/docs/finance/subject-probe.md (…) by user
+all folded into 1 commit; final tree path = the moved path; index clean
+```
+
+This closes **round-1 Note 1**: a folded session's `git log` line now names what actually last
+happened to the document instead of being frozen at `doc create:`.
+
+### Round-1 passing paths, re-verified unchanged
+
+| Criterion                                              | Round 2 observation                                                                                      |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| TEST-31 past-window delete                              | 2 commits, absent from HEAD tree, `--diff-filter=D` finds it — byte-identical to round 1                  |
+| TEST-39/40 two rapid saves fold                         | 1 commit containing both edits                                                                            |
+| TEST-18 no-op `PUT`                                     | `HEAD` unchanged, mtime unchanged                                                                         |
+| TEST-30 agent cannot delete                             | 403 `"deletion is user-only; the agent archives, never deletes"`                                          |
+| TEST-36 staging hygiene                                 | `git show --stat HEAD` lists only the document; the unrelated `DIRTY.md` still ` M`                        |
+| TEST-13/15 anchors in the same commit                   | `{"remapped":["anc_r2000001"],"orphaned":[]}`, one commit / one file, `Corpus-Anchors: remapped=1 orphaned=0` |
+| TEST-54 projection health                               | `rebuild` `{"documents":12,…,"skipped":[]}` → `doctor` **`{"ok":true,"drift":[]}`**                        |
+
+### Round-2 gates
+
+`npm run build` ✔ · `npm run lint` ✔ · `npm run format:check` ✔ · `npm run typecheck` (all
+workspaces) ✔ · `npx vitest run` → **2 732 passed / 670 suites, 0 failed** (up 7 from round 1's
+2 725 — the fix carries new tests) · `check-generated-artifacts.ts` ✔.
+
+Final workspace: `git diff --cached` empty; the only worktree residue is my deliberate `DIRTY.md`
+fixture plus the two intentionally hook-rejected mutations; no `*.tmp` anywhere.
+
 ## Notes for the record
 
-1. **Different verbs fold into one commit inside the window.** `create → edit → move → archive →
-   unarchive` within 30 s produces a single commit whose subject is `doc create: …` and whose diff
-   shows the file at its *final* path. The net state is always correct, and no sprint test forbids
-   it — TEST-34 explicitly assumes mutations "spaced beyond the squash window", TEST-41 lists only
-   window/author/document/interleaving as amend-breakers, and Adjudication 2 pins create→edit
-   folding. But `git log` cannot tell you a move or an archive happened, which is in tension with
-   SPEC §4's audit-trail purpose. Flagged for the orchestrator as a possible follow-up, **not**
-   counted as a failure.
+1. ~~**Different verbs fold into one commit inside the window**, leaving the subject frozen at
+   `doc create:`.~~ **Closed in round 2** — the amended commit is now re-subjected by the latest
+   verb, so `git log` names what last happened. Folding itself remains by design (TEST-34 assumes
+   spacing; TEST-41 lists only four amend-breakers; Adjudication 2 pins create→edit folding).
 
 2. **A save during an interrupted rebase is non-durable.** TEST-42(c) passes — a fresh commit is
    created and nothing is rewritten — but the commit lands on the throwaway rebase HEAD. After
@@ -300,7 +374,46 @@ Independently reproduced twice, on two separate workspaces, by two separate test
    directive, and did not silently re-widen. That is the right call and the right escalation; the
    spec text still needs reconciling.
 
+5. **Deleting a multi-file skill leaves its sibling files behind.** `DELETE` on a skill document
+   removes `SKILL.md` only; `refs/a.md` and `run.sh` stayed on disk *and* in git, consistently. The
+   sprint does not specify skill deletion (archive is the specified folder-level operation) and
+   disk, git and projection agree, so this is not a defect — recorded because it contrasts with
+   TEST-26's folder-level archive and may deserve a spec sentence.
+
 ## Summary
+
+### Round 2 verdict: PASS
+
+**55 of 55 SERVER-005 criteria pass**, plus all six cross-issue criteria. FAIL-1 is genuinely
+fixed, not papered over: the delete now produces a real `doc delete:` commit, git history is
+correct and complete, and the index is left matching HEAD in every outcome I could construct —
+including the two I designed specifically to break the new seam (a hook rejecting the fallback
+commit itself, and the fallback running under a pushed upstream and a detached HEAD). The
+remaining residue after a refused commit is worktree-only and provably non-contaminating: an
+operator's own `git commit` now carries only their own work in every scenario that broke it in
+round 1.
+
+Two things I want to credit rather than just record. The fix chose the *narrow* correct condition —
+it asks git plumbing whether the amend would actually empty the commit, rather than blanket-
+disabling the amend for deletes — which is why poke 2 (a delete amending a genuinely non-empty
+multi-file commit) still amends and still produces the right tree. And the index restoration was
+generalised to every non-landed outcome rather than patched at the delete site, which is why the
+hook-rejected *create* also improved (`??` instead of a staged `A`) even though nothing in my
+round-1 report asked for that.
+
+### Round 1 record (superseded)
+
+**54 of 55 criteria passed**, plus the centerpiece with no hop stubbed. The hard cases the sprint
+singled out are genuinely hard and genuinely pass: the hostile-environment test with a
+directly-started server, atomicity under 13 000 concurrent reads, git serialization across ten
+interleaved parallel writes, all four amend-safety states, both no-git variants, and the typed
+client compiling and running without a cast. The proof-of-work log is the most honest I have
+audited in this project — its numbers reproduce, its self-corrections are real, and its bug fix
+carries a proper pre-fix reproduction. The one defect (FAIL-1) was never exercised by it because
+no logged test deleted a document inside the squash window.
+
+<details>
+<summary>Round 1 summary text, for the record</summary>
 
 **54 of 55 SERVER-005 criteria pass**, plus all six cross-issue criteria that touch this issue,
 including the sprint's centerpiece with no hop stubbed. The hard cases the sprint singled out are
@@ -323,3 +436,7 @@ must never leave staged changes behind when its commit does not happen.
 
 Re-evaluate after the fix: FAIL-1's reproduction steps, plus TEST-31, TEST-36 and TEST-67
 (SERVER-009's audit commit must be empty again).
+
+</details>
+
+*All three re-evaluation targets above were met in round 2.*

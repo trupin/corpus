@@ -129,6 +129,18 @@ clean index the break commit is genuinely empty, its subject, trailers and autho
 and it does not amend the preceding commit. **SERVER-009's audit entry is correct; it is
 downstream of SERVER-005's leak.** Fixing FAIL-1 removes this symptom.
 
+**Resolved 2026-07-27 at `6e23872`.** SERVER-005's fix landed and I re-ran this probe: with a
+`create → immediate DELETE` pair staged right before the break (round 1's exact trigger), the
+force-break audit commit is **empty again** —
+
+```
+break commit: 619528a user <user@corpus.local> | lock: force-break on doc_gs5tlpwr (was agent) by user
+$ git show --stat --format= HEAD
+(no output)
+```
+
+TEST-67 now passes on its own terms with nothing to caveat.
+
 ### Note 2 — lock expiry pruning is read-triggered, and precisely so
 
 TEST-72 passes in the state it posits (after TEST-71's `GET /api/locks`). The exact semantics I

@@ -51,11 +51,11 @@ The sole-writer server and the thin-client CLI.
 | CONTRACT-002 | Contract growth: full API surface (queue, locks, jobs, attachments, SSE, query params) | done | P0 | CONTRACT-001 |
 | SERVER-003 | Server bootstrap: Hono app, config, auth, static UI | done | P0 | CONTRACT-001 |
 | SERVER-004 | SQLite projection: schema, projectors, FTS, rebuild/doctor | done | P0 | SERVER-001, SERVER-003 |
-| SERVER-005 | Doc write paths + git auto-commit with author attribution | in_progress | P0 | SERVER-002, SERVER-004, SERVER-013 |
-| SERVER-006 | Thread write paths: creation, turns, events, cascade | todo | P0 | SERVER-005, CONTRACT-002 |
+| SERVER-005 | Doc write paths + git auto-commit with author attribution | done | P0 | SERVER-002, SERVER-004, SERVER-013 |
+| SERVER-006 | Thread write paths: creation, turns, events, cascade | in_progress | P0 | SERVER-005, CONTRACT-002 |
 | SERVER-007 | Watcher + SSE invalidation | done | P0 | SERVER-004 |
 | SERVER-008 | Queue over HTTP: event store + long-poll | done | P0 | SERVER-003, CONTRACT-002 |
-| SERVER-009 | Document locks + job logs | in_progress | P0 | SERVER-007, CONTRACT-002 |
+| SERVER-009 | Document locks + job logs | done | P0 | SERVER-007, CONTRACT-002 |
 | SERVER-010 | Attachments: ingest + serving | todo | P1 | SERVER-006 |
 | SERVER-011 | Collection query endpoint: filters + FTS + needs=me | done | P0 | SERVER-004 |
 | CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | done | P0 | CONTRACT-001, INFRA-007 |
@@ -63,12 +63,12 @@ The sole-writer server and the thin-client CLI.
 | CONTRACT-003 | Request schemas with `.default()` render as required in the generated client | done | P1 | CONTRACT-002 |
 | CONTRACT-004 | Mandatory request bodies are typed optional in the generated client | done | P1 | CONTRACT-002 |
 | SERVER-013 | Anchor engine: substitution class — anchors handed unrelated text while their own survives | done | P1 | SERVER-012 |
-| CONTRACT-005 | Board contract growth: query-key vocabulary, DocRow staleness + thread fields | in_progress | P1 | CONTRACT-002 |
+| CONTRACT-005 | Board contract growth: query-key vocabulary, DocRow staleness + thread fields | done | P1 | CONTRACT-002 |
 | SERVER-014 | Anchor engine: duplicate-survivor policy (remap-one vs orphan) — TEST-64/66 tension | todo | P2 | SERVER-013 |
-| SERVER-015 | Populate CONTRACT-005's new DocRow fields in the collection query | in_progress | P1 | CONTRACT-005, SERVER-011 |
+| SERVER-015 | Populate CONTRACT-005's new DocRow fields in the collection query | done | P1 | CONTRACT-005, SERVER-011 |
 | CLI-002 | `corpus init` + server lifecycle verbs | done | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006 |
-| CLI-004 | Queue, lock, job verbs (agent loop surface) | todo | P0 | CLI-001, SERVER-008, SERVER-009 |
+| CLI-004 | Queue, lock, job verbs (agent loop surface) | in_progress | P0 | CLI-001, SERVER-008, SERVER-009 |
 
 ---
 
