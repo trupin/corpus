@@ -56,6 +56,9 @@ Two file-backed coordination mechanisms that make the agent's work visible and s
 
 ### Key Implementation Details
 
+- **`jobs.status` is joined from the `events` mirror, never read from the log file** _(SERVER-004 handoff, 2026-07-26)_: the projection pins this; the log file carries lines, not state.
+
+
 **Lock lifecycle.** `acquire(docId, holder, ttl?)`: read the existing file; if absent or expired (`now > acquired + ttl`), write the new lock (temp + rename) and return it; if held by the same holder, refresh `acquired` and return 200; otherwise 409 with `{holder, acquired, ttl, expiresAt}`. `release(docId, holder)`: delete only when the holder matches (mismatch → 409; absent → 200 idempotent). The agent acquires implicitly through the CLI's edit verbs (CLI-004); the user's editor session acquires on first keystroke and releases on idle/close (UI-011). Both go through these endpoints — the server remains the sole writer of lock files.
 
 **Force break.** `POST /api/locks/:docId/break` deletes the lock regardless of holder. Because `.corpus/` is gitignored, the audit trail entry is an explicit empty commit: `git commit --allow-empty -m "lock: force-break on <docId> (was <holder>) by user"`. If the broken lock carries `deferredEventId`, call the SERVER-008 queue to move that event back to `pending` so the deferred edit re-enters the queue. The `deferredEventId` field is set by whoever defers (the orchestrator, via the acquire/patch route) — the server just honors it.

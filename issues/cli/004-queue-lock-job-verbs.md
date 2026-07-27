@@ -55,6 +55,9 @@ SPEC.md §7 still describes `idle` as blocking on `fs.watch` of `.corpus/queue/p
 - colocated `*.test.ts`
 
 ### Key Implementation Details
+
+- **`corpus db rebuild` must make the server reopen its database handle** _(SERVER-004 handoff, 2026-07-26)_: `rebuild()` atomically replaces `cache.db`, so a running server's handle points at the old inode afterward — the verb needs a server-side reopen (endpoint or signal), not just the file swap.
+
 **Poll loop.** `pollWindow({ client, totalMs, signal })`: compute a deadline, then loop issuing `GET /api/queue/idle?wait=<segmentSeconds>` with an `AbortController` whose timeout is the segment cap plus a margin. Server responses are one of: `{ event }` → return it immediately; `{ idle: true }` (segment expired, or halted) → continue if time remains; transport failure → retry once after ~500 ms, then fail. The remaining window shrinks monotonically; never extend past the deadline. The default `totalMs` is 8 minutes; the segment cap comes from the server's advertised maximum (SERVER-008) with a client-side fallback.
 
 **Zero-token parking.** The command must produce **no output at all** while parked — no heartbeat lines, no dots. The whole point is that the agent's context grows by one line per 8-minute window.

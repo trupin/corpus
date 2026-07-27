@@ -57,6 +57,9 @@ Implement every write path that produces or mutates a thread: thread creation in
 
 ### Key Implementation Details
 
+- **`.corpus/seen.json` shape pinned** _(SERVER-004 handoff, 2026-07-26)_: a flat `{threadId: isoInstant}` map — SERVER-004's projector already reads this shape into the `seen` table; write exactly it.
+
+
 **Atomicity of creation.** Anchored creation touches two files (the parent's frontmatter and a new `data/threads/th_*.md`). Perform both writes under the per-document write mutex established in SERVER-005, then make a **single** auto-commit staging both paths (`comment: new thread on <parentId> by <author>`). On any failure after the first write, restore the parent file from its pre-write content and unlink the thread file before returning 5xx — never leave an anchor pointing at a nonexistent thread.
 
 **Anchor entries.** Generate `anc_<8 lowercase hex>`, unique within the parent's `anchors` map. The entry stores `{exact, prefix, suffix}` exactly as supplied by the client (the selection capture is a UI concern). Do not attempt resolution at write time — resolution is a projection/render-time concern per §6. Reject an empty or whitespace-only `exact` with 422.
