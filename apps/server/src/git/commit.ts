@@ -20,6 +20,12 @@
 //   previous auto-commit. Every condition under which that would rewrite
 //   something the server did not itself just create is checked first, and the
 //   fallback — a fresh commit — is always safe.
+// - **No attempt ever leaves the index dirty.** The index is a shared file: a
+//   change staged and then not committed is swept up by the *next* commit made
+//   by anything at all, the operator's own included. Every outcome that is not
+//   a landed commit restores the index to `HEAD` for the paths it staged. The
+//   working tree is never touched — the mutation stands (SPEC.md §14), it is
+//   simply not staged.
 
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
@@ -242,7 +248,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
   const amendTarget = async (
     request: CommitRequest,
     head: string,
-  ): Promise<{ subject: string; authorDate: string } | null> => {
+  ): Promise<{ authorDate: string } | null> => {
     if (request.squash === false || request.paths.length === 0) return null;
     const record = session;
     if (record === null) return null;
@@ -261,10 +267,92 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     if (trailerValue(message.stdout, TRAILER_DOC) !== request.docId) return null;
     if (trailerValue(message.stdout, TRAILER_ACTOR) !== request.actor) return null;
 
-    const subject = await git.exec(["log", "-1", "--format=%s"]);
+    // Only the author date is carried over. The *subject* is deliberately the
+    // new save's: when different verbs fold into one window commit, a subject
+    // frozen at the session's first save ends up describing content that has
+    // since been moved, archived or rewritten — `doc create:` on a commit whose
+    // diff shows an archived document at a new path. The latest verb is the one
+    // that describes what the commit now contains.
     const authorDate = await git.exec(["log", "-1", "--format=%aI"]);
-    if (!subject.ok || !authorDate.ok) return null;
-    return { subject: subject.stdout.trim(), authorDate: authorDate.stdout.trim() };
+    if (!authorDate.ok) return null;
+    return { authorDate: authorDate.stdout.trim() };
+  };
+
+  /**
+   * Everything `HEAD` itself contributes, as workspace-relative file paths —
+   * its diff against its parent, or its whole tree when it is a root commit.
+   */
+  const headContribution = async (parent: string | null): Promise<string[] | null> => {
+    const result = await git.exec(
+      parent === null
+        ? ["diff-tree", "--root", "-r", "--name-only", "--no-commit-id", "HEAD"]
+        : ["diff", "--name-only", parent, "HEAD"],
+    );
+    if (!result.ok) return null;
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+  };
+
+  /**
+   * Would folding this save into `HEAD` leave `HEAD` with nothing to say?
+   *
+   * git refuses such an amend outright, and the refusal arrives at the worst
+   * possible moment: the mutation is already on disk and already staged. Asking
+   * first turns the whole case into an ordinary fresh commit — which is what the
+   * history should record anyway. The canonical trigger is a document created
+   * and deleted inside the same idle window: the create commit's entire content
+   * is that one file, and the file is now gone, so amending would restate the
+   * parent and the deletion would go unrecorded.
+   *
+   * The question is answered from plumbing rather than from git's (translatable)
+   * prose. Any path `HEAD` changed that this save does not touch survives the
+   * amend untouched, so the commit still says something; when everything `HEAD`
+   * carries is ours, the amend empties it exactly when our staged content is
+   * what the parent already holds.
+   */
+  const amendWouldEmptyHead = async (paths: readonly string[]): Promise<boolean> => {
+    if (paths.length === 0) return false;
+
+    const parentResult = await git.exec(["rev-parse", "--quiet", "--verify", "HEAD^"]);
+    const parent =
+      parentResult.ok && parentResult.stdout.trim() !== "" ? parentResult.stdout.trim() : null;
+
+    const contributed = await headContribution(parent);
+    if (contributed === null) return false;
+    const isOurs = (path: string): boolean =>
+      paths.some((owned) => path === owned || path.startsWith(`${owned}/`));
+    if (!contributed.every(isOurs)) return false;
+
+    if (parent === null) {
+      // A root commit is empty exactly when its tree is, and by the check above
+      // its tree holds nothing but our paths.
+      const listed = await git.exec(["ls-files", "--", ...paths]);
+      return listed.ok && listed.stdout.trim() === "";
+    }
+    // `--quiet` exits 0 only when there is no difference at all — i.e. the
+    // amended commit would restate its own parent.
+    return (await git.exec(["diff", "--cached", "--quiet", parent, "--", ...paths])).ok;
+  };
+
+  /**
+   * Restore the index to `HEAD` for the paths an attempt staged, leaving the
+   * working tree alone. Called on every outcome that is not a landed commit, so
+   * a refused auto-commit can never escape into someone else's.
+   */
+  const unstage = async (paths: readonly string[], head: string | null): Promise<void> => {
+    if (paths.length === 0) return;
+    const result =
+      head === null
+        ? await git.exec(["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", ...paths])
+        : await git.exec(["reset", "--quiet", "HEAD", "--", ...paths]);
+    if (!result.ok) {
+      logger.error("could not restore the index after an auto-commit that did not land", {
+        paths: [...paths],
+        output: gitOutput(result),
+      });
+    }
   };
 
   const headSha = async (): Promise<string | null> => {
@@ -310,27 +398,35 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     // legitimately names a path that no longer exists (and a never-committed
     // skill folder names one git has never heard of). Filtering keeps one such
     // path from failing the commit for the paths that are real.
+    const allowEmpty = request.allowEmpty ?? false;
     const paths = await stageablePaths(request.paths);
+    const head = await headSha();
     if (paths.length > 0) {
       // `-A` so a removal (a delete, or a move's old path) stages as a removal
       // rather than being silently left behind in the tree.
       const staged = await git.exec(["add", "-A", "--", ...paths]);
-      if (!staged.ok) return failure("staging failed", staged);
-    } else if (!(request.allowEmpty ?? false)) {
+      if (!staged.ok) {
+        await unstage(paths, head);
+        return failure("staging failed", staged);
+      }
+    } else if (!allowEmpty) {
       return { kind: "skipped", reason: "nothing to commit" };
     }
 
-    if (!(request.allowEmpty ?? false)) {
+    if (!allowEmpty) {
       const status = await git.exec(["status", "--porcelain", "--", ...paths]);
       if (status.ok && status.stdout.trim() === "") {
+        await unstage(paths, head);
         return { kind: "skipped", reason: "nothing to commit" };
       }
     }
 
-    const head = await headSha();
-    const target = head === null ? null : await amendTarget(request, head);
+    const candidate = head === null ? null : await amendTarget(request, head);
+    // An amend that would empty the commit is refused by git; make the fresh
+    // commit that records this save instead of losing it to that refusal.
+    const target =
+      candidate !== null && !allowEmpty && (await amendWouldEmptyHead(paths)) ? null : candidate;
     const anchors = mergeAnchors(target === null ? null : session, request.anchors);
-    const subject = target?.subject ?? request.subject;
     const message = buildTrailers(
       request.docId,
       request.actor,
@@ -344,12 +440,12 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       "commit",
       `--author=${gitAuthorOf(request.actor)}`,
       "-m",
-      subject,
+      request.subject,
       "-m",
       message,
     ];
     if (target !== null) args.push("--amend", `--date=${target.authorDate}`);
-    if (request.allowEmpty ?? false) args.push("--allow-empty");
+    if (allowEmpty) args.push("--allow-empty");
     // `--only` commits the named paths' working-tree content and disregards
     // whatever else is staged, so an operator's staged-but-unrelated work is
     // never swallowed. It needs a HEAD to compare against, and needs the paths
@@ -359,6 +455,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     const committed = await git.exec(args);
     if (!committed.ok) {
       session = null;
+      await unstage(paths, head);
       return failure(
         target === null ? "git commit failed" : "git commit --amend failed",
         committed,
@@ -368,6 +465,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     const sha = await headSha();
     if (sha === null) {
       session = null;
+      await unstage(paths, head);
       return { kind: "skipped", reason: "commit produced no HEAD" };
     }
     session = {

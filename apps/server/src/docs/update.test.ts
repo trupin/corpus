@@ -304,19 +304,23 @@ describe("squash-on-idle, through the API", () => {
     // Sprint-005 Open Conflict 5's adjudication: a create followed by an edit
     // inside the idle window **folds** — "create the document, type into it" is
     // one editing session by SPEC.md §4's own framing. So all three saves are
-    // still the create commit.
+    // one commit.
     expect(ws.head()).not.toBe(afterCreate);
     expect(ws.git("log", "--format=%s", `${afterCreate}~1..HEAD`).trim().split("\n")).toHaveLength(
       1,
     );
-    expect(ws.log("%s")[0]).toContain("doc create: Session");
+    // …and it is labelled by the last verb folded into it, not the first: a
+    // subject frozen at the session's opening save would describe content the
+    // session has since rewritten (SERVER-005 eval, "Notes for the record" 1).
+    expect(ws.log("%s")[0]).toContain("doc edit: Session");
     expect(ws.git("show", `HEAD:${created.path}`)).toContain("edit two");
 
     ws.advance(SQUASH_IDLE_MS);
     await ws.put(`/api/docs/${created.id}`, { body: "a later session" });
     const subjects = ws.log("%s");
     expect(subjects[0]).toContain("doc edit: Session");
-    expect(subjects[1]).toContain("doc create: Session");
+    expect(subjects[1]).toContain("doc edit: Session");
+    expect(subjects[2]).toContain("seed the workspace");
   });
 
   it("does not fold across actors", async () => {

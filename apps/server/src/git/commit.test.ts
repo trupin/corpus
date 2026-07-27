@@ -28,7 +28,10 @@ afterEach(() => {
   repo = undefined;
 });
 
-function makeRepo(name: string, options: { init?: boolean; identity?: boolean } = {}): Repo {
+function makeRepo(
+  name: string,
+  options: { init?: boolean; identity?: boolean; seed?: boolean } = {},
+): Repo {
   const root = mkdtempSync(join(tmpdir(), `corpus-s005-${name}-`));
   const git = (...args: string[]): string =>
     execFileSync("git", args, {
@@ -44,9 +47,11 @@ function makeRepo(name: string, options: { init?: boolean; identity?: boolean } 
       git("config", "user.name", "Workspace Owner");
       git("config", "user.email", "owner@example.test");
     }
-    writeFileSync(join(root, "seed.txt"), "seed\n", "utf8");
-    git("add", "-A", "--", "seed.txt");
-    git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "seed");
+    if (options.seed !== false) {
+      writeFileSync(join(root, "seed.txt"), "seed\n", "utf8");
+      git("add", "-A", "--", "seed.txt");
+      git("-c", "user.name=Seed", "-c", "user.email=seed@example.test", "commit", "-m", "seed");
+    }
   }
 
   const state = { clock: Date.parse("2026-07-27T09:00:00Z") };
@@ -324,7 +329,10 @@ describe("createAutoCommitter", () => {
     expect(execFileSync("cat", [join(r.root, DOC)], { encoding: "utf8" })).toBe(
       "edited despite the hook",
     );
-    expect(r.git("status", "--porcelain")).toContain(DOC);
+    expect(r.git("status", "--porcelain", "-uall")).toContain(DOC);
+    // …and nothing of it is left in the index: the refused commit must not be
+    // waiting to ride along on whatever commits next.
+    expect(r.git("diff", "--cached", "--name-only").trim()).toBe("");
 
     // Removing the hook restores normal behaviour.
     rmSync(hook);
@@ -412,6 +420,222 @@ describe("createAutoCommitter", () => {
       "doc delete",
     );
     expect(r.git("show", "HEAD~1:" + DOC)).toBe("one");
+  });
+
+  // Regression, evaluator FAIL-1 (SERVER-005-eval): a document created and then
+  // deleted inside the idle window used to try to amend the create commit. The
+  // amend would have emptied it, git refused, and the deletion was lost — while
+  // the staged removal stayed in the index.
+  it("falls back to a fresh commit when amending would empty the previous one", async () => {
+    const r = makeRepo("amend-would-empty");
+    r.touch(DOC, "created inside the window");
+    const created = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    expect(created.kind).toBe("committed");
+    const createSha = r.git("rev-parse", "HEAD").trim();
+
+    r.clock += 100;
+    rmSync(join(r.root, DOC));
+    const deleted = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    // A fresh commit, not a refusal and not a rewrite.
+    expect(deleted.kind).toBe("committed");
+    expect(r.git("rev-parse", "HEAD").trim()).not.toBe(createSha);
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(createSha);
+    // The deletion is in the audit trail (SPEC.md §4) and the file is gone from
+    // the tree, while the create commit still holds its content.
+    expect(r.git("log", "--diff-filter=D", "--format=%s", "--", DOC).trim()).toBe(
+      "doc delete: Note (doc_aaaa1111) by user",
+    );
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain(DOC);
+    expect(r.git("show", `${createSha}:${DOC}`)).toBe("created inside the window");
+  });
+
+  it("leaves nothing staged after a delete inside the window, so the next commit is uncontaminated", async () => {
+    const r = makeRepo("delete-window-index");
+    r.touch(DOC, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    r.clock += 100;
+    rmSync(join(r.root, DOC));
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    expect(r.git("status", "--porcelain").trim()).toBe("");
+
+    // The evaluator's contamination scenario, exactly: the operator commits
+    // their own unrelated work and must ship nothing of ours with it.
+    r.touch("UNRELATED.md", "the operator's own work\n");
+    r.git("add", "--", "UNRELATED.md");
+    r.git("commit", "-m", "an unrelated user commit");
+    const stat = r.git("show", "--stat", "--format=", "HEAD");
+    expect(stat).toContain("UNRELATED.md");
+    expect(stat).not.toContain(DOC);
+  });
+
+  it("leaves nothing staged when git refuses the commit, so the next commit is uncontaminated", async () => {
+    const r = makeRepo("refused-index");
+    r.touch(DOC, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create",
+      paths: [DOC],
+    });
+    r.clock += SQUASH_IDLE_MS * 2;
+
+    const hook = join(r.root, ".git", "hooks", "pre-commit");
+    writeFileSync(hook, "#!/bin/sh\nexit 1\n", "utf8");
+    chmodSync(hook, 0o755);
+    rmSync(join(r.root, DOC));
+    const outcome = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete",
+      paths: [DOC],
+    });
+    expect(outcome.kind).toBe("failed");
+    rmSync(hook);
+
+    // The deletion still stands on disk, unstaged — `D` in the working tree, not
+    // `D ` in the index.
+    expect(r.git("status", "--porcelain").trim()).toBe(`D ${DOC}`);
+    expect(r.git("diff", "--cached", "--name-only").trim()).toBe("");
+
+    r.touch("UNRELATED.md", "the operator's own work\n");
+    r.git("add", "--", "UNRELATED.md");
+    r.git("commit", "-m", "an unrelated user commit");
+    const stat = r.git("show", "--stat", "--format=", "HEAD");
+    expect(stat).toContain("UNRELATED.md");
+    expect(stat).not.toContain(DOC);
+  });
+
+  it("falls back to a fresh commit when the root commit itself would be emptied", async () => {
+    // An unborn branch: the server's own first commit *is* the root commit, so
+    // "would the amend be empty" has no parent to compare against and is asked
+    // of the tree instead.
+    const r = makeRepo("amend-would-empty-root", { seed: false });
+    r.touch(DOC, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create",
+      paths: [DOC],
+    });
+    const rootSha = r.git("rev-parse", "HEAD").trim();
+
+    r.clock += 100;
+    rmSync(join(r.root, DOC));
+    const outcome = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete",
+      paths: [DOC],
+    });
+
+    expect(outcome.kind).toBe("committed");
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(rootSha);
+    expect(r.git("log", "--diff-filter=D", "--format=%s", "--", DOC).trim()).toBe("doc delete");
+    expect(r.git("status", "--porcelain").trim()).toBe("");
+  });
+
+  it("unstages on an unborn branch too, when the very first commit is refused", async () => {
+    const r = makeRepo("unborn-refused", { seed: false });
+    const hook = join(r.root, ".git", "hooks", "pre-commit");
+    writeFileSync(hook, "#!/bin/sh\nexit 1\n", "utf8");
+    chmodSync(hook, 0o755);
+
+    r.touch(DOC, "one");
+    const outcome = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create",
+      paths: [DOC],
+    });
+
+    expect(outcome.kind).toBe("failed");
+    // Nothing staged, so the operator's own first commit is theirs alone. With
+    // no HEAD to reset to, the entry has to leave the index outright.
+    expect(r.git("diff", "--cached", "--name-only").trim()).toBe("");
+    expect(r.git("status", "--porcelain", "-uall").trim()).toBe(`?? ${DOC}`);
+  });
+
+  it("still amends when the previous commit says more than this save touches", async () => {
+    const r = makeRepo("amend-wider-head");
+    const other = "data/docs/inbox/other.md";
+    r.touch(DOC, "one");
+    r.touch(other, "kept");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create",
+      paths: [DOC, other],
+    });
+    const base = r.git("rev-parse", "HEAD~1").trim();
+
+    r.clock += 100;
+    rmSync(join(r.root, DOC));
+    const outcome = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc delete",
+      paths: [DOC],
+    });
+
+    // Reverting our path does not empty the commit: it still introduces `other`.
+    expect(outcome.kind).toBe("amended");
+    expect(r.git("rev-parse", "HEAD~1").trim()).toBe(base);
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).toContain(other);
+    expect(r.git("ls-tree", "-r", "--name-only", "HEAD")).not.toContain(DOC);
+  });
+
+  it("amends under the latest verb's subject, so a folded commit never mislabels itself", async () => {
+    const r = makeRepo("fold-subject");
+    const base = r.git("rev-parse", "HEAD").trim();
+    r.touch(DOC, "created");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    r.clock += 100;
+    r.touch(DOC, "edited");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    r.clock += 100;
+    r.touch(DOC, "archived");
+    const last = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc archive: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    expect(last.kind).toBe("amended");
+    expect(r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n")).toHaveLength(1);
+    expect(r.log("%s")[0]).toBe("doc archive: Note (doc_aaaa1111) by user");
   });
 
   it("answers 'nothing to commit' when the paths hold no change", async () => {

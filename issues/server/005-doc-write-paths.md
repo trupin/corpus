@@ -544,6 +544,224 @@ sentence. Implemented per §9.2 and the orchestrator's directive; if §11's phra
 license a *scoped* carry-over (plugin-declared keys only, never the fields with documented server
 defaults), that is a spec clarification plus a follow-up issue, not a silent re-widening.
 
+### Amendment — fix loop round 1: FAIL-1, the amend that would empty the create commit (2026-07-27)
+
+**Fixed on: opus.** Addresses `issues/evals/SERVER-005-eval.md` FAIL-1 (TEST-31, TEST-36, TEST-67)
+and the evaluator's "Notes for the record" item 1 (a folded commit's subject naming the first verb).
+The rebase-interrupted non-durability note (item 2) is accepted as-is and untouched.
+
+#### Pre-fix reproduction (real server, real workspace, before any code change)
+
+Fresh `corpus init` workspace at `/tmp/corpus-s005f-repro`, real server on **port 8765**
+(`corpus server start --workspace /tmp/corpus-s005f-repro`, pid 40020), real `curl`, real git.
+
+```
+$ git log -1 --format='%h %s'
+  3f53f2a workspace: initialize corpus workspace by user
+
+$ curl -X POST …/api/docs -d '{"type":"note","title":"Repro CD3"}'      → 201 doc_e2isbjz7
+$ git log -1 --format='%h %s'
+  e4ce75c doc create: Repro CD3 (doc_e2isbjz7) by user
+
+$ curl -X DELETE …/api/docs/doc_e2isbjz7        (same actor, <30 s)     → HTTP 200
+  {"deletedId":"doc_e2isbjz7","orphanedThreadIds":[],
+   "warnings":[{"code":"commit_failed",
+     "detail":"git commit --amend failed: On branch main\nNo changes\nYou asked to amend the most
+               recent commit, but doing so would make\nit empty. You can repeat your command with
+               --allow-empty, or you can\nremove the commit entirely with \"git reset HEAD^\"."}]}
+
+$ ls data/docs/inbox/repro-cd3.md            → No such file or directory   (file gone)
+$ git log -1 --format='%h %s'                → e4ce75c doc create: …       ← HEAD UNMOVED
+$ git ls-tree -r --name-only HEAD | grep -c repro-cd3   → 1                ← still in HEAD's tree
+$ git log --diff-filter=D -- data/docs/inbox/repro-cd3.md → (empty)        ← deletion never recorded
+$ git status --porcelain                     → D  data/docs/inbox/repro-cd3.md   ← STAGED LEAK
+```
+
+Contamination, same workspace, immediately after:
+
+```
+$ printf 'x\n' > UNRELATED.md && git add UNRELATED.md
+$ git commit -m "an unrelated user commit"
+$ git show --stat --format='%s' HEAD
+  an unrelated user commit
+   UNRELATED.md                 |  1 +
+   data/docs/inbox/repro-cd3.md | 19 -------------------      ← the user shipped our deletion
+   2 files changed, 1 insertion(+), 19 deletions(-)
+$ git status --porcelain                     → (clean)        ← the leak is now someone else's commit
+```
+
+Secondary (evaluator note 1), same server, same window:
+
+```
+$ POST /api/docs {"title":"Verb Fold"}  → doc_mqbuikoo
+$ PUT  /api/docs/doc_mqbuikoo {"body":"edited body\n"}
+$ POST /api/docs/doc_mqbuikoo/archive   → 200, status archived
+$ git log -1 --format='%h %s'
+  7697da8 doc create: Verb Fold (doc_mqbuikoo) by user        ← subject names the FIRST verb
+```
+
+#### The fix (`apps/server/src/git/commit.ts` only)
+
+1. **`amendWouldEmptyHead(paths)` — ask before committing, not after.** git refuses an amend that
+   would empty the commit, and the refusal arrives at the worst possible moment: the mutation is
+   already on disk and already staged. The question is answered from plumbing, not from git's
+   (translatable) prose. `HEAD`'s own contribution is `git diff --name-only HEAD^ HEAD`
+   (`diff-tree --root -r` for a root commit); if any path in it lies outside this save's paths, the
+   amended commit still says something and is safe. When everything `HEAD` carries is ours,
+   `git diff --cached --quiet HEAD^ -- <paths>` exits 0 exactly when the staged content restates the
+   parent — the amend would be empty. In that case the amend target is dropped and the save becomes
+   an **ordinary fresh commit**, which is what history should have recorded anyway. (Root commit:
+   the tree is empty iff `git ls-files -- <paths>` lists nothing.) The primitives were checked
+   against real git before the code was written — the exit codes above, and `git reset -q HEAD --
+   <path>` exiting 0 even for a pathspec git has never heard of.
+
+2. **The staged-state invariant.** `unstage(paths, head)` restores the index to `HEAD` for exactly
+   the paths an attempt staged, and it now runs on **every** outcome that is not a landed commit:
+   staging failure, `nothing to commit`, `commit produced no HEAD`, and git refusing the commit
+   (hook rejection included). The working tree is never touched — the mutation stands (SPEC §14), it
+   is simply no longer in the shared index, so it cannot ride along on the next commit made by
+   anything at all. `git reset --quiet HEAD -- <paths>` where there is a `HEAD`,
+   `git rm --cached -r -q --ignore-unmatch` on an unborn branch. The property is stated in the
+   module header alongside the other three the file carries.
+
+3. **Subject honesty on a fold.** The amended commit's subject is now the *latest* verb's
+   (`request.subject`) rather than the one frozen at the session's first save, so
+   `create → edit → move → archive → unarchive` inside the window reads `doc unarchive: …` instead
+   of `doc create: …` describing content that has since moved and changed status. The folding itself
+   is unchanged (SPEC §4 squash-on-idle, Adjudication 2); only the label is corrected, and the
+   trailers were already truthful. `amendTarget` no longer reads `%s` at all — one fewer git call
+   per fold, and it now returns the author date alone.
+
+#### Post-fix verification
+
+Fresh `corpus init` workspace at `/tmp/corpus-s005f-verify`, real server on **port 8765**
+(`corpus server start`, pid 165), real `curl`, real git, real hooks.
+
+**A — create → DELETE inside the window (FAIL-1's exact reproduction):**
+
+```
+POST /api/docs {"type":"note","title":"Fix CD"}  → 201 doc_xvkx5dra
+  HEAD eaa8246 doc create: Fix CD (doc_xvkx5dra) by user
+DELETE /api/docs/doc_xvkx5dra                    → HTTP 200  {"warnings":[]}   ← was commit_failed
+  HEAD                → fbbfcd4 doc delete: Fix CD (doc_xvkx5dra) by user      ← HEAD ADVANCED
+  ls-tree -r HEAD     → 0 matches for fix-cd                                   ← gone from the tree
+  --diff-filter=D     → fbbfcd4 doc delete: Fix CD (doc_xvkx5dra) by user      ← deletion RECORDED
+  git status          → (empty)                                                ← NO staged leak
+  merge-base --is-ancestor eaa8246 HEAD → yes; git show eaa8246:<path> → the file   (history kept)
+```
+
+**B — the contamination is gone:**
+
+```
+printf 'x\n' > UNRELATED.md; git add UNRELATED.md; git commit -m "an unrelated user commit"
+git show --stat --format='%s' HEAD
+  an unrelated user commit
+   UNRELATED.md | 1 +
+   1 file changed, 1 insertion(+)          ← the user's file ALONE
+git status --porcelain → (empty)
+```
+
+**C — the whole verb chain inside one window (the evaluator's "this is how I first hit it"):**
+
+```
+create → edit → move(finance) → archive → unarchive → DELETE, all inside 30 s
+DELETE → HTTP 200 {"warnings":[]}
+commits since the chain started:
+  f504d65 doc delete: Chain (doc_lyf4mam4) by user     ← the fresh fallback commit
+  f51fea3 doc unarchive: Chain (doc_lyf4mam4) by user  ← the folded session commit, labelled by
+                                                         the LAST verb folded in (was "doc create:")
+git status → (empty)   ls-tree → 0 matches   --diff-filter=D → f504d65
+```
+
+**D — a refused commit leaves nothing staged:**
+
+```
+.git/hooks/pre-commit → echo "doc check: refusing" >&2; exit 1
+PUT /api/docs/<id> → 200, warnings [{"code":"commit_failed",
+                                    "detail":"git commit --amend failed: doc check: refusing"}]
+HEAD                       → 4fb3e01, unmoved
+git status --porcelain -uall →  M data/docs/inbox/hooked.md     ← unstaged (was "M ")
+git diff --cached --name-only → (empty)                          ← the invariant
+file on disk               → holds the edit (SPEC §14: the mutation stands)
+then, hook removed: the operator's own commit carries UNRELATED2.md ALONE
+                    the next PUT commits normally → 9c43f26 doc edit: Hooked (doc_d23s6s5v) by user,
+                    git status → (empty)
+```
+
+**E — the non-amending delete path is unchanged:**
+
+```
+create → wait 31 s (past SQUASH_IDLE_MS) → DELETE → 200 {"warnings":[]}
+commits since the create: 6d548da doc delete: Late CD (doc_givnyrpr) by user   (so 2 in total)
+--diff-filter=D → 6d548da       git status → (empty)
+```
+
+**F — SERVER-009's force-break audit commit is empty again (TEST-67):**
+
+```
+POST /api/locks/doc_qdblllts        (x-corpus-author: agent) → holder agent
+POST /api/locks/doc_qdblllts/break  (user)                   → released true
+HEAD                          → eb7b3de lock: force-break on doc_qdblllts (was agent) by user
+git show --stat --format= HEAD → (empty)      ← nothing swept in
+git status --porcelain         → (empty)
+```
+
+**G — squash-on-idle still folds, author timestamp still preserved (TEST-39/40):**
+
+```
+create, then two PUTs inside the window → 1 commit since the create
+HEAD  → 5f7c6b6 doc edit: Squash (doc_afcdrurn) by user
+%aI|%cI → 2026-07-27T01:09:53-07:00|2026-07-27T01:09:54-07:00   (author = session start)
+git show HEAD:<path> | grep -c 'EDIT [AB] marker' → 2     git status → (empty)
+```
+
+Server stopped by pid (`corpus server stop` → "stopped (pid 165)"), both scratch trees
+(`/tmp/corpus-s005f-repro`, `/tmp/corpus-s005f-verify`) removed, `lsof -nP -iTCP:8765` empty
+afterwards. `git status` in the repo worktree shows only `apps/server/**` and this issue file.
+
+_Not re-run here_: `db rebuild` / `db doctor` are not yet exposed as CLI verbs or HTTP routes in this
+tree, so TEST-54/TEST-125 could not be re-measured from outside. Nothing in this change touches the
+projection, the watcher or SSE — the diff is confined to `git/commit.ts`'s index handling and amend
+decision — and the repo-wide suite (which drives projection and drift through the real app) is green.
+
+#### Tests
+
+`apps/server/src/git/commit.test.ts` grows seven cases, three of them named regressions for FAIL-1:
+
+- _"falls back to a fresh commit when amending would empty the previous one"_ — create-then-delete
+  inside the window: `committed` (not `failed`), the deletion appears in `--diff-filter=D`, the
+  create commit survives as `HEAD~1` and still holds the file.
+- _"leaves nothing staged after a delete inside the window, so the next commit is uncontaminated"_ —
+  the evaluator's contamination scenario as a regression test: after the delete, the operator's own
+  commit is made and its `--stat` lists their file **only**.
+- _"leaves nothing staged when git refuses the commit, so the next commit is uncontaminated"_ — the
+  same invariant on the path where no commit happens at all (a hook rejects a delete): status is
+  `D <path>` (working tree), `git diff --cached` is empty, and the operator's next commit is clean.
+- _"falls back to a fresh commit when the root commit itself would be emptied"_ — the parentless
+  branch of the emptiness check, on an unborn-branch repository.
+- _"unstages on an unborn branch too, when the very first commit is refused"_ — the `git rm
+  --cached` half of `unstage`.
+- _"still amends when the previous commit says more than this save touches"_ — the guard rail: a
+  session commit that also carries a second path is still amendable when our path reverts.
+- _"amends under the latest verb's subject, so a folded commit never mislabels itself"_ — create →
+  edit → archive folds to one commit subjected `doc archive: …`.
+
+Updated: the hook-failure case now also asserts the empty index (and reads status with `-uall`,
+since an unstaged never-committed file is `?? ` rather than `A `); `docs/update.test.ts`'s
+squash-through-the-API case asserts the folded subject names the latest verb. `"stages a removal and
+skips a path git has never heard of"` keeps its >30 s spacing — that is the non-amending delete
+path, deliberately unchanged.
+
+#### Gates
+
+`npm run build` ✔ · `npm run lint` ✔ (0 errors, 0 warnings) · `npm run format:check` ✔ ·
+`npm run typecheck` (every workspace) ✔ · `npm run test:coverage` → **155 files / 2 732 tests, all
+passing**, statements **98.74 %**, branches **95.01 %**, functions **99.40 %**, lines **98.74 %**
+(gate 90 %); `git/commit.ts` itself 94.07 % lines / 88.50 % branches.
+
+The evaluator's "Notes for the record" item 2 (a save during an interrupted rebase lands on the
+throwaway rebase HEAD and is unreachable after `--abort`) is **accepted as-is and untouched** here.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing
