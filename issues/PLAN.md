@@ -65,6 +65,7 @@ The sole-writer server and the thin-client CLI.
 | SERVER-013 | Anchor engine: substitution class — anchors handed unrelated text while their own survives | done | P1 | SERVER-012 |
 | CONTRACT-005 | Board contract growth: query-key vocabulary, DocRow staleness + thread fields | in_progress | P1 | CONTRACT-002 |
 | SERVER-014 | Anchor engine: duplicate-survivor policy (remap-one vs orphan) — TEST-64/66 tension | todo | P2 | SERVER-013 |
+| SERVER-015 | Populate CONTRACT-005's new DocRow fields in the collection query | in_progress | P1 | CONTRACT-005, SERVER-011 |
 | CLI-002 | `corpus init` + server lifecycle verbs | done | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006 |
 | CLI-004 | Queue, lock, job verbs (agent loop surface) | todo | P0 | CLI-001, SERVER-008, SERVER-009 |

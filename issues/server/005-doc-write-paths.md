@@ -48,6 +48,16 @@ Implement the document mutation surface: create, edit, move, archive, and delete
 - [ ] Every mutation re-projects synchronously before responding (read-your-write, §9.1) — an immediately following `GET` reflects the change with no polling.
 - [ ] Unit + integration tests cover each verb, the anchor-reconciliation path, the squash window (inside and outside it), the actor gate on delete, and the hook-failure path.
 
+## Sprint-005 Adjudications (binding, 2026-07-27)
+
+Orchestrator decisions — implement exactly these; full reasoning in `issues/sprints/sprint-005.md`:
+
+1. **Warnings field**: CONTRACT-005 adds the §14 response-side `warnings` carrier (rider) — CONTRACT-005 hard-blocks this issue's warning ACs; build against its shape (coordinate via the sprint contract, not by inventing).
+2. **Squash residuals pinned**: idle window **30 s**; create→edit within the window **folds** (amend), per SPEC §4's amend-within-idle-window.
+3. **Header is `x-corpus-author`** (shipped contract), never `X-Corpus-Actor`; **`baseHash` ACs are struck** (no such contract field — do not defer, delete); move/archive collisions are **400 with `issues`** (no 409 is declared on those routes).
+4. **Git hygiene**: the server is now a git writer — duplicate `sanitizeGitEnv` (strip `GIT_*` by prefix, case-insensitive) as a server-local util with a cross-reference comment to apps/cli's, use it on EVERY git child spawn, retrofit the existing unsanitized `readHeadVersion` in the watcher's git-head.ts, and port the hostile-env regression test.
+5. **Self-writes register** with the watcher's registry so no double-projection; mutation sequence per Domain Knowledge (validate → write atomically → reconcile → auto-commit → re-project synchronously → broadcast).
+
 ## Technical Design
 
 ### Files to Create/Modify

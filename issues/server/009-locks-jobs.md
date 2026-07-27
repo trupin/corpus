@@ -40,6 +40,14 @@ Two file-backed coordination mechanisms that make the agent's work visible and s
 - [ ] Retry (failed → pending) and abandon are wired to the SERVER-008 queue transitions.
 - [ ] A job's `.jsonl` file is deleted when its event is reaped, abandoned, or pruned.
 
+## Sprint-005 Adjudications (binding, 2026-07-27)
+
+Orchestrator decisions — the contract wins on all eight divergences; full reasoning in `issues/sprints/sprint-005.md`:
+
+1. Acquire is **201 at `POST /api/locks/{docId}`**; non-holder release **403**; absent lock **404**; break is **user-only** (agent → 403); abandon **deletes nothing** (the vacuous AC is struck); job-log cursor param is **`cursor`** (not `since`); listing defaults **50/200**; unknown job id **404**. `deferredEventId` is **struck** (no wire home).
+2. **Security surface, all four §7 hardening measures are ACs**: Origin-header rejection (NOT currently in `localhostOnly` — add it for this path), line cap, unknown-job refusal, plain-text render posture; the tokenless auth exemption for `POST /api/jobs/{id}/log` must be **method-and-path exact** — the GET log read stays authenticated.
+3. `jobs.status` joins from the events mirror, never the log file (SERVER-004 handoff already in this file).
+
 ## Technical Design
 
 ### Files to Create/Modify

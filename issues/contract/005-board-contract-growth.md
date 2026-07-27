@@ -41,6 +41,14 @@ Two gaps found while sprint-004 pinned SERVER-007/011 to the shipped contract: (
 - [ ] All standing invariants hold (400/401, no request defaults, explicit required, component purity); artifacts regenerated, byte-deterministic, drift green.
 - [ ] Round-trip tests for changed schemas; the vocabulary constants have a test pinning the closed set.
 
+## Sprint-005 Adjudications (binding, 2026-07-27)
+
+Orchestrator decisions — full reasoning in `issues/sprints/sprint-005.md`:
+
+1. **Rider: the §14 `warnings` carrier** — response-side field (e.g. on mutation responses) for validation warnings; additive, no new routes/request bodies, every pinned invariant holds. This issue now hard-blocks SERVER-005's warning ACs — it merges FIRST in the sprint.
+2. **The key vocabulary is the emitted nine-shape set** recorded in SERVER-007's E2E log — including both lock keys (`["locks"]`, `["locks",docId]`); the issue's earlier example list is superseded.
+3. **DocRow growth breaks merged SERVER-011** (nullable fields it doesn't populate red the server typecheck): SERVER-015 is filed to populate them and merges together with this issue — expect the orchestrator to gate the combined harvest.
+
 ## Technical Design
 
 ### Files to Create/Modify
