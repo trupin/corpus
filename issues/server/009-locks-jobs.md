@@ -413,6 +413,8 @@ them. `GET /api/locks` → `{"locks":[]}`, `GET /api/jobs` → `{"jobs":[]}`,
 `GET /api/queue/status` → `{"halted":false,"pending":0,…}`: the SERVER-009 surfaces survived the
 merge intact.
 
+**2026-07-27 — CONTRACT-006 follow-up (`appended` honesty), opus.** Real `corpus init` workspace `/tmp/corpus-e2e-cap`, real server (`tsx apps/server/src/main.ts`, ports 8792 pre-fix / 8793 post-fix), real `curl`, log filled to exactly `MAX_LOG_FILE_BYTES`: **pre-fix** `POST /api/jobs/evt_capdemo/log` on the capped log → `201 {"eventId":"evt_capdemo","appended":true}` (the lie — the line was dropped); **post-fix** same call → `201 {"appended":false}` on both the tokenless hook path and the `Bearer`-authenticated CLI path, while an uncapped job (`evt_fresh01`) still answers `201 {"appended":true}`; `GET /api/jobs/evt_capdemo/log` shows only the pre-cap line plus one `log capped at 4194304 bytes; further lines were dropped` notice — none of the three refused lines. Status code unchanged at `201` throughout.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

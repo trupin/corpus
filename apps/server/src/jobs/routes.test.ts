@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -14,7 +14,12 @@ import type { ServerConfig } from "../config.js";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { silentLogger } from "../logger.js";
 import { createProjectionQueueMirror } from "../projection/index.js";
-import { MAX_LOG_LINE_BYTES, StoredLogLineSchema } from "./store.js";
+import {
+  FILE_CAP_NOTICE,
+  MAX_LOG_FILE_BYTES,
+  MAX_LOG_LINE_BYTES,
+  StoredLogLineSchema,
+} from "./store.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
@@ -73,6 +78,16 @@ const enqueue = async (payload: Record<string, unknown> = {}): Promise<string> =
 
 const logPath = (eventId: string): string => join(ws.config.corpusDir, "jobs", `${eventId}.jsonl`);
 
+/**
+ * Puts a job's log at its size cap. The filler is deliberately not JSON — the
+ * reader skips what it cannot parse, so the read-back below shows only the
+ * lines the server itself wrote.
+ */
+const fillLogToCap = (eventId: string): void => {
+  mkdirSync(join(ws.config.corpusDir, "jobs"), { recursive: true });
+  writeFileSync(logPath(eventId), `${"x".repeat(MAX_LOG_FILE_BYTES - 1)}\n`, "utf8");
+};
+
 interface StoredLine {
   readonly ts: string;
   readonly source: string;
@@ -120,6 +135,28 @@ describe("POST /api/jobs/{id}/log — the tokenless loopback ingest", () => {
     expect(logLines(id)).toEqual([
       { ts: "2026-07-27T09:00:00Z", source: "hook", line: "reading thread" },
     ]);
+  });
+
+  it("answers 201 with `appended: false` when the file cap dropped the line", async () => {
+    const id = await enqueue();
+    fillLogToCap(id);
+
+    // Both callers of the one append implementation: the tokenless hook and
+    // `corpus job log`. Neither wrote anything, and neither is told it did.
+    for (const headers of [undefined, AUTH]) {
+      const response = await ingest(id, "one line too many", { ...(headers ? { headers } : {}) });
+
+      expect(response.status).toBe(201);
+      expect(AppendLogResultSchema.parse(await response.json())).toEqual({
+        eventId: id,
+        appended: false,
+      });
+    }
+
+    // And the log really is missing the line: what the reader gets back past the
+    // filler is the cap notice, written once, and nothing the callers sent.
+    const log = JobLogSchema.parse(await (await request(`/api/jobs/${id}/log`)).json());
+    expect(log.lines.map((entry) => entry.line)).toEqual([FILE_CAP_NOTICE]);
   });
 
   it("refuses a non-loopback peer, whatever it claims in a header", async () => {

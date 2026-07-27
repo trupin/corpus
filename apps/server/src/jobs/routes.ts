@@ -38,12 +38,14 @@ export function mountJobRoutes(app: OpenAPIHono, jobs: JobService): void {
   app.openapi(contractRoutes.appendJobLog, async (c) => {
     const { id } = c.req.valid("param");
     const { line } = c.req.valid("json");
-    // A line refused by the file-size cap still answers `201`: the contract
-    // declares one success shape, the request itself was well formed, and the
-    // cap is a property of the log rather than of the call. The refusal is
-    // recorded in the server log and as the final line in the file.
-    await jobs.appendLine(id, line, sourceOf(c.req.header("Authorization")));
-    return c.json({ eventId: id, appended: true as const }, 201);
+    // A line refused by the file-size cap still answers `201`: the request
+    // itself was well formed, and the cap is a property of the log rather than
+    // of the call. The status code therefore cannot carry the refusal, so
+    // `appended` does: it is the outcome's own answer to "did this line reach
+    // the file", not a constant. The refusal is also recorded in the server log
+    // and as the final line in the file.
+    const outcome = await jobs.appendLine(id, line, sourceOf(c.req.header("Authorization")));
+    return c.json({ eventId: id, appended: outcome.stored !== undefined }, 201);
   });
 
   app.openapi(contractRoutes.retryJob, async (c) => {
