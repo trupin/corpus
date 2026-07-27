@@ -130,12 +130,27 @@ describe("CreateThreadRequest", () => {
 
 describe("CreateThreadResponse", () => {
   it("reports the written anchor and the enqueued event", () => {
-    const response = { thread, anchorId: "anc_k4f7", eventId: "evt_7c1d" };
+    const response = { thread, anchorId: "anc_k4f7", eventId: "evt_7c1d", warnings: [] };
     expect(CreateThreadResponseSchema.parse(response)).toEqual(response);
   });
 
   it("reports nulls when nothing was anchored and the agent was not requested", () => {
-    const response = { thread, anchorId: null, eventId: null };
+    const response = { thread, anchorId: null, eventId: null, warnings: [] };
+    expect(CreateThreadResponseSchema.parse(response)).toEqual(response);
+  });
+
+  /**
+   * The case the field exists for: anchored creation writes the parent's
+   * frontmatter, so a hook that refuses the commit leaves the parent uncommitted
+   * and the commenter has to be told (SPEC.md §14).
+   */
+  it("carries a rejected auto-commit on an anchored creation", () => {
+    const response = {
+      thread,
+      anchorId: "anc_k4f7",
+      eventId: null,
+      warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+    };
     expect(CreateThreadResponseSchema.parse(response)).toEqual(response);
   });
 });
@@ -164,6 +179,7 @@ describe("AppendTurnRequest and AppendTurnResponse", () => {
       },
       turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks" },
       eventId: null,
+      warnings: [],
     };
     expect(AppendTurnResponseSchema.parse(response)).toEqual(response);
   });
@@ -244,6 +260,7 @@ describe("DeleteTurnResult", () => {
       deletedThread: false,
       removedAnchor: null,
       parentId: "doc_a1b2c3",
+      warnings: [],
     };
     expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
   });
@@ -254,6 +271,7 @@ describe("DeleteTurnResult", () => {
       deletedThread: true,
       removedAnchor: "anc_k4f7",
       parentId: "doc_a1b2c3",
+      warnings: [],
     };
     expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
   });
@@ -264,6 +282,19 @@ describe("DeleteTurnResult", () => {
       deletedThread: true,
       removedAnchor: null,
       parentId: null,
+      warnings: [],
+    };
+    expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
+  });
+
+  /** The cascade rewrites the parent's frontmatter, so it can warn like any write. */
+  it("carries a commit warning raised while removing the parent's anchor entry", () => {
+    const result = {
+      deletedTurn: true,
+      deletedThread: true,
+      removedAnchor: "anc_k4f7",
+      parentId: "doc_a1b2c3",
+      warnings: [{ code: "commit_skipped" as const, detail: "workspace is not a git repository" }],
     };
     expect(DeleteTurnResultSchema.parse(result)).toEqual(result);
   });
@@ -274,8 +305,74 @@ describe("DeleteTurnResult", () => {
       deletedThread: false,
       removedAnchor: null,
       parentId: null,
+      warnings: [],
     };
     expect(DeleteTurnResultSchema.safeParse(result).success).toBe(false);
+  });
+});
+
+/**
+ * One definition, spread — not four look-alike arrays. The rule that matters to
+ * a consumer is that the key is always there, so "no warnings" is an empty array
+ * and never an absent field.
+ */
+describe("§14 warnings travel on every thread mutation", () => {
+  const shapes = [
+    {
+      name: "CreateThreadResponse",
+      schema: CreateThreadResponseSchema,
+      base: { thread, anchorId: null, eventId: null },
+    },
+    {
+      name: "AppendTurnResponse",
+      schema: AppendTurnResponseSchema,
+      base: {
+        thread: {
+          id: "th_x9y8",
+          title: "Re: 30-year fixed assumption",
+          status: "open",
+          parent: "doc_a1b2c3",
+          anchor: "anc_k4f7",
+          agent: "engaged",
+          created: "2026-07-19T10:05:00Z",
+          updated: "2026-07-19T10:09:00Z",
+          turnCount: 3,
+          lastAuthor: "user",
+          lastTs: "2026-07-19T10:09:00Z",
+        },
+        turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks" },
+        eventId: null,
+      },
+    },
+    {
+      name: "DeleteTurnResult",
+      schema: DeleteTurnResultSchema,
+      base: {
+        deletedTurn: true,
+        deletedThread: false,
+        removedAnchor: null,
+        parentId: "doc_a1b2c3",
+      },
+    },
+  ] as const;
+
+  describe.each(shapes)("$name", ({ schema, base }) => {
+    it("demands the warnings array rather than treating it as optional", () => {
+      expect(schema.safeParse(base).success).toBe(false);
+    });
+
+    it("accepts several warnings from the one mutation", () => {
+      const warnings = [
+        { code: "commit_failed" as const, detail: "pre-commit hook exited 1" },
+        { code: "orphaned_anchor" as const, detail: "anc_k4f7 no longer resolves" },
+      ];
+      expect(schema.parse({ ...base, warnings }).warnings).toEqual(warnings);
+    });
+
+    it("rejects a warning code outside the closed set", () => {
+      const warnings = [{ code: "disk_full", detail: "…" }];
+      expect(schema.safeParse({ ...base, warnings }).success).toBe(false);
+    });
   });
 });
 

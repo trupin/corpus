@@ -72,6 +72,7 @@ function createApp(): OpenAPIHono {
         thread: threadSummary,
         turn: { author: "user" as const, ts: threadSummary.lastTs, body },
         eventId: null,
+        warnings: [],
       },
       201,
     );
@@ -209,6 +210,7 @@ describe("the dual-media turn-append body", () => {
           thread: threadSummary,
           turn: { author: "user" as const, ts: "2026-07-19T10:09:00Z", body: "" },
           eventId: null,
+          warnings: [],
         },
         201,
       ),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
+import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
 import { QUERY_KEY_NAMES, QUERY_KEY_VOCABULARY } from "./query-keys.js";
@@ -54,6 +55,8 @@ function parameter(path: string, method: string, name: string) {
 /** The subset of JSON Schema the walk below needs; `openapi3-ts` types it as `any`. */
 interface SchemaNode {
   readonly $ref?: string;
+  readonly type?: string;
+  readonly enum?: string[];
   readonly default?: unknown;
   readonly required?: string[];
   readonly properties?: Record<string, SchemaNode>;
@@ -584,6 +587,103 @@ describe("routes declare only the codes they can return", () => {
     ["/api/threads/{id}", "get"],
   ])("declares no 403 on the read-only route %s %s", (path, method) => {
     expect(operation(path, method).responses?.["403"]).toBeUndefined();
+  });
+});
+
+/**
+ * CONTRACT-006. §14's "a warning on the API response" has to be true of every
+ * mutation, not only of the document ones: thread writes go through the same
+ * server pipeline, and anchored creation writes the **parent document's**
+ * frontmatter. A shape that cannot carry a warning makes §14 selectively true.
+ */
+describe("§14 warnings reach every mutation response", () => {
+  const CARRIERS = [
+    "DocMutationResponse",
+    "UpdateDocResponse",
+    "DeleteDocResult",
+    "CreateThreadResponse",
+    "AppendTurnResponse",
+    "CaptureResult",
+    "DeleteTurnResult",
+  ];
+
+  it.each(CARRIERS)("declares `warnings` required on %s", (component) => {
+    const schema = componentSchemas?.[component];
+    expect(schema?.required).toContain("warnings");
+    expect(schema?.properties?.["warnings"]).toMatchObject({
+      type: "array",
+      items: { $ref: "#/components/schemas/Warning" },
+    });
+  });
+
+  /**
+   * Pinned from the other side too: a mutation response added later without the
+   * field shows up here as an unlisted carrier rather than passing unnoticed.
+   */
+  it("finds no other component carrying a differently-shaped warnings field", () => {
+    const stray = Object.entries(componentSchemas ?? {})
+      .filter(([name]) => !CARRIERS.includes(name))
+      .filter(([, schema]) => schema.properties?.["warnings"] !== undefined);
+    expect(stray.map(([name]) => name)).toEqual([]);
+  });
+});
+
+/**
+ * SPEC.md §2.2 and §14's projection-maintenance pair. `rebuild && doctor` clean
+ * is the standing invariant v1's definition of done gates on, so both halves are
+ * contract surface rather than server-local commands.
+ */
+describe("the projection maintenance routes", () => {
+  it("takes no request input at all on the rebuild, beyond the actor header", () => {
+    const op = operation("/api/db/rebuild", "post");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters?.map((entry) => entry.name)).toEqual([ACTOR_HEADER]);
+  });
+
+  it("takes no request input at all on doctor, and therefore declares no 400", () => {
+    const op = operation("/api/db/doctor", "get");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["200", "401"]);
+  });
+
+  it.each([
+    ["/api/db/rebuild", "post"],
+    ["/api/db/doctor", "get"],
+  ])("keeps %s %s behind the bearer token", (path, method) => {
+    expect(operation(path, method).security).toBeUndefined();
+    expect(operation(path, method).responses?.["401"]).toBeDefined();
+  });
+
+  it("reports drift as a 200 rather than inventing a failure status", () => {
+    const responses = operation("/api/db/doctor", "get").responses ?? {};
+    expect(JSON.stringify(responses["200"])).toContain("DoctorReport");
+    for (const code of ["400", "409", "422", "423"]) {
+      expect(responses[code]).toBeUndefined();
+    }
+  });
+
+  it("counts every projection table the rebuild writes, so a summary can report them", () => {
+    const properties = Object.keys(componentSchemas?.["RebuildResult"]?.properties ?? {});
+    expect(properties).toEqual(["path", ...PROJECTION_COUNT_FIELDS, "durationMs", "skipped"]);
+  });
+
+  it("classifies drift by the server's own closed kind vocabulary", () => {
+    expect(componentSchemas?.["ProjectionDrift"]?.properties?.["kind"]?.enum).toEqual([
+      ...DRIFT_KINDS,
+    ]);
+  });
+
+  /** Nullable, not optional — the response-side convention this contract uses. */
+  it("always carries the drift path key, null when the drift concerns no one file", () => {
+    const drift = componentSchemas?.["ProjectionDrift"];
+    expect(drift?.required).toEqual(["kind", "path", "detail"]);
+  });
+
+  it("neither route claims to warn, because neither writes a workspace file", () => {
+    for (const component of ["RebuildResult", "DoctorReport"]) {
+      expect(componentSchemas?.[component]?.properties?.["warnings"]).toBeUndefined();
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 /**
  * The pinned method+path inventory of the Corpus HTTP API — every endpoint
- * SPEC.md §9.2 lists, plus the queue, lock and job verbs §7 requires.
+ * SPEC.md §9.2 lists, plus the queue, lock and job verbs §7 requires and the
+ * projection-maintenance pair behind §2.2's `corpus db rebuild` / `db doctor`.
  *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
@@ -59,6 +60,9 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/jobs/{id}/log",
   "POST /api/jobs/{id}/retry",
   "POST /api/jobs/{id}/abandon",
+
+  "POST /api/db/rebuild",
+  "GET /api/db/doctor",
 
   "GET /events",
   "GET /attachments/{path}",

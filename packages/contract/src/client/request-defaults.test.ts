@@ -102,6 +102,7 @@ function createTestClient() {
         },
         anchorId: request.selector ? "anc_k4f7" : null,
         eventId: null,
+        warnings: [],
       },
       201,
     );

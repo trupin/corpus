@@ -107,6 +107,44 @@ function createServer() {
   /** The long-poll timeout: a declared `204`, which must not read as a failure. */
   app.openapi(contractRoutes.idleQueue, (c) => c.body(null, 204));
 
+  app.openapi(contractRoutes.rebuildDb, (c) =>
+    c.json(
+      {
+        path: "/w/.corpus/cache.db",
+        documents: 1,
+        threads: 0,
+        turns: 0,
+        anchors: 0,
+        links: 0,
+        events: 0,
+        jobs: 0,
+        locks: 0,
+        seen: 0,
+        durationMs: 12,
+        skipped: [],
+      },
+      200,
+    ),
+  );
+
+  app.openapi(contractRoutes.doctorDb, (c) =>
+    c.json(
+      {
+        ok: false,
+        drift: [
+          {
+            kind: "count_mismatch" as const,
+            path: null,
+            detail:
+              ".corpus/queue holds 2 evt_*.json file(s) but the projection has 1 event row(s)",
+          },
+        ],
+        stats: { files: 1, documents: 1, hashed: 0, parsed: 0, durationMs: 3 },
+      },
+      200,
+    ),
+  );
+
   app.openapi(contractRoutes.haltQueue, (c) => {
     // The halt body is optional in full, so validation yields `{}` for a bare
     // POST. `pending` carries the reason's length back out — the status shape
@@ -150,6 +188,7 @@ function createServer() {
           body: `files=${String(attached)} actor=${c.req.header(ACTOR_HEADER) ?? ""}`,
         },
         eventId: null,
+        warnings: [],
       },
       201,
     );
@@ -161,6 +200,9 @@ function createServer() {
         docId: "doc_a1b2c3",
         threadId: "th_x9y8",
         eventId: c.req.valid("form").requestsAgent === false ? null : "evt_7c1d",
+        // A capture writes a document, a thread and the parent's frontmatter, so
+        // §14's warnings ride back with it like any other mutation.
+        warnings: [{ code: "commit_skipped" as const, detail: "no `git` on PATH" }],
       },
       201,
     ),
@@ -272,6 +314,43 @@ describe("the long-poll idle endpoint", () => {
 });
 
 /**
+ * The projection-maintenance pair behind `corpus db rebuild` / `corpus db
+ * doctor` (SPEC.md §2.2, §14). Rebuild is the one `POST` in the surface that
+ * takes no body at all, so the typed client must be able to call it with nothing
+ * but a path — a generated `requestBody` would be a contract bug here.
+ */
+describe("the projection maintenance calls", () => {
+  // Compile-time assertion: giving rebuild a body would break this, not a run.
+  type RebuildOperation = paths["/api/db/rebuild"]["post"];
+  type RebuildTakesNoBody = RebuildOperation extends { requestBody?: undefined } ? true : never;
+
+  it("types the rebuild call as taking no request body", () => {
+    const bodiless: RebuildTakesNoBody = true;
+    expect(bodiless).toBe(true);
+  });
+
+  it("rebuilds on a bare call and returns the typed per-table counts", async () => {
+    const { data, error } = await createTestClient("agent").api.POST("/api/db/rebuild");
+
+    expect(error).toBeUndefined();
+    expect(data?.documents).toBe(1);
+    expect(data?.durationMs).toBe(12);
+    expect(data?.skipped).toEqual([]);
+  });
+
+  it("returns a drifted doctor report as typed data rather than an error", async () => {
+    const { data, error, response } = await createTestClient().api.GET("/api/db/doctor");
+
+    expect(response.status).toBe(200);
+    expect(error).toBeUndefined();
+    expect(data?.ok).toBe(false);
+    expect(data?.drift[0]?.kind).toBe("count_mismatch");
+    expect(data?.drift[0]?.path).toBeNull();
+    expect(data?.stats.hashed).toBe(0);
+  });
+});
+
+/**
  * Halting is a kill switch first and an annotation second: `corpus queue halt`
  * with no argument, and the console strip's HALT toggle, both send a bare POST.
  * So the typed client must accept the call with no `body` at all — an optional
@@ -339,7 +418,12 @@ describe("the multipart helpers on the client", () => {
 
   it("captures text as an inbox document plus its filing thread", async () => {
     const result = await createTestClient().capture({ text: "a thought" });
-    expect(result).toEqual({ docId: "doc_a1b2c3", threadId: "th_x9y8", eventId: "evt_7c1d" });
+    expect(result).toEqual({
+      docId: "doc_a1b2c3",
+      threadId: "th_x9y8",
+      eventId: "evt_7c1d",
+      warnings: [{ code: "commit_skipped", detail: "no `git` on PATH" }],
+    });
   });
 
   it('carries an explicit "note only" capture through to a null event', async () => {

@@ -2,6 +2,7 @@ import { z } from "@hono/zod-openapi";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { DocIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
 import { requestsAgentFormField } from "./thread.js";
+import { warningsField } from "./warning.js";
 
 /**
  * Capture is the composer's "this should live on as a document" action (SPEC.md
@@ -38,6 +39,10 @@ export const CaptureResultSchema = z
         "immediately and the console can link the job back to this capture. Null when nothing was " +
         "enqueued, which an explicit `requestsAgent: false` always produces.",
     ),
+    // A capture is a document write and a thread write in one call, so it has
+    // strictly more ways to warn than either — the same `warningsField`, so the
+    // composition reports what its parts would have (SPEC.md §14).
+    warnings: warningsField,
   })
   .openapi("CaptureResult");
 

@@ -1,5 +1,6 @@
 import { getAttachment } from "./attachments.js";
 import { capture } from "./capture.js";
+import { doctorDb, rebuildDb } from "./db.js";
 import {
   archiveDoc,
   createDoc,
@@ -38,6 +39,7 @@ import { getTree } from "./tree.js";
 
 export * from "./attachments.js";
 export * from "./capture.js";
+export * from "./db.js";
 export * from "./docs.js";
 export * from "./events.js";
 export * from "./health.js";
@@ -108,6 +110,9 @@ export const contractRoutes = {
   appendJobLog,
   retryJob,
   abandonJob,
+
+  rebuildDb,
+  doctorDb,
 
   streamEvents,
   getAttachment,

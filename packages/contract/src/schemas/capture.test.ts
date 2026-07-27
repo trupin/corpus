@@ -56,17 +56,38 @@ describe("CaptureRequest.requestsAgent stays a tri-state", () => {
 
 describe("CaptureResult", () => {
   it("round-trips the document, its filing thread and the enqueued event", () => {
-    const result = { docId: "doc_a1b2c3", threadId: "th_x9y8", eventId: "evt_7c1d" };
+    const result = {
+      docId: "doc_a1b2c3",
+      threadId: "th_x9y8",
+      eventId: "evt_7c1d",
+      warnings: [],
+    };
     expect(CaptureResultSchema.parse(result)).toEqual(result);
   });
 
   it("round-trips a null event, which an explicit `requestsAgent: false` always produces", () => {
-    const result = { docId: "doc_a1b2c3", threadId: "th_x9y8", eventId: null };
+    const result = { docId: "doc_a1b2c3", threadId: "th_x9y8", eventId: null, warnings: [] };
     expect(CaptureResultSchema.parse(result)).toEqual(result);
   });
 
   it("rejects a thread id where the document id belongs", () => {
-    const result = { docId: "th_x9y8", threadId: "th_x9y8", eventId: null };
+    const result = { docId: "th_x9y8", threadId: "th_x9y8", eventId: null, warnings: [] };
+    expect(CaptureResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  /** A capture is a document write and a thread write in one call (SPEC.md §14). */
+  it("carries a warning raised while committing the captured document", () => {
+    const result = {
+      docId: "doc_a1b2c3",
+      threadId: "th_x9y8",
+      eventId: "evt_7c1d",
+      warnings: [{ code: "commit_skipped" as const, detail: "no `git` on PATH" }],
+    };
+    expect(CaptureResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("demands the warnings array rather than treating it as optional", () => {
+    const result = { docId: "doc_a1b2c3", threadId: "th_x9y8", eventId: null };
     expect(CaptureResultSchema.safeParse(result).success).toBe(false);
   });
 });

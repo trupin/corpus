@@ -99,8 +99,28 @@ export const AppendLogRequestSchema = z
   })
   .openapi("AppendLogRequest");
 
+/**
+ * `appended` is a genuine boolean rather than `literal(true)`, because the
+ * server has a real way to answer no: a job log is capped at a maximum file
+ * size, and once a log reaches it every further line is dropped. That refusal
+ * still answers `201` — the request was well formed and the cap is a property
+ * of the log rather than of the call — so the status code cannot carry it, and
+ * a literal `true` would have the response assert that a dropped line was
+ * written. The one field that can be honest here is this one.
+ */
 export const AppendLogResultSchema = z
-  .object({ eventId: EventIdSchema, appended: z.literal(true) })
+  .object({
+    eventId: EventIdSchema,
+    appended: z
+      .boolean()
+      .describe(
+        "True when the line reached the log file. **False when the log is at its size cap** and " +
+          "the line was dropped (SPEC.md §7): the call still succeeds with `201`, because the " +
+          "request was well formed and nothing about it can be retried differently — but the line " +
+          "is not there. A caller that reports progress from this endpoint reports the flag, not " +
+          "the status code.",
+      ),
+  })
   .openapi("AppendLogResult");
 
 export type Job = z.infer<typeof JobSchema>;

@@ -50,6 +50,10 @@
       "description": "Job rows and their log streams — the console feed."
     },
     {
+      "name": "db",
+      "description": "Projection maintenance: rebuild and drift check."
+    },
+    {
       "name": "events",
       "description": "The SSE invalidation stream."
     },
@@ -1068,12 +1072,20 @@
             "pattern": "^evt_[A-Za-z0-9]+$",
             "description": "Enqueued `comment.created` event, so the UI can show the pending-agent indicator immediately and the console can link the job back to this capture. Null when nothing was enqueued, which an explicit `requestsAgent: false` always produces.",
             "example": "evt_7c1d"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "description": "Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong."
           }
         },
         "required": [
           "docId",
           "threadId",
-          "eventId"
+          "eventId",
+          "warnings"
         ]
       },
       "CaptureRequest": {
@@ -1124,12 +1136,20 @@
             "pattern": "^evt_[A-Za-z0-9]+$",
             "description": "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the first turn carries a mention or skill invocation; always null when `requestsAgent` was explicitly false (\"note only\").",
             "example": "evt_7c1d"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "description": "Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong."
           }
         },
         "required": [
           "thread",
           "anchorId",
-          "eventId"
+          "eventId",
+          "warnings"
         ]
       },
       "Thread": {
@@ -1315,12 +1335,20 @@
             "pattern": "^evt_[A-Za-z0-9]+$",
             "description": "Enqueued `comment.created` event; null when nothing was enqueued. Non-null when `requestsAgent` was true, or when it was omitted and the thread is already engaged; always null when `requestsAgent` was explicitly false (\"note only\", SPEC.md §8).",
             "example": "evt_7c1d"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "description": "Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong."
           }
         },
         "required": [
           "thread",
           "turn",
-          "eventId"
+          "eventId",
+          "warnings"
         ]
       },
       "ThreadSummary": {
@@ -1480,13 +1508,21 @@
             "pattern": "^(doc|th)_[A-Za-z0-9]+$",
             "description": "The thread's parent, whose frontmatter and anchor list may now differ. Null for a standalone thread.",
             "example": "doc_a1b2c3"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "description": "Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong."
           }
         },
         "required": [
           "deletedTurn",
           "deletedThread",
           "removedAnchor",
-          "parentId"
+          "parentId",
+          "warnings"
         ]
       },
       "MarkSeenResult": {
@@ -1896,9 +1932,7 @@
           },
           "appended": {
             "type": "boolean",
-            "enum": [
-              true
-            ]
+            "description": "True when the line reached the log file. **False when the log is at its size cap** and the line was dropped (SPEC.md §7): the call still succeeds with `201`, because the request was well formed and nothing about it can be retried differently — but the line is not there. A caller that reports progress from this endpoint reports the flag, not the status code."
           }
         },
         "required": [
@@ -1945,6 +1979,197 @@
         "required": [
           "code",
           "message"
+        ]
+      },
+      "RebuildResult": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path of the database this rebuild produced — `.corpus/cache.db`, which the rebuild replaced atomically by rename."
+          },
+          "documents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `documents` by this rebuild."
+          },
+          "threads": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `threads` by this rebuild."
+          },
+          "turns": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `turns` by this rebuild."
+          },
+          "anchors": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `anchors` by this rebuild."
+          },
+          "links": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `links` by this rebuild."
+          },
+          "events": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `events` by this rebuild."
+          },
+          "jobs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `jobs` by this rebuild."
+          },
+          "locks": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `locks` by this rebuild."
+          },
+          "seen": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows written to `seen` by this rebuild."
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Wall-clock time the rebuild took, so `corpus db rebuild` can report it."
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkippedFile"
+            },
+            "description": "Files that are documents by location but produced no row. Empty is the good case."
+          }
+        },
+        "required": [
+          "path",
+          "documents",
+          "threads",
+          "turns",
+          "anchors",
+          "links",
+          "events",
+          "jobs",
+          "locks",
+          "seen",
+          "durationMs",
+          "skipped"
+        ]
+      },
+      "SkippedFile": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative path of the file that produced no row."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why it was skipped. Rendered verbatim; never parsed."
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ]
+      },
+      "DoctorReport": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "True exactly when `drift` is empty. The single flag `corpus db doctor` turns into its exit code, so a caller never has to re-derive the verdict from the list."
+          },
+          "drift": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectionDrift"
+            },
+            "description": "Every disagreement found between the files and the projection. Empty when `ok`."
+          },
+          "stats": {
+            "$ref": "#/components/schemas/DoctorStats"
+          }
+        },
+        "required": [
+          "ok",
+          "drift",
+          "stats"
+        ]
+      },
+      "ProjectionDrift": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "missing_row",
+              "orphan_row",
+              "content_mismatch",
+              "count_mismatch",
+              "unparseable",
+              "duplicate_id"
+            ],
+            "description": "`missing_row`: a document file exists but the projection has no row for it. `orphan_row`: the projection has a row for a path that no longer exists. `content_mismatch`: the file's bytes no longer hash to what was projected. `count_mismatch`: a table the projection keeps no per-item detail for disagrees with the files by count. `unparseable`: the file is a document by location but its frontmatter cannot be read. `duplicate_id`: two files claim one id; only the first by path order is projected."
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Workspace-relative path this drift concerns. Null when it concerns no single file, which today is exactly `count_mismatch`."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable specifics, rendered verbatim by `corpus db doctor`; never parsed."
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "detail"
+        ]
+      },
+      "DoctorStats": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Document files found under the workspace roots."
+          },
+          "documents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "`documents` rows the projection holds."
+          },
+          "hashed": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Files whose bytes had to be read and hashed. Zero on a warm, untouched workspace — doctor skips any file whose size and mtime are unchanged, which is what keeps it inside a pre-commit hook's budget."
+          },
+          "parsed": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Files that had to be parsed, i.e. those with no row to explain them."
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Wall-clock time the check took."
+          }
+        },
+        "required": [
+          "files",
+          "documents",
+          "hashed",
+          "parsed",
+          "durationMs"
         ]
       }
     },
@@ -4660,7 +4885,7 @@
           "jobs"
         ],
         "summary": "Append a line to a job's log (loopback-only, tokenless)",
-        "description": "**Localhost-only and unauthenticated**, for Claude Code hooks such as `PostToolUse` which hold no token. Appends to the same `.corpus/jobs/<eventId>.jsonl` that `corpus job log` writes through. Hardening (SPEC.md §7): non-loopback peers and requests carrying a browser `Origin` header are rejected with `403`, line length is capped, and appends to unknown job ids are refused with `404`.",
+        "description": "**Localhost-only and unauthenticated**, for Claude Code hooks such as `PostToolUse` which hold no token. Appends to the same `.corpus/jobs/<eventId>.jsonl` that `corpus job log` writes through. Hardening (SPEC.md §7): non-loopback peers and requests carrying a browser `Origin` header are rejected with `403`, line length is capped, and appends to unknown job ids are refused with `404`. The log **file** is capped too, and that cap does not fail the call: a line dropped because the log is full still answers `201`, with `appended: false`.",
         "security": [],
         "parameters": [
           {
@@ -4704,7 +4929,7 @@
         },
         "responses": {
           "201": {
-            "description": "The line was appended.",
+            "description": "The append was accepted; `appended` says whether the line actually reached the log.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4909,6 +5134,95 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db/rebuild": {
+      "post": {
+        "tags": [
+          "db"
+        ],
+        "summary": "Rebuild the projection from files",
+        "description": "Re-derives every row of `.corpus/cache.db` from the workspace's files alone and swaps the result in atomically, which is what makes §9.1's \"derived tables only\" checkable rather than merely asserted (SPEC.md §14). The rename is the commit point: an interrupted rebuild leaves the previous database intact. **Takes no request body at all** — there is nothing to configure, and a bodiless `POST` is the whole call. A rebuild of a large corpus is the longest-running call in the API; clients give it a longer timeout than the default. `rebuild` followed by a clean `doctor` is the standing invariant §14 names.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the rebuild wrote: per-table row counts, how long it took, and every file it skipped.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db/doctor": {
+      "get": {
+        "tags": [
+          "db"
+        ],
+        "summary": "Check the projection against the files",
+        "description": "Reports every disagreement between the workspace's files and the projection's rows (SPEC.md §14). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never re-read, and a file that already has a row is never re-parsed. Nothing is mutated and no rebuild is triggered — a drifted projection is reported, never quietly repaired, because the point of the check is that drift is visible. `ok` is the verdict `corpus db doctor` turns into its exit code.",
+        "responses": {
+          "200": {
+            "description": "The drift report. `ok` is true exactly when `drift` is empty; a drifted projection is a `200` carrying the findings, not an error status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoctorReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
                 }
               }
             }

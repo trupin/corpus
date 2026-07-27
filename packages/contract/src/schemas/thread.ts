@@ -4,6 +4,7 @@ import { TextQuoteSelectorRequestSchema } from "./anchor.js";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
 import { IsoDateTimeSchema } from "./time.js";
+import { warningsField } from "./warning.js";
 
 /**
  * Whether the agent participates in a thread (SPEC.md §6, §8). `requested` is
@@ -127,6 +128,18 @@ export const CreateThreadRequestSchema = z
   })
   .openapi("CreateThreadRequest");
 
+/**
+ * Every thread mutation carries §14's warnings, exactly as the document
+ * mutations do — the same `warningsField`, so there is one definition of what a
+ * warning is and one shape it arrives in.
+ *
+ * Threads need it as sharply as documents: **anchored creation writes the parent
+ * document's frontmatter**, so a workspace git hook that rejects the auto-commit
+ * leaves the parent's anchors map on disk and uncommitted. Without the field the
+ * person who just posted a comment is told nothing at all, and §14's "surfaces
+ * loudly — a warning on the API response" would be true of document writes and
+ * silently false of thread writes, though both go through one pipeline.
+ */
 export const CreateThreadResponseSchema = z
   .object({
     thread: ThreadSchema,
@@ -138,6 +151,7 @@ export const CreateThreadResponseSchema = z
         "`requestsAgent` was true, or when it was omitted and the first turn carries a mention or " +
         'skill invocation; always null when `requestsAgent` was explicitly false ("note only").',
     ),
+    warnings: warningsField,
   })
   .openapi("CreateThreadResponse");
 
@@ -178,6 +192,7 @@ export const AppendTurnResponseSchema = z
         "`requestsAgent` was true, or when it was omitted and the thread is already engaged; " +
         'always null when `requestsAgent` was explicitly false ("note only", SPEC.md §8).',
     ),
+    warnings: warningsField,
   })
   .openapi("AppendTurnResponse");
 
@@ -224,6 +239,7 @@ export const DeleteTurnResultSchema = z
       "The thread's parent, whose frontmatter and anchor list may now differ. Null for a " +
         "standalone thread.",
     ),
+    warnings: warningsField,
   })
   .openapi("DeleteTurnResult");
 

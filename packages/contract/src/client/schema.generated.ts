@@ -2336,7 +2336,7 @@ export interface paths {
         put?: never;
         /**
          * Append a line to a job's log (loopback-only, tokenless)
-         * @description **Localhost-only and unauthenticated**, for Claude Code hooks such as `PostToolUse` which hold no token. Appends to the same `.corpus/jobs/<eventId>.jsonl` that `corpus job log` writes through. Hardening (SPEC.md §7): non-loopback peers and requests carrying a browser `Origin` header are rejected with `403`, line length is capped, and appends to unknown job ids are refused with `404`.
+         * @description **Localhost-only and unauthenticated**, for Claude Code hooks such as `PostToolUse` which hold no token. Appends to the same `.corpus/jobs/<eventId>.jsonl` that `corpus job log` writes through. Hardening (SPEC.md §7): non-loopback peers and requests carrying a browser `Origin` header are rejected with `403`, line length is capped, and appends to unknown job ids are refused with `404`. The log **file** is capped too, and that cap does not fail the call: a line dropped because the log is full still answers `201`, with `appended: false`.
          */
         post: {
             parameters: {
@@ -2358,7 +2358,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description The line was appended. */
+                /** @description The append was accepted; `appended` says whether the line actually reached the log. */
                 201: {
                     headers: {
                         [name: string]: unknown;
@@ -2549,6 +2549,114 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild the projection from files
+         * @description Re-derives every row of `.corpus/cache.db` from the workspace's files alone and swaps the result in atomically, which is what makes §9.1's "derived tables only" checkable rather than merely asserted (SPEC.md §14). The rename is the commit point: an interrupted rebuild leaves the previous database intact. **Takes no request body at all** — there is nothing to configure, and a bodiless `POST` is the whole call. A rebuild of a large corpus is the longest-running call in the API; clients give it a longer timeout than the default. `rebuild` followed by a clean `doctor` is the standing invariant §14 names.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description What the rebuild wrote: per-table row counts, how long it took, and every file it skipped. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RebuildResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/doctor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check the projection against the files
+         * @description Reports every disagreement between the workspace's files and the projection's rows (SPEC.md §14). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never re-read, and a file that already has a row is never re-parsed. Nothing is mutated and no rebuild is triggered — a drifted projection is reported, never quietly repaired, because the point of the check is that drift is visible. `ok` is the verdict `corpus db doctor` turns into its exit code.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The drift report. `ok` is true exactly when `drift` is empty; a drifted projection is a `200` carrying the findings, not an error status. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DoctorReport"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3081,6 +3189,8 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         CaptureRequest: {
             /** @description The captured text. Becomes the inbox document's body and its filing thread's first turn. */
@@ -3102,6 +3212,8 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         Thread: {
             /**
@@ -3185,6 +3297,8 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         ThreadSummary: {
             /**
@@ -3261,6 +3375,8 @@ export interface components {
              * @example doc_a1b2c3
              */
             parentId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
         };
         MarkSeenResult: {
             /**
@@ -3423,8 +3539,8 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
-            /** @enum {boolean} */
-            appended: true;
+            /** @description True when the line reached the log file. **False when the log is at its size cap** and the line was dropped (SPEC.md §7): the call still succeeds with `201`, because the request was well formed and nothing about it can be retried differently — but the line is not there. A caller that reports progress from this endpoint reports the flag, not the status code. */
+            appended: boolean;
         };
         AppendLogRequest: {
             /** @description One progress line. Rendered as plain text and never interpreted; the server caps its length (SPEC.md §7). */
@@ -3435,6 +3551,68 @@ export interface components {
             code: "conflict";
             message: string;
             lock?: components["schemas"]["Lock"] & unknown;
+        };
+        RebuildResult: {
+            /** @description Absolute path of the database this rebuild produced — `.corpus/cache.db`, which the rebuild replaced atomically by rename. */
+            path: string;
+            /** @description Rows written to `documents` by this rebuild. */
+            documents: number;
+            /** @description Rows written to `threads` by this rebuild. */
+            threads: number;
+            /** @description Rows written to `turns` by this rebuild. */
+            turns: number;
+            /** @description Rows written to `anchors` by this rebuild. */
+            anchors: number;
+            /** @description Rows written to `links` by this rebuild. */
+            links: number;
+            /** @description Rows written to `events` by this rebuild. */
+            events: number;
+            /** @description Rows written to `jobs` by this rebuild. */
+            jobs: number;
+            /** @description Rows written to `locks` by this rebuild. */
+            locks: number;
+            /** @description Rows written to `seen` by this rebuild. */
+            seen: number;
+            /** @description Wall-clock time the rebuild took, so `corpus db rebuild` can report it. */
+            durationMs: number;
+            /** @description Files that are documents by location but produced no row. Empty is the good case. */
+            skipped: components["schemas"]["SkippedFile"][];
+        };
+        SkippedFile: {
+            /** @description Workspace-relative path of the file that produced no row. */
+            path: string;
+            /** @description Why it was skipped. Rendered verbatim; never parsed. */
+            reason: string;
+        };
+        DoctorReport: {
+            /** @description True exactly when `drift` is empty. The single flag `corpus db doctor` turns into its exit code, so a caller never has to re-derive the verdict from the list. */
+            ok: boolean;
+            /** @description Every disagreement found between the files and the projection. Empty when `ok`. */
+            drift: components["schemas"]["ProjectionDrift"][];
+            stats: components["schemas"]["DoctorStats"];
+        };
+        ProjectionDrift: {
+            /**
+             * @description `missing_row`: a document file exists but the projection has no row for it. `orphan_row`: the projection has a row for a path that no longer exists. `content_mismatch`: the file's bytes no longer hash to what was projected. `count_mismatch`: a table the projection keeps no per-item detail for disagrees with the files by count. `unparseable`: the file is a document by location but its frontmatter cannot be read. `duplicate_id`: two files claim one id; only the first by path order is projected.
+             * @enum {string}
+             */
+            kind: "missing_row" | "orphan_row" | "content_mismatch" | "count_mismatch" | "unparseable" | "duplicate_id";
+            /** @description Workspace-relative path this drift concerns. Null when it concerns no single file, which today is exactly `count_mismatch`. */
+            path: string | null;
+            /** @description Human-readable specifics, rendered verbatim by `corpus db doctor`; never parsed. */
+            detail: string;
+        };
+        DoctorStats: {
+            /** @description Document files found under the workspace roots. */
+            files: number;
+            /** @description `documents` rows the projection holds. */
+            documents: number;
+            /** @description Files whose bytes had to be read and hashed. Zero on a warm, untouched workspace — doctor skips any file whose size and mtime are unchanged, which is what keeps it inside a pre-commit hook's budget. */
+            hashed: number;
+            /** @description Files that had to be parsed, i.e. those with no row to explain them. */
+            parsed: number;
+            /** @description Wall-clock time the check took. */
+            durationMs: number;
         };
     };
     responses: never;

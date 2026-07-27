@@ -64,6 +64,7 @@ function createServer() {
           ].join(" "),
         },
         eventId: parsed.requestsAgent === false ? null : "evt_7c1d",
+        warnings: [],
       },
       201,
     );
@@ -76,6 +77,7 @@ function createServer() {
         docId: "doc_a1b2c3",
         threadId: body.files.length > 0 ? "th_x9y8" : "th_q1w2",
         eventId: body.requestsAgent === false ? null : "evt_7c1d",
+        warnings: [],
       },
       201,
     );
@@ -216,7 +218,12 @@ describe("uploadTurn against a mounted contract route", () => {
 describe("uploadCapture against a mounted contract route", () => {
   it("captures text alone", async () => {
     const result = await uploadCapture({ ...options(), text: "buy a house?" });
-    expect(result).toEqual({ docId: "doc_a1b2c3", threadId: "th_q1w2", eventId: "evt_7c1d" });
+    expect(result).toEqual({
+      docId: "doc_a1b2c3",
+      threadId: "th_q1w2",
+      eventId: "evt_7c1d",
+      warnings: [],
+    });
   });
 
   it("captures a screenshot plus one line", async () => {

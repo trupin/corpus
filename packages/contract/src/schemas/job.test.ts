@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AppendLogResult } from "./job.js";
 import {
   AppendLogRequestSchema,
   AppendLogResultSchema,
@@ -111,5 +112,30 @@ describe("AppendLogRequest and AppendLogResult", () => {
   it("round-trips the append acknowledgement", () => {
     const result = { eventId: "evt_7c1d", appended: true };
     expect(AppendLogResultSchema.parse(result)).toEqual(result);
+  });
+
+  /**
+   * The server's log file is capped, and past that cap it answers `201` while
+   * writing nothing (SPEC.md §7). `appended` is the only field that can say so,
+   * which is why it is a boolean rather than `literal(true)`.
+   */
+  it("round-trips the honest refusal of a line dropped at the file cap", () => {
+    const result = { eventId: "evt_7c1d", appended: false };
+    expect(AppendLogResultSchema.parse(result)).toEqual(result);
+  });
+
+  /**
+   * A type-level probe, checked by `tsc --noEmit` rather than at runtime: the
+   * annotation is what fails to compile if `appended` narrows back to `true`.
+   */
+  it("makes the refusal representable in the inferred type, not just at parse time", () => {
+    const capped: AppendLogResult = { eventId: "evt_7c1d", appended: false };
+    expect(capped.appended).toBe(false);
+  });
+
+  it("still rejects a non-boolean acknowledgement rather than coercing it", () => {
+    expect(AppendLogResultSchema.safeParse({ eventId: "evt_7c1d", appended: "no" }).success).toBe(
+      false,
+    );
   });
 });

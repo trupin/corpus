@@ -73,7 +73,8 @@ export const appendJobLog = createRoute({
     "no token. Appends to the same `.corpus/jobs/<eventId>.jsonl` that `corpus job log` writes " +
     "through. Hardening (SPEC.md §7): non-loopback peers and requests carrying a browser `Origin` " +
     "header are rejected with `403`, line length is capped, and appends to unknown job ids are " +
-    "refused with `404`.",
+    "refused with `404`. The log **file** is capped too, and that cap does not fail the call: a " +
+    "line dropped because the log is full still answers `201`, with `appended: false`.",
   security: [],
   request: {
     params: JobIdParamSchema,
@@ -86,7 +87,10 @@ export const appendJobLog = createRoute({
     },
   },
   responses: {
-    201: jsonContent(AppendLogResultSchema, "The line was appended."),
+    201: jsonContent(
+      AppendLogResultSchema,
+      "The append was accepted; `appended` says whether the line actually reached the log.",
+    ),
     400: VALIDATION_RESPONSE,
     403: FORBIDDEN_RESPONSE,
     404: NOT_FOUND_RESPONSE,

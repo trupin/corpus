@@ -109,6 +109,9 @@ const lock = {
   ttl: 300,
 };
 
+/** Stands in for a job whose log file has reached its size cap. */
+const CAPPED_JOB_ID = "evt_full";
+
 const job = {
   eventId: "evt_7c1d",
   status: "in-progress" as const,
@@ -116,6 +119,41 @@ const job = {
   updated: "2026-07-19T10:05:40Z",
   lastLine: null,
   originId: "th_x9y8",
+};
+
+/** Shaped exactly as `apps/server`'s `rebuild()` returns it (SERVER-004). */
+const rebuildResult = {
+  path: "/w/.corpus/cache.db",
+  documents: 6,
+  threads: 1,
+  turns: 2,
+  anchors: 1,
+  links: 0,
+  events: 0,
+  jobs: 0,
+  locks: 0,
+  seen: 1,
+  durationMs: 42,
+  skipped: [{ path: "data/docs/broken.md", reason: "frontmatter is not valid YAML" }],
+};
+
+/** Shaped exactly as `apps/server`'s `doctor()` returns it, with drift to report. */
+const doctorReport = {
+  ok: false,
+  drift: [
+    {
+      kind: "orphan_row" as const,
+      path: "data/docs/gone.md",
+      detail: "data/docs/gone.md is projected as doc_a1b2c3 but no such file exists under any root",
+    },
+    // The one kind that concerns no single file, so it carries a null path.
+    {
+      kind: "count_mismatch" as const,
+      path: null,
+      detail: ".corpus/queue holds 2 evt_*.json file(s) but the projection has 1 event row(s)",
+    },
+  ],
+  stats: { files: 6, documents: 7, hashed: 1, parsed: 0, durationMs: 9 },
 };
 
 /**
@@ -205,16 +243,19 @@ function createStubApp() {
         docId: "doc_a1b2c3",
         threadId: "th_x9y8",
         eventId: body.requestsAgent === false ? null : "evt_7c1d",
+        warnings: [],
       },
       201,
     );
   });
 
   app.openapi(contractRoutes.createThread, (c) =>
-    c.json({ thread, anchorId: "anc_k4f7", eventId: null }, 201),
+    c.json({ thread, anchorId: "anc_k4f7", eventId: null, warnings: [] }, 201),
   );
   app.openapi(contractRoutes.getThread, (c) => c.json(thread, 200));
-  mountAppendTurn(app, (c) => c.json({ thread: threadSummary, turn, eventId: null }, 201));
+  mountAppendTurn(app, (c) =>
+    c.json({ thread: threadSummary, turn, eventId: null, warnings: [] }, 201),
+  );
   app.openapi(contractRoutes.deleteTurn, (c) =>
     c.json(
       {
@@ -222,6 +263,9 @@ function createStubApp() {
         deletedThread: false,
         removedAnchor: null,
         parentId: c.req.valid("param").ts === turn.ts ? "doc_a1b2c3" : null,
+        // A turn deletion that cascades to the parent's frontmatter is exactly
+        // where a rejected auto-commit has to surface (SPEC.md §14).
+        warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
       },
       200,
     ),
@@ -280,13 +324,19 @@ function createStubApp() {
   app.openapi(contractRoutes.getJobLog, (c) =>
     c.json({ lines: [{ ts: job.updated, line: "step" }], nextCursor: 1 }, 200),
   );
-  app.openapi(contractRoutes.appendJobLog, (c) =>
-    c.json({ eventId: c.req.valid("param").id, appended: true as const }, 201),
-  );
+  // `appended` is a plain boolean, so the capped case is expressible: the
+  // sentinel id below stands in for a log that has reached its size cap.
+  app.openapi(contractRoutes.appendJobLog, (c) => {
+    const eventId = c.req.valid("param").id;
+    return c.json({ eventId, appended: eventId !== CAPPED_JOB_ID }, 201);
+  });
   app.openapi(contractRoutes.retryJob, (c) => c.json({ ...job, status: "pending" as const }, 200));
   app.openapi(contractRoutes.abandonJob, (c) =>
     c.json({ ...job, status: "abandoned" as const }, 200),
   );
+
+  app.openapi(contractRoutes.rebuildDb, (c) => c.json(rebuildResult, 200));
+  app.openapi(contractRoutes.doctorDb, (c) => c.json(doctorReport, 200));
 
   app.openapi(contractRoutes.streamEvents, (c) =>
     c.newResponse("event: invalidate\ndata: {}\n\n", 200, {
@@ -460,6 +510,7 @@ describe("routes mounted on a Hono app", () => {
       deletedThread: false,
       removedAnchor: null,
       parentId: "doc_a1b2c3",
+      warnings: [{ code: "commit_failed", detail: "pre-commit hook exited 1" }],
     });
   });
 
@@ -562,6 +613,43 @@ describe("routes mounted on a Hono app", () => {
       body: JSON.stringify({ reason: "" }),
     });
     expect(response.status).toBe(400);
+  });
+
+  /**
+   * The whole point of relaxing `appended` from `literal(true)`: a log at its
+   * size cap answers `201` and has to be able to say the line was dropped.
+   */
+  it("lets the job-log ingest answer 201 while reporting the line was not appended", async () => {
+    const app = createStubApp();
+    const ingest = (id: string) =>
+      app.request(`/api/jobs/${id}/log`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ line: "step" }),
+      });
+
+    const accepted = await ingest("evt_7c1d");
+    expect(accepted.status).toBe(201);
+    await expect(accepted.json()).resolves.toEqual({ eventId: "evt_7c1d", appended: true });
+
+    const capped = await ingest(CAPPED_JOB_ID);
+    expect(capped.status).toBe(201);
+    await expect(capped.json()).resolves.toEqual({ eventId: CAPPED_JOB_ID, appended: false });
+  });
+
+  /** A bodiless `POST`: no content type, no bytes, and still a valid call. */
+  it("rebuilds the projection from a bare POST that sends no body at all", async () => {
+    const response = await createStubApp().request("/api/db/rebuild", { method: "POST" });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(rebuildResult);
+  });
+
+  it("reports drift from doctor as a 200, not as an error status", async () => {
+    const response = await createStubApp().request("/api/db/doctor");
+    expect(response.status).toBe(200);
+    const report = (await response.json()) as { ok: boolean; drift: { path: string | null }[] };
+    expect(report.ok).toBe(false);
+    expect(report.drift.map((entry) => entry.path)).toEqual(["data/docs/gone.md", null]);
   });
 
   it("serves the SSE route as an event stream, not as JSON", async () => {
