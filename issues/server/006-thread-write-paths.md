@@ -42,6 +42,16 @@ Implement every write path that produces or mutates a thread: thread creation in
 - [ ] `GET /api/threads/:id` returns the thread frontmatter plus its ordered turns (idx, author, ts, body) and anchor context when anchored.
 - [ ] Every mutating endpoint re-projects the affected rows synchronously before responding (read-your-write per §9.1) and emits an invalidation.
 
+## Sprint-006 Adjudications (binding, 2026-07-27)
+
+Orchestrator decisions — implement exactly these; full reasoning in `issues/sprints/sprint-006.md`:
+
+1. **423 splits on whether the parent is written**: anchored creation and anchor-removing cascades hit the lock guard (423); whole-doc/standalone creation, turns, resolve/reopen, seen never do. Correct `locks/guard.ts`'s header comment (it currently claims blanket thread-creation exemption); use the `assertWritable` seam, not the unmounted middleware.
+2. **CONTRACT-006 rider runs FIRST** (separate agent, merges before you): warnings on `CreateThreadResponse`/`AppendTurnResponse`/`CaptureResult`/`DeleteTurnResult`, `appended` honesty, db routes. Build your warning serialization against it.
+3. **Forms are struck from this issue** (AC 8): zero contract surface exists; CONTRACT-007 + SERVER-016 are filed for Phase 3, sequenced before UI-008.
+4. **`agent: engaged` is set by the server** on the first agent-authored turn in a `requested` thread — mechanical, no contract change; this is what makes the enqueue matrix's engaged rows reachable.
+5. **Thread deletion extends SERVER-005's shipped `deleteDoc`** (there is no `DELETE /api/threads/:id`); the cascade lives there.
+
 ## Technical Design
 
 ### Files to Create/Modify

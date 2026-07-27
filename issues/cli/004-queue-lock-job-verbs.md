@@ -42,6 +42,16 @@ SPEC.md §7 still describes `idle` as blocking on `fs.watch` of `.corpus/queue/p
 - [ ] All JSON shapes emitted by these commands are documented in the registry examples and therefore in the generated `docs/cli.md`; changing a shape without regenerating fails the drift check.
 - [ ] Vitest coverage for the long-poll loop (event, timeout, halt, restart-retry, SIGINT), the claim-all empty batch, and exit-code mapping.
 
+## Sprint-006 Adjudications (binding, 2026-07-27)
+
+Orchestrator decisions — implement exactly these; full reasoning in `issues/sprints/sprint-006.md`:
+
+1. **The idle wait flag is `--wait <seconds>`** (not `--timeout`, which is the global transport flag and collides at registry load) and the long-poll request carries its OWN AbortSignal so the 10 s transport timeout never aborts a 480 s park. AGENT-002's skill text will use this name.
+2. **`corpus lock break` sends `actor: user`** — it is an operator recovery command run by a human terminal, not part of the agent loop (the server is user-only on break by adjudication); say so in the verb help.
+3. **`reap-stale` takes no `--older-than`** (the contract declares no such param — it would be silently ignored).
+4. **The segmenting loop collapses** to single requests while MAX_IDLE_TIMEOUT_SECONDS is 480 — implement the simple form, keep the rearm loop shape for when the constant diverges.
+5. **The db rebuild/reopen handoff moves to CLI-003** (its routes arrive via the CONTRACT-006 rider + SERVER-017 mount).
+
 ## Technical Design
 
 ### Files to Create/Modify
