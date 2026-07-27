@@ -206,50 +206,6 @@ describe("M1 matrix on disk", () => {
     ).toBe(true);
   });
 
-  it("SERVER-012 round 3: swapping two wholly-distinct paragraphs keeps the thread on its own paragraph on disk", () => {
-    // Pre-fix, this write persisted `exact: "Cash runway extends…"` for a
-    // thread anchored on the hiring-freeze paragraph — the anchor kept its
-    // byte range while different text moved in, and its own paragraph sat
-    // verbatim a few lines below. Fixed: the persisted exact is byte-identical
-    // and only the context refreshes to the paragraph's new surroundings.
-    const paragraphs = [
-      "The quarterly report opens with a summary of vendor obligations.",
-      "Legal review of the licensing addendum is scheduled for Thursday.",
-      "Our travel policy caps international airfare at premium economy.",
-      "Hiring is paused until the second half of next year at the earliest.",
-      "The office lease renews in October with a five percent escalator.",
-      "Cash runway extends nineteen months under the current burn profile.",
-    ];
-    const hiring = paragraphs[3] ?? "";
-    const body = `# Planning notes\n\n${paragraphs.join("\n\n")}\n`;
-    const at = body.indexOf(hiring);
-    const seeded: Frontmatter = {
-      id: "doc_s012cc",
-      type: "note",
-      anchors: {
-        anc_hire01: { exact: hiring, ...computeContext(body, at, at + hiring.length) },
-      },
-    };
-    const file = join(workspace, "distinct-swap.md");
-    writeDoc(file, seeded, body);
-
-    const { frontmatter, body: onDisk } = readDoc(file);
-    const swapped = [...paragraphs];
-    const [fourth, sixth] = [swapped[3], swapped[5]];
-    if (fourth !== undefined && sixth !== undefined) [swapped[3], swapped[5]] = [sixth, fourth];
-    const newBody = `# Planning notes\n\n${swapped.join("\n\n")}\n`;
-    const { anchors, report } = reconcileAnchors(onDisk, newBody, frontmatter.anchors);
-    writeDoc(file, { ...frontmatter, anchors }, newBody);
-
-    expect(report).toEqual({ unchanged: [], remapped: ["anc_hire01"], orphaned: [] });
-    const persisted = readDoc(file);
-    const selector = persisted.frontmatter.anchors["anc_hire01"];
-    expect(selector?.exact).toBe(hiring);
-    const range = selector === undefined ? null : resolveAnchor(persisted.body, selector);
-    const own = persisted.body.indexOf(hiring);
-    expect(range).toEqual({ start: own, end: own + hiring.length });
-  });
-
   it("TEST-26: both neighbouring sentences rewritten → remapped, exact kept, context quotes the new surroundings", () => {
     const { report, selector, body } = runRow("context-only", (b) =>
       b

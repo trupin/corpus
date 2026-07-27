@@ -446,3 +446,14 @@ voiding by the containment clause. Neither is reachable without re-opening (d).
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[SERVER-012]` prefix
+
+### Round-3 revert (orchestrator, 2026-07-26)
+
+Eval round 4 found `lacksKinship` regressive: 67.3% of shrink-edits-with-duplicate orphaned
+(TEST-63 violation, new vs round 2) while 6.5% of plain swaps still substituted (median
+similarity 0.924 — no threshold satisfies both tests). The round-3 code commit (4515fb9) is
+reverted; the engine stands at the round-2 state the evaluator confirmed strictly improving
+with zero regressions (capture 339→0, collision 114→0, substitution 695→378, all pre-existing).
+The substitution class is escalated to the user per the 3-round cap; the candidate design for
+the next attempt (unique-verbatim-survivor location/INSERT-vs-EQUAL discriminator) is recorded
+in the eval file and server-dev Domain Knowledge.
