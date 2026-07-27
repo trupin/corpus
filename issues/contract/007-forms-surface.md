@@ -34,6 +34,7 @@ Discovered by sprint-006: no `formAnswer` schema and no producer of `form.respon
 
 - [ ] **Rider**: `resolve`/`reopen` responses gain the warnings field (SERVER-006: they return a bare ThreadSummary, so their §14 warnings are log-only today).
 - [ ] **Rider**: `ReapStaleResult` gains `failed: string[]` (QueueService returns it; the CLI cannot report give-ups without it — CLI-004 harvest note).
+- [ ] **Rider**: `JobSchema` gains a nullable origin-title field for the jobs listing (thread- and doc-origin jobs carry the origin's title so UI-011's console can label jobs without a second fetch — struck from SERVER-018 on 2026-07-27 because no such field exists in the contract; the server-side population rides with SERVER-016 or a small follow-up).
 - [ ] Form-answer request/response schemas per §8; the submission route declared; `form.respond` payload pinned in the QueueEvent core types.
 - [ ] All standing invariants; artifacts regenerated; round-trips.
 

@@ -1,4 +1,4 @@
-# [SERVER-018] Thread deletion omits the `["tree"]` invalidate key; thread-origin jobs report `originTitle: null`
+# [SERVER-018] `["tree"]` invalidate-key gaps: thread deletion and archive/unarchive
 
 ## Domain
 
@@ -28,20 +28,25 @@ opus — two narrow, well-located fixes surfaced by the sprint-006 evaluator; no
 
 ## Summary
 
-Two small server-side gaps found (and explicitly ruled non-blocking) by the sprint-006 evaluator:
+`["tree"]` invalidate-key gaps on mutation paths that change what `GET /api/tree` returns:
 
-1. **Thread deletion emits no `["tree"]` SSE key, though thread creation does.** A deletion changes the tree exactly as much as a creation; a board subscribed on `["tree"]` shows a stale entry until an unrelated invalidation arrives.
-2. **`GET /api/jobs` returns `originTitle: null` for thread-origin jobs.** The projection has the thread's title; the jobs listing should carry it so the console (UI-011) can label the job's origin without a second fetch.
+1. **Thread deletion emits no `["tree"]` SSE key, though thread creation does** (sprint-006 evaluator). A deletion changes the tree exactly as much as a creation; a board subscribed on `["tree"]` shows a stale entry until an unrelated invalidation arrives.
+2. **`doc archive`/unarchive emit no `["tree"]` key either** (sprint-007 planner, by inspection of every `TREE_KEY` emitter in `docs/archive.ts`) — yet archived documents are excluded from every folder count, so the board's folder badges silently desynchronize. Sprint-007 contract TEST-132b covers this.
+
+The governing invariant (sprint-007 contract): **a mutation's invalidate frame carries `["tree"]` exactly when the response of `GET /api/tree` actually changed.**
+
+> **Scope adjudication (orchestrator, 2026-07-27):** the originally filed second half — populating `originTitle` in the jobs listing — is **struck**: `JobSchema` has no such field anywhere in the contract, so it is a contract change, not a population fix. It is now a CONTRACT-007 rider (jobs-listing origin title), consumed by UI-011.
 
 ## Acceptance Criteria
 
 - [ ] Deleting a thread (both direct deletion and last-turn cascade) broadcasts the same key set shape as creation, including `["tree"]`.
-- [ ] `GET /api/jobs` returns the origin thread's title in `originTitle` for thread-origin jobs; document-origin jobs unchanged.
-- [ ] Regression tests for both; SSE key vocabulary unchanged (no new key names).
+- [ ] `doc archive` and unarchive broadcast `["tree"]` (their folder counts change).
+- [ ] Reproduction logged first for both paths (these are bugs); regression tests for both; SSE key vocabulary unchanged (no new key names).
+- [ ] Audit of the remaining tree-changing mutations against the invariant (create/move/delete already emit; state which paths were checked).
 
 ## Technical Design
 
-Expected footprint: the thread-delete invalidation frame construction and the jobs listing projection query. No contract changes — `originTitle` is already nullable in the schema; this populates it.
+Expected footprint: the invalidation frame construction in the thread-delete/cascade path and `docs/archive.ts`. No contract changes.
 
 ## Testing Strategy
 

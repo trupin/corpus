@@ -23,34 +23,31 @@ opus — thin mappings onto endpoints already pinned by the contract and the spe
 - CLAUDE.md — Architecture Decision 2 (server is the sole writer; CLI is a thin HTTP client)
 
 ## Summary
-Ship the document-lifecycle surface the product agent actually uses to steward the corpus: `corpus doc create|edit|move|archive|delete|check`, `corpus thread reply|resolve|reopen`, `corpus skill rollback`, and `corpus db rebuild|doctor`. Every verb is a thin, typed call onto a server endpoint — the CLI parses arguments, reads a body from stdin or `--file`, calls the server, and renders the response. It never touches a document file, never writes YAML, never runs `git commit`; locking, anchor reconciliation, validation, and auto-commit with author attribution all happen server-side. `--from user|agent` is threaded through every mutating verb so `git log` remains the audit trail of who changed what.
+Ship the document-lifecycle surface the product agent actually uses to steward the corpus: `corpus doc create|edit|move|archive|delete`, `corpus thread reply|resolve|reopen`, and `corpus db rebuild|doctor`.
+
+> **Scope adjudication (orchestrator, 2026-07-27, sprint-007 planning):** `corpus doc check` and `corpus skill rollback` are **deferred out of this issue** — the server exposes no validation or targeted-revert endpoint, so they are contract-first work: CONTRACT-008 → SERVER-019 → CLI-006 (Phase 4, before AGENT-003). The `.githooks/pre-commit` edit is **struck entirely**: this repo's hooks run in the Corpus *tool* repo, which is not a workspace — the workspace-side hook belongs to the agent-runtime domain once `doc check` exists. Do not touch `.githooks/`. Every verb is a thin, typed call onto a server endpoint — the CLI parses arguments, reads a body from stdin or `--file`, calls the server, and renders the response. It never touches a document file, never writes YAML, never runs `git commit`; locking, anchor reconciliation, validation, and auto-commit with author attribution all happen server-side. `--from user|agent` is threaded through every mutating verb so `git log` remains the audit trail of who changed what.
 
 ## Acceptance Criteria
 - [ ] `corpus doc create --type <t> --title <s> [--folder <p>] [--tags a,b] [--due <iso>] [--from user|agent] [--file <p>]` — body from `--file` or stdin (heredoc); omitting both is legal (the server pre-fills from the type's template document). Prints the new document id; `--json` prints the created document object.
 - [ ] `corpus doc edit <id> [--file <p>|stdin] [--title <s>] [--add-tag <t>…] [--remove-tag <t>…] [--status <s>] [--due <iso>] [--reviewed] [--evergreen true|false] [--from …]` — body replacement is optional (frontmatter-only edits are valid); the server acquires and releases the document lock implicitly. Output reports remapped and newly orphaned anchors when the response includes them.
 - [ ] `corpus doc move <id> --folder <path>` and `corpus doc archive <id>` map to their endpoints and report the new path / status.
 - [ ] `corpus doc delete <id>` is **user-only**: `--from agent` (or `CORPUS_FROM=agent`) is refused client-side with an explanatory error ("deletion is user-only — the agent archives, never deletes"), exit code 2, and no request is sent. Interactive use requires `--yes` unless stdin is a TTY and the confirm prompt is answered.
-- [ ] `corpus doc check [<id>…] [--staged]` validates via the server: with ids, validates those documents; with `--staged`, collects staged paths and blob contents with read-only git plumbing and posts them for validation. Warnings (orphaned anchors, unresolved `[[refs]]`) do not fail; errors exit **6** so the pre-commit hook blocks; `--json` emits the structured findings.
 - [ ] `corpus thread reply <id> --from user|agent` reads the turn body from stdin (heredoc), `--file`, or `--message/-m`; empty body is a usage error. Prints the created turn's timestamp.
 - [ ] `corpus thread resolve <id>` and `corpus thread reopen <id>` flip thread status through the server and are idempotent (already-resolved → says so, exit 0).
-- [ ] `corpus skill rollback <name> [--to <ref>]` calls the server's targeted-revert endpoint restoring the skill's last-known-good version (§7 loop safety) and prints the restored commit and file path.
 - [ ] `corpus db rebuild` triggers a full projection rebuild and prints a summary (documents/threads/turns projected, duration). `corpus db doctor` prints the drift report and exits **6** on drift, 0 when clean — the exit code the pre-commit hook gates on.
 - [ ] Every mutating verb accepts `--from user|agent` (default `user`, overridable by `CORPUS_FROM`), sends it to the server, and the resulting git commit carries that author — verified E2E via `git log`.
 - [ ] Every command above is registered in the CLI-001 registry with a summary, flag descriptions, and at least one realistic example, and appears in the regenerated `docs/cli.md`.
 - [ ] No handler in this issue calls `fs.writeFile`, `fs.rename`, `fs.unlink`, or spawns a state-changing git command; a lint rule or unit assertion enforces the read-only-filesystem constraint.
-- [ ] Vitest coverage for argument parsing, body-source resolution, the delete guard, exit-code mapping, and `--staged` collection.
+- [ ] Vitest coverage for argument parsing, body-source resolution, the delete guard, and exit-code mapping.
 
 ## Technical Design
 
 ### Files to Create/Modify
-- `apps/cli/src/commands/doc/{create,edit,move,archive,delete,check}.ts`
-- `apps/cli/src/commands/doc/staged.ts` — staged-file collection via read-only git
+- `apps/cli/src/commands/doc/{create,edit,move,archive,delete}.ts`
 - `apps/cli/src/commands/thread/{reply,resolve,reopen}.ts`
-- `apps/cli/src/commands/skill/rollback.ts`
 - `apps/cli/src/commands/db/{rebuild,doctor}.ts`
 - `apps/cli/src/input.ts` — shared body resolution (stdin / `--file` / `-m`) and `--from` resolution
-- `apps/cli/src/registry/index.ts` — register the `doc`, `thread`, `skill`, `db` topics
-- `.githooks/pre-commit` — call `corpus doc check --staged` and `corpus db doctor` per SPEC.md §14, gating on exit 6
+- `apps/cli/src/registry/index.ts` — register the `doc`, `thread`, `db` topics
 - `docs/cli.md` — regenerated
 - colocated `*.test.ts`
 
@@ -58,8 +55,6 @@ Ship the document-lifecycle surface the product agent actually uses to steward t
 **Body resolution** (one helper, used by `doc create`, `doc edit`, `thread reply`): precedence `--message` > `--file` > stdin-when-not-a-TTY > none. Reading stdin means reading it fully before the request (heredocs are the agent's normal invocation form). Reading `--file` is a *read*, which is permitted; the CLI still never writes.
 
 **`--from` attribution.** Resolve once in the dispatcher (`--from` flag ?? `CORPUS_FROM` ?? `"user"`), validate against the union, and pass it in the request body/header exactly as the contract defines. The server maps it to the git author. Commands that are inherently user-only (`doc delete`) reject `agent` before any network call.
-
-**`doc check --staged`.** The CLI needs the *staged* content, which differs from the worktree, so it shells out to read-only plumbing: `git diff --cached --name-only --diff-filter=ACMR -z` for paths, filtered to the workspace's document roots, then `git show :<path>` for each blob. Those `(path, content)` pairs are posted to the server's validation endpoint — the same validator the server runs on `PUT`, per §14's "hooks and API share one implementation". No worktree file is read for `--staged`, and no git state is changed.
 
 **Anchor reporting.** `doc edit` responses carry the reconciliation result (§6). Human output prints e.g. `edited doc_a1b2c3 — 3 anchors remapped, 1 orphaned (th_x9y8)`; `--json` passes the response through untouched so the agent can act on it.
 
@@ -70,10 +65,8 @@ Ship the document-lifecycle surface the product agent actually uses to steward t
 ### Edge Cases
 - Editing a document the **user** currently holds the lock on → the server returns a lock conflict; the CLI renders it as "document is locked by user — the edit was not applied" with a distinct, documented exit code path (server error, exit 5) so the orchestrate skill can defer rather than retry blindly.
 - `doc create` with a `--folder` that does not exist → the server decides (create-on-demand or reject); the CLI surfaces the typed problem verbatim rather than pre-validating.
-- `doc check --staged` with no staged document paths → exit 0 and print nothing (hooks must stay fast and silent on the common path).
 - `thread reply` with a body containing a `~~~form` / fenced block → passed through byte-for-byte; no markdown post-processing in the CLI.
 - Very large bodies (multi-MB pasted content) → stream/limit sensibly; do not build the request body twice.
-- `skill rollback` for an unknown skill name → server 404 rendered as "no skill named <name>", exit 5.
 - `db rebuild` on a large corpus may exceed the default HTTP timeout → use a longer, explicit timeout for this verb and print progress-free but non-hanging output.
 - CRLF/no-trailing-newline stdin bodies → normalized only if the server contract says so; otherwise pass through unchanged and let the server normalize (one implementation).
 
