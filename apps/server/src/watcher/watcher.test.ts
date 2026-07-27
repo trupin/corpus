@@ -303,12 +303,12 @@ describe("the watcher — ignores", () => {
     await waitForKey(["docs", "doc_real"]);
     expect(rows("SELECT id FROM documents")).toEqual([{ id: "doc_real" }]);
     // Only the real save produced keys — nothing named a swap file or a .txt.
+    // And no `["tree"]`: the document landed at the *root* of `data/docs/`,
+    // which belongs to no folder node, so `GET /api/tree` is byte-identical
+    // either side of it. The `structural` heuristic used to announce the key
+    // here purely because a file had appeared (SERVER-020).
     expect(new Set(flat())).toEqual(
-      new Set([
-        JSON.stringify(["docs"]),
-        JSON.stringify(["docs", "doc_real"]),
-        JSON.stringify(["tree"]),
-      ]),
+      new Set([JSON.stringify(["docs"]), JSON.stringify(["docs", "doc_real"])]),
     );
   });
 });

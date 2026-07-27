@@ -198,6 +198,40 @@ describe("POST /api/db/rebuild", () => {
     expect(REBUILD_QUERY_KEYS).toHaveLength(5);
   });
 
+  it("names the tree even when the rebuild leaves it byte-identical, by design", async () => {
+    // SERVER-020's decision item, pinned so it is not re-litigated by mistake.
+    //
+    // SERVER-018 and SERVER-020 made every *mutation* frame lawful: it carries
+    // `["tree"]` exactly when `GET /api/tree`'s response changed, measured
+    // across the write. `POST /api/db/rebuild` is deliberately outside that
+    // rule, because it is not reporting a change the server made — it is a
+    // resynchronization instruction, the operator's reset button for a client
+    // or a cache nobody trusts any more.
+    //
+    // Measuring it would mean comparing the tree derived from the rows being
+    // discarded against the tree derived from the rows replacing them, and
+    // suppressing the key when they match. That comparison is blind to the case
+    // the route exists for: an operator rebuilds precisely when the *board*
+    // looks wrong, which includes a client that missed a frame while its
+    // projection was right all along. Suppression there would decline to
+    // resynchronize the one thing the user asked to have fixed. Over-
+    // invalidating a rare, manual, whole-cache operation costs one refetch of a
+    // small structure; under-invalidating it costs the point of the command.
+    boot();
+    write("data/docs/finance/d.md", doc("doc_ddd"));
+    await rebuildRequest();
+    const before = await (await request("/api/tree")).text();
+    keys = [];
+
+    // Nothing on disk changed between the two rebuilds.
+    await rebuildRequest();
+
+    const after = await (await request("/api/tree")).text();
+    expect(after).toBe(before);
+    expect(JSON.parse(after)).toMatchObject({ folders: [{ path: "finance", count: 1 }] });
+    expect(keys).toEqual([[["docs"], ["tree"], ["queue"], ["jobs"], ["locks"]]]);
+  });
+
   it("takes the actor header without making it an author", async () => {
     boot();
     expect((await rebuildRequest({ "x-corpus-author": "agent" })).status).toBe(200);

@@ -23,6 +23,7 @@ export type { SelfWriteRegistry, SelfWriteRegistryOptions } from "./self-writes.
 export {
   AWAIT_WRITE_FINISH,
   WATCH_DEBOUNCE_MS,
+  WATCH_FLUSH_BUDGET_MS,
   WATCH_MAX_BATCH_MS,
   startWatcher,
 } from "./watcher.js";
