@@ -27,9 +27,15 @@ export const DEFAULT_DATA_DIR = "data";
 export const RECOMMENDED_TOKEN_LENGTH = 32;
 
 /**
- * v1 binds loopback only (CLAUDE.md Architecture Decision 5). Accepting a
- * routable host here would expose an unencrypted, single-token API to the
- * network; remote setups become a configuration change later, not a v1 feature.
+ * v1 binds loopback only (CLAUDE.md Architecture Decision 5): a routable host
+ * would expose an unencrypted, single-token API to the network, and remote
+ * setups stay a later configuration change rather than a v1 feature.
+ *
+ * That rule is enforced *at bind time*, not at parse time (Sprint-002
+ * Adjudication 6). `.corpus/config.json` is shared with the CLI, which only
+ * dials `host` — making a routable value a schema failure would break the CLI's
+ * reader over a constraint that is none of its business, and would report a
+ * server capability limit as a malformed file.
  */
 const LOOPBACK_HOSTS = new Set([
   "localhost",
@@ -49,20 +55,34 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 /**
- * The canonical on-disk shape, pinned by Sprint-002 Adjudication 3 and shared
- * with the CLI's reader. Parsed non-strictly: unknown keys pass through (a newer
- * `corpus init` may write fields this server does not know), absent optionals
- * take their documented defaults.
+ * The canonical on-disk shape, pinned by Sprint-002 Adjudications 3 and 6 and
+ * shared with the CLI's reader. Parsed non-strictly: unknown keys pass through
+ * (a newer `corpus init` may write fields this server does not know), absent
+ * optionals take their documented defaults — including `port`, so a config
+ * written without one is valid and binds {@link DEFAULT_PORT}.
+ *
+ * `host` is any string here; loopback-only is a *semantic* boot rule owned by
+ * the component that binds (see {@link nonLoopbackBindError}).
  */
 export const WorkspaceConfigSchema = z.object({
   version: z.literal(1),
   port: z.number().int().min(1).max(65535).default(DEFAULT_PORT),
-  host: z.string().default(DEFAULT_HOST).refine(isLoopbackHost, {
-    message: "must be a loopback address — this version of corpus binds 127.0.0.1 only",
-  }),
+  host: z.string().default(DEFAULT_HOST),
   token: z.string().min(1),
   dataDir: z.string().min(1).default(DEFAULT_DATA_DIR),
 });
+
+/**
+ * The boot-time refusal for a host this version will not bind. It names the
+ * value, the rule and the file to edit, because the operator's next action is
+ * always "change that key" — the config itself is well-formed.
+ */
+export function nonLoopbackBindError(host: string, configPath: string): ConfigError {
+  return new ConfigError(
+    `refusing to bind ${JSON.stringify(host)}: this version of corpus serves loopback only — ` +
+      `set "host" to ${DEFAULT_HOST} in ${configPath}, or remove the key to use the default`,
+  );
+}
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 

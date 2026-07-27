@@ -10,7 +10,7 @@ import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { buildOpenApiDocument, contractRoutes } from "@corpus/contract";
-import type { ServerConfig } from "./config.js";
+import { isLoopbackHost, nonLoopbackBindError, type ServerConfig } from "./config.js";
 import {
   CorpusError,
   badRequest,
@@ -159,6 +159,15 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
   const start = (): Promise<BoundAddress> =>
     new Promise<BoundAddress>((resolvePromise, rejectPromise) => {
+      // Loopback-only is enforced here, at the bind, and not in the config
+      // schema (Sprint-002 Adjudication 6): the file parses — the CLI reads the
+      // same one and only needs a dial target — but *this* process refuses to
+      // put an unencrypted, single-token API on a routable interface.
+      if (!isLoopbackHost(config.host)) {
+        rejectPromise(nonLoopbackBindError(config.host, config.configPath));
+        return;
+      }
+
       let settled = false;
 
       const onStartupError = (error: Error): void => {

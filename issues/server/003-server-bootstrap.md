@@ -118,7 +118,7 @@ Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue —
 
 - Workspace resolution walking to `/` without finding `.corpus/config.json` → `CorpusError` "not a Corpus workspace; run `corpus init`" (exit code 1 from `main.ts`).
 - `.corpus/config.json` present but malformed JSON, or valid JSON failing the schema → distinct, actionable messages (parse error names the byte offset; schema error names the failing field).
-- `host` configured to something non-loopback → rejected at config parse time in v1 (Decision 5 keeps remote setups a future non-breaking change, not a v1 capability).
+- `host` configured to something non-loopback → ~~rejected at config parse time in v1~~ **superseded by Adjudication 6**: the config parses (the CLI shares the file and only dials `host`); the server refuses to *bind* it at boot with an actionable message and exits 1 (Decision 5 keeps remote setups a future non-breaking change, not a v1 capability).
 - Two workspaces on one machine using the same port → `EADDRINUSE` message above; tests use port `0`.
 - Empty or whitespace `Authorization` header, `Bearer` with no value, wrong scheme (`Basic`) → all 401, none throwing.
 - A request to `/api/…` for a route no issue has registered yet → problem-JSON 404, not the SPA fallback.
@@ -340,7 +340,7 @@ malformed JSON
   /tmp/server003/bad-json/.corpus/config.json is not valid JSON: Expected double-quoted property name in JSON at position 50 (line 2 column 1)
 schema failure
   /tmp/server003/bad-schema/.corpus/config.json is not a valid workspace config — port: Too big: expected number to be <=65535
-non-loopback host
+non-loopback host  [SUPERSEDED by Adjudication 6 — now a bind-time refusal, see the addendum below]
   /tmp/server003/bad-host/.corpus/config.json is not a valid workspace config — host: must be a loopback address — this version of corpus binds 127.0.0.1 only
 bad CORPUS_PORT
   CORPUS_PORT must be a port number between 0 and 65535 (0 binds an ephemeral port), got "notaport"
@@ -552,6 +552,35 @@ npm run test:coverage ✓ 85 files, 1677 tests passed, 0 failed
 coverage             ✓ All files 99.55% lines / 96.18% branches / 100% functions
                        (apps/server/src 97.04% lines; gate 90%)
 ```
+
+### Post-eval edge pin — Adjudication 6 (2026-07-26, model: opus)
+
+Portless config parses and defaults to 8765; a routable `host` parses too and is refused at
+the **bind**, not the read — superseding the TEST-34 line above ("non-loopback host →
+_is not a valid workspace config_"), which recorded the pre-Adjudication-6 behaviour.
+
+```
+$ cat /tmp/corpus-s003-edge/ws/.corpus/config.json     # portless
+{"version":1,"token":"8815…8831"}
+$ CORPUS_WORKSPACE=… ./node_modules/.bin/tsx apps/server/src/main.ts
+{"level":"info","msg":"listening on http://127.0.0.1:8765","port":8765,…}
+$ lsof -nP -iTCP:8765 -sTCP:LISTEN → node … TCP 127.0.0.1:8765 (LISTEN)
+$ curl -s -o /dev/null -w '%{http_code}' …/api/health → 200   (openapi.json with token → 200)
+
+$ cat …/config.json                                    # {"version":1,"token":"…","host":"0.0.0.0"}
+$ tsx -e 'readWorkspaceConfig(ws)'                     # the file PARSES — the CLI shares it
+{"version":1,"port":8765,"host":"0.0.0.0","token":"8815…8831","dataDir":"data"}
+$ CORPUS_WORKSPACE=… ./node_modules/.bin/tsx apps/server/src/main.ts
+exit=1
+{"level":"error","msg":"refusing to bind \"0.0.0.0\": this version of corpus serves loopback only — set \"host\" to 127.0.0.1 in /tmp/corpus-s003-edge/ws/.corpus/config.json, or remove the key to use the default"}
+$ lsof -nP -iTCP:8765 -sTCP:LISTEN → (nothing bound)
+
+$ …"host":"localhost", CORPUS_PORT=8799 → listening on http://localhost:8799, health 200
+```
+
+No stack trace on the refusal (anticipated `CorpusError`), nothing bound, exit 1. Scoped
+gate: `npx vitest run apps/server` ✓ 30 files / 773 tests, `eslint` + `prettier --check` +
+`tsc --noEmit` on `apps/server` ✓. **PASS**
 
 ## Completion Checklist (domain agent)
 

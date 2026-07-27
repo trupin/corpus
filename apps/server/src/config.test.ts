@@ -14,6 +14,7 @@ import {
   findWorkspaceRoot,
   isLoopbackHost,
   loadServerConfig,
+  nonLoopbackBindError,
   readToolVersion,
   readWorkspaceConfig,
   resolveUiDistDir,
@@ -88,16 +89,41 @@ describe("WorkspaceConfigSchema", () => {
     expect(WorkspaceConfigSchema.parse({ version: 1, token: "t" }).token).toBe("t");
   });
 
+  it("accepts a portless config, defaulting the port to 8765 (Adjudication 6)", () => {
+    const parsed = WorkspaceConfigSchema.parse({ version: 1, token: LONG_TOKEN });
+    expect(parsed.port).toBe(DEFAULT_PORT);
+    expect(DEFAULT_PORT).toBe(8765);
+  });
+
+  it.each([["0.0.0.0"], ["192.168.1.10"], ["example.com"], ["::"], [""]])(
+    "accepts host %j — loopback-only is a bind rule, not a schema rule (Adjudication 6)",
+    (host) => {
+      const result = WorkspaceConfigSchema.safeParse({ version: 1, token: LONG_TOKEN, host });
+      expect(result.success).toBe(true);
+      expect(result.success && result.data.host).toBe(host);
+    },
+  );
+
   it.each([
     ["an empty token", { version: 1, token: "" }],
     ["a missing token", { version: 1 }],
     ["a wrong version", { version: 2, token: LONG_TOKEN }],
     ["a port above the range", { version: 1, token: LONG_TOKEN, port: 99999 }],
     ["a fractional port", { version: 1, token: LONG_TOKEN, port: 80.5 }],
-    ["a non-loopback host", { version: 1, token: LONG_TOKEN, host: "0.0.0.0" }],
     ["an empty dataDir", { version: 1, token: LONG_TOKEN, dataDir: "" }],
   ])("rejects %s", (_label, value) => {
     expect(WorkspaceConfigSchema.safeParse(value).success).toBe(false);
+  });
+});
+
+describe("nonLoopbackBindError", () => {
+  it("names the value, the rule and the file to edit", () => {
+    const error = nonLoopbackBindError("0.0.0.0", "/ws/.corpus/config.json");
+    expect(error).toBeInstanceOf(ConfigError);
+    expect(error.message).toContain('refusing to bind "0.0.0.0"');
+    expect(error.message).toContain("loopback only");
+    expect(error.message).toContain(`set "host" to ${DEFAULT_HOST}`);
+    expect(error.message).toContain("/ws/.corpus/config.json");
   });
 });
 
@@ -197,10 +223,22 @@ describe("readWorkspaceConfig", () => {
     expect(() => readWorkspaceConfig(workspace)).toThrow(/is not a valid workspace config — port:/);
   });
 
-  it("names `host` and states the loopback rule", () => {
-    const workspace = makeWorkspace("bad-host", { version: 1, token: LONG_TOKEN, host: "0.0.0.0" });
-    expect(() => readWorkspaceConfig(workspace)).toThrow(/host: must be a loopback address/);
-    expect(() => readWorkspaceConfig(workspace)).toThrow(/binds 127\.0\.0\.1 only/);
+  it("reads a portless config, defaulting the port (Adjudication 6)", () => {
+    const workspace = makeWorkspace("portless", { version: 1, token: LONG_TOKEN });
+    expect(readWorkspaceConfig(workspace)).toMatchObject({
+      port: DEFAULT_PORT,
+      host: DEFAULT_HOST,
+      token: LONG_TOKEN,
+    });
+  });
+
+  it("reads a non-loopback host without complaint — the bind refuses it, not the reader", () => {
+    const workspace = makeWorkspace("wide-host", {
+      version: 1,
+      token: LONG_TOKEN,
+      host: "0.0.0.0",
+    });
+    expect(readWorkspaceConfig(workspace).host).toBe("0.0.0.0");
   });
 
   it("reports a root-level failure without an empty path segment", () => {
@@ -291,6 +329,22 @@ describe("loadServerConfig", () => {
       logLevel: "info",
       warnings: [],
     });
+  });
+
+  it("loads a portless config with the default port and host (Adjudication 6)", () => {
+    const workspace = makeWorkspace("portless", { version: 1, token: LONG_TOKEN });
+    const config = loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root });
+    expect(config).toMatchObject({ port: DEFAULT_PORT, host: DEFAULT_HOST, warnings: [] });
+  });
+
+  it("carries a non-loopback host through — refusing to bind it is `start()`'s job", () => {
+    const workspace = makeWorkspace("wide-host", {
+      version: 1,
+      token: LONG_TOKEN,
+      host: "0.0.0.0",
+    });
+    const config = loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root });
+    expect(config.host).toBe("0.0.0.0");
   });
 
   it("resolves a custom dataDir against the workspace root", () => {

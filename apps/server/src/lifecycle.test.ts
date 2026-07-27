@@ -235,6 +235,31 @@ describe("runServerProcess — boot", () => {
     expect(entry).toHaveProperty("stack");
   });
 
+  it("exits 1 with the loopback rule when the config names a routable host", async () => {
+    // The file is well-formed — it parses, and the CLI reads the same one — so
+    // the refusal happens at the bind, not at the read (Adjudication 6).
+    const workspace = makeWorkspace("wide-host", { version: 1, token: TOKEN, host: "0.0.0.0" });
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+    });
+
+    expect(server).toBeUndefined();
+    expect(h.exits).toEqual([1]);
+
+    const entry = JSON.parse(h.lines[0] ?? "") as Record<string, unknown>;
+    expect(entry.level).toBe("error");
+    expect(String(entry.msg)).toContain('refusing to bind "0.0.0.0"');
+    expect(String(entry.msg)).toContain(join(workspace, ".corpus", "config.json"));
+    // Anticipated and actionable: no stack trace to bury the message.
+    expect(entry).not.toHaveProperty("stack");
+  });
+
   it("exits 1 with the port-in-use message when the bind fails", async () => {
     const workspace = makeWorkspace("ws");
     const first = harness();

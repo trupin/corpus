@@ -10,8 +10,15 @@ import {
   ValidationErrorSchema,
 } from "@corpus/contract";
 import { OPENAPI_PATH, createServer, formatHostForUrl, mapListenError } from "./app.js";
-import type { ServerConfig } from "./config.js";
-import { CorpusError, badRequest, errorResponse, notFound, toValidationIssues } from "./errors.js";
+import { nonLoopbackBindError, type ServerConfig } from "./config.js";
+import {
+  ConfigError,
+  CorpusError,
+  badRequest,
+  errorResponse,
+  notFound,
+  toValidationIssues,
+} from "./errors.js";
 import { createLogger, silentLogger, type LogSink } from "./logger.js";
 import { UI_MISSING_MESSAGE } from "./static-ui.js";
 
@@ -421,6 +428,57 @@ describe("createServer — lifecycle", () => {
     } finally {
       await second.close();
       await first.close();
+    }
+  });
+});
+
+describe("createServer — loopback-only bind (Adjudication 6)", () => {
+  it.each([["0.0.0.0"], ["192.168.1.10"], ["::"], ["example.com"], [""]])(
+    "refuses to bind host %j with an actionable message",
+    async (host) => {
+      const config = makeConfig({ host, port: 0 });
+      const server = createServer(config);
+
+      try {
+        await expect(server.start()).rejects.toThrow(ConfigError);
+        // The operator sees the value, the rule and the file to edit.
+        await expect(server.start()).rejects.toThrow(
+          nonLoopbackBindError(host, config.configPath).message,
+        );
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  it("still constructs the app — the config is valid, only the bind is refused", async () => {
+    const { app } = createServer(makeConfig({ host: "0.0.0.0" }));
+    expect((await app.request("/api/health")).status).toBe(200);
+  });
+
+  it("opens no socket: the port stays free for a loopback server", async () => {
+    const probe = createServer(makeConfig({ port: 0 }));
+    const { port } = await probe.start();
+    await probe.close();
+
+    const refused = createServer(makeConfig({ host: "0.0.0.0", port }));
+    await expect(refused.start()).rejects.toThrow(/refusing to bind/);
+    await refused.close();
+
+    const loopback = createServer(makeConfig({ port }));
+    try {
+      await expect(loopback.start()).resolves.toMatchObject({ port, host: "127.0.0.1" });
+    } finally {
+      await loopback.close();
+    }
+  });
+
+  it.each([["127.0.0.1"], ["localhost"]])("binds loopback host %s", async (host) => {
+    const server = createServer(makeConfig({ host, port: 0 }));
+    try {
+      await expect(server.start()).resolves.toMatchObject({ host });
+    } finally {
+      await server.close();
     }
   });
 });
