@@ -27,6 +27,8 @@ opus — each item is small and precisely located by the PR #9 review.
 
 ## Summary
 
+> **Sprint-008 reassignments (orchestrator, 2026-07-27, Open Conflict 9):** finding 4 (whitespace-only `exact`) moved to SERVER-014 (same file, same classification reasoning, fable-tier); finding 10 (watcher sync `git show` bound) moved to SERVER-020 (same `flush()`). This issue keeps the remaining nine findings, all on disjoint files — the three server issues run genuinely parallel.
+
 The server-side MINOR findings from the Phase 2 PR review, deferred out of the merge as a single hardening session:
 
 1. **Encoded traversal spellings in the raw-path guard** (`attachments/serve.ts`): `%2e%2e` collapses in WHATWG parsing like literal `..`; extend the raw guard so encoded spellings share the uniform 404 (containment/auth already hold).

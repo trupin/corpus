@@ -67,11 +67,12 @@ Build the data layer that every other UI issue consumes: `@corpus/kit` exports a
 
 ### Key Implementation Details
 
-**Query-key scheme (stable, hierarchical, prefix-invalidatable).** Publish exactly this and do not deviate — the server's `invalidate` payloads must be able to name these:
+**Query-key scheme (stable, hierarchical, prefix-invalidatable).**
+
+> **Corrected (orchestrator, 2026-07-27, sprint-008 Open Conflict 1):** the literals originally listed here (`["doc", id]`, `["thread", id]`) do NOT match what the server emits — the shipped vocabulary is `["docs", id]` / `["threads", id]`, exported from `@corpus/contract` (re-exported via the server's `events/keys.ts`). A kit built to the old literals caches under keys no `invalidate` frame ever names: every unit test passes and every reader goes permanently stale. **The kit must call the contract's exported key builders — never write key literals** — so drift is a type/test error, not a silent cache miss.
 
 - `["docs", canonicalQuery]` — a collection query; `canonicalQuery` is the filter object with `undefined`/empty values dropped and keys sorted, so key identity is value-based
-- `["doc", id]` — a single document (frontmatter + body + anchors)
-- `["thread", id]` — a thread with turns
+- the contract's single-document and thread key builders (shipped shapes: `["docs", id]`, `["threads", id]`)
 - `["tree"]` — the folder tree
 - `["jobs", params]` — console rows
 - `["locks"]` — the lock projection
@@ -90,6 +91,8 @@ Prefix matching is the whole point: an `invalidate` naming `["docs"]` must inval
 **The boundary rule.** `packages/kit/src/index.ts` is the plugin contract. Everything UI-003 and later consume goes through it; a component reaching past the kit into the generated client is a review-blocking defect (and, per SPEC.md §10, lint-forbidden for plugins). Keep the export surface deliberate — export hooks, the provider, the key builders, and types; do not re-export the raw client's internals.
 
 **Auth.** The bearer token comes from the workspace config surfaced by the server/dev proxy per CLAUDE.md Architecture Decision 5. The kit takes it as configuration — it never reads files or env directly.
+
+> **Adjudicated (orchestrator, 2026-07-27, sprint-008 Open Conflict 3):** nothing currently provisions that token to the browser — no injection in `mountStaticUi`, no `/api/config` endpoint. Split: the **kit** stays config-only (this issue's ACs unchanged — it receives `{ baseUrl, token }` and never sources them); **apps/ui in dev** reads a `VITE_CORPUS_TOKEN` env var (documented in its README/dev script); the **production provisioning half** (server surfaces the token to the served UI) is SERVER-024, filed and scheduled this phase. UI-002's own E2E may use the dev env var path.
 
 ### Edge Cases
 

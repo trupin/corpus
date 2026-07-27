@@ -36,6 +36,7 @@ Escalated by SERVER-018's implementer: mutation frames now satisfy the invariant
 - [ ] Both reproduced directions become regression tests (disk-edit archive → key present; skill-file appearance → key absent).
 - [ ] No new key names; mutation-path behavior untouched.
 - [ ] Optional (sprint-007 evaluator note): `POST /api/db/rebuild` is the one remaining route emitting `["tree"]` on a byte-identical tree — deliberately coarse per SERVER-017. Decide whether to fold it into the measured scheme or bless the coarseness with a written rationale.
+- [ ] **Reassigned in (sprint-008 Open Conflict 9)**: SERVER-022 finding 10 — the watcher's batch flush runs a synchronous `execFileSync("git show")` per anchored file (`watcher.ts` + `git-head.ts`); a branch switch touching many anchored docs (or a wedged git at the 5s timeout) blocks the event loop for the whole batch. Bound the per-batch blocking. Lands here because both changes live inside `flush()`.
 
 ## Technical Design
 
