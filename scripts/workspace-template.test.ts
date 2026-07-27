@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { CORE_DOC_TYPES, DocumentIdSchema, IsoDateTimeSchema } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
+// Read-only, and deliberately the real thing: `corpus init` creates exactly these
+// directories, so importing them is what stops the install contract from drifting
+// away from the implementation it documents.
+import { WORKSPACE_DIRECTORIES } from "../apps/cli/src/commands/init/scaffold.js";
 import {
+  CONTRACT_DOC_PATH,
   INIT_GENERATED,
   INSTALL_FILTERS,
   INSTALL_RENAMES,
@@ -251,6 +256,45 @@ describe("gitignore", () => {
   });
 });
 
+/**
+ * The generated list mixes three kinds: workspace-relative directories (trailing
+ * `/`), workspace-relative files, and bare actions such as `git init`. A path
+ * always carries a separator, which is what tells an action apart from a file.
+ */
+const GENERATED_ACTIONS = INIT_GENERATED.filter((entry) => !entry.includes("/"));
+const GENERATED_DIRECTORIES = INIT_GENERATED.filter((entry) => entry.endsWith("/"));
+const GENERATED_FILES = INIT_GENERATED.filter(
+  (entry) => entry.includes("/") && !entry.endsWith("/"),
+);
+const GENERATED_PATHS = [...GENERATED_DIRECTORIES, ...GENERATED_FILES];
+
+/** Where every surviving template file lands, in installed-path form. */
+const installedTemplatePaths = templateFiles
+  .map(installedPath)
+  .filter((relPath): relPath is string => relPath !== null);
+
+/** Every directory in the template tree, deepest included, `/`-separated. */
+const templateDirectories = [
+  ...new Set(
+    templateFiles.flatMap((relPath) => {
+      const segments = relPath.split("/").slice(0, -1);
+      return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+    }),
+  ),
+].sort();
+
+/**
+ * A template directory's installed path, computed by sending a name the copy
+ * filter cannot drop through the real `installedPath()`. Re-deriving the rename
+ * prefixes here would be a second implementation of the rule under test.
+ */
+const PROBE_NAME = "probe";
+const installedDirectory = (dir: string): string => {
+  const probed = installedPath(`${dir}/${PROBE_NAME}`);
+  if (probed === null) throw new Error(`the probe name "${PROBE_NAME}" is itself filtered`);
+  return `${path.posix.dirname(probed)}/`;
+};
+
 describe("install contract", () => {
   const documented = readContractDoc();
 
@@ -264,6 +308,117 @@ describe("install contract", () => {
 
   it("agrees with the exported generate-don't-copy list", () => {
     expect(documented.generated).toEqual([...INIT_GENERATED]);
+  });
+
+  it("generates directories, files and exactly one action", () => {
+    expect(GENERATED_ACTIONS).toEqual(["git init"]);
+    expect(GENERATED_DIRECTORIES).toEqual([
+      "data/docs/inbox/",
+      "data/threads/",
+      ".claude/skills-archived/",
+      ".claude/agents/",
+      ".corpus/queue/",
+      ".corpus/locks/",
+      ".corpus/jobs/",
+      ".corpus/attachments/",
+    ]);
+    expect(GENERATED_FILES).toEqual([".corpus/config.json", ".corpus/template-manifest.json"]);
+  });
+
+  it("names every generated path relative to the workspace root", () => {
+    for (const entry of [...GENERATED_DIRECTORIES, ...GENERATED_FILES]) {
+      expect(entry, `${entry}: absolute`).not.toMatch(/^\//);
+      expect(entry, `${entry}: backslash`).not.toContain("\\");
+      expect(entry.split("/"), `${entry}: traversal`).not.toContain("..");
+    }
+  });
+
+  it("generates nothing the copy already installs", () => {
+    for (const file of GENERATED_FILES) {
+      expect(installedTemplatePaths, `${file} is both copied and generated`).not.toContain(file);
+    }
+    for (const directory of GENERATED_DIRECTORIES) {
+      const inside = installedTemplatePaths.filter((relPath) => relPath.startsWith(directory));
+      expect(inside, `${directory} receives copied files`).toEqual([]);
+    }
+  });
+
+  it("generates every template directory the copy filter empties", () => {
+    // A directory whose every entry is dropped installs to nothing, so it has to
+    // be created outright or it is simply missing from the workspace. This is the
+    // general form of sprint-003 Open Conflict 9.
+    const emptied = templateDirectories.filter((dir) =>
+      templateFiles
+        .filter((relPath) => relPath.startsWith(`${dir}/`))
+        .every((relPath) => installedPath(relPath) === null),
+    );
+    expect(emptied, "no template directory is emptied by the filter").not.toEqual([]);
+    expect(emptied).toContain("claude/agents");
+    for (const dir of emptied) {
+      expect(
+        GENERATED_DIRECTORIES,
+        `${dir} installs to nothing and is not generated either`,
+      ).toContain(installedDirectory(dir));
+    }
+  });
+
+  it("generates the roots the template cannot carry at all", () => {
+    // `.claude/skills-archived/` has no template counterpart whatsoever, yet it is
+    // one of the projection's document roots (SPEC.md §4, §7).
+    expect(templateFiles.some((relPath) => relPath.startsWith("claude/skills-archived/"))).toBe(
+      false,
+    );
+    expect(GENERATED_DIRECTORIES).toContain(".claude/skills-archived/");
+  });
+
+  it("accounts for every directory `corpus init` creates", () => {
+    // Exhaustiveness, stated as a covering rule: a created directory is accounted
+    // for when the copy fills it, when a listed entry lives in it, or when it is
+    // (or sits inside) a listed directory. Anything left over is created by
+    // `init` and invisible to `corpus workspace upgrade`.
+    const uncovered = WORKSPACE_DIRECTORIES.filter((dir) => {
+      const prefix = `${dir}/`;
+      if (installedTemplatePaths.some((relPath) => relPath.startsWith(prefix))) return false;
+      if (GENERATED_PATHS.some((entry) => entry.startsWith(prefix))) return false;
+      return !GENERATED_DIRECTORIES.some((entry) => prefix.startsWith(entry));
+    });
+    expect(uncovered, "created by `corpus init`, absent from the install contract").toEqual([]);
+  });
+
+  it("lists nothing `corpus init` does not create", () => {
+    for (const directory of GENERATED_DIRECTORIES) {
+      expect(WORKSPACE_DIRECTORIES, `${directory} is documented but never created`).toContain(
+        directory.slice(0, -1),
+      );
+    }
+    for (const file of GENERATED_FILES) {
+      expect(WORKSPACE_DIRECTORIES, `${file}'s parent is never created`).toContain(
+        path.posix.dirname(file),
+      );
+    }
+  });
+
+  it("lists its directories in `corpus init`'s creation order", () => {
+    const created = WORKSPACE_DIRECTORIES.filter((dir) =>
+      GENERATED_DIRECTORIES.includes(`${dir}/`),
+    );
+    expect(GENERATED_DIRECTORIES.map((entry) => entry.slice(0, -1))).toEqual(created);
+  });
+
+  it("documents the manifest with the shape `corpus init` writes", () => {
+    const doc = readFileSync(CONTRACT_DOC_PATH, "utf8");
+    const shape = /```json\n([\s\S]*?)```/.exec(doc)?.[1];
+    expect(shape, "no fenced json manifest shape").toBeDefined();
+    const parsed: unknown = JSON.parse(shape ?? "");
+    expect(Object.keys(parsed as Record<string, unknown>)).toEqual([
+      "version",
+      "tool",
+      "installedAt",
+      "files",
+    ]);
+    const { version, files } = parsed as { version: unknown; files: unknown[] };
+    expect(version).toBe(1);
+    expect(Object.keys(files[0] as Record<string, unknown>)).toEqual(["path", "sha256"]);
   });
 
   it("maps every template path to its installed path", () => {

@@ -48,12 +48,30 @@ export const INSTALL_RENAMES: readonly InstallRename[] = [
 export const INSTALL_FILTERS: readonly string[] = [".gitkeep"];
 
 /**
- * What `corpus init` produces itself. The template is fully static — no secrets,
- * no machine-specific paths — which is what makes "copy wholesale" safe.
+ * Everything `corpus init` produces itself, in install order — **exhaustively**.
+ * The template is fully static (no secrets, no machine-specific paths), which is
+ * what makes "copy wholesale" safe; anything host-specific, every directory whose
+ * only template content is a filtered `.gitkeep`, and every runtime directory
+ * with no template counterpart is generated instead. `corpus workspace upgrade`
+ * compares a workspace against this list, so an omission is invisible to it.
+ *
+ * A trailing `/` marks a directory; `git init` is an action rather than a path.
+ * Directories that receive copied files arrive with the copy and are not listed.
+ * Kept byte-identical to, and in the same order as, the bullet list in
+ * `docs/workspace-template.md`; the directory order tracks
+ * `WORKSPACE_DIRECTORIES` in `apps/cli/src/commands/init/scaffold.ts`.
  */
 export const INIT_GENERATED: readonly string[] = [
-  ".corpus/config.json",
+  "data/docs/inbox/",
+  "data/threads/",
+  ".claude/skills-archived/",
+  ".claude/agents/",
   ".corpus/queue/",
+  ".corpus/locks/",
+  ".corpus/jobs/",
+  ".corpus/attachments/",
+  ".corpus/config.json",
+  ".corpus/template-manifest.json",
   "git init",
 ];
 
