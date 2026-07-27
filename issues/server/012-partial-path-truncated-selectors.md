@@ -6,7 +6,7 @@ server
 
 ## Status
 
-in_progress
+done
 
 ## Priority
 
@@ -457,3 +457,12 @@ with zero regressions (capture 339→0, collision 114→0, substitution 695→37
 The substitution class is escalated to the user per the 3-round cap; the candidate design for
 the next attempt (unique-verbatim-survivor location/INSERT-vs-EQUAL discriminator) is recorded
 in the eval file and server-dev Domain Knowledge.
+
+### Re-scope (user decision, 2026-07-26)
+
+Closed as done for the arms it fixed — slice truncation (round 1) and cross-anchor
+capture/collision (round 2), both evaluator-verified strict improvements with zero
+regressions. The remaining pre-existing substitution class (eval rounds 3–4) is carved
+out to [SERVER-013], sequenced before SERVER-005 so the write path never consumes the
+engine with it open. The round-3 similarity attempt stays reverted; the survivor-location
+design authorized for SERVER-013 is recorded there and in the eval file.
