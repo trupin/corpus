@@ -27,23 +27,6 @@ import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { internalError, notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
 
-/**
- * What `created`/`updated` say when the file carries neither.
- *
- * CONTRACT-005 made the **row**'s timestamps nullable (sprint-005 Open Conflict
- * 11) and `query.ts` now passes `null` straight through. `DocFrontmatter` was
- * deliberately *not* changed with it — its own comment says "only the row is
- * nullable … a document the server writes is always stamped" — so this shape
- * still has to produce a string, and only an epoch sentinel is available.
- *
- * The split is real and visible: a hand-written `SKILL.md` reads as `null` from
- * `GET /api/docs` and as this sentinel from `GET /api/docs/{id}`. Closing it
- * means making `DocFrontmatterSchema.created`/`updated` nullable, which is a
- * contract change and not this issue's to make. ESCALATED — see SERVER-005's
- * E2E log.
- */
-const UNDATED_INSTANT = "1970-01-01T00:00:00Z";
-
 export type DocumentRow = {
   readonly id: string;
   readonly type: string;
@@ -138,8 +121,12 @@ export function readAnchorsMap(value: unknown): Record<string, TextQuoteSelector
  * broken file — §5's canonical block is what a *Corpus-created* document has,
  * while §7's hand-written skills carry almost none of it.
  *
- * `created`/`updated` fall back to {@link UNDATED_INSTANT} — see that constant
- * for why this shape cannot say `null` the way the collection query now can.
+ * `created`/`updated` pass `null` straight through when the file carries no such
+ * timestamp — a hand-written skill legitimately has none, and the contract's
+ * `DocFrontmatter` says `null` for exactly that case (CONTRACT-005, extended by
+ * the SERVER-005 escalation). No epoch sentinel: substituting `1970-01-01` made
+ * one file read two different ages through `GET /api/docs` and
+ * `GET /api/docs/{id}`.
  */
 export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFrontmatter {
   const data = parsed.data;
@@ -154,8 +141,8 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     id: row.id,
     type: row.type,
     title: asText(data["title"]) ?? asText(data["name"]) ?? row.title,
-    created: (created === null ? null : normalizeInstant(created)) ?? UNDATED_INSTANT,
-    updated: (updated === null ? null : normalizeInstant(updated)) ?? UNDATED_INSTANT,
+    created: created === null ? null : normalizeInstant(created),
+    updated: updated === null ? null : normalizeInstant(updated),
     tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === "string") : [],
     status: row.status,
     anchors: readAnchorsMap(data["anchors"]),

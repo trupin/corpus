@@ -11,6 +11,7 @@ import {
   MoveDocRequestSchema,
   UpdateDocRequestSchema,
   UpdateDocResponseSchema,
+  docRowBaseShape,
 } from "./doc.js";
 
 const frontmatter = {
@@ -66,6 +67,50 @@ describe("DocFrontmatter", () => {
     const broken = { ...frontmatter, anchors: { k4f7: { exact: "x", prefix: "", suffix: "" } } };
     expect(DocFrontmatterSchema.safeParse(broken).success).toBe(false);
   });
+
+  /**
+   * The hand-written `SKILL.md` of SPEC.md §7: no frontmatter timestamps at all.
+   * `GET /api/docs` says `null` for it (`docRowBaseShape`), so `GET /api/docs/{id}`
+   * must say `null` too — the epoch sentinel the server used to substitute made
+   * the same file read two different ages depending on the route.
+   */
+  it("round-trips an undated document, the same way the list row does", () => {
+    const undated = { ...frontmatter, created: null, updated: null };
+    expect(DocFrontmatterSchema.parse(undated)).toEqual(undated);
+  });
+
+  it("still rejects a malformed timestamp — nullable is not lenient", () => {
+    expect(DocFrontmatterSchema.safeParse({ ...frontmatter, created: "yesterday" }).success).toBe(
+      false,
+    );
+  });
+
+  it("still requires the timestamp keys to be present", () => {
+    const { created: _created, ...withoutCreated } = frontmatter;
+    expect(DocFrontmatterSchema.safeParse(withoutCreated).success).toBe(false);
+  });
+
+  it.each(["created", "updated"] as const)(
+    "tells the client to render %s as an em dash rather than substituting a date",
+    (field) => {
+      const description = DocFrontmatterSchema.shape[field].meta()?.description ?? "";
+      expect(description).toContain("—");
+      expect(description).toContain("staleness treats an unknown age as fresh");
+    },
+  );
+
+  /**
+   * The bug this closes: the two response-side shapes described the same two
+   * fields differently, so a consumer reading one route learned the wrong rule.
+   */
+  it.each(["created", "updated"] as const)(
+    "describes %s identically to the list row, since they describe the same file",
+    (field) => {
+      expect(DocFrontmatterSchema.shape[field].meta()?.description).toBe(
+        docRowBaseShape[field].meta()?.description,
+      );
+    },
+  );
 });
 
 describe("Doc", () => {

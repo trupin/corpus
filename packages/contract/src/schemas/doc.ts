@@ -41,13 +41,37 @@ const FOLDER_DESCRIPTION =
   `(\`data/docs/finance\`). Defaults to \`${DEFAULT_DOC_FOLDER}\` — creation is inbox-first ` +
   "(SPEC.md §11), and the agent files inbox arrivals per its skill.";
 
+/**
+ * **Nullable timestamps (CONTRACT-005 decision, 2026-07-27; extended to
+ * `DocFrontmatter` by the SERVER-005 escalation, 2026-07-27).** A document's
+ * `created`/`updated` are legitimately absent: a hand-written `SKILL.md` carries
+ * no frontmatter timestamps, and the projection stores NULL for it. The wire
+ * says `null` rather than an epoch sentinel — the sentinel is a lie every
+ * consumer then has to special-case, and "we do not know" is not "1970".
+ * Staleness treats an unknown age as **fresh** (`stale: null`), never as
+ * ancient, which is the same reading `docs/staleness.ts` already implements.
+ *
+ * Both response-side shapes say the same thing. The list row (`docRowBaseShape`,
+ * `GET /api/docs`) and the single document (`DocFrontmatter`,
+ * `GET /api/docs/{id}` and every mutation response) must not disagree about the
+ * same file: reading one skill through the two routes previously yielded `null`
+ * from one and `1970-01-01T00:00:00Z` from the other.
+ *
+ * This is a *response*-side statement only. The server's own file-parsing
+ * schemas are separate and unaffected.
+ */
+const UNDATED_DESCRIPTION = (which: string): string =>
+  `When the document was ${which}, or \`null\` when the file carries no such timestamp — a ` +
+  "hand-written skill file legitimately has none. Render it as “—” rather than " +
+  "substituting a date; staleness treats an unknown age as fresh.";
+
 export const DocFrontmatterSchema = z
   .object({
     id: DocumentIdSchema,
     type: DocTypeSchema,
     title: z.string(),
-    created: IsoDateTimeSchema,
-    updated: IsoDateTimeSchema,
+    created: IsoDateTimeSchema.nullable().describe(UNDATED_DESCRIPTION("created")),
+    updated: IsoDateTimeSchema.nullable().describe(UNDATED_DESCRIPTION("last modified")),
     tags: z.array(z.string()),
     status: DocStatusSchema,
     anchors: z
@@ -94,23 +118,6 @@ export const DocSchema = z
     anchors: z.array(ResolvedAnchorSchema),
   })
   .openapi("Doc");
-
-/**
- * **Nullable timestamps (CONTRACT-005 decision, 2026-07-27).** A document's
- * `created`/`updated` are legitimately absent: a hand-written `SKILL.md` carries
- * no frontmatter timestamps, and the projection stores NULL for it. The row says
- * `null` rather than an epoch sentinel — the sentinel is a lie every consumer
- * then has to special-case, and "we do not know" is not "1970". Staleness treats
- * an unknown age as **fresh** (`stale: null`), never as ancient, which is the
- * same reading `docs/staleness.ts` already implements.
- *
- * Only the *row* is nullable. `DocFrontmatter` keeps both non-nullable: a
- * document the server writes is always stamped.
- */
-const UNDATED_DESCRIPTION = (which: string): string =>
-  `When the document was ${which}, or \`null\` when the file carries no such timestamp — a ` +
-  "hand-written skill file legitimately has none. Render it as “—” rather than " +
-  "substituting a date; staleness treats an unknown age as fresh.";
 
 /**
  * The projection's `documents` columns, without the body (SPEC.md §9.1). Spread

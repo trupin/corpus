@@ -519,14 +519,22 @@
             "type": "string"
           },
           "created": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "example": "2026-07-19T10:05:00Z"
+            "example": "2026-07-19T10:05:00Z",
+            "description": "When the document was created, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh."
           },
           "updated": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "example": "2026-07-19T10:05:00Z"
+            "example": "2026-07-19T10:05:00Z",
+            "description": "When the document was last modified, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh."
           },
           "tags": {
             "type": "array",

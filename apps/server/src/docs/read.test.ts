@@ -1,4 +1,4 @@
-import { DocSchema } from "@corpus/contract";
+import { DocListSchema, DocSchema } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 
@@ -149,9 +149,34 @@ describe("GET /api/docs/{id}", () => {
       reviewed: null,
       evergreen: false,
     });
-    // The same undated sentinel the collection query emits, so one document
-    // never has two ages depending on the endpoint.
-    expect(doc.frontmatter.created).toBe("1970-01-01T00:00:00Z");
+    // Undated is `null`, exactly as the collection query reports it, so one
+    // document never has two ages depending on the endpoint.
+    expect(doc.frontmatter.created).toBeNull();
+    expect(doc.frontmatter.updated).toBeNull();
+  });
+
+  /**
+   * The SERVER-005 escalation, closed: a hand-written `SKILL.md` (SPEC.md §7)
+   * carries no timestamps at all, and the two read routes used to disagree about
+   * it — `null` from the collection, an epoch sentinel from the single read.
+   */
+  it("agrees with the collection query about an undated skill file", async () => {
+    ws = createWriteWorkspace("read-undated-agreement");
+    ws.write(
+      ".claude/skills/handwritten/SKILL.md",
+      "---\nname: handwritten\ndescription: Written by hand, dated by nobody.\n---\n\nSteps.\n",
+    );
+    ws.reproject();
+
+    const list = DocListSchema.parse(await (await ws.request("/api/docs?type=skill")).json());
+    const row = list.items.find((candidate) => candidate.title === "handwritten");
+    expect(row).toBeDefined();
+    expect(row?.created).toBeNull();
+    expect(row?.updated).toBeNull();
+
+    const doc = DocSchema.parse(await (await ws.request(`/api/docs/${row?.id ?? ""}`)).json());
+    expect(doc.frontmatter.created).toBe(row?.created);
+    expect(doc.frontmatter.updated).toBe(row?.updated);
   });
 
   it("takes type and status from the row so an archived skill reads correctly", async () => {

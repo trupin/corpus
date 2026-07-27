@@ -275,6 +275,88 @@ string", "ignores an unknown parameter name rather than rejecting it".
 epoch sentinel must be deleted deliberately: `toDocRow` should emit `row.created`/`row.updated`
 directly (already `string | null` off the projection) and `UNDATED_INSTANT` should go with it.
 
+### Addendum — `DocFrontmatter` timestamps made nullable too (SERVER-005 escalation, 2026-07-27)
+
+**implemented on: opus.** Main tree, branch `phase-2-server-cli`. Real server E2E at
+`/tmp/corpus-e2e-nullts` (torn down after).
+
+**The defect.** This issue's own decision table said "`DocFrontmatter` stays non-nullable — a
+document the server writes is always stamped". That reasoning only covers documents the server
+writes. SPEC.md §7's hand-written `SKILL.md` is not one: it carries no frontmatter timestamps, the
+projection stores NULL, and `GET /api/docs` duly reported `null` — while `GET /api/docs/{id}`,
+bound by the non-nullable `DocFrontmatter`, substituted an epoch sentinel. **The same file read two
+different ages depending on which route you asked.** SERVER-005 escalated it rather than papering
+over it; `apps/server/src/docs/read.ts` carried a `UNDATED_INSTANT` constant whose comment named
+this exact contract change as the fix.
+
+**The change.** `DocFrontmatterSchema.created`/`updated` are now
+`IsoDateTimeSchema.nullable()` carrying the *same* `UNDATED_DESCRIPTION(...)` text as
+`docRowBaseShape` — one helper, hoisted above both, so the two response-side shapes cannot drift
+apart again. Both keys stay **required** (nullable, never optional); the block comment now says
+the rule applies to both response shapes and explicitly disclaims the server's file-parsing
+schemas.
+
+**Blast radius, checked honestly.**
+
+| Surface                                        | Effect                                                                      |
+| ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| `DocFrontmatter` (get-one + mutation responses) | widened to `string \| null` — the fix                                        |
+| `apps/server/src/core/frontmatter.ts` (`FileFrontmatterSchema`, `FileThreadFrontmatterSchema`) | **untouched.** Parse-side/file-side, a different schema; not this contract |
+| `apps/server/src/docs/read.ts`                  | local `UNDATED_INSTANT` sentinel **deleted** (the escalation's predicted trivial edit, cross-domain blessed); `wireFrontmatter` passes `null` through |
+| Repo-wide typecheck                             | **no `apps/server` breakage.** Widening a response type is not a producer-side error; the sentinel had to be removed deliberately, exactly as this issue's §7 note warned |
+| Endpoint / request-body inventory               | unchanged — response-side only, no new components                            |
+
+**Tests.** `schemas/doc.test.ts` +6: undated round-trip, malformed timestamp still rejected,
+key still required, both fields' descriptions carry the em-dash/unknown-age-is-fresh wording, and
+a pin asserting each description is **identical** to the corresponding `docRowBaseShape` one — the
+regression that let the two shapes disagree. `apps/server/src/docs/read.test.ts`: the sentinel
+assertion becomes `toBeNull()`, plus a new cross-route agreement test reading one undated skill
+through `GET /api/docs` and `GET /api/docs/{id}`.
+
+**Artifacts.** Regenerated twice, byte-identical; content-hash drift check green.
+
+```
+$ npm run generate -w packages/contract   # twice, hashes compared
+CONTENT-HASH DRIFT CHECK: GREEN (regeneration is a no-op)
+111a7d6bdfb8446b5639c2d55598a1cf3c609eb85923e35df4a0ab88879997bc  packages/contract/openapi.json
+2d6e44efb178d3a1e18f52c035ea919df4cb5790b2e47806bbb0dbfb738d32d8  packages/contract/src/client/schema.generated.ts
+
+$ node -e "…components.schemas.DocFrontmatter…"
+created: { type: ["string","null"], format: "date-time", … }
+required includes created/updated: true true      # nullable, still required
+
+$ grep -A2 'DocFrontmatter: {' src/client/schema.generated.ts
+created: string | null;
+```
+
+**E2E — real server, both routes (the escalation's acceptance test).** `corpus init` →
+hand-written `.claude/skills/handwritten/SKILL.md` with no timestamps → `corpus server start` →
+both responses validated against the *published* `DocListSchema` / `DocSchema`:
+
+```
+LIST  row        : {"id":"doc_skill07d757a3","created":null,"updated":null,"stale":null}
+GET   frontmatter: {"created":null,"updated":null}
+AGREE            : true
+BOTH NULL        : true
+NO REGRESSION    : {"createResponse":"2026-07-27T07:00:39Z","getOne":"2026-07-27T07:00:39Z",
+                    "listRow":"2026-07-27T07:00:39Z","allNonNullAndEqual":true}
+```
+
+The last line is the guard against over-correcting: a server-*created* document still carries real
+timestamps, identical across the create response, the single read and the list row.
+
+**Gate:** `npm test` 2716 passed / 154 files · `npm run typecheck` (repo-wide) pass ·
+`npm run lint` pass · `npm run format:check` pass · `npm run build` pass ·
+`npx vitest run packages/contract` 688 passed.
+
+**Incidental observation, not fixed (out of scope, flagged for the orchestrator).** During the E2E
+a `POST /api/docs {"type":"note","title":"…"}` came back with `evergreen: true`. The seed
+`data/docs/templates/note.md` carries `evergreen: true` in *its own* frontmatter, and the
+template pre-fill appears to copy that field onto the new document — so every templated note opts
+itself out of staleness, contradicting `CreateDocRequest`'s documented `false` default. That is a
+server/agent-runtime concern (template frontmatter should not bleed into the instance), not a
+contract one.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

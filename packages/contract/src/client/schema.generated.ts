@@ -2859,14 +2859,16 @@ export interface components {
             title: string;
             /**
              * Format: date-time
+             * @description When the document was created, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            created: string;
+            created: string | null;
             /**
              * Format: date-time
+             * @description When the document was last modified, or `null` when the file carries no such timestamp — a hand-written skill file legitimately has none. Render it as “—” rather than substituting a date; staleness treats an unknown age as fresh.
              * @example 2026-07-19T10:05:00Z
              */
-            updated: string;
+            updated: string | null;
             tags: string[];
             /**
              * @description Lifecycle status; meaning is per type. Archiving is a reversible flip, never a deletion.
