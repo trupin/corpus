@@ -1533,7 +1533,7 @@ export interface paths {
         put?: never;
         /**
          * Halt the queue
-         * @description Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here.
+         * @description Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here. The body is optional in full: a bare `POST` halts, and a `reason`, when given, is recorded in the sentinel beside the halt timestamp. Halting an already-halted queue is not an error — it re-records the sentinel, so a second call may replace or add the reason.
          */
         post: {
             parameters: {
@@ -1545,7 +1545,12 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            /** @description Optional halt annotation; omit the body entirely to halt without a reason. */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["HaltQueueRequest"];
+                };
+            };
             responses: {
                 /** @description The queue status, now halted. */
                 200: {
@@ -1734,6 +1739,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
+            /** @description Optional failure annotation; omit the body entirely to fail without a reason. */
             requestBody?: {
                 content: {
                     "application/json": components["schemas"]["FailEventRequest"];
@@ -3247,6 +3253,10 @@ export interface components {
         ReapStaleResult: {
             /** @description Events recovered from `in-progress/` back to `pending/` after a crashed run. */
             reaped: string[];
+        };
+        HaltQueueRequest: {
+            /** @description Human-readable halt reason, recorded in the `.corpus/HALT` sentinel. */
+            reason?: string;
         };
         FailEventRequest: {
             /** @description Human-readable failure reason, shown in the console. */

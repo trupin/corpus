@@ -1485,6 +1485,16 @@
           "reaped"
         ]
       },
+      "HaltQueueRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable halt reason, recorded in the `.corpus/HALT` sentinel."
+          }
+        }
+      },
       "FailEventRequest": {
         "type": "object",
         "properties": {
@@ -3594,7 +3604,7 @@
           "queue"
         ],
         "summary": "Halt the queue",
-        "description": "Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here.",
+        "description": "Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land here. The body is optional in full: a bare `POST` halts, and a `reason`, when given, is recorded in the sentinel beside the halt timestamp. Halting an already-halted queue is not an error — it re-records the sentinel, so a second call may replace or add the reason.",
         "parameters": [
           {
             "schema": {
@@ -3612,6 +3622,17 @@
             "in": "header"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional halt annotation; omit the body entirely to halt without a reason.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HaltQueueRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "The queue status, now halted.",
@@ -3819,6 +3840,8 @@
           }
         ],
         "requestBody": {
+          "required": false,
+          "description": "Optional failure annotation; omit the body entirely to fail without a reason.",
           "content": {
             "application/json": {
               "schema": {

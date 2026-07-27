@@ -4,6 +4,7 @@ import { EventIdSchema } from "../schemas/id.js";
 import {
   ClaimBatchSchema,
   FailEventRequestSchema,
+  HaltQueueRequestSchema,
   IdleQuerySchema,
   IdleResultSchema,
   MAX_IDLE_TIMEOUT_SECONDS,
@@ -106,8 +107,17 @@ export const haltQueue = createRoute({
   description:
     "Writes the `.corpus/HALT` sentinel. While halted, `claim-all` returns empty and `idle` parks for " +
     "its full window (SPEC.md §7). The console strip's HALT toggle and `corpus queue halt` both land " +
-    "here.",
-  request: { headers: ActorHeaderSchema },
+    "here. The body is optional in full: a bare `POST` halts, and a `reason`, when given, is recorded " +
+    "in the sentinel beside the halt timestamp. Halting an already-halted queue is not an error — it " +
+    "re-records the sentinel, so a second call may replace or add the reason.",
+  request: {
+    headers: ActorHeaderSchema,
+    body: {
+      required: false,
+      description: "Optional halt annotation; omit the body entirely to halt without a reason.",
+      content: { "application/json": { schema: HaltQueueRequestSchema } },
+    },
+  },
   responses: {
     200: jsonContent(QueueStatusSchema, "The queue status, now halted."),
     400: VALIDATION_RESPONSE,
@@ -151,7 +161,11 @@ export const failEvent = createRoute({
   request: {
     params: EventIdParamSchema,
     headers: ActorHeaderSchema,
-    body: { content: { "application/json": { schema: FailEventRequestSchema } } },
+    body: {
+      required: false,
+      description: "Optional failure annotation; omit the body entirely to fail without a reason.",
+      content: { "application/json": { schema: FailEventRequestSchema } },
+    },
   },
   responses: {
     200: jsonContent(QueueEventSchema, "The event, now in `failed/`."),

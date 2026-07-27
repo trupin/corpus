@@ -5,6 +5,7 @@ import {
   CoreQueueEventTypeSchema,
   DEFAULT_IDLE_TIMEOUT_SECONDS,
   FailEventRequestSchema,
+  HaltQueueRequestSchema,
   IdleQuerySchema,
   IdleResultSchema,
   MAX_IDLE_TIMEOUT_SECONDS,
@@ -143,6 +144,26 @@ describe("QueueStatus", () => {
 
   it("requires every count, so a partial response is a validation failure", () => {
     expect(QueueStatusSchema.safeParse({ halted: false, pending: 0 }).success).toBe(false);
+  });
+});
+
+describe("HaltQueueRequest", () => {
+  /** A bare `POST /api/queue/halt` validates as `{}`, so the empty object must parse. */
+  it("accepts a halt with no annotation at all", () => {
+    expect(HaltQueueRequestSchema.parse({})).toEqual({});
+  });
+
+  it("carries a reason through", () => {
+    expect(HaltQueueRequestSchema.parse({ reason: "deploying" })).toEqual({ reason: "deploying" });
+  });
+
+  /** A blank reason is worse than none: it records an annotation that says nothing. */
+  it("rejects a blank reason", () => {
+    expect(HaltQueueRequestSchema.safeParse({ reason: "" }).success).toBe(false);
+  });
+
+  it("leaves the reason optional rather than defaulting it", () => {
+    expect(HaltQueueRequestSchema.parse({}).reason).toBeUndefined();
   });
 });
 

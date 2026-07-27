@@ -221,7 +221,12 @@ function createStubApp() {
   );
   app.openapi(contractRoutes.claimAll, (c) => c.json({ events: [queueEvent] }, 200));
   app.openapi(contractRoutes.reapStale, (c) => c.json({ reaped: ["evt_7c1d"] }, 200));
-  app.openapi(contractRoutes.haltQueue, (c) => c.json({ ...queueStatus, halted: true }, 200));
+  app.openapi(contractRoutes.haltQueue, (c) =>
+    // `pending` doubles as the echo of the optional reason's length: the status
+    // shape carries no string field, and the length proves the annotation
+    // reached the handler intact.
+    c.json({ ...queueStatus, halted: true, pending: c.req.valid("json").reason?.length ?? 0 }, 200),
+  );
   app.openapi(contractRoutes.resumeQueue, (c) => c.json(queueStatus, 200));
   app.openapi(contractRoutes.completeEvent, (c) => c.json(queueEvent, 200));
   app.openapi(contractRoutes.failEvent, (c) => c.json(queueEvent, 200));
@@ -492,6 +497,45 @@ describe("routes mounted on a Hono app", () => {
     const response = await createStubApp().request("/api/queue/idle");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ events: [{ id: "evt_7c1d" }] });
+  });
+
+  /**
+   * The kill switch must stay reachable with nothing but a verb and a URL, so
+   * the annotation had to be added without making the body mandatory.
+   */
+  it("halts on a bare POST that sends no body and no content type", async () => {
+    const response = await createStubApp().request("/api/queue/halt", { method: "POST" });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ halted: true, pending: 0 });
+  });
+
+  it("halts on an explicitly empty JSON body", async () => {
+    const response = await createStubApp().request("/api/queue/halt", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ halted: true, pending: 0 });
+  });
+
+  it("carries an optional halt reason through to the handler", async () => {
+    const response = await createStubApp().request("/api/queue/halt", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "deploying" }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ halted: true, pending: 9 });
+  });
+
+  it("rejects a blank halt reason", async () => {
+    const response = await createStubApp().request("/api/queue/halt", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "" }),
+    });
+    expect(response.status).toBe(400);
   });
 
   it("serves the SSE route as an event stream, not as JSON", async () => {

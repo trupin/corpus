@@ -20,7 +20,11 @@ interface Operation {
     description?: string;
     schema?: { type?: string; enum?: string[]; default?: unknown };
   }[];
-  readonly requestBody?: { content?: Record<string, unknown> };
+  readonly requestBody?: {
+    required?: boolean;
+    description?: string;
+    content?: Record<string, unknown>;
+  };
   readonly responses?: Record<string, { description?: string; content?: Record<string, unknown> }>;
 }
 
@@ -466,6 +470,50 @@ describe("queue long-poll", () => {
     const description = operation("/api/queue/idle", "get").description ?? "";
     expect(description).toContain("halted");
     expect(description).toContain("never returns events");
+  });
+});
+
+/**
+ * Halt and fail both accept an annotation the caller may simply not have —
+ * `corpus queue halt` with no argument stays a bare `POST`. They are the only
+ * two operations whose body may be omitted in full, so they state
+ * `required: false` rather than inheriting it from OpenAPI's default, and the
+ * generated client turns that into an optional `requestBody`.
+ */
+describe("the annotatable queue verbs take an omittable body", () => {
+  it.each([
+    ["/api/queue/halt", "HaltQueueRequest"],
+    ["/api/queue/{id}/fail", "FailEventRequest"],
+  ])("declares %s's body optional and JSON-only", (path, component) => {
+    const body = operation(path, "post").requestBody;
+    expect(body?.required).toBe(false);
+    expect(Object.keys(body?.content ?? {})).toEqual(["application/json"]);
+    expect(JSON.stringify(body?.content)).toContain(`#/components/schemas/${component}`);
+  });
+
+  it.each(["HaltQueueRequest", "FailEventRequest"])(
+    "leaves every property of %s optional, so the empty object satisfies it",
+    (component) => {
+      const schema = componentSchemas?.[component];
+      expect(schema?.required).toBeUndefined();
+      expect(Object.keys(schema?.properties ?? {})).toEqual(["reason"]);
+    },
+  );
+
+  /**
+   * Taking a body makes halt an input-validating operation, and
+   * `@hono/zod-openapi` answers a bad one with a `400` — which the document must
+   * therefore declare. The blanket invariant above already enforces this; naming
+   * halt pins the specific regression the body introduced.
+   */
+  it("declares 400 on halt, now that halt validates a request body", () => {
+    expect(operation("/api/queue/halt", "post").responses?.["400"]).toBeDefined();
+  });
+
+  it("says on the halt route that the body may be omitted entirely", () => {
+    const op = operation("/api/queue/halt", "post");
+    expect(op.description).toContain("body is optional in full");
+    expect(op.requestBody?.description).toContain("omit the body entirely");
   });
 });
 

@@ -97,6 +97,25 @@ function createServer() {
   /** The long-poll timeout: a declared `204`, which must not read as a failure. */
   app.openapi(contractRoutes.idleQueue, (c) => c.body(null, 204));
 
+  app.openapi(contractRoutes.haltQueue, (c) => {
+    // The halt body is optional in full, so validation yields `{}` for a bare
+    // POST. `pending` carries the reason's length back out — the status shape
+    // has nowhere to echo a string, and the length is enough to prove the exact
+    // text survived the wire.
+    const { reason } = c.req.valid("json");
+    return c.json(
+      {
+        halted: true,
+        pending: reason?.length ?? 0,
+        inProgress: 0,
+        processed: 0,
+        failed: 0,
+        abandoned: 0,
+      },
+      200,
+    );
+  });
+
   app.openapi(contractRoutes.appendTurn, (c) => {
     const validated = c.req.valid("form");
     const attached = "files" in validated ? validated.files.length : 0;
@@ -239,6 +258,62 @@ describe("the long-poll idle endpoint", () => {
     expect(response.status).toBe(204);
     expect(data).toBeUndefined();
     expect(error).toBeUndefined();
+  });
+});
+
+/**
+ * Halting is a kill switch first and an annotation second: `corpus queue halt`
+ * with no argument, and the console strip's HALT toggle, both send a bare POST.
+ * So the typed client must accept the call with no `body` at all — an optional
+ * request body that the generated types made mandatory would break the primary
+ * caller to serve the secondary one.
+ */
+describe("the optional halt body", () => {
+  // Compile-time assertion: were the body to become required, `undefined` would
+  // stop being assignable and this would fail `tsc --noEmit`, not a test run.
+  type HaltRequestBody = paths["/api/queue/halt"]["post"]["requestBody"];
+  type HaltBodyIsOmittable = undefined extends HaltRequestBody ? true : never;
+
+  it("types the request body as omittable", () => {
+    const omittable: HaltBodyIsOmittable = true;
+    expect(omittable).toBe(true);
+  });
+
+  it("halts on a bare call that passes no body", async () => {
+    const { data, error } = await createTestClient().api.POST("/api/queue/halt");
+
+    expect(error).toBeUndefined();
+    expect(data).toMatchObject({ halted: true, pending: 0 });
+  });
+
+  it("halts on a call that passes an empty body object", async () => {
+    const { data, error } = await createTestClient().api.POST("/api/queue/halt", { body: {} });
+
+    expect(error).toBeUndefined();
+    expect(data?.halted).toBe(true);
+  });
+
+  it("carries a halt reason through to the handler", async () => {
+    const { data, error } = await createTestClient("agent").api.POST("/api/queue/halt", {
+      body: { reason: "deploying" },
+    });
+
+    expect(error).toBeUndefined();
+    expect(data?.pending).toBe("deploying".length);
+  });
+
+  /**
+   * The 400 body is the server's to shape (`apps/server` installs the
+   * `defaultHook` that renders a `ValidationError`); what the contract owns, and
+   * what this asserts, is that validation rejects the call at all.
+   */
+  it("rejects a blank reason rather than recording an empty annotation", async () => {
+    const { data, response } = await createTestClient().api.POST("/api/queue/halt", {
+      body: { reason: "" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(data).toBeUndefined();
   });
 });
 

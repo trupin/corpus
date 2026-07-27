@@ -111,6 +111,23 @@ export const ReapStaleResultSchema = z
   })
   .openapi("ReapStaleResult");
 
+/**
+ * Body of `POST /api/queue/halt`, and optional in both directions: the whole
+ * body may be omitted (halting is a kill switch first — `corpus queue halt`
+ * with no argument must stay a bare POST), and when it is sent the reason is
+ * still optional. A supplied reason is recorded beside the timestamp in the
+ * `.corpus/HALT` sentinel, so whoever finds the queue stopped can see why.
+ */
+export const HaltQueueRequestSchema = z
+  .object({
+    reason: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Human-readable halt reason, recorded in the `.corpus/HALT` sentinel."),
+  })
+  .openapi("HaltQueueRequest");
+
 export const FailEventRequestSchema = z
   .object({
     reason: z
@@ -130,3 +147,4 @@ export type QueueEvent = z.infer<typeof QueueEventSchema>;
 export type ClaimBatch = z.infer<typeof ClaimBatchSchema>;
 export type QueueStatus = z.infer<typeof QueueStatusSchema>;
 export type FailEventRequest = z.infer<typeof FailEventRequestSchema>;
+export type HaltQueueRequest = z.infer<typeof HaltQueueRequestSchema>;
