@@ -63,6 +63,7 @@ The sole-writer server and the thin-client CLI.
 | CONTRACT-003 | Request schemas with `.default()` render as required in the generated client | done | P1 | CONTRACT-002 |
 | CONTRACT-004 | Mandatory request bodies are typed optional in the generated client | in_progress | P1 | CONTRACT-002 |
 | SERVER-013 | Anchor engine: substitution class — anchors handed unrelated text while their own survives | in_progress | P1 | SERVER-012 |
+| CONTRACT-005 | Board contract growth: query-key vocabulary, DocRow staleness + thread fields | todo | P1 | CONTRACT-002 |
 | CLI-002 | `corpus init` + server lifecycle verbs | done | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006 |
 | CLI-004 | Queue, lock, job verbs (agent loop surface) | todo | P0 | CLI-001, SERVER-008, SERVER-009 |

@@ -39,6 +39,14 @@ Build `GET /api/docs` — the one collection endpoint behind every list in the p
 - [ ] `GET /api/tree` returns the `data/docs/` folder tree (path, name, direct and recursive document counts), built from the projection, not the filesystem.
 - [ ] The whole query executes as a single SQL statement per request (plus one count), with indexes covering the common filters.
 
+## Sprint-004 Adjudications (binding, 2026-07-27)
+
+Orchestrator decision on the sprint-004 Open Conflicts affecting this issue — full reasoning in `issues/sprints/sprint-004.md`:
+
+1. **The contract wins on all eleven prose mismatches** (status/tag/stale/sort/awaiting/since/reason names; `attention` not `reasons`; structured `snippets` not `<mark>` strings; the declared envelope; limit over-max is a 400 from the validation hook, not a clamp). Implement `DocsQuerySchema`/`DocRowSchema` exactly as shipped.
+2. **Two ACs are unsatisfiable inside the shipped contract** (staleness tier and thread fields are absent from `DocRow`): implement the contract exactly; the fields arrive via CONTRACT-005 (filed, sequenced before UI-003) — do not invent extra response fields.
+3. **Seeding**: no write endpoints exist in this batch — seed with real files + real watcher/restart projection, real `seen.json`, and failed jobs produced over the real queue API.
+
 ## Technical Design
 
 ### Files to Create/Modify

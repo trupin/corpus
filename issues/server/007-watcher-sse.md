@@ -35,6 +35,15 @@ Wire the live-update loop: a chokidar watcher over every document and runtime ro
 - [ ] An internal event bus is exported so server write paths broadcast invalidations directly, without a watcher round-trip; the watcher is the catch-all for out-of-band changes only.
 - [ ] Measured E2E: touching a file on disk produces an observable SSE `invalidate` in well under 250 ms.
 
+## Sprint-004 Adjudications (binding, 2026-07-27)
+
+Orchestrator decisions on the sprint-004 Open Conflicts affecting this issue — implement exactly these; full reasoning in `issues/sprints/sprint-004.md`:
+
+1. **SSE payload**: the shipped `InvalidatePayloadSchema` wins — `{keys: QueryKey[]}` where each key is an ARRAY (UI-001's `createEventStream` already validates exactly that). The query-key vocabulary gets published in the contract by CONTRACT-005 before UI-002; use the contract's shapes verbatim meanwhile.
+2. **`createServer` stays pure**: the projection is opened in `lifecycle.ts` BEFORE `createServer` and passed as a dep — this issue lands that seam (SERVER-011 consumes it).
+3. **Auto-commit is out of reach**: no git writer exists in `apps/server` until SERVER-005. Watcher reconciliation reads `git show HEAD:` for oldBody and writes reconciled frontmatter back; the auto-commit leg is DEFERRED → SERVER-005 (record it, don't fake it).
+4. **No subscriber cap**: the 32-subscriber 503 is dropped for v1 — it would need an undeclared response; dead-subscriber pruning is the protection.
+
 ## Technical Design
 
 ### Files to Create/Modify

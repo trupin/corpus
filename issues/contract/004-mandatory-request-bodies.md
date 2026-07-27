@@ -39,6 +39,10 @@ Found during the halt-reason addendum: OpenAPI treats an omitted `requestBody.re
 - [ ] **Rider (evaluator doc nit, sprint-003 round 2)**: `haltQueue`'s route description names only two of three outcomes — a bare re-halt also **clears** a previously recorded reason. Correct the text ("replace, add, or clear") while in `routes/queue.ts`; behavior is already correct.
 - [ ] Artifacts regenerated, byte-deterministic, drift check green.
 
+## Sprint-004 Adjudication (binding, 2026-07-27)
+
+The "exactly halt and fail" enumeration in this issue is factually wrong (seen, acquire-lock, and `PUT /api/docs/{id}` are also wholly optional). **Pinned rule instead of a list**: a request body is `required: false` iff every field in its schema is optional (a bare invocation is meaningful); any body with at least one required field declares `required: true`. The invariant test asserts the rule against the schemas, not a hand-list; sprint-004 TEST-71's enumeration derives from applying the rule.
+
 ## Technical Design
 
 ### Files to Create/Modify
