@@ -189,7 +189,9 @@ describe("the queue mirrored into the projection", () => {
     // does not: the honest one-row difference `db doctor` is meant to surface.
     const restarted = boot();
     expect(rows(restarted.db).map((row) => row.id)).toEqual([good.id]);
-    expect(eventFiles("pending")).toEqual([`${badId}.json`, `${good.id}.json`]);
+    // Sorted on both sides: `good.id` is randomly generated, so its position
+    // relative to the fixture id is a coin flip.
+    expect([...eventFiles("pending")].sort()).toEqual([`${badId}.json`, `${good.id}.json`].sort());
 
     const report = doctor(config);
     expect(report.ok).toBe(false);

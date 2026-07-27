@@ -12,6 +12,7 @@ import {
   ValidationErrorSchema,
 } from "@corpus/contract";
 import { createServer, type CorpusServer } from "../app.js";
+import { HaltSentinelSchema, type HaltSentinel } from "./store.js";
 import type { ServerConfig } from "../config.js";
 import { silentLogger } from "../logger.js";
 
@@ -39,6 +40,17 @@ function makeConfig(): ServerConfig {
 
 const request = async (path: string, init: RequestInit = {}): Promise<Response> =>
   server.app.request(path, { ...init, headers: { ...AUTH, ...init.headers } });
+
+const halt = async (body: { reason?: string }): Promise<Response> =>
+  request("/api/queue/halt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+/** The `.corpus/HALT` sentinel exactly as it sits on disk, parsed but not defaulted. */
+const readSentinel = (): HaltSentinel =>
+  HaltSentinelSchema.parse(JSON.parse(readFileSync(join(root, ".corpus", "HALT"), "utf8")));
 
 const seed = async (count: number): Promise<string[]> => {
   const ids: string[] = [];
@@ -303,6 +315,61 @@ describe("halt and resume over HTTP", () => {
     expect(await resumed.json()).toMatchObject({ halted: false });
     const again = await request("/api/queue/resume", { method: "POST" });
     expect(again.status).toBe(200);
+    expect(readdirSync(join(root, ".corpus")).includes("HALT")).toBe(false);
+  });
+
+  it("records the reason from the request body in the sentinel", async () => {
+    const response = await halt({ reason: "maintenance window" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ halted: true });
+    // `readSentinel` parses through `HaltSentinelSchema`, so `at` is already a
+    // validated ISO instant; what is left to prove is the reason beside it.
+    const sentinel = readSentinel();
+    expect(sentinel.reason).toBe("maintenance window");
+    expect(Object.keys(sentinel).sort()).toEqual(["at", "reason"]);
+  });
+
+  it("leaves the reason absent for a bare POST rather than recording an empty one", async () => {
+    const response = await request("/api/queue/halt", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    const sentinel = readSentinel();
+    expect(Object.keys(sentinel)).toEqual(["at"]);
+    expect("reason" in sentinel).toBe(false);
+  });
+
+  it("re-records both fields when a second halt supplies a reason", async () => {
+    // The sentinel's `at` has whole-second resolution, so the two halts have to
+    // land in different seconds for "advanced" to be observable at all. A
+    // steerable clock buys that without a real-time sleep.
+    let clock = Date.parse("2026-07-27T03:00:00Z");
+    await server.close();
+    server = createServer(makeConfig(), { logger: silentLogger, now: () => clock });
+
+    await request("/api/queue/halt", { method: "POST" });
+    const bare = readSentinel();
+    expect(bare.reason).toBeUndefined();
+
+    clock += 2_000;
+    const second = await halt({ reason: "second-halt-reason-XYZ" });
+    expect(second.status).toBe(200);
+
+    const rewritten = readSentinel();
+    expect(rewritten.reason).toBe("second-halt-reason-XYZ");
+    expect(Date.parse(rewritten.at)).toBeGreaterThan(Date.parse(bare.at));
+    // Rewritten in place: still exactly one sentinel, no `HALT.1` beside it.
+    expect(readdirSync(join(root, ".corpus")).filter((name) => name.startsWith("HALT"))).toEqual([
+      "HALT",
+    ]);
+  });
+
+  it("rejects a blank reason without touching the sentinel", async () => {
+    const response = await halt({ reason: "" });
+
+    expect(response.status).toBe(400);
+    const parsed = ValidationErrorSchema.safeParse(await response.json());
+    expect(parsed.success && parsed.data.issues[0]?.path).toBe("json.reason");
     expect(readdirSync(join(root, ".corpus")).includes("HALT")).toBe(false);
   });
 });

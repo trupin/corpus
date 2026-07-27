@@ -190,14 +190,17 @@ behaviour — and when the process group finally died the server did unwind the 
 With 1 event pending and `.corpus/HALT` present: `claim-all` → `{"events":[]}`,
 `pending/` unchanged, `idle?timeout=10` → `http=204 time=10.005973 size=0`.
 
-**TEST-46 — halt/resume idempotent and reported — PARTIAL / contract gap**
+**TEST-46 — halt/resume idempotent and reported — PASS** _(originally PARTIAL; the escalation
+is resolved — see the 2026-07-27 addendum for the reason-recording evidence)_
 `halt` twice → both `200` with a `QueueStatus` (`"halted":true`); one `HALT` file, rewritten
 not duplicated; `resume` twice → both `200` (`"halted":false`), sentinel gone after the
-first. **The "second halt with a `reason`" half is unexecutable over HTTP**: the contract's
-`haltQueue` route declares no request body or query, so there is no way to send a reason.
-The server supports it (`QueueService.halt(reason)` writes `{reason, at}` — covered by
-`service.test.ts` "is idempotent in both directions") and the sentinel schema carries the
-optional field; adding it to the wire is a CONTRACT change. **Escalated.**
+first. At the time of this run the "second halt with a `reason`" half was **unexecutable over
+HTTP**: the contract's `haltQueue` route declared no request body or query, so there was no
+way to send a reason. The server already supported it (`QueueService.halt(reason)` writes
+`{reason, at}` — covered by `service.test.ts` "is idempotent in both directions") and the
+sentinel schema already carried the optional field; adding it to the wire was a CONTRACT
+change and was **escalated**. CONTRACT-002 (commit d7a2463) added the optional
+`HaltQueueRequest` body; the route handler was brought along on 2026-07-27 (addendum below).
 
 **TEST-47 — claim-all in one batch — PASS.** 3 pending → `200` with all three; `pending/`
 holds only `.gitkeep`; `in-progress/` holds all three with payloads identical to what was
@@ -373,6 +376,100 @@ quarantined. Plus `attachProjection` wiring cases in `projection/attach.test.ts`
 `npm run typecheck` all clean; `npm run test:coverage` → **2113 passed / 114 files**, total
 statements 99.22 %, branches 95.9 %, functions 99.63 %, lines 99.22 % (gate 90 %);
 `queue-mirror.ts` and `attach.ts` at 100 % across the board.
+
+---
+
+### Addendum — 2026-07-27: fix round 1 — the halt `reason` reaches the sentinel (eval FAIL-1)
+
+**implemented on: opus.** Main tree (`phase-2-server-cli`), no worktree. Port **8866** (8765
+verified free before and after), scratch workspace `WS=/tmp/corpus-halt-rZrAOY`
+(`mktemp -d /tmp/corpus-halt-XXXXXX`), a real daemon started and stopped with the real
+`corpus server start` / `corpus server stop` and confirmed gone by pid (`ps -p <pid>`); no
+`pkill`/`killall`. Driven by real `curl` over a real socket and read back with real `cat`/`grep`.
+
+**The defect** (`issues/evals/SERVER-008-eval.md` FAIL-1). The `haltQueue` handler read no body
+at all — `app.openapi(contractRoutes.haltQueue, async (c) => c.json(await queue.halt(), 200))`.
+Once CONTRACT-002 added the optional `HaltQueueRequest` body, the reason was parsed and
+validated by the route's own validator (hence the blank-reason `400`) and then dropped on the
+floor, because the handler never called `c.req.valid("json")`. `QueueService.halt(reason)` was
+already correct; only the argument was missing.
+
+#### Reproduction (before the fix)
+
+Fresh `corpus init --port 8866` workspace, real `corpus server start` (pid 25342), no prior
+sentinel:
+
+```
+$ ls .corpus/HALT
+ls: .corpus/HALT: No such file or directory
+
+$ curl -sS -X POST .../api/queue/halt -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' -d '{"reason":"maintenance window"}'
+{"halted":true,"pending":0,"inProgress":0,"processed":0,"failed":0,"abandoned":0}   http=200
+
+$ cat .corpus/HALT
+{
+  "at": "2026-07-27T03:04:22Z"
+}
+$ grep -c 'maintenance window' .corpus/HALT   → 0
+```
+
+The value provably reached the handler — `-d '{"reason":""}'` returned
+`400 {"code":"bad_request", … "issues":[{"path":"json.reason","message":"Too small: expected
+string to have >=1 characters"}]}` — and was then discarded. The evaluator's second path
+reproduced too: bare halt (`at: …:04:29Z`), then two seconds later a halt with
+`{"reason":"second-halt-reason-XYZ"}` → `at` advanced to `…:04:31Z` (so the sentinel *is*
+rewritten, not duplicated) while `grep -c XYZ .corpus/HALT` and `grep -c XYZ .corpus/server.log`
+were both `0`.
+
+#### The fix
+
+`apps/server/src/queue/routes.ts` — the handler destructures the validated body and passes the
+reason through unchanged. A bare `POST` validates to `{}`, so `reason` stays `undefined` and
+`halt` omits the key; it is deliberately **not** collapsed to `""` (which the sentinel schema's
+`min(1)` would reject anyway, and which would make "halted, no reason" indistinguishable from
+"halted for a reason"). No other file changed.
+
+#### Post-fix verification (real server restarted, pid 27607)
+
+```
+$ ls .corpus/HALT                                     → No such file or directory
+$ curl … -d '{"reason":"maintenance window"}'         → http=200 {"halted":true, …}
+$ cat .corpus/HALT
+{
+  "at": "2026-07-27T03:07:05Z",
+  "reason": "maintenance window"
+}
+$ grep -c 'maintenance window' .corpus/HALT           → 1
+$ curl … GET /api/queue/status                        → {"halted":true, …}
+```
+
+The rest of TEST-46, re-run end to end on the same daemon:
+
+| Leg                                                     | Result                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| resume, then **bare** `POST` (no body, no content-type) | `200`; sentinel `{"at":"…:07:14Z"}`, `grep -c reason` → **0** (absent, not `""`) |
+| second halt **with** a reason, 2 s later                | `200`; `{"at":"…:07:16Z","reason":"second-halt-reason-XYZ"}` — `at` advanced **and** the reason recorded |
+| sentinel rewritten, not duplicated                      | `ls .corpus/ \| grep -c '^HALT'` → **1**                                  |
+| blank reason after a good halt                          | `400` `json.reason` too-small; sentinel shasum **byte-identical** before/after |
+| reasoned halt then a **bare** re-halt                   | `{"at":"…:07:28Z","reason":"first"}` → `{"at":"…:07:28Z"}` — re-records from scratch, per the route description's "may replace or add the reason" |
+| `resume`                                                | `200`; `.corpus/HALT` gone                                                |
+
+#### Tests (`apps/server/src/queue/routes.test.ts`, "halt and resume over HTTP")
+
+Four handler-level cases over `server.app.request`, reading the real on-disk sentinel through
+`HaltSentinelSchema`: the reason lands in the sentinel; a bare `POST` leaves it **absent**
+(`"reason" in sentinel === false`); a second halt with a reason re-records **both** fields with
+`at` strictly advancing (steerable clock via `createServer(…, { now })` — the sentinel's `at` is
+whole-second, so a real sleep would be the only alternative) and exactly one `HALT*` file
+remains; a blank reason `400`s with `issues[0].path === "json.reason"` and writes no sentinel.
+Regression-checked by reverting the one-line fix: the two reason-carrying cases fail
+(`expected undefined to be 'second-halt-reason-XYZ'`), the other 27 pass.
+
+**Gate (fix round 1).** `npm run build`, `npm run lint`, `npm run format:check`,
+`npm run typecheck` all clean; `npm run test:coverage` → **2117 passed / 114 files**, statements
+99.22 %, branches 95.9 %, functions 99.63 %, lines 99.22 % (gate 90 %); `queue/routes.ts` 100 %
+across the board.
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

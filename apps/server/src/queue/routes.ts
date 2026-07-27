@@ -36,7 +36,14 @@ export function mountQueueRoutes(app: OpenAPIHono, queue: QueueService): void {
     return c.json({ reaped }, 200);
   });
 
-  app.openapi(contractRoutes.haltQueue, async (c) => c.json(await queue.halt(), 200));
+  app.openapi(contractRoutes.haltQueue, async (c) => {
+    // The body is optional in full, so a bare `POST` validates to `{}` and
+    // `reason` stays `undefined` — which `halt` turns into a sentinel with no
+    // `reason` key. Passing it through unchanged (never `?? ""`) is what keeps
+    // "halted without a reason" distinguishable from "halted for a reason".
+    const { reason } = c.req.valid("json");
+    return c.json(await queue.halt(reason), 200);
+  });
   app.openapi(contractRoutes.resumeQueue, async (c) => c.json(await queue.resume(), 200));
 
   app.openapi(contractRoutes.completeEvent, async (c) => {
