@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { AddressInfo } from "node:net";
+import { DEFAULT_ACTOR, type Actor } from "@corpus/contract";
 import { createClient, type CliClient } from "../client.js";
 import { createTestContext, type TestContextOptions } from "../registry/fixtures.js";
 import type { WorkspaceCommandContext } from "../registry/types.js";
@@ -144,12 +145,25 @@ export interface StubContext {
   stderr(): string;
 }
 
+export interface StubContextOptions extends TestContextOptions {
+  /** The acting party the dispatcher would have resolved; defaults to the client's own default. */
+  readonly actor?: Actor;
+}
+
 /** A `WorkspaceCommandContext` wired to the stub's real client. */
-export function stubContext(stub: StubServer, options: TestContextOptions = {}): StubContext {
+export function stubContext(stub: StubServer, options: StubContextOptions = {}): StubContext {
   const harness = createTestContext(options);
+  const actor = options.actor ?? DEFAULT_ACTOR;
   return {
     stdout: () => harness.stdout(),
     stderr: () => harness.stderr(),
-    context: { ...harness.context, workspace: stub.workspace, client: stub.client },
+    context: {
+      ...harness.context,
+      workspace: stub.workspace,
+      // Rebuilt rather than reusing `stub.client`, so a test that names an actor
+      // exercises the same header path the dispatcher wires in production.
+      client: createClient({ workspace: stub.workspace, actor }),
+      actor,
+    },
   };
 }

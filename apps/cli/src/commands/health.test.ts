@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CorpusApi } from "@corpus/contract/client";
+import { DEFAULT_ACTOR } from "@corpus/contract";
 import type { CliClient } from "../client.js";
 import { createTestContext } from "../registry/fixtures.js";
 import { collectRegistryProblems } from "../registry/validate.js";
@@ -41,7 +42,7 @@ function clientReturning(body: unknown): { client: CliClient; calls: unknown[] }
 async function runHealth(json: boolean) {
   const { client, calls } = clientReturning(HEALTH);
   const harness = createTestContext({ json });
-  await healthCommand.handler({ ...harness.context, workspace, client });
+  await healthCommand.handler({ ...harness.context, workspace, client, actor: DEFAULT_ACTOR });
   return { stdout: harness.stdout(), calls };
 }
 

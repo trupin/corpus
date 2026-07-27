@@ -1,3 +1,4 @@
+import type { Actor } from "@corpus/contract";
 import type { CliClient } from "../client.js";
 import type { Output } from "../output.js";
 import type { ParsedArgs, ParsedFlags } from "../parse-args.js";
@@ -57,6 +58,13 @@ export interface CommandContext {
 export interface WorkspaceCommandContext extends CommandContext {
   readonly workspace: Workspace;
   readonly client: CliClient;
+  /**
+   * The acting party the client sends on every request, resolved once by the
+   * dispatcher (`--from` ?? `CORPUS_FROM` ?? `user`). Handlers read it only to
+   * *refuse* — `doc delete` is user-only and rejects the agent before any
+   * request — never to re-derive what the client already sends.
+   */
+  readonly actor: Actor;
 }
 
 interface CommandSpecBase {

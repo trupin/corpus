@@ -2,6 +2,7 @@ import { createClient } from "./client.js";
 import { resolveCommand } from "./dispatch.js";
 import { ExitCode, exitCodeFor } from "./errors.js";
 import { renderCommandHelp, renderRootHelp, renderTopicHelp } from "./help.js";
+import { resolveActor } from "./input.js";
 import { bindPositionals, parseFlags, type ParsedInput } from "./parse-args.js";
 import { registry as defaultRegistry } from "./registry/index.js";
 import type { CommandSpec, Registry } from "./registry/types.js";
@@ -113,6 +114,10 @@ async function invoke(
     return;
   }
 
+  // Before the workspace is even located: a misspelled actor is a usage error
+  // (exit 2), and no request may leave the process carrying one.
+  const actor = resolveActor(input.flags, options.env);
+
   const workspace = resolveWorkspace({
     cwd: options.cwd,
     env: options.env,
@@ -121,10 +126,11 @@ async function invoke(
   const timeoutMs = input.flags.number("timeout");
   const client = createClient({
     workspace,
+    actor,
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
-  await command.handler({ ...context, workspace, client });
+  await command.handler({ ...context, workspace, client, actor });
 }
 
 interface GlobalHints {

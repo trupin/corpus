@@ -15,6 +15,15 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [Global flags](#global-flags)
 - [`corpus health`](#corpus-health)
 - [`corpus init`](#corpus-init)
+- [`corpus db`](#corpus-db)
+  - [`corpus db doctor`](#corpus-db-doctor)
+  - [`corpus db rebuild`](#corpus-db-rebuild)
+- [`corpus doc`](#corpus-doc)
+  - [`corpus doc archive`](#corpus-doc-archive)
+  - [`corpus doc create`](#corpus-doc-create)
+  - [`corpus doc delete`](#corpus-doc-delete)
+  - [`corpus doc edit`](#corpus-doc-edit)
+  - [`corpus doc move`](#corpus-doc-move)
 - [`corpus job`](#corpus-job)
   - [`corpus job abandon`](#corpus-job-abandon)
   - [`corpus job list`](#corpus-job-list)
@@ -41,6 +50,10 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus server start`](#corpus-server-start)
   - [`corpus server status`](#corpus-server-status)
   - [`corpus server stop`](#corpus-server-stop)
+- [`corpus thread`](#corpus-thread)
+  - [`corpus thread reopen`](#corpus-thread-reopen)
+  - [`corpus thread reply`](#corpus-thread-reply)
+  - [`corpus thread resolve`](#corpus-thread-resolve)
 - [Exit codes](#exit-codes)
 
 ## Usage
@@ -62,15 +75,16 @@ help, because help is documentation rather than data.
 
 These are merged into every command; a command may not declare a flag that shadows one.
 
-| Flag                 | Type    | Default | Description                                                                                              |
-| -------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `--json`             | boolean | `false` | Write exactly one machine-readable JSON value to stdout, and failures as `{"error":{…}}` to stderr.      |
-| `--workspace <path>` | string  | —       | Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE. |
-| `--timeout <ms>`     | number  | `10000` | How long to wait for the workspace server before reporting it unreachable (exit 4).                      |
-| `--verbose`          | boolean | `false` | Include the stack trace when an unexpected internal error occurs.                                        |
-| `--no-color`         | boolean | `false` | Never emit ANSI colour. Implied whenever stdout is not a TTY.                                            |
-| `-h, --help`         | boolean | `false` | Show help for the current topic or command and exit.                                                     |
-| `--version`          | boolean | `false` | Print the version of the `corpus` tool and exit.                                                         |
+| Flag                   | Type    | Default | Description                                                                                                                                                                                                                                                                    |
+| ---------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--from <user\|agent>` | string  | —       | Who is acting, and therefore the git author of the server's auto-commit: `user` or `agent`. Defaults to `user`; set `CORPUS_FROM=agent` to change the default for a session, and this flag still wins over it. Anything else is a usage error (exit 2) and no request is sent. |
+| `--json`               | boolean | `false` | Write exactly one machine-readable JSON value to stdout, and failures as `{"error":{…}}` to stderr.                                                                                                                                                                            |
+| `--workspace <path>`   | string  | —       | Workspace to act on, instead of searching upward from the current directory. Overrides CORPUS_WORKSPACE.                                                                                                                                                                       |
+| `--timeout <ms>`       | number  | `10000` | How long to wait for the workspace server before reporting it unreachable (exit 4).                                                                                                                                                                                            |
+| `--verbose`            | boolean | `false` | Include the stack trace when an unexpected internal error occurs.                                                                                                                                                                                                              |
+| `--no-color`           | boolean | `false` | Never emit ANSI colour. Implied whenever stdout is not a TTY.                                                                                                                                                                                                                  |
+| `-h, --help`           | boolean | `false` | Show help for the current topic or command and exit.                                                                                                                                                                                                                           |
+| `--version`            | boolean | `false` | Print the version of the `corpus` tool and exit.                                                                                                                                                                                                                               |
 
 ## `corpus health`
 
@@ -150,6 +164,276 @@ Machine-readable form. The bearer token is never printed.
 
 ```
 corpus init --json
+```
+
+## `corpus db`
+
+Maintain the SQLite projection.
+
+`.corpus/cache.db` is a **derived** cache: the whole database is reconstructible from the workspace's files at any time (SPEC.md §9.1). `rebuild` re-derives it, `doctor` checks it, and “rebuild then a clean doctor” is the standing invariant §14 gates v1 on. Neither verb touches a document, so neither produces a commit.
+
+### `corpus db doctor`
+
+Check the projection against the files; exit 6 on drift.
+
+Compares every document file with the row the projection holds for it and reports what disagrees — a missing row, an orphan row, a content mismatch, a count mismatch, an unparseable file, a duplicate id (SPEC.md §14). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never re-read. Exits **6** when anything drifted and **0** when nothing did, so a hook can gate on the code alone; the findings are printed one per line, and `--json` emits the server's report — `{ok, drift, stats}` — untouched. Nothing is repaired: run `corpus db rebuild` for that. On a live server the file watcher heals an out-of-band edit within about a second, so a clean report right after one is correct rather than surprising.
+
+```
+corpus db doctor [flags]
+```
+
+**Examples**
+
+Verify the projection still matches the files; exits 6 if it does not.
+
+```
+corpus db doctor
+```
+
+SPEC.md §14's standing invariant: a rebuild is followed by a clean check.
+
+```
+corpus db rebuild && corpus db doctor
+```
+
+One JSON value: `{"ok":true,"drift":[],"stats":{"files":18,"documents":18,…}}`.
+
+```
+corpus db doctor --json
+```
+
+### `corpus db rebuild`
+
+Rebuild the projection from the workspace's files.
+
+Re-derives every row of `.corpus/cache.db` from the files alone and replaces the database atomically, so an interrupted rebuild leaves the previous one intact (SPEC.md §14). Files are the source of truth; the projection is a cache, and this proves it. Prints the per-table row counts and how long it took, and names any file that is a document by location but produced no row — an empty `skipped` list is the good case. This call ignores the global `--timeout`, which is a ten-second transport deadline: a rebuild of a large corpus is the longest-running call in the API and is given ten minutes of its own. `rebuild` followed by a clean `doctor` is §14's standing invariant.
+
+```
+corpus db rebuild [flags]
+```
+
+**Examples**
+
+Re-derive the projection after editing files outside the app.
+
+```
+corpus db rebuild
+```
+
+One JSON value: `{"path":"…/.corpus/cache.db","documents":12,…,"durationMs":412,"skipped":[]}`.
+
+```
+corpus db rebuild --json
+```
+
+## `corpus doc`
+
+Create, edit, move, archive and delete documents.
+
+The stewardship surface (SPEC.md §7): the agent creates, edits, moves and archives documents on its own initiative, and **archives where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what.
+
+### `corpus doc archive`
+
+Archive a document (reversible; never a deletion).
+
+Flips `status` to `archived`. Nothing leaves git and nothing leaves the index: the document drops out of the default `GET /api/docs` result set and comes back with `status=archived` (SPEC.md §7). This is the verb the agent uses where a person would reach for delete — the agent archives, never deletes. Archiving an already-archived document reports “already archived” and exits 0 without writing or committing, so a retried loop is harmless. Archiving a `type: skill` document also moves its folder to `.claude/skills-archived/`, which disables the skill without unindexing it. A `423` from the other party's edit lock is a server error (exit 5).
+
+```
+corpus doc archive <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Examples**
+
+Retire a note that is no longer current, keeping every version in git.
+
+```
+corpus doc archive doc_a1b2c3
+```
+
+One JSON value — `{"doc":{…},"warnings":[]}` — with the archiving attributed to the agent.
+
+```
+corpus doc archive doc_a1b2c3 --from agent --json
+```
+
+### `corpus doc create`
+
+Create a document.
+
+A type and a title are the whole requirement (SPEC.md §11's zero-form creation); everything else the server fills in, including the id, which is immutable thereafter. The body comes from `-m`, from `--file`, or from stdin — the heredoc form the agent's skills use — and omitting all three is legal: the server pre-fills from the type's `template` document when one exists. Bytes are passed through untouched; there is no markdown processing in the CLI. An omitted `--folder` files the document in `data/docs/inbox/` (creation is inbox-first); a folder the server rejects is reported verbatim rather than pre-validated here. Prints the new id and path; `--json` emits the server's `{doc, warnings}` response unchanged.
+
+```
+corpus doc create [flags]
+```
+
+**Flags**
+
+| Flag                   | Type   | Default | Description                                                                                                          |
+| ---------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--type <type>`        | string | —       | Document type: `note`, `view`, `template`, `skill`, `agent-def`, or a plugin's own. Required.                        |
+| `--title <text>`       | string | —       | The document's title. Required.                                                                                      |
+| `--folder <path>`      | string | —       | Folder under `data/docs/`, as a bare name (`finance`) or the full prefix (`data/docs/finance`). Defaults to `inbox`. |
+| `--tags <a,b>`         | string | —       | Comma-separated tags. Blank entries are dropped; defaults to no tags.                                                |
+| `--due <yyyy-mm-dd>`   | string | —       | Optional deadline, surfaced in Attention and in filters.                                                             |
+| `-m, --message <text>` | string | —       | The document body as a literal string. Wins over --file and stdin.                                                   |
+| `--file <path>`        | string | —       | Read the document body from this file. Wins over stdin; the file is only read.                                       |
+
+**Examples**
+
+Create a note in `data/docs/finance/`, with the body pre-filled from the `note` template.
+
+```
+corpus doc create --type note --title "Mortgage options" --folder finance
+```
+
+The agent's form: body from a heredoc, tagged, and committed with `agent` as the git author.
+
+```
+corpus doc create --type note --title "Mortgage options" --tags finance,housing --from agent <<'EOF'
+30-year fixed at 6.1%.
+EOF
+```
+
+Body from a file; one JSON value — `{"doc":{…},"warnings":[]}` — for a caller that needs the id.
+
+```
+corpus doc create --type note --title "Notes" --file notes.md --json
+```
+
+### `corpus doc delete`
+
+Delete a document (user-only, irreversible in the working tree).
+
+**The agent may not run this.** `--from agent` (or `CORPUS_FROM=agent`) is refused here, before any request is sent, with exit 2: the agent archives, never deletes (SPEC.md §7). The server rejects it with a `403` as well; this guard exists so the agent gets the reason rather than a status code. Deletion cascades to the document's threads, which survive as **orphaned records** — still readable, still naming this document as `parent`, with anchors that no longer resolve — and the printed line names every one of them. Nothing is removed from git history. Confirmation is required: with a terminal you are asked, and without one `--yes` is mandatory, because a piped body must never be mistaken for a yes.
+
+```
+corpus doc delete <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Flags**
+
+| Flag    | Type    | Default | Description                                                                                                            |
+| ------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--yes` | boolean | `false` | Skip the confirmation prompt. Required whenever stdin is not a terminal — a script or a hook has no way to answer one. |
+
+**Examples**
+
+Delete a document from a script, as the user; git retains every version of it.
+
+```
+corpus doc delete doc_a1b2c3 --yes
+```
+
+One JSON value — `{"deletedId":"doc_a1b2c3","orphanedThreadIds":["th_x9y8"],"warnings":[]}`.
+
+```
+corpus doc delete doc_a1b2c3 --yes --json
+```
+
+### `corpus doc edit`
+
+Edit a document's body and frontmatter.
+
+The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only edit** and the body is left exactly as it is — the CLI never sends an empty body it was not given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: remapped anchors moved with the text, orphaned ones name the threads that just became detached. `--reviewed` records the current instant as a “still current” confirmation, which is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's current tags first, so they cost one extra request; nothing else does. A `423` from the other party's edit lock is reported as a server error (exit 5) and is never retried — the orchestrate skill defers instead. An edit that names no change at all is a usage error, not an empty request.
+
+```
+corpus doc edit <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Flags**
+
+| Flag                        | Type                | Default | Description                                                                                                            |
+| --------------------------- | ------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--title <text>`            | string              | —       | Replace the title.                                                                                                     |
+| `--add-tag <tag>`           | string (repeatable) | —       | Add a tag, keeping the existing ones.                                                                                  |
+| `--remove-tag <tag>`        | string (repeatable) | —       | Remove a tag. A tag both added and removed is removed.                                                                 |
+| `--status <status>`         | string              | —       | Set the lifecycle status: `open`, `resolved` or `archived`.                                                            |
+| `--due <yyyy-mm-dd>`        | string              | —       | Set the deadline.                                                                                                      |
+| `--reviewed`                | boolean             | `false` | Record "still current" as of now. Staleness runs from max(updated, reviewed), so this does not stamp `updated`.        |
+| `--evergreen <true\|false>` | string              | —       | Opt the document out of staleness, or back into it. Takes an explicit value: omitting the flag leaves the field alone. |
+| `-m, --message <text>`      | string              | —       | The replacement document body as a literal string. Wins over --file and stdin.                                         |
+| `--file <path>`             | string              | —       | Read the replacement document body from this file. Wins over stdin; the file is only read.                             |
+
+**Examples**
+
+Replace the body from a heredoc, attributed to the agent; the anchor report names any thread that came loose.
+
+```
+corpus doc edit doc_a1b2c3 --from agent <<'EOF'
+The revised body.
+EOF
+```
+
+A frontmatter-only edit: the title changes and the body is not touched.
+
+```
+corpus doc edit doc_a1b2c3 --title "Mortgage options (2026)"
+```
+
+Retag and mark the document "still current".
+
+```
+corpus doc edit doc_a1b2c3 --add-tag housing --remove-tag draft --reviewed
+```
+
+One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warnings`, exactly as the server sent them.
+
+```
+corpus doc edit doc_a1b2c3 --file revised.md --json
+```
+
+### `corpus doc move`
+
+Move a document to another folder.
+
+Rewrites the file's path and nothing else: **the id never changes**, so no reference, anchor or thread parent has to be rewritten (SPEC.md §9.2). Moving a document to the folder it is already in is a reported no-op that writes and commits nothing — the agent's loop never has to branch on it. Threads live flat under `data/threads/` and skills inside their own folder, so neither can be moved; the server says so. A `423` from the other party's edit lock is a server error (exit 5).
+
+```
+corpus doc move <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Flags**
+
+| Flag              | Type   | Default | Description                                                                                                           |
+| ----------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `--folder <path>` | string | —       | Destination folder under `data/docs/`, as a bare name (`finance`) or the full prefix (`data/docs/finance`). Required. |
+
+**Examples**
+
+File an inbox arrival under `data/docs/finance/`.
+
+```
+corpus doc move doc_a1b2c3 --folder finance
+```
+
+One JSON value — `{"doc":{…},"warnings":[]}` — carrying the document at its new path.
+
+```
+corpus doc move doc_a1b2c3 --folder archive-notes --json
 ```
 
 ## `corpus job`
@@ -782,6 +1066,117 @@ Machine-readable form: what was stopped, or that nothing was running.
 
 ```
 corpus server stop --json
+```
+
+## `corpus thread`
+
+Reply to conversations and open or close them.
+
+A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `reply` is the agent's half of the conversation — the exact command §7's comment skill is written in — and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+
+### `corpus thread reopen`
+
+Reopen a resolved thread.
+
+Sets `status: open` again; an `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Reopening an already-open thread reports “already open” and exits 0, having written and committed nothing.
+
+```
+corpus thread reopen <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description      |
+| -------- | -------- | ---------------- |
+| `id`     | yes      | The thread's id. |
+
+**Examples**
+
+Bring a resolved conversation back because something new came up.
+
+```
+corpus thread reopen th_a1b2c3
+```
+
+One JSON value: the thread summary, with `status` back to `open`.
+
+```
+corpus thread reopen th_a1b2c3 --json
+```
+
+### `corpus thread reply`
+
+Append a turn to a thread.
+
+Reads the turn's body from `-m`, `--file` or stdin — the heredoc form the comment skill uses — and appends it to the thread, committed with `--from` as the git author. An empty body is a usage error (exit 2), never a request. Whether the turn wakes the agent is the server's call (SPEC.md §8): a turn in an `engaged` thread, or one mentioning `@agent`, enqueues a `comment.created` event and the printed line names it; a resolved thread enqueues nothing. The body is passed through unchanged — fenced blocks, `~~~form` blocks and interior newlines all survive verbatim.
+
+```
+corpus thread reply <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description      |
+| -------- | -------- | ---------------- |
+| `id`     | yes      | The thread's id. |
+
+**Flags**
+
+| Flag                   | Type   | Default | Description                                                                |
+| ---------------------- | ------ | ------- | -------------------------------------------------------------------------- |
+| `-m, --message <text>` | string | —       | The turn body as a literal string. Wins over --file and stdin.             |
+| `--file <path>`        | string | —       | Read the turn body from this file. Wins over stdin; the file is only read. |
+
+**Examples**
+
+The agent's form: a heredoc reply, authored by the agent (SPEC.md §7).
+
+```
+corpus thread reply th_a1b2c3 --from agent <<'EOF'
+I filed the note under finance/.
+EOF
+```
+
+A short reply from the user, inline.
+
+```
+corpus thread reply th_a1b2c3 -m "one more thought"
+```
+
+One JSON value carrying `thread`, `turn` (with its `ts`), `eventId` and `warnings`.
+
+```
+corpus thread reply th_a1b2c3 --file answer.md --json
+```
+
+### `corpus thread resolve`
+
+Resolve a thread.
+
+Sets `status: resolved`. The thread collapses in the document view and later turns stop re-triggering the agent even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving an already-resolved thread reports “already resolved” and exits 0, having written and committed nothing.
+
+```
+corpus thread resolve <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description      |
+| -------- | -------- | ---------------- |
+| `id`     | yes      | The thread's id. |
+
+**Examples**
+
+Close a conversation that has run its course.
+
+```
+corpus thread resolve th_a1b2c3
+```
+
+One JSON value: the thread summary, with `status` now `resolved`.
+
+```
+corpus thread resolve th_a1b2c3 --from agent --json
 ```
 
 ## Exit codes

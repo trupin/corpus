@@ -68,12 +68,20 @@ describe("createClient", () => {
     expect(client.baseUrl).toBe(`http://127.0.0.1:${String(port)}`);
   });
 
-  it("sends the workspace bearer token and attributes the CLI to the agent", async () => {
+  it("sends the workspace bearer token and attributes an unnamed actor to the user", async () => {
     const { port, requests } = await listen(json(200, HEALTH));
     await createClient({ workspace: workspaceOn(port) }).request((api) => api.GET("/api/health"));
     const [request] = requests;
     expect(request?.headers.authorization).toBe("Bearer 0123456789abcdef0123456789abcdef");
-    expect(request?.headers["x-corpus-author"]).toBe("agent");
+    expect(request?.headers["x-corpus-author"]).toBe("user");
+  });
+
+  it("sends the actor the dispatcher resolved on every request", async () => {
+    const { port, requests } = await listen(json(200, HEALTH));
+    await createClient({ workspace: workspaceOn(port), actor: "agent" }).request((api) =>
+      api.GET("/api/health"),
+    );
+    expect(requests[0]?.headers["x-corpus-author"]).toBe("agent");
   });
 
   it("exposes the generated client for callers that need it directly", async () => {
@@ -129,6 +137,9 @@ describe("non-2xx responses", () => {
       .request((api) => api.GET("/api/health"))
       .catch((e: unknown) => e);
     expect(error).toHaveProperty("details", lock);
+    // The holder is in the server's message; the hint is what to do about it.
+    expect(error).toHaveProperty("hint", expect.stringContaining("was not applied"));
+    expect(error).toHaveProperty("hint", expect.stringContaining("retrying in a loop"));
   });
 
   it("renders a body that is not a contract problem through the same path", async () => {

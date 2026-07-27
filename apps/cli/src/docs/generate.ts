@@ -156,21 +156,32 @@ function exitCodeTable(): readonly string[] {
   );
 }
 
+/**
+ * A cell's own `|` would end the column early — `--from <user|agent>` would
+ * render as two cells and Prettier would reflow the whole table around the
+ * break. Escaping is the fix; the help renderer keeps the readable form.
+ */
+function escapeCell(cell: string): string {
+  return cell.replace(/\|/g, "\\|");
+}
+
 /** Markdown table with padded columns, so the committed file is stable and readable. */
 function table(
   headers: readonly string[],
   rows: readonly (readonly string[])[],
 ): readonly string[] {
-  const widths = headers.map((header, column) =>
-    Math.max(3, header.length, ...rows.map((row) => (row[column] ?? "").length)),
+  const escapedHeaders = headers.map(escapeCell);
+  const escapedRows = rows.map((row) => row.map(escapeCell));
+  const widths = escapedHeaders.map((header, column) =>
+    Math.max(3, header.length, ...escapedRows.map((row) => (row[column] ?? "").length)),
   );
   const render = (cells: readonly string[]): string =>
     `| ${cells.map((cell, column) => cell.padEnd(widths[column] ?? cell.length)).join(" | ")} |`;
 
   return [
-    render(headers),
+    render(escapedHeaders),
     `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`,
-    ...rows.map(render),
+    ...escapedRows.map(render),
   ];
 }
 

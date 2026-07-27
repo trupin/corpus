@@ -102,7 +102,8 @@ The board, editor, threads, console. design/index.html is authoritative for look
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| AGENT-002 | Orchestrate skill: the agent's main loop | todo | P0 | CLI-004, AGENT-001 |
+| CLI-007 | `corpus job log` stdin-socket hang under agent harness | todo | P1 | CLI-003, CLI-004 |
+| AGENT-002 | Orchestrate skill: the agent's main loop | todo | P0 | CLI-004, CLI-007, AGENT-001 |
 | CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | todo | P1 | CONTRACT-002 |
 | SERVER-019 | Mount validation + skill-rollback handlers | todo | P1 | CONTRACT-008 |
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | todo | P1 | CLI-003, SERVER-019 |

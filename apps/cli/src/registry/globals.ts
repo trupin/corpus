@@ -1,3 +1,4 @@
+import { FROM_FLAG } from "../input.js";
 import type { FlagSpec } from "./types.js";
 
 /**
@@ -6,6 +7,7 @@ import type { FlagSpec } from "./types.js";
  * one of these names or aliases, so the merge can never be ambiguous.
  */
 export const GLOBAL_FLAGS: readonly FlagSpec[] = [
+  FROM_FLAG,
   {
     name: "json",
     type: "boolean",

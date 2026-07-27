@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_ACTOR } from "@corpus/contract";
 import { UsageError } from "../../errors.js";
 import { createTestContext } from "../../registry/fixtures.js";
 import { makeTempDir, removeTempDirs } from "../../testing/temp.js";
@@ -138,7 +139,12 @@ describe("corpus server logs", () => {
   it("prints the tail verbatim", async () => {
     const { workspace, path } = workspaceWithLog("logs-print", "a\nb\nc\n");
     const harness = createTestContext({ flags: { lines: 2, follow: false } });
-    await logsCommand.handler({ ...harness.context, workspace, client: undefined as never });
+    await logsCommand.handler({
+      ...harness.context,
+      workspace,
+      client: undefined as never,
+      actor: DEFAULT_ACTOR,
+    });
 
     expect(harness.stdout()).toBe("b\nc\n");
     expect(readFileSync(path, "utf8")).toBe("a\nb\nc\n");
@@ -147,7 +153,12 @@ describe("corpus server logs", () => {
   it("emits one JSON value under --json", async () => {
     const { workspace } = workspaceWithLog("logs-json", "a\nb\n");
     const harness = createTestContext({ flags: { lines: 2, follow: false }, json: true });
-    await logsCommand.handler({ ...harness.context, workspace, client: undefined as never });
+    await logsCommand.handler({
+      ...harness.context,
+      workspace,
+      client: undefined as never,
+      actor: DEFAULT_ACTOR,
+    });
 
     expect(JSON.parse(harness.stdout())).toMatchObject({ lines: ["a", "b"] });
   });
@@ -158,7 +169,12 @@ describe("corpus server logs", () => {
       `${Array.from({ length: 120 }, (_, i) => `l${String(i)}`).join("\n")}\n`,
     );
     const harness = createTestContext({ flags: { follow: false } });
-    await logsCommand.handler({ ...harness.context, workspace, client: undefined as never });
+    await logsCommand.handler({
+      ...harness.context,
+      workspace,
+      client: undefined as never,
+      actor: DEFAULT_ACTOR,
+    });
 
     expect(harness.stdout().trimEnd().split("\n")).toHaveLength(DEFAULT_LOG_LINES);
   });
@@ -168,7 +184,12 @@ describe("corpus server logs", () => {
     const harness = createTestContext({ flags: { follow: true }, json: true });
 
     await expect(
-      logsCommand.handler({ ...harness.context, workspace, client: undefined as never }),
+      logsCommand.handler({
+        ...harness.context,
+        workspace,
+        client: undefined as never,
+        actor: DEFAULT_ACTOR,
+      }),
     ).rejects.toBeInstanceOf(UsageError);
   });
 
@@ -180,6 +201,7 @@ describe("corpus server logs", () => {
       ...harness.context,
       workspace,
       client: undefined as never,
+      actor: DEFAULT_ACTOR,
     });
     const before = process.listenerCount("SIGINT");
     appendFileSync(path, "later\n");

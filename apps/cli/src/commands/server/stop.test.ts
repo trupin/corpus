@@ -2,6 +2,7 @@ import type { Health } from "@corpus/contract";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_ACTOR } from "@corpus/contract";
 import type { CliClient } from "../../client.js";
 import { ServerUnreachableError } from "../../errors.js";
 import { serverPidfilePath } from "../../paths.js";
@@ -51,6 +52,7 @@ async function stop(options: {
     ...harness.context,
     workspace: workspaceAt(root),
     client: client(options.health),
+    actor: DEFAULT_ACTOR,
   });
   return { root, output: harness.stdout() };
 }

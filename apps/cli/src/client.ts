@@ -1,4 +1,10 @@
-import { createCorpusClient, isApiError, type CorpusApi } from "@corpus/contract/client";
+import {
+  createCorpusClient,
+  isApiError,
+  DEFAULT_ACTOR,
+  type Actor,
+  type CorpusApi,
+} from "@corpus/contract/client";
 import { ServerResponseError, ServerUnreachableError } from "./errors.js";
 import type { Workspace } from "./workspace.js";
 
@@ -48,6 +54,14 @@ export interface CliClient {
 export interface CreateClientOptions {
   readonly workspace: Workspace;
   readonly timeoutMs?: number;
+  /**
+   * The acting party sent on every request, and therefore the git author of the
+   * server's auto-commit. The dispatcher resolves it once from `--from` /
+   * `CORPUS_FROM` (CLI-003); it defaults to `user` because a human typing a
+   * command is a user, and mis-attributing a human's edit to the agent is the
+   * one direction of audit-trail corruption nothing can detect afterwards.
+   */
+  readonly actor?: Actor;
   /** Injectable transport for tests; production uses the global `fetch`. */
   readonly fetch?: typeof globalThis.fetch;
 }
@@ -63,9 +77,11 @@ export function createClient(options: CreateClientOptions): CliClient {
     createCorpusClient({
       baseUrl: workspace.baseUrl,
       token: workspace.token,
-      // The CLI is the agent's only interface (SPEC.md §2.2), so its writes are
-      // attributed to the agent in the server's git auto-commit.
-      actor: "agent",
+      // Attribution travels with the client, not with each call: a verb that had
+      // to remember to set the header could forget to, and the git author is the
+      // audit trail (SPEC.md §2.2, §7). A verb that is inherently one party's —
+      // `lock break` — still overrides it per call.
+      actor: options.actor ?? DEFAULT_ACTOR,
       fetch: transportFetch,
     }).api;
 
@@ -207,8 +223,18 @@ function detailsFor(body: { readonly code: string }): { details?: unknown } {
 }
 
 function hintFor(status: number): { hint?: string } {
-  if (status !== 401) return {};
-  return {
-    hint: "The workspace bearer token was rejected — check `token` in .corpus/config.json, or the CORPUS_TOKEN override.",
-  };
+  if (status === 401) {
+    return {
+      hint: "The workspace bearer token was rejected — check `token` in .corpus/config.json, or the CORPUS_TOKEN override.",
+    };
+  }
+  if (status === 423) {
+    // The message names the holder; what the caller needs on top of that is
+    // what to do about it. Retrying in a loop is the wrong answer: a lock is
+    // held by a person typing, and the write was not applied (SPEC.md §7).
+    return {
+      hint: "The write was not applied. The other party holds this document's edit lock — defer and come back to it, rather than retrying in a loop.",
+    };
+  }
+  return {};
 }

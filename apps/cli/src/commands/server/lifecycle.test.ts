@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_ACTOR } from "@corpus/contract";
 import { createClient } from "../../client.js";
 import { ExitCode, exitCodeFor } from "../../errors.js";
 import { serverLogPath, serverPidfilePath } from "../../paths.js";
@@ -108,6 +109,7 @@ function context(harness: Harness, options: { readonly json?: boolean } = {}) {
       ...test.context,
       workspace: harness.workspace,
       client: createClient({ workspace: harness.workspace, timeoutMs: 2000 }),
+      actor: DEFAULT_ACTOR,
     },
   };
 }

@@ -387,3 +387,69 @@ describe("colour and standalone commands", () => {
     expect(result.stderr).toBe("");
   });
 });
+
+describe("actor attribution, resolved once by the dispatcher", () => {
+  const seen: { header?: string | undefined; count: number } = { count: 0 };
+
+  async function recordingServer(): Promise<number> {
+    const server = createServer((request, response) => {
+      seen.count += 1;
+      seen.header = request.headers["x-corpus-author"] as string | undefined;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(HEALTH));
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return (server.address() as AddressInfo).port;
+  }
+
+  afterEach(() => {
+    seen.count = 0;
+    seen.header = undefined;
+  });
+
+  it("attributes an unnamed actor to the user", async () => {
+    const port = await recordingServer();
+    const result = await invoke(["health"], { cwd: workspaceDir(port) });
+    expect(result.code).toBe(ExitCode.success);
+    expect(seen.header).toBe("user");
+  });
+
+  it("sends --from, and lets it beat CORPUS_FROM", async () => {
+    const port = await recordingServer();
+    const root = workspaceDir(port);
+
+    await invoke(["health", "--from", "agent"], { cwd: root });
+    expect(seen.header).toBe("agent");
+
+    await invoke(["health"], { cwd: root, env: { CORPUS_FROM: "agent" } });
+    expect(seen.header).toBe("agent");
+
+    await invoke(["health", "--from", "user"], { cwd: root, env: { CORPUS_FROM: "agent" } });
+    expect(seen.header).toBe("user");
+  });
+
+  it("rejects an unknown actor with exit 2 before any request leaves the process", async () => {
+    const port = await recordingServer();
+    const root = workspaceDir(port);
+
+    const flag = await invoke(["health", "--from", "robot"], { cwd: root });
+    expect(flag.code).toBe(ExitCode.usageError);
+    expect(flag.stderr).toContain("--from must be one of: user, agent");
+
+    const env = await invoke(["health"], { cwd: root, env: { CORPUS_FROM: "robot" } });
+    expect(env.code).toBe(ExitCode.usageError);
+    expect(env.stderr).toContain("CORPUS_FROM must be one of");
+
+    expect(seen.count).toBe(0);
+  });
+
+  it("is documented in the global flags every level of help renders", async () => {
+    const root = await invoke(["--help"]);
+    const verb = await invoke(["doc", "create", "--help"]);
+    for (const text of [root.stdout, verb.stdout]) {
+      expect(text).toContain("--from <user|agent>");
+      expect(text).toContain("CORPUS_FROM");
+    }
+  });
+});
