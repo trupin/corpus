@@ -1,5 +1,5 @@
+import { useHealth } from "@corpus/kit";
 import type { ReactElement } from "react";
-import { useHealth } from "./useHealth";
 import "./ConsoleStrip.css";
 
 function ServerStatus(): ReactElement {

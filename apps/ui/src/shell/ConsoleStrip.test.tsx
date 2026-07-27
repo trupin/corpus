@@ -1,9 +1,15 @@
 /** @vitest-environment jsdom */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createCorpusTestHarness, type CorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConsoleStrip } from "./ConsoleStrip";
+
+/**
+ * Adapted for UI-002: the health probe moved into `@corpus/kit` (it is the key
+ * the SSE bridge invalidates on connect and disconnect, so it belongs beside
+ * the bridge), which means the strip now needs a `CorpusProvider` rather than a
+ * bare `QueryClientProvider`. Every assertion below is the one UI-001 shipped.
+ */
 
 const HEALTH_BODY = {
   status: "ok",
@@ -12,31 +18,28 @@ const HEALTH_BODY = {
   workspace: "/tmp/corpus-workspace",
 };
 
-let client: QueryClient;
+let harness: CorpusTestHarness | undefined;
 
-function renderStrip(): ReturnType<typeof render> {
-  const tree: ReactElement = (
-    <QueryClientProvider client={client}>
-      <ConsoleStrip />
-    </QueryClientProvider>
-  );
-  return render(tree);
+function renderStrip(fetchImpl: unknown): ReturnType<typeof render> {
+  harness = createCorpusTestHarness({
+    fetch: fetchImpl as typeof globalThis.fetch,
+    // The drop test emits a transport error on purpose; the default logger is
+    // `console`, and its output would be noise, not signal.
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  });
+  return render(<ConsoleStrip />, { wrapper: harness.Wrapper });
 }
-
-beforeEach(() => {
-  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-});
 
 afterEach(() => {
   cleanup();
-  client.clear();
+  harness?.queryClient.clear();
+  harness = undefined;
   vi.unstubAllGlobals();
 });
 
 describe("ConsoleStrip", () => {
   it("renders one collapsed line as a flow sibling, never a fixed overlay", () => {
-    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
-    const { container } = renderStrip();
+    const { container } = renderStrip(vi.fn().mockReturnValue(new Promise(() => {})));
 
     const console_ = container.querySelector(".console");
     expect(console_).not.toBeNull();
@@ -47,14 +50,12 @@ describe("ConsoleStrip", () => {
   });
 
   it("reports an honest pending state while the probe is in flight", () => {
-    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
-    renderStrip();
+    renderStrip(vi.fn().mockReturnValue(new Promise(() => {})));
     expect(screen.getByRole("status").textContent).toBe("checking server…");
   });
 
   it("reports the server version once the probe answers", async () => {
-    vi.stubGlobal(
-      "fetch",
+    renderStrip(
       vi.fn().mockResolvedValue(
         new Response(JSON.stringify(HEALTH_BODY), {
           status: 200,
@@ -62,20 +63,43 @@ describe("ConsoleStrip", () => {
         }),
       ),
     );
-    renderStrip();
     await waitFor(() => {
       expect(screen.getByRole("status").textContent).toBe("corpus 1.2.3");
     });
   });
 
   it("shows the server-unreachable notice instead of crashing the shell", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
-    const { container } = renderStrip();
+    const { container } = renderStrip(vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
     await waitFor(() => {
       expect(screen.getByRole("status").textContent).toBe("server unreachable");
     });
     expect(container.querySelector(".c-failed")).not.toBeNull();
     expect(container.querySelector(".console-strip")).not.toBeNull();
+  });
+
+  // TEST-26, at the surface the criterion is written about: the strip's verdict
+  // is the boot-time probe forever unless something invalidates the health key,
+  // and losing the stream is exactly when it stops being true.
+  it("converges from a version to unreachable when the stream drops", async () => {
+    let answer: () => Response = () =>
+      new Response(JSON.stringify(HEALTH_BODY), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    renderStrip(vi.fn().mockImplementation(() => Promise.resolve(answer())));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toBe("corpus 1.2.3");
+    });
+
+    answer = () => {
+      throw new TypeError("Failed to fetch");
+    };
+    harness?.eventSource.latest().emit("error");
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toBe("server unreachable");
+    });
   });
 });

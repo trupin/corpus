@@ -5,8 +5,13 @@ import { defineConfig } from "vite";
  * The workspace server (SPEC.md §3): binds `127.0.0.1`, default port 8765. In
  * the installed tool the server serves the built UI itself, so this proxy only
  * exists to make the dev server look like that same origin.
+ *
+ * `CORPUS_SERVER_ORIGIN` overrides it, for a workspace that `corpus init` put on
+ * another port. The default is unchanged, which the e2e suite depends on: it
+ * asserts the console strip reads "server unreachable" with nothing listening on
+ * 8765.
  */
-const SERVER_ORIGIN = "http://127.0.0.1:8765";
+const SERVER_ORIGIN = process.env.CORPUS_SERVER_ORIGIN ?? "http://127.0.0.1:8765";
 
 export default defineConfig({
   plugins: [react()],
