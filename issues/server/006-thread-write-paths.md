@@ -26,21 +26,21 @@ opus — behavior fully pinned by §6/§8; no open design questions, only carefu
 Implement every write path that produces or mutates a thread: thread creation in its three modes (anchored, whole-document, standalone), turn append with monotonic unique timestamps, mention/invocation parsing that decides whether a `comment.created` event is enqueued, form answers, resolve/reopen, read marks, and user-only deletion with the full cascade (last turn → thread → parent anchor entry). This is the core of the conversational surface: every comment, reply, Ask, and Capture lands here, and it is the only place in the system that writes thread files or parent anchor entries.
 
 ## Acceptance Criteria
-- [ ] `POST /api/threads` supports all three creation modes: **anchored** (`parent` + text-quote selector — the anchor entry is written into the parent's frontmatter and the thread file is created atomically, in one auto-commit), **whole-document** (`parent`, no anchor), **standalone** (`parent: null` — the composer's Ask).
-- [ ] Thread creation accepts the first turn body, an author (`user` | `agent`), and an agent-request flag; the created thread's frontmatter matches §6 (`id: th_*`, `type: thread`, `parent`, `anchor`, `agent`, `status: open`, derived `title`).
-- [ ] `POST /api/threads/:id/turns` appends a turn as `## <author> · <ISO ts>` with a timestamp that is **unique and monotonically increasing within the thread** (via the core turn helpers from SERVER-001).
-- [ ] Mentions and invocations are parsed at post time per §8 (`@agent`, `@<subagent>` matching an `agent-def` document name, `/<skill>` matching a `skill` document name), validated against the projection, and emitted as structured `mentions` / `skills` fields in the event payload.
-- [ ] A plain comment (no flag, no recognized mention/invocation, thread not `engaged`) appends the turn and enqueues **nothing**.
-- [ ] A turn that requests the agent — explicit flag, `@agent`, a resolved `@<subagent>`, or a resolved `/<skill>` — enqueues `comment.created`.
-- [ ] A turn in a thread with `agent: engaged` enqueues `comment.created` **unless** the thread is `resolved` or the request carries the "note only" flag.
-- [ ] A form answer (`formAnswer` on the turn request) appends a structured answer turn (chosen option + optional note) and enqueues `form.respond`.
-- [ ] `POST /api/threads/:id/resolve` and `/reopen` flip `status` (idempotent), auto-commit, re-project, invalidate.
-- [ ] `POST /api/threads/:id/seen` updates `.corpus/seen.json`, re-projects the `seen` table, and broadcasts an invalidation; it makes **no** git commit (runtime state).
-- [ ] `DELETE /api/threads/:id/turns/:ts` is **user-only** (agent actor → 403) and cascades: deleting the last remaining turn deletes the thread, and deleting a thread removes its anchor entry from the parent's frontmatter.
-- [ ] `DELETE /api/threads/:id` deletes the thread file and removes its anchor entry from the parent (user-only, same cascade rules).
-- [ ] `POST /api/capture` creates the inbox document **and** its agent-requested whole-document filing thread in one call and one commit.
-- [ ] `GET /api/threads/:id` returns the thread frontmatter plus its ordered turns (idx, author, ts, body) and anchor context when anchored.
-- [ ] Every mutating endpoint re-projects the affected rows synchronously before responding (read-your-write per §9.1) and emits an invalidation.
+- [x] `POST /api/threads` supports all three creation modes: **anchored** (`parent` + text-quote selector — the anchor entry is written into the parent's frontmatter and the thread file is created atomically, in one auto-commit), **whole-document** (`parent`, no anchor), **standalone** (`parent: null` — the composer's Ask).
+- [x] Thread creation accepts the first turn body, an author (`user` | `agent`), and an agent-request flag; the created thread's frontmatter matches §6 (`id: th_*`, `type: thread`, `parent`, `anchor`, `agent`, `status: open`, derived `title`).
+- [x] `POST /api/threads/:id/turns` appends a turn as `## <author> · <ISO ts>` with a timestamp that is **unique and monotonically increasing within the thread** (via the core turn helpers from SERVER-001).
+- [x] Mentions and invocations are parsed at post time per §8 (`@agent`, `@<subagent>` matching an `agent-def` document name, `/<skill>` matching a `skill` document name), validated against the projection, and emitted as structured `mentions` / `skills` fields in the event payload.
+- [x] A plain comment (no flag, no recognized mention/invocation, thread not `engaged`) appends the turn and enqueues **nothing**.
+- [x] A turn that requests the agent — explicit flag, `@agent`, a resolved `@<subagent>`, or a resolved `/<skill>` — enqueues `comment.created`.
+- [x] A turn in a thread with `agent: engaged` enqueues `comment.created` **unless** the thread is `resolved` or the request carries the "note only" flag.
+- [x] ~~A form answer (`formAnswer` on the turn request) appends a structured answer turn (chosen option + optional note) and enqueues `form.respond`.~~ **Struck** — sprint-006 Adjudication 3: no contract surface exists; CONTRACT-007 + SERVER-016 own it, sequenced before UI-008.
+- [x] `POST /api/threads/:id/resolve` and `/reopen` flip `status` (idempotent), auto-commit, re-project, invalidate.
+- [x] `POST /api/threads/:id/seen` updates `.corpus/seen.json`, re-projects the `seen` table, and broadcasts an invalidation; it makes **no** git commit (runtime state).
+- [x] `DELETE /api/threads/:id/turns/:ts` is **user-only** (agent actor → 403) and cascades: deleting the last remaining turn deletes the thread, and deleting a thread removes its anchor entry from the parent's frontmatter.
+- [x] **`DELETE /api/docs/:id` on a `th_*` id** (there is no `DELETE /api/threads/:id` — Open Conflict 6) deletes the thread file and removes its anchor entry from the parent (user-only, same cascade rules). SERVER-005's document branch — threads survive their parent as orphaned records — is unchanged.
+- [x] `POST /api/capture` creates the inbox document **and** its agent-requested whole-document filing thread in one call and one commit.
+- [x] `GET /api/threads/:id` returns the thread frontmatter plus its ordered turns (**`author`, `ts`, `body`** — `TurnSchema` has no `idx`, and anchor *context* is `GET /api/docs/:parentId`'s `ResolvedAnchor[]`; Open Conflict 7, the contract wins).
+- [x] Every mutating endpoint re-projects the affected rows synchronously before responding (read-your-write per §9.1) and emits an invalidation.
 
 ## Sprint-006 Adjudications (binding, 2026-07-27)
 
@@ -57,13 +57,16 @@ Orchestrator decisions — implement exactly these; full reasoning in `issues/sp
 ### Files to Create/Modify
 - `apps/server/src/threads/routes.ts` — register the CONTRACT-002 thread route definitions against handlers
 - `apps/server/src/threads/create.ts` — three-mode creation + atomic parent-anchor write
-- `apps/server/src/threads/turns.ts` — turn append, monotonic ts, form answers, turn deletion
+- `apps/server/src/threads/turns.ts` — turn append, monotonic ts, ~~form answers~~, multipart parse
+- `apps/server/src/threads/status.ts` — resolve / reopen
 - `apps/server/src/threads/mentions.ts` — `@`/`/` parsing + projection validation
+- `apps/server/src/threads/participation.ts` — the §8 enqueue decision and the `agent` transitions
+- `apps/server/src/threads/events.ts` — the one `comment.created` producer
 - `apps/server/src/threads/cascade.ts` — turn → thread → anchor-entry deletion cascade
 - `apps/server/src/threads/seen.ts` — `.corpus/seen.json` read/write + projection
 - `apps/server/src/capture/capture.ts` — `POST /api/capture` composition (inbox doc + filing thread)
 - `apps/server/src/threads/*.test.ts` — colocated Vitest specs
-- `apps/server/src/app.ts` — mount the thread + capture routes
+- `apps/server/src/app.ts` — mount the thread + capture routes, sharing one document mutex
 
 ### Key Implementation Details
 
@@ -143,24 +146,153 @@ Vitest in `apps/server`, against a temporary workspace fixture (tmp dir, `git in
 10. `GET /api/threads/:id` → JSON with ordered turns matching the file on disk.
 
 ## E2E Verification Log
-_Filled in by the implementing agent as proof-of-work. Must be from real E2E
-testing — no mocks, no test clients. Real application, real requests, real
-interfaces. Include specific commands run, actual outputs observed, and pass/fail
-conclusions. State which model the implementing agent ran on ("implemented on:
-opus | fable")._
+
+**implemented on: opus.** Two-agent relay — a first server-dev agent's connection
+died mid-issue; this agent inherited its uncommitted work (the multi-lane mutex
+and all-or-nothing rollback in `docs/write.ts`, the hex anchor alphabet in
+`core/ids.ts`, `core/anchor-entries.ts`, the `deleteDoc` thread branch in
+`docs/delete.ts`, the `locks/guard.ts` comment correction, the watcher's
+`WATCH_FILES`, and `threads/{mentions,participation,read,title,workspace}.ts`),
+verified it, and built the rest on top. The inherited modules carried **no
+tests**; every test below is this agent's.
+
+**Environment.** Real `corpus init` workspaces under `/tmp/corpus-s006-*`, real
+git repositories, a real server process (`npx tsx apps/server/src/main.ts`) on
+**8905** (and **8906** for the fresh-workspace re-verification). Effects read
+from four independent surfaces: files on disk, `git log`/`git show`, `sqlite3
+.corpus/cache.db`, and `ls .corpus/queue/pending/` (`evt_*.json` only). Both
+servers stopped by pid; `lsof -nP -iTCP:8905/8906 -sTCP:LISTEN` empty afterwards;
+scratch directories removed.
 
 ### Reproduction (bugs only)
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+
+Two defects were found **by E2E**, after the unit suites were green. Both are
+reproductions in the strict sense — the failing behaviour was observed against
+the real running server first.
+
+**BUG-1 — `/comment` did not resolve against the seeded skill.**
+
+```
+$ curl -sS -X POST localhost:8905/api/threads/th_tuungucc/turns -H "$A" \
+    -d '{"body":"@researcher please dig, then /comment on it — and ask @nobody too"}'
+$ cat .corpus/queue/pending/evt_k7uetqiltpo3.json   # payload
+  "mentions": [ { "name": "researcher", "docId": "doc_agentdef9aac2cc9", "status": "open" } ],
+  "skills": [],
+  "unresolved": [ "/comment", "@nobody" ]
+```
+
+`sqlite3 … "select id,type,title from documents where type='skill'"` →
+`doc_skillcomment|skill|Comment`. The seeded `SKILL.md` carries **both** Claude
+Code's `name: comment` and Corpus's `title: Comment` (§7 — "the two sets coexist
+in the same YAML block"); the projection keeps the title and has no `name`
+column, so a resolver matching `documents.title` answers `/comment` with nothing.
+The unit suite had passed because its fixture skill had only a `name`.
+
+**Fix**: `invocableName(path)` derives the name a document is *invocable* by from
+its root (`.claude/skills/<name>/SKILL.md`, `.claude/agents/<name>.md`) — the
+same name Claude Code discovers it as — and `parseMentions` indexes each type's
+documents by invocable name **and** title, case-insensitively, once per sigil.
+
+**BUG-2 — the watcher never saw `.corpus/seen.json` appear.**
+
+```
+$ sqlite3 .corpus/cache.db "select count(*) from seen"     # 1, written via the API
+$ node -e "…add th_gqs5kplh to .corpus/seen.json…"          # out-of-band, in place
+$ sleep 4; sqlite3 .corpus/cache.db "select thread_id,last_seen_ts from seen"
+th_45bvy7cx|2026-07-27T11:38:03Z                            # unchanged — the edit was invisible
+```
+
+Isolated with a chokidar probe using the watcher's own predicate:
+
+```
+parent ignored  : []            # file absent at start, `.corpus` rejected by `isIgnoredEntry`
+parent exempted : ["add","change"]
+```
+
+To notice a file that does not exist yet, chokidar must watch its **parent** —
+and `.corpus` is dot-prefixed, so `ignored: (p) => !rootSet.has(p) &&
+isIgnoredEntry(basename(p))` rejected it and the watch was never established.
+The inherited `WATCH_FILES` work therefore closed the sprint-004 gap only for a
+workspace whose `seen.json` already existed; a fresh one — every real one — never
+saw its first mark-seen until a restart. **Fix**: each watched file's directory
+joins the exemption set. The regression test (`watcher.test.ts` → "notices read
+state appearing for the first time") was confirmed to fail without the fix and
+pass with it.
 
 ### Post-Implementation Verification
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+
+Server restarted after each fix. Ids below are verbatim from the runs.
+
+| # | What | Evidence |
+| - | ---- | -------- |
+| 1 | **Anchored creation, one commit, two files** | `201 {anchorId:"anc_f1396aae", eventId:"evt_ve44au72sit4"}`; parent gained exactly one `anchors` key whose `{exact,prefix,suffix}` round-trips byte-for-byte; `git log -1 --stat` → `comment: new thread on doc_s23gqi4m (th_45bvy7cx) by user`, 2 files changed |
+| 2 | **§6 frontmatter** | `id/type/title/created/updated/tags/status/parent/anchor/agent` in §6's key order; `created == updated`; body is exactly `## user · 2026-07-27T11:33:58Z` + the request body |
+| 3 | **Whole-document / standalone** | `anchorId:null`, `anchor:null`; standalone also `parent:null`; parent's `anchors` unchanged (still one key); commit touches only the thread file |
+| 4 | **Refusals** | unknown parent → `404`; whitespace-only `exact` → `400 {"issues":[{"path":"selector.exact",…}]}`; neither wrote anything |
+| 5 | **Enqueue matrix** | plain turn → `eventId:null`, pending unchanged; agent reply on a `requested` thread → `agent: engaged` (Adjudication 4); plain user turn in the engaged thread → `evt_ed265yzdxpto`; `requestsAgent:false` on `"@agent for the record"` → `null` |
+| 6 | **Monotonic stamps** | `## user · …11:33:58Z`, `## agent · …11:34:44Z`, `## user · …11:34:45Z`, `## user · …11:34:46Z` — distinct and increasing inside one wall-clock second |
+| 7 | **Mentions/invocations (after BUG-1)** | payload `mentions:[{researcher, doc_agentdef9aac2cc9, open}]`, `skills:[{comment, doc_skillcomment, open}]`, `unresolved:["@nobody"]` — the `agent-def` reached the projection through the **watcher**, ~4 s after the file was written |
+| 8 | **Resolve / reopen** | resolve → `200 {status:"resolved"}`, one commit; second resolve → `200`, **no** commit and **no** SSE frame; plain turn in the resolved engaged thread → `eventId:null`; `requestsAgent:true` → `evt_zgtn67vc3mqz` (Adjudication 5); reopen → `200 {status:"open"}` |
+| 9 | **Seen** | bare POST → `{"lastSeenTs":"2026-07-27T11:38:03Z","unread":false}`; `.corpus/seen.json` is the flat map; an older mark answers the **recorded** one unchanged; `git status --porcelain` clean of it; `select * from seen` current immediately |
+| 10 | **SSE keys** | `curl -N /events` over resolve/turn/turn/reopen/seen → 6 frames, every key from the published vocabulary, none carrying data: `[["docs"],["docs","th_…"],["threads","th_…"],["docs","doc_…"]]` and `[["queue"],["jobs"]]` |
+| 11 | **Turn deletion** | agent actor → `403 {"code":"forbidden","message":"turn deletion is user-only; the agent never deletes turns"}`; user → `200 {deletedTurn:true, deletedThread:false, removedAnchor:null, parentId:"doc_s23gqi4m"}`; the other four stamps unchanged. A raw (unencoded) `:` in the path → `404`, so clients must encode as the route says |
+| 12 | **Last-turn cascade** | `200 {deletedThread:true, removedAnchor:"anc_5bfc6b58", parentId:"doc_s23gqi4m"}`; thread file gone; the parent's *other* anchor untouched; **one** commit staging both paths; `git show HEAD~1:data/threads/th_d3qd2gcc.md` intact; `threads`/`anchors` rows gone |
+| 13 | **`DELETE /api/docs/<th_*>`** | agent → `403`; user → `200`, thread file gone, parent's anchor key gone, one commit staging both paths |
+| 14 | **Capture, via the generated typed client** | `client.capture(...)` (real multipart, `uploadCapture`) → `{docId:"doc_tgkddufu", threadId:"th_hv22c35h", eventId:"evt_slxsheuhnsmd"}`; `data/docs/inbox/call-the-bank-about-the-rate-lock.md`; filing thread `agent: requested`, one `## user` turn carrying the text **and** the filing ask; one pending event; one commit staging both files |
+| 15 | **Capture: dedupe + note-only** | the same text again → different `docId`, `…-2.md`, first file untouched; `requestsAgent:"false"` → `eventId:null`, both files still created, thread `agent: none` |
+| 16 | **Attachments refused honestly** | `client.uploadTurn({files:[File]})` → `400 [{"path":"files","message":"attachments are not accepted yet: ingest and serving land in SERVER-010"}]`, nothing written. `DEFERRED → SERVER-010` |
+| 17 | **Typed client round-trip** | `client.api.GET("/api/threads/{id}")` → `{id, title:"Re: call the bank about the rate lock", agent:"requested", parent:"doc_tgkddufu", turns:2}` |
+| 18 | **Anchor context** | `GET /api/docs/doc_s23gqi4m` → `ResolvedAnchor` `{anchorId, selector, threadId, threadStatus, range:{start:13,end:43}, orphaned:false}` |
+| 19 | **A parked long-poll wakes** | `GET /api/queue/idle?timeout=30` held open; an `@agent` turn on another connection returned it `200` with `comment.created` — `total=2.16s` against a 2 s sleep, so ~0.16 s wake. Proves the thread path went through `server.queue.enqueue`, not a file drop |
+| 20 | **§14 hook rejection** | `.git/hooks/pre-commit` exiting 1 → `201` with `warnings:[{"code":"commit_failed","detail":"git commit failed: doc check: refusing"}]`, file **stands** on disk, 0 commits added, and the log line `"mutation completed with a warning" … "the file mutation stands; a §14 warning never fails a write"` |
+| 21 | **Read state out of band (after BUG-2)** | fresh workspace on 8906, `seen.json` absent at boot; API mark → row present; out-of-band append → both rows within ~3 s, **no restart** |
+| 22 | **Latency (TEST-76)** | 27 documents projected, 10 iterations each, wall clock: create `median 76 ms / p95 114 ms`, turn append `median 107 ms / p95 110 ms`, turn delete `median 105 ms / p95 110 ms`. No call above 1 s |
+
+**Event payload shape produced (the Integration Points contract with AGENT-002),
+verbatim:**
+
+```json
+{
+  "id": "evt_ve44au72sit4",
+  "type": "comment.created",
+  "created": "2026-07-27T11:33:58Z",
+  "source": "thread",
+  "payload": {
+    "threadId": "th_45bvy7cx",
+    "parentId": "doc_s23gqi4m",
+    "turnTs": "2026-07-27T11:33:58Z",
+    "mentions": [{ "name": "researcher", "docId": "doc_agentdef9aac2cc9", "status": "open" }],
+    "skills": [{ "name": "comment", "docId": "doc_skillcomment", "status": "open" }],
+    "unresolved": ["@nobody"]
+  },
+  "status": "pending",
+  "updated": "2026-07-27T11:33:58Z"
+}
+```
+
+`source` is `thread` for the thread endpoints and `capture` for `POST
+/api/capture`; the server cannot honestly say "ui" or "cli" (both are HTTP
+clients of the same route and neither identifies itself).
+
+**Title truncation constants**: `ANCHOR_TITLE_QUOTE_LENGTH = 60`
+(`Re: "<first 60 chars>"`), `STANDALONE_TITLE_LENGTH = 80`,
+`UNTITLED_THREAD = "Untitled thread"`, `CAPTURE_TITLE_LENGTH = 80`.
+
+**Deferrals recorded**: attachments on turns and captures → `DEFERRED →
+SERVER-010` (multipart parse path implemented, `files` refused with a `400`
+naming it). Forms → struck (Adjudication 3), not stubbed. `deferredEventId` is
+untouched (Open Conflict 14).
+
+**Gate**: `npm run build`, `npm run lint`, `npm run format:check`, `npm run
+typecheck` all clean; `vitest run --coverage` → **3005 tests, 169 files, all
+passing**, 98.69 % lines / 94.88 % branches / 99.44 % functions (gate 90 %).
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, cross-domain surface)

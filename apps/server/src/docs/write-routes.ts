@@ -20,7 +20,12 @@ import { deleteDocument } from "./delete.js";
 import { moveDocument } from "./move.js";
 import { loadDocument, toWireDoc } from "./read.js";
 import { updateDocument } from "./update.js";
-import { createDocumentMutex, type DocsWorkspace, type MutationResult } from "./write.js";
+import {
+  createDocumentMutex,
+  type DocsWorkspace,
+  type DocumentMutex,
+  type MutationResult,
+} from "./write.js";
 
 /**
  * §14 asks a warning to surface three ways — "a warning on the API response, a
@@ -28,7 +33,11 @@ import { createDocumentMutex, type DocsWorkspace, type MutationResult } from "./
  * redundant with the response half: the log survives a client that ignores the
  * field, and it names the document, which a `Warning` on its own does not.
  */
-function reportWarnings(workspace: DocsWorkspace, docId: string, result: MutationResult): void {
+export function reportWarnings(
+  workspace: DocsWorkspace,
+  docId: string,
+  result: MutationResult,
+): void {
   for (const warning of result.warnings) {
     workspace.logger.info("mutation completed with a warning", {
       docId,
@@ -43,12 +52,26 @@ function reportWarnings(workspace: DocsWorkspace, docId: string, result: Mutatio
 /**
  * The response half. Copied rather than passed through because the pipeline
  * holds its warnings readonly while the wire schema infers a mutable array.
+ *
+ * Both halves are exported because the **thread** surface owes §14 the same two
+ * (CONTRACT-006 put `warnings` on its four response shapes): one definition of
+ * what a warning is and one of how it reaches the operator, rather than a second
+ * copy in `threads/` that drifts the first time the shape changes.
  */
-const serializeWarnings = (result: MutationResult): Warning[] => [...result.warnings];
+export const serializeWarnings = (result: MutationResult): Warning[] => [...result.warnings];
 
-export function mountDocWriteRoutes(app: OpenAPIHono, workspace: DocsWorkspace): void {
-  const mutex = createDocumentMutex();
-
+/**
+ * `mutex` is a *parameter* rather than a local because thread writes share it:
+ * anchored thread creation and the deletion cascade rewrite a document's
+ * frontmatter, so they contend with `PUT /api/docs/{id}` for the same file and
+ * must queue in the same lane (SERVER-006). Two mutexes would serialize each
+ * surface against itself and neither against the other.
+ */
+export function mountDocWriteRoutes(
+  app: OpenAPIHono,
+  workspace: DocsWorkspace,
+  mutex: DocumentMutex = createDocumentMutex(),
+): void {
   app.openapi(contractRoutes.getDoc, (c) => {
     const { id } = c.req.valid("param");
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);

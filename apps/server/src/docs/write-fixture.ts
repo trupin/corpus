@@ -15,7 +15,12 @@ import { dirname, join } from "node:path";
 import { createServer, type CorpusServer } from "../app.js";
 import type { ServerConfig } from "../config.js";
 import { sanitizeGitEnv } from "../git/index.js";
-import { openProjection, populateFromFiles, type ProjectionDb } from "../projection/index.js";
+import {
+  createProjectionQueueMirror,
+  openProjection,
+  populateFromFiles,
+  type ProjectionDb,
+} from "../projection/index.js";
 
 export const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 export const AUTH: Record<string, string> = { Authorization: `Bearer ${TOKEN}` };
@@ -51,6 +56,12 @@ export interface WriteWorkspaceOptions {
   readonly git?: boolean | undefined;
   /** Configure a repository identity, so the committer is not the fallback. */
   readonly identity?: boolean | undefined;
+  /**
+   * Sprint label in the scratch directory's name, so a failed run's leftovers
+   * say which issue created them. Defaults to the sprint that wrote this
+   * fixture; SERVER-006's thread suites pass their own.
+   */
+  readonly sprint?: string | undefined;
 }
 
 const serverConfig = (workspaceRoot: string): ServerConfig => ({
@@ -74,7 +85,7 @@ export function createWriteWorkspace(
   // Every fixture repository lives under the sprint's own scratch prefix, and
   // every git invocation below carries an explicit `cwd`: a `git commit` that
   // ran with the wrong working directory would commit into the Corpus repo.
-  const root = mkdtempSync(join(tmpdir(), `corpus-s005-${prefix}-`));
+  const root = mkdtempSync(join(tmpdir(), `corpus-${options.sprint ?? "s005"}-${prefix}-`));
   const workspaceRoot = join(root, "ws");
   mkdirSync(join(workspaceRoot, "data", "docs", "inbox"), { recursive: true });
   mkdirSync(join(workspaceRoot, "data", "threads"), { recursive: true });
@@ -116,6 +127,11 @@ export function createWriteWorkspace(
     now: () => state.clock,
     heartbeatMs: 0,
   });
+  // What `attachProjection` does in production: the queue's `events` table is a
+  // mirror bound after construction, so without this an enqueue lands on disk
+  // and never reaches the projection — a difference a thread test would
+  // otherwise mistake for a missing write.
+  server.queue.attachMirror(createProjectionQueueMirror(db));
 
   const write = (relativePath: string, content: string): void => {
     const abs = join(workspaceRoot, relativePath);

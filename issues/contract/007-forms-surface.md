@@ -32,6 +32,7 @@ Discovered by sprint-006: no `formAnswer` schema and no producer of `form.respon
 
 ## Acceptance Criteria
 
+- [ ] **Rider**: `resolve`/`reopen` responses gain the warnings field (SERVER-006: they return a bare ThreadSummary, so their §14 warnings are log-only today).
 - [ ] **Rider**: `ReapStaleResult` gains `failed: string[]` (QueueService returns it; the CLI cannot report give-ups without it — CLI-004 harvest note).
 - [ ] Form-answer request/response schemas per §8; the submission route declared; `form.respond` payload pinned in the QueueEvent core types.
 - [ ] All standing invariants; artifacts regenerated; round-trips.

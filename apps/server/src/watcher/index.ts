@@ -14,7 +14,7 @@
 export { attachWatcher } from "./attach.js";
 export { GIT_TIMEOUT_MS, MAX_HEAD_BLOB_BYTES, readHeadVersion } from "./git-head.js";
 export type { ReadHeadVersion } from "./git-head.js";
-export { WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
+export { WATCH_FILES, WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
 export type { WatchTarget } from "./paths.js";
 export { reconcileOutOfBandEdit } from "./reconcile-out-of-band.js";
 export type { OutOfBandOutcome, ReconcileOutOfBandOptions } from "./reconcile-out-of-band.js";

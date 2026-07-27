@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
+import { WATCH_FILES, WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
 
 describe("WATCH_ROOTS", () => {
   it("covers every §9.1 root and nothing that is served rather than projected", () => {
@@ -12,6 +12,15 @@ describe("WATCH_ROOTS", () => {
       ".corpus/locks",
       ".corpus/jobs",
     ]);
+  });
+});
+
+describe("WATCH_FILES", () => {
+  // `.corpus/` also holds `cache.db` and the config, which must not be watched,
+  // so read state is followed as a single file rather than by adding a root
+  // (SERVER-006, closing the sprint-004 evaluator's gap).
+  it("follows read state as a bare file, since no root covers it", () => {
+    expect([...WATCH_FILES]).toEqual([".corpus/seen.json"]);
   });
 });
 
@@ -74,6 +83,10 @@ describe("classifyWatchPath", () => {
     });
   });
 
+  it("classifies read state, which projects as one whole-file pass", () => {
+    expect(classifyWatchPath(".corpus/seen.json")).toEqual({ kind: "seen" });
+  });
+
   it.each([
     // Not corpus state at all.
     "data/docs/notes.txt",
@@ -81,7 +94,6 @@ describe("classifyWatchPath", () => {
     ".corpus/cache.db",
     ".corpus/cache.db-wal",
     ".corpus/config.json",
-    ".corpus/seen.json",
     // A thread is flat; a `.md` next to a `SKILL.md` is not a skill.
     "data/threads/nested/th_a1b2c3.md",
     ".claude/skills/orchestrate/reference.md",

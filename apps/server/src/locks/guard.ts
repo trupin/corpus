@@ -8,16 +8,28 @@
 // hand, and a guard that has to re-parse the request is a guard that can
 // disagree with the handler about what is being written.
 //
-// Two things are deliberately **not** guarded:
+// **Reads are never guarded.** `GET /api/docs` and `GET /api/docs/{id}` are
+// never blocked. §7 scopes locks to editing; a banner tells the reader who is
+// editing, it does not hide the document.
 //
-//   - **Reads.** `GET /api/docs` and `GET /api/docs/{id}` are never blocked. §7
-//     scopes locks to editing; a banner tells the reader who is editing, it does
-//     not hide the document.
-//   - **Thread creation and turns** (SERVER-006). Commenting is not editing:
-//     §7's lock is the edit lock, and posting a comment on a document the agent
-//     is editing must keep working. The anchor entry that thread creation writes
-//     into the parent's frontmatter rides that exemption — it is part of
-//     commenting, not an edit of the document's content.
+// **The thread surface splits on whether the parent is actually written**
+// (sprint-006 Adjudication 1, which corrects what this comment claimed before
+// SERVER-006 made the disagreement observable). Commenting is not editing, so
+// most of the surface is exempt — but an anchor entry *is* a write to the
+// parent's frontmatter, and the contract declares `423` on the two verbs that
+// perform one:
+//
+//   - **Never guarded**: turn append, resolve, reopen, mark-seen, and
+//     whole-document or standalone thread creation. None of them touches the
+//     parent, and the contract declares no `423` for any of them.
+//   - **Guarded on the parent**: **anchored** thread creation, and any deletion
+//     that cascades to removing an anchor entry — deleting a thread's last turn,
+//     or deleting an anchored thread through `DELETE /api/docs/{id}`. Those
+//     genuinely mutate the other party's locked document.
+//
+// The guarded verbs call `assertWritable` with the **parent's** id, not the
+// thread's: the lock that can refuse the write is the one held on the file being
+// written.
 
 import type { MiddlewareHandler } from "hono";
 import { ACTORS, ACTOR_HEADER, DEFAULT_ACTOR, type Actor } from "@corpus/contract";

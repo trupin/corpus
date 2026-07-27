@@ -146,9 +146,9 @@ export class QueueService {
 
   /**
    * Makes an event pending. The one entry point for producers inside the server
-   * (SERVER-006's `@agent` comments, form answers, subagent wake-backs): write,
-   * mirror, invalidate, wake. Re-enqueueing a known id overwrites its pending
-   * file rather than creating a second event.
+   * (`threads/events.ts`'s `comment.created`, from thread creation, turn append
+   * and capture): write, mirror, invalidate, wake. Re-enqueueing a known id
+   * overwrites its pending file rather than creating a second event.
    */
   async enqueue(input: EnqueueInput): Promise<StoredEvent> {
     const at = formatInstant(this.now());

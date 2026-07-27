@@ -27,10 +27,24 @@ export const WATCH_ROOTS = [
   ".corpus/jobs",
 ] as const;
 
+/**
+ * Individual **files** the watcher follows, as opposed to the directory roots
+ * above. `.corpus/seen.json` is a bare file directly under `.corpus/`, so no
+ * root covers it and its own directory holds `cache.db` and the config — things
+ * that must not be watched. Watching the single file closes the sprint-004
+ * evaluator's gap: an out-of-band edit to read state now re-projects like every
+ * other root instead of needing a restart (SERVER-006 AC, TEST-52).
+ *
+ * These are never `mkdir`ed — a missing file is a file chokidar picks up when it
+ * appears, and creating a *directory* by that name would break the projector.
+ */
+export const WATCH_FILES = [".corpus/seen.json"] as const;
+
 /** `.corpus/` subdirectory names, mirroring `projection/project-runtime.ts`. */
 const QUEUE_SEGMENT = ".corpus/queue";
 const LOCKS_SEGMENT = ".corpus/locks";
 const JOBS_SEGMENT = ".corpus/jobs";
+const SEEN_PATH = ".corpus/seen.json";
 
 const EVENT_FILE = /^(evt_[A-Za-z0-9]+)\.json$/;
 const JOB_FILE = /^(evt_[A-Za-z0-9]+)\.jsonl$/;
@@ -42,7 +56,9 @@ export type WatchTarget =
   | { readonly kind: "document"; readonly root: DocumentRoot }
   | { readonly kind: "queue-event"; readonly status: QueueEventStatus; readonly id: string }
   | { readonly kind: "lock"; readonly docId: string }
-  | { readonly kind: "job"; readonly eventId: string };
+  | { readonly kind: "job"; readonly eventId: string }
+  /** `.corpus/seen.json` — read state, projected as one whole-file pass (§7). */
+  | { readonly kind: "seen" };
 
 /**
  * Editor debris and files that are not corpus state. Everything dot-prefixed is
@@ -64,6 +80,8 @@ export function isIgnoredEntry(basename: string): boolean {
 export function classifyWatchPath(relativePath: string): WatchTarget | null {
   const documentRoot = classifyPath(relativePath);
   if (documentRoot !== null) return { kind: "document", root: documentRoot };
+
+  if (relativePath === SEEN_PATH) return { kind: "seen" };
 
   const segments = relativePath.split("/");
   const filename = segments.at(-1);

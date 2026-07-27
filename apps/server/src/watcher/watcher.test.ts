@@ -3,7 +3,15 @@
 // prove the simulation.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -416,6 +424,71 @@ describe("the watcher — runtime roots", () => {
       expect(rows("SELECT event_id, last_line FROM jobs")).toEqual([
         { event_id: "evt_seed00000000", last_line: "started" },
       ]);
+    }, WAIT);
+  });
+
+  // `.corpus/seen.json` is a bare file directly under `.corpus/`, which no root
+  // covers — the directory also holds `cache.db` and the config, which must not
+  // be watched. SERVER-006 follows the single file, closing the sprint-004
+  // evaluator's note that read state needed a restart to re-project.
+  it("re-projects read state edited out of band, with no restart", async () => {
+    write(".corpus/seen.json", JSON.stringify({ th_a1b2c3d4: "2026-07-19T10:05:00Z" }));
+    await startWatching();
+
+    write(
+      ".corpus/seen.json",
+      JSON.stringify({
+        th_a1b2c3d4: "2026-07-19T10:05:00Z",
+        th_e5f6h7j8: "2026-07-19T11:00:00Z",
+      }),
+    );
+
+    await waitForKey(["docs"]);
+    await vi.waitFor(() => {
+      expect(rows("SELECT thread_id, last_seen_ts FROM seen ORDER BY thread_id")).toEqual([
+        { thread_id: "th_a1b2c3d4", last_seen_ts: "2026-07-19T10:05:00Z" },
+        { thread_id: "th_e5f6h7j8", last_seen_ts: "2026-07-19T11:00:00Z" },
+      ]);
+    }, WAIT);
+  });
+
+  // The condition a real server boots in, and the one a seeded fixture hides:
+  // `.corpus/seen.json` does not exist yet, so chokidar can only notice it by
+  // watching `.corpus` — a dot-prefixed directory the ignore predicate rejects
+  // unless it is exempted. Without the exemption the first mark-seen is
+  // invisible until a restart, which is exactly the gap this closes.
+  it("notices read state appearing for the first time", async () => {
+    await startWatching();
+    expect(existsSync(abs(".corpus/seen.json"))).toBe(false);
+
+    write(".corpus/seen.json", JSON.stringify({ th_a1b2c3d4: "2026-07-19T10:05:00Z" }));
+
+    await waitForKey(["docs"]);
+    await vi.waitFor(() => {
+      expect(rows("SELECT thread_id FROM seen")).toEqual([{ thread_id: "th_a1b2c3d4" }]);
+    }, WAIT);
+
+    // …and keeps following it once it is there.
+    write(
+      ".corpus/seen.json",
+      JSON.stringify({
+        th_a1b2c3d4: "2026-07-19T10:05:00Z",
+        th_e5f6h7j8: "2026-07-19T11:00:00Z",
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(rows("SELECT thread_id FROM seen")).toHaveLength(2);
+    }, WAIT);
+  });
+
+  it("empties the `seen` table when read state is deleted out of band", async () => {
+    write(".corpus/seen.json", JSON.stringify({ th_a1b2c3d4: "2026-07-19T10:05:00Z" }));
+    await startWatching();
+
+    unlinkSync(abs(".corpus/seen.json"));
+
+    await vi.waitFor(() => {
+      expect(rows("SELECT thread_id FROM seen")).toEqual([]);
     }, WAIT);
   });
 });

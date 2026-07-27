@@ -20,7 +20,9 @@ import {
   toHttpError,
   toValidationIssues,
 } from "./errors.js";
-import { mountDocsRoutes } from "./docs/index.js";
+import { mountCaptureRoutes } from "./capture/index.js";
+import { createDocumentMutex, mountDocsRoutes, type DocsWorkspace } from "./docs/index.js";
+import { mountThreadRoutes, type ThreadsWorkspace } from "./threads/index.js";
 import {
   createInvalidationBus,
   createSseHub,
@@ -72,8 +74,10 @@ export interface CorpusServer {
   readonly logger: Logger;
   /**
    * The file-backed event queue (SPEC.md §7). Exposed so in-process producers —
-   * SERVER-006's `@agent` comments, form answers, subagent wake-backs — enqueue
-   * through the same path the HTTP surface uses, waking parked long-polls.
+   * thread creation, turn append and capture, and later subagent wake-backs —
+   * enqueue through the same path the HTTP surface uses, waking parked
+   * long-polls. A file dropped into `pending/` would land the same bytes and
+   * leave the agent asleep.
    */
   readonly queue: QueueService;
   /**
@@ -287,19 +291,34 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     lockGuard = guard;
     mountLockRoutes(app, lockService);
 
-    mountDocsRoutes(app, deps.projection, {
+    const docsWorkspace: DocsWorkspace = {
+      workspaceRoot: config.workspaceRoot,
+      projection: deps.projection,
+      git,
+      selfWrites,
+      bus,
+      logger,
       now,
-      workspace: {
-        workspaceRoot: config.workspaceRoot,
-        projection: deps.projection,
-        git,
-        selfWrites,
-        bus,
-        logger,
-        now,
-        assertWritable: (docId, actor) => guard.assertWritable(docId, actor),
-      },
-    });
+      assertWritable: (docId, actor) => guard.assertWritable(docId, actor),
+    };
+    // One mutex across both surfaces. Anchored thread creation and the deletion
+    // cascade rewrite a *document's* frontmatter, so they contend with
+    // `PUT /api/docs/{id}` for the same file and must queue in the same lane;
+    // two mutexes would serialize each surface against itself and neither
+    // against the other (SERVER-006).
+    const mutex = createDocumentMutex();
+    mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace });
+
+    const threadsWorkspace: ThreadsWorkspace = {
+      ...docsWorkspace,
+      corpusDir: config.corpusDir,
+      // The one enqueue path: `QueueService.enqueue` writes the pending file,
+      // mirrors it, invalidates and — the part a file drop cannot do — wakes
+      // every parked `queue idle` (SPEC.md §7).
+      enqueue: (input) => queue.enqueue(input),
+    };
+    mountThreadRoutes(app, threadsWorkspace, mutex);
+    mountCaptureRoutes(app, threadsWorkspace, mutex);
 
     mountJobRoutes(
       app,

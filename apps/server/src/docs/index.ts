@@ -10,7 +10,13 @@
 export { actorOf } from "./actor.js";
 export { SKILLS_ARCHIVED_ROOT, SKILLS_ROOT, setArchived, skillDocumentsUnder } from "./archive.js";
 export { MAX_SLUG_ATTEMPTS, allocatePath, createDocument } from "./create.js";
-export { AGENT_DELETE_MESSAGE, deleteDocument } from "./delete.js";
+export {
+  AGENT_DELETE_MESSAGE,
+  anchoredThreadParent,
+  deleteDocument,
+  deleteDocumentLocked,
+} from "./delete.js";
+export type { DeleteOutcome } from "./delete.js";
 export { moveDocument } from "./move.js";
 export {
   findDocumentRow,
@@ -25,13 +31,15 @@ export type { DocumentRow, LoadedDocument } from "./read.js";
 export { findTemplate } from "./templates.js";
 export type { TemplatePrefill } from "./templates.js";
 export { changedFields, updateDocument } from "./update.js";
-export { mountDocWriteRoutes } from "./write-routes.js";
+export { mountDocWriteRoutes, reportWarnings, serializeWarnings } from "./write-routes.js";
 export {
   CREATE_LANE,
+  SEEN_LANE,
   WARNING_DETAIL_LENGTH,
   WARNING_DETAIL_LINES,
   allowAllWrites,
   createDocumentMutex,
+  runInLanes,
   runMutation,
   validateBeforeWrite,
   validationError,

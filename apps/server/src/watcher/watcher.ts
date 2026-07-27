@@ -15,7 +15,7 @@
 //   holds the id would be refused as a duplicate, and the document would vanish.
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { QUEUE_EVENT_STATUSES, type QueryKey } from "@corpus/contract";
 import chokidar, { type FSWatcher } from "chokidar";
 import {
@@ -37,6 +37,7 @@ import {
   projectEventFile,
   projectJob,
   projectLock,
+  projectSeen,
   readDocumentIdentity,
   removeDocument,
   removeEvent,
@@ -47,7 +48,7 @@ import {
   type ProjectionDb,
 } from "../projection/index.js";
 import type { ReadHeadVersion } from "./git-head.js";
-import { WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
+import { WATCH_FILES, WATCH_ROOTS, classifyWatchPath, isIgnoredEntry } from "./paths.js";
 import { reconcileOutOfBandEdit } from "./reconcile-out-of-band.js";
 import type { SelfWriteRegistry } from "./self-writes.js";
 
@@ -109,7 +110,23 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     // first skill is archived.
     mkdirSync(root, { recursive: true });
   }
-  const rootSet = new Set(roots);
+  // Watched files are *not* created: `mkdirSync` on `.corpus/seen.json` would
+  // put a directory where the projector expects a JSON file. chokidar follows a
+  // path that does not exist yet and fires `add` when it appears, which is
+  // exactly what the first mark-seen produces.
+  const files = WATCH_FILES.map((file) => join(workspaceRoot, ...file.split("/")));
+  // Exempt from {@link isIgnoredEntry}: the watched roots, the watched files,
+  // **and each watched file's directory**.
+  //
+  // The last one is not decoration. To notice a file that does not exist yet,
+  // chokidar has to watch its parent — and `.corpus` is dot-prefixed, so the
+  // ignore predicate below rejects it and the watch is never established. The
+  // symptom is precisely the sprint-004 gap this issue exists to close, and it
+  // hides from any test that seeds the file first: a workspace whose
+  // `.corpus/seen.json` already exists watches it correctly, and a fresh one
+  // never sees its first mark-seen at all. Directory roots do not need this —
+  // chokidar watches them directly, not through their parents.
+  const rootSet = new Set([...roots, ...files, ...files.map((file) => dirname(file))]);
 
   const pending = new Map<string, WatchEventKind>();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -266,6 +283,16 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         else projectJob(db, corpusDir, target.eventId);
         keys.push(JOBS_KEY, jobKey(target.eventId));
         return;
+      case "seen":
+        // A whole-file pass: `seen.json` is a flat map with no per-thread event
+        // to key on, and the file is small. `projectSeen` tolerates a missing or
+        // malformed file, so an unlink and a half-written save are both handled.
+        projectSeen(db, corpusDir);
+        // Which threads changed is not knowable without diffing, so the
+        // collection key is the honest announcement: it is what every unread
+        // badge and the Attention view read (`query-keys.ts` names mark-seen).
+        keys.push(DOCS_KEY);
+        return;
     }
   };
 
@@ -313,7 +340,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     schedule();
   };
 
-  const watcher: FSWatcher = chokidar.watch(roots, {
+  const watcher: FSWatcher = chokidar.watch([...roots, ...files], {
     ignoreInitial: true,
     awaitWriteFinish: { ...AWAIT_WRITE_FINISH },
     // The roots themselves carry dot-prefixed segments (`.corpus`, `.claude`);

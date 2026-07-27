@@ -264,10 +264,12 @@ export function projectLocksDir(
 }
 
 /**
- * `.corpus/seen.json` is a flat map of thread id → last-seen instant. The shape
- * is pinned here because nothing writes the file yet (SERVER-006 owns
- * `POST /api/threads/:id/seen`); a missing or malformed file projects an empty
- * table with a warning, because read state is not the corpus.
+ * `.corpus/seen.json` is a flat map of thread id → last-seen instant, written by
+ * `POST /api/threads/{id}/seen` (`threads/seen.ts`) and followed by the watcher
+ * as a single watched file, so an out-of-band edit re-projects like every other
+ * root. A missing or malformed file projects an empty table with a warning,
+ * because read state is not the corpus and refusing to answer would be worse
+ * than answering "nothing has been read".
  */
 export function projectSeen(db: ProjectionDb, corpusDir: string): number {
   db.sqlite.exec("DELETE FROM seen");

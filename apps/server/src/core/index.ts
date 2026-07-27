@@ -10,6 +10,7 @@
  * the filesystem, git and the database.
  */
 
+export * from "./anchor-entries.js";
 export * from "./check.js";
 export * from "./code.js";
 export * from "./document.js";

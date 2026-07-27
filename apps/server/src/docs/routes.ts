@@ -4,7 +4,7 @@ import type { ProjectionDb } from "../projection/index.js";
 import { queryDocs } from "./query.js";
 import { folderTree } from "./tree.js";
 import { mountDocWriteRoutes } from "./write-routes.js";
-import type { DocsWorkspace } from "./write.js";
+import { createDocumentMutex, type DocsWorkspace, type DocumentMutex } from "./write.js";
 
 export interface DocsRoutesOptions {
   /** Injected so staleness and `due` keywords are testable against a fixed clock. */
@@ -15,6 +15,12 @@ export interface DocsRoutesOptions {
    * a unit test that needs no workspace on disk wants.
    */
   readonly workspace?: DocsWorkspace | undefined;
+  /**
+   * The per-document write lane, shared with the thread surface so a thread
+   * write and a document write to the same file queue rather than race
+   * (SERVER-006). Omitted, the document surface gets a private one.
+   */
+  readonly mutex?: DocumentMutex | undefined;
 }
 
 /**
@@ -40,5 +46,7 @@ export function mountDocsRoutes(
 
   app.openapi(contractRoutes.getTree, (c) => c.json(folderTree(projection), 200));
 
-  if (options.workspace !== undefined) mountDocWriteRoutes(app, options.workspace);
+  if (options.workspace !== undefined) {
+    mountDocWriteRoutes(app, options.workspace, options.mutex ?? createDocumentMutex());
+  }
 }

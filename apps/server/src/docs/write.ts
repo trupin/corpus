@@ -13,6 +13,9 @@
 // - **Validation runs before anything touches disk.** A rejected mutation
 //   leaves the workspace byte-for-byte as it was — no partial write, no orphan
 //   temp file, no commit.
+// - **A multi-file plan is all-or-nothing.** Anchored thread creation writes two
+//   files; if the second fails, the first is restored before the error
+//   propagates, so an anchor entry can never outlive the thread it names (§6).
 // - **The commit is allowed to fail.** SPEC.md §14: a workspace hook that
 //   rejects the commit does not roll back the file, because the file is the
 //   source of truth. The failure surfaces loudly instead.
@@ -29,6 +32,7 @@ import {
   fsyncSync,
   mkdirSync,
   openSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -359,25 +363,62 @@ function registerSelfWrites(workspace: DocsWorkspace, operation: FileOperation):
   }
 }
 
-function applyOperation(workspace: DocsWorkspace, operation: FileOperation): void {
+/** Restores what one applied operation replaced; see {@link applyOperation}. */
+type Undo = () => void;
+
+/**
+ * Put a path back the way it was found. `previous` is `null` for a path that did
+ * not exist, which is undone by removing whatever the operation created.
+ */
+function restore(workspace: DocsWorkspace, path: string, previous: string | null): void {
+  const target = abs(workspace, path);
+  if (previous === null) {
+    workspace.selfWrites.record(target, null);
+    rmSync(target, { force: true });
+    return;
+  }
+  workspace.selfWrites.record(target, previous);
+  writeFileAtomically(target, previous);
+}
+
+const readIfPresent = (absPath: string): string | null =>
+  existsSync(absPath) ? readFileSync(absPath, "utf8") : null;
+
+function applyOperation(workspace: DocsWorkspace, operation: FileOperation): Undo {
   switch (operation.kind) {
-    case "write":
-      writeFileAtomically(abs(workspace, operation.path), operation.content);
-      return;
-    case "remove":
-      rmSync(abs(workspace, operation.path), { force: true });
-      return;
+    case "write": {
+      const target = abs(workspace, operation.path);
+      const previous = readIfPresent(target);
+      writeFileAtomically(target, operation.content);
+      return () => {
+        restore(workspace, operation.path, previous);
+      };
+    }
+    case "remove": {
+      const target = abs(workspace, operation.path);
+      const previous = readIfPresent(target);
+      rmSync(target, { force: true });
+      return () => {
+        restore(workspace, operation.path, previous);
+      };
+    }
     case "renameFile": {
       const target = abs(workspace, operation.to);
       mkdirSync(dirname(target), { recursive: true });
       renameSync(abs(workspace, operation.from), target);
-      return;
+      return () => {
+        workspace.selfWrites.record(target, null);
+        workspace.selfWrites.record(abs(workspace, operation.from), operation.content);
+        renameSync(target, abs(workspace, operation.from));
+      };
     }
     case "renameDir": {
       const target = abs(workspace, operation.to);
       mkdirSync(dirname(target), { recursive: true });
       renameSync(abs(workspace, operation.from), target);
-      return;
+      return () => {
+        renameSync(target, abs(workspace, operation.from));
+      };
     }
   }
 }
@@ -439,11 +480,47 @@ export function createDocumentMutex(): DocumentMutex {
 }
 
 /**
- * The key creates serialize under. Two concurrent creates can choose the same
- * filename before either has written it, so they take one lane; edits to
- * distinct documents never contend.
+ * Lane keys that are not document ids. Both begin with U+0000, which no id and
+ * no path can contain, so a reserved lane can never be shadowed by a real
+ * document. Written as an escape rather than as a raw byte: a literal NUL in a
+ * source file makes git's own heuristics call it binary once it lands in the
+ * first few kilobytes, and an invisible control character is not something a
+ * reviewer should have to hexdump for.
+ *
+ * {@link CREATE_LANE} is the key creates serialize under — two concurrent
+ * creates can choose the same filename before either has written it, so they
+ * take one lane, while edits to distinct documents never contend.
+ * {@link SEEN_LANE} is the same idea for `.corpus/seen.json`, which is one
+ * file for the whole workspace and therefore one lane (SPEC.md §7).
  */
-export const CREATE_LANE = " create";
+export const CREATE_LANE = "\u0000create";
+export const SEEN_LANE = "\u0000seen";
+
+/**
+ * Hold several lanes at once, for a mutation that writes more than one
+ * document — a thread whose deletion also rewrites its parent's `anchors` map
+ * (SPEC.md §6).
+ *
+ * **Acquisition order is the deadlock discipline**, and it is the caller's to
+ * respect: every composite thread mutation passes `[threadId, parentId]`, in
+ * that order, and nothing anywhere takes the two the other way round.
+ * Duplicates are collapsed, so a (corrupt) thread naming itself as its own
+ * parent waits on itself exactly zero times.
+ */
+export function runInLanes<T>(
+  mutex: DocumentMutex,
+  keys: readonly (string | null | undefined)[],
+  task: () => Promise<T>,
+): Promise<T> {
+  const lanes = [
+    ...new Set(keys.filter((key): key is string => key !== null && key !== undefined)),
+  ];
+  const enter = (index: number): Promise<T> => {
+    const key = lanes[index];
+    return key === undefined ? task() : mutex.run(key, () => enter(index + 1));
+  };
+  return enter(0);
+}
 
 export async function runMutation(
   workspace: DocsWorkspace,
@@ -475,9 +552,32 @@ export async function runMutation(
     }
   }
 
-  for (const operation of plan.operations) {
-    registerSelfWrites(workspace, operation);
-    applyOperation(workspace, operation);
+  // A plan that touches more than one path is all-or-nothing. Anchored thread
+  // creation writes the parent's frontmatter *and* the new thread file
+  // (SPEC.md §6, SERVER-006); a failure between the two would leave an anchor
+  // pointing at a conversation that does not exist — the one state §6 says must
+  // never be observable. A single-operation plan needs nothing: every write
+  // here is a rename over the target, so it either landed whole or not at all.
+  const undo: Undo[] = [];
+  try {
+    for (const operation of plan.operations) {
+      registerSelfWrites(workspace, operation);
+      undo.push(applyOperation(workspace, operation));
+    }
+  } catch (error) {
+    for (const rollback of undo.reverse()) {
+      try {
+        rollback();
+      } catch (rollbackError) {
+        // The mutation already failed; a failed rollback is worse news, not a
+        // different outcome. Report it and keep unwinding the rest.
+        workspace.logger.error("could not roll back a partial mutation", {
+          docId: request.docId,
+          error: String(rollbackError),
+        });
+      }
+    }
+    throw error;
   }
 
   const commit =
