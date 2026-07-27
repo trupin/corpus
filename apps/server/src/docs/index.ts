@@ -22,7 +22,7 @@ export {
   wireFrontmatter,
 } from "./read.js";
 export type { DocumentRow, LoadedDocument } from "./read.js";
-export { TEMPLATE_RESERVED_KEYS, findTemplate } from "./templates.js";
+export { findTemplate } from "./templates.js";
 export type { TemplatePrefill } from "./templates.js";
 export { changedFields, updateDocument } from "./update.js";
 export { mountDocWriteRoutes } from "./write-routes.js";

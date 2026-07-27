@@ -85,7 +85,10 @@ describe("POST /api/docs", () => {
     expect(full.path).toBe("data/docs/finance/gamma.md");
   });
 
-  it("pre-fills the body and extra frontmatter from the matching template", async () => {
+  // The pre-fill rule has its own suite in `templates.test.ts`; this case holds
+  // the create path's end of it — a template contributes its body, and the
+  // frontmatter block is the request plus the server defaults (SPEC.md §9.2).
+  it("pre-fills the body from the matching template, and only the body", async () => {
     start("create-template");
     ws.write(
       "data/docs/templates/note.md",
@@ -99,7 +102,7 @@ describe("POST /api/docs", () => {
     expect(file).toContain("What matters here.");
 
     const parsed = parseDocument(file, created.path);
-    expect(parsed.data["column"]).toBe("research");
+    expect(parsed.data["column"]).toBeUndefined();
     // The server's own identity fields are never the template's.
     expect(parsed.data["id"]).toBe(created.id);
     expect(parsed.data["title"]).toBe("Prefilled");

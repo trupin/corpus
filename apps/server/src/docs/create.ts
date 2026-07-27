@@ -89,7 +89,9 @@ export async function createDocument(
       folder,
     );
 
-    const extras = template?.frontmatter ?? {};
+    // The template contributed `body` and nothing else (see `templates.ts`):
+    // every frontmatter value below is either the request's or the server
+    // default `CreateDocRequestSchema` documents for that field.
     const fields: Record<string, unknown> = {
       // Canonical key order (SPEC.md §5), which is the order they are written.
       id,
@@ -97,19 +99,13 @@ export async function createDocument(
       title: input.title,
       created: stamp,
       updated: stamp,
-      tags: input.tags ?? asStringArray(extras["tags"]) ?? [],
-      status: input.status ?? asStatus(extras["status"]) ?? "open",
+      tags: input.tags ?? [],
+      status: input.status ?? "open",
       anchors: {},
-      due: input.due ?? (typeof extras["due"] === "string" ? extras["due"] : null),
+      due: input.due ?? null,
       reviewed: null,
-      evergreen: input.evergreen ?? extras["evergreen"] === true,
+      evergreen: input.evergreen ?? false,
     };
-    // Everything else the template declared and the request did not name — a
-    // plugin's own keys, a default `tags` list, a `column` hint.
-    for (const [key, value] of Object.entries(extras)) {
-      if (key in fields) continue;
-      fields[key] = value;
-    }
 
     const text = serializeDocument(setFrontmatterFields(emptyDocument(body), fields));
     const warnings = validateBeforeWrite(workspace, path, text);
@@ -137,9 +133,3 @@ export async function createDocument(
     };
   });
 }
-
-const asStringArray = (value: unknown): string[] | null =>
-  Array.isArray(value) && value.every((entry) => typeof entry === "string") ? [...value] : null;
-
-const asStatus = (value: unknown): "open" | "resolved" | "archived" | null =>
-  value === "open" || value === "resolved" || value === "archived" ? value : null;

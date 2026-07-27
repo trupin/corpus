@@ -245,8 +245,10 @@ sqlite3 .corpus/cache.db → doc_vsvhds7g|note|data/docs/inbox/mortgage-options.
 ```
 
 The author is the acting party and the **committer is the process identity** — `%an` alone is the
-audit column. `evergreen: true` was carried from the template's own frontmatter (a key the request
-did not name), which is the §11 carry-over rule working.
+audit column. ~~`evergreen: true` was carried from the template's own frontmatter (a key the request
+did not name), which is the §11 carry-over rule working.~~ **Struck — this was the bug, and the
+"§11 carry-over rule" it cited does not exist. See "Correction: template pre-fill is body-only"
+below.**
 
 **TEST-38 — hostile environment, directly-started server.** The server was launched with
 `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_AUTHOR_NAME=Hook Leak`,
@@ -456,6 +458,91 @@ those lines recorded is unchanged, only the name half of the identity is. `FALLB
 an actor identity and is untouched. Also mounted in that reconciliation: the `assertWritable`
 seam deferred above now carries SERVER-009's real guard — see
 `issues/server/009-locks-jobs.md` → "Harvest Reconciliation over SERVER-005".
+
+### Correction: template pre-fill is body-only (bug fix, 2026-07-27, opus)
+
+Found incidentally during the CONTRACT-005 timestamps E2E and logged in
+`issues/contract/005-board-contract-growth.md`'s addendum. **This entry corrects the E2E log above**
+(the struck sentence under "Create + template pre-fill") and the Technical Design's Create paragraph
+("…plus any frontmatter keys it defines that the request did not").
+
+**The claimed rule does not exist.** SERVER-005's escalation 4 called the frontmatter carry-over
+"the §11 carry-over rule working". SPEC.md §9.2 (line ~311) is the operative sentence and it says
+**body**, nothing else: "body pre-filled from the type's `template` document when one exists and no
+body is given". `CreateDocRequestSchema` independently documents the server default for every
+frontmatter field a request may omit (`tags` → no tags, `status` → `open`, `due` → `null`,
+`evergreen` → `false`). A template's own frontmatter is the *template document's* housekeeping.
+
+**Reproduction (real server, real workspace, before any code change).** `corpus init` at
+`/tmp/corpus-tmpl-repro` (real git repo, the seeded `data/docs/templates/note.md` which carries
+`evergreen: true`, because a seed document never goes stale — AGENT-001), real server started with
+`CORPUS_WORKSPACE=… node --import tsx apps/server/src/main.ts` on 127.0.0.1:8765:
+
+```
+curl -X POST …/api/docs -H 'x-corpus-author: user' -d '{"type":"note","title":"Repro Wire"}'
+→ 201 {"doc":{"frontmatter":{…,"evergreen":true},…}}          ← request never named `evergreen`
+cat data/docs/inbox/repro-wire.md → evergreen: true            ← and on disk
+```
+
+**Blast radius.** `evergreen: true` opts a document out of §5's staleness ramp entirely, so **every
+note created from the seeded template was permanently invisible to the stale tiers** — no age rail,
+no age chip, and never a row in Attention's stale-for-review lane. Demonstrated on the post-fix
+server with two hand-written, long-untouched twins (`updated: 2025-01-01`) differing only in
+`evergreen`: `GET /api/docs?stale=stale&type=note` returned **only** the `evergreen: false` one
+(`stale: "very-stale"`, `attention: ["stale"]`); the `evergreen: true` twin was absent.
+
+**Fix.** `docs/templates.ts` — `TemplatePrefill` is now `{ path, body }`. The frontmatter channel is
+gone, along with `TEMPLATE_RESERVED_KEYS` (which existed only to police it) and its `docs/index.ts`
+re-export. `docs/create.ts` — the `extras` merge and its `asStringArray`/`asStatus` coercers are
+deleted; every frontmatter value is now the request's or the documented server default.
+
+**Audit of the other fields templates.ts copied** (directive: same rule, body only). It copied
+**every** non-reserved key, so all of these are removed: `tags`, `status`, `due` and `evergreen`
+(each of which had a coercer and shadowed a documented default), plus arbitrary extra keys such as a
+plugin's `column` hint. Only `id`/`type`/`title`/`created`/`updated`/`anchors`/`for` had been
+excluded before. Nothing else in the repo consumed the frontmatter channel — `findTemplate`'s only
+caller is `createDocument`.
+
+**Tests.** New dedicated `docs/templates.test.ts` (the suite SERVER-005's report flagged as missing;
+`templates.ts` had been covered only incidentally through `create.test.ts`), 8 cases: body-and-only-
+body from a deliberately hostile template that sets every inheritable field against its default;
+no template for the type; the `for: template` self-referential refusal; archived skipped and
+first-match-by-path; a template corrupted out-of-band after projection (the only way the parse-error
+skip is actually reachable — projection never holds a row for a file it could not parse); pre-fill
+only when `body` is omitted (`""` is a supplied body, not a request for a surprise); a no-template
+type creating empty-bodied; the request's own non-default values still winning; and the evergreen
+regression asserted on all three surfaces (wire, file, `documents.evergreen` row). `create.test.ts`'s
+"pre-fills the body and extra frontmatter" case was renamed and inverted — `column: research` must
+**not** ride along.
+
+**E2E, post-fix** (fresh `corpus init` at `/tmp/corpus-tmpl-e2e`, real server on 8765, real curl):
+
+```
+POST {"type":"note","title":"Repro Evergreen"}   → 201, wire "evergreen":false
+  file  data/docs/inbox/repro-evergreen.md       → evergreen: false
+  body  "## Context / ## Notes / ## Open questions"   ← the template's body, still pre-filled
+  row   sqlite3 → doc_zfiamehc|note|Repro Evergreen|0
+  GET /api/docs/doc_zfiamehc (next command, no sleep) → evergreen:false   (read-your-write)
+POST {…,"evergreen":true,"tags":["x"],"status":"resolved","due":"2027-03-04"}
+  → 201, all four honoured verbatim; row evergreen=1
+POST {…,"body":"Only my words."}                 → template body absent, request body present
+POST {"type":"view","title":"No Template"}       → 201, body "" (no view template; §11's "none → empty")
+git log --format='%an|%s' -4 → four `user|doc create: …` lines, unchanged
+sqlite3 → doc_seedtemplatenote|template|Note template|1   ← the template keeps its OWN evergreen
+```
+
+Scratch trees `/tmp/corpus-tmpl-repro` and `/tmp/corpus-tmpl-e2e` removed, server stopped by pid,
+`lsof -nP -iTCP:8765` empty afterwards.
+
+**Gates.** `npm run build` ✔ · `npm run lint` ✔ (0 errors, 0 warnings) · `npm run format:check` ✔ ·
+`npm run typecheck` (every workspace) ✔ · `npm run test:coverage` → **155 files / 2 725 tests, all
+passing**, **statements 98.81 %, branches 95.06 %, functions 99.39 %, lines 98.81 %** (gate 90 %).
+
+**Flagged for the orchestrator, not decided here:** SPEC.md §11 line 376 reads "provides the starting
+**frontmatter/body** for new documents of that type", which is in tension with §9.2's body-only
+sentence. Implemented per §9.2 and the orchestrator's directive; if §11's phrasing is meant to
+license a *scoped* carry-over (plugin-declared keys only, never the fields with documented server
+defaults), that is a spec clarification plus a follow-up issue, not a silent re-widening.
 
 ## Completion Checklist (domain agent)
 
