@@ -3,8 +3,9 @@ import { TextQuoteSelectorSchema } from "@corpus/contract";
 import { isWellFormedText } from "./code-points.js";
 import { computeContext } from "./context.js";
 import { computeOffsetMapper } from "./diff.js";
+import { FUZZY_THRESHOLD, boundedLevenshtein } from "./fuzzy.js";
 import { reconcileAnchors } from "./reconcile.js";
-import { resolveAnchor } from "./resolve.js";
+import { resolveAnchor, resolveAnchorExact } from "./resolve.js";
 import type { AnchorsMap, Range, TextQuoteSelector } from "./types.js";
 
 const SENTENCE = "assume a 30-year fixed at 6.1%";
@@ -507,6 +508,157 @@ describe("reconcileAnchors — reorder family: cross-anchor slice honesty (SERVE
   });
 });
 
+describe("reconcileAnchors — substitution family: slices with no kinship to their original (SERVER-012 round 3)", () => {
+  // Evaluator FAIL-1 (round 3): reordering wholly-distinct paragraphs can keep
+  // an anchor's byte offset while different text moves in — the diff
+  // cross-aligns incidental characters between the two paragraphs, so the
+  // range classifies `partial` (not `deleted`), the replacement respects the
+  // boundary, the window is unique, and there is no co-anchor to collide with
+  // or capture: every earlier guard is blind. The anchor is handed whatever
+  // paragraph occupies its old offset while its own text sits verbatim
+  // elsewhere in the same document. A rewritten slice with similarity below
+  // the fuzzy threshold to its original, while the original survives verbatim
+  // outside the slice, is not in-place-edit evidence — it is voided and the
+  // anchor re-places through the adjudicated chain (exact-only rungs +
+  // insertion-overlap, orphan last, fuzzy never).
+  const DP = [
+    "The quarterly report opens with a summary of vendor obligations.",
+    "Legal review of the licensing addendum is scheduled for Thursday.",
+    "Our travel policy caps international airfare at premium economy.",
+    "Hiring is paused until the second half of next year at the earliest.",
+    "The office lease renews in October with a five percent escalator.",
+    "Cash runway extends nineteen months under the current burn profile.",
+  ];
+  const doc = (blocks: string[]) => `# Planning notes\n\n${blocks.join("\n\n")}\n`;
+  const swapBody = (): { oldBody: string; newBody: string } => {
+    const swapped = [...DP];
+    const [fourth, sixth] = [swapped[3], swapped[5]];
+    if (fourth !== undefined && sixth !== undefined) [swapped[3], swapped[5]] = [sixth, fourth];
+    return { oldBody: doc(DP), newBody: doc(swapped) };
+  };
+
+  it("swapping two wholly-distinct paragraphs: the anchor follows its own text, not its byte offset", () => {
+    // Pre-fix: `remapped` with exact "Cash runway extends nineteen months…" —
+    // a thread about the hiring freeze silently became a thread about cash
+    // runway, while "Hiring is paused…" survived verbatim 69 bytes below.
+    const { oldBody, newBody } = swapBody();
+    const hiring = DP[3] ?? "";
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, {
+      anc_hire01: capture(oldBody, hiring),
+    });
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_hire01"], orphaned: [] });
+    expect(anchors["anc_hire01"]?.exact).toBe(hiring);
+    const range = resolveAnchor(newBody, anchors["anc_hire01"] ?? { exact: "" });
+    const own = newBody.indexOf(hiring);
+    expect(range).toEqual({ start: own, end: own + hiring.length });
+  });
+
+  it("the swap fixture exercises the kinship seam: partial, boundary-respecting, mapped to the other paragraph", () => {
+    // Fixture-rot guard: the raw mapped slice must still be the paragraph that
+    // moved in — unrelated text at the anchor's old offset — through a shape
+    // that defeats the straddle guard, the round-trip, and the cross-anchor
+    // pass (single anchor). Only the kinship check can see it.
+    const { oldBody, newBody } = swapBody();
+    const hiring = DP[3] ?? "";
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    const start = oldBody.indexOf(hiring);
+    const range = { start, end: start + hiring.length };
+    expect(mapper.classify(range)).toBe("partial");
+    expect(mapper.straddledByReplacement(range)).toBe(false);
+    expect(newBody.slice(mapper.mapStart(range.start), mapper.mapEnd(range.end))).toBe(DP[5]);
+  });
+
+  it.each([
+    ["two paragraphs inserted between", "An inserted paragraph one.\n\nAn inserted paragraph two."],
+    ["one paragraph inserted between", "An inserted paragraph one."],
+  ])(
+    "a sentence moved far with %s resolves to the moved text itself, not the filler",
+    (_name, filler) => {
+      // Evaluator FAIL-2 (TEST-67c): pre-fix both variants remapped to the
+      // inserted filler while the moved sentence survived verbatim and uniquely.
+      const SENT = "We assume a 30-year fixed at 6.1% for the base case.";
+      const opening = "Opening remarks compare current lenders.";
+      const closing = "Closing remarks on the tax treatments of points follow.";
+      const oldBody = `# Mortgage options\n\n${opening}\n\n${SENT}\n\n${closing}\n`;
+      const newBody = `# Mortgage options\n\n${opening}\n\n${filler}\n\n${closing}\n\n${SENT}\n`;
+      // Fixture-rot guard: the mapper hands the range the filler, as `partial`.
+      const mapper = computeOffsetMapper(oldBody, newBody);
+      const start = oldBody.indexOf(SENT);
+      expect(mapper.classify({ start, end: start + SENT.length })).toBe("partial");
+      expect(newBody.slice(mapper.mapStart(start), mapper.mapEnd(start + SENT.length))).toBe(
+        filler,
+      );
+      const { anchors, report } = reconcileAnchors(oldBody, newBody, {
+        anc_move01: capture(oldBody, SENT),
+      });
+      expect(report).toEqual({ unchanged: [], remapped: ["anc_move01"], orphaned: [] });
+      expect(anchors["anc_move01"]?.exact).toBe(SENT);
+      const own = newBody.lastIndexOf(SENT);
+      const range = resolveAnchor(newBody, anchors["anc_move01"] ?? { exact: "" });
+      expect(range).toEqual({ start: own, end: own + SENT.length });
+    },
+  );
+
+  it("an unrelated in-place rewrite beside a pre-existing verbatim copy orphans — the copy is not the anchor's text", () => {
+    // The voided slice re-places through the adjudicated chain, which must
+    // still refuse a doppelgänger: the surviving copy resolves exactly (rung
+    // 2, unique after the rewrite) but sits wholly in unedited text, so
+    // insertion-overlap rejects it and the deletion stands (SPEC §6 step 5).
+    const S = "The retention clause survives termination of this agreement.";
+    const R = "Umbrella insurance riders take effect once premiums have cleared.";
+    const oldBody = `# Contract\n\nOpening section stands.\n\n${S}\n\nMiddle prose about indemnities.\n\nAppendix repeats it verbatim: ${S}\n`;
+    const newBody = oldBody.replace(`${S}\n\nMiddle`, `${R}\n\nMiddle`);
+    const input: AnchorsMap = { anc_ret: capture(oldBody, S) };
+    const start = oldBody.indexOf(S);
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    expect(mapper.classify({ start, end: start + S.length })).toBe("partial");
+    expect(mapper.straddledByReplacement({ start, end: start + S.length })).toBe(false);
+    const survivor = resolveAnchorExact(newBody, input["anc_ret"] ?? { exact: "" });
+    expect(survivor).not.toBeNull();
+    expect(mapper.touchesInsertion(survivor ?? { start: 0, end: 0 })).toBe(false);
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_ret"] });
+    expect(anchors["anc_ret"]).toEqual(input["anc_ret"]);
+  });
+
+  it("a heavy in-place edit above the similarity threshold stays trusted despite a verbatim duplicate elsewhere", () => {
+    // The SERVER-002 adjudication survives this refinement: in-place-edit
+    // evidence outranks a verbatim duplicate elsewhere — kinship (similarity
+    // at or above the fuzzy threshold) is exactly what makes the slice count
+    // as evidence of an in-place edit.
+    const S = "The migration plan covers schema changes and rollback steps in detail.";
+    const edited = "The migration plan covers the schema work and rollback steps in detail.";
+    const oldBody = `# Ops\n\n${S}\n\nOther prose stands here.\n\nAppendix copy: ${S}\n`;
+    const newBody = oldBody.replace(
+      "covers schema changes and rollback",
+      "covers the schema work and rollback",
+    );
+    // Fixture-rot guards: the duplicate survives verbatim, and the edited
+    // sentence stays within the fuzzy threshold of the original.
+    expect(newBody.includes(S)).toBe(true);
+    const maxDistance = Math.floor(Math.max(edited.length, S.length) * (1 - FUZZY_THRESHOLD));
+    expect(boundedLevenshtein(edited, S, maxDistance)).toBeLessThanOrEqual(maxDistance);
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, {
+      anc_mig: capture(oldBody, S),
+    });
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_mig"], orphaned: [] });
+    expect(anchors["anc_mig"]?.exact).toBe(edited);
+  });
+
+  it("a paragraph genuinely deleted during a reorder of wholly-distinct paragraphs orphans, selector preserved", () => {
+    const first = DP[0] ?? "";
+    const second = DP[1] ?? "";
+    const third = DP[2] ?? "";
+    const fourth = DP[3] ?? "";
+    const oldBody = doc([first, second, third, fourth]);
+    const newBody = doc([fourth, first, third]);
+    const input: AnchorsMap = { anc_gone: capture(oldBody, second) };
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_gone"] });
+    expect(anchors["anc_gone"]).toEqual(input["anc_gone"]);
+  });
+});
+
 describe("reconcileAnchors — guarantees", () => {
   it("is deterministic: 100 runs on identical inputs serialize byte-identically", () => {
     const anchors: AnchorsMap = {
@@ -681,6 +833,31 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
     }
   };
 
+  // The corrected TEST-61 clause (SERVER-012 round 3): a surviving anchor may
+  // never be handed text unrelated to its original (similarity below the fuzzy
+  // threshold) while the original survives verbatim outside the resolved range
+  // — remap-to-own-text or a preserved orphan are the only honest outcomes.
+  // Related slices (in-place edits) and originals that are genuinely gone are
+  // out of scope: that is the adjudicated partial-trusts-mapper territory.
+  const expectNoSubstitution = (
+    newBody: string,
+    original: string,
+    emitted: string,
+    range: Range,
+    label: string,
+  ): void => {
+    if (emitted === original || original.length === 0) return;
+    const maxLen = Math.max(emitted.length, original.length);
+    const maxDistance = Math.floor(maxLen * (1 - FUZZY_THRESHOLD));
+    if (boundedLevenshtein(emitted, original, maxDistance) <= maxDistance) return;
+    for (let at = newBody.indexOf(original); at !== -1; at = newBody.indexOf(original, at + 1)) {
+      expect(
+        at >= range.start && at + original.length <= range.end,
+        `${label}: handed unrelated text while its own survives verbatim at ${at}`,
+      ).toBe(true);
+    }
+  };
+
   it("holds the report invariants across 40 seeded random edits", () => {
     const words = ["alpha", "refit", "quarterly", "\n\n", "rates ", "— beta —", "🎉", "x"];
     const anchors: AnchorsMap = {
@@ -727,6 +904,15 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
         expect(newBody.slice(range?.start, range?.end), `seed ${run + 1}: ${id}`).toBe(
           selector?.exact,
         );
+        if (range !== null) {
+          expectNoSubstitution(
+            newBody,
+            anchors[id]?.exact ?? "",
+            selector?.exact ?? "",
+            range,
+            `seed ${run + 1}: ${id}`,
+          );
+        }
       }
       for (const id of report.orphaned) {
         expect(next[id], `seed ${run + 1}: ${id}`).toEqual(normalized[id]);
@@ -785,6 +971,15 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
         expect(newBody.slice(range?.start, range?.end), `seed ${run + 101}: ${id}`).toBe(
           selector?.exact,
         );
+        if (range !== null) {
+          expectNoSubstitution(
+            newBody,
+            anchors[id]?.exact ?? "",
+            selector?.exact ?? "",
+            range,
+            `seed ${run + 101}: ${id}`,
+          );
+        }
       }
       expectNoNewOverlaps(resolved, `seed ${run + 101}`);
       for (const id of report.orphaned) {
@@ -849,6 +1044,15 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
         expect(newBody.slice(range?.start, range?.end), `seed ${run + 201}: ${id}`).toBe(
           selector?.exact,
         );
+        if (range !== null) {
+          expectNoSubstitution(
+            newBody,
+            anchors[id]?.exact ?? "",
+            selector?.exact ?? "",
+            range,
+            `seed ${run + 201}: ${id}`,
+          );
+        }
         for (const other of Object.keys(anchors)) {
           if (other === id) continue;
           expect(
@@ -861,6 +1065,122 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
       for (const id of report.orphaned) {
         const original = anchors[id];
         expect(out[id], `seed ${run + 201}: ${id}`).toEqual({
+          exact: original?.exact ?? "",
+          prefix: original?.prefix ?? "",
+          suffix: original?.suffix ?? "",
+        });
+      }
+      expect([...report.unchanged, ...report.remapped, ...report.orphaned].sort()).toEqual(
+        Object.keys(anchors).sort(),
+      );
+    }
+  });
+
+  it("holds the substitution invariant across 40 seeded reorders/insertions of wholly-distinct paragraphs", () => {
+    // The round-3 failure family (evaluator FAIL-1): documents whose
+    // paragraphs share no phrasing. The near-identical sweeps cannot see
+    // substitution — look-alike siblings always sit within the similarity
+    // threshold of each other — so the wholly-distinct family gets its own
+    // generator: swaps, rotations, shuffles, reversals, far moves with fresh
+    // insertions, and deletions during a reorder, over 1–4 anchors (including
+    // the single-anchor case the cross-anchor pass can never help).
+    const pool = [
+      "The quarterly report opens with a summary of vendor obligations.",
+      "Legal review of the licensing addendum is scheduled for Thursday.",
+      "Our travel policy caps international airfare at premium economy.",
+      "Hiring is paused until the second half of next year at the earliest.",
+      "The office lease renews in October with a five percent escalator.",
+      "Cash runway extends nineteen months under the current burn profile.",
+      "Customer churn improved after the onboarding flow was rebuilt.",
+      "Security training completion sits at ninety-two percent this cycle.",
+      "The data warehouse migration finished two sprints ahead of plan.",
+      "Marketing spend shifts toward regional events in the coming half.",
+      "A dedicated incident channel replaced the old paging rotation.",
+      "Procurement now requires dual sign-off above ten thousand dollars.",
+    ];
+    const freshInserts = [
+      "A freshly written aside about none of the existing topics.",
+      "Another brand-new remark that has no counterpart above.",
+      "Yet more inserted commentary unrelated to prior sections.",
+    ];
+    const rebuild = (blocks: string[]) => `# Notes\n\n${blocks.join("\n\n")}\n`;
+    for (let run = 0; run < 40; run++) {
+      const rng = makeRng(run + 301);
+      const n = 4 + Math.floor(rng() * 3);
+      const remaining = [...pool];
+      const paragraphs: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const picked = remaining.splice(Math.floor(rng() * remaining.length), 1)[0];
+        paragraphs.push(picked ?? "unreachable filler");
+      }
+      const body = rebuild(paragraphs);
+      const anchorCount = 1 + Math.floor(rng() * 4);
+      const anchorIdx = new Set<number>();
+      while (anchorIdx.size < anchorCount) anchorIdx.add(Math.floor(rng() * n));
+      const anchors: AnchorsMap = {};
+      for (const i of [...anchorIdx].sort((a, b) => a - b)) {
+        anchors[`anc_p${i}`] = capture(body, paragraphs[i] ?? "");
+      }
+
+      let next = [...paragraphs];
+      const shape = Math.floor(rng() * 6);
+      if (shape === 0) {
+        const i = Math.floor(rng() * n);
+        const j = (i + 1 + Math.floor(rng() * (n - 1))) % n;
+        const [a, b] = [next[i], next[j]];
+        if (a !== undefined && b !== undefined) [next[i], next[j]] = [b, a];
+      } else if (shape === 1) {
+        const k = 1 + Math.floor(rng() * (n - 1));
+        next = [...next.slice(k), ...next.slice(0, k)];
+      } else if (shape === 2 || shape === 3) {
+        for (let i = next.length - 1; i > 0; i--) {
+          const j = Math.floor(rng() * (i + 1));
+          const [a, b] = [next[i], next[j]];
+          if (a !== undefined && b !== undefined) [next[i], next[j]] = [b, a];
+        }
+        if (shape === 3) next.splice(Math.floor(rng() * next.length), 1);
+      } else if (shape === 4) {
+        next.reverse();
+      } else {
+        const from = Math.floor(rng() * n);
+        const [moved] = next.splice(from, 1);
+        next.splice(from, 0, ...freshInserts.slice(0, 1 + Math.floor(rng() * 3)));
+        if (rng() < 0.5) next.push(moved ?? "");
+        else next.unshift(moved ?? "");
+      }
+      const newBody = rebuild(next);
+
+      const { anchors: out, report } = reconcileAnchors(body, newBody, anchors);
+      const resolved: Record<string, Range> = {};
+      for (const id of [...report.unchanged, ...report.remapped]) {
+        const selector = out[id];
+        const range = resolveAnchor(newBody, selector ?? { exact: "" });
+        expect(range, `seed ${run + 301}: ${id}`).not.toBeNull();
+        if (range !== null) resolved[id] = range;
+        expect(newBody.slice(range?.start, range?.end), `seed ${run + 301}: ${id}`).toBe(
+          selector?.exact,
+        );
+        if (range !== null) {
+          expectNoSubstitution(
+            newBody,
+            anchors[id]?.exact ?? "",
+            selector?.exact ?? "",
+            range,
+            `seed ${run + 301}: ${id}`,
+          );
+        }
+        for (const other of Object.keys(anchors)) {
+          if (other === id) continue;
+          expect(
+            out[id]?.exact.includes(anchors[other]?.exact ?? " "),
+            `seed ${run + 301}: ${id} quotes ${other}'s paragraph`,
+          ).toBe(false);
+        }
+      }
+      expectNoNewOverlaps(resolved, `seed ${run + 301}`);
+      for (const id of report.orphaned) {
+        const original = anchors[id];
+        expect(out[id], `seed ${run + 301}: ${id}`).toEqual({
           exact: original?.exact ?? "",
           prefix: original?.prefix ?? "",
           suffix: original?.suffix ?? "",

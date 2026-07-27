@@ -1,6 +1,7 @@
 import { snapRange } from "./code-points.js";
 import { computeContext } from "./context.js";
 import { computeOffsetMapper } from "./diff.js";
+import { FUZZY_THRESHOLD, boundedLevenshtein } from "./fuzzy.js";
 import { resolveAnchor, resolveAnchorExact, sortedEntries } from "./resolve.js";
 import type {
   AnchorsMap,
@@ -33,6 +34,12 @@ import type {
  *   - a slice whose emitted selector would resolve anywhere but the slice's
  *     own range (self-round-trip) would misattach its thread on the very next
  *     lookup;
+ *   - a rewritten slice with no kinship to its original is not in-place-edit
+ *     evidence: when the slice's similarity to the original exact falls below
+ *     the fuzzy threshold *and* the original survives verbatim at another
+ *     location, the mapper merely kept a byte offset across a relocation and
+ *     handed the anchor whatever text occupies it now (the substitution
+ *     family: swaps, rotations, moves with insertions);
  *   - two anchors whose old ranges were disjoint but whose new ranges overlap
  *     prove at least one slice swallowed text that belongs to the other — the
  *     offset mapping is monotone, so an honest in-place rewrite can never make
@@ -102,6 +109,35 @@ export function reconcileAnchors(
     return resolved !== null && resolved.start === range.start && resolved.end === range.end;
   };
 
+  // A rewritten slice with no kinship to its original is not in-place-edit
+  // evidence (SERVER-012 round 3). An honest in-place rewrite keeps a
+  // resemblance to what it rewrote; a slice that is *unrelated* to its
+  // original — similarity below the engine's fuzzy threshold — while the
+  // original text sits verbatim at another location is the mapper keeping a
+  // byte offset across a relocation and handing the anchor whatever paragraph
+  // occupies it now (swap two paragraphs: the anchor quotes the paragraph
+  // that moved *in*, while its own survives untouched elsewhere). Such a
+  // slice is voided and the anchor re-places through the adjudicated chain:
+  // a relocated survivor necessarily sits in inserted text (an EQUAL survivor
+  // would have been followed by the monotone mapping), so it re-attaches; a
+  // pre-existing doppelgänger in unedited text fails insertion-overlap and
+  // the anchor orphans. An occurrence wholly *inside* the slice is kinship by
+  // containment (the superset shape), not a disjoint survivor — it never
+  // voids here. Both signals are deterministic; fuzzy resolution never runs.
+  const lacksKinship = (range: Range, exact: string): boolean => {
+    let at = newBody.indexOf(exact);
+    let survivesOutside = false;
+    while (at !== -1 && !survivesOutside) {
+      survivesOutside = at < range.start || at + exact.length > range.end;
+      at = newBody.indexOf(exact, at + 1);
+    }
+    if (!survivesOutside) return false;
+    const slice = newBody.slice(range.start, range.end);
+    const maxLen = Math.max(slice.length, exact.length);
+    const maxDistance = Math.floor(maxLen * (1 - FUZZY_THRESHOLD));
+    return boundedLevenshtein(slice, exact, maxDistance) > maxDistance;
+  };
+
   type Draft = {
     id: string;
     /** Original selector, normalized to the contract shape — what an orphan keeps. */
@@ -131,8 +167,9 @@ export function reconcileAnchors(
       end: mapper.mapEnd(oldRange.end),
     });
     // A range edited down to nothing is a deletion in all but name; a slice
-    // rewritten through a boundary-straddling replacement or failing its own
-    // round-trip is dishonest (see above). All take the deleted-claim
+    // rewritten through a boundary-straddling replacement, failing its own
+    // round-trip, or bearing no kinship to the text it claims to have
+    // rewritten is dishonest (see above). All take the deleted-claim
     // verification path — exact-only, orphan last, fuzzy never. A slice equal
     // to the old exact is verbatim survival, not a rewrite claim, and an
     // `equal` classification can't be straddled (a straddling DELETE would
@@ -141,7 +178,9 @@ export function reconcileAnchors(
       isBlank(mapped) ||
       (classification === "partial" &&
         newBody.slice(mapped.start, mapped.end) !== selector.exact &&
-        (mapper.straddledByReplacement(oldRange) || !sliceRoundTrips(mapped)));
+        (mapper.straddledByReplacement(oldRange) ||
+          !sliceRoundTrips(mapped) ||
+          lacksKinship(mapped, selector.exact)));
     return { id, selector, oldRange, newRange: suspect ? verifiedSurvivor(selector) : mapped };
   });
 

@@ -324,7 +324,114 @@ passed / 85 files** (1677 baseline + 7 new, zero regressions) · coverage 99.56%
 slice with **no co-anchor** to collide with or capture still emits (single-anchor reorder)
 — no per-anchor, non-fuzzy evidence distinguishes it from a legitimate growth rewrite
 without re-opening the partial-trusts-mapper adjudication. TEST-61's operative predicate
-and FAIL-1's harm are cross-anchor; both are now clean.
+and FAIL-1's harm are cross-anchor; both are now clean. _(Round-3 note: the corrected
+verdict showed this disclosure understated the remainder — the uncovered class was
+per-anchor substitution at 12.6 %, not the rare superset. Closed by round 3 below.)_
+
+### Round 3 — the substitution arm (evaluator FAIL-1: TEST-61 per-anchor; FAIL-2: TEST-67c)
+
+**Implemented on: fable (claude-fable-5).** Round-3 corrected verdict: the round-2 guard's
+scope was cross-anchor while TEST-61's invariant is per-anchor — an anchor handed **wholly
+unrelated text** while its own exact survives verbatim and uniquely elsewhere (378/3006 =
+12.6 % of swept anchors in wholly-distinct-text documents; pre-existing, byte-identical
+pre-round-2). TEST-67(c) fails as a named instance: the anchor is handed the *inserted
+filler* instead of following its moved sentence.
+
+**Reproduction (before any code change), 2026-07-26.** All real runs, `tsx` drivers under
+`/tmp/server012-r3/`, engine = repo HEAD (`46fa225`, pre-round-3):
+
+- **Evaluator's hand-verified FAIL-1 fixture** rebuilt (six wholly-distinct paragraphs,
+  swap #4 ↔ #6, one anchor on "Hiring is paused…"): `remapped`, emitted exact =
+  `"Cash runway extends nineteen months under the current burn profile."`, resolves to
+  `{217,284}` (the anchor's old byte offsets — matching the verdict byte-for-byte), own
+  text surviving verbatim and uniquely at 353. `classify=partial`,
+  `straddledByReplacement=false`, slice round-trips, no co-anchor — every existing guard
+  blind by construction.
+- **On disk** (`tsx repro-disk.mts`, real `git init` workspace
+  `/var/folders/.../corpus-s012r3-F2vohs`, save-path shape, `git diff -U0`): frontmatter
+  diff shows `exact:` flipping from the hiring paragraph to the cash-runway paragraph —
+  the thread silently re-pointed at an unrelated paragraph.
+- **TEST-67c, corrected predicate**: fixture search recovered the evaluator's exact shape
+  (`opening "Opening remarks compare current lenders."`, closing
+  `"Closing remarks on the tax treatments of points follow."`, fillers
+  `"An inserted paragraph one/two."`): both variants `remapped` to the **inserted filler**
+  (emitted `"An inserted paragraph one.\n\nAn inserted paragraph two."` resp.
+  `"An inserted paragraph one."`) while the moved sentence survives uniquely — matching
+  the verdict's emitted exacts character for character.
+- **Independent 1000-case sweep** (wholly-distinct paragraph pool; shapes
+  swap/rotate/shuffle/reverse/insert+relocate/delete-during-reorder; 1–4 anchors incl.
+  single-anchor): **E (substitution) = 136/2495 anchors (5.5 %)**, concentrated in insert
+  (55) and swap (50); A = B = C = 0 (round 2 holds).
+
+**Adjudicated design refinement (orchestrator decision — refines, does not reverse, the
+SERVER-002 partial-trusts-mapper pin):** *a rewritten slice with no kinship to its
+original is not in-place-edit evidence.* `reconcileAnchors` voids a rewritten `partial`
+slice when **both**: (1) its similarity to the original exact is below the engine's fuzzy
+threshold (reusing `boundedLevenshtein` + `FUZZY_THRESHOLD = 0.75` — no new constants),
+and (2) the original occurs verbatim in `newBody` outside the slice (an occurrence wholly
+*inside* the slice is kinship by containment — the pinned superset residual never voids).
+Voided slices re-place through the existing adjudicated chain (`verifiedSurvivor`:
+exact-only rungs 1–2 + insertion-overlap, orphan last, fuzzy never, selector
+byte-preserved on orphan). New third arm of the pass-1 `suspect` disjunction; `diff.ts`,
+the cross-anchor pass, and every other seam untouched.
+
+**Chain analysis verified before relying on it** (`tsx chain-verify.mts`, mapper probes):
+a reorder-relocated survivor sits in INSERT text (`touchesInsertion=true` → re-attach; an
+EQUAL survivor would have been *followed* by the monotone mapping and the slice would
+equal the exact, never reaching the guard); a pre-existing doppelgänger under a
+partial-classified unrelated rewrite sits wholly in EQUAL text (`touchesInsertion=false`
+→ orphan; that case was itself a substitution at HEAD — remapped to the unrelated
+replacement — so the remap→orphan change is inside the licensed class). No case found
+where the chain misbehaves for a voided slice; no fifth adjudication needed.
+
+**Post-fix verification** (all real runs, freshly rebuilt):
+
+- FAIL-1 fixture: `remapped`, exact preserved byte-for-byte, resolves to `{353,421}` —
+  its own paragraph's new home. On disk the frontmatter diff is context-only refresh.
+- TEST-67c both variants: `remapped`, exact = the moved sentence, resolving to exactly
+  the survivor's own range (`{175,227}` / `{147,199}` — the verdict's quoted offsets).
+- Sweep: **E = 0/2495** (pre-fix 136); A = B = C = 0.
+- **A/B vs the pre-round-3 snapshot** (`/tmp/server012-r3/prefix-anchors`,
+  `ab-verify.mts` + `ab-sweep.mts`): 25-fixture must-hold battery **25/25
+  byte-identical** — four deletion scenarios, escalating-context ×4 (TEST-26),
+  cut-and-paste ×3, TEST-59/60 sibling family, both-siblings-deleted, re-typed re-attach,
+  straddled doppelgänger, shrinks ×3, reversed near-identical reorder, capture-with-twin,
+  musical-chairs identical paragraphs, genuine-deletion-during-reorder, nested exemption,
+  shadowed-window, and must-hold (d) below. Sweep A/B: 864/1000 cases byte-identical;
+  **all 136 differing cases contain a pre-fix substitution-class anchor; 0
+  non-substitution anchors changed even inside differing cases**; outcome totals
+  identical (remapped 2079 / orphaned 84 / unchanged 332 both engines — substituted
+  anchors re-attach to their own text, none newly orphan in this family).
+- **Must-hold (d)** — the original adjudication surviving: a heavy in-place edit *above*
+  the threshold (similarity ≈ 0.87) with a verbatim duplicate elsewhere stays trusted —
+  `remapped` to the edited slice, byte-identical to pre-round-3.
+- Determinism ×200 → 1 distinct serialized result; deep-frozen inputs: no throw, distinct
+  output. Purity grep over non-test anchor modules: zero hits.
+- Perf A/B (same machine, same inputs): 1 MB/50 anchors middle insertion 7.2 ms vs
+  7.6 ms pre; 1 MB distant-swap 8.5 vs 8.2; 1 MB all-50-anchored-paragraphs deleted 58.0
+  vs 51.8 (+12 %, the guard never runs on `equal`/verbatim slices). Same order of
+  magnitude everywhere.
+- New tests (9): the swap fixture + kinship-seam fixture-rot guard (raw mapped slice =
+  the other paragraph, partial, non-straddled), TEST-67c ×2 with mapped-slice-is-filler
+  rot guards, partial-path doppelgänger orphan (with `touchesInsertion=false` pinned),
+  must-hold (d), genuine-deletion-during-distinct-reorder, a 40-seed wholly-distinct
+  reorder/insertion sweep, and a disk-matrix swap row. The substitution predicate
+  (`expectNoSubstitution`) is asserted inside **all** property sweeps (random-edit,
+  near-identical siblings, near-identical reorders, wholly-distinct).
+
+**Repo gates** (round-3 final state): `npm run build` ✓ · `npm run lint` ✓ (0 problems) ·
+`npm run format:check` ✓ · `npm run typecheck` ✓ (5 workspaces) · `npm test` **1693
+passed / 85 files** (1684 baseline + 9 new, zero regressions) · coverage 99.56 % stmts /
+96.29 % branches / 100 % functions (gate 90 %); `reconcile.ts` 100/100/100/100.
+
+**Known residual (round 3, disclosed):** slices *within* the fuzzy threshold of their
+original are still trusted even when the original survives elsewhere — that is must-hold
+(d), the SERVER-002 adjudication itself. Concretely: a fixture variant of the 67c shape
+where the diff keeps the moved sentence but misaligns its trailing period emits a 51-of-52
+character selector (similarity ≈ 0.98, survivor overlapping the slice — the evaluator's
+G class, 0/3006 in their sweep, fixture-sensitive); and the pinned single-anchor superset
+shape (original surviving wholly inside a grown slice) is deliberately exempted from
+voiding by the containment clause. Neither is reachable without re-opening (d).
 
 ## Completion Checklist (domain agent)
 

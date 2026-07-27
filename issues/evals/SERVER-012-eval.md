@@ -2,190 +2,218 @@
 
 **Date**: 2026-07-26
 **Sprint**: sprint-002
-**Verdict**: FAIL — 11 of 12 acceptance tests pass; **TEST-61 fails**
+**Round**: 3 (re-evaluation of the round-2 fix, commit `46fa225`)
+**Verdict**: **FAIL** — 10 of 12 acceptance tests pass. **TEST-61 fails on its
+"never another range's text" clause** (378 / 3006 anchors), and **TEST-67 fails on row (c)**.
+Both failures are **pre-existing and byte-identical to pre-round-2** — round 2 is not a
+regression, it is an incomplete fix for a defect larger than any round has characterized.
 
-The fix is real and it works: the reproduction is genuine, the sibling-deletion truncation
-family is eliminated, the adjudicated ladder is respected, legitimate shrinks still remap,
-and every SERVER-002 round-3 must-hold reproduces. But TEST-61's invariant is stated as a
-**general** property — "never a prefix, never a superset, never another range's text" — and
-it does not hold generally. A whole-document reorder of near-identical paragraphs still
-produces a `remapped` selector whose `exact` is double its original length and contains a
-neighbouring anchor's entire paragraph, with the two anchors' resolved ranges overlapping.
+**Correction to my own first round-3 pass.** My initial round-3 verdict said "both
+harm-bearing clauses now hold universally" and graded this PARTIAL. **That was wrong, and
+the way it was wrong matters**: my capture and collision checks were *cross-anchor only* —
+they asked whether an anchor swallowed a **co-anchor's** text. That is the same blind spot
+the fix itself has, so my sweep could not see an anchor handed **unanchored** text. Adding a
+substitution check exposes 378 violations at HEAD where my earlier checks reported 0.
+Separately, my must-hold A/B used `newBody.includes(sel.exact)` as its integrity column —
+a predicate satisfied by *any* text present in `newBody`, which is why I passed TEST-67c.
+Both probes have been rebuilt and re-run; the corrected results are below.
 
-**This is pre-existing, not a regression** — the pre-fix engine emits the identical
-130-character selector for the same input. I verified that myself. It is nonetheless a
-failure of the acceptance test as written, and of the issue's own second acceptance
-criterion, so it is recorded as a FAIL rather than waived.
+Environment: real `git init` scratch workspaces on real disk with real `doc.md` files
+carrying `anchors:` frontmatter, `git diff -U0` as the instrument, plus black-box library
+probes. Pre-round-2 engine reconstructed read-only from
+`git show a776387:apps/server/src/anchors/*`. Scratch at `/tmp/eval-p2-scratch/r3-*`.
+Repo tree clean; HEAD `46fa225`.
 
-Environment: real `git init` scratch workspaces on real disk, real `doc.md` files with
-`anchors:` frontmatter, `git diff -U0` as the observation instrument, real `tsx` drivers
-against freshly built sources. Pre-fix engine reconstructed from
-`git show 4296717:apps/server/src/anchors/*` into `/tmp/eval-p2-scratch/prefix-anchors/`
-(read-only; the repo working tree was never touched). Scratch also at
-`/tmp/eval-p2-anchors/`. Repo tree verified clean before and after.
+---
 
-## E2E Proof-of-Work Audit
+## What round 2 genuinely fixed
 
-| Check                                   | Result | Notes                                                                                                                                                                       |
-| --------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Verification log present                | PASS   | Reproduction section plus per-test post-implementation sections TEST-60…70 and a gate block.                                                                                   |
-| Commands are specific and concrete      | PASS   | Named driver scripts, named scratch workspaces, verbatim report JSON, verbatim `git diff -U0` hunks, a segment-level root-cause dump.                                          |
-| Real E2E (not mocked)                   | PASS   | Real `mkdtemp` git workspaces, real save path, real `git diff`. The pre-fix engine is kept as a black box and A/B'd, which is the right instrument.                            |
-| Scenarios cover acceptance criteria     | PASS   | Every acceptance criterion has a section. (Coverage ≠ correctness — see FAIL-1.)                                                                                               |
-| Application restarted after changes     | PASS   | "All verification against freshly built sources (`npm run build` from a clean tree)."                                                                                          |
-| Actual model recorded (implemented on:) | PASS   | "**implemented on: fable (claude-fable-5)**", stated in both the Reproduction and the Post-Implementation sections.                                                             |
-| Reproduction logged before fix (bugs)   | PASS   | **Verified against the pre-fix engine, character for character** — see TEST-59. The reproduction is not fabricated.                                                             |
-
-## Criteria Results
-
-| #   | Criterion                                                | Result   | Notes                                                                                                                                                                                                                                                    |
-| --- | -------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 59  | The bug reproduces on disk before any fix                | PASS     | Pre-fix engine, the log's exact fixture: `{"remapped":["anc_one1","anc_two2"]}`, `anc_one1.exact = "Paragraph one now has orang"` (truncated mid-word), `anc_two2.exact = "oranges and pears in the basket today."` (the surviving sibling's text). Matches the logged strings **character for character**; the frontmatter block was touched. |
-| 60  | The reproduced scenario is clean after the fix           | PASS     | Same fixture, same write, fixed engine: `{"orphaned":["anc_one1","anc_two2"]}`, both selectors byte-preserved, `frontmatter block touched: false`, `git diff -U0` body-only. No truncation, no cross-handed text, no third outcome.                        |
-| 61  | Selector integrity is a general invariant                | **FAIL** | An independent 1000-case seeded sweep found **6 hard violations at HEAD**, all of the whole-document-reorder shape. Reproduced by me standalone: a `remapped` anchor's `exact` grows 65 → 130 chars and contains another anchor's entire paragraph; the two ranges overlap. See FAIL-1. |
-| 62  | The failure path falls through the adjudicated ladder    | PASS     | With a fuzzy-matchable near-identical sibling present, a straddled `partial` was **not** taken from the mapper, `resolveAnchorExact` returned `null`, the full ladder (`resolveAnchor`, fuzzy) **would** have attached it to the sibling — and the engine orphaned instead, selector byte-preserved. Fuzzy proven not to run. A second case shows the exact tier ran and insertion-overlap rejected the hit. A control case (deleted text re-typed verbatim by the same write) still remaps, so the guard is not a blanket orphan. |
-| 63  | Legitimate shrinking edits still remap                   | PASS     | 6/6 shrink shapes `remapped` with `exact` equal to the new range's full text, including both pure boundary-crossing deletes with no insertion (`"We assume a 30-year fixed"`, `"6.1% for the base case."`). All byte-identical to pre-fix. Confirmed on disk. |
-| 64  | Both siblings deleted → both orphan, no contamination    | PASS     | `{"orphaned":["anc_one1","anc_two2"]}`, both selectors byte-preserved, frontmatter untouched, body-only `git diff`. Neither acquired the other's text.                                                                                                     |
-| 65  | The M1 disk matrix stays green                           | PASS     | 5/5 reproduce their round-3 outcomes: sprint-001 TEST-22 `unchanged` (frontmatter untouched); TEST-23 `unchanged` (same offsets `{75,127}`); TEST-24 `remapped` with `exact` quoting the edited sentence verbatim; TEST-25 `orphaned` with a byte-identical selector and a body-only diff; TEST-26 `remapped`, `exact` unchanged, `prefix`/`suffix` refreshed at exactly 32 chars each. |
-| 66  | The four deletion scenarios still orphan                 | PASS     | Near-identical paragraphs, the middle bullet, the Q2 table row and the verbatim-copy case: all `orphaned`, all selectors byte-preserved, all `frontmatter touched: false`, all body-only diffs, all byte-identical to pre-fix.                             |
-| 67  | Cut-and-paste still re-attaches                          | PASS     | (a) down past the tail, (b) up above the lead, (c) far with inserted paragraphs — all three `remapped` and resolving to the moved text. See DISC-1: (b) is **not** byte-identical to pre-fix as the log claims, and HEAD's value is the better one.        |
-| 68  | Doppelgänger and plain deletion still orphan             | PASS     | (a) twin in untouched text → `orphaned`, preserved; (b) no twin → `orphaned`, preserved, re-resolves to `null`. The must-not-fix case — delete here + identical text inserted in an unrelated section — still `remapped`. All byte-identical to pre-fix.    |
-| 69  | The escalating-context sequence stays all-remapped       | PASS     | 4/4 `remapped` with `exact` unchanged and `prefix`/`suffix` equal to `computeContext(newBody, …)`, including row 4 ("both neighbours rewritten"), which was round 1's bug. All byte-identical to pre-fix.                                                  |
-| 70  | Determinism, purity and perf unchanged                   | PASS     | Determinism: mixed-outcome fixture ×100 → 1 distinct result; 1 MB body ×100 → 1 distinct result. Purity: sanctioned grep over the 7 non-test anchor modules for `node:fs`/`node:child_process`/`better-sqlite3`/`core/` → **zero hits**; only `diff-match-patch`, relative siblings and one type-only contract import. Immutability: deep-frozen inputs did not throw, inputs deep-equal after the call, result is a distinct object. Perf A/B (HEAD vs pre-fix, same inputs): 1 MB/50 anchors 5.03 ms vs 5.34 ms; 1 MB sibling scenario 6.18 ms vs 5.64 ms; 50 anchored paragraphs all deleted 1.25 ms vs 1.21 ms — same order of magnitude, nothing near the 1 s `Diff_Timeout`. |
-
-Repo suite: `npx vitest run apps/server/src/anchors` → **34 suites / 157 tests, 0 failures**;
-full repo → **85 files / 1677 tests, 0 failures**.
-
-## Failures
-
-### FAIL-1: A `remapped` selector can still be a superset carrying another anchor's text
-
-**Criterion**: TEST-61 — "For every **remapped** anchor, `newBody.slice(start, end) ===
-selector.exact` exactly — never a prefix, never a superset, never another range's text. A
-single violation fails the sweep and names the seed." Also SERVER-012 acceptance criterion 2
-("A remapped selector's `exact` always equals the full text of the range it claims …
-enforced as a general invariant test over the reconcile property sweep, not just the one
-fixture") and the issue's own Summary, which names "handing one anchor another anchor's
-text" as the defect being fixed.
-
-**Expected**: after reconciliation, no `remapped` anchor's selector contains another
-anchor's text, and no two anchors resolve to overlapping ranges.
-
-**Observed**: `anc_fourth`'s `exact` grows from 65 to 130 characters and contains
-`anc_first`'s entire paragraph; `anc_fourth` resolves to `{143,273}`, which strictly
-contains `anc_first`'s `{209,273}`. Both are reported `remapped`. On disk the two anchors
-end up with identical `prefix`/`suffix` and one `exact` block-scalar quoting the other's
-sentence. The mapper reports `classify=partial, straddledByReplacement=false`, so the new
-guard never fires.
-
-**Steps to reproduce** (pure library, no disk needed —
-`/tmp/eval-p2-scratch/verify-t61.mts`):
-
-1. Build the repo (`npm run build`).
-2. Import `computeContext`, `reconcileAnchors`, `resolveAnchor` from
-   `apps/server/src/index.ts`.
-3. Build four near-identical paragraphs and reverse their order in one write:
-   ```ts
-   const P1 = "Paragraph one now has margin and cherries in the budget quarter.";
-   const P2 = "Paragraph two now has margin and cherries in the budget quarter.";
-   const P3 = "Paragraph three now has margin and cherries in the budget quarter.";
-   const P4 = "Paragraph four now has margin and cherries in the budget quarter.";
-   const oldBody = `\n# Doc\n\n${P1}\n\n${P2}\n\n${P3}\n\n${P4}\n\nA closing paragraph that stays put.\n`;
-   const newBody = `\n# Doc\n\n${P4}\n\n${P3}\n\n${P2}\n\n${P1}\n\nA closing paragraph that stays put.\n`;
-   ```
-4. Anchor `anc_first` on `P1` and `anc_fourth` on `P4`, selectors built with
-   `computeContext`.
-5. Run `reconcileAnchors(oldBody, newBody, anchors)`.
-
-**Actual output at HEAD** (`a776387`):
+My round-2 FAIL-1 reproduction is gone. Same fixture, unchanged:
 
 ```
 report: {"unchanged":[],"remapped":["anc_first","anc_fourth"],"orphaned":[]}
-
-anc_first:
-  exact (64 chars, original 64): "Paragraph one now has margin and cherries in the budget quarter."
-  resolves to: {"start":209,"end":273}
-  contains the OTHER anchor's original text: false
-anc_fourth:
-  exact (130 chars, original 65): "Paragraph two now has margin and cherries in the budget quarter.\n\nParagraph one now has margin and cherries in the budget quarter."
-  resolves to: {"start":143,"end":273}
-  contains the OTHER anchor's original text: true
-  is a single whole paragraph of newBody : false
+anc_first : 64ch (was 64) -> {209,273}     anc_fourth: 65ch (was 65) -> {8,73}
+disjoint; each re-attached to its OWN relocated paragraph
 ```
 
-**Same input on the pre-fix engine** (`4296717`, extracted read-only):
+On disk the frontmatter diff is only reordering plus refreshed context. Round 2's
+cross-anchor pass does exactly what it claims, and the improvement is large and real.
+
+## Corrected sweep — 1000 cases, 3006 anchors, HEAD vs pre-round-2
+
+Own seeded generator: 7 shapes including all four reorder families, 4–6 paragraphs
+(78 % near-identical / 22 % wholly-distinct controls), 2–4 anchors, 30 % sub-paragraph spans.
+
+| check                                                                   | HEAD `46fa225` | pre-round-2 `a776387` |
+| ----------------------------------------------------------------------- | -------------- | --------------------- |
+| **A** `newBody.slice(start,end) !== exact`, or orphan not preserved       | 0              | 0                     |
+| **B** capture — emitted exact contains a **disjoint co-anchor's** exact   | **0**          | **339**               |
+| **C** collision — newly overlapping resolved ranges                       | **0**          | **114**               |
+| **D** superset (`exact` grew > 1.2×)                                      | 2              | 28                    |
+| **E** **substitution — handed unrelated text while its own text survives verbatim** | **378** | **695** |
+| — of which near-identical documents (arguable)                            | **0**          | 0                     |
+| — of which **wholly-distinct-text documents (unambiguous)**               | **378**        | 695                   |
+| **G** truncated/extended while its own text survives                      | 0              | 0                     |
+
+Round 2 eliminates capture and collision outright and roughly **halves** substitution
+(695 → 378). It does not close it. **Every one of the 378 is in a wholly-distinct-text
+document**, so none is the ambiguous "which near-identical twin is which" case — the anchor
+is handed a paragraph with no lexical relationship to its own, while its own text sits
+verbatim and uniquely elsewhere in the same document.
+
+## Criteria Results
+
+| #   | Criterion                                             | Result   | Notes                                                                                                                                                                                     |
+| --- | ----------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 59  | The bug reproduces on disk before any fix             | PASS     | Verified in round 1 against the pre-fix engine, character for character.                                                                                                                    |
+| 60  | The reproduced scenario is clean after the fix        | PASS     | `{"orphaned":["anc_one1","anc_two2"]}`, both selectors byte-preserved, frontmatter untouched, body-only `git diff`.                                                                          |
+| 61  | Selector integrity is a general invariant             | **FAIL** | "never another range's text": **378 / 3006**. "never a superset": 2. Only `slice === exact` (0) and "never a prefix" (0, this generator) hold. See FAIL-1.                                   |
+| 62  | The failure path falls through the adjudicated ladder | PASS     | Fuzzy bait: reorder with P1/P2 deleted while near-identical twins survive relocated → both `orphaned`, preserved. Fuzzy did not run.                                                         |
+| 63  | Legitimate shrinking edits still remap                | PASS     | Shrink-to-a-few-words and pure boundary-crossing tail delete both `remapped` to the new range's full text. (A prefix here is *correct* — the original text is genuinely gone.)               |
+| 64  | Both siblings deleted → both orphan, no contamination | PASS     | Both `orphaned`, byte-preserved, no cross-contamination.                                                                                                                                    |
+| 65  | The M1 disk matrix stays green                        | PASS     | Anchor suite 8 files / **164 tests, 0 failures**.                                                                                                                                           |
+| 66  | The four deletion scenarios still orphan              | PASS     | All four `orphaned`, selectors byte-preserved, frontmatter untouched, byte-identical to pre-round-2.                                                                                         |
+| 67  | Cut-and-paste still re-attaches                       | **FAIL** | (a) and (b) resolve to their own moved text. **(c) does not** — two independent fixture variants both hand the anchor the *inserted filler*, while its own text survives uniquely. See FAIL-2. |
+| 68  | Doppelgänger and plain deletion still orphan          | PASS     | (a) and (b) `orphaned` and preserved; the must-NOT-fix case still `remapped`.                                                                                                               |
+| 69  | The escalating-context sequence stays all-remapped    | PASS     | All four rows `remapped`, resolving to their own text, context refreshed — verified with the corrected predicate.                                                                            |
+| 70  | Determinism, purity and perf unchanged                | PASS     | Reorder path 200 runs → 1 distinct result. Order-independence across 4 key-insertion / id-sort permutations. Purity grep zero hits. Perf ratio flat at 1.15–1.22× from 25 → 400 anchors.      |
+
+**Repo gates:** build ✓ · lint ✓ · format ✓ · typecheck ✓ · **1684 tests / 85 files, 0
+failures** · coverage 99.56 / 96.26 / 100; `reconcile.ts` 100/100/100/100. All match the log.
+
+## Failures
+
+### FAIL-1: a `remapped` anchor is handed an unrelated paragraph while its own text survives verbatim
+
+**Criterion**: TEST-61 — "never a prefix, never a superset, **never another range's text**."
+
+**Hand-verified reproduction** (`/tmp/eval-p2-scratch/r3-verify-substitution.mts`) — six
+**wholly distinct** paragraphs, one write swaps paragraph 4 and paragraph 6, **one** anchor:
 
 ```
-anc_first:
-  exact (14 chars, original 64): "Paragraph four"          <- SERVER-012 repaired this one
-anc_fourth:
-  exact (130 chars, original 65): "…budget quarter.\n\nParagraph one now has …budget quarter."   <- unchanged
+anchored on : "Hiring is paused until the second half of next year at the earliest."  (old offset 217)
+
+HEAD 46fa225   report: {"remapped":["anc_hire01"],"orphaned":[]}
+  emitted exact : "Cash runway extends nineteen months under the current burn profile."
+  resolves to   : {217,284}   slice===exact: true
+  its own text still survives verbatim and UNIQUELY at 356
+
+PRE-R2 a776387 : byte-identical output
 ```
 
-So SERVER-012 repaired the truncation arm of this shape and left the superset arm intact.
+The anchor kept its byte offset and was handed whatever text now occupies it. `slice ===
+exact` holds — which is why a check built only on that predicate calls this clean — but the
+selector now quotes a different paragraph entirely. A thread about the hiring freeze silently
+becomes a thread about cash runway. Its own paragraph is sitting untouched 139 bytes away.
 
-**Rate**: 6 violations in 1000 seeded cases, all of the `reorder-all` shape. The repo's own
-sweep is green because its generated shapes do not include a whole-document reorder of
-near-identical paragraphs — the invariant is asserted, but over a shape space that cannot
-exhibit this family.
+**Rate**: **378 / 3006 anchors (12.6 %)** at HEAD; 695 (23.1 %) pre-round-2. All in
+wholly-distinct-text documents, concentrated in reorder and insert shapes.
 
-**Scope note for the orchestrator.** The sprint's Out of Scope excludes "reworking the
-`deleted` classification path" and says SERVER-012 "guards the **quality of the slice** the
-`partial` path trusts, and nothing else". This case *is* a `partial`-path slice of bad
-quality, so it is in scope by that wording. It is however **not a regression**, and the
-product consequence — two threads anchored to overlapping text, one quoting the other's
-paragraph — is a §6 correctness problem that predates this issue. Whether to fix it here or
-file it as SERVER-013 is an orchestrator call; my mandate is to report that the acceptance
-test as written does not pass.
+**Not universal** — the ordinary case is correct. Three distinct paragraphs, promote the last
+to the top, thread on the middle paragraph: `remapped`, resolves to `{150,216}`, which is
+exactly where its own text now lives. The failure is specific to diff alignments where the
+mapper keeps a byte offset across a relocation.
 
-## Discrepancies between the E2E log and observation
+### FAIL-2: TEST-67 row (c) — the anchor does not follow the moved text
 
-**DISC-1 — "Cut-and-paste ×3 … byte-identical to pre-fix" is false for row (b).**
-Independently verified (`/tmp/eval-p2-scratch/verify-t67b.mts`), moving the anchored
-sentence up above the lead paragraph:
+**Criterion**: TEST-67 — "An anchored sentence is … (c) moved far with extra paragraphs
+inserted between. Then: All three report `remapped` **and resolve to the moved text**."
 
 ```
-HEAD   exact = "We assume a 30-year fixed at 6.1% for the base case."                            (52 chars, original 52)
-PREFIX exact = "We assume a 30-year fixed at 6.1% for the base case.\n\nThe finance model has three inputs that matter most."   (106 chars)
-byte-identical to pre-fix: false
+TEST-67c  moved far, 2 paragraphs inserted
+  original exact (52ch): "We assume a 30-year fixed at 6.1% for the base case."
+  emitted  exact (54ch): "An inserted paragraph one.\n\nAn inserted paragraph two."
+  resolves to {62,116}  —  its own text is at {175,227}, unique
+TEST-67c' moved far, 1 paragraph inserted
+  resolves to {62,88}   —  its own text is at {147,199}, unique
 ```
 
-TEST-67 still passes (all three rows `remapped` and resolving to the moved text) and HEAD's
-value is the **correct** one — but the blanket "byte-identical" claim is inaccurate, and it
-happens to conceal a second superset case that the fix *does* repair. A log that overstates
-sameness makes the next A/B harder to trust.
+Both variants `remapped`, both byte-identical to pre-round-2. The anchor is handed the
+inserted filler. This is FAIL-1's class surfacing inside a named must-hold row.
 
-**DISC-2 — "TEST-61 … asserted inside both property sweeps … Green" overstates what is
-proven.** The repo's sweeps are green (157/157); the invariant does not hold over shapes the
-generator does not emit. See FAIL-1.
+**This row passed in my earlier reports because the check was wrong**, not because the
+behaviour changed: I asserted `newBody.includes(sel.exact)`, which any resident text
+satisfies. With the correct predicate — where the original text survives, the anchor must
+resolve to *that* range — the row fails on both fixtures I built. A different fixture shape
+(the parallel probe run) produced a 1-character trailing-period truncation instead of a full
+substitution, so the row's outcome is fixture-sensitive; it is not robustly passing under any
+of the three constructions tried.
 
-**DISC-3 — the perf figures do not reproduce as absolute numbers.** Log: "HEAD 7.7 ms vs
-pre-fix 7.4 ms" (1 MB/50) and "7.8 vs 7.5" (sibling). Measured here: 5.03 vs 5.34 and 6.18
-vs 5.64. Direction and order of magnitude agree; the absolutes are machine-dependent. Not a
-defect — noted because the log presents them as measurements without stating the machine.
+## Assessment
 
-**DISC-4 — the test-count claim ("848 passed / 55 files") is stale.** HEAD runs 1677 tests
-across 85 files after CONTRACT-002, SERVER-003 and CLI-001 landed. Expected drift.
+**Round 2 is sound work and is not a regression.** It removes 339 capture and 114 collision
+violations outright, halves substitution, keeps all 16 other must-hold rows byte-identical,
+is order-independent and deterministic across the new pairwise pass, exempts nested anchors
+correctly, handles byte-identical "musical chairs" paragraphs correctly, orphans a genuinely
+deleted paragraph instead of stealing, and costs a flat ~15–22 % with no super-linear term.
 
-## Observation (not a listed test)
+**But TEST-61 is not met, and the gap is wider than the disclosed residual.** The issue log
+discloses a single-anchor superset residual. The actual uncovered class is much larger: the
+cross-anchor pass can only void a slice by comparing against **another anchor**, so any slice
+that mangles *unanchored* text passes untouched — whether it swallows it (superset, ~0.07 %),
+or is handed it wholesale (substitution, **12.6 %**). The guard's scope is cross-anchor; the
+invariant's scope is per-anchor. That difference is the entire remaining failure set.
 
-A multi-edit write can now orphan an anchor whose paragraph was **edited in place and still
-exists**: with four edits in one write, `"A sentence that gets edited right here in place."`
-→ `"…in situ."` classifies `partial` with `straddled=true` and orphans (selector preserved),
-whereas the same edit in isolation remaps correctly. Pre-fix remapped it, but onto a
-corrupted superset. This is the conservative trade the issue's log discloses, and TEST-60
-explicitly admits orphan-with-preserved-selector as acceptable — but the cost now lands on
-genuinely-surviving edited text, not only on deleted text. Worth knowing before SERVER-005
-wires reconciliation into the real save path.
+**On the letter-versus-harm question**: this is no longer a case where the letter is violated
+but the harm is not. A thread quoting a paragraph it was never about — while its own
+paragraph sits verbatim and unique elsewhere in the same document — is precisely the harm §6
+promises against, and it does not require a second anchor to be visible to a user.
+
+**Blocking versus follow-up remains the orchestrator's call**, and there is a defensible case
+for shipping: everything here is pre-existing, round 2 strictly improves it, and the
+remaining fix needs a design decision (re-placing any `partial` slice whose original text
+still survives verbatim and uniquely) that touches the SERVER-002 "in-place edit evidence
+outranks a verbatim duplicate elsewhere" adjudication this sprint declared closed. What
+should **not** happen is recording the remainder as a narrow single-anchor superset residual —
+the measured class is a 12.6 % substitution rate in distinct-text documents.
+
+## Discrepancies between the round-2 log and observation
+
+**DISC-1 — "0/1000 violations" is true only for the narrow predicate.** Confirmed for
+`slice === exact` (0 / 3006) and for capture and collision (0 / 3006). Not true for TEST-61
+as written, which also forbids "another range's text": 378 / 3006.
+
+**DISC-2 — the disclosed residual's scope is understated twice over.** The log says "a
+dishonest superset slice with no co-anchor … (single-anchor reorder)". Observed: (i) it also
+fires in **multi-anchor** documents when the swallowed paragraphs are unanchored (19 in a
+2-anchor reorder sweep) and when the would-be colliding co-anchor orphans; (ii) the superset
+shape is the *rarer* half — substitution is 189× more common in this sweep.
+
+**DISC-3 — "only the reorder family differs" is false as a general statement.** 16/16 named
+must-hold rows are byte-identical, which is what the log directly claims and it holds. But at
+sweep level HEAD differs from pre-round-2 well outside the reorder family, and the parallel
+probe run measured 208/1000 cases differing including delete-edit and random-edits.
+
+**DISC-4 — "227/1000 pre-round-2" is not reproducible with an independent generator.** My
+pre-round-2 figures on my own seeds: 339 capture + 114 collision + 695 substitution.
+Direction and magnitude of the improvement are confirmed; the specific count is
+generator-dependent and should not be quoted as an absolute.
+
+**DISC-5 — perf absolutes differ, direction agrees.** Machine- and fixture-dependent; the
+order-of-magnitude bar is met either way.
 
 ## Summary
 
-**11 of 12 acceptance tests pass.** The reproduction is genuine and matches its log
-character for character; the fix eliminates the sibling-deletion truncation family
-completely (40 → 0 hard violations across a 1000-case sweep) without disturbing shrinks,
-cut-and-paste, doppelgängers, the escalating-context sequence, the M1 disk matrix, the four
-deletion scenarios, determinism, purity or perf. **TEST-61 fails**: the general
-slice-integrity invariant does not hold for whole-document reorders of near-identical
-paragraphs, where a `remapped` selector can still be a superset containing another anchor's
-text. That failure is pre-existing rather than introduced here, which bears on whether it
-blocks this issue or becomes a follow-up — but it is a failure of the test as written.
+**10 of 12 acceptance tests pass.** Round 2's cross-anchor pass is real, well-targeted and
+regression-free: capture 339 → 0, collision 114 → 0, substitution 695 → 378, all 16 other
+must-hold rows byte-identical, order-independent, deterministic, no perf blow-up. **TEST-61
+still fails** — an anchor is handed a wholly unrelated paragraph in 12.6 % of swept anchors
+while its own text survives verbatim and uniquely — and **TEST-67(c) fails** as a named
+instance of that class. Both are pre-existing and byte-identical to pre-round-2. My earlier
+round-3 PARTIAL was based on two checks that shared the fix's own cross-anchor blind spot;
+corrected here.
+
+---
+
+## Appendix — round-2 record (superseded, kept for the audit trail)
+
+Round-2 verdict was **FAIL** on TEST-61: a whole-document reorder of near-identical
+paragraphs emitted a `remapped` selector whose `exact` was a 130-character superset
+containing another anchor's entire 65-character paragraph, ranges overlapping
+(`{143,273}` ⊃ `{209,273}`), with `classify=partial, straddledByReplacement=false` so
+round 1's guard never fired. Verified pre-existing against `4296717`. **Round 2 fixes this
+specific reproduction** — verified directly at HEAD: 65 chars, `{8,73}`, disjoint.
+
+Round 2 also recorded that "cut-and-paste ×3 … byte-identical to pre-fix" was false for row
+(b) against the *round-1* baseline. Against `a776387` all three rows are byte-identical; row
+(c) is now shown to be failing on its own merits (FAIL-2), not on an A/B difference.
