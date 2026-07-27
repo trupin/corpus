@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CorpusServer } from "./app.js";
 import { CorpusError } from "./errors.js";
@@ -308,6 +309,56 @@ describe("runServerProcess — boot", () => {
       write.mockRestore();
     }
   });
+
+  it("opens the SQLite projection before the socket, and closes it at shutdown", async () => {
+    const workspace = makeWorkspace("ws-projection");
+    mkdirSync(join(workspace, "data", "docs"), { recursive: true });
+    writeFileSync(
+      join(workspace, "data", "docs", "a.md"),
+      "---\nid: doc_aaa\ntype: note\ntitle: A\n---\n\nBody.\n",
+      "utf8",
+    );
+
+    const h = harness();
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+    });
+
+    const cacheDb = join(workspace, ".corpus", "cache.db");
+    expect(existsSync(cacheDb)).toBe(true);
+    const projected = new Database(cacheDb, { readonly: true });
+    try {
+      expect(projected.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_aaa" }]);
+    } finally {
+      projected.close();
+    }
+
+    await server?.close();
+  });
+
+  it("treats a projection that cannot be opened as a boot failure", async () => {
+    const workspace = makeWorkspace("ws-projection-fails");
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      attachProjectionFn: () => {
+        throw new CorpusError("cache.db is unreadable");
+      },
+    });
+
+    expect(server).toBeUndefined();
+    expect(h.exits).toEqual([1]);
+    expect(h.lines.join("\n")).toContain("cache.db is unreadable");
+  });
 });
 
 describe("runServerProcess — shutdown", () => {
@@ -412,6 +463,9 @@ describe("runServerProcess — shutdown", () => {
       hooks: h.hooks,
       logger: h.logger,
       createServerFn: () => failing,
+      // This stand-in server carries no real config, so the projection has no
+      // workspace to open; what is under test here is the shutdown path.
+      attachProjectionFn: () => undefined,
     });
 
     h.raise("SIGTERM");

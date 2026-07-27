@@ -13,12 +13,14 @@
     "@corpus/contract": "*",
     "@hono/node-server": "^1.19.0",
     "@hono/zod-openapi": "^1.5.1",
+    "better-sqlite3": "^12.4.1",
     "diff-match-patch": "^1.0.5",
     "hono": "^4.12.32",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/diff-match-patch": "^1.0.36"
   }
 }

@@ -34,17 +34,17 @@ Build the derived SQLite projection in `apps/server/src/projection/`: the schema
 
 ## Acceptance Criteria
 
-- [ ] `openProjection(config)` opens/creates `.corpus/cache.db` with WAL, foreign keys on, and the §9.1 schema; the handle registers a disposer with SERVER-003's server.
-- [ ] Tables exist exactly as §9.1 lists them: `documents`, `threads`, `anchors`, `turns`, `events`, `seen`, `jobs`, `locks`, `links`, FTS5 `search`, `meta` — same names, same columns.
-- [ ] `projectDocument(db, absPath)` (incremental, single file, synchronous, transactional) and `removeDocument(db, absPath)` keep every derived table consistent for that document.
-- [ ] Skill and agent-definition roots are indexed per §7 with the right `type`, archived skills still indexed, and Claude Code's `name`/`description` frontmatter coexisting with Corpus's fields without validation failures.
-- [ ] `links` rows are extracted from `[[refs]]` in document bodies **and** in thread turn bodies.
-- [ ] `anchors.resolved_offset` is computed with SERVER-002's `resolveAnchor` against the current parent body and is `NULL` when the selector no longer resolves.
-- [ ] **Orphan look-alike decision** _(evaluator observation, SERVER-002 round 3, 2026-07-26)_: when reconciliation has orphaned an anchor (its frontmatter entry preserved for history), running full-ladder `resolveAnchor` on that preserved selector at projection time can fuzzy-match a similar sibling (the deleted *bread* bullet's selector resolves to the *milk* bullet) — so `resolved_offset` would be non-NULL and the UI would render the orphaned thread on the wrong text. Before implementing, resolve with the orchestrator whether orphaned-at-reconcile-time anchors should (a) project `resolved_offset = NULL` unconditionally (orphan state is sticky until a write re-attaches it), or (b) re-resolve exact-only (`resolveAnchorExact`), never fuzzy. Full-ladder fuzzy at render time contradicts the reconciler's byte-for-byte history guarantee.
-- [ ] FTS5 `search` covers document titles, document bodies, and turn bodies; a query returns the expected document with a snippet.
-- [ ] `rebuild(config, { into? })` builds a fresh database from files alone and atomically replaces `cache.db` (or writes to `into` for the pre-push temp-path check); running it twice produces identical content.
-- [ ] `doctor(config)` detects drift by (a) file counts vs. row counts per root and (b) per-file content-hash comparison, skipping hashing when size and mtime are unchanged; it returns a structured report and completes fast enough for pre-commit (target < 200 ms on a warm workspace of ~1000 documents).
-- [ ] Unit tests cover per-projector row shapes, rebuild idempotence, drift detection (each drift kind), and FTS behaviour.
+- [x] `openProjection(config)` opens/creates `.corpus/cache.db` with WAL, foreign keys on, and the §9.1 schema; the handle registers a disposer with SERVER-003's server.
+- [x] Tables exist exactly as §9.1 lists them: `documents`, `threads`, `anchors`, `turns`, `events`, `seen`, `jobs`, `locks`, `links`, FTS5 `search`, `meta` — same names, same columns.
+- [x] `projectDocument(db, absPath)` (incremental, single file, synchronous, transactional) and `removeDocument(db, absPath)` keep every derived table consistent for that document.
+- [x] Skill and agent-definition roots are indexed per §7 with the right `type`, archived skills still indexed, and Claude Code's `name`/`description` frontmatter coexisting with Corpus's fields without validation failures.
+- [x] `links` rows are extracted from `[[refs]]` in document bodies **and** in thread turn bodies.
+- [x] `anchors.resolved_offset` is computed with SERVER-002's `resolveAnchor` against the current parent body and is `NULL` when the selector no longer resolves.
+- [x] **Orphan look-alike decision** _(evaluator observation, SERVER-002 round 3, 2026-07-26)_: when reconciliation has orphaned an anchor (its frontmatter entry preserved for history), running full-ladder `resolveAnchor` on that preserved selector at projection time can fuzzy-match a similar sibling (the deleted *bread* bullet's selector resolves to the *milk* bullet) — so `resolved_offset` would be non-NULL and the UI would render the orphaned thread on the wrong text. Before implementing, resolve with the orchestrator whether orphaned-at-reconcile-time anchors should (a) project `resolved_offset = NULL` unconditionally (orphan state is sticky until a write re-attaches it), or (b) re-resolve exact-only (`resolveAnchorExact`), never fuzzy. Full-ladder fuzzy at render time contradicts the reconciler's byte-for-byte history guarantee.
+- [x] FTS5 `search` covers document titles, document bodies, and turn bodies; a query returns the expected document with a snippet.
+- [x] `rebuild(config, { into? })` builds a fresh database from files alone and atomically replaces `cache.db` (or writes to `into` for the pre-push temp-path check); running it twice produces identical content.
+- [x] `doctor(config)` detects drift by (a) file counts vs. row counts per root and (b) per-file content-hash comparison, skipping hashing when size and mtime are unchanged; it returns a structured report and completes fast enough for pre-commit (target < 200 ms on a warm workspace of ~1000 documents).
+- [x] Unit tests cover per-projector row shapes, rebuild idempotence, drift detection (each drift kind), and FTS behaviour.
 
 ## Sprint-003 Adjudications (binding, 2026-07-26)
 
@@ -190,25 +190,224 @@ N/A — this is a feature, not a bug.
 8. Drift check: run `doctor` → expected `ok`. Then edit a document with a real editor/`printf >>`, re-run `doctor` → expected `content_mismatch` naming that path. Re-project that single file and re-run → `ok`. Delete a file with `rm`, re-run → `orphan_row`. Time each run (`time`) and record the numbers.
 9. Read-your-write sanity: from a single `tsx` script, write a new markdown file, call `projectDocument` synchronously, then immediately `SELECT` it — expected: the row is visible in the same tick, no polling.
 
+## Implementation Notes — deviations from the Technical Design
+
+Three places where the implementation departs from this file's Technical Design, each deliberate and each recorded so the next reader inherits the reasoning rather than re-deriving it.
+
+1. **Synthetic ids are `doc_`-prefixed, not `skill_` / `agentdef_`.** The design pins `skill_<sha1(path).slice(0,8)>` and `agentdef_<…>`, but neither satisfies the contract's `DocumentIdSchema` (`^(doc|th)_[A-Za-z0-9]+$`) — a row carrying one would fail response validation the moment SERVER-011's collection query returned it. The readable kind is kept inside the id instead: `doc_skill61c2325d`, `doc_agentdef9aac2cc9`. Everything the AC actually depends on is unchanged — path-derived, deterministic, identical across rebuilds and the incremental path, and never written back into the file. `documents.type` remains the real discriminator.
+
+2. **`count_mismatch` is the queue mirror's check only.** The design describes a per-root file-count-vs-row-count pass. For document roots that pass is strictly weaker than what `doctor` already does: it compares the enumerated path set against `SELECT id, path FROM documents` (one query, no file reads), which localizes every disagreement as `missing_row` / `orphan_row` / `duplicate_id` / `unparseable` and therefore subsumes counting. Emitting a bare `count_mismatch` alongside those would be pure noise on every real drift. `events` has no per-file bookkeeping table, so it is the one surface where a count is the only available mechanism — and it counts `evt_*.json` exclusively (Sprint-003 Adjudication 2).
+
+3. **The disposer is registered from `lifecycle.ts`, not from `app.ts`.** `createServer` is documented as a pure function of its config — it reads no environment and touches no filesystem — and `app.ts` already declares `registerDisposer` as the seam later subsystems attach *through*. `attachProjection(server)` therefore runs in `runServerProcess`, before the socket binds, and is injectable as `attachProjectionFn` for lifecycle tests driving a stand-in server. Side benefit for the sprint: it removes SERVER-004 from `app.ts` entirely, so SERVER-008's queue mount lands with no conflict there.
+
+Two shapes this issue pins that nothing else had yet defined, flagged for the issues that will write them: `.corpus/seen.json` is a **flat map** of thread id → ISO instant (`{"th_x9y8": "2026-07-04T10:00:00Z"}`), and `jobs.status` is **joined from the `events` mirror** (NULL when no event row exists), never read from the log file.
+
 ## E2E Verification Log
 
 _Filled in by the implementing agent as proof-of-work. Must be from real E2E testing — no mocks, no test clients, no in-memory databases. Include specific commands run, actual outputs observed, and pass/fail conclusions. State which model the implementing agent ran on ("implemented on: opus | fable")._
 
+**implemented on: opus** (worktree `.claude/worktrees/server-004`, branch `wt-server-004`).
+
+**Environment.** Port `8775` (checked free with `lsof -nP -iTCP:8775 -sTCP:LISTEN` before binding; never `pkill`). Scratch workspaces `mktemp -d /tmp/corpus-s004-XXXXXX`. Node v25.2.1, `sqlite3` 3.43.2 (system CLI), better-sqlite3 12.4.1 (SQLite 3.53.2, fts5 present). Every database below is a real file on disk, inspected from a **separate process** with the `sqlite3` CLI — no in-memory database anywhere in this log.
+
 ### Reproduction (bugs only)
 
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+N/A — this is a feature, not a bug.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+**Workspace built by hand** (`corpus init` is being implemented in a parallel worktree, so the tree was assembled from `docs/workspace-template.md`'s documented shape): `git init`, `.corpus/config.json` mode 600 with port 8775, the five `.corpus/queue/<status>/` directories each holding a `.gitkeep`, `.corpus/{locks,jobs}/`, `data/docs/{finance,inbox,views}/`, `data/threads/`, `.claude/{skills,skills-archived,agents}/`. Content: a note with two anchors (one resolvable, one not), a grocery note whose anchor was orphaned through the real reconciliation path, a thread with three turns and `[[refs]]`, the repo's real `assets/workspace/claude/skills/comment/SKILL.md` and the three real seed view documents, an archived skill, a hand-written `.claude/agents/researcher.md` carrying only Claude Code's `name`/`description`, a **symlinked** plugin skill (`.claude/skills/todos -> plugins/todos`), an unparseable `broken.md`, plus decoys (`notes.txt`, `.hidden.md`, `node_modules/pkg/README.md`, root `README.md`), one `evt_*.json`, one lock, one job log, one `seen.json`.
+
+**1. Real rebuild** — `tsx` calling `rebuild()` against the real workspace:
+
+```
+{ "documents": 10, "threads": 1, "turns": 3, "anchors": 3, "links": 2,
+  "events": 1, "jobs": 1, "locks": 1, "seen": 1, "durationMs": 14,
+  "skipped": [{ "path": "data/docs/broken.md",
+                "reason": "data/docs/broken.md:4: invalid YAML frontmatter: Flow sequence in block collection …" }],
+  "path": "/tmp/corpus-s004-RmpjWk/.corpus/cache.db" }
+```
+
+PASS — counts match the fixtures, the unparseable file is named in `skipped`, nothing partial was inserted for it, the process did not exit.
+
+**2. Real database, `sqlite3` CLI.** `sqlite3 …/.corpus/cache.db ".tables"` →
+`anchors documents events file_hashes jobs links locks meta search search_config search_content search_data search_docsize search_idx seen threads turns`
+(the `search_*` entries are FTS5's own shadow tables; every §9.1 table plus `file_hashes` is present).
+
+`select id,type,status,path from documents order by path`:
+
+```
+doc_agentdef9aac2cc9  agent-def  open      .claude/agents/researcher.md
+doc_skilllegacy       skill      archived  .claude/skills-archived/legacy/SKILL.md
+doc_skillcomment      skill      open      .claude/skills/comment/SKILL.md
+doc_skill61c2325d     skill      open      .claude/skills/todos/SKILL.md
+doc_a1b2c3            note       open      data/docs/finance/mortgage.md
+doc_grocery1          note       open      data/docs/inbox/groceries.md
+doc_seedattention     view       open      data/docs/views/attention.md
+doc_seedinbox         view       open      data/docs/views/inbox.md
+doc_seedopenthreads   view       open      data/docs/views/open-threads.md
+th_x9y8               thread     open      data/threads/th_x9y8.md
+```
+
+PASS — all five roots typed correctly, the archived skill forced to `status='archived'`, every path workspace-relative and POSIX. `select count(*) from documents where type='skill'` → `3`: the symlinked `todos` skill is indexed **once**, under its link path. `notes.txt`, `.hidden.md`, `node_modules/…`, and the root `README.md` are absent.
+
+**3. Anchors — the orphan look-alike guarantee.** `select doc_id,anchor_id,resolved_offset,exact_text from anchors`:
+
+```
+doc_a1b2c3    anc_gone   (null)  a clause that was deleted long ago
+doc_a1b2c3    anc_k4f7   8       assume a 30-year fixed at 6.1%
+doc_grocery1  anc_bread  (null)  - bread from the corner bakery
+```
+
+A script re-read the real files, sliced each body at the stored offset and compared:
+
+```
+anc_gone: NULL (orphaned)
+anc_k4f7: offset=8 slice="assume a 30-year fixed at 6.1%" matches=true
+anc_bread: NULL (orphaned)
+milk bullet offset in groceries body = 13
+```
+
+PASS — the live anchor's offset slices back to its `exact` byte for byte; the orphaned *bread* bullet is `NULL` and specifically **not** `13`, the offset of the *milk* bullet. Sprint-003 Adjudication 1 (exact-only, `resolveAnchorExact`, fuzzy never) holds at projection time.
+
+**4. Links.** `select * from links`:
+
+```
+doc_a1b2c3  th_x9y8      (from the note's body)
+th_x9y8     doc_a1b2c3   (from a turn body, attributed to the thread)
+```
+
+PASS — `[[doc_fenced]]` inside a code fence produced no row.
+
+**5. FTS5.** `select ref,kind,doc_id,snippet(search,4,'[',']','…',8) from search where search match 'mortgage'`:
+
+```
+doc_a1b2c3|doc|doc_a1b2c3|Let us assume a 30-year fixed at…
+th_x9y8#2026-07-03T09:00:00Z|turn|th_x9y8|Is the [mortgage] rate in [[doc_a1b2c3]] still…
+```
+
+PASS — a title-only hit (`Mortgage options`) and a turn-body hit, both with non-empty snippets, `ref` = `<threadId>#<ts>` for the turn. Diacritic folding: a note containing `café` is returned by `search match 'cafe'` → `doc_cafe01|doc`, so the declared `unicode61 remove_diacritics 2` tokenizer is the one in effect.
+
+**6. Rebuild idempotence (§15 M1).** Two rebuilds into two temp paths, then every table dumped with a deterministic `order by` and `diff`ed:
+
+```
+documents: identical   threads: identical   anchors: identical   turns: identical
+events: identical      seen: identical      jobs: identical      locks: identical
+links: identical       file_hashes: identical   search: identical   meta: identical
+idempotence-fail=0
+```
+
+PASS. `meta` was compared excluding `rebuilt_at`, which is the one value that is supposed to differ (`schema_version|1`, `rebuilt_at|2026-07-27T01:57:30.399Z`).
+
+**7. The projection never writes to the corpus.** `stat -f '%m %z %N'` and `md5 -q` over every `.md` under `data/` and `.claude/`, before and after two full rebuilds: both diffs empty ("mtimes+sizes: IDENTICAL", "content hashes: IDENTICAL"). The hand-written agent-def and the symlinked skill kept the same synthetic ids across both runs (`doc_agentdef9aac2cc9`, `doc_skill61c2325d`).
+
+**8. Doctor drift detection**, each kind independently, with `time`:
+
+| step | result |
+| --- | --- |
+| clean workspace | `{"ok": true, "drift": []}`, `stats: {files: 10, documents: 10, hashed: 0, parsed: 0, durationMs: 4}` — **and no `count_mismatch` from the five `.gitkeep` files** (Sprint-003 Adjudication 2) |
+| `printf >>` a document | `content_mismatch` naming `data/docs/finance/mortgage.md`, `hashed: 1` |
+| re-project that one file | back to `ok` |
+| add a `.md` without projecting | `missing_row` naming `data/docs/new.md`, `parsed: 1` |
+| `rm` a projected file | `orphan_row`: "data/docs/inbox/cafe.md is projected as doc_cafe01 but no such file exists under any root" |
+| add an unparseable file | `unparseable` with the parser's line-and-column message |
+| add a second file claiming an existing id | `duplicate_id`: "data/docs/inbox/mortgage-copy.md claims id doc_a1b2c3, already projected from data/docs/finance/mortgage.md" |
+| drop an `evt_*.json` into `in-progress/` without projecting | `count_mismatch`: ".corpus/queue holds 2 evt_\*.json file(s) but the projection has 1 event row(s)" |
+| undo each | `{"ok": true, "drift": []}` |
+
+The hash pass skipped every file on the clean runs (`hashed: 0`) and hashed exactly the one changed file otherwise. `doctor` left `cache.db` untouched (asserted on size and mtime in `doctor.test.ts`; it opens `readonly: true`).
+
+**9. Real server process, port 8775.**
+
+```
+$ CORPUS_WORKSPACE=$WS CORPUS_LOG_LEVEL=debug tsx apps/server/src/main.ts &
+{"level":"debug","msg":"projection ready","path":"/tmp/corpus-s004-RmpjWk/.corpus/cache.db","durationMs":18}
+{"level":"info","msg":"listening on http://127.0.0.1:8775",…,"workspace":"/tmp/corpus-s004-RmpjWk"}
+$ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8775/api/health   → 200
+$ ls -la $WS/.corpus | grep cache
+cache.db (4096)  cache.db-shm (32768)  cache.db-wal (395552)
+$ sqlite3 $WS/.corpus/cache.db "select count(*) from documents; select count(*) from events;"
+10
+1
+```
+
+The projection is opened and populated **before the socket binds** (a projection that cannot be built is a boot failure), and `sqlite3` reads the running server's WAL database from another process. `doctor` run while the server was up: `{"ok": true, drift: []}` over 10 files in 4 ms, neither blocking nor blocked; `/api/health` still `200` afterwards.
+
+Graceful shutdown:
+
+```
+$ kill -TERM <pid>
+{"level":"info","msg":"shutting down","signal":"SIGTERM"}
+{"level":"info","msg":"shutdown complete","signal":"SIGTERM"}
+server exit code = 0
+$ ls -la $WS/.corpus | grep cache      → cache.db (147456) only; -wal and -shm gone
+$ sqlite3 $WS/.corpus/cache.db "pragma integrity_check; select count(*) from documents;"
+ok
+10
+```
+
+PASS — the disposer closed the handle, the WAL was checkpointed away, and reopening needs no recovery pass.
+
+**10. Read-your-write, in one tick.** A single `tsx` script wrote a new markdown file, called `projectDocument`, then `SELECT`ed — with no `await`, no timer, no polling:
+
+```
+projectDocument returned: {"kind":"projected","path":"data/docs/inbox/read-your-write.md","id":"doc_ryw001",…}
+SELECT in the same tick: {"id":"doc_ryw001","title":"Read your write","path":"data/docs/inbox/read-your-write.md"}
+row visible before any microtask: true
+$ sqlite3 .corpus/cache.db "select id,path from documents where id='doc_ryw001'"
+doc_ryw001|data/docs/inbox/read-your-write.md
+```
+
+PASS. No projection function is `async` (asserted in `index.test.ts`).
+
+**11. A schema-version change wipes rather than migrates.** With the projection closed, `sqlite3` stamped `schema_version=0` and created a `legacy_leftover` table. Reopening (what a boot does):
+
+```
+documents after reopen: 11
+$ sqlite3 .corpus/cache.db "select * from meta; select count(*) from sqlite_master where name='legacy_leftover'; select count(*) from documents"
+schema_version|1
+0
+11
+```
+
+PASS — the database was dropped and rebuilt from files; the foreign table is gone; every row reconstructed. There is no migration code path.
+
+**12. An interrupted rebuild never half-writes `cache.db`.** On a 2201-document workspace, a rebuild was `kill -TERM`ed mid-flight:
+
+```
+rebuild exit=143
+$ sqlite3 .corpus/cache.db "pragma integrity_check; select count(*) from documents"
+ok
+2201
+$ ls .corpus | grep rebuild-
+cache.db.rebuild-38543  cache.db.rebuild-38543-shm  cache.db.rebuild-38543-wal
+$ <next rebuild>   → "documents": 2201, "path": ".../cache.db";  no leftovers remain
+```
+
+PASS — the rename is the commit point; the previous database stayed valid and the next rebuild cleaned the temp files.
+
+**13. Performance, real measurements on this machine** (`time`, generated workspaces):
+
+| operation | measured | target |
+| --- | --- | --- |
+| cold `rebuild` of 2200 documents (2000 notes with anchors + 200 threads + 2200 refs) | **448 ms** internal, 0.737 s wall including tsx startup | < 2 s |
+| warm `doctor` over 2200 files | **58 ms** internal (`hashed: 0`) | — |
+| warm `doctor` over 1000 files | **31 ms** internal, 0.327 s wall including tsx startup | < 200 ms |
+| single-document incremental projection into a 2201-document database, 20 samples | **min 0.241 ms, median 0.427 ms, max 0.530 ms** | < 5 ms |
+
+PASS on all four.
+
+**14. Gates.** `npm run build` ✅ · `npm run lint` ✅ (0 errors, 0 warnings) · `npm run format:check` ✅ · `npm run typecheck` ✅ (all four workspaces) · `npm test` **1834 passed / 1834**, of which 126 are this issue's. Coverage: **99.32 % lines, 95.89 % branches, 100 % functions** repo-wide (gate 90 %); `apps/server/src/projection` at 98.05 % lines / 94.01 % branches.
+
+**Verified by unit test rather than by hand E2E** (recorded here so the omission is deliberate, not silent): the 5 MB-body document (`project-document.test.ts` — excerpt stays 280 chars, FTS row queryable), the `ENOENT`-between-enumeration-and-read race, the FTS5-missing open failure (`assertFts5Available` against a stub that throws — no real fts5-less build exists on this machine), and the empty-workspace rebuild.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

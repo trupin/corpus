@@ -7,6 +7,7 @@ import { createServer, type CorpusServer } from "./app.js";
 import { loadServerConfig, type ServerConfig } from "./config.js";
 import { CorpusError, describeThrown } from "./errors.js";
 import { createLogger, type Logger } from "./logger.js";
+import { attachProjection } from "./projection/attach.js";
 
 export const SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"] as const;
 
@@ -84,6 +85,12 @@ export interface RunServerOptions {
   readonly hooks: ProcessHooks;
   readonly logger?: Logger;
   readonly createServerFn?: (config: ServerConfig) => CorpusServer;
+  /**
+   * Opens the SQLite projection and registers its disposer (SERVER-004).
+   * Injected so a test driving the lifecycle with a stand-in server does not
+   * need a real workspace on disk.
+   */
+  readonly attachProjectionFn?: (server: CorpusServer) => void;
   readonly gracePeriodMs?: number;
 }
 
@@ -111,6 +118,9 @@ export async function runServerProcess(
       logger.info(`warning: ${warning}`, { configPath: config.configPath });
     }
     server = (options.createServerFn ?? createServer)(config);
+    // Before the socket opens: a projection that cannot be built is a boot
+    // failure, and the first request must never race the initial projection.
+    (options.attachProjectionFn ?? attachProjection)(server);
   } catch (error) {
     logBootFailure(logger, error, "failed to start");
     hooks.exit(1);
