@@ -68,6 +68,9 @@ Implement the document mutation surface: create, edit, move, archive, and delete
 
 ### Key Implementation Details
 
+- **ValidationError requires `issues`** _(evaluator, sprint-002, 2026-07-26)_: `ApiErrorSchema`'s `bad_request` variant makes `issues` required — every server-generated 400 (not just zod-hook ones) must carry a non-absent `issues` array or the body fails its own contract parse.
+
+
 **The pipeline.** Every verb funnels through one function so the invariants live in exactly one place:
 
 ```ts

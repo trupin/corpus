@@ -5,7 +5,7 @@ import { computeContext } from "./context.js";
 import { computeOffsetMapper } from "./diff.js";
 import { reconcileAnchors } from "./reconcile.js";
 import { resolveAnchor } from "./resolve.js";
-import type { AnchorsMap, TextQuoteSelector } from "./types.js";
+import type { AnchorsMap, Range, TextQuoteSelector } from "./types.js";
 
 const SENTENCE = "assume a 30-year fixed at 6.1%";
 const BODY = [
@@ -402,6 +402,111 @@ describe("reconcileAnchors — partial-path slice integrity (SERVER-012)", () =>
   });
 });
 
+describe("reconcileAnchors — reorder family: cross-anchor slice honesty (SERVER-012 round 2)", () => {
+  // Evaluator FAIL-1 (round 2): a whole-document reorder of near-identical
+  // paragraphs makes the diff stuff an entire relocated paragraph into a
+  // replacement wholly *inside* a range — boundary-respecting, so the straddle
+  // guard cannot fire — and the mapped slice becomes a superset carrying a
+  // neighbouring anchor's whole paragraph, with the two anchors' resolved
+  // ranges overlapping. The cross-anchor honesty pass must reject such slices
+  // and fall through the adjudicated chain.
+  const P1 = "Paragraph one now has margin and cherries in the budget quarter.";
+  const P2 = "Paragraph two now has margin and cherries in the budget quarter.";
+  const P3 = "Paragraph three now has margin and cherries in the budget quarter.";
+  const P4 = "Paragraph four now has margin and cherries in the budget quarter.";
+  const oldBody = `\n# Doc\n\n${P1}\n\n${P2}\n\n${P3}\n\n${P4}\n\nA closing paragraph that stays put.\n`;
+  const newBody = `\n# Doc\n\n${P4}\n\n${P3}\n\n${P2}\n\n${P1}\n\nA closing paragraph that stays put.\n`;
+  const input: AnchorsMap = {
+    anc_first: capture(oldBody, P1),
+    anc_fourth: capture(oldBody, P4),
+  };
+
+  it("a reversed document re-attaches both anchors to their own relocated paragraphs", () => {
+    // Pre-fix: anc_fourth's exact grew 65 → 130 chars, quoting P2 *and* P1,
+    // and resolved to a range strictly containing anc_first's.
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_first", "anc_fourth"], orphaned: [] });
+    expect(anchors["anc_first"]?.exact).toBe(P1);
+    expect(anchors["anc_fourth"]?.exact).toBe(P4);
+    const first = resolveAnchor(newBody, anchors["anc_first"] ?? { exact: "" });
+    const fourth = resolveAnchor(newBody, anchors["anc_fourth"] ?? { exact: "" });
+    expect(newBody.slice(first?.start, first?.end)).toBe(P1);
+    expect(newBody.slice(fourth?.start, fourth?.end)).toBe(P4);
+    // The observable harm of the bug: overlapping resolved ranges.
+    expect(first).not.toBeNull();
+    expect(fourth).not.toBeNull();
+    expect(
+      (first?.end ?? 0) <= (fourth?.start ?? 0) || (fourth?.end ?? 0) <= (first?.start ?? 0),
+    ).toBe(true);
+  });
+
+  it("the reorder fixture exercises the non-straddled seam the round-1 guard cannot reach", () => {
+    // Fixture-rot guard: the dishonest slice must come from a replacement
+    // wholly inside the range (`partial`, not straddled) — the exact shape
+    // that defeated `straddledByReplacement`.
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    const start = oldBody.indexOf(P4);
+    const range = { start, end: start + P4.length };
+    expect(mapper.classify(range)).toBe("partial");
+    expect(mapper.straddledByReplacement(range)).toBe(false);
+  });
+
+  it("a captured anchor whose paragraph has a pre-existing twin orphans, selector preserved", () => {
+    // Re-routing goes through the adjudicated chain: exact-only, so a moved
+    // paragraph that is no longer uniquely resolvable (a verbatim twin sits in
+    // unedited text) orphans byte-for-byte instead of guessing — fuzzy never.
+    const appendix = `Appendix repeats: ${P4}`;
+    const twinOld = `${oldBody}\n${appendix}\n`;
+    const twinNew = `${newBody}\n${appendix}\n`;
+    const twinInput: AnchorsMap = {
+      anc_first: capture(twinOld, P1),
+      anc_fourth: capture(twinOld, P4),
+    };
+    const { anchors, report } = reconcileAnchors(twinOld, twinNew, twinInput);
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_first"], orphaned: ["anc_fourth"] });
+    expect(anchors["anc_fourth"]).toEqual(twinInput["anc_fourth"]);
+    expect(anchors["anc_first"]?.exact).toBe(P1);
+  });
+
+  it("pre-existing nested anchors are exempt: an edited outer range may quote its inner anchor", () => {
+    // The capture check only applies to anchors whose *old* ranges were
+    // disjoint — nested/overlapping anchors are legal and move together.
+    const SENT = "We assume a 30-year fixed at 6.1% for the base case.";
+    const body = `Intro line.\n\n${SENT}\n\nOutro line.\n`;
+    const nested: AnchorsMap = {
+      anc_outer: capture(body, SENT),
+      anc_inner: capture(body, "6.1%"),
+    };
+    const edited = body.replace("for the base case", "for the bull case");
+    const { anchors, report } = reconcileAnchors(body, edited, nested);
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_inner", "anc_outer"], orphaned: [] });
+    expect(anchors["anc_outer"]?.exact).toBe(SENT.replace("base", "bull"));
+    expect(anchors["anc_inner"]?.exact).toBe("6.1%");
+  });
+
+  it("rejects a slice whose emitted selector would resolve to an identical earlier window", () => {
+    // Self-round-trip (acceptance criterion 2): an edit that makes the
+    // anchored block byte-identical to an earlier block — including 32 chars
+    // of context on each side — would emit a selector resolving to the FIRST
+    // occurrence, silently moving the thread to the wrong section. The slice
+    // is rejected; the original text is gone, so the anchor orphans.
+    const block = (word: string) =>
+      `The standard clause requires ${word} review before any release ships.`;
+    const SEP = "\n\n---- standard divider used between every section ----\n\n";
+    const shadowOld = `# Policy${SEP}${block("legal")}${SEP}${block("editorial")}${SEP}End.`;
+    const shadowNew = shadowOld.replace("editorial", "legal");
+    const start = shadowOld.indexOf(block("editorial"));
+    const range = { start, end: start + block("editorial").length };
+    const mapper = computeOffsetMapper(shadowOld, shadowNew);
+    expect(mapper.classify(range)).toBe("partial");
+    expect(mapper.straddledByReplacement(range)).toBe(false);
+    const shadowInput: AnchorsMap = { anc_second: capture(shadowOld, block("editorial")) };
+    const { anchors, report } = reconcileAnchors(shadowOld, shadowNew, shadowInput);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_second"] });
+    expect(anchors["anc_second"]).toEqual(shadowInput["anc_second"]);
+  });
+});
+
 describe("reconcileAnchors — guarantees", () => {
   it("is deterministic: 100 runs on identical inputs serialize byte-identically", () => {
     const anchors: AnchorsMap = {
@@ -559,6 +664,23 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
     };
   };
 
+  // Every sweep fixture anchors disjoint old ranges, so any overlap among the
+  // emitted anchors' resolved ranges was *created* by reconciliation — the
+  // observable harm of the SERVER-012 round-2 reorder family.
+  const expectNoNewOverlaps = (resolved: Record<string, Range>, label: string): void => {
+    const entries = Object.entries(resolved);
+    for (let a = 0; a < entries.length; a++) {
+      for (let b = a + 1; b < entries.length; b++) {
+        const [idA, rangeA] = entries[a] ?? ["", { start: 0, end: 0 }];
+        const [idB, rangeB] = entries[b] ?? ["", { start: 0, end: 0 }];
+        expect(
+          rangeA.start < rangeB.end && rangeB.start < rangeA.end,
+          `${label}: ${idA} overlaps ${idB}`,
+        ).toBe(false);
+      }
+    }
+  };
+
   it("holds the report invariants across 40 seeded random edits", () => {
     const words = ["alpha", "refit", "quarterly", "\n\n", "rates ", "— beta —", "🎉", "x"];
     const anchors: AnchorsMap = {
@@ -654,16 +776,95 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
         newBody = `${newBody.slice(0, at)}${word}${newBody.slice(at + len)}`;
       }
       const { anchors: next, report } = reconcileAnchors(body, newBody, anchors);
+      const resolved: Record<string, Range> = {};
       for (const id of [...report.unchanged, ...report.remapped]) {
         const selector = next[id];
         const range = resolveAnchor(newBody, selector ?? { exact: "" });
         expect(range, `seed ${run + 101}: ${id}`).not.toBeNull();
+        if (range !== null) resolved[id] = range;
         expect(newBody.slice(range?.start, range?.end), `seed ${run + 101}: ${id}`).toBe(
           selector?.exact,
         );
       }
+      expectNoNewOverlaps(resolved, `seed ${run + 101}`);
       for (const id of report.orphaned) {
         expect(next[id], `seed ${run + 101}: ${id}`).toEqual(normalized[id]);
+      }
+      expect([...report.unchanged, ...report.remapped, ...report.orphaned].sort()).toEqual(
+        Object.keys(anchors).sort(),
+      );
+    }
+  });
+
+  it("holds slice integrity across 40 seeded reorders of near-identical siblings", () => {
+    // The round-2 failure family (evaluator FAIL-1): whole-document reorders.
+    // The repo sweep above was green while this family failed at 6/1000 in an
+    // independent sweep purely because its generator never emitted reorders —
+    // so reorder shapes get their own seeded sweep, asserting the general
+    // invariant AND the observable harm directly: anchors whose old ranges
+    // were disjoint never resolve to overlapping ranges, and no emitted exact
+    // contains another anchor's entire original text.
+    const paragraph = (n: string, k: string) =>
+      `Paragraph ${n} now has ${k} and cherries in the budget quarter.`;
+    const ordinals = ["one", "two", "three", "four", "five"];
+    const fruits = ["margin", "apples", "plums", "margin", "apples"];
+    for (let run = 0; run < 40; run++) {
+      const rng = makeRng(run + 201);
+      const n = 4 + Math.floor(rng() * 2);
+      const paragraphs = ordinals.slice(0, n).map((o, i) => paragraph(o, fruits[i] ?? "margin"));
+      const rebuild = (blocks: string[]) =>
+        `\n# Doc\n\n${blocks.join("\n\n")}\n\nA closing paragraph that stays put.\n`;
+      const body = rebuild(paragraphs);
+      const anchors: AnchorsMap = {};
+      for (const [i, text] of paragraphs.entries()) anchors[`anc_p${i}`] = capture(body, text);
+
+      let next = [...paragraphs];
+      const shape = Math.floor(rng() * 4);
+      if (shape === 0) next.reverse();
+      else if (shape === 1) {
+        const k = 1 + Math.floor(rng() * (n - 1));
+        next = [...next.slice(k), ...next.slice(0, k)];
+      } else if (shape === 2) {
+        const i = Math.floor(rng() * n);
+        const j = (i + 1 + Math.floor(rng() * (n - 1))) % n;
+        const [a, b] = [next[i], next[j]];
+        if (a !== undefined && b !== undefined) [next[i], next[j]] = [b, a];
+      } else {
+        for (let i = next.length - 1; i > 0; i--) {
+          const j = Math.floor(rng() * (i + 1));
+          const [a, b] = [next[i], next[j]];
+          if (a !== undefined && b !== undefined) [next[i], next[j]] = [b, a];
+        }
+      }
+      let newBody = rebuild(next);
+      if (rng() < 0.5) newBody = newBody.replace("cherries", "sultanas");
+
+      const { anchors: out, report } = reconcileAnchors(body, newBody, anchors);
+      const resolved: Record<string, Range> = {};
+      for (const id of [...report.unchanged, ...report.remapped]) {
+        const selector = out[id];
+        const range = resolveAnchor(newBody, selector ?? { exact: "" });
+        expect(range, `seed ${run + 201}: ${id}`).not.toBeNull();
+        if (range !== null) resolved[id] = range;
+        expect(newBody.slice(range?.start, range?.end), `seed ${run + 201}: ${id}`).toBe(
+          selector?.exact,
+        );
+        for (const other of Object.keys(anchors)) {
+          if (other === id) continue;
+          expect(
+            out[id]?.exact.includes(anchors[other]?.exact ?? " "),
+            `seed ${run + 201}: ${id} quotes ${other}'s paragraph`,
+          ).toBe(false);
+        }
+      }
+      expectNoNewOverlaps(resolved, `seed ${run + 201}`);
+      for (const id of report.orphaned) {
+        const original = anchors[id];
+        expect(out[id], `seed ${run + 201}: ${id}`).toEqual({
+          exact: original?.exact ?? "",
+          prefix: original?.prefix ?? "",
+          suffix: original?.suffix ?? "",
+        });
       }
       expect([...report.unchanged, ...report.remapped, ...report.orphaned].sort()).toEqual(
         Object.keys(anchors).sort(),

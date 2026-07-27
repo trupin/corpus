@@ -64,6 +64,8 @@ Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue —
 4. **`GET /api/openapi.json`**: served behind the bearer guard as server-local introspection, deliberately outside the contract (no typed-client method); CONTRACT-002 documents the exemption.
 5. **`?token=` reachability**: mount the bearer guard on `/events` too; that path (only) accepts header OR `?token=`. The handler is SERVER-007's — an authenticated `/events` request gets an ApiError 404 this sprint.
 
+6. **Post-eval edge pin (2026-07-26)**: `port` is optional in the schema with default `8765` (matching this issue's own AC) — BOTH readers must accept a portless config. `host` non-loopback values are not a schema failure: the schema accepts any string; the SERVER enforces loopback-only at boot as a semantic error (it is the component that binds). The CLI treats `host` as an opaque dial target.
+
 ## Technical Design
 
 ### Files to Create/Modify

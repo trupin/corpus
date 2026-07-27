@@ -164,6 +164,48 @@ describe("M1 matrix on disk", () => {
     expect(persisted["anc_two2"]).toEqual(seeded.anchors["anc_two2"]);
   });
 
+  it("SERVER-012 round 2: reversing near-identical paragraphs re-anchors both threads to their own paragraphs on disk", () => {
+    // Pre-fix, the reorder persisted `anc_fourth` with a 130-char exact
+    // quoting TWO paragraphs (its own plus anc_first's), the two anchors'
+    // resolved ranges overlapping on disk. Fixed: each anchor follows its own
+    // relocated paragraph.
+    const p = (o: string) => `Paragraph ${o} now has margin and cherries in the budget quarter.`;
+    const body = `\n# Doc\n\n${p("one")}\n\n${p("two")}\n\n${p("three")}\n\n${p("four")}\n\nA closing paragraph that stays put.\n`;
+    const at1 = body.indexOf(p("one"));
+    const at4 = body.indexOf(p("four"));
+    const seeded: Frontmatter = {
+      id: "doc_s012bb",
+      type: "note",
+      anchors: {
+        anc_first: { exact: p("one"), ...computeContext(body, at1, at1 + p("one").length) },
+        anc_fourth: { exact: p("four"), ...computeContext(body, at4, at4 + p("four").length) },
+      },
+    };
+    const file = join(workspace, "reorder.md");
+    writeDoc(file, seeded, body);
+
+    const { frontmatter, body: onDisk } = readDoc(file);
+    const newBody = `\n# Doc\n\n${p("four")}\n\n${p("three")}\n\n${p("two")}\n\n${p("one")}\n\nA closing paragraph that stays put.\n`;
+    const { anchors, report } = reconcileAnchors(onDisk, newBody, frontmatter.anchors);
+    writeDoc(file, { ...frontmatter, anchors }, newBody);
+
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_first", "anc_fourth"], orphaned: [] });
+    const persisted = readDoc(file);
+    const first = persisted.frontmatter.anchors["anc_first"];
+    const fourth = persisted.frontmatter.anchors["anc_fourth"];
+    expect(first?.exact).toBe(p("one"));
+    expect(fourth?.exact).toBe(p("four"));
+    const rangeFirst = first === undefined ? null : resolveAnchor(persisted.body, first);
+    const rangeFourth = fourth === undefined ? null : resolveAnchor(persisted.body, fourth);
+    expect(persisted.body.slice(rangeFirst?.start, rangeFirst?.end)).toBe(p("one"));
+    expect(persisted.body.slice(rangeFourth?.start, rangeFourth?.end)).toBe(p("four"));
+    // Disjoint on disk — the observable harm of the pre-fix superset selector.
+    expect(
+      (rangeFourth?.end ?? 0) <= (rangeFirst?.start ?? 0) ||
+        (rangeFirst?.end ?? 0) <= (rangeFourth?.start ?? 0),
+    ).toBe(true);
+  });
+
   it("TEST-26: both neighbouring sentences rewritten → remapped, exact kept, context quotes the new surroundings", () => {
     const { report, selector, body } = runRow("context-only", (b) =>
       b

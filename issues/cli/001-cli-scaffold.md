@@ -57,6 +57,8 @@ Orchestrator decisions on the sprint-002 Open Conflicts affecting this issue —
 2. **One built-in verb authorized**: `corpus health` — registry-visible, self-documenting in `docs/cli.md`, calls `GET /api/health` through the typed client. This is the registry→dispatch→workspace-resolution→client→socket proof. Because health is unauthenticated, the 401 mapping is proven against the test stub here and re-proven against a real guarded route in CLI-002.
 3. **CI drift step**: you are blessed to edit `.github/workflows/ci.yml` (normally infra domain) to add ONE step, `generated artifacts drift` (regenerate + `git diff --exit-code`), right after build, covering BOTH `packages/contract/openapi.json`/`schema.generated.ts` AND `docs/cli.md`. The pre-push hook and the CI step must consume one shared list (a script), not two drifting copies.
 
+4. **Post-eval edge pin (2026-07-26)**: `port` is optional with default `8765` — the CLI reader must accept `{"version":1,"token":"..."}` exactly as the server does (the evaluator found the CLI rejecting a portless config the server accepts). `host` stays schema-opaque in the CLI; loopback enforcement is the server's boot-time concern.
+
 ## Technical Design
 
 ### Files to Create/Modify

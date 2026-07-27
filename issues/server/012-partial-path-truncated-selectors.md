@@ -199,7 +199,11 @@ real git workspace, `git diff -U0`):
 - Four deletion scenarios (paragraphs / bullets / table row / doppelgänger): `orphaned`,
   `frontmatter-touched=false`, body-only `git diff`, **byte-identical to pre-fix** in-memory.
 - Cut-and-paste ×3 (down past tail, up above lead, far with inserted paragraphs):
-  `remapped`, byte-identical to pre-fix.
+  `remapped`. **Correction (round 2, per eval DISC-1)**: rows (a)/(c) byte-identical to
+  pre-fix; row (b) is **not** — pre-fix emitted a 106-char selector (the moved sentence
+  plus the lead paragraph), the fixed engine emits the correct 52-char sentence. The
+  round-1 "byte-identical" claim was overbroad; the difference is itself a superset case
+  the fix repaired.
 - Escalating-context ×4 (incl. TEST-26 "both neighbours rewritten" → `remapped`):
   byte-identical to pre-fix.
 
@@ -215,10 +219,112 @@ real git workspace, `git diff -U0`):
   50 anchored paragraphs all deleted — 11.4 ms vs 7.9 ms. Same order of magnitude
   everywhere; the straddle check never runs for `equal`/`deleted` classifications.
 
-**Repo gates** (final state): `npm run build` ✓ · `npm run lint` ✓ (0 problems) ·
+**Repo gates** (round-1 state): `npm run build` ✓ · `npm run lint` ✓ (0 problems) ·
 `npm run format:check` ✓ · `npm run typecheck` ✓ (5 workspaces) · `npm test` **848 passed /
 55 files** (828 baseline + 20 new SERVER-012 tests, zero regressions) · coverage 99.76%
 lines / 95.72% branches / 100% functions (gate 90%).
+
+### Round 2 — the superset arm (evaluator FAIL-1: TEST-61)
+
+**Implemented on: fable (claude-fable-5).** Round-2 verdict: round 1 eliminated the
+truncation arm but a whole-document reorder of near-identical paragraphs still emitted a
+`remapped` selector whose `exact` was a 130-char superset containing another anchor's
+entire 65-char paragraph, the two resolved ranges overlapping — `classify=partial`,
+`straddledByReplacement=false`, so the round-1 guard never fires. Pre-existing (identical
+on the pre-fix engine).
+
+**Reproduction (before any code change), 2026-07-26.** Evaluator's fixture rebuilt from
+the verdict (`tsx /tmp/server012-r2/repro.mts`) against repo HEAD (pre-fix for this arm),
+freshly built:
+
+```
+report: {"unchanged":[],"remapped":["anc_first","anc_fourth"],"orphaned":[]}
+anc_first : exact (64 chars) "Paragraph one …quarter."   resolves to {209,273}
+anc_fourth: exact (130 chars, original 65)
+            "Paragraph two …quarter.\n\nParagraph one …quarter."  resolves to {143,273}
+ranges overlap: true          <- matches the verdict character for character
+anc_fourth: old=[208,273) classify=partial straddled=false mapped=[143,273)
+```
+
+Independent 1000-case seeded sweep with reorder shapes (`tsx sweep1000.mts`, shapes:
+reverse/rotate/swap/shuffle/delete-edit/random-edits over 4–6 near-identical paragraphs,
+2–4 anchors): **227/1000 violating cases pre-fix**, all in the four reorder shapes
+(supersets carrying a co-anchor's paragraph, newly-overlapping resolved ranges);
+`delete-edit` and `random-edits` (the round-1 family) clean — round 1 holds, the miss is
+exactly the reorder family.
+
+**Root cause (segment probe, logged above in the repro output).** The reversal diff
+cross-aligns: for `anc_fourth` (old `[208,273)`) only `"four"` (old `[218,222)`) is
+deleted — a replacement **wholly inside** the range, boundary-respecting — but the INSERT
+replacing it is 69 chars of *relocated* text (`"two …quarter.\n\nParagraph "`). The mapped
+slice `[143,273)` is then survivors + insertion by segment accounting (monotonicity keeps
+foreign EQUAL text out of every mapped span), so no segment-level detector can see the
+dishonesty; the guidance's plain self-round-trip also passes (the emitted window is unique
+— probed explicitly, `probe-detectors.mts`). The honest, causal signals are cross-anchor:
+**(collision)** `mapStart`/`mapEnd` are monotone, so anchors with disjoint old ranges can
+only overlap in `newBody` if a slice misattributed text; **(capture)** a rewritten slice
+containing a disjoint co-anchor's entire `exact` is quoting that anchor's text wherever it
+landed (the shuffle "musical chairs" cases collide with nothing). Both exempt pairs whose
+old ranges already overlapped — nested/overlapping anchors are legal and move together.
+
+**Fix shape** (`reconcile.ts` restructured into draft → cross-anchor pass → finalize; the
+public API, `diff.ts` and all round-1 seams untouched):
+
+- per-anchor (pass 1), a rewritten `partial` slice must now also **self-round-trip**
+  (emitted selector resolves via `resolveAnchorExact` back to exactly its own range —
+  acceptance criterion 2's second clause; catches shadowed-duplicate windows that would
+  silently send the thread to an identical earlier block);
+- cross-anchor (pass 2), rewritten slices that **collide** (newly-created overlap) or
+  **capture** a disjoint co-anchor's exact are voided against the pass-1 snapshot
+  (order-independent detection) and re-placed in sorted order through the adjudicated
+  chain — exact-only rungs 1–2 + `touchesInsertion`, fuzzy never, orphan last with the
+  selector preserved byte-for-byte; a re-attachment must not itself newly collide;
+- a slice equal to its old exact is verbatim survival and outranks any rewritten claim —
+  verbatim/`equal`/unchanged paths run zero extra work, and the partial-trusts-mapper
+  adjudication is untouched for honest slices (no straddle, round-trips, no collision, no
+  capture ⇒ mapper wins, exactly as before).
+
+**Post-fix verification** (all real runs, freshly built sources):
+
+- Fixture: both anchors `remapped` to their **own relocated paragraphs** — `anc_fourth`
+  re-attaches at `{8,73}` (P4's new home, rung 2 + insertion-overlap), `anc_first` at
+  `{209,273}`; disjoint, no superset. Better than orphaning: the thread follows its text.
+- Sweep: **0/1000 violating cases** (pre-fix 227). Outcome quality: remapped 2186→2142,
+  orphaned 201→243 — most previously-corrupted anchors now re-attach correctly; the rest
+  orphan visibly with selectors preserved.
+- On disk (`tsx repro-disk-r2.mts`, real `git init` workspace
+  `/var/folders/.../corpus-s012r2-*`, save-path shape, `git diff -U0`): pre-fix engine
+  persists `exact: |-` (130-char two-paragraph block scalar), ranges `{143,273}⊃{209,273}`;
+  fixed engine persists the 65-char paragraph, ranges `{8,73}` / `{209,273}` disjoint.
+- Must-hold A/B vs the pre-fix snapshot (`tsx ab-verify-r2.mts`, snapshot =
+  HEAD-before-round-2 at `/tmp/server012-r2/prefix-anchors`): **0 failures, all
+  byte-identical** — TEST-66 four deletion scenarios, TEST-69 escalating-context ×4 (incl.
+  TEST-26), TEST-67 cut-and-paste ×3, round-1 TEST-59/60 sibling fixture, both-siblings
+  deleted, re-typed re-attach, straddled doppelgänger, TEST-63 shrinks ×3 (incl. pure
+  boundary-crossing delete). Only the reorder family differs — the fix itself.
+- Determinism ×100 → 1 distinct serialized result; deep-frozen inputs: no throw, inputs
+  unchanged, distinct output object.
+- Perf A/B (same machine, same inputs): 1 MB/50 anchors 7.2 ms vs 7.6 ms pre-fix; 1 MB
+  sibling 7.7 vs 7.6; 50 anchored paragraphs all deleted 10.3 vs 7.4; 60 near-identical
+  anchored paragraphs document-reversed 5.0 vs 3.0 (59 remapped / 1 orphaned — one block
+  sits wholly in the diff's common-subsequence run, fails insertion-overlap, orphans
+  visibly). Same order of magnitude everywhere.
+- New tests (7): the reorder fixture + fixture-rot guard pinning the non-straddled seam,
+  capture-with-twin → orphan preserved, nested-anchors exemption, shadowed-window
+  round-trip rejection, a 40-seed reorder sweep asserting the general invariant **and**
+  no-newly-overlapping-resolved-ranges directly (the sibling sweep also gained the direct
+  overlap assertion), and a disk-matrix reorder row.
+
+**Repo gates** (round-2 final state): `npm run build` ✓ · `npm run lint` ✓ (0 problems) ·
+`npm run format:check` ✓ · `npm run typecheck` ✓ (5 workspaces) · `npm test` **1684
+passed / 85 files** (1677 baseline + 7 new, zero regressions) · coverage 99.56% lines /
+96.26% branches / 100% functions (gate 90%); `reconcile.ts` 100/100/100/100.
+
+**Known residual (disclosed, out of this issue's cross-anchor bar):** a dishonest superset
+slice with **no co-anchor** to collide with or capture still emits (single-anchor reorder)
+— no per-anchor, non-fuzzy evidence distinguishes it from a legitimate growth rewrite
+without re-opening the partial-trusts-mapper adjudication. TEST-61's operative predicate
+and FAIL-1's harm are cross-anchor; both are now clean.
 
 ## Completion Checklist (domain agent)
 

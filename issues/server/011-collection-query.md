@@ -52,6 +52,9 @@ Build `GET /api/docs` — the one collection endpoint behind every list in the p
 
 ### Key Implementation Details
 
+- **ValidationError requires `issues`** _(evaluator, sprint-002, 2026-07-26)_: `ApiErrorSchema`'s `bad_request` variant makes `issues` required — every server-generated 400 (not just zod-hook ones) must carry a non-absent `issues` array or the body fails its own contract parse.
+
+
 **Shape.** One `SELECT` over `documents` LEFT JOINed to `threads`, `seen`, and (when `q` is present) the `search` FTS table, with `EXISTS` subqueries for tag, link, and form conditions. Parameters bind positionally — never interpolate user input. Response rows: core document fields, `staleness` tier, thread fields when `type = thread` (`parent`, `agent`, `anchor` quote, `turnCount`, `lastAuthor`, `lastTs`, `unread`), optional `snippet`, optional `reasons`. Envelope: `{items, total, limit, offset}`.
 
 **Filter semantics** (each is a no-op when the parameter is absent):
