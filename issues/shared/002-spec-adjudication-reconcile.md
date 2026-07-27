@@ -6,7 +6,7 @@ shared (orchestrator-handled; drafted by spec-writer, sign-off by user)
 
 ## Status
 
-in_review — awaiting user sign-off with the Phase 2 PR ("land")
+done — user signed off 2026-07-27 ("land"), merged with PR #9
 
 ## Priority
 
@@ -33,7 +33,7 @@ The recurring gap of Phase 2: sprint adjudications that changed user-observable 
 
 - [x] SPEC.md amended minimal-diff (11 insertions, 12 deletions), no section restructuring
 - [x] `issues/ui/009-search-overlay.md` annotated re: the dropped awaiting-reply chip
-- [ ] User sign-off ("land" on PR #9)
+- [x] User sign-off ("land" on PR #9, 2026-07-27)
 
 ## Process note
 
