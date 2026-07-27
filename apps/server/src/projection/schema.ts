@@ -11,7 +11,7 @@
  * rows a reader would see. A database stamped with a different value is dropped
  * and rebuilt from files, so there is deliberately no migration path.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -171,8 +171,12 @@ CREATE VIRTUAL TABLE search USING fts5(
 CREATE INDEX documents_type ON documents (type);
 CREATE INDEX documents_status ON documents (status);
 CREATE INDEX documents_updated ON documents (updated);
+CREATE INDEX documents_created ON documents (created);
+CREATE INDEX documents_due ON documents (due);
 CREATE INDEX threads_parent_id ON threads (parent_id);
+CREATE INDEX threads_last_ts ON threads (last_ts);
 CREATE INDEX turns_thread_idx ON turns (thread_id, idx);
 CREATE INDEX links_to_id ON links (to_id);
 CREATE INDEX anchors_doc_id ON anchors (doc_id);
+CREATE INDEX events_status ON events (status);
 `;

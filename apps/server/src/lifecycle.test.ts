@@ -340,6 +340,38 @@ describe("runServerProcess — boot", () => {
     await server?.close();
   });
 
+  it("hands the open projection to the app, so the read routes answer from it", async () => {
+    const workspace = makeWorkspace("ws-read-routes");
+    mkdirSync(join(workspace, "data", "docs", "finance"), { recursive: true });
+    writeFileSync(
+      join(workspace, "data", "docs", "finance", "m.md"),
+      "---\nid: doc_bbb\ntype: note\ntitle: Escrow\n---\n\nBody.\n",
+      "utf8",
+    );
+
+    const h = harness();
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+    });
+
+    try {
+      const response = await server?.app.request("/api/docs?folder=finance", {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      expect(response?.status).toBe(200);
+      expect(await response?.json()).toMatchObject({
+        items: [{ id: "doc_bbb", title: "Escrow" }],
+        page: { total: 1 },
+      });
+    } finally {
+      await server?.close();
+    }
+  });
+
   it("starts the watcher, so an out-of-band edit is projected and announced", async () => {
     const workspace = makeWorkspace("ws-watcher");
     mkdirSync(join(workspace, "data", "docs"), { recursive: true });
@@ -552,6 +584,7 @@ describe("runServerProcess — shutdown", () => {
       createServerFn: () => failing,
       // This stand-in server carries no real config, so the projection has no
       // workspace to open; what is under test here is the shutdown path.
+      openProjectionFn: () => undefined,
       attachProjectionFn: () => undefined,
     });
 

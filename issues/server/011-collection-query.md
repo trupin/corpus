@@ -26,18 +26,18 @@ opus — a single endpoint with an enumerated filter surface; the semantics are 
 Build `GET /api/docs` — the one collection endpoint behind every list in the product: board columns, the search overlay, autocompletes, and the Attention view all issue the same query with different parameters. Structured filters compose with optional full-text search over titles, bodies, and turns (returning snippet highlights), thread-specific filters no-op for non-thread types, archived documents are excluded unless asked for, and `needs=me` returns the Attention union with per-row reasons. Ship `GET /api/tree` alongside it: the `data/docs/` folder tree with names and counts for folder pickers and filter chips.
 
 ## Acceptance Criteria
-- [ ] `GET /api/docs` accepts and composes `q`, `type`, `status`, `tag`, `folder`, `parent`, `references`, `agent`, `author`, `since`, `due`, `stale`, `unread`, `needs`, `sort`, plus pagination (`limit`, `offset`).
-- [ ] `q` runs FTS5 across document titles, bodies, and turn bodies; matches on a thread's turns attribute to the thread, and each hit carries a highlighted `snippet`.
-- [ ] Thread-specific filters (`parent`, `agent`, `unread`, awaiting-reply) **no-op** for non-thread types rather than emptying the result.
-- [ ] Results exclude `status: archived` by default; an explicit `status` including `archived` brings them back.
-- [ ] `folder` scopes to a directory under `data/docs/` **and** includes threads whose parent document lives in that folder (§11 folder scoping).
-- [ ] `references=<id>` returns documents whose bodies/turns link to that id (via the `links` table).
-- [ ] `stale` filters by tier computed from `max(updated, reviewed)` against the 30/90/180-day thresholds; `evergreen: true` documents are never anything but fresh.
-- [ ] Every row carries its staleness tier so the UI can render the ramp without recomputing.
-- [ ] `needs=me` returns the Attention union — unread agent replies ∪ unanswered forms ∪ due/overdue ∪ stale-for-review ∪ failed jobs — with each row carrying its `reasons` array (a row matching two reasons appears once with both).
-- [ ] `sort` supports `last-activity` (default), `created`, `updated`, `due`, `title`, with a stable tiebreak.
-- [ ] `GET /api/tree` returns the `data/docs/` folder tree (path, name, direct and recursive document counts), built from the projection, not the filesystem.
-- [ ] The whole query executes as a single SQL statement per request (plus one count), with indexes covering the common filters.
+- [x] `GET /api/docs` accepts and composes `q`, `type`, `status`, `tag`, `folder`, `parent`, `references`, `agent`, `author`, `since`, `due`, `stale`, `unread`, `needs`, `sort`, plus pagination (`limit`, `offset`).
+- [x] `q` runs FTS5 across document titles, bodies, and turn bodies; matches on a thread's turns attribute to the thread, and each hit carries a highlighted `snippet`. _(Adjudication 1i: structured `snippets[]`, never `<mark>`.)_
+- [x] Thread-specific filters (`parent`, `agent`, `unread`, awaiting-reply) **no-op** for non-thread types rather than emptying the result. _(Awaiting-reply is `needs=form`, Adjudication 1e.)_
+- [x] Results exclude `status: archived` by default; an explicit `status` including `archived` brings them back. _(Adjudication 1a: `status` is a single enum, so `status=archived`.)_
+- [x] `folder` scopes to a directory under `data/docs/` **and** includes threads whose parent document lives in that folder (§11 folder scoping).
+- [x] `references=<id>` returns documents whose bodies/turns link to that id (via the `links` table).
+- [x] `stale` filters by tier computed from `max(updated, reviewed)` against the 30/90/180-day thresholds; `evergreen: true` documents are never anything but fresh. _(Adjudication 1c: one tier, at-or-beyond.)_
+- [ ] Every row carries its staleness tier so the UI can render the ramp without recomputing. — **`DEFERRED → CONTRACT-005`** (Adjudication 2: `DocRow` declares no such field; emitting one would defeat §9.3).
+- [x] `needs=me` returns the Attention union — unread agent replies ∪ unanswered forms ∪ due/overdue ∪ stale-for-review ∪ failed jobs — with each row carrying its `reasons` array (a row matching two reasons appears once with both). _(Adjudication 1g/1h: the field is `attention`, the reasons are `form` and `stale`.)_
+- [x] `sort` supports the contract's enum — `updated`, `-updated`, `created`, `-created`, `due`, `title`, `relevance` — defaulting to `-updated`, with `documents.id` as the stable tiebreak. _(Adjudication 1d: `last-activity` is not in the contract and is a 400.)_
+- [x] `GET /api/tree` returns the `data/docs/` folder tree (path, name, direct and recursive document counts), built from the projection, not the filesystem.
+- [x] The whole query executes as a single SQL statement per request (plus one count), with indexes covering the common filters.
 
 ## Sprint-004 Adjudications (binding, 2026-07-27)
 
@@ -146,17 +146,146 @@ conclusions. State which model the implementing agent ran on ("implemented on:
 opus | fable")._
 
 ### Reproduction (bugs only)
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+Not a bug — new endpoints. No pre-fix reproduction applies.
 
 ### Post-Implementation Verification
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+
+**Implemented on: opus.**
+
+**Environment.** Real `corpus init` workspace (`npm run dev -w apps/cli -- init /tmp/corpus-s011-ZSAa6X/ws --port 8825 --json`), real server process
+(`npx tsx apps/server/src/main.ts --workspace <ws>`) on **port 8825** (sprint-004 allocation;
+8765 untouched), real `.md` files on disk, real projection, real HTTP. Baseline corpus =
+`init`'s 6 seed documents (1 template, 3 views, 2 skills) + 9 hand-written documents (one
+`archived`) + 2 threads + a real `.corpus/seen.json`. Server stopped by pid; scratch removed by
+variable.
+
+Seeding through `POST /api/docs` / `POST /api/threads` is **`DEFERRED → SERVER-005/006`**
+(pre-authorized substitute: real files + real projection). `POST /api/threads/:id/seen` is
+**`DEFERRED → SERVER-006`** (substitute: a real `.corpus/seen.json`). There is no watcher in
+this worktree (SERVER-007), so out-of-band file edits were re-projected by **restarting the
+real server**.
+
+**1. Envelope, defaults, archived** (`curl … | jq`):
+```
+{"keys":["items","page"],"page":{"total":15,"limit":50→200,"offset":0}, …}
+default excludes doc_retired: null        # archived is out by default
+?status=archived  → {"total":1,"ids":["doc_retired"]}
+?status=open,archived → 400               # contract's `status` is a single enum
+```
+
+**2. FTS** — title, body and turn hits, structured snippets, no markup:
+```
+?q=escrow                     → ["doc_mortgage"]
+?q=amortization               → ids ["doc_q1"], field "body", matched ["amortization"]
+?q=cherry-picked assumption   → ["th_form"], snippet {field:"turn", threadId:"th_form",
+      segments:[{"That is a ",false},{"cherry",true},{"-",false},{"picked",true},
+                {" ",false},{"assumption",true},{", so let us decide explicitly.…",false}]}
+```
+Adversarial: `"unbalanced`, `NEAR(a b)`, `a OR b`, `*`, `""`, `)))`, a 1 KB `q` → **200** every
+time (no 500, no FTS syntax error).
+
+**3. Composition, folder scoping, references:**
+```
+?type=thread&agent=engaged&folder=finance&sort=-updated → ["th_reply"] (total 1)
+?folder=finance      → [doc_mortgage, doc_q1, th_reply, th_form, doc_oldrates]  # threads included
+?folder=finance/2026 → [doc_q1, th_form]
+?folder=finance/     → identical to ?folder=finance
+?folder=/            → 13 rows (everything under data/docs/ + their threads)
+?folder=nope         → 200 {"items":[],"total":0}   # not a 404
+?references=doc_mortgage → ["doc_q1"]
+```
+Note: `?folder=` (empty) is a **400**, not the root — the contract's `folder` is `.min(1)`,
+the same rule that makes `?type=` a 400 (TEST-53). The root is `?folder=/` or
+`?folder=data/docs`.
+
+**4. Staleness and Attention** (`doc_oldrates` 100 d old; `doc_handbook` 200 d old but
+`evergreen`):
+```
+?stale=aging → ["doc_oldrates"]   ?stale=stale → ["doc_oldrates"]   ?stale=very-stale → []
+doc_handbook appears in no tier, ever.
+```
+The failed job was produced through the **real queue API**: an event file in
+`.corpus/queue/pending/` → `POST /api/queue/claim-all` → `POST /api/queue/evt_s011failed/fail`
+(`{"halted":false,…,"failed":1}`, file in `failed/`).
+```
+?needs=me →
+  {"id":"doc_failing","attention":["failed-job"]}
+  {"id":"th_reply","attention":["unread-reply","failed-job"]}   # two reasons, ONE row
+  {"id":"doc_idea","attention":["due"]}
+  {"id":"th_form","attention":["form"]}
+  {"id":"doc_oldrates","attention":["stale"]}
+per-reason: unread-reply→[th_reply] form→[th_form] due→[doc_idea] stale→[doc_oldrates]
+            failed-job→[doc_failing, th_reply]   (union == ?needs=me)
+?needs=me&folder=finance → [th_reply, th_form, doc_oldrates]     # intersection, not replacement
+```
+The same `attention` arrays appear on the **unfiltered** `GET /api/docs`.
+
+**5. Handling each reason clears the row.** Seen mark advanced past the last turn; a `user`
+turn appended after the form turn; `due` moved 30 days out; `reviewed` set to now;
+`DELETE /api/queue/evt_s011failed` (abandon, the real endpoint — `POST …/abandon` is a 404,
+the contract spells it `DELETE /api/queue/{id}`). Server restarted to re-project:
+```
+?needs=me → {"total":0,"items":[]}
+unfiltered attention chips → []
+?stale=aging|stale|very-stale → []          # "still current" took it off the ramp
+?type=thread&unread=true → ["th_form"]      # the new user turn is newer than its mark
+```
+
+**6. Sorting, paging, validation, auth:**
+```
+?sort=title&limit=2&offset=0 → ["Attention","Comment"]
+?sort=title&limit=2&offset=2 → ["Escrow basics","Handbook"]      # disjoint, in order
+?sort=last-activity → 400   ?limit=201 → 400   ?limit=200 → 200
+400 + issues: stale=ancient→[query.stale] type=→[query.type] agent=maybe→[query.agent]
+  needs=everyone→[query.needs] due=next-tuesday→[query.due] since=not-a-date→[query.since]
+  unread=perhaps→[query.unread] offset=-1→[query.offset] sort=relevance (no q)→[query.sort]
+?colour=blue&type=note → 200, byte-identical ids to ?type=note
+GET /api/docs and /api/tree with no Authorization → 401 {"code":"unauthorized",…}, no ids,
+  no counts, no folder names in the body
+```
+
+**7. `GET /api/tree`:**
+```
+{"path":"finance","count":3,"totalCount":5,"children":[{"path":"finance/2026","count":2,"totalCount":2}]}
+{"path":"inbox","count":2,…} {"path":"legal","count":1,…} {"path":"reference","count":1,…}
+{"path":"templates","count":1,…} {"path":"views","count":3,…}
+finance totalCount vs ?folder=finance&limit=200 .page.total → 5 vs 5
+```
+Paths are relative to `data/docs/`; threads are not nodes but count in their parent's folder;
+archived rows are excluded from both the tree and the default list, which is what makes the
+badge and the list agree.
+
+**8. Generated typed client** (`createCorpusClient` from `@corpus/contract/client`, run with
+`tsx` against the live server, and typechecked with a real `tsc --noEmit` — exit 0):
+```
+GET /api/docs {q:"amortization", folder:"finance", sort:"relevance"} →
+  {"page":{"total":1,"limit":50,"offset":0},
+   "rows":[{"id":"doc_q1","title":"Q1 numbers","attention":[],
+            "snippetFields":["body"],"matched":["amortization"]}]}
+GET /api/tree → [{"path":"finance","count":3,"totalCount":5,"children":["finance/2026"]}, …]
+GET /api/docs {stale:"ancient"} → 400 {"code":"bad_request","issues":[{"path":"query.stale",…}]}
+```
+
+**9. Performance.** Vitest, 2000 generated documents + 200 threads projected for real,
+uninstrumented: filtered search (`q` + `type` + `tag` + `folder` + `sort`) **min 8.1 / median
+8.4 / max 8.6 ms**; `?needs=me` **median 1.1 ms**. Query plan for the common filters:
+`SEARCH d USING INDEX documents_type (type=?)` — no `SCAN documents`. Statement count asserted
+by instrumenting `prepare`: exactly **2** executions per request (one SELECT, one COUNT). Over
+real HTTP on the seeded workspace: 5.1 ms cold, then 0.8–1.2 ms.
+
+**10. Gate.** `npm run build`, `npm run lint`, `npm run format:check`, `npm run typecheck` all
+clean; `npm run test:coverage` **2222 tests passing, 120 files**, totals lines 99.25 %,
+branches 96.10 %, functions 99.66 % (gate 90 %); `apps/server/src/docs/` alone 99.8 % lines /
+97.4 % branches.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified (the two the shipped contract cannot express — a
+      `staleness` tier field and thread fields on `DocRow` — are Adjudication 2's
+      `DEFERRED → CONTRACT-005`; nothing undeclared is emitted)
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (P0, powers every list surface in the product)

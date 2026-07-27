@@ -20,6 +20,7 @@ import {
   toHttpError,
   toValidationIssues,
 } from "./errors.js";
+import { mountDocsRoutes } from "./docs/index.js";
 import {
   createInvalidationBus,
   createSseHub,
@@ -111,7 +112,13 @@ export interface CreateServerDeps {
    * a recorder.
    */
   readonly invalidate?: QueueInvalidate | undefined;
-  /** The open projection, per {@link CorpusServer.projection}. */
+  /**
+   * The open projection (SERVER-004), handed in rather than opened here so
+   * `createServer` stays a pure function of its config: read routes need the
+   * handle at request time, `lifecycle.ts` owns opening and closing it, and a
+   * unit test that needs no database simply omits it — the read routes are then
+   * not mounted, which is an honest 404 rather than a half-wired server.
+   */
   readonly projection?: ProjectionDb | undefined;
   /** How often `GET /events` writes its keep-alive comment; `0` disables it. */
   readonly heartbeatMs?: number | undefined;
@@ -212,6 +219,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     now,
   });
   mountQueueRoutes(app, queue);
+
+  if (deps.projection !== undefined) {
+    mountDocsRoutes(app, deps.projection, { now });
+  }
 
   const openApiDocument = buildOpenApiDocument();
   app.get(OPENAPI_PATH, (c) => c.json(openApiDocument, 200));

@@ -1,0 +1,61 @@
+// Attention (SPEC.md §11): the five reasons a row asks for the user, expressed
+// as SQL over the same joins the collection query already makes.
+//
+// They are SQL rather than a post-pass in TypeScript for one reason: `needs=`
+// filters on them *and* every row carries them, so a JavaScript implementation
+// would have to load the whole corpus to answer `?needs=me&limit=50`. Written
+// once here, each fragment appears in the WHERE clause and in the SELECT list of
+// the same statement, which is also what guarantees the filter and the reason
+// chip can never disagree.
+
+import { NEEDS_REASONS, type NeedsReason } from "@corpus/contract";
+import { atOrBeyondSql } from "./staleness.js";
+
+/**
+ * Row aliases every fragment assumes: `d` documents, `t` threads (LEFT JOINed,
+ * so `t.id IS NULL` means "not a thread"), `s` seen.
+ */
+export const UNREAD_SQL =
+  "(t.id IS NOT NULL AND t.last_ts IS NOT NULL AND t.last_ts > COALESCE(s.last_seen_ts, ''))";
+
+/**
+ * An unanswered form is an agent turn carrying a fenced ```form block that is
+ * still the thread's last turn (SPEC.md §6) — `last_author = 'agent'` is what
+ * says no user turn followed it, so no "is there a later turn" subquery is
+ * needed.
+ */
+const UNANSWERED_FORM_SQL = `(t.id IS NOT NULL AND t.last_author = 'agent' AND EXISTS (
+  SELECT 1 FROM turns tu
+   WHERE tu.thread_id = t.id AND tu.ts = t.last_ts AND tu.author = 'agent'
+     AND tu.body_md LIKE '%\`\`\`form%'
+))`;
+
+/**
+ * Any failed queue event whose payload *names* this row. Matching every
+ * top-level payload value rather than a fixed key list (`threadId`,
+ * `parentId`, …) keeps plugin event types working without a server change —
+ * payload shapes belong to whoever defines the event type (SPEC.md §7, §10).
+ */
+const FAILED_JOB_SQL = `(EXISTS (
+  SELECT 1 FROM events e, json_each(e.payload_json) je
+   WHERE e.status = 'failed' AND je.value = d.id
+))`;
+
+export const NEEDS_REASON_SQL: Readonly<Record<NeedsReason, string>> = {
+  "unread-reply": `(${UNREAD_SQL} AND t.last_author = 'agent')`,
+  form: UNANSWERED_FORM_SQL,
+  due: "(d.due IS NOT NULL AND d.due <= @today)",
+  stale: atOrBeyondSql("stale"),
+  "failed-job": FAILED_JOB_SQL,
+};
+
+/** `needs=me`: the union of every reason (SPEC.md §9.2). */
+export const ANY_REASON_SQL = `(${NEEDS_REASONS.map((reason) => NEEDS_REASON_SQL[reason]).join(" OR ")})`;
+
+/** Column alias carrying one reason's truth value in the result row. */
+export const reasonColumn = (reason: NeedsReason): string => `reason_${reason.replace(/-/g, "_")}`;
+
+/** The reasons a result row matched, in the contract's declared order. */
+export function rowAttention(row: Readonly<Record<string, unknown>>): NeedsReason[] {
+  return NEEDS_REASONS.filter((reason) => row[reasonColumn(reason)] === 1);
+}
