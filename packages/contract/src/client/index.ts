@@ -67,15 +67,20 @@ export {
 } from "../query-keys.js";
 
 /**
- * The paths the fetch client covers. `/events` is documented in the contract and
- * present in the generated types, but excluded here on purpose: it is an SSE
- * stream, and `openapi-typescript` can only describe its body as a string, so a
- * `GET("/events")` method would hand callers a response they must not read that
- * way. The stream is reached through `connectEvents` / `createEventStream`
- * instead, which is also the only way to attach the token EventSource cannot
- * send as a header.
+ * The paths the fetch client covers. Two documented paths are excluded on
+ * purpose, both because a generated fetch method would hand callers a response
+ * they must not read that way:
+ *
+ * - `/events` is an SSE stream, and `openapi-typescript` can only describe its
+ *   body as a string. The stream is reached through `connectEvents` /
+ *   `createEventStream` instead, which is also the only way to attach the token
+ *   EventSource cannot send as a header.
+ * - `/attachments/{path}` serves raw bytes as `application/octet-stream`, which
+ *   `openapi-fetch` would run through `JSON.parse` — corrupting or throwing on
+ *   every image and every download. Attachment URLs belong in `<img src>` and
+ *   download links (see the route's own note), not behind a fetch wrapper.
  */
-export type FetchPaths = Omit<paths, "/events">;
+export type FetchPaths = Omit<paths, "/events" | "/attachments/{path}">;
 
 /** The generated fetch surface: one method per HTTP verb, keyed by contract path. */
 export type CorpusApi = Client<FetchPaths>;

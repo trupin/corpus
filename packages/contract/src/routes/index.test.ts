@@ -274,16 +274,16 @@ function createStubApp() {
     c.json({ ...threadSummary, status: "resolved" as const }, 200),
   );
   app.openapi(contractRoutes.reopenThread, (c) => c.json(threadSummary, 200));
-  app.openapi(contractRoutes.markThreadSeen, (c) =>
-    c.json(
-      {
-        threadId: c.req.valid("param").id,
-        lastSeenTs: c.req.valid("json").lastSeenTs ?? turn.ts,
-        unread: false as const,
-      },
+  // `unread` is a plain boolean, so the partial read is expressible: a mark
+  // before the thread's last turn leaves later turns unseen, and the badge stays
+  // lit. The stub thread's last turn is `turn.ts`.
+  app.openapi(contractRoutes.markThreadSeen, (c) => {
+    const lastSeenTs = c.req.valid("json")?.lastSeenTs ?? turn.ts;
+    return c.json(
+      { threadId: c.req.valid("param").id, lastSeenTs, unread: lastSeenTs < turn.ts },
       200,
-    ),
-  );
+    );
+  });
 
   app.openapi(contractRoutes.getQueueStatus, (c) => c.json(queueStatus, 200));
   app.openapi(contractRoutes.idleQueue, (c) =>
@@ -635,6 +635,37 @@ describe("routes mounted on a Hono app", () => {
     const capped = await ingest(CAPPED_JOB_ID);
     expect(capped.status).toBe(201);
     await expect(capped.json()).resolves.toEqual({ eventId: CAPPED_JOB_ID, appended: false });
+  });
+
+  /**
+   * The whole point of relaxing `unread` from `literal(false)`: a mark placed
+   * before the thread's last turn is a partial read (SPEC.md §7), and the
+   * response has to be able to say the thread is still unread rather than have
+   * the client clear a badge the next `GET /api/docs` re-raises.
+   */
+  it("reports a partial mark as still unread, and a full one as read", async () => {
+    const markSeen = (body?: string) =>
+      createStubApp().request("/api/threads/th_x9y8/seen", {
+        method: "POST",
+        ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body }),
+      });
+
+    const partial = await markSeen(JSON.stringify({ lastSeenTs: "2026-07-19T10:00:00Z" }));
+    expect(partial.status).toBe(200);
+    await expect(partial.json()).resolves.toEqual({
+      threadId: "th_x9y8",
+      lastSeenTs: "2026-07-19T10:00:00Z",
+      unread: true,
+    });
+
+    // A bare POST means "I opened it": the mark lands on the last turn.
+    const full = await markSeen();
+    expect(full.status).toBe(200);
+    await expect(full.json()).resolves.toEqual({
+      threadId: "th_x9y8",
+      lastSeenTs: turn.ts,
+      unread: false,
+    });
   });
 
   /** A bodiless `POST`: no content type, no bytes, and still a valid call. */

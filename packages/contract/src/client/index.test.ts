@@ -459,3 +459,20 @@ describe("the SSE stream is not part of the fetch surface", () => {
     expect(stream.url).toContain("/events?token=");
   });
 });
+
+/**
+ * Attachment bytes are the second non-fetch surface: the route answers
+ * `application/octet-stream`, which `openapi-fetch` would run through
+ * `JSON.parse` for every image and download. The URL belongs in `<img src>` and
+ * download links instead.
+ */
+describe("attachment bytes are not part of the fetch surface", () => {
+  type AttachmentsDocumented = "/attachments/{path}" extends keyof paths ? true : never;
+  type AttachmentsNotFetchable = "/attachments/{path}" extends keyof FetchPaths ? never : true;
+
+  it("keeps /attachments/{path} in the generated document but out of the fetch client", () => {
+    const documented: AttachmentsDocumented = true;
+    const notFetchable: AttachmentsNotFetchable = true;
+    expect([documented, notFetchable]).toEqual([true, true]);
+  });
+});

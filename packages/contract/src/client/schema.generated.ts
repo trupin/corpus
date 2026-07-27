@@ -3390,11 +3390,8 @@ export interface components {
              * @example 2026-07-19T10:05:00Z
              */
             lastSeenTs: string;
-            /**
-             * @description Always false: the mark is at or beyond the last turn the caller has seen.
-             * @enum {boolean}
-             */
-            unread: false;
+            /** @description Whether the thread is *still* unread after this mark — that is, whether any turn is newer than `lastSeenTs` (SPEC.md §7). False for the ordinary case of a bare `POST`, which marks the thread read up to its last turn. **True when `lastSeenTs` names an earlier turn**: a partial read leaves later turns unseen, and the badge stays lit. A client updates its unread state from this flag, not from the fact that the call succeeded. */
+            unread: boolean;
         };
         MarkSeenRequest: {
             /**

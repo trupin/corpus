@@ -210,13 +210,29 @@ export const MarkSeenRequestSchema = z
   })
   .openapi("MarkSeenRequest");
 
+/**
+ * `unread` is a genuine boolean rather than `literal(false)`, because a mark can
+ * legitimately land short of the thread's end: {@link MarkSeenRequestSchema}
+ * accepts a `lastSeenTs` before the last turn to record a partial read, and by
+ * this contract's own definition of unread — turns after the mark — the thread
+ * is then still unread. A literal `false` would have the mutation response
+ * assert a cleared badge that the next `GET /api/docs` immediately re-raises, so
+ * a client trusting it would flicker. This field reports the state the mark
+ * actually leaves behind.
+ */
 export const MarkSeenResultSchema = z
   .object({
     threadId: ThreadIdSchema,
     lastSeenTs: IsoDateTimeSchema.describe("The mark now recorded for this thread."),
     unread: z
-      .literal(false)
-      .describe("Always false: the mark is at or beyond the last turn the caller has seen."),
+      .boolean()
+      .describe(
+        "Whether the thread is *still* unread after this mark — that is, whether any turn is newer " +
+          "than `lastSeenTs` (SPEC.md §7). False for the ordinary case of a bare `POST`, which marks " +
+          "the thread read up to its last turn. **True when `lastSeenTs` names an earlier turn**: a " +
+          "partial read leaves later turns unseen, and the badge stays lit. A client updates its " +
+          "unread state from this flag, not from the fact that the call succeeded.",
+      ),
   })
   .openapi("MarkSeenResult");
 

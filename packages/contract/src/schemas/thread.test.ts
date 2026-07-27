@@ -7,6 +7,7 @@ import {
   DeleteTurnResultSchema,
   MarkSeenRequestSchema,
   MarkSeenResultSchema,
+  type MarkSeenResult,
   MultipartAppendTurnRequestSchema,
   THREAD_AGENT_STATES,
   ThreadAgentSchema,
@@ -246,8 +247,37 @@ describe("MarkSeenRequest and MarkSeenResult", () => {
     expect(MarkSeenResultSchema.parse(result)).toEqual(result);
   });
 
-  it("cannot report the thread as still unread after marking it seen", () => {
-    const result = { threadId: "th_x9y8", lastSeenTs: "2026-07-19T10:07:12Z", unread: true };
+  /**
+   * The request schema accepts a `lastSeenTs` before the last turn to record a
+   * partial read, after which turns remain unseen and the badge stays lit
+   * (SPEC.md §7). `unread` is the only field that can say so, which is why it is
+   * a boolean rather than `literal(false)`.
+   */
+  it("round-trips a partial mark that leaves the thread unread", () => {
+    const result = {
+      threadId: "th_x9y8",
+      // The first of the two turns: the later one is still unread.
+      lastSeenTs: "2026-07-19T10:05:00Z",
+      unread: true,
+    };
+    expect(MarkSeenResultSchema.parse(result)).toEqual(result);
+  });
+
+  /**
+   * A type-level probe, checked by `tsc --noEmit` rather than at runtime: the
+   * annotation is what fails to compile if `unread` narrows back to `false`.
+   */
+  it("makes the partial mark representable in the inferred type, not just at parse time", () => {
+    const partial: MarkSeenResult = {
+      threadId: "th_x9y8",
+      lastSeenTs: "2026-07-19T10:05:00Z",
+      unread: true,
+    };
+    expect(partial.unread).toBe(true);
+  });
+
+  it("still rejects a non-boolean unread flag rather than coercing it", () => {
+    const result = { threadId: "th_x9y8", lastSeenTs: "2026-07-19T10:07:12Z", unread: "yes" };
     expect(MarkSeenResultSchema.safeParse(result).success).toBe(false);
   });
 });
