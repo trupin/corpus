@@ -24,6 +24,27 @@ export const VALIDATION_RESPONSE = jsonContent(
 );
 
 /**
+ * `413` for an upload past the workspace's size caps, declared on every route
+ * that accepts files.
+ *
+ * **It reuses `bad_request` rather than adding an eighth error code.** An
+ * over-cap upload is a request-shape problem, and `ValidationError`'s
+ * `{code, message, issues[]}` already carries exactly the field-level detail an
+ * operator needs — which part was too large, and what the cap is. The `ApiError`
+ * union is discriminated on `code`, so a new member would touch every narrowing
+ * site: the CLI's error renderer, the upload helpers' `UploadError`, and every
+ * consumer that switches on the code. That is a wide blast radius for one
+ * status. The status code carries the distinction instead, which is what status
+ * codes are for.
+ */
+export const PAYLOAD_TOO_LARGE_RESPONSE = jsonContent(
+  ValidationErrorSchema,
+  "An attached file, or the request as a whole, is past the workspace's upload caps. `issues` " +
+    "names the offending part and the limit it exceeded. The body is the same `bad_request` shape " +
+    "every other validation failure uses — the status is what distinguishes it.",
+);
+
+/**
  * Every route that carries it says in prose *which* actor it refuses, because
  * `403` is about who is asking rather than about the request being malformed.
  */

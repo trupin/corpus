@@ -9,14 +9,17 @@
 //   `Content-Length` is the client's claim and a chunked request has none at
 //   all. This is the authoritative check; the early one is an optimisation.
 //
-// **The status is `400`, not `413`** (sprint-007 Open Conflict 5b). `413` is the
-// semantically right answer, but `appendTurn` and `capture` declare `400/401/404`
-// and shipping an undeclared status is contract drift no generator would catch.
-// The message names the cap and the offending file, so the caller learns exactly
-// what `413` would have told them; `413` follows in the CONTRACT rider.
+// **Both refusals are `413`**, on every route that takes files — `POST /api/capture`,
+// `POST /api/threads/{id}/turns` and `POST /api/threads`, each of which declares
+// it (CONTRACT-009). The body stays the `bad_request` `ValidationError` shape
+// every other refusal uses, naming the offending file and the cap; only the
+// status distinguishes an over-cap upload from a malformed one. SERVER-010
+// shipped an interim `400` here because `413` was undeclared at the time and an
+// undeclared status is contract drift no generator would catch; that reason is
+// gone.
 
 import type { MiddlewareHandler } from "hono";
-import { badRequest } from "../errors.js";
+import { payloadTooLarge } from "../errors.js";
 
 const MEGABYTE = 1024 * 1024;
 
@@ -75,13 +78,13 @@ export function assertWithinLimits(files: readonly File[], limits: AttachmentLim
   for (const file of files) {
     if (file.size > limits.maxFileBytes) {
       const message = fileTooLargeMessage(file.name, file.size, limits.maxFileBytes);
-      throw badRequest(message, [{ path: "files", message }]);
+      throw payloadTooLarge(message, [{ path: "files", message }]);
     }
     total += file.size;
   }
   if (total > limits.maxRequestBytes) {
     const message = requestTooLargeMessage(total, limits.maxRequestBytes);
-    throw badRequest(message, [{ path: "files", message }]);
+    throw payloadTooLarge(message, [{ path: "files", message }]);
   }
 }
 
@@ -104,7 +107,7 @@ export function createUploadSizeGuard(limits: () => AttachmentLimits): Middlewar
       const declared = Number(c.req.header("content-length"));
       const { maxRequestBytes } = limits();
       if (Number.isFinite(declared) && declared > maxRequestBytes) {
-        throw badRequest(requestTooLargeMessage(declared, maxRequestBytes), [
+        throw payloadTooLarge(requestTooLargeMessage(declared, maxRequestBytes), [
           { path: "files", message: requestTooLargeMessage(declared, maxRequestBytes) },
         ]);
       }

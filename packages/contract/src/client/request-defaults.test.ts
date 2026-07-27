@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { contractRoutes } from "../routes/index.js";
+import { isMultipartThreadCreate, mountCreateThread } from "../routes/thread-create.js";
 import { createCorpusClient } from "./index.js";
 import type { paths } from "./schema.generated.js";
 
@@ -84,8 +85,15 @@ function createTestClient() {
     );
   });
 
-  app.openapi(contractRoutes.createThread, (c) => {
+  // `mountCreateThread`, not `app.openapi`: the body has two media types, and a
+  // `required: true` dual-media body pushes both validators into the chain, so a
+  // JSON request would have to satisfy the multipart schema too and 400s.
+  mountCreateThread(app, (c) => {
     const request = c.req.valid("json");
+    // The validated body is now the union of the two media types, so the first
+    // turn's prose is `body` on the JSON half and `text` on the multipart one.
+    // These cases send JSON; the narrowing is what makes that explicit.
+    const firstTurn = isMultipartThreadCreate(request) ? (request.text ?? "") : request.body;
     return c.json(
       {
         thread: {
@@ -98,7 +106,7 @@ function createTestClient() {
           parent: request.parent ?? null,
           anchor: request.selector ? "anc_k4f7" : null,
           agent: "none" as const,
-          turns: [{ author: "user" as const, ts: "2026-07-19T10:05:00Z", body: request.body }],
+          turns: [{ author: "user" as const, ts: "2026-07-19T10:05:00Z", body: firstTurn }],
         },
         anchorId: request.selector ? "anc_k4f7" : null,
         eventId: null,

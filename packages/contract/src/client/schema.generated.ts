@@ -700,7 +700,7 @@ export interface paths {
         put?: never;
         /**
          * Capture text (and attachments) as an inbox document
-         * @description The composer's Capture action (SPEC.md §11): creates the document in `data/docs/inbox/` **plus** its whole-document filing thread asking the agent to retitle, move, expand and tag it, in one call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board show the pending-agent indicator immediately and the console link the job back to the capture.
+         * @description The composer's Capture action (SPEC.md §11): creates the document in `data/docs/inbox/` **plus** its whole-document filing thread asking the agent to retitle, move, expand and tag it, in one call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board show the pending-agent indicator immediately and the console link the job back to the capture. An upload past the workspace's size caps is a `413`.
          */
         post: {
             parameters: {
@@ -746,6 +746,15 @@ export interface paths {
                         "application/json": components["schemas"]["UnauthorizedError"];
                     };
                 };
+                /** @description An attached file, or the request as a whole, is past the workspace's upload caps. `issues` names the offending part and the limit it exceeded. The body is the same `bad_request` shape every other validation failure uses — the status is what distinguishes it. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -766,6 +775,8 @@ export interface paths {
         /**
          * Create a thread on a selection, a whole document, or standalone
          * @description With a selector, the server writes the anchor entry into the parent's frontmatter and creates the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's edit lock, since anchoring mutates the parent.
+         *
+         *     Send `application/json` for a plain thread, or `multipart/form-data` to attach files to the first turn — the composer's *Ask* with a screenshot (SPEC.md §8). The multipart form takes the same repeated `files` part as `POST /api/capture`, names the first turn's prose `text` rather than `body`, and carries `selector` as one JSON-encoded part; a first turn may be attachment-only, but a request with neither text nor files is a `400`. Multipart bodies are built by `uploadCreateThread` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountCreateThread` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.
          */
         post: {
             parameters: {
@@ -777,10 +788,11 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            /** @description The thread and its first turn. `body` is mandatory, so the request body is too. */
+            /** @description The thread and its first turn, as JSON or as multipart. Mandatory: the JSON form demands `body`, a multipart body carrying neither `text` nor `files` is a `400`, and a thread with no first turn is not a thread. */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["CreateThreadRequest"];
+                    "multipart/form-data": components["schemas"]["MultipartCreateThreadRequest"];
                 };
             };
             responses: {
@@ -818,6 +830,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description An attached file, or the request as a whole, is past the workspace's upload caps. `issues` names the offending part and the limit it exceeded. The body is the same `bad_request` shape every other validation failure uses — the status is what distinguishes it. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
                     };
                 };
                 /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
@@ -917,7 +938,7 @@ export interface paths {
         put?: never;
         /**
          * Append a turn to a thread
-         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from `@corpus/contract`, which dispatches validation on `content-type`.
+         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.
          */
         post: {
             parameters: {
@@ -974,6 +995,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description An attached file, or the request as a whole, is past the workspace's upload caps. `issues` names the offending part and the limit it exceeded. The body is the same `bad_request` shape every other validation failure uses — the status is what distinguishes it. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
                     };
                 };
             };
@@ -1076,6 +1106,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{id}/turns/{ts}/form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer the form in an agent turn
+         * @description Submits an answer to the ```` ```form ```` block in the turn at `{ts}`: the server appends a structured answer turn carrying the chosen option and any note, and enqueues a `form.respond` event that re-triggers the agent like any engaged-thread reply (SPEC.md §6). The thread then leaves `needs=form`.
+         *
+         *     **The fence grammar**, which this route validates the answer against: an opening fence whose info string is exactly `form` (so ```` ```formula ```` is not one), then YAML with `prompt` (non-empty) and `options` (at least one, each non-empty, all distinct), then a closing fence. Selection is single: the answer names exactly one option, verbatim. A `note` is free text and always optional. Nothing else is part of the grammar — no form id, no per-option types, no required markers, no multi-select.
+         *
+         *     `400` when `option` is not one of the offered options, naming `body.option` in `issues`; `404` when the thread has no such turn, or that turn carries no form.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                    /** @description Timestamp of the agent turn carrying the form, which is that turn's identity and therefore the form's (SPEC.md §6). An ISO 8601 instant contains `:`, so clients must URL-encode it — `2026-07-19T10%3A05%3A00Z`. */
+                    ts: string;
+                };
+                cookie?: never;
+            };
+            /** @description The answer. `option` is mandatory — an answer that chooses nothing is not an answer — so the body is too. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FormAnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description The appended answer turn, the updated thread summary, and the enqueued event. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FormAnswerResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{id}/resolve": {
         parameters: {
             query?: never;
@@ -1087,7 +1200,7 @@ export interface paths {
         put?: never;
         /**
          * Resolve a thread
-         * @description Sets `status: resolved`. The thread collapses in the document view and **later turns stop re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything.
+         * @description Sets `status: resolved`. The thread collapses in the document view and **later turns stop re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving rewrites the thread file and auto-commits it, so the response carries §14's warnings — a workspace hook that rejects the commit leaves the status change on disk and uncommitted, and that has to be visible.
          */
         post: {
             parameters: {
@@ -1104,13 +1217,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The updated thread summary. */
+                /** @description The updated thread summary, and any warnings raised while writing it. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ThreadSummary"];
+                        "application/json": components["schemas"]["ThreadMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -1159,7 +1272,7 @@ export interface paths {
         put?: never;
         /**
          * Reopen a resolved thread
-         * @description Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8).
+         * @description Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Like `resolve`, it rewrites and auto-commits the thread file, so the response carries §14's warnings.
          */
         post: {
             parameters: {
@@ -1176,13 +1289,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The updated thread summary. */
+                /** @description The updated thread summary, and any warnings raised while writing it. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ThreadSummary"];
+                        "application/json": components["schemas"]["ThreadMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -3289,6 +3402,23 @@ export interface components {
             /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues only when the body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a `/<skill>` invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
             requestsAgent?: boolean;
         };
+        MultipartCreateThreadRequest: {
+            /**
+             * @description Document being commented on. Omitted creates a standalone thread.
+             * @example doc_a1b2c3
+             */
+            parent?: string;
+            /** @description Text-quote selector as a JSON object encoded into one part, e.g. `{"exact":"assume a 30-year fixed at 6.1%","prefix":"the model we "}`. Same fields and same meaning as the JSON body's `selector`. Omit it to anchor the thread to the whole document, or to nothing when `parent` is absent. */
+            selector?: string;
+            /** @description Defaults to the anchor quote or the first turn. */
+            title?: string;
+            /** @description Body of the thread's first turn. Optional: a first turn may be attachment-only. */
+            text?: string;
+            /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues only when the body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a `/<skill>` invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
+            requestsAgent?: boolean;
+            /** @description Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6). */
+            files?: string[];
+        };
         AppendTurnResponse: {
             thread: components["schemas"]["ThreadSummary"];
             turn: components["schemas"]["Turn"];
@@ -3378,6 +3508,28 @@ export interface components {
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
             warnings: components["schemas"]["Warning"][];
         };
+        FormAnswerResponse: {
+            thread: components["schemas"]["ThreadSummary"];
+            turn: components["schemas"]["Turn"] & unknown;
+            /**
+             * @description The enqueued `form.respond` event, which re-triggers the agent like any engaged-thread reply (SPEC.md §6). Null when the answer does not re-trigger it — a resolved thread stops re-triggering the agent even while it is engaged (SPEC.md §8).
+             * @example evt_7c1d
+             */
+            eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        FormAnswerRequest: {
+            /** @description The chosen option, matched verbatim against the answered form's `options`. An option the form does not offer is a `400` naming `body.option` — validating the answer against the fence it answers is the point of the route. */
+            option: string;
+            /** @description Free-text note recorded beside the chosen option (SPEC.md §6). Optional. */
+            note?: string;
+        };
+        ThreadMutationResponse: {
+            thread: components["schemas"]["ThreadSummary"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
         MarkSeenResult: {
             /**
              * @description Identifier of a thread document.
@@ -3429,7 +3581,7 @@ export interface components {
             created: string;
             /** @description What produced the event, e.g. `ui` or `cli`. */
             source: string;
-            /** @description Type-specific payload; plugins own the shape of their own event types. */
+            /** @description Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, option, note}` (SPEC.md §6). */
             payload: {
                 [key: string]: unknown;
             };
@@ -3440,6 +3592,8 @@ export interface components {
         ReapStaleResult: {
             /** @description Events recovered from `in-progress/` back to `pending/` after a crashed run. */
             reaped: string[];
+            /** @description Events the reap gave up on rather than recovering, having exhausted their attempts. They are **not** in `reaped`: the two arrays are disjoint, and an empty one is the normal case. */
+            failed: string[];
         };
         HaltQueueRequest: {
             /** @description Human-readable halt reason, recorded in the `.corpus/HALT` sentinel. */
@@ -3514,6 +3668,8 @@ export interface components {
              * @example doc_a1b2c3
              */
             originId: string | null;
+            /** @description **The current title of whatever `originId` names, or null.** Null exactly when `originId` is null, or when the document it names no longer exists. It rides along so the console can label a job row without a second fetch per row; it is a denormalised copy read at response time, never a stored field, so a renamed document shows its new title on the next read. */
+            originTitle: string | null;
         };
         JobLog: {
             /** @description Log lines from `cursor` onwards, oldest first. */

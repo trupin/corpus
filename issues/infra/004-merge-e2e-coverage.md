@@ -402,3 +402,5 @@ orchestrator as a robustness question for those domains, not fixed here.
 - [ ] `/audit` run (if qualifying)
 - [ ] `/evaluate` passes
 - [ ] Committed with `[INFRA-004]` prefix
+
+> Post-harvest note (orchestrator, 2026-07-27): the implementing agent additionally ruled out this issue as a cause of the `apps/server` wall-clock test flakes — its entire `vitest.config.ts` diff sits inside `test.coverage` (identical glob values, unchanged reportsDirectory), and `npm test` passes no `--coverage`, so the unit run is provably unaffected. The flaky bound itself was made load-tolerant in SERVER-023's session.

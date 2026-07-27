@@ -71,6 +71,27 @@ export const ThreadSummarySchema = z
   .openapi("ThreadSummary");
 
 /**
+ * The response of a thread mutation that changes nothing but the thread itself —
+ * `resolve` and `reopen`.
+ *
+ * **Warnings ride a wrapper, never the resource.** {@link ThreadSummarySchema}
+ * is a *resource*: it is every list row of `GET /api/docs?type=thread`, and
+ * bolting §14's warnings onto it would put an always-empty array on every row of
+ * every listing and make "did this mutation warn?" unanswerable from a read. So
+ * the mutation gets its own envelope — `{thread, warnings}`, exactly mirroring
+ * `DocMutationResponse`'s `{doc, warnings}` — and the resource stays untouched.
+ *
+ * Both routes need it for a real reason rather than for symmetry: resolving
+ * rewrites the thread file's frontmatter and auto-commits it, so a workspace git
+ * hook that rejects the commit leaves the change on disk and uncommitted. The
+ * server already computes those warnings and, before this shape existed, could
+ * only log them (SPEC.md §14: "surfaces loudly — a warning on the API response").
+ */
+export const ThreadMutationResponseSchema = z
+  .object({ thread: ThreadSummarySchema, warnings: warningsField })
+  .openapi("ThreadMutationResponse");
+
+/**
  * `requestsAgent` is the *enqueue* signal (SPEC.md §8) — it decides whether a
  * `comment.created` event is written — and is deliberately distinct from
  * authorship, which travels in the `x-corpus-author` header.
@@ -127,6 +148,68 @@ export const CreateThreadRequestSchema = z
     requestsAgent: requestsAgentField(THREAD_CREATE_OMITTED_BEHAVIOUR),
   })
   .openapi("CreateThreadRequest");
+
+/**
+ * The selector, carried through a `multipart/form-data` body where every part
+ * arrives as text: a JSON object encoded into one part.
+ *
+ * The alternative — flattening it into `selector.exact` / `selector.prefix` /
+ * `selector.suffix` parts — would invent a second wire spelling of a shape the
+ * JSON branch already has, and the two would drift. One encoded part keeps a
+ * single definition of what a selector is; the published shape is a string,
+ * because that is what is on the wire.
+ */
+const MultipartSelectorSchema = z
+  .preprocess((value) => {
+    if (typeof value !== "string") return value;
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      // Left as the string it is: the object schema below reports it, rather
+      // than this throwing out of a preprocess where no path is attached.
+      return value;
+    }
+  }, TextQuoteSelectorRequestSchema)
+  .optional()
+  .openapi({
+    type: "string",
+    description:
+      "Text-quote selector as a JSON object encoded into one part, e.g. " +
+      '`{"exact":"assume a 30-year fixed at 6.1%","prefix":"the model we "}`. Same fields and same ' +
+      "meaning as the JSON body's `selector`. Omit it to anchor the thread to the whole document, " +
+      "or to nothing when `parent` is absent.",
+  });
+
+/**
+ * The attachment form of thread creation (SPEC.md §6, §8) — the composer's *Ask*
+ * with a screenshot, and a selection comment that carries a file.
+ *
+ * Mirrors {@link CaptureRequestSchema}'s multipart shape part for part: `text`
+ * for the prose, the same `requestsAgent` string-boolean, and the same repeated
+ * `files` part. The first turn may be attachment-only, so `text` is optional —
+ * but a request carrying neither text nor files creates a thread with an empty
+ * first turn, which is nothing at all, and is rejected.
+ */
+export const MultipartCreateThreadRequestSchema = z
+  .object({
+    parent: DocumentIdSchema.optional().describe(
+      "Document being commented on. Omitted creates a standalone thread.",
+    ),
+    selector: MultipartSelectorSchema,
+    title: z.string().min(1).optional().describe("Defaults to the anchor quote or the first turn."),
+    text: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Body of the thread's first turn. Optional: a first turn may be attachment-only."),
+    requestsAgent: requestsAgentFormField(THREAD_CREATE_OMITTED_BEHAVIOUR),
+    files: AttachmentFilesSchema,
+  })
+  .refine((value) => value.text !== undefined || value.files.length > 0, {
+    message: "A thread's first turn needs `text`, at least one file, or both.",
+    path: ["text"],
+  })
+  .openapi("MultipartCreateThreadRequest");
 
 /**
  * Every thread mutation carries §14's warnings, exactly as the document
@@ -264,7 +347,9 @@ export type ThreadStatus = z.infer<typeof ThreadStatusSchema>;
 export type Turn = z.infer<typeof TurnSchema>;
 export type Thread = z.infer<typeof ThreadSchema>;
 export type ThreadSummary = z.infer<typeof ThreadSummarySchema>;
+export type ThreadMutationResponse = z.infer<typeof ThreadMutationResponseSchema>;
 export type CreateThreadRequest = z.infer<typeof CreateThreadRequestSchema>;
+export type MultipartCreateThreadRequest = z.infer<typeof MultipartCreateThreadRequestSchema>;
 export type CreateThreadResponse = z.infer<typeof CreateThreadResponseSchema>;
 export type AppendTurnRequest = z.infer<typeof AppendTurnRequestSchema>;
 export type MultipartAppendTurnRequest = z.infer<typeof MultipartAppendTurnRequestSchema>;

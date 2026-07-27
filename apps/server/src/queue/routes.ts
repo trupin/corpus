@@ -31,9 +31,14 @@ export function mountQueueRoutes(app: OpenAPIHono, queue: QueueService): void {
     return c.json({ events: events.map(toWireEvent) }, 200);
   });
 
+  // Both arrays, and they are disjoint: `reaped` is what came back to
+  // `pending/`, `failed` is what the reap gave up on — an event past its attempt
+  // cap, or one whose file no longer parses. The service has always computed
+  // both; dropping `failed` here left the CLI unable to report a give-up at all
+  // (CONTRACT-007's rider).
   app.openapi(contractRoutes.reapStale, async (c) => {
-    const { reaped } = await queue.reapStale();
-    return c.json({ reaped }, 200);
+    const { reaped, failed } = await queue.reapStale();
+    return c.json({ reaped, failed }, 200);
   });
 
   app.openapi(contractRoutes.haltQueue, async (c) => {

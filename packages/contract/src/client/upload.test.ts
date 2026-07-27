@@ -1,12 +1,19 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
-import { contractRoutes, mountAppendTurn } from "../routes/index.js";
+import {
+  contractRoutes,
+  isMultipartThreadCreate,
+  mountAppendTurn,
+  mountCreateThread,
+} from "../routes/index.js";
 import {
   buildCaptureFormData,
+  buildThreadFormData,
   buildTurnFormData,
   FILES_FIELD,
   uploadCapture,
+  uploadCreateThread,
   UploadError,
   uploadTurn,
 } from "./upload.js";
@@ -64,6 +71,39 @@ function createServer() {
           ].join(" "),
         },
         eventId: parsed.requestsAgent === false ? null : "evt_7c1d",
+        warnings: [],
+      },
+      201,
+    );
+  });
+
+  mountCreateThread(app, (c) => {
+    const validated = c.req.valid("form");
+    const multipart = isMultipartThreadCreate(validated);
+    const files = multipart ? validated.files : [];
+    return c.json(
+      {
+        thread: {
+          id: "th_x9y8",
+          title: [
+            `text=${(multipart ? validated.text : validated.body) ?? ""}`,
+            `title=${validated.title ?? ""}`,
+            `selector=${validated.selector?.exact ?? ""}`,
+            `files=${files.map((file) => file.name).join("|")}`,
+            `auth=${c.req.header("authorization") ?? ""}`,
+            `actor=${c.req.header(ACTOR_HEADER) ?? ""}`,
+          ].join(" "),
+          created: "2026-07-19T10:05:00Z",
+          updated: "2026-07-19T10:05:00Z",
+          status: "open" as const,
+          tags: [],
+          parent: validated.parent ?? null,
+          anchor: validated.selector ? "anc_k4f7" : null,
+          agent: "none" as const,
+          turns: [],
+        },
+        anchorId: validated.selector ? "anc_k4f7" : null,
+        eventId: validated.requestsAgent === false ? null : "evt_7c1d",
         warnings: [],
       },
       201,
@@ -131,6 +171,95 @@ describe("buildTurnFormData", () => {
 
   it("omits the text part on an attachment-only turn", () => {
     expect(buildTurnFormData({ files: [png()] }).has("text")).toBe(false);
+  });
+});
+
+describe("buildThreadFormData", () => {
+  it("names the parts the multipart thread body declares", () => {
+    const form = buildThreadFormData({ text: "why 6.1%?", title: "Rates", files: [png()] });
+    expect([...form.keys()].sort()).toEqual([FILES_FIELD, "text", "title"]);
+    expect(form.get("text")).toBe("why 6.1%?");
+  });
+
+  /** One JSON-encoded part, because every multipart part is text. */
+  it("encodes the selector into a single part", () => {
+    const selector = { exact: "a 30-year fixed at 6.1%", prefix: "the model we " };
+    const form = buildThreadFormData({ text: "why?", selector, parent: "doc_a1b2c3" });
+    // A `FormData` entry is a string or a `File`; this part must be the former,
+    // and it must round-trip back to the very object the caller handed in.
+    const encoded = form.get("selector");
+    expect(encoded).toBe(JSON.stringify(selector));
+    expect(form.get("parent")).toBe("doc_a1b2c3");
+    expect(JSON.parse(typeof encoded === "string" ? encoded : "")).toEqual(selector);
+  });
+
+  it("omits every part the caller left unset, preserving the tri-state signal", () => {
+    const form = buildThreadFormData({ files: [png()] });
+    expect([...form.keys()]).toEqual([FILES_FIELD]);
+  });
+
+  it("repeats the files part once per attachment", () => {
+    const form = buildThreadFormData({ text: "hi", files: [png("a.png"), png("b.png")] });
+    expect(form.getAll(FILES_FIELD)).toHaveLength(2);
+  });
+});
+
+describe("uploadCreateThread against a mounted contract route", () => {
+  it("delivers the parts, the bearer token and the actor header", async () => {
+    const created = await uploadCreateThread({
+      ...options(),
+      actor: "agent",
+      text: "why 6.1%?",
+      title: "Rates",
+      files: [png()],
+    });
+
+    expect(created.thread.title).toBe(
+      `text=why 6.1%? title=Rates selector= files=shot.png auth=Bearer ${TOKEN} actor=agent`,
+    );
+    expect(created.eventId).toBe("evt_7c1d");
+  });
+
+  it("round-trips a selector through the encoded part, and anchors the thread", async () => {
+    const created = await uploadCreateThread({
+      ...options(),
+      text: "why?",
+      parent: "doc_a1b2c3",
+      selector: { exact: "a 30-year fixed at 6.1%" },
+    });
+
+    expect(created.thread.title).toContain("selector=a 30-year fixed at 6.1%");
+    expect(created.thread.parent).toBe("doc_a1b2c3");
+    expect(created.anchorId).toBe("anc_k4f7");
+  });
+
+  it("posts an attachment-only first turn", async () => {
+    const created = await uploadCreateThread({ ...options(), files: [png()] });
+    expect(created.thread.title).toContain("files=shot.png");
+    expect(created.thread.title).toContain("text=");
+  });
+
+  it('carries an explicit false through to a null event id ("note only")', async () => {
+    const created = await uploadCreateThread({
+      ...options(),
+      text: "just filing this",
+      requestsAgent: false,
+    });
+    expect(created.eventId).toBeNull();
+  });
+
+  /** A thread with an empty first turn is nothing at all; the helper says so before the round trip. */
+  it("refuses an empty first turn without touching the network", async () => {
+    const error = await rejection(
+      uploadCreateThread({
+        ...options(),
+        fetch: () => {
+          throw new Error("the network should not have been touched");
+        },
+      }),
+    );
+    expect(error.status).toBe(400);
+    expect(error.message).toContain("at least one file");
   });
 });
 

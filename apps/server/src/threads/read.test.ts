@@ -175,13 +175,15 @@ describe("GET /api/threads/{id} — hand-written files", () => {
     const response = await ws.post("/api/threads/th_noturns/resolve", {});
     expect(response.status).toBe(200);
     expect((await response.json()) as Record<string, unknown>).toMatchObject({
-      id: "th_noturns",
-      turnCount: 0,
-      // With no turns to date it, the summary falls back to the thread's own
-      // `updated`, which resolving has just stamped.
-      lastAuthor: "user",
-      lastTs: "2026-07-27T09:00:00Z",
-      status: "resolved",
+      thread: {
+        id: "th_noturns",
+        turnCount: 0,
+        // With no turns to date it, the summary falls back to the thread's own
+        // `updated`, which resolving has just stamped.
+        lastAuthor: "user",
+        lastTs: "2026-07-27T09:00:00Z",
+        status: "resolved",
+      },
     });
   });
 });

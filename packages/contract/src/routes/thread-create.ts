@@ -1,0 +1,140 @@
+import { createRoute, type OpenAPIHono, type RouteHandler } from "@hono/zod-openapi";
+import type { Env } from "hono";
+import { ActorHeaderSchema } from "../schemas/actor.js";
+import {
+  CreateThreadRequestSchema,
+  CreateThreadResponseSchema,
+  MultipartCreateThreadRequestSchema,
+  type CreateThreadRequest,
+  type MultipartCreateThreadRequest,
+} from "../schemas/thread.js";
+import {
+  DUAL_MEDIA_TYPES,
+  dualMediaSource,
+  isSupportedDualMediaContentType,
+  missingBodyError,
+} from "./dual-media.js";
+import {
+  jsonContent,
+  LOCKED_RESPONSE,
+  NOT_FOUND_RESPONSE,
+  PAYLOAD_TOO_LARGE_RESPONSE,
+  UNAUTHORIZED_RESPONSE,
+  VALIDATION_RESPONSE,
+} from "./responses.js";
+
+/**
+ * `POST /api/threads` — the second dual-media route, and the wire path for the
+ * composer's *Ask* with attachments (SPEC.md §8) and for a selection comment
+ * that carries a file (§6). Before it, only Capture could ingest attachments, so
+ * *Ask* had no way to send one at all.
+ *
+ * Everything about the mechanism — why a `required: true` dual-media body cannot
+ * be mounted with `app.openapi`, and why the published definition still declares
+ * it mandatory — is in `./dual-media.ts`.
+ */
+
+/** Media types the route accepts, in the order the document declares them. */
+export const THREAD_CREATE_MEDIA_TYPES = DUAL_MEDIA_TYPES;
+
+const createThreadRoute = (required: boolean) =>
+  createRoute({
+    method: "post",
+    path: "/api/threads",
+    tags: ["threads"],
+    summary: "Create a thread on a selection, a whole document, or standalone",
+    description:
+      "With a selector, the server writes the anchor entry into the parent's frontmatter and creates " +
+      "the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's " +
+      "edit lock, since anchoring mutates the parent.\n\n" +
+      "Send `application/json` for a plain thread, or `multipart/form-data` to attach files to the " +
+      "first turn — the composer's *Ask* with a screenshot (SPEC.md §8). The multipart form takes " +
+      "the same repeated `files` part as `POST /api/capture`, names the first turn's prose `text` " +
+      "rather than `body`, and carries `selector` as one JSON-encoded part; a first turn may be " +
+      "attachment-only, but a request with neither text nor files is a `400`. Multipart bodies are " +
+      "built by `uploadCreateThread` in `@corpus/contract/client`, since `openapi-fetch` serialises " +
+      "JSON only. Servers mount this route with `mountCreateThread` from `@corpus/contract`, which " +
+      "dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.",
+    request: {
+      headers: ActorHeaderSchema,
+      body: {
+        required,
+        description:
+          "The thread and its first turn, as JSON or as multipart. Mandatory: the JSON form demands " +
+          "`body`, a multipart body carrying neither `text` nor `files` is a `400`, and a thread " +
+          "with no first turn is not a thread.",
+        content: {
+          "application/json": { schema: CreateThreadRequestSchema },
+          "multipart/form-data": { schema: MultipartCreateThreadRequestSchema },
+        },
+      },
+    },
+    responses: {
+      201: jsonContent(
+        CreateThreadResponseSchema,
+        "The created thread, its anchor, and any enqueued event.",
+      ),
+      400: VALIDATION_RESPONSE,
+      401: UNAUTHORIZED_RESPONSE,
+      404: NOT_FOUND_RESPONSE,
+      413: PAYLOAD_TOO_LARGE_RESPONSE,
+      423: LOCKED_RESPONSE,
+    },
+  });
+
+/** The published definition: what `openapi.json` and the generated client see. */
+export const createThread = createThreadRoute(true);
+
+/** The twin handed to the library, whose falsy `required` buys content-type dispatch. */
+const dispatchingCreateThread = createThreadRoute(false);
+
+/** The union `c.req.valid("json")` / `c.req.valid("form")` hands a handler for this route. */
+export type CreateThreadBody = CreateThreadRequest | MultipartCreateThreadRequest;
+
+/**
+ * Narrows the union to the multipart form. `files` is multipart-only and always
+ * present there (the parser normalises a missing part to an empty array), so its
+ * presence is a total discriminator — a handler never has to re-read the
+ * `content-type` it was already dispatched on.
+ */
+export function isMultipartThreadCreate(
+  body: CreateThreadBody,
+): body is MultipartCreateThreadRequest {
+  return "files" in body;
+}
+
+/** True when the request declares one of the two forms this route validates. */
+export const isSupportedThreadCreateContentType = isSupportedDualMediaContentType;
+
+/** The `400` for a thread-create request that declared no validatable body. */
+export const MISSING_THREAD_BODY_ERROR = missingBodyError("A thread");
+
+/**
+ * Mounts the thread-create route on `app`, restoring the mandatory body the
+ * library drops. The handler is typed exactly as it would be for
+ * `app.openapi(contractRoutes.createThread, handler)` — **and a server that
+ * keeps using `app.openapi` here will reject both of its own body forms at
+ * runtime**, which is the one failure this helper exists to prevent.
+ */
+export function mountCreateThread<E extends Env>(
+  app: OpenAPIHono<E>,
+  handler: RouteHandler<typeof createThread, E>,
+): void {
+  const guarded: RouteHandler<typeof createThread, E> = (c, next) => {
+    const contentType = c.req.header("content-type");
+    if (!isSupportedThreadCreateContentType(contentType)) {
+      return c.json(MISSING_THREAD_BODY_ERROR, 400);
+    }
+
+    // The dispatch fills one validation target and leaves the other `{}`, so a
+    // handler reading the "wrong" one would silently see an empty body. Both are
+    // pointed at the body that actually arrived; which form it is stays readable
+    // through `isMultipartThreadCreate`.
+    const source = dualMediaSource(contentType);
+    c.req.addValidatedData(source === "form" ? "json" : "form", c.req.valid(source));
+
+    return handler(c, next);
+  };
+
+  app.openapi(dispatchingCreateThread, guarded);
+}

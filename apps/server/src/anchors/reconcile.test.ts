@@ -1248,26 +1248,44 @@ describe("reconcileAnchors — whitespace-only exact: the blank-slice guard is c
 });
 
 describe("reconcileAnchors — bounded work", () => {
-  it("reconciles 50 anchors over a ~1 MB body in under a second", () => {
-    const paragraphs: string[] = [];
-    for (let i = 0; paragraphs.join("\n\n").length < 1_000_000; i++) {
-      paragraphs.push(
-        `Paragraph ${i}: filler prose about lenders, rates, and scenarios, stretched with enough words to make each block meaningfully sized for the benchmark.`,
-      );
-    }
-    const oldBody = paragraphs.join("\n\n");
-    const anchors: AnchorsMap = {};
-    const step = Math.floor(paragraphs.length / 50);
-    for (let a = 0; a < 50; a++) {
-      const needle = `Paragraph ${a * step}: filler prose about lenders`;
-      anchors[`anc_${String(a).padStart(3, "0")}`] = capture(oldBody, needle);
-    }
-    const middle = oldBody.indexOf(`Paragraph ${25 * step}:`);
-    const newBody = `${oldBody.slice(0, middle)}An inserted paragraph right in the middle.\n\n${oldBody.slice(middle)}`;
-    const startedAt = performance.now();
-    const { report } = reconcileAnchors(oldBody, newBody, anchors);
-    const elapsedMs = performance.now() - startedAt;
-    expect(report.orphaned).toEqual([]);
-    expect(elapsedMs).toBeLessThan(1000);
-  });
+  /**
+   * An **order-of-magnitude** guard, not a benchmark. What it exists to catch is
+   * a complexity regression — a reconcile that goes quadratic in body size or
+   * anchor count blows past this by orders of magnitude, whatever the machine.
+   * What it must not do is fail because the machine was busy: this suite runs
+   * alongside every other workspace's, and often alongside several agents'.
+   * A tight bound here has flaked repeatedly while measuring nothing about the
+   * code. The measured time on an idle machine is tens of milliseconds, so five
+   * seconds is ~100× headroom and still two orders of magnitude below what a
+   * genuine regression costs. The vitest timeout is raised past the assertion so
+   * an overrun is reported as a slow reconcile rather than as a killed test.
+   */
+  const RECONCILE_BUDGET_MS = 5000;
+
+  it(
+    "reconciles 50 anchors over a ~1 MB body without going superlinear",
+    () => {
+      const paragraphs: string[] = [];
+      for (let i = 0; paragraphs.join("\n\n").length < 1_000_000; i++) {
+        paragraphs.push(
+          `Paragraph ${i}: filler prose about lenders, rates, and scenarios, stretched with enough words to make each block meaningfully sized for the benchmark.`,
+        );
+      }
+      const oldBody = paragraphs.join("\n\n");
+      const anchors: AnchorsMap = {};
+      const step = Math.floor(paragraphs.length / 50);
+      for (let a = 0; a < 50; a++) {
+        const needle = `Paragraph ${a * step}: filler prose about lenders`;
+        anchors[`anc_${String(a).padStart(3, "0")}`] = capture(oldBody, needle);
+      }
+      const middle = oldBody.indexOf(`Paragraph ${25 * step}:`);
+      const newBody = `${oldBody.slice(0, middle)}An inserted paragraph right in the middle.\n\n${oldBody.slice(middle)}`;
+      const startedAt = performance.now();
+      const { report } = reconcileAnchors(oldBody, newBody, anchors);
+      const elapsedMs = performance.now() - startedAt;
+      expect(report.orphaned).toEqual([]);
+      expect(elapsedMs).toBeLessThan(RECONCILE_BUDGET_MS);
+    },
+    RECONCILE_BUDGET_MS * 4,
+  );
 });

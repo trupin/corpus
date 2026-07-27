@@ -13,8 +13,8 @@
 
 export { AGENT_TURN_DELETE_MESSAGE, deleteThreadTurn } from "./cascade.js";
 export type { TurnDeletion } from "./cascade.js";
-export { createThread, normalizeSelector } from "./create.js";
-export type { ThreadCreation } from "./create.js";
+export { createThread, normalizeSelector, threadRequestBody } from "./create.js";
+export type { ThreadCreateInput, ThreadCreation } from "./create.js";
 export { commentPayload, enqueueComment } from "./events.js";
 export type { CommentEventInput } from "./events.js";
 export {

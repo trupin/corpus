@@ -8,6 +8,7 @@ import {
   createThreadWorkspace,
   frontmatterOf,
   pendingEvents,
+  postForm,
   threadFrontmatterOf,
   threadPath,
   turnsOf,
@@ -335,5 +336,131 @@ describe("POST /api/threads — the edit lock (sprint-006 Adjudication 1)", () =
 
     expect((await ws.post("/api/threads", { parent: parent.id, body: "note" })).status).toBe(201);
     expect((await ws.post("/api/threads", { body: "standalone" })).status).toBe(201);
+  });
+});
+
+// The route gained a `multipart/form-data` variant (CONTRACT-009), which is how
+// the composer's *Ask* sends a screenshot. What the type system cannot check is
+// the mounting: `app.openapi` on a `required: true` dual-media body pushes both
+// validators into the chain, so **every JSON request would 400 at runtime**.
+// Only a request catches that, which is what this suite is.
+describe("POST /api/threads — the dual-media body (CONTRACT-009)", () => {
+  it("still accepts every JSON form, unchanged, now that a second media type exists", async () => {
+    const parent = await seedParent();
+
+    const standalone = await ws.post("/api/threads", { body: "what should I read about X?" });
+    expect(standalone.status).toBe(201);
+
+    const anchored = await ws.post("/api/threads", {
+      parent: parent.id,
+      selector: SELECTOR,
+      body: "is this still right?",
+    });
+    const payload = (await anchored.json()) as { anchorId: string | null; warnings: unknown[] };
+    expect(anchored.status).toBe(201);
+    expect(payload.anchorId).toMatch(/^anc_/);
+    expect(payload.warnings).toEqual([]);
+  });
+
+  it("creates a standalone thread from a multipart body, naming the prose `text`", async () => {
+    const before = ws.log("%H").length;
+
+    const response = await postForm(ws, "/api/threads", [["text", "why 6.1%?"]]);
+    const payload = (await response.json()) as {
+      thread: { id: string; title: string };
+      anchorId: string | null;
+      warnings: unknown[];
+    };
+
+    expect(response.status).toBe(201);
+    expect(payload.anchorId).toBeNull();
+    expect(payload.warnings).toEqual([]);
+    const turns = turnsOf(ws, payload.thread.id);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ author: "user", body: "why 6.1%?" });
+    // One commit, the same as the JSON branch: there is one creation path below
+    // the two media types.
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    expect(filesInHead()).toEqual([threadPath(payload.thread.id)]);
+  });
+
+  it("carries the selector as one JSON-encoded part and anchors the parent atomically", async () => {
+    const parent = await seedParent();
+    const before = ws.log("%H").length;
+
+    const response = await postForm(ws, "/api/threads", [
+      ["parent", parent.id],
+      ["selector", JSON.stringify(SELECTOR)],
+      ["text", "is this still right?"],
+    ]);
+    const payload = (await response.json()) as { thread: { id: string }; anchorId: string };
+
+    expect(response.status).toBe(201);
+    expect(payload.anchorId).toMatch(/^anc_/);
+    // The same shape the JSON branch stores, from the same normalisation.
+    expect(anchorsOf(parent.path)[payload.anchorId]).toEqual(SELECTOR);
+    expect(threadFrontmatterOf(ws, payload.thread.id)).toMatchObject({
+      parent: parent.id,
+      anchor: payload.anchorId,
+    });
+    // Both files, one commit — §6's atomicity is not a property of the JSON
+    // branch, it is a property of the write path both branches share.
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    expect(filesInHead()).toEqual([parent.path, threadPath(payload.thread.id)].sort());
+  });
+
+  it('reads `requestsAgent` as a string boolean, keeping "note only" distinguishable', async () => {
+    const suppressed = await postForm(ws, "/api/threads", [
+      ["text", "@agent please look"],
+      ["requestsAgent", "false"],
+    ]);
+    // `z.stringbool` keeps "false" distinguishable from silence; `z.coerce`
+    // would have made it `true` and enqueued against the author's instruction.
+    expect(((await suppressed.json()) as { eventId: string | null }).eventId).toBeNull();
+
+    const requested = await postForm(ws, "/api/threads", [
+      ["text", "no mention at all"],
+      ["requestsAgent", "true"],
+    ]);
+    expect(((await requested.json()) as { eventId: string | null }).eventId).toMatch(/^evt_/);
+  });
+
+  it("refuses a multipart body carrying neither text nor files, writing nothing", async () => {
+    const before = ws.log("%H").length;
+
+    const response = await postForm(ws, "/api/threads", [["title", "just a title"]]);
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { issues: unknown[] }).issues.length).toBeGreaterThan(0);
+    expect(ws.log("%H")).toHaveLength(before);
+    expect(pendingEvents(ws)).toEqual([]);
+  });
+
+  it("refuses a body in neither media type, and says which two it takes", async () => {
+    const response = await ws.server.app.request("/api/threads", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${ws.server.config.token}`, "content-type": "text/plain" },
+      body: "why 6.1%?",
+    });
+    const payload = (await response.json()) as { code: string; issues: { message: string }[] };
+
+    expect(response.status).toBe(400);
+    expect(payload.code).toBe("bad_request");
+    expect(payload.issues[0]?.message).toContain("application/json or multipart/form-data");
+  });
+
+  it("refuses a selector part that is not a JSON object, before writing the parent", async () => {
+    const parent = await seedParent();
+    const before = ws.read(parent.path);
+
+    for (const selector of ["not json", '"a string"', "{}", '{"exact":""}']) {
+      const response = await postForm(ws, "/api/threads", [
+        ["parent", parent.id],
+        ["selector", selector],
+        ["text", "?"],
+      ]);
+      expect(response.status).toBe(400);
+    }
+    expect(ws.read(parent.path)).toBe(before);
   });
 });

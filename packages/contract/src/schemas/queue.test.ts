@@ -105,15 +105,33 @@ describe("IdleResult", () => {
 
 describe("ReapStaleResult", () => {
   it("round-trips the events recovered from in-progress", () => {
-    expect(ReapStaleResultSchema.parse({ reaped: ["evt_7c1d"] })).toEqual({ reaped: ["evt_7c1d"] });
+    const result = { reaped: ["evt_7c1d"], failed: [] };
+    expect(ReapStaleResultSchema.parse(result)).toEqual(result);
   });
 
   it("round-trips a reap that found nothing stuck", () => {
-    expect(ReapStaleResultSchema.parse({ reaped: [] })).toEqual({ reaped: [] });
+    const result = { reaped: [], failed: [] };
+    expect(ReapStaleResultSchema.parse(result)).toEqual(result);
   });
 
-  it("rejects an id that is not an event id", () => {
-    expect(ReapStaleResultSchema.safeParse({ reaped: ["doc_a1b2c3"] }).success).toBe(false);
+  /**
+   * The half the route used to drop on the floor: an event whose attempts have
+   * run out is given up on rather than recovered, and an operator running
+   * `corpus queue reap-stale` has no other way to hear about it.
+   */
+  it("reports the given-up events separately from the recovered ones", () => {
+    const result = { reaped: ["evt_7c1d"], failed: ["evt_dead"] };
+    expect(ReapStaleResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("requires both halves, so a reap cannot silently report only one", () => {
+    expect(ReapStaleResultSchema.safeParse({ reaped: [] }).success).toBe(false);
+    expect(ReapStaleResultSchema.safeParse({ failed: [] }).success).toBe(false);
+  });
+
+  it.each(["reaped", "failed"])("rejects an id in %s that is not an event id", (field) => {
+    const result = { reaped: [], failed: [], [field]: ["doc_a1b2c3"] };
+    expect(ReapStaleResultSchema.safeParse(result).success).toBe(false);
   });
 });
 

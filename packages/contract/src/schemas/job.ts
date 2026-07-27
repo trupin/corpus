@@ -21,6 +21,16 @@ export const JobSchema = z
     originId: DocumentIdSchema.nullable().describe(
       "Document or thread the job originated from, so the console can link through.",
     ),
+    originTitle: z
+      .string()
+      .nullable()
+      .describe(
+        "**The current title of whatever `originId` names, or null.** Null exactly when `originId` " +
+          "is null, or when the document it names no longer exists. It rides along so the console " +
+          "can label a job row without a second fetch per row; it is a denormalised copy read at " +
+          "response time, never a stored field, so a renamed document shows its new title on the " +
+          "next read.",
+      ),
   })
   .openapi("Job");
 

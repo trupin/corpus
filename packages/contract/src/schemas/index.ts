@@ -28,6 +28,7 @@ export * from "./capture.js";
 export * from "./db.js";
 export * from "./doc.js";
 export * from "./error.js";
+export * from "./form.js";
 export * from "./health.js";
 export * from "./id.js";
 export * from "./job.js";

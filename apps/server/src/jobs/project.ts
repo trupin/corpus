@@ -56,8 +56,29 @@ export function recordJobLine(db: ProjectionDb, eventId: string, line: JobLogLin
   ).run(eventId, eventId, line.ts, line.ts, line.line);
 }
 
-/** The originating document or thread, resolved through the projection; `null` when unknown. */
-export function resolveOriginId(db: ProjectionDb, payloadJson: string): string | null {
+/**
+ * What a job came from: the id the console links through, and the label it
+ * shows beside it.
+ *
+ * The title is read from the projection at response time rather than stored, so
+ * a renamed document shows its new title on the next read. A thread origin
+ * yields the *thread's* own title and a document origin the document's — both
+ * are rows of `documents`, which every projected file gets, threads included.
+ */
+export interface JobOrigin {
+  readonly id: string;
+  readonly title: string;
+}
+
+/**
+ * The originating document or thread, resolved through the projection; `null`
+ * when unknown.
+ *
+ * The title comes from the same row that proves the document exists, so the
+ * response's `originTitle` is null exactly when its `originId` is — the rule
+ * `JobSchema` writes down and UI-011's console reads.
+ */
+export function resolveOrigin(db: ProjectionDb, payloadJson: string): JobOrigin | null {
   let payload: unknown;
   try {
     payload = JSON.parse(payloadJson);
@@ -73,8 +94,9 @@ export function resolveOriginId(db: ProjectionDb, payloadJson: string): string |
     if (!DocumentIdSchema.safeParse(candidate).success) continue;
     // Resolved through the projection: an id the corpus no longer holds is not a
     // link the console can offer, so it reads as "no origin" rather than a dead one.
-    const row = db.prepare("SELECT 1 AS present FROM documents WHERE id = ?").get(candidate);
-    if (row !== undefined) return candidate;
+    const row = db.prepare("SELECT title FROM documents WHERE id = ?").get(candidate) as
+      { title: string } | undefined;
+    if (row !== undefined) return { id: candidate, title: row.title };
   }
   return null;
 }
@@ -82,6 +104,7 @@ export function resolveOriginId(db: ProjectionDb, payloadJson: string): string |
 function toJob(db: ProjectionDb, row: JobJoinRow): Job {
   const status = QueueEventStatusSchema.safeParse(row.status);
   const started = row.started ?? row.created ?? UNKNOWN_INSTANT;
+  const origin = resolveOrigin(db, row.payload_json);
   return {
     eventId: row.event_id,
     // The directory a file sits in is the authority on its status, and that is
@@ -91,7 +114,8 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
     started,
     updated: row.updated ?? row.created ?? started,
     lastLine: row.last_line,
-    originId: resolveOriginId(db, row.payload_json),
+    originId: origin?.id ?? null,
+    originTitle: origin?.title ?? null,
   };
 }
 

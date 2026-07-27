@@ -40,10 +40,16 @@ describe("POST /api/threads/{id}/resolve and /reopen", () => {
     const before = ws.log("%H").length;
 
     const response = await ws.post(`/api/threads/${created.id}/resolve`, {});
-    const summary = (await response.json()) as { id: string; status: string; turnCount: number };
+    const payload = (await response.json()) as {
+      thread: { id: string; status: string; turnCount: number };
+      warnings: unknown[];
+    };
 
     expect(response.status).toBe(200);
-    expect(summary).toMatchObject({ id: created.id, status: "resolved", turnCount: 2 });
+    // The §14 envelope, not a bare summary: `{thread, warnings}`, mirroring
+    // `DocMutationResponse` (CONTRACT-007's rider).
+    expect(payload.thread).toMatchObject({ id: created.id, status: "resolved", turnCount: 2 });
+    expect(payload.warnings).toEqual([]);
     expect(threadFrontmatterOf(ws, created.id)["status"]).toBe("resolved");
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect(ws.db.prepare("SELECT status FROM documents WHERE id = ?").get(created.id)).toEqual({
@@ -60,7 +66,12 @@ describe("POST /api/threads/{id}/resolve and /reopen", () => {
     const frames = await framesDuring(async () => {
       const again = await ws.post(`/api/threads/${created.id}/resolve`, {});
       expect(again.status).toBe(200);
-      expect((await again.json()) as { status: string }).toMatchObject({ status: "resolved" });
+      // A no-op wrote nothing, so it warns about nothing — and still answers the
+      // envelope, because the shape does not depend on whether work happened.
+      expect(await again.json()).toMatchObject({
+        thread: { status: "resolved" },
+        warnings: [],
+      });
     });
 
     // Nothing written, nothing committed, nothing announced: the state the
@@ -84,7 +95,7 @@ describe("POST /api/threads/{id}/resolve and /reopen", () => {
     const response = await ws.post(`/api/threads/${created.id}/reopen`, {});
 
     expect(response.status).toBe(200);
-    expect((await response.json()) as { status: string }).toMatchObject({ status: "open" });
+    expect(await response.json()).toMatchObject({ thread: { status: "open" } });
     expect(threadFrontmatterOf(ws, created.id)["status"]).toBe("open");
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect((await appendTurn(ws, created.id, { body: "and now?" })).eventId).toMatch(/^evt_/);

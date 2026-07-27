@@ -37,7 +37,12 @@ export const QueueEventSchema = z
     source: z.string().min(1).describe("What produced the event, e.g. `ui` or `cli`."),
     payload: z
       .record(z.string(), z.unknown())
-      .describe("Type-specific payload; plugins own the shape of their own event types."),
+      .describe(
+        "Type-specific payload; plugins own the shape of their own event types, which is why this " +
+          "stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads " +
+          "are declared beside their features: `form.respond` carries " +
+          "`{threadId, formTs, option, note}` (SPEC.md §6).",
+      ),
   })
   .openapi("QueueEvent");
 
@@ -104,11 +109,24 @@ export const IdleQuerySchema = z.object({
     }),
 });
 
+/**
+ * Both halves of a reap. The server already computes them — an event whose
+ * recovery attempts have run out is *given up on* rather than returned to
+ * `pending/` — and reporting only the recovered half left the CLI unable to say
+ * that anything had been abandoned, which is the one outcome an operator running
+ * `corpus queue reap-stale` needs to hear about.
+ */
 export const ReapStaleResultSchema = z
   .object({
     reaped: z
       .array(EventIdSchema)
       .describe("Events recovered from `in-progress/` back to `pending/` after a crashed run."),
+    failed: z
+      .array(EventIdSchema)
+      .describe(
+        "Events the reap gave up on rather than recovering, having exhausted their attempts. They " +
+          "are **not** in `reaped`: the two arrays are disjoint, and an empty one is the normal case.",
+      ),
   })
   .openapi("ReapStaleResult");
 

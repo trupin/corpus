@@ -2,8 +2,14 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { CONTRACT_VERSION } from "../openapi.js";
+import { FormSchema, validateFormAnswer } from "../schemas/form.js";
 import { ALL_CONTRACT_ROUTES, contractRoutes } from "./index.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./inventory.js";
+import {
+  isMultipartThreadCreate,
+  MISSING_THREAD_BODY_ERROR,
+  mountCreateThread,
+} from "./thread-create.js";
 import { mountAppendTurn } from "./turn-append.js";
 
 const frontmatter = {
@@ -85,6 +91,12 @@ const threadSummary = {
   lastTs: "2026-07-19T10:05:00Z",
 };
 
+/** The form the stub thread's last agent turn carries, parsed from its fence. */
+const STUB_FORM = FormSchema.parse({
+  prompt: "Which rate should the model assume?",
+  options: ["6.1%", "6.4%"],
+});
+
 const queueEvent = {
   id: "evt_7c1d",
   type: "comment.created",
@@ -119,6 +131,7 @@ const job = {
   updated: "2026-07-19T10:05:40Z",
   lastLine: null,
   originId: "th_x9y8",
+  originTitle: "Re: 30-year fixed assumption",
 };
 
 /** Shaped exactly as `apps/server`'s `rebuild()` returns it (SERVER-004). */
@@ -249,9 +262,25 @@ function createStubApp() {
     );
   });
 
-  app.openapi(contractRoutes.createThread, (c) =>
-    c.json({ thread, anchorId: "anc_k4f7", eventId: null, warnings: [] }, 201),
-  );
+  // Dual-media, so it is mounted rather than `app.openapi`-ed: the echoed
+  // `title` proves which form the validator actually saw.
+  mountCreateThread(app, (c) => {
+    const body = c.req.valid("json");
+    const multipart = isMultipartThreadCreate(body);
+    return c.json(
+      {
+        thread: {
+          ...thread,
+          title: multipart ? `multipart:${String(body.files.length)}` : `json:${body.body}`,
+          parent: body.parent ?? null,
+        },
+        anchorId: body.selector ? "anc_k4f7" : null,
+        eventId: null,
+        warnings: [],
+      },
+      201,
+    );
+  });
   app.openapi(contractRoutes.getThread, (c) => c.json(thread, 200));
   mountAppendTurn(app, (c) =>
     c.json({ thread: threadSummary, turn, eventId: null, warnings: [] }, 201),
@@ -270,10 +299,41 @@ function createStubApp() {
       200,
     ),
   );
+  // Resolving rewrites and auto-commits the thread file, which is exactly where a
+  // rejected hook has to surface (SPEC.md §14) — so the stub warns here rather
+  // than returning the tidy empty array.
   app.openapi(contractRoutes.resolveThread, (c) =>
-    c.json({ ...threadSummary, status: "resolved" as const }, 200),
+    c.json(
+      {
+        thread: { ...threadSummary, status: "resolved" as const },
+        warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+      },
+      200,
+    ),
   );
-  app.openapi(contractRoutes.reopenThread, (c) => c.json(threadSummary, 200));
+  app.openapi(contractRoutes.reopenThread, (c) =>
+    c.json({ thread: threadSummary, warnings: [] }, 200),
+  );
+
+  // The answer is validated against the form it answers, which no static schema
+  // can express: the legal values are whatever the agent wrote into the fence.
+  app.openapi(contractRoutes.respondToForm, (c) => {
+    const answer = c.req.valid("json");
+    const rejection = validateFormAnswer(STUB_FORM, answer);
+    if (rejection) return c.json(rejection, 400);
+    return c.json(
+      {
+        thread: threadSummary,
+        turn: {
+          ...turn,
+          body: answer.note === undefined ? answer.option : `${answer.option}\n\n${answer.note}`,
+        },
+        eventId: "evt_7c1d",
+        warnings: [],
+      },
+      201,
+    );
+  });
   // `unread` is a plain boolean, so the partial read is expressible: a mark
   // before the thread's last turn leaves later turns unseen, and the badge stays
   // lit. The stub thread's last turn is `turn.ts`.
@@ -290,7 +350,9 @@ function createStubApp() {
     c.req.valid("query").timeout === 1 ? c.body(null, 204) : c.json({ events: [queueEvent] }, 200),
   );
   app.openapi(contractRoutes.claimAll, (c) => c.json({ events: [queueEvent] }, 200));
-  app.openapi(contractRoutes.reapStale, (c) => c.json({ reaped: ["evt_7c1d"] }, 200));
+  app.openapi(contractRoutes.reapStale, (c) =>
+    c.json({ reaped: ["evt_7c1d"], failed: ["evt_dead"] }, 200),
+  );
   app.openapi(contractRoutes.haltQueue, (c) =>
     // `pending` doubles as the echo of the optional reason's length: the status
     // shape carries no string field, and the length proves the annotation
@@ -484,7 +546,7 @@ describe("routes mounted on a Hono app", () => {
   /** A `docId` literally named `reap` must not swallow the reap verb, and vice versa. */
   it.each([
     ["/api/locks/reap", '{"reaped":["doc_a1b2c3"]}'],
-    ["/api/queue/reap-stale", '{"reaped":["evt_7c1d"]}'],
+    ["/api/queue/reap-stale", '{"reaped":["evt_7c1d"],"failed":["evt_dead"]}'],
   ])("routes %s to its own handler, not to the parameterised peer", async (path, expected) => {
     const response = await createStubApp().request(path, { method: "POST" });
     expect(response.status).toBe(200);
@@ -521,6 +583,72 @@ describe("routes mounted on a Hono app", () => {
     expect(response.status).toBe(400);
   });
 
+  /**
+   * CONTRACT-009. *Ask* with a screenshot: before it, `POST /api/threads` was
+   * JSON-only and the only attachment ingest in the product was Capture.
+   */
+  const createThreadRequest = (init: RequestInit) =>
+    createStubApp().request("/api/threads", { method: "POST", ...init });
+
+  it("still accepts the JSON form of thread creation, unchanged", async () => {
+    const response = await createThreadRequest({
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body: "why 6.1%?" }),
+    });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      thread: { title: "json:why 6.1%?", parent: null },
+      anchorId: null,
+    });
+  });
+
+  it("accepts a multipart thread whose first turn is attachment-only", async () => {
+    const form = new FormData();
+    form.append("files", new File(["bytes"], "shot.png", { type: "image/png" }));
+    const response = await createThreadRequest({ body: form });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      thread: { title: "multipart:1" },
+      anchorId: null,
+    });
+  });
+
+  it("carries a JSON-encoded selector through the multipart form", async () => {
+    const form = new FormData();
+    form.append("text", "why this figure?");
+    form.append("parent", "doc_a1b2c3");
+    form.append("selector", JSON.stringify({ exact: "a 30-year fixed at 6.1%" }));
+    form.append("files", new File(["bytes"], "shot.png", { type: "image/png" }));
+    const response = await createThreadRequest({ body: form });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      thread: { parent: "doc_a1b2c3" },
+      anchorId: "anc_k4f7",
+    });
+  });
+
+  it("rejects a multipart selector that is not a selector", async () => {
+    const form = new FormData();
+    form.append("text", "why this figure?");
+    form.append("selector", "not json at all");
+    expect((await createThreadRequest({ body: form })).status).toBe(400);
+
+    const empty = new FormData();
+    empty.append("text", "why this figure?");
+    empty.append("selector", JSON.stringify({ prefix: "no quote" }));
+    expect((await createThreadRequest({ body: empty })).status).toBe(400);
+  });
+
+  it("rejects a multipart thread carrying neither text nor files", async () => {
+    expect((await createThreadRequest({ body: new FormData() })).status).toBe(400);
+  });
+
+  it("rejects a thread creation with no body and no content type at all", async () => {
+    const response = await createThreadRequest({});
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual(MISSING_THREAD_BODY_ERROR);
+  });
+
   it("accepts a multipart turn with a file and no text", async () => {
     const form = new FormData();
     form.append("files", new File(["bytes"], "shot.png", { type: "image/png" }));
@@ -546,6 +674,86 @@ describe("routes mounted on a Hono app", () => {
       body: JSON.stringify({ body: "hi" }),
     });
     expect(response.status).toBe(201);
+  });
+
+  /**
+   * The forms surface, exercised through the mounted route rather than asserted
+   * against the schema: the answer is validated against the *fence's* options,
+   * which is the half a static schema cannot express (SPEC.md §6).
+   */
+  const answerForm = (body: unknown, ts = turn.ts) =>
+    createStubApp().request(`/api/threads/th_x9y8/turns/${encodeURIComponent(ts)}/form`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("accepts an option the answered form offers", async () => {
+    const response = await answerForm({ option: "6.4%" });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      turn: { body: "6.4%" },
+      eventId: "evt_7c1d",
+      warnings: [],
+    });
+  });
+
+  it("carries the optional note into the answer turn", async () => {
+    const response = await answerForm({ option: "6.1%", note: "matches the Q2 sheet" });
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      turn: { body: "6.1%\n\nmatches the Q2 sheet" },
+    });
+  });
+
+  it("rejects an option the form does not offer, naming the field", async () => {
+    const response = await answerForm({ option: "5.0%" });
+    expect(response.status).toBe(400);
+    const rejection = (await response.json()) as {
+      code: string;
+      issues: { path: string; message: string }[];
+    };
+    expect(rejection.code).toBe("bad_request");
+    expect(rejection.issues).toHaveLength(1);
+    expect(rejection.issues[0]?.path).toBe("body.option");
+    expect(rejection.issues[0]?.message).toContain("6.1%");
+  });
+
+  it("rejects an answer that chooses nothing at all", async () => {
+    expect((await answerForm({ note: "hmm" })).status).toBe(400);
+    expect((await answerForm({ option: "" })).status).toBe(400);
+  });
+
+  it("rejects a form timestamp that is not an instant", async () => {
+    expect((await answerForm({ option: "6.1%" }, "yesterday")).status).toBe(400);
+  });
+
+  it("reports both halves of a reap, keeping the given-up events out of `reaped`", async () => {
+    const response = await createStubApp().request("/api/queue/reap-stale", { method: "POST" });
+    const result = (await response.json()) as { reaped: string[]; failed: string[] };
+    expect(result.reaped).not.toContain("evt_dead");
+    expect(result.failed).toEqual(["evt_dead"]);
+  });
+
+  it("carries a thread mutation's warnings on the wrapper, not on the summary", async () => {
+    const response = await createStubApp().request("/api/threads/th_x9y8/resolve", {
+      method: "POST",
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      thread: Record<string, unknown>;
+      warnings: { code: string }[];
+    };
+    expect(body.warnings).toEqual([{ code: "commit_failed", detail: "pre-commit hook exited 1" }]);
+    expect(body.thread.status).toBe("resolved");
+    expect(body.thread).not.toHaveProperty("warnings");
+  });
+
+  it("labels a job row with its origin's title", async () => {
+    const response = await createStubApp().request("/api/jobs");
+    const list = (await response.json()) as { jobs: { originId: string; originTitle: string }[] };
+    expect(list.jobs[0]?.originId).toBe("th_x9y8");
+    expect(list.jobs[0]?.originTitle).toBe("Re: 30-year fixed assumption");
   });
 
   it('preserves an explicit "note only" through the multipart capture body', async () => {

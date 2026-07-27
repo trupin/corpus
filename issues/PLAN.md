@@ -99,8 +99,9 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | SERVER-016 | Form answer write path (form.respond producer) | todo | P1 | CONTRACT-007, SERVER-006 |
 | SERVER-020 | Watcher path breaks the tree-key invariant (heuristic vs. signature) | in_progress | P2 | SERVER-018 |
 | SERVER-022 | Server hardening batch: PR #9 MINOR findings | in_progress | P2 | SERVER-010, SERVER-018 |
-| SERVER-023 | Consume CONTRACT-007/009 riders: warnings, reap failed, originTitle, multipart, 413 | todo | P1 | CONTRACT-007, CONTRACT-009, SERVER-006, SERVER-010 |
+| SERVER-023 | Consume CONTRACT-007/009 riders: warnings, reap failed, originTitle, multipart, 413 | in_progress | P1 | CONTRACT-007, CONTRACT-009, SERVER-006, SERVER-010 |
 | SERVER-024 | Provision the bearer token to the served UI | todo | P1 | SERVER-003 |
+| SERVER-025 | Emit an invalidate when the boot projection completes | todo | P2 | SERVER-007 |
 | CLI-008 | CLI hardening batch: PR #9 MINOR findings | in_progress | P2 | CLI-003, CLI-004 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | in_progress | P1 | INFRA-003, UI-001 |
 

@@ -20,6 +20,7 @@ const job = {
   updated: "2026-07-19T10:05:40Z",
   lastLine: "reading doc_a1b2c3",
   originId: "th_x9y8",
+  originTitle: "Re: 30-year fixed assumption",
 };
 
 describe("Job", () => {
@@ -28,8 +29,21 @@ describe("Job", () => {
   });
 
   it("round-trips a job that has not logged yet and has no origin", () => {
-    const fresh = { ...job, lastLine: null, originId: null };
+    const fresh = { ...job, lastLine: null, originId: null, originTitle: null };
     expect(JobSchema.parse(fresh)).toEqual(fresh);
+  });
+
+  /**
+   * The console labels rows without a second fetch each, so the title rides
+   * along — but it is a denormalised read, and a job whose origin has since been
+   * deleted still has to be representable.
+   */
+  it("keeps a titleless origin representable, and the key present", () => {
+    const untitled = { ...job, originTitle: null };
+    expect(JobSchema.parse(untitled).originTitle).toBeNull();
+
+    const { originTitle: _dropped, ...missing } = job;
+    expect(JobSchema.safeParse(missing).success).toBe(false);
   });
 
   it("mirrors the queue statuses, so a job cannot report a status the queue lacks", () => {
