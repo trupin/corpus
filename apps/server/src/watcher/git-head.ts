@@ -9,6 +9,7 @@
 // reconciled frontmatter is SERVER-005's (sprint-004 Adjudication 3).
 
 import { execFileSync } from "node:child_process";
+import { sanitizeGitEnv } from "../git/env.js";
 
 /** Enough for any hand-written document; a blob past it is not something we reconcile. */
 export const MAX_HEAD_BLOB_BYTES = 16 * 1024 * 1024;
@@ -33,6 +34,11 @@ export const readHeadVersion: ReadHeadVersion = (workspaceRoot, relativePath) =>
   try {
     return execFileSync("git", ["show", `HEAD:./${relativePath}`], {
       cwd: workspaceRoot,
+      // Without this the read inherits `GIT_DIR`/`GIT_WORK_TREE` from whatever
+      // started the server — a git hook exports them — and `oldBody` would come
+      // from a foreign repository. Sprint-005 Open Conflict 6: every git child
+      // in `apps/server` runs sanitized, reads included.
+      env: sanitizeGitEnv(),
       encoding: "utf8",
       maxBuffer: MAX_HEAD_BLOB_BYTES,
       timeout: GIT_TIMEOUT_MS,

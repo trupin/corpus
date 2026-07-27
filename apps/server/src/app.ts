@@ -27,6 +27,7 @@ import {
   mountEventStream,
   type InvalidationBus,
 } from "./events/index.js";
+import { createAutoCommitter, createGit } from "./git/index.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
@@ -221,7 +222,24 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   mountQueueRoutes(app, queue);
 
   if (deps.projection !== undefined) {
-    mountDocsRoutes(app, deps.projection, { now });
+    // Everything the write path needs is already reachable here (sprint-005
+    // Open Conflict 12: "no new deps"): the workspace root is on the config, the
+    // bus and the self-write registry were just created, the projection is the
+    // dep `lifecycle.ts` opened, and the git module is a pure function of the
+    // root — constructing a command builder opens no handle and touches no
+    // filesystem, so it does not compromise `createServer`'s purity.
+    mountDocsRoutes(app, deps.projection, {
+      now,
+      workspace: {
+        workspaceRoot: config.workspaceRoot,
+        projection: deps.projection,
+        git: createAutoCommitter({ git: createGit(config.workspaceRoot), logger, now }),
+        selfWrites,
+        bus,
+        logger,
+        now,
+      },
+    });
   }
 
   const openApiDocument = buildOpenApiDocument();

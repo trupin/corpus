@@ -1,11 +1,51 @@
 /**
- * The collection query (SPEC.md §9.2): `GET /api/docs` — the one endpoint behind
- * every list in the product — and `GET /api/tree`, the folder scoping it agrees
- * with.
+ * The document surface (SPEC.md §9.2): the collection query behind every list,
+ * the folder tree it agrees with, read-one, and the whole mutation surface —
+ * create, edit, move, archive, unarchive and delete, all funnelling through one
+ * write pipeline (Architecture Decision 2, "the server is the sole writer").
  *
  * This file is the surface: nothing outside `docs/` imports its internals.
  */
 
+export { actorOf } from "./actor.js";
+export { SKILLS_ARCHIVED_ROOT, SKILLS_ROOT, setArchived, skillDocumentsUnder } from "./archive.js";
+export { MAX_SLUG_ATTEMPTS, allocatePath, createDocument } from "./create.js";
+export { AGENT_DELETE_MESSAGE, deleteDocument } from "./delete.js";
+export { moveDocument } from "./move.js";
+export {
+  findDocumentRow,
+  isIdTaken,
+  loadDocument,
+  readAnchorsMap,
+  resolveDocumentAnchors,
+  toWireDoc,
+  wireFrontmatter,
+} from "./read.js";
+export type { DocumentRow, LoadedDocument } from "./read.js";
+export { TEMPLATE_RESERVED_KEYS, findTemplate } from "./templates.js";
+export type { TemplatePrefill } from "./templates.js";
+export { changedFields, updateDocument } from "./update.js";
+export { mountDocWriteRoutes } from "./write-routes.js";
+export {
+  CREATE_LANE,
+  WARNING_DETAIL_LENGTH,
+  WARNING_DETAIL_LINES,
+  allowAllWrites,
+  createDocumentMutex,
+  runMutation,
+  validateBeforeWrite,
+  validationError,
+  warningDetail,
+  writeFileAtomically,
+} from "./write.js";
+export type {
+  DocsWorkspace,
+  DocumentMutex,
+  FileOperation,
+  MutationPlan,
+  MutationResult,
+  WriteGuard,
+} from "./write.js";
 export {
   MAX_QUERY_TOKENS,
   MAX_SNIPPETS_PER_ROW,

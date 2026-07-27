@@ -3,18 +3,29 @@ import { contractRoutes } from "@corpus/contract";
 import type { ProjectionDb } from "../projection/index.js";
 import { queryDocs } from "./query.js";
 import { folderTree } from "./tree.js";
+import { mountDocWriteRoutes } from "./write-routes.js";
+import type { DocsWorkspace } from "./write.js";
 
 export interface DocsRoutesOptions {
   /** Injected so staleness and `due` keywords are testable against a fixed clock. */
   readonly now?: () => number;
+  /**
+   * Everything the file-backed half of the surface needs — read-one, and every
+   * mutation. Omitted, only the two pure projection reads mount, which is what
+   * a unit test that needs no workspace on disk wants.
+   */
+  readonly workspace?: DocsWorkspace | undefined;
 }
 
 /**
- * Binds the collection query and the folder tree to the contract's route
- * definitions. Both are pure reads of the projection, so they need nothing from
- * the request beyond its validated query — parameters are parsed by
- * `DocsQuerySchema` in the zod-openapi hook, which is what makes an unknown
+ * Binds the document surface to the contract's route definitions.
+ *
+ * The two collection reads are pure queries of the projection, so they need
+ * nothing from the request beyond its validated query — parameters are parsed
+ * by `DocsQuerySchema` in the zod-openapi hook, which is what makes an unknown
  * filter *value* a 400 rather than a silently empty list (SPEC.md §9.3).
+ * Read-one and the mutations additionally touch the workspace, and mount only
+ * when one is supplied.
  */
 export function mountDocsRoutes(
   app: OpenAPIHono,
@@ -28,4 +39,6 @@ export function mountDocsRoutes(
   );
 
   app.openapi(contractRoutes.getTree, (c) => c.json(folderTree(projection), 200));
+
+  if (options.workspace !== undefined) mountDocWriteRoutes(app, options.workspace);
 }

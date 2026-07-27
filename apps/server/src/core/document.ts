@@ -175,6 +175,15 @@ export const parseDocument = (raw: string, path?: string): ParsedDocument => {
 };
 
 /**
+ * A document with an empty frontmatter mapping — the seed a create builds on,
+ * so that composing a brand-new document goes through the same
+ * {@link setFrontmatterFields} path as every later edit rather than through a
+ * second, hand-rolled serializer. The fence spelling lives here because this is
+ * the only module that knows the container format.
+ */
+export const emptyDocument = (body = ""): ParsedDocument => parseDocument(`---\n---\n${body}`);
+
+/**
  * The frontmatter YAML source, LF-normalized. Mutations work in LF and
  * {@link serializeDocument} restores the file's own line endings, so a CRLF
  * file never grows a mixed-ending frontmatter block.

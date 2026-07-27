@@ -71,7 +71,7 @@ export const slugifyTitle = (title: string): string =>
  * the full workspace-relative form (`"data/docs/finance"`); both mean the same
  * place, and disagreeing about it is not worth a runtime error.
  */
-const normalizeDocFolder = (folder: string | undefined): string => {
+export const normalizeDocFolder = (folder: string | undefined): string => {
   const trimmed = (folder ?? DEFAULT_DOC_FOLDER).trim().replace(/^\/+|\/+$/g, "");
   if (trimmed === "") return DOCS_ROOT;
   const withoutRoot =
