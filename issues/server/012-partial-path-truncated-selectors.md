@@ -466,3 +466,11 @@ regressions. The remaining pre-existing substitution class (eval rounds 3–4) i
 out to [SERVER-013], sequenced before SERVER-005 so the write path never consumes the
 engine with it open. The round-3 similarity attempt stays reverted; the survivor-location
 design authorized for SERVER-013 is recorded there and in the eval file.
+
+### Cross-reference (2026-07-26)
+
+SERVER-013 closed the carved-out substitution class with the authorized survivor-location
+discriminator (relocation evidence: disjoint verbatim occurrence overlapping INSERT text →
+void + re-place through the adjudicated chain; EQUAL survivor → mapper trust), plus an
+exact-tier boundary repair for the 67c truncation. Both sweeps report substitution 0; every
+round-1/round-2 outcome of this issue A/B'd byte-identical. Evidence: SERVER-013's E2E log.

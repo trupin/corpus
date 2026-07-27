@@ -507,6 +507,259 @@ describe("reconcileAnchors — reorder family: cross-anchor slice honesty (SERVE
   });
 });
 
+describe("reconcileAnchors — substitution class: relocation evidence (SERVER-013)", () => {
+  // Evaluator round-4 class: in a reorder, a `partial`-classified anchor is
+  // handed a rewritten slice of *another paragraph's text* while its own
+  // `exact` survives verbatim elsewhere — boundary-respecting and
+  // self-round-tripping, and with a single anchor the cross-anchor pass has
+  // nothing to compare against. The discriminator is the survivor's location:
+  // disjoint from the slice AND overlapping inserted text → relocation, void
+  // and re-place through the adjudicated chain; wholly in unedited text →
+  // pre-existing duplicate, the mapper's slice stays trusted. Never similarity.
+  const HIRE =
+    "Hiring velocity stalled around the hiring committee's bar, before the budget review lands.";
+  const CASH =
+    "Cash runway stalled around nineteen months of burn, assuming no new debt this year.";
+  const OPS = [
+    "Revenue grew past the enterprise tier forecast, according to the latest close.",
+    "Churn held steady near two point one percent, despite the pricing change in May.",
+    "The support backlog dropped below forty open tickets, per the operating plan.",
+    HIRE,
+    "Marketing spend shifted toward developer conferences this spring, though the data lags a week.",
+    CASH,
+  ];
+  const opsDoc = (ps: string[]): string => `# Q3 operations review\n\n${ps.join("\n\n")}\n`;
+  const OPS_OLD = opsDoc(OPS);
+  const OPS_SWAPPED = ((): string => {
+    const next = [...OPS];
+    [next[3], next[5]] = [CASH, HIRE];
+    return opsDoc(next);
+  })();
+
+  it("six wholly-distinct paragraphs, #4 and #6 swapped, one anchor → re-attaches to its own moved text (TEST-57/59)", () => {
+    const input: AnchorsMap = { anc_hire: capture(OPS_OLD, HIRE) };
+    const { anchors, report } = reconcileAnchors(OPS_OLD, OPS_SWAPPED, input);
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_hire"], orphaned: [] });
+    expect(anchors["anc_hire"]?.exact).toBe(HIRE);
+    // "Its own moved text": the resolved range is where the paragraph landed —
+    // not merely `newBody.includes(exact)`, the discredited predicate.
+    const range = resolveAnchor(OPS_SWAPPED, anchors["anc_hire"] ?? { exact: "" });
+    expect(range?.start).toBe(OPS_SWAPPED.indexOf(HIRE));
+    expect(OPS_SWAPPED.slice(range?.start, range?.end)).toBe(HIRE);
+  });
+
+  it("the fixture exercises the substitution seam: partial, unstraddled, and mapped onto the other paragraph", () => {
+    // Fixture-rot guard. The diff must hand the anchor the *cash* paragraph's
+    // text through a boundary-respecting partial — the exact shape the shipped
+    // engine trusted (its emitted exact was CASH, per the on-disk repro).
+    const mapper = computeOffsetMapper(OPS_OLD, OPS_SWAPPED);
+    const start = OPS_OLD.indexOf(HIRE);
+    const range = { start, end: start + HIRE.length };
+    expect(mapper.classify(range)).toBe("partial");
+    expect(mapper.straddledByReplacement(range)).toBe(false);
+    const slice = OPS_SWAPPED.slice(mapper.mapStart(range.start), mapper.mapEnd(range.end));
+    expect(slice).toBe(CASH);
+  });
+
+  it("round-4 minimal: two near-identical paragraphs swapped, ONE anchor → its own text, not the sibling's (TEST-62)", () => {
+    // With a single anchor the round-2 cross-anchor pass cannot fire — this is
+    // the hand-verified reproduction from the round-4 evaluation.
+    const P1 = "Paragraph one now has margin and cherries in the budget quarter.";
+    const P2 = "Paragraph two now has margin and cherries in the budget quarter.";
+    const oldBody = `\n# Doc\n\n${P1}\n\n${P2}\n\nA closing paragraph that stays put.\n`;
+    const newBody = `\n# Doc\n\n${P2}\n\n${P1}\n\nA closing paragraph that stays put.\n`;
+    const input: AnchorsMap = { anc_0001: capture(oldBody, P1) };
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_0001"], orphaned: [] });
+    expect(anchors["anc_0001"]?.exact).toBe(P1);
+    const range = resolveAnchor(newBody, anchors["anc_0001"] ?? { exact: "" });
+    expect(range?.start).toBe(newBody.indexOf(P1));
+  });
+
+  const DUP_SENT = "We assume a 30-year fixed at 6.1% for the base case.";
+  const dupBody = `\n# Doc\n\nLead paragraph stays.\n\n${DUP_SENT}\n\nTail paragraph stays.\n\nAppendix: ${DUP_SENT}\n`;
+
+  it.each([
+    [
+      "shrink to a few words",
+      (b: string) => b.replace(DUP_SENT, "We assume 6.1%."),
+      "We assume 6.1%.",
+    ],
+    [
+      "heavy in-place rewrite",
+      (b: string) =>
+        b.replace(DUP_SENT, "We assume nothing is safe; rates moved and 6.1% no longer holds."),
+      "We assume nothing is safe; rates moved and 6.1% no longer holds.",
+    ],
+    [
+      "medium in-place rewrite",
+      (b: string) => b.replace(DUP_SENT, "We assume a 30-year floating at 6.4% for the bull case."),
+      "We assume a 30-year floating at 6.4% for the bull case.",
+    ],
+    [
+      "boundary-crossing pure delete",
+      (b: string) => b.replace(" at 6.1% for the base case.\n\nTail paragraph stays.", "."),
+      "We assume a 30-year fixed",
+    ],
+  ])(
+    "an in-place edit with a verbatim duplicate elsewhere stays remapped in place: %s (TEST-61/63)",
+    (_name, edit, expected) => {
+      // The round-3 anti-goal: `lacksKinship` orphaned 404/600 of these. The
+      // duplicate sits wholly in unedited (EQUAL) text — a pre-existing
+      // doppelgänger, not this anchor's text surviving — so the in-place edit
+      // evidence outranks it (SERVER-002 adjudication) and the anchor never
+      // orphans and never jumps to the appendix.
+      const first = dupBody.indexOf(DUP_SENT);
+      const input: AnchorsMap = {
+        anc_dup: { exact: DUP_SENT, ...computeContext(dupBody, first, first + DUP_SENT.length) },
+      };
+      const newBody = edit(dupBody);
+      const { anchors, report } = reconcileAnchors(dupBody, newBody, input);
+      expect(report).toEqual({ unchanged: [], remapped: ["anc_dup"], orphaned: [] });
+      expect(anchors["anc_dup"]?.exact).toBe(expected);
+      const range = resolveAnchor(newBody, anchors["anc_dup"] ?? { exact: "" });
+      expect(newBody.slice(range?.start, range?.end)).toBe(expected);
+      // Never the appendix copy: the resolved range precedes it.
+      expect(range?.end).toBeLessThanOrEqual(newBody.indexOf("Appendix: "));
+    },
+  );
+
+  it("EQUAL-text survivor + wholly rewritten slice keeps the mapper's slice — the adjudicated corner (68c must-not-fix)", () => {
+    // A rewrite sharing only fragments with the original, while a verbatim
+    // duplicate pre-exists in unedited text. Orphaning here would need an
+    // unrelatedness signal — the similarity trap. The authorized design trusts
+    // the mapper for EQUAL survivors, byte-identical to the shipped engine.
+    const newBody = dupBody.replace(
+      DUP_SENT,
+      "Everything was renegotiated after the audit; we keep only the 6.1% figure.",
+    );
+    const first = dupBody.indexOf(DUP_SENT);
+    const input: AnchorsMap = {
+      anc_dup: { exact: DUP_SENT, ...computeContext(dupBody, first, first + DUP_SENT.length) },
+    };
+    const { anchors, report } = reconcileAnchors(dupBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_dup"], orphaned: [] });
+    expect(anchors["anc_dup"]?.exact).toBe(
+      "Everything was renegotiated after the audit; we keep only the 6.1% figure.",
+    );
+  });
+
+  it("true duplication during a reorder leaves the mapper's choice standing (TEST-65)", () => {
+    // Both the mapped location and an INSERT location hold verbatim copies —
+    // there is no evidence the mapper is wrong, so nothing is voided.
+    const [A, B, C] = [OPS[0]!, OPS[1]!, OPS[2]!];
+    const oldBody = `# Doc\n\n${A}\n\n${HIRE}\n\n${B}\n\n${C}\n`;
+    const newBody = `# Doc\n\n${A}\n\n${HIRE}\n\n${C}\n\n${B}\n\nQuoted again: ${HIRE}\n`;
+    const input: AnchorsMap = { anc_t: capture(oldBody, HIRE) };
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report.orphaned).toEqual([]);
+    expect(anchors["anc_t"]?.exact).toBe(HIRE);
+    // The emitted context still names the original neighbourhood.
+    const range = resolveAnchor(newBody, anchors["anc_t"] ?? { exact: "" });
+    expect(range?.start).toBe(newBody.indexOf(HIRE));
+  });
+
+  it("a non-unique survivor goes through the chain's uniqueness rules: ambiguity orphans, selector preserved (TEST-64)", () => {
+    // The anchored paragraph relocates, but a verbatim twin already sat in
+    // unedited text: after the reorder the exact resolves nowhere uniquely and
+    // the old context survives nowhere, so re-placement refuses to pick an
+    // occurrence arbitrarily — and never picks by similarity.
+    const twinDoc = `${OPS_OLD}\nAppendix repeats: ${HIRE}\n`;
+    const twinNew = `${OPS_SWAPPED}\nAppendix repeats: ${HIRE}\n`;
+    const input: AnchorsMap = { anc_hire: capture(twinDoc, HIRE) };
+    const { anchors, report } = reconcileAnchors(twinDoc, twinNew, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_hire"] });
+    expect(anchors["anc_hire"]).toEqual(input["anc_hire"]);
+  });
+
+  it("musical chairs: two anchors on byte-identical paragraphs keep distinct, order-preserving ranges", () => {
+    const T = "The repeated boilerplate disclaimer applies to this section.";
+    const [A, B, C] = [OPS[0]!, OPS[1]!, OPS[2]!];
+    const oldBody = `# Doc\n\n${A}\n\n${T}\n\n${B}\n\n${T}\n\n${C}\n`;
+    const newBody = `# Doc\n\n${C}\n\n${T}\n\n${B}\n\n${T}\n\n${A}\n`;
+    const first = oldBody.indexOf(T);
+    const second = oldBody.indexOf(T, first + 1);
+    const input: AnchorsMap = {
+      anc_a: { exact: T, ...computeContext(oldBody, first, first + T.length) },
+      anc_b: { exact: T, ...computeContext(oldBody, second, second + T.length) },
+    };
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    expect(report.orphaned).toEqual([]);
+    const ra = resolveAnchor(newBody, anchors["anc_a"] ?? { exact: "" });
+    const rb = resolveAnchor(newBody, anchors["anc_b"] ?? { exact: "" });
+    expect(ra).not.toBeNull();
+    expect(rb).not.toBeNull();
+    expect(newBody.slice(ra?.start, ra?.end)).toBe(T);
+    expect(newBody.slice(rb?.start, rb?.end)).toBe(T);
+    expect(ra?.start).toBeLessThan(rb?.start ?? 0);
+  });
+
+  it("nested anchors on a relocated paragraph move together (nested exemption, reordered)", () => {
+    const input: AnchorsMap = {
+      anc_inner: capture(OPS_OLD, "the hiring committee's bar"),
+      anc_outer: capture(OPS_OLD, HIRE),
+    };
+    const { anchors, report } = reconcileAnchors(OPS_OLD, OPS_SWAPPED, input);
+    expect(report.orphaned).toEqual([]);
+    const outer = resolveAnchor(OPS_SWAPPED, anchors["anc_outer"] ?? { exact: "" });
+    const inner = resolveAnchor(OPS_SWAPPED, anchors["anc_inner"] ?? { exact: "" });
+    expect(OPS_SWAPPED.slice(outer?.start, outer?.end)).toBe(HIRE);
+    expect(OPS_SWAPPED.slice(inner?.start, inner?.end)).toBe("the hiring committee's bar");
+    expect(inner?.start).toBeGreaterThanOrEqual(outer?.start ?? 0);
+    expect(inner?.end).toBeLessThanOrEqual(outer?.end ?? 0);
+  });
+
+  it.each([
+    ["one paragraph inserted between", ["A freshly written interlude paragraph sits here now."]],
+    [
+      "two paragraphs inserted between",
+      [
+        "A freshly written interlude paragraph sits here now.",
+        "And a second brand-new paragraph follows it immediately.",
+      ],
+    ],
+  ])(
+    "cut-and-paste far away still re-attaches to its own moved text: %s (TEST-67c)",
+    (_name, inserted) => {
+      const SENT = "We assume a 30-year fixed at 6.1% for the base case.";
+      const PRE = "The finance model has three inputs that matter most.";
+      const POST = "Everything downstream depends on that number.";
+      const TAIL = "A closing paragraph that stays in place below everything.";
+      const oldBody = `\n# Doc\n\n${PRE}\n\n${SENT}\n\n${POST}\n\n${TAIL}\n`;
+      const newBody = `\n# Doc\n\n${PRE}\n\n${POST}\n\n${inserted.join("\n\n")}\n\n${SENT}\n\n${TAIL}\n`;
+      const input: AnchorsMap = { anc_move: capture(oldBody, SENT) };
+      const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+      expect(report).toEqual({ unchanged: [], remapped: ["anc_move"], orphaned: [] });
+      expect(anchors["anc_move"]?.exact).toBe(SENT);
+      const range = resolveAnchor(newBody, anchors["anc_move"] ?? { exact: "" });
+      expect(range?.start).toBe(newBody.indexOf(SENT));
+    },
+  );
+
+  it("is order-independent: anchor key order never changes the outcome", () => {
+    const selectors: [string, ReturnType<typeof capture>][] = [
+      ["anc_hire", capture(OPS_OLD, HIRE)],
+      ["anc_cash", capture(OPS_OLD, CASH)],
+      ["anc_rev", capture(OPS_OLD, OPS[0]!)],
+    ];
+    const permutations = [
+      [0, 1, 2],
+      [2, 1, 0],
+      [1, 2, 0],
+      [2, 0, 1],
+    ];
+    const results = permutations.map((perm) => {
+      const input: AnchorsMap = {};
+      for (const i of perm) {
+        const [id, sel] = selectors[i]!;
+        input[id] = sel;
+      }
+      return JSON.stringify(reconcileAnchors(OPS_OLD, OPS_SWAPPED, input));
+    });
+    for (const result of results) expect(result).toBe(results[0]);
+  });
+});
+
 describe("reconcileAnchors — guarantees", () => {
   it("is deterministic: 100 runs on identical inputs serialize byte-identically", () => {
     const anchors: AnchorsMap = {

@@ -38,7 +38,19 @@ import type {
  *     offset mapping is monotone, so an honest in-place rewrite can never make
  *     disjoint ranges collide (the whole-document-reorder family, where the
  *     diff stuffs an entire relocated paragraph into a small replacement
- *     wholly *inside* the range, defeating the straddle check).
+ *     wholly *inside* the range, defeating the straddle check);
+ *   - a rewritten slice whose anchor's own `exact` survives verbatim at a
+ *     *disjoint* location overlapping text this edit inserted was handed
+ *     someone else's words while its paragraph was relocated — the
+ *     substitution class (SERVER-013). Monotonicity makes this causal: an
+ *     EQUAL survivor sourced from the anchor's own old range is necessarily
+ *     contained in the mapped slice, so a disjoint survivor sitting in INSERT
+ *     text can only be the anchor's text arriving somewhere else. A disjoint
+ *     survivor wholly in EQUAL text is the opposite proof — it existed before
+ *     the edit, a pre-existing duplicate — and the mapper's slice stays
+ *     trusted (the SERVER-002 adjudication: in-place-edit evidence outranks a
+ *     verbatim duplicate elsewhere; this is what keeps a shrink/heavy rewrite
+ *     with a doppelgänger in an appendix remapped instead of orphaned).
  *   A dishonest slice is rejected and the anchor takes the same verification
  *   path as a deletion claim;
  * - diff says the range was deleted (or the mapped slice degenerates to
@@ -70,6 +82,7 @@ export function reconcileAnchors(
   const mapper = computeOffsetMapper(oldBody, newBody);
   const isBlank = (range: Range): boolean =>
     newBody.slice(range.start, range.end).trim().length === 0;
+  const overlapping = (a: Range, b: Range): boolean => a.start < b.end && b.start < a.end;
 
   // The diff claims this anchor's text is gone (or its slice is untrustworthy).
   // Before detaching the thread, check for verbatim survival — and only
@@ -130,6 +143,28 @@ export function reconcileAnchors(
       start: mapper.mapStart(oldRange.start),
       end: mapper.mapEnd(oldRange.end),
     });
+    const blank = isBlank(mapped);
+    const rewritten =
+      classification === "partial" && newBody.slice(mapped.start, mapped.end) !== selector.exact;
+    // Boundary repair (SERVER-013, the TEST-67c family): the mapper followed
+    // the text — a verbatim occurrence of the exact overlaps the mapped range —
+    // but its endpoints sit a few alignment-noise characters off (a relocated
+    // paragraph whose trailing punctuation the diff pinned to some other EQUAL
+    // run), so the slice would emit a truncated or padded selector. The
+    // occurrence is exact-tier evidence at the mapper's own location: snap to
+    // it, provided its selector would round-trip. Nothing here reads
+    // similarity, and a genuine edit (whose original no longer occurs at the
+    // slice) never has an overlapping occurrence to snap to.
+    if (!blank && rewritten) {
+      const { exact } = selector;
+      for (let at = newBody.indexOf(exact); at !== -1; at = newBody.indexOf(exact, at + 1)) {
+        const occurrence = { start: at, end: at + exact.length };
+        if (overlapping(occurrence, mapped) && sliceRoundTrips(occurrence)) {
+          return { id, selector, oldRange, newRange: occurrence };
+        }
+        if (at >= mapped.end) break;
+      }
+    }
     // A range edited down to nothing is a deletion in all but name; a slice
     // rewritten through a boundary-straddling replacement or failing its own
     // round-trip is dishonest (see above). All take the deleted-claim
@@ -138,14 +173,12 @@ export function reconcileAnchors(
     // `equal` classification can't be straddled (a straddling DELETE would
     // have touched the range) — kept anchors pay for none of these checks.
     const suspect =
-      isBlank(mapped) ||
-      (classification === "partial" &&
-        newBody.slice(mapped.start, mapped.end) !== selector.exact &&
-        (mapper.straddledByReplacement(oldRange) || !sliceRoundTrips(mapped)));
+      blank || (rewritten && (mapper.straddledByReplacement(oldRange) || !sliceRoundTrips(mapped)));
     return { id, selector, oldRange, newRange: suspect ? verifiedSurvivor(selector) : mapped };
   });
 
-  // Cross-anchor honesty checks — the reorder family (SERVER-012 round 2).
+  // Slice honesty checks — the reorder family (SERVER-012 round 2 cross-anchor
+  // signals; SERVER-013 adds relocation evidence, which needs no co-anchor).
   // The diff can stuff an entire relocated paragraph into a replacement wholly
   // *inside* a range, so its slice is boundary-respecting, round-trips, and is
   // still another anchor's text; segment accounting cannot see it (the foreign
@@ -161,7 +194,6 @@ export function reconcileAnchors(
   // A slice still equal to its old exact is verbatim survival and outranks the
   // rewritten claim, so only the rewritten side is re-routed — through the
   // same adjudicated chain, whose re-attachment must not itself collide.
-  const overlapping = (a: Range, b: Range): boolean => a.start < b.end && b.start < a.end;
   const oldDisjoint = (a: Draft, b: Draft): boolean =>
     a.oldRange === null || b.oldRange === null || !overlapping(a.oldRange, b.oldRange);
   const collides = (draft: Draft, range: Range): boolean =>
@@ -183,18 +215,40 @@ export function reconcileAnchors(
   const isRewritten = (draft: Draft): boolean =>
     draft.newRange !== null &&
     newBody.slice(draft.newRange.start, draft.newRange.end) !== draft.selector.exact;
-  const conflicted = drafts.filter((draft) => {
+  // Relocation evidence — the substitution class (SERVER-013). A rewritten
+  // slice claims "your text was edited in place into this"; a verbatim
+  // occurrence of the anchor's `exact` sitting *disjoint* from the slice and
+  // overlapping text this edit inserted proves the text was instead carried
+  // somewhere else by the edit, so the slice's claim is false. No such
+  // occurrence, occurrences wholly in EQUAL text (pre-existing duplicates), or
+  // one overlapping the slice (the mapper kept the text in reach) all leave
+  // the slice trusted — the discriminator is location, never similarity. The
+  // evidence scan deliberately ignores uniqueness: it only *voids*;
+  // re-placement below still runs the adjudicated chain, whose uniqueness
+  // rules orphan on genuine ambiguity rather than pick an occurrence.
+  const relocated = (draft: Draft): boolean => {
+    const range = draft.newRange;
+    if (range === null) return false;
+    const { exact } = draft.selector;
+    for (let at = newBody.indexOf(exact); at !== -1; at = newBody.indexOf(exact, at + 1)) {
+      const occurrence = { start: at, end: at + exact.length };
+      if (!overlapping(occurrence, range) && mapper.touchesInsertion(occurrence)) return true;
+    }
+    return false;
+  };
+  const dishonest = drafts.filter((draft) => {
     if (!isRewritten(draft) || draft.newRange === null) return false;
     return (
       collides(draft, draft.newRange) ||
-      captures(draft, newBody.slice(draft.newRange.start, draft.newRange.end))
+      captures(draft, newBody.slice(draft.newRange.start, draft.newRange.end)) ||
+      relocated(draft)
     );
   });
   // Void every dishonest slice first — detection is against the pass-1
   // snapshot, so the outcome is independent of processing order — then
   // re-place each in sorted order.
-  for (const draft of conflicted) draft.newRange = null;
-  for (const draft of conflicted) {
+  for (const draft of dishonest) draft.newRange = null;
+  for (const draft of dishonest) {
     const revived = verifiedSurvivor(draft.selector);
     if (revived !== null && !collides(draft, revived)) draft.newRange = revived;
   }
