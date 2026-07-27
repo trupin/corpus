@@ -4,7 +4,7 @@
 cli
 
 ## Status
-in_progress
+done
 
 ## Priority
 P0
