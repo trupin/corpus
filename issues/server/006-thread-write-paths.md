@@ -4,7 +4,7 @@
 server
 
 ## Status
-in_progress
+done
 
 ## Priority
 P0
@@ -235,7 +235,7 @@ Server restarted after each fix. Ids below are verbatim from the runs.
 | 8 | **Resolve / reopen** | resolve → `200 {status:"resolved"}`, one commit; second resolve → `200`, **no** commit and **no** SSE frame; plain turn in the resolved engaged thread → `eventId:null`; `requestsAgent:true` → `evt_zgtn67vc3mqz` (Adjudication 5); reopen → `200 {status:"open"}` |
 | 9 | **Seen** | bare POST → `{"lastSeenTs":"2026-07-27T11:38:03Z","unread":false}`; `.corpus/seen.json` is the flat map; an older mark answers the **recorded** one unchanged; `git status --porcelain` clean of it; `select * from seen` current immediately |
 | 10 | **SSE keys** | `curl -N /events` over resolve/turn/turn/reopen/seen → 6 frames, every key from the published vocabulary, none carrying data: `[["docs"],["docs","th_…"],["threads","th_…"],["docs","doc_…"]]` and `[["queue"],["jobs"]]` |
-| 11 | **Turn deletion** | agent actor → `403 {"code":"forbidden","message":"turn deletion is user-only; the agent never deletes turns"}`; user → `200 {deletedTurn:true, deletedThread:false, removedAnchor:null, parentId:"doc_s23gqi4m"}`; the other four stamps unchanged. A raw (unencoded) `:` in the path → `404`, so clients must encode as the route says |
+| 11 | **Turn deletion** | agent actor → `403 {"code":"forbidden","message":"turn deletion is user-only; the agent never deletes turns"}`; user → `200 {deletedTurn:true, deletedThread:false, removedAnchor:null, parentId:"doc_s23gqi4m"}`; the other four stamps unchanged. A raw (unencoded) `:` in the path is also accepted (`200`, turn deleted — Hono decodes the segment either way); a malformed segment still `400`s. _(Corrected 2026-07-27: the original log claimed `404` here; the sprint-006 evaluator (DISC-1) showed it returns `200` and deletes the turn.)_ |
 | 12 | **Last-turn cascade** | `200 {deletedThread:true, removedAnchor:"anc_5bfc6b58", parentId:"doc_s23gqi4m"}`; thread file gone; the parent's *other* anchor untouched; **one** commit staging both paths; `git show HEAD~1:data/threads/th_d3qd2gcc.md` intact; `threads`/`anchors` rows gone |
 | 13 | **`DELETE /api/docs/<th_*>`** | agent → `403`; user → `200`, thread file gone, parent's anchor key gone, one commit staging both paths |
 | 14 | **Capture, via the generated typed client** | `client.capture(...)` (real multipart, `uploadCapture`) → `{docId:"doc_tgkddufu", threadId:"th_hv22c35h", eventId:"evt_slxsheuhnsmd"}`; `data/docs/inbox/call-the-bank-about-the-rate-lock.md`; filing thread `agent: requested`, one `## user` turn carrying the text **and** the filing ask; one pending event; one commit staging both files |

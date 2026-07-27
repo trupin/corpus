@@ -52,7 +52,7 @@ The sole-writer server and the thin-client CLI.
 | SERVER-003 | Server bootstrap: Hono app, config, auth, static UI | done | P0 | CONTRACT-001 |
 | SERVER-004 | SQLite projection: schema, projectors, FTS, rebuild/doctor | done | P0 | SERVER-001, SERVER-003 |
 | SERVER-005 | Doc write paths + git auto-commit with author attribution | done | P0 | SERVER-002, SERVER-004, SERVER-013 |
-| SERVER-006 | Thread write paths: creation, turns, events, cascade | in_progress | P0 | SERVER-005, CONTRACT-002 |
+| SERVER-006 | Thread write paths: creation, turns, events, cascade | done | P0 | SERVER-005, CONTRACT-002 |
 | SERVER-007 | Watcher + SSE invalidation | done | P0 | SERVER-004 |
 | SERVER-008 | Queue over HTTP: event store + long-poll | done | P0 | SERVER-003, CONTRACT-002 |
 | SERVER-009 | Document locks + job logs | done | P0 | SERVER-007, CONTRACT-002 |
@@ -68,8 +68,9 @@ The sole-writer server and the thin-client CLI.
 | SERVER-015 | Populate CONTRACT-005's new DocRow fields in the collection query | done | P1 | CONTRACT-005, SERVER-011 |
 | CLI-002 | `corpus init` + server lifecycle verbs | done | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | todo | P0 | CLI-001, SERVER-005, SERVER-006, SERVER-017 |
-| CLI-004 | Queue, lock, job verbs (agent loop surface) | in_progress | P0 | CLI-001, SERVER-008, SERVER-009 |
-| CONTRACT-006 | Thread-response warnings, appended honesty, db routes | in_progress | P0 | CONTRACT-005 |
+| CLI-004 | Queue, lock, job verbs (agent loop surface) | done | P0 | CLI-001, SERVER-008, SERVER-009 |
+| CONTRACT-006 | Thread-response warnings, appended honesty, db routes | done | P0 | CONTRACT-005 |
+| SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | in_progress | P1 | SERVER-004 |
 
 ---
 
@@ -91,7 +92,6 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-011 | Console drawer: jobs master-detail, live logs, HALT | todo | P1 | UI-002, SERVER-009 |
 | CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | todo | P1 | CONTRACT-002 |
 | SERVER-016 | Form answer write path (form.respond producer) | todo | P1 | CONTRACT-007, SERVER-006 |
-| SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | in_progress | P1 | SERVER-004 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | todo | P1 | INFRA-003, UI-001 |
 
 ---
