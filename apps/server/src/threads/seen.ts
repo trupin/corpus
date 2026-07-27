@@ -11,6 +11,13 @@
 // response reports the mark now *recorded*, not the one asked for, so a client
 // that sent a stale mark learns the real state instead of caching its own guess.
 //
+// **`unread` is computed, not assumed** (CONTRACT-010, SERVER-021). A mark that
+// names an earlier turn leaves later turns unseen and the badge lit, so the
+// answer is `docs/needs.ts`'s own unread fragment run against the mark now
+// recorded — the very expression `GET /api/docs` puts in every row, over the
+// rows this request just re-projected. A client that inferred "read" from a
+// `200` would clear a badge the next collection query lights again.
+//
 // The file is a flat `{threadId: isoInstant}` map, which is exactly what
 // `projectSeen` already reads (SERVER-004). One file for the whole workspace
 // means one lane (`SEEN_LANE`): a read-modify-write of a shared JSON file is the
@@ -22,7 +29,12 @@ import { join } from "node:path";
 import type { MarkSeenRequest, MarkSeenResult } from "@corpus/contract";
 import { ThreadIdSchema } from "@corpus/contract";
 import { instantToEpochMs, normalizeInstant } from "../core/index.js";
-import { SEEN_LANE, writeFileAtomically, type DocumentMutex } from "../docs/index.js";
+import {
+  SEEN_LANE,
+  isThreadUnread,
+  writeFileAtomically,
+  type DocumentMutex,
+} from "../docs/index.js";
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { SEEN_FILE, projectSeen } from "../projection/index.js";
 import { loadThread, type LoadedThread } from "./read.js";
@@ -90,7 +102,14 @@ function recordMark(
   const marks = readSeenMarks(workspace.corpusDir);
   const current = marks[id];
   if (!movesForward(current, requested)) {
-    return { threadId: id, lastSeenTs: current ?? requested, unread: false };
+    // Answered against the mark now *recorded*, not the one asked for — same
+    // rule as `lastSeenTs` beside it.
+    const recorded = current ?? requested;
+    return {
+      threadId: id,
+      lastSeenTs: recorded,
+      unread: isThreadUnread(workspace.projection, id, recorded),
+    };
   }
 
   const path = join(workspace.corpusDir, SEEN_FILE);
@@ -109,7 +128,11 @@ function recordMark(
   if (thread.parent !== null) keys.push(docKey(thread.parent));
   workspace.bus.invalidate(keys);
 
-  return { threadId: id, lastSeenTs: requested, unread: false };
+  return {
+    threadId: id,
+    lastSeenTs: requested,
+    unread: isThreadUnread(workspace.projection, id, requested),
+  };
 }
 
 export async function markThreadSeen(

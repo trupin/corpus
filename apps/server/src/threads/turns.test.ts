@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { turnRequestBody } from "./turns.js";
+import { turnRequestBody, whileUnreferenced } from "./turns.js";
 import {
   appendTurn,
   createDoc,
@@ -9,9 +9,11 @@ import {
   createThreadWorkspace,
   pendingEvents,
   postForm,
+  referencedAttachments,
   threadFrontmatterOf,
   threadPath,
   turnsOf,
+  withBrokenQueue,
   type WriteWorkspace,
 } from "./thread-fixture.js";
 
@@ -183,6 +185,31 @@ describe("POST /api/threads/{id}/turns — multipart", () => {
     expect(problem.issues.length).toBeGreaterThan(0);
   });
 
+  // SERVER-021, the same defect as `POST /api/capture`: the cleanup used to wrap
+  // `runMutation` and everything after it.
+  it("keeps the attachment when the failure lands after the commit (§6)", async () => {
+    const created = await createThread(ws, { body: "first" });
+
+    const response = await withBrokenQueue(ws, () =>
+      postForm(ws, `/api/threads/${created.id}/turns`, [
+        ["text", "with a file"],
+        ["requestsAgent", "true"],
+        ["files", new File(["bytes"], "shot.png", { type: "image/png" })],
+      ]),
+    );
+
+    expect(response.status).toBe(500);
+    // Committed, so this is a failure *after* the write (the append amends the
+    // thread's own commit, so the count is not what says so — the content is).
+    const committed = ws.git("show", `HEAD:${threadPath(created.id)}`);
+    expect(committed).toContain("with a file");
+    expect(ws.git("status", "--porcelain")).toBe("");
+
+    const referenced = referencedAttachments(committed);
+    expect(referenced).toHaveLength(1);
+    for (const path of referenced) expect(ws.exists(path)).toBe(true);
+  });
+
   it("refuses a request that declares no validatable body", async () => {
     const created = await createThread(ws, { body: "first" });
     const response = await ws.server.app.request(`/api/threads/${created.id}/turns`, {
@@ -190,6 +217,46 @@ describe("POST /api/threads/{id}/turns — multipart", () => {
       headers: { Authorization: `Bearer ${ws.server.config.token}` },
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("whileUnreferenced", () => {
+  const THREAD = "th_a1b2c3d4";
+  const TS = "2026-07-27T09:00:00Z";
+  const stored = [{ name: "shot.png" }] as const;
+
+  const attachmentsRoot = (): string => join(ws.root, ".corpus", "attachments");
+  const seed = (): string => {
+    const relative = `.corpus/attachments/${THREAD}/${TS}/shot.png`;
+    ws.write(relative, "bytes");
+    return relative;
+  };
+
+  it("removes the bytes when the markdown that would quote them fails", () => {
+    const relative = seed();
+    expect(() =>
+      whileUnreferenced(attachmentsRoot(), THREAD, TS, stored, () => {
+        throw new Error("could not build the turn");
+      }),
+    ).toThrow("could not build the turn");
+    expect(ws.exists(relative)).toBe(false);
+  });
+
+  it("leaves them where they are once the markdown is built", () => {
+    const relative = seed();
+    expect(whileUnreferenced(attachmentsRoot(), THREAD, TS, stored, () => "built")).toBe("built");
+    expect(ws.exists(relative)).toBe(true);
+  });
+
+  it("does nothing for a turn that stored no files", () => {
+    const relative = seed();
+    expect(() =>
+      whileUnreferenced(attachmentsRoot(), THREAD, TS, [], () => {
+        throw new Error("boom");
+      }),
+    ).toThrow("boom");
+    // Another turn's directory is not this failure's to remove.
+    expect(ws.exists(relative)).toBe(true);
   });
 });
 

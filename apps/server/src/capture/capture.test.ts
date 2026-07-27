@@ -7,8 +7,10 @@ import {
   frontmatterOf,
   pendingEvents,
   postForm,
+  referencedAttachments,
   threadFrontmatterOf,
   turnsOf,
+  withBrokenQueue,
   type WriteWorkspace,
 } from "../threads/thread-fixture.js";
 
@@ -191,6 +193,32 @@ describe("POST /api/capture", () => {
     // The attachment belongs to the conversation, not to the document (§6).
     const docPath = inboxFiles()[0] ?? "";
     expect(ws.read(`data/docs/inbox/${docPath}`)).not.toContain("attachments/");
+  });
+
+  // SERVER-021. The cleanup that removes the bytes when the markdown cannot be
+  // built used to wrap the commit and everything after it, so an enqueue failure
+  // deleted the files the *committed* turn quotes.
+  it("keeps the attachment when the failure lands after the commit (§6)", async () => {
+    const before = ws.log("%H").length;
+
+    const response = await withBrokenQueue(ws, () =>
+      postForm(ws, "/api/capture", [
+        ["text", "post-commit failure"],
+        ["files", new File(["bytes"], "shot.png", { type: "image/png" })],
+      ]),
+    );
+
+    expect(response.status).toBe(500);
+    // The commit landed all the same — this is a failure *after* the write.
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    const threadFile = filesInHead().find((path) => path.startsWith("data/threads/")) ?? "";
+    expect(threadFile).not.toBe("");
+
+    const referenced = referencedAttachments(ws.git("show", `HEAD:${threadFile}`));
+    expect(referenced).toHaveLength(1);
+    for (const path of referenced) expect(ws.exists(path)).toBe(true);
+    // The event is the part that genuinely did not happen.
+    expect(pendingEvents(ws)).toEqual([]);
   });
 
   it("refuses an empty capture, with or without a file", async () => {

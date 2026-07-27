@@ -9,14 +9,40 @@
 // chip can never disagree.
 
 import { NEEDS_REASONS, type NeedsReason } from "@corpus/contract";
+import type { ProjectionDb } from "../projection/index.js";
 import { atOrBeyondSql } from "./staleness.js";
+
+/**
+ * "Still unread" — a thread whose last turn is newer than the mark it is
+ * compared against — with the mark left to the caller: the collection query
+ * joins `seen`, {@link isThreadUnread} binds the mark it is about to report.
+ * Written once so a badge and the response that clears it cannot disagree.
+ */
+const unreadSql = (mark: string): string =>
+  `(t.id IS NOT NULL AND t.last_ts IS NOT NULL AND t.last_ts > COALESCE(${mark}, ''))`;
 
 /**
  * Row aliases every fragment assumes: `d` documents, `t` threads (LEFT JOINed,
  * so `t.id IS NULL` means "not a thread"), `s` seen.
  */
-export const UNREAD_SQL =
-  "(t.id IS NOT NULL AND t.last_ts IS NOT NULL AND t.last_ts > COALESCE(s.last_seen_ts, ''))";
+export const UNREAD_SQL = unreadSql("s.last_seen_ts");
+
+/**
+ * Whether `threadId` still has a turn newer than `mark` — what `POST
+ * /api/threads/{id}/seen` answers with (SPEC.md §7, CONTRACT-010). It is the
+ * *same* test `GET /api/docs` puts in every row, so a partial mark reports
+ * `unread: true` and the next collection query agrees.
+ *
+ * A thread with no row is not unread: the caller reached this through
+ * `loadThread`, which resolves the id against this projection, so the row is
+ * there whenever the mark was recordable at all.
+ */
+export function isThreadUnread(db: ProjectionDb, threadId: string, mark: string): boolean {
+  const row = db
+    .prepare(`SELECT ${unreadSql("@mark")} AS unread FROM threads t WHERE t.id = @id`)
+    .get({ id: threadId, mark }) as { readonly unread: number } | undefined;
+  return row !== undefined && row.unread !== 0;
+}
 
 /**
  * The pending-agent affordance (SPEC.md §8, §11): the agent has been drawn into

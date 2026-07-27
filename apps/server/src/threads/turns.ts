@@ -20,12 +20,11 @@
 //
 // **Ordering is the atomicity story.** The stamp is chosen first, because it
 // names the directory the bytes go in and the body then quotes that directory.
-// Bytes are written next, and the markdown last: if anything after the bytes
+// Bytes are written next, and the markdown last: if the *markdown building*
 // fails, the turn directory is removed before the error propagates, because a
 // committed reference to a file that does not exist is the one outcome §6 rules
-// out. A *commit* failure is not that case — §14 says the file mutation stands
-// and the failure surfaces as a warning — so the bytes stay with the turn that
-// references them.
+// out. The cleanup window closes at `runMutation` (SERVER-021) — see
+// {@link whileUnreferenced}.
 
 import type { Actor, AppendTurnBody, ThreadSummary, Turn } from "@corpus/contract";
 import { isMultipartTurn } from "@corpus/contract";
@@ -117,7 +116,8 @@ export async function appendThreadTurn(
     const ts = nextTurnTs(thread.loaded.parsed.body, formatInstant(workspace.now()));
     const stored = await storeTurnFiles(workspace, id, ts, input.files);
 
-    try {
+    // Everything that *builds* the reference, and nothing that writes it.
+    const prepared = whileUnreferenced(workspace.attachmentsRoot, id, ts, stored, () => {
       const appended = appendTurn(thread.loaded.parsed.body, {
         author: actor,
         text: withAttachmentReferences(
@@ -139,47 +139,78 @@ export async function appendThreadTurn(
           agent: decision.agent,
         }),
       );
-      const warnings = validateBeforeWrite(workspace, thread.loaded.path, text);
+      return { appended, text, warnings: validateBeforeWrite(workspace, thread.loaded.path, text) };
+    });
 
-      const keys = [DOCS_KEY, docKey(id), threadKey(id)];
-      // A thread mutation invalidates "both the thread and its parent"
-      // (`query-keys.ts`): the parent's reader draws this thread's chip.
-      if (thread.parent !== null) keys.push(docKey(thread.parent));
+    const keys = [DOCS_KEY, docKey(id), threadKey(id)];
+    // A thread mutation invalidates "both the thread and its parent"
+    // (`query-keys.ts`): the parent's reader draws this thread's chip.
+    if (thread.parent !== null) keys.push(docKey(thread.parent));
 
-      const result = await runMutation(workspace, {
-        docId: id,
-        actor,
-        warnings,
-        plan: {
-          operations: [{ kind: "write", path: thread.loaded.path, content: text }],
-          stage: [thread.loaded.path],
-          project: [thread.loaded.path],
-          unproject: [],
-          commit: { subject: `comment: turn on ${id} by ${actor}` },
-          keys,
-        },
-      });
+    // From here on the bytes stay, whatever fails.
+    const result = await runMutation(workspace, {
+      docId: id,
+      actor,
+      warnings: prepared.warnings,
+      plan: {
+        operations: [{ kind: "write", path: thread.loaded.path, content: prepared.text }],
+        stage: [thread.loaded.path],
+        project: [thread.loaded.path],
+        unproject: [],
+        commit: { subject: `comment: turn on ${id} by ${actor}` },
+        keys,
+      },
+    });
 
-      const eventId = decision.enqueue
-        ? await enqueueComment(workspace, {
-            threadId: id,
-            parentId: thread.parent,
-            turnTs: appended.turn.ts,
-            parsed,
-          })
-        : null;
+    const eventId = decision.enqueue
+      ? await enqueueComment(workspace, {
+          threadId: id,
+          parentId: thread.parent,
+          turnTs: prepared.appended.turn.ts,
+          parsed,
+        })
+      : null;
 
-      return {
-        thread: toThreadSummary(loadThread(workspace, id)),
-        turn: appended.turn,
-        eventId,
-        result,
-      };
-    } catch (error) {
-      if (stored.length > 0) removeTurnAttachments(workspace.attachmentsRoot, id, ts);
-      throw error;
-    }
+    return {
+      thread: toThreadSummary(loadThread(workspace, id)),
+      turn: prepared.appended.turn,
+      eventId,
+      result,
+    };
   });
+}
+
+/**
+ * Runs `build` — the markdown that will quote `stored` — and removes those bytes
+ * again if it throws, because nothing references them yet.
+ *
+ * **The window closes here, not after the write** (SERVER-021). The cleanup used
+ * to wrap the whole rest of the append, so a failure *after* `runMutation` had
+ * committed the turn — an unwritable `.corpus/queue/` breaking the enqueue, the
+ * read-back throwing — deleted the very files the committed turn quotes, which
+ * is precisely the state §6 rules out. `runMutation` is therefore outside the
+ * guard entirely rather than merely at its edge: it writes, commits, and
+ * re-projects behind one call, and a caller that catches its failure cannot tell
+ * which of those it got past.
+ *
+ * The cost is the mirror image, and the cheaper one: a `runMutation` that fails
+ * during its *write* phase rolls the markdown back and leaves the bytes with
+ * nothing pointing at them. Unreferenced files in a gitignored directory are
+ * litter; a committed reference to bytes that are gone is corruption.
+ */
+export function whileUnreferenced<T>(
+  attachmentsRoot: string | undefined,
+  threadId: string,
+  turnTs: string,
+  stored: readonly { readonly name: string }[],
+  build: () => T,
+): T {
+  try {
+    return build();
+  } catch (error) {
+    if (stored.length > 0) removeTurnAttachments(attachmentsRoot, threadId, turnTs);
+    throw error;
+  }
 }
 
 /**

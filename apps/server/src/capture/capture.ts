@@ -29,7 +29,6 @@ import {
   DEFAULT_ATTACHMENT_LIMITS,
   assertWithinLimits,
   attachmentReferences,
-  removeTurnAttachments,
   withAttachmentReferences,
 } from "../attachments/index.js";
 import {
@@ -63,6 +62,7 @@ import {
   firstProseLine,
   parseMentions,
   storeTurnFiles,
+  whileUnreferenced,
   type ThreadsWorkspace,
 } from "../threads/index.js";
 
@@ -153,10 +153,13 @@ export async function captureDocument(
 
     // Bytes before markdown: the stamp names their directory and the turn body
     // quotes it, so a reference can never be committed ahead of the file. A
-    // failure after this point removes them again — §6 forbids a committed
-    // reference to a file that does not exist.
+    // failure while the markdown is still being *built* removes them again — §6
+    // forbids a committed reference to a file that does not exist — and
+    // `whileUnreferenced` is where that window closes (SERVER-021).
     const stored = await storeTurnFiles(workspace, threadId, stamp, request.files);
-    try {
+    const threadPath = `${THREADS_ROOT}/${threadId}.md`;
+
+    const prepared = whileUnreferenced(workspace.attachmentsRoot, threadId, stamp, stored, () => {
       const turnText = withAttachmentReferences(
         `${request.text}\n\n${FILING_REQUEST}`,
         attachmentReferences(
@@ -166,7 +169,6 @@ export async function captureDocument(
         ),
       );
       const { body, turn } = appendTurn("", { author: actor, text: turnText, ts: stamp });
-      const threadPath = `${THREADS_ROOT}/${threadId}.md`;
       const threadText = serializeDocument(
         setFrontmatterFields(emptyDocument(body), {
           id: threadId,
@@ -182,52 +184,55 @@ export async function captureDocument(
         }),
       );
 
-      const warnings = [
-        ...validateBeforeWrite(workspace, docPath, docText),
-        ...validateBeforeWrite(workspace, threadPath, threadText),
-      ];
-
-      const mutation = await runMutation(workspace, {
-        docId,
-        actor,
-        warnings,
-        plan: {
-          operations: [
-            { kind: "write", path: docPath, content: docText },
-            { kind: "write", path: threadPath, content: threadText },
-          ],
-          stage: [docPath, threadPath],
-          project: [docPath, threadPath],
-          unproject: [],
-          commit: { subject: `capture: ${title} (${docId}) by ${actor}` },
-          keys: [DOCS_KEY, docKey(docId), docKey(threadId), threadKey(threadId)],
-          // The captured document lands in a folder under `data/docs/`, and its
-          // filing thread counts there too.
-          mayChangeTree: true,
-        },
-      });
-
-      const eventId = decision.enqueue
-        ? await enqueueComment(workspace, {
-            threadId,
-            parentId: docId,
-            turnTs: turn.ts,
-            parsed,
-            source: EVENT_SOURCE.capture,
-          })
-        : null;
-
-      // Read back rather than trusting the plan: the capture answers with ids, and
-      // an id that names no readable document would be a lie the client caches.
-      loadDocument(workspace.workspaceRoot, workspace.projection, docId);
-
       return {
-        result: { docId, threadId, eventId, warnings: [...mutation.warnings] },
-        mutation,
+        turn,
+        threadText,
+        warnings: [
+          ...validateBeforeWrite(workspace, docPath, docText),
+          ...validateBeforeWrite(workspace, threadPath, threadText),
+        ],
       };
-    } catch (error) {
-      if (stored.length > 0) removeTurnAttachments(workspace.attachmentsRoot, threadId, stamp);
-      throw error;
-    }
+    });
+
+    // From here on the bytes stay, whatever fails: the write pipeline may already
+    // have committed the turn that quotes them.
+    const mutation = await runMutation(workspace, {
+      docId,
+      actor,
+      warnings: prepared.warnings,
+      plan: {
+        operations: [
+          { kind: "write", path: docPath, content: docText },
+          { kind: "write", path: threadPath, content: prepared.threadText },
+        ],
+        stage: [docPath, threadPath],
+        project: [docPath, threadPath],
+        unproject: [],
+        commit: { subject: `capture: ${title} (${docId}) by ${actor}` },
+        keys: [DOCS_KEY, docKey(docId), docKey(threadId), threadKey(threadId)],
+        // The captured document lands in a folder under `data/docs/`, and its
+        // filing thread counts there too.
+        mayChangeTree: true,
+      },
+    });
+
+    const eventId = decision.enqueue
+      ? await enqueueComment(workspace, {
+          threadId,
+          parentId: docId,
+          turnTs: prepared.turn.ts,
+          parsed,
+          source: EVENT_SOURCE.capture,
+        })
+      : null;
+
+    // Read back rather than trusting the plan: the capture answers with ids, and
+    // an id that names no readable document would be a lie the client caches.
+    loadDocument(workspace.workspaceRoot, workspace.projection, docId);
+
+    return {
+      result: { docId, threadId, eventId, warnings: [...mutation.warnings] },
+      mutation,
+    };
   });
 }

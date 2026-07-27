@@ -43,7 +43,7 @@ export {
   deriveThreadTitle,
   firstProseLine,
 } from "./title.js";
-export { appendThreadTurn, storeTurnFiles, turnRequestBody } from "./turns.js";
+export { appendThreadTurn, storeTurnFiles, turnRequestBody, whileUnreferenced } from "./turns.js";
 export type { TurnAppend, TurnInput } from "./turns.js";
 export { COMMENT_CREATED, EVENT_SOURCE } from "./workspace.js";
 export type { EnqueueEvent, EnqueueInput, EnqueuedEvent, ThreadsWorkspace } from "./workspace.js";

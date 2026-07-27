@@ -33,6 +33,16 @@ const seenRows = (): { thread_id: string; last_seen_ts: string }[] =>
     last_seen_ts: string;
   }[];
 
+/**
+ * What `GET /api/docs` says about the same thread — the source of truth the
+ * response has to agree with (SPEC.md §7, CONTRACT-010).
+ */
+async function unreadInCollection(id: string): Promise<boolean | null> {
+  const response = await ws.request("/api/docs?type=thread");
+  const payload = (await response.json()) as { items: { id: string; unread: boolean | null }[] };
+  return payload.items.find((row) => row.id === id)?.unread ?? null;
+}
+
 /** A thread with three turns at distinct stamps. */
 async function threeTurns(): Promise<{ id: string; stamps: string[] }> {
   const created = await createThread(ws, { body: "t0" });
@@ -86,6 +96,53 @@ describe("POST /api/threads/{id}/seen", () => {
     const { id, stamps } = await threeTurns();
     await ws.post(`/api/threads/${id}/seen`, { lastSeenTs: stamps[1] });
     expect(seenFile()[id]).toBe(stamps[1]);
+  });
+
+  // SERVER-021 / CONTRACT-010: `unread` used to be a hard-coded `false`, so a
+  // partial mark told the client the badge was clear and the very next
+  // collection query lit it again.
+  it("reports a partial mark as still unread, and agrees with GET /api/docs", async () => {
+    const { id, stamps } = await threeTurns();
+
+    const response = await ws.post(`/api/threads/${id}/seen`, { lastSeenTs: stamps[0] });
+    expect(await response.json()).toEqual({
+      threadId: id,
+      lastSeenTs: stamps[0],
+      unread: true,
+    });
+    expect(await unreadInCollection(id)).toBe(true);
+
+    // Marking the last turn clears it, in the response and in the collection.
+    const full = await ws.post(`/api/threads/${id}/seen`, {});
+    expect(await full.json()).toEqual({
+      threadId: id,
+      lastSeenTs: stamps.at(-1),
+      unread: false,
+    });
+    expect(await unreadInCollection(id)).toBe(false);
+  });
+
+  it("answers a stale mark with the state of the mark on record", async () => {
+    const { id, stamps } = await threeTurns();
+    await ws.post(`/api/threads/${id}/seen`, { lastSeenTs: stamps[1] });
+
+    // Rejected for being backwards, so the answer describes `stamps[1]` — which
+    // still leaves the last turn unseen — not the mark that was asked for.
+    const response = await ws.post(`/api/threads/${id}/seen`, { lastSeenTs: stamps[0] });
+    expect(await response.json()).toEqual({
+      threadId: id,
+      lastSeenTs: stamps[1],
+      unread: true,
+    });
+    expect(await unreadInCollection(id)).toBe(true);
+  });
+
+  it("clears when the mark on record already covers the last turn", async () => {
+    const { id, stamps } = await threeTurns();
+    await ws.post(`/api/threads/${id}/seen`, {});
+
+    const again = await ws.post(`/api/threads/${id}/seen`, { lastSeenTs: stamps.at(-1) });
+    expect(await again.json()).toMatchObject({ lastSeenTs: stamps.at(-1), unread: false });
   });
 
   it("makes no commit — read state is runtime state, not corpus (§7)", async () => {

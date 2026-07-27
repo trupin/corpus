@@ -8,7 +8,7 @@
 // projection and the real queue directories. A test that stubbed any of them
 // would assert that the stub was called.
 
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createWriteWorkspace,
@@ -61,6 +61,38 @@ export function pendingEvents(ws: WriteWorkspace): string[] {
     return [];
   }
 }
+
+/**
+ * Runs `body` with the queue's `pending/` directory replaced by a regular file,
+ * so the enqueue fails *after* the write pipeline has already committed — the
+ * post-commit failure SERVER-021 is about.
+ *
+ * A read-only directory would do the same on a developer's machine and nothing
+ * at all in a container running as root; `ENOTDIR` is refused for everyone. The
+ * layout is restored whatever happens, or the fixture's own teardown would trip
+ * over it.
+ */
+export async function withBrokenQueue<T>(ws: WriteWorkspace, body: () => Promise<T>): Promise<T> {
+  const pending = join(ws.root, ".corpus", "queue", "pending");
+  rmSync(pending, { recursive: true, force: true });
+  writeFileSync(pending, "", "utf8");
+  try {
+    return await body();
+  } finally {
+    rmSync(pending, { force: true });
+    mkdirSync(pending, { recursive: true });
+  }
+}
+
+/**
+ * The workspace-relative paths a turn body's attachment references point at,
+ * percent-decoding the turn stamp the markdown escaped. §6's invariant is
+ * exactly that each of these resolves once the turn is committed.
+ */
+export const referencedAttachments = (body: string): string[] =>
+  [...body.matchAll(/]\(attachments\/([^)\s]+)\)/g)].map(
+    (match) => `.corpus/attachments/${decodeURIComponent(match[1] ?? "")}`,
+  );
 
 export interface CreatedThread {
   readonly id: string;

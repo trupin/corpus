@@ -63,7 +63,13 @@ export {
   toFtsMatchExpression,
   toSegments,
 } from "./fts.js";
-export { AWAITING_AGENT_SQL, NEEDS_REASON_SQL, UNREAD_SQL, rowAttention } from "./needs.js";
+export {
+  AWAITING_AGENT_SQL,
+  NEEDS_REASON_SQL,
+  UNREAD_SQL,
+  isThreadUnread,
+  rowAttention,
+} from "./needs.js";
 export { DOCS_ROOT, folderPathPrefix, queryDocs } from "./query.js";
 export { mountDocsRoutes } from "./routes.js";
 export type { DocsRoutesOptions } from "./routes.js";
