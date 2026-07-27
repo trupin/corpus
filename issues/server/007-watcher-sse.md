@@ -49,6 +49,9 @@ Wire the live-update loop: a chokidar watcher over every document and runtime ro
 
 ### Key Implementation Details
 
+- **Watcher scope includes `.corpus/queue/`** _(mirror-wiring handoff, 2026-07-26)_: an `evt_*.json` dropped out of band while the server runs wakes a parked long-poll (queue's 500 ms poll) but produces no `events` row until a claim or restart — `db doctor` reports that window as `count_mismatch`. The watcher re-projects queue events like any other out-of-band write (`projectEvent`/`removeEvent` in projection/project-runtime.ts are the seam).
+
+
 **Watcher configuration.** One chokidar instance over the resolved absolute roots with `ignoreInitial: true`, `awaitWriteFinish: {stabilityThreshold: 40, pollInterval: 10}`, and ignores for `.git/`, `node_modules/`, `.corpus/cache.db*`, and `.corpus/attachments/` (bytes are served, never projected). Skill documents are matched as `.claude/skills/**/SKILL.md`; agent definitions as `.claude/agents/*.md`.
 
 **Debounce and batching.** Accumulate `(path, event)` into a map keyed by path; flush on a trailing 50 ms timer (cap the pending window at 250 ms so a stream of writes still flushes within budget). Per batch: classify each path into its root type, re-project, collect keys, emit one `bus.invalidate(keys)`.
