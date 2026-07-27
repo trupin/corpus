@@ -56,7 +56,7 @@ The sole-writer server and the thin-client CLI.
 | SERVER-007 | Watcher + SSE invalidation | done | P0 | SERVER-004 |
 | SERVER-008 | Queue over HTTP: event store + long-poll | done | P0 | SERVER-003, CONTRACT-002 |
 | SERVER-009 | Document locks + job logs | done | P0 | SERVER-007, CONTRACT-002 |
-| SERVER-010 | Attachments: ingest + serving | in_progress | P1 | SERVER-006 |
+| SERVER-010 | Attachments: ingest + serving | done | P1 | SERVER-006 |
 | SERVER-011 | Collection query endpoint: filters + FTS + needs=me | done | P0 | SERVER-004 |
 | CLI-001 | CLI scaffold: bin, command registry, workspace resolution, typed client | done | P0 | CONTRACT-001, INFRA-007 |
 | SERVER-012 | Anchor engine: partial-path truncated selectors beside edited near-identical siblings | done | P2 | SERVER-002 |
@@ -67,11 +67,11 @@ The sole-writer server and the thin-client CLI.
 | SERVER-014 | Anchor engine: duplicate-survivor policy (remap-one vs orphan) — TEST-64/66 tension | todo | P2 | SERVER-013 |
 | SERVER-015 | Populate CONTRACT-005's new DocRow fields in the collection query | done | P1 | CONTRACT-005, SERVER-011 |
 | CLI-002 | `corpus init` + server lifecycle verbs | done | P0 | CLI-001, SERVER-003, AGENT-001 |
-| CLI-003 | Doc & thread verbs | in_progress | P0 | CLI-001, SERVER-005, SERVER-006, SERVER-017 |
+| CLI-003 | Doc & thread verbs | done | P0 | CLI-001, SERVER-005, SERVER-006, SERVER-017 |
 | CLI-004 | Queue, lock, job verbs (agent loop surface) | done | P0 | CLI-001, SERVER-008, SERVER-009 |
 | CONTRACT-006 | Thread-response warnings, appended honesty, db routes | done | P0 | CONTRACT-005 |
 | SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | done | P1 | SERVER-004 |
-| SERVER-018 | `["tree"]` key gaps: thread deletion + archive/unarchive | in_progress | P2 | SERVER-006, SERVER-009 |
+| SERVER-018 | `["tree"]` key gaps: thread deletion + archive/unarchive | done | P2 | SERVER-006, SERVER-009 |
 
 ---
 

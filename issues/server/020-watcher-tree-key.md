@@ -35,6 +35,7 @@ Escalated by SERVER-018's implementer: mutation frames now satisfy the invariant
 - [ ] The watcher's `flush()` decides `["tree"]` by comparing `folderTreeSignature()` across the re-projection, same as `runMutation`.
 - [ ] Both reproduced directions become regression tests (disk-edit archive → key present; skill-file appearance → key absent).
 - [ ] No new key names; mutation-path behavior untouched.
+- [ ] Optional (sprint-007 evaluator note): `POST /api/db/rebuild` is the one remaining route emitting `["tree"]` on a byte-identical tree — deliberately coarse per SERVER-017. Decide whether to fold it into the measured scheme or bless the coarseness with a written rationale.
 
 ## Technical Design
 
