@@ -72,6 +72,9 @@ The sole-writer server and the thin-client CLI.
 | CONTRACT-006 | Thread-response warnings, appended honesty, db routes | done | P0 | CONTRACT-005 |
 | SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | done | P1 | SERVER-004 |
 | SERVER-018 | `["tree"]` key gaps: thread deletion + archive/unarchive | done | P2 | SERVER-006, SERVER-009 |
+| CONTRACT-010 | MarkSeen `unread` honesty + client attachment-path exclusion | in_progress | P1 | CONTRACT-006 |
+| SERVER-021 | Capture cleanup deletes committed attachment bytes | in_progress | P1 | SERVER-010 |
+| CLI-007 | `corpus job log` stdin-socket hang under agent harness | in_progress | P1 | CLI-003, CLI-004 |
 
 ---
 
@@ -95,6 +98,8 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-009 | Multipart createThread + declared 413 (attachments rider) | todo | P1 | CONTRACT-002 |
 | SERVER-016 | Form answer write path (form.respond producer) | todo | P1 | CONTRACT-007, SERVER-006 |
 | SERVER-020 | Watcher path breaks the tree-key invariant (heuristic vs. signature) | todo | P2 | SERVER-018 |
+| SERVER-022 | Server hardening batch: PR #9 MINOR findings | todo | P2 | SERVER-010, SERVER-018 |
+| CLI-008 | CLI hardening batch: PR #9 MINOR findings | todo | P2 | CLI-003, CLI-004 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | todo | P1 | INFRA-003, UI-001 |
 
 ---
@@ -103,7 +108,6 @@ The board, editor, threads, console. design/index.html is authoritative for look
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| CLI-007 | `corpus job log` stdin-socket hang under agent harness | todo | P1 | CLI-003, CLI-004 |
 | AGENT-002 | Orchestrate skill: the agent's main loop | todo | P0 | CLI-004, CLI-007, AGENT-001 |
 | CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | todo | P1 | CONTRACT-002 |
 | SERVER-019 | Mount validation + skill-rollback handlers | todo | P1 | CONTRACT-008 |
