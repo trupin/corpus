@@ -72,9 +72,9 @@ The sole-writer server and the thin-client CLI.
 | CONTRACT-006 | Thread-response warnings, appended honesty, db routes | done | P0 | CONTRACT-005 |
 | SERVER-017 | Mount db rebuild/doctor routes (CONTRACT-006 rider) | done | P1 | SERVER-004 |
 | SERVER-018 | `["tree"]` key gaps: thread deletion + archive/unarchive | done | P2 | SERVER-006, SERVER-009 |
-| CONTRACT-010 | MarkSeen `unread` honesty + client attachment-path exclusion | in_progress | P1 | CONTRACT-006 |
-| SERVER-021 | Capture cleanup deletes committed attachment bytes | in_progress | P1 | SERVER-010 |
-| CLI-007 | `corpus job log` stdin-socket hang under agent harness | in_progress | P1 | CLI-003, CLI-004 |
+| CONTRACT-010 | MarkSeen `unread` honesty + client attachment-path exclusion | done | P1 | CONTRACT-006 |
+| SERVER-021 | Capture cleanup deletes committed attachment bytes | done | P1 | SERVER-010 |
+| CLI-007 | `corpus job log` stdin-socket hang under agent harness | done | P1 | CLI-003, CLI-004 |
 
 ---
 

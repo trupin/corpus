@@ -21,9 +21,11 @@ opus — a single-endpoint composition problem with the UX fully pinned by the p
 - Depends on: UI-003
 - Blocks: UI-010
 
+> **Spec refresh (SHARED-002, 2026-07-27):** the `awaiting-reply` filter/chip was dropped in favor of `needs=form` (SPEC.md §9.2/§11 amended with PR #9). The quotes below are updated to match.
+
 ## Spec References
 
-- SPEC.md §11 — **Search overlay** (one query input composing FTS with filter chips: type, tag, status, folder, date, due, unread, `references:`, and for threads agent participation / awaiting-reply / parent; default excludes `status: archived`, an "archived" chip brings them back; snippet-highlighted results grouped by type; **"Save as view"** pins the current query as a new board column; **all through the single `GET /api/docs` endpoint**)
+- SPEC.md §11 — **Search overlay** (one query input composing FTS with filter chips: type, tag, status, folder, date, due, unread, `references:`, and for threads agent participation / awaiting a form answer (`needs=form`) / parent; default excludes `status: archived`, an "archived" chip brings them back; snippet-highlighted results grouped by type; **"Save as view"** pins the current query as a new board column; **all through the single `GET /api/docs` endpoint**)
 - SPEC.md §11 — **Creating documents — zero-form, inbox-first** (omnibox create: no exact title match → **Create "\<query\>"**; lands in `data/docs/inbox/`; the new document opens immediately in its column, title selected, ready to type)
 - SPEC.md §11 — **Columns are pinned view documents** (save-as-view creates a `type: view` document with `pinned: true` holding the query and `order`)
 - SPEC.md §9.2 — `GET /api/docs?q=&type=&status=&tag=&folder=&parent=&references=&agent=&author=&since=&due=&stale=&unread=&needs=&sort=`, `GET /api/tree`, `POST /api/docs`
@@ -39,7 +41,7 @@ Build the search overlay: the top-bar search bar (click or ⌘K) expands into a 
 - [ ] Clicking the top-bar `.searchbar` or pressing ⌘K opens the overlay: `.overlay.open` (blurred scrim, `backdrop-filter: blur(3px)`, `color-mix(in srgb, var(--ink) 18%, transparent)`) with the `.search-panel` (`min(760px, 100vw - 48px)`, `7vh` top margin, `max-height: 78vh`), and focus lands in the query input.
 - [ ] The query input is serif 19px, borderless, on `.search-input-row`; the `save as view` ghost chip sits at its right.
 - [ ] Typing issues a **single** debounced (~200 ms) `GET /api/docs` request combining `q` with every active filter. There is **no** client-side filtering of the result set and **no** second request for a second group.
-- [ ] Filter chips render in `.search-filters` and toggle query parameters: `type`, `tag`, `status`, `folder` (options sourced from `GET /api/tree`), date (`since`), `due`, `unread`, `references:`; plus thread-only chips for agent participation (`agent`), awaiting-reply, and `parent`. Active chips take `.chip.on`.
+- [ ] Filter chips render in `.search-filters` and toggle query parameters: `type`, `tag`, `status`, `folder` (options sourced from `GET /api/tree`), date (`since`), `due`, `unread`, `references:`; plus thread-only chips for agent participation (`agent`), awaiting a form answer (`needs=form`), and `parent`. Active chips take `.chip.on`.
 - [ ] **Archived default**: with no status chip set, the request excludes `status: archived`. An `include archived` chip (`.chip.warn`) adds them back. Toggling it re-queries.
 - [ ] Results render **grouped by type** with `.sr-group` headers formatted `Documents · 3` / `Threads · 2` (label + count), each `.sr` row showing a `.type-glyph`, a serif `.sr-title`, a `.sr-snippet` carrying the server's `<mark>` highlights, and a mono `.sr-path` (folder + updated, or thread context like `on Mortgage options · open`).
 - [ ] Snippet HTML from the server is rendered with **only** `<mark>` permitted — sanitize before injecting; never `dangerouslySetInnerHTML` on raw server text without the allowlist.

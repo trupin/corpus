@@ -32,7 +32,8 @@ CLI-side MINOR findings from the Phase 2 PR review, deferred out of the merge:
 1. **`probeHealth` ignores `health.workspace`** (`commands/server/state.ts`): a foreign corpus server on the same port passes as this workspace's; in `start` the child can die EADDRINUSE while the ready-probe hits the foreigner, writing a pidfile for a dead pid and reporting success. Compare the workspace identity.
 2. **`lock break --from agent` silently rewrites to `user`** (`commands/lock/break.ts`): refuse like `doc delete` does (exit 2, no request) — one guard pattern for the two user-only verbs; refresh the stale module-header prose.
 3. **Tag edit read-modify-write** (`commands/doc/edit.ts`): `--add-tag`/`--remove-tag` is an unguarded GET-then-PUT; document the hazard and mitigate if the server offers a conditional write; otherwise note the accepted race in the module header.
-4. **`readAll` duplication** (`commands/job/log.ts` vs `input.ts`): fold onto the `input.ts` implementation (CLI-007 likely already did this — verify and close).
+4. **`readAll` duplication** (`commands/job/log.ts` vs `input.ts`): folded by CLI-007 — verify and close.
+5. **Enforce the stdin discipline** (CLI-007 implementer's suggestion): extend the hygiene test (or a lint rule) to assert no command module reads `process.stdin` outside `input.ts`, so the socket-hang class is enforced rather than remembered.
 
 ## Acceptance Criteria
 
