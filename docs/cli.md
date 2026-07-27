@@ -14,6 +14,12 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [Usage](#usage)
 - [Global flags](#global-flags)
 - [`corpus health`](#corpus-health)
+- [`corpus init`](#corpus-init)
+- [`corpus server`](#corpus-server)
+  - [`corpus server logs`](#corpus-server-logs)
+  - [`corpus server start`](#corpus-server-start)
+  - [`corpus server status`](#corpus-server-status)
+  - [`corpus server stop`](#corpus-server-stop)
 - [Exit codes](#exit-codes)
 
 ## Usage
@@ -73,6 +79,177 @@ Probe another workspace's server, failing fast.
 
 ```
 corpus health --workspace ~/notes --timeout 1000
+```
+
+## `corpus init`
+
+Create a Corpus workspace here (document tree, config, git repository, agent skills).
+
+Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. Refuses to touch a directory that already holds a workspace — there is no `--force`.
+
+```
+corpus init [path] [flags]
+```
+
+Runs outside a workspace; it does not contact the server.
+
+**Arguments**
+
+| Argument | Required | Description                                                                     |
+| -------- | -------- | ------------------------------------------------------------------------------- |
+| `path`   | no       | Directory to initialize, created if missing. Defaults to the current directory. |
+
+**Flags**
+
+| Flag         | Type   | Default | Description                                                                                                                                       |
+| ------------ | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port <n>` | number | —       | Port this workspace's server binds. Defaults to the first free port at or above 8765; a port already in use is an error, never silently replaced. |
+
+**Examples**
+
+Create a workspace in the current directory.
+
+```
+corpus init
+```
+
+Create a workspace at ~/notes.
+
+```
+corpus init ~/notes
+```
+
+Pin the port instead of probing upward from 8765.
+
+```
+corpus init ~/notes --port 8790
+```
+
+Machine-readable form. The bearer token is never printed.
+
+```
+corpus init --json
+```
+
+## `corpus server`
+
+Manage this workspace's server process.
+
+Each workspace runs its own server, as a background daemon with its pidfile and log under `.corpus/`. Nothing here is global: two workspaces start, stop and report independently, and each command acts on the workspace resolved from the current directory.
+
+### `corpus server logs`
+
+Print the tail of this workspace's server log.
+
+Reads the end of `.corpus/server.log` without loading the whole file. Each `corpus server start` writes a header line naming the timestamp, pid and port, so runs are distinguishable in one log. `--follow` streams new lines until interrupted and exits 0 on Ctrl-C; it cannot be combined with `--json`, which promises exactly one value.
+
+```
+corpus server logs [flags]
+```
+
+**Flags**
+
+| Flag                  | Type    | Default | Description                                 |
+| --------------------- | ------- | ------- | ------------------------------------------- |
+| `-n, --lines <count>` | number  | `50`    | How many trailing lines to print.           |
+| `-f, --follow`        | boolean | `false` | Keep streaming new lines until interrupted. |
+
+**Examples**
+
+Print the last 50 lines.
+
+```
+corpus server logs
+```
+
+Print the last 200 lines.
+
+```
+corpus server logs -n 200
+```
+
+Follow the log until Ctrl-C.
+
+```
+corpus server logs -f
+```
+
+### `corpus server start`
+
+Start this workspace's server as a background daemon.
+
+Spawns the server detached, with its output appended to `.corpus/server.log`, and waits until `GET /api/health` answers before reporting the board URL. The daemon outlives the shell that started it. Idempotent: an already-running server is reported and the command exits 0. If it never becomes ready, the tail of the log is printed rather than a silent failure.
+
+```
+corpus server start [flags]
+```
+
+**Examples**
+
+Start the server for this workspace.
+
+```
+corpus server start
+```
+
+Machine-readable form: pid, port and board URL as one JSON value.
+
+```
+corpus server start --json
+```
+
+### `corpus server status`
+
+Report whether this workspace's server is running, and how it is doing.
+
+Combines the pidfile with a live `GET /api/health` so a stale or reused pid is never reported as running — a pidfile whose process is gone is cleaned up on the spot. Exits 0 when the server is running and answering, and 6 when it is not, so scripts can gate on it (`corpus server status || corpus server start`). Under `--json` the whole report is one object on stdout in both states.
+
+```
+corpus server status [flags]
+```
+
+**Examples**
+
+Report the state of this workspace's server.
+
+```
+corpus server status
+```
+
+One JSON object: running, pid, port, uptime, version.
+
+```
+corpus server status --json
+```
+
+Start the server only when it is not already up.
+
+```
+corpus server status || corpus server start
+```
+
+### `corpus server stop`
+
+Stop this workspace's server.
+
+Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, and removes the pidfile. Stopping a server that is not running is not an error: it says so and exits 0, so scripts can stop unconditionally. A pidfile naming a dead or reused pid is cleaned rather than acted on — an unrelated process is never signalled.
+
+```
+corpus server stop [flags]
+```
+
+**Examples**
+
+Stop the server for this workspace.
+
+```
+corpus server stop
+```
+
+Machine-readable form: what was stopped, or that nothing was running.
+
+```
+corpus server stop --json
 ```
 
 ## Exit codes

@@ -38,10 +38,20 @@ export interface Example {
   readonly description: string;
 }
 
+/**
+ * Everything a handler is allowed to know about the process it runs in. Ambient
+ * state is read once, in `run.ts`, and handed down — a handler that reached for
+ * `process.cwd()` or `process.env` itself would be untestable without a chdir.
+ */
 export interface CommandContext {
   readonly args: ParsedArgs;
   readonly flags: ParsedFlags;
   readonly out: Output;
+  /** Directory the command was invoked from; relative paths resolve against it. */
+  readonly cwd: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Version of the `corpus` tool, for anything that records its provenance. */
+  readonly version: string;
 }
 
 export interface WorkspaceCommandContext extends CommandContext {

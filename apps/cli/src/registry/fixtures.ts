@@ -1,4 +1,12 @@
-import type { CommandSpec, Registry, TopicSpec, WorkspaceCommandSpec } from "./types.js";
+import { createOutput } from "../output.js";
+import { ParsedArgs, ParsedFlags, type FlagValue } from "../parse-args.js";
+import type {
+  CommandContext,
+  CommandSpec,
+  Registry,
+  TopicSpec,
+  WorkspaceCommandSpec,
+} from "./types.js";
 
 /**
  * A small registry used by the parser, dispatcher, help and docs tests. Keeping
@@ -68,3 +76,47 @@ export const fixtureRegistry: Registry = {
   commands: [fixtureEverythingCommand, fixtureStandaloneCommand],
   topics: [fixtureTopic],
 };
+
+export interface TestContextOptions {
+  readonly args?: Readonly<Record<string, string>>;
+  readonly flags?: Readonly<Record<string, FlagValue>>;
+  readonly json?: boolean;
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly version?: string;
+}
+
+export interface TestContext {
+  readonly context: CommandContext;
+  /** Everything written to stdout so far, joined. */
+  stdout(): string;
+  stderr(): string;
+}
+
+/**
+ * A `CommandContext` for calling a handler directly. Handlers take every ambient
+ * input as a parameter precisely so that this is possible without a chdir, a
+ * spawned process, or a mocked `node:process`.
+ */
+export function createTestContext(options: TestContextOptions = {}): TestContext {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  return {
+    stdout: () => stdout.join(""),
+    stderr: () => stderr.join(""),
+    context: {
+      args: new ParsedArgs(new Map(Object.entries(options.args ?? {}))),
+      flags: new ParsedFlags(new Map(Object.entries(options.flags ?? {}))),
+      out: createOutput({
+        json: options.json ?? false,
+        color: false,
+        stdout: (text) => void stdout.push(text),
+        stderr: (text) => void stderr.push(text),
+      }),
+      cwd: options.cwd ?? process.cwd(),
+      env: options.env ?? {},
+      version: options.version ?? "0.0.0-test",
+    },
+  };
+}

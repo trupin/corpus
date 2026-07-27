@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CorpusApi } from "@corpus/contract/client";
 import type { CliClient } from "../client.js";
-import { createOutput } from "../output.js";
-import { ParsedArgs, ParsedFlags } from "../parse-args.js";
+import { createTestContext } from "../registry/fixtures.js";
 import { collectRegistryProblems } from "../registry/validate.js";
 import type { Workspace } from "../workspace.js";
 import { healthCommand } from "./health.js";
@@ -39,21 +38,10 @@ function clientReturning(body: unknown): { client: CliClient; calls: unknown[] }
 }
 
 async function runHealth(json: boolean) {
-  const stdout: string[] = [];
   const { client, calls } = clientReturning(HEALTH);
-  await healthCommand.handler({
-    args: new ParsedArgs(new Map()),
-    flags: new ParsedFlags(new Map()),
-    out: createOutput({
-      json,
-      color: false,
-      stdout: (text) => void stdout.push(text),
-      stderr: () => undefined,
-    }),
-    workspace,
-    client,
-  });
-  return { stdout: stdout.join(""), calls };
+  const harness = createTestContext({ json });
+  await healthCommand.handler({ ...harness.context, workspace, client });
+  return { stdout: harness.stdout(), calls };
 }
 
 describe("corpus health", () => {

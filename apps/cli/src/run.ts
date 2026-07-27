@@ -99,7 +99,14 @@ async function invoke(
   out: Output,
   options: RunOptions,
 ): Promise<void> {
-  const context = { args: input.args, flags: input.flags, out };
+  const context = {
+    args: input.args,
+    flags: input.flags,
+    out,
+    cwd: options.cwd,
+    env: options.env,
+    version: options.version ?? readPackageVersion(),
+  };
 
   if (command.requiresWorkspace === false) {
     await command.handler(context);
