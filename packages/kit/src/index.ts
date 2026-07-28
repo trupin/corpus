@@ -30,6 +30,7 @@ export {
   type CorpusClient,
   type CorpusClientConfig,
   type CorpusEventStreamOptions,
+  type CreateDocInput,
   type CreateThreadInput,
   type DocsFilter,
   type JobsParams,
@@ -55,7 +56,8 @@ export { useHealth } from "./query/useHealth.js";
 
 // The write path the board needs today.
 export { useAppendTurn, type AppendTurnVariables } from "./query/useAppendTurn.js";
-export { useUpdateDoc } from "./query/useUpdateDoc.js";
+export { useUpdateDoc, useUpdateDocById, type UpdateDocVariables } from "./query/useUpdateDoc.js";
+export { useCreateDoc } from "./query/useCreateDoc.js";
 export { useCreateThread } from "./query/useCreateThread.js";
 export {
   isPendingTurn,

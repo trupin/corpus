@@ -1,9 +1,11 @@
 import type {
   AppendTurnResponse,
+  CreateDocRequest,
   CreateThreadRequest,
   CreateThreadResponse,
   Doc,
   DocList,
+  DocMutationResponse,
   FolderTree,
   Health,
   JobList,
@@ -78,6 +80,14 @@ export interface CorpusClient {
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
+   * `POST /api/docs` — zero-form creation (SPEC.md §11).
+   *
+   * Also how a board column comes into being: a column IS a `type: view`
+   * document with `pinned: true`, so pinning a list is this call with the §11
+   * view keys set, and nothing else. See {@link CreateDocInput}.
+   */
+  createDoc(input: CreateDocInput): Promise<DocMutationResponse>;
+  /**
    * `PUT /api/docs/{id}` — the frontmatter/body edit (SPEC.md §9.2).
    *
    * Every field is optional and the server changes only what the body names, so
@@ -100,6 +110,9 @@ type DocsQueryParams = NonNullable<paths["/api/docs"]["get"]["parameters"]["quer
 type JobsQueryParams = NonNullable<paths["/api/jobs"]["get"]["parameters"]["query"]>;
 type PutDocBody = NonNullable<
   paths["/api/docs/{id}"]["put"]["requestBody"]
+>["content"]["application/json"];
+type PostDocBody = NonNullable<
+  paths["/api/docs"]["post"]["requestBody"]
 >["content"]["application/json"];
 type PostThreadBody = NonNullable<
   paths["/api/threads"]["post"]["requestBody"]
@@ -136,6 +149,16 @@ export type JobsParams = Clearable<JobsQueryParams>;
  * `reviewed` — the field whose absence makes staleness lie (SPEC.md §5).
  */
 export type UpdateDocChanges = UpdateDocRequest;
+
+/**
+ * The `POST /api/docs` body, exactly as the contract declares it.
+ *
+ * Aliased for the same reason as {@link UpdateDocChanges}: which fields a
+ * creation may carry is the contract's decision. In particular the §11 view
+ * keys (`pinned`, `order`, `query`, `column`) live here, which is what lets the
+ * board create a column without a second write.
+ */
+export type CreateDocInput = CreateDocRequest;
 
 /** The JSON form of `POST /api/threads`. Attachments are multipart and are not this. */
 export type CreateThreadInput = CreateThreadRequest;
@@ -291,6 +314,14 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           },
         }),
       );
+    },
+
+    async createDoc(input) {
+      // Same two-spellings-of-optional mismatch as `updateDoc` below: the
+      // generated body type and the zod-inferred request describe identical
+      // values under different `exactOptionalPropertyTypes` stances.
+      const body = input as PostDocBody;
+      return unwrap("POST /api/docs", await api.POST("/api/docs", { body }));
     },
 
     async updateDoc(id, changes) {

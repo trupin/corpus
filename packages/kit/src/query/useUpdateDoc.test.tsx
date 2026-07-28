@@ -3,7 +3,7 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCorpusTestHarness } from "../testing/index.js";
 import { DOCS_KEY, docKey, docsListKey } from "./keys.js";
-import { useUpdateDoc } from "./useUpdateDoc.js";
+import { useUpdateDoc, useUpdateDocById } from "./useUpdateDoc.js";
 
 afterEach(cleanup);
 
@@ -109,5 +109,48 @@ describe("useUpdateDoc", () => {
       expect(result.current.isError).toBe(true);
     });
     expect(result.current.error?.message).toContain("agent holds the edit lock");
+  });
+});
+
+describe("useUpdateDocById", () => {
+  it("addresses a different document per call from one mounted hook", async () => {
+    const wire = transport();
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useUpdateDocById(), { wrapper: harness.Wrapper });
+
+    // The reason this binding exists: one gesture, several documents, and hooks
+    // cannot be called in a loop.
+    await result.current.mutateAsync({ id: "doc_a", changes: { order: 5 } });
+    await result.current.mutateAsync({ id: "doc_b", changes: { order: 15 } });
+
+    expect(wire.calls).toEqual([
+      { method: "PUT", path: "/api/docs/doc_a", body: { order: 5 } },
+      { method: "PUT", path: "/api/docs/doc_b", body: { order: 15 } },
+    ]);
+  });
+
+  it("invalidates the document it wrote and every list that could hold it", async () => {
+    const wire = transport();
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    harness.queryClient.setQueryData(docKey("doc_b"), { frontmatter: {} });
+    harness.queryClient.setQueryData(docsListKey({ pinned: "true" }), { items: [], page: {} });
+    const { result } = renderHook(() => useUpdateDocById(), { wrapper: harness.Wrapper });
+
+    await result.current.mutateAsync({ id: "doc_b", changes: { order: 15 } });
+
+    expect(harness.queryClient.getQueryState(docKey("doc_b"))?.isInvalidated).toBe(true);
+    expect(harness.queryClient.getQueryState(docsListKey({ pinned: "true" }))?.isInvalidated).toBe(
+      true,
+    );
+  });
+
+  it("surfaces a refusal rather than swallowing it", async () => {
+    const wire = transport(423);
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const { result } = renderHook(() => useUpdateDocById(), { wrapper: harness.Wrapper });
+
+    await expect(
+      result.current.mutateAsync({ id: "doc_a", changes: { order: 5 } }),
+    ).rejects.toThrow(/agent holds the edit lock/);
   });
 });

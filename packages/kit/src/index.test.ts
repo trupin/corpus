@@ -35,6 +35,8 @@ const RUNTIME_SURFACE = [
   // write path
   "useAppendTurn",
   "useUpdateDoc",
+  "useUpdateDocById",
+  "useCreateDoc",
   "useCreateThread",
   "isPendingTurn",
   "mergePendingTurns",
