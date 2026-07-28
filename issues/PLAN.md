@@ -64,7 +64,7 @@ The sole-writer server and the thin-client CLI.
 | CONTRACT-004 | Mandatory request bodies are typed optional in the generated client | done | P1 | CONTRACT-002 |
 | SERVER-013 | Anchor engine: substitution class — anchors handed unrelated text while their own survives | done | P1 | SERVER-012 |
 | CONTRACT-005 | Board contract growth: query-key vocabulary, DocRow staleness + thread fields | done | P1 | CONTRACT-002 |
-| SERVER-014 | Anchor engine: duplicate-survivor policy (remap-one vs orphan) — TEST-64/66 tension | in_progress | P2 | SERVER-013 |
+| SERVER-014 | Anchor engine: duplicate-survivor policy (remap-one vs orphan) — TEST-64/66 tension | done | P2 | SERVER-013 |
 | SERVER-015 | Populate CONTRACT-005's new DocRow fields in the collection query | done | P1 | CONTRACT-005, SERVER-011 |
 | CLI-002 | `corpus init` + server lifecycle verbs | done | P0 | CLI-001, SERVER-003, AGENT-001 |
 | CLI-003 | Doc & thread verbs | done | P0 | CLI-001, SERVER-005, SERVER-006, SERVER-017 |
@@ -84,7 +84,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| UI-002 | @corpus/kit data layer: hooks + SSE bridge | in_progress | P0 | CONTRACT-002, SERVER-007, UI-001 |
+| UI-002 | @corpus/kit data layer: hooks + SSE bridge | done | P0 | CONTRACT-002, SERVER-007, UI-001 |
 | UI-003 | Board columns: pinned view docs, reorder, new-list | todo | P0 | UI-002, SERVER-011, SERVER-024 |
 | UI-004 | Type-aware rows: badges, reasons, staleness ramp | todo | P0 | UI-002 |
 | UI-005 | Reader, navigation stacks, doc menu, focus shell, lock banner | todo | P0 | UI-003, UI-004 |
@@ -94,16 +94,16 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-009 | Search overlay, omnibox create, save-as-view | todo | P0 | UI-003 |
 | UI-010 | Global Ask/Capture composer + keyboard scheme | todo | P1 | UI-008, UI-009 |
 | UI-011 | Console drawer: jobs master-detail, live logs, HALT | todo | P1 | UI-002, SERVER-009 |
-| CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | in_progress | P1 | CONTRACT-002 |
-| CONTRACT-009 | Multipart createThread + declared 413 (attachments rider) | in_progress | P1 | CONTRACT-002 |
+| CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | done | P1 | CONTRACT-002 |
+| CONTRACT-009 | Multipart createThread + declared 413 (attachments rider) | done | P1 | CONTRACT-002 |
 | SERVER-016 | Form answer write path (form.respond producer) | todo | P1 | CONTRACT-007, SERVER-006 |
-| SERVER-020 | Watcher path breaks the tree-key invariant (heuristic vs. signature) | in_progress | P2 | SERVER-018 |
-| SERVER-022 | Server hardening batch: PR #9 MINOR findings | in_progress | P2 | SERVER-010, SERVER-018 |
-| SERVER-023 | Consume CONTRACT-007/009 riders: warnings, reap failed, originTitle, multipart, 413 | in_progress | P1 | CONTRACT-007, CONTRACT-009, SERVER-006, SERVER-010 |
+| SERVER-020 | Watcher path breaks the tree-key invariant (heuristic vs. signature) | done | P2 | SERVER-018 |
+| SERVER-022 | Server hardening batch: PR #9 MINOR findings | done | P2 | SERVER-010, SERVER-018 |
+| SERVER-023 | Consume CONTRACT-007/009 riders: warnings, reap failed, originTitle, multipart, 413 | done | P1 | CONTRACT-007, CONTRACT-009, SERVER-006, SERVER-010 |
 | SERVER-024 | Provision the bearer token to the served UI | todo | P1 | SERVER-003 |
 | SERVER-025 | Emit an invalidate when the boot projection completes | todo | P2 | SERVER-007 |
-| CLI-008 | CLI hardening batch: PR #9 MINOR findings | in_progress | P2 | CLI-003, CLI-004 |
-| INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | in_progress | P1 | INFRA-003, UI-001 |
+| CLI-008 | CLI hardening batch: PR #9 MINOR findings | done | P2 | CLI-003, CLI-004 |
+| INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
 ---
 
