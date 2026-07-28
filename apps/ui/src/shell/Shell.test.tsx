@@ -138,3 +138,141 @@ describe("the search overlay's one global key", () => {
     expect(screen.getByRole("dialog", { name: "Search" })).toBeDefined();
   });
 });
+
+/**
+ * The three overlays are one layer, and the shell is where that is enforced —
+ * `?` never stacks on the composer, ⌘K replaces it, and every one of them is a
+ * `.overlay.open` so `isOverlayOpen()` keeps telling the truth.
+ */
+describe("the shell's one overlay layer", () => {
+  const openShell = (): ReturnType<typeof render> =>
+    renderShell(boardTransport({ views: [], tree: { folders: [] } }).fetch);
+
+  const composer = (): HTMLElement | null =>
+    screen.queryByRole("dialog", { name: "Ask or capture" });
+  const cheatSheet = (): HTMLElement | null => screen.queryByRole("dialog", { name: "Keyboard" });
+
+  it("opens the composer from `c` and from the top bar's button, with the caret in the textarea", async () => {
+    const user = userEvent.setup();
+    openShell();
+
+    await user.keyboard("c");
+    await waitFor(() => {
+      expect(composer()).not.toBeNull();
+    });
+    expect(isOverlayOpen()).toBe(true);
+    expect(document.activeElement?.getAttribute("data-composer")).toBe("compose");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(composer()).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Ask \/ Capture/ }));
+    await waitFor(() => {
+      expect(composer()).not.toBeNull();
+    });
+  });
+
+  it("shows the `c` hint on the button, because a shortcut nobody sees is unused", () => {
+    openShell();
+    expect(
+      screen.getByRole("button", { name: /Ask \/ Capture/ }).querySelector("kbd")?.textContent,
+    ).toBe("c");
+  });
+
+  it("toggles the cheat sheet with `?` and closes it with escape", async () => {
+    const user = userEvent.setup();
+    openShell();
+
+    await user.keyboard("?");
+    await waitFor(() => {
+      expect(cheatSheet()).not.toBeNull();
+    });
+    await user.keyboard("?");
+    await waitFor(() => {
+      expect(cheatSheet()).toBeNull();
+    });
+
+    await user.keyboard("?");
+    await waitFor(() => {
+      expect(cheatSheet()).not.toBeNull();
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(cheatSheet()).toBeNull();
+    });
+  });
+
+  it("refuses `?` while another overlay is up rather than stacking a second one", async () => {
+    const user = userEvent.setup();
+    openShell();
+    await user.keyboard("c");
+    await waitFor(() => {
+      expect(composer()).not.toBeNull();
+    });
+
+    await user.keyboard("?");
+    expect(cheatSheet()).toBeNull();
+    expect(composer()).not.toBeNull();
+    expect(document.querySelectorAll(".overlay.open")).toHaveLength(1);
+  });
+
+  it("lets ⌘K replace the composer — one overlay at a time", async () => {
+    const user = userEvent.setup();
+    openShell();
+    await user.keyboard("c");
+    await waitFor(() => {
+      expect(composer()).not.toBeNull();
+    });
+
+    await user.keyboard("{Meta>}k{/Meta}");
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Search" })).toBeDefined();
+    });
+    expect(composer()).toBeNull();
+    expect(document.querySelectorAll(".overlay.open")).toHaveLength(1);
+  });
+
+  it("types a `c` into the composer instead of reopening it", async () => {
+    const user = userEvent.setup();
+    openShell();
+    await user.keyboard("c");
+    await waitFor(() => {
+      expect(composer()).not.toBeNull();
+    });
+
+    await user.keyboard("cat");
+    expect(screen.getByLabelText("Ask the agent, or capture a thought")).toHaveProperty(
+      "value",
+      "cat",
+    );
+    expect(document.querySelectorAll(".overlay.open")).toHaveLength(1);
+  });
+
+  it("types `c`, `e`, `f`, `r`, `j`, `k` and `?` into the search input rather than acting on them", async () => {
+    const user = userEvent.setup();
+    openShell();
+    await user.keyboard("{Meta>}k{/Meta}");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Search query")).toBeDefined();
+    });
+
+    await user.keyboard("cefrjk?");
+    expect(screen.getByLabelText("Search query")).toHaveProperty("value", "cefrjk?");
+    expect(cheatSheet()).toBeNull();
+    expect(composer()).toBeNull();
+  });
+
+  it("renders the cheat sheet from the registry, one row per binding", async () => {
+    const user = userEvent.setup();
+    const { container } = openShell();
+    await user.keyboard("?");
+    await waitFor(() => {
+      expect(cheatSheet()).not.toBeNull();
+    });
+    expect(container.ownerDocument.querySelectorAll(".kbd-row").length).toBeGreaterThan(0);
+    expect(screen.getByText("Ask / Capture composer")).toBeDefined();
+    expect(screen.getByText("this cheat-sheet")).toBeDefined();
+  });
+});

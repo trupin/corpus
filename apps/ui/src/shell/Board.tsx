@@ -1,8 +1,18 @@
-import { useCreateDoc, useUpdateDocById, type RowNotice } from "@corpus/kit";
+import {
+  archivedMessage,
+  useCreateDoc,
+  useDoc,
+  useUpdateDocById,
+  type RowNotice,
+} from "@corpus/kit";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Column } from "../board/Column";
 import { measureColumns, previewOrder } from "../board/columnDrag";
 import { nextOrder, reinsert } from "../board/columnOrder";
+import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
+import { focusReplyComposer, replyRoot } from "../keyboard/focusReply";
+import { useActiveColumn } from "../keyboard/useActiveColumn";
+import { useRowCursor } from "../keyboard/useRowCursor";
 import {
   clampMenuPosition,
   columnRequest,
@@ -53,7 +63,6 @@ export function Board(): ReactElement {
   const updateDoc = useUpdateDocById();
   const toast = useToast();
 
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [preview, setPreview] = useState<readonly string[] | null>(null);
   const [picker, setPicker] = useState<MenuPosition | null>(null);
@@ -168,7 +177,16 @@ export function Board(): ReactElement {
   const navigation = useMemo<BoardNavigation>(
     () => ({
       open: (target) => {
-        const columnId = resolveColumn(orderedRef.current, target.subject ?? null);
+        // A caller that names a column is looking at the row; resolution is for
+        // callers that only know a document. The named column is still checked
+        // against the live set, because an SSE frame may have unpinned it
+        // between the keystroke and this call.
+        const named =
+          target.columnId != null &&
+          orderedRef.current.some((column) => column.id === target.columnId)
+            ? target.columnId
+            : null;
+        const columnId = named ?? resolveColumn(orderedRef.current, target.subject ?? null);
         if (columnId === null) return;
         openInColumn(columnId, target.docId);
         setSelectTitleFor(target.selectTitle === true ? target.docId : null);
@@ -223,30 +241,31 @@ export function Board(): ReactElement {
     [columnOrder, toast],
   );
 
-  const activeIndex = Math.max(
-    0,
-    ordered.findIndex((column) => column.id === activeId),
-  );
-  const activeColumnId = ordered[activeIndex]?.id ?? null;
+  const active = useActiveColumn(ordered);
+  const activeColumnId = active.id;
+  const activeColumn = ordered[active.index] ?? null;
+  const cursor = useRowCursor({ board, activeColumnId });
 
-  // `⇧←`/`⇧→` — the keyboard drag (SPEC.md §11). Same mutation as the pointer
-  // drag, and a silent no-op at either end: no wrap-around, no write.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      // The target is the `document` itself when nothing is focused, and only
-      // an `Element` answers `closest`.
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      if (target?.isContentEditable === true) return;
-      if (target?.closest("input, textarea, select") != null) return;
+  /**
+   * The document the active column has open, if any — `e` and `f` act on it in
+   * preference to the row under the cursor (SPEC.md §11: "archive the open (or
+   * highlighted) document"). The fetch costs nothing: the reader below is
+   * already asking for exactly this key.
+   */
+  const openInActive = activeColumnId === null ? null : openDocId(forColumn(activeColumnId));
+  const openDoc = useDoc(openInActive ?? undefined);
 
+  /**
+   * `⇧←`/`⇧→` — the keyboard drag (SPEC.md §11). Same `persistMove` the pointer
+   * drag ends in, so `order` is written through UI-003's one path; a silent
+   * no-op at either end, with no wrap-around and no write.
+   */
+  const moveActiveColumn = useCallback(
+    (delta: -1 | 1) => {
       const from = ordered.findIndex((column) => column.id === activeColumnId);
       if (from < 0) return;
-      const to = event.key === "ArrowLeft" ? from - 1 : from + 1;
+      const to = from + delta;
       if (to < 0 || to >= ordered.length) return;
-
-      event.preventDefault();
       setPreview(
         reinsert(
           ordered.map((column) => column.id),
@@ -254,14 +273,110 @@ export function Board(): ReactElement {
           to,
         ),
       );
-      setScrollTo(ordered[from]?.id ?? null);
+      const moved = ordered[from]?.id ?? null;
+      // The moved column stays active and comes back into view: the gesture is
+      // about *this* list, and losing it to whatever slid under the cursor is
+      // how a second `⇧→` moves the wrong one.
+      if (moved !== null) active.pin(moved);
+      setScrollTo(moved);
       void persistMove(ordered, from, to);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [activeColumnId, ordered, persistMove]);
+    },
+    [active, activeColumnId, ordered, persistMove],
+  );
+
+  /**
+   * `e` — the open document when one is open, otherwise the row under the
+   * cursor. The row's own status and title are read from what it rendered:
+   * asking the server for a document the user is looking at, to learn whether
+   * to tell them it is already archived, would be a request per keystroke.
+   */
+  const archiveTarget = useCallback(() => {
+    // An open reader is the target even before its document has arrived: the
+    // alternative — falling through to the row under the cursor while the
+    // document loads — would archive something the user is not looking at.
+    if (openInActive !== null && openDoc.data === undefined) {
+      toast({ tone: "info", message: "Still opening that document — try again in a moment." });
+      return;
+    }
+
+    const row = cursor.element();
+    const target =
+      openDoc.data !== undefined && openInActive !== null
+        ? {
+            id: openInActive,
+            title: openDoc.data.frontmatter.title,
+            status: openDoc.data.frontmatter.status,
+          }
+        : row === null
+          ? null
+          : {
+              id: row.dataset["rowDoc"] ?? "",
+              title: row.querySelector(".row-title")?.textContent ?? "",
+              status: row.dataset["rowStatus"] ?? "",
+            };
+
+    if (target === null || target.id === "") {
+      toast({ tone: "info", message: "Nothing to archive — open a document or highlight a row." });
+      return;
+    }
+    if (target.status === "archived") {
+      toast({ tone: "info", message: `“${target.title}” is already archived.` });
+      return;
+    }
+    void (async () => {
+      try {
+        await updateDoc.mutateAsync({ id: target.id, changes: { status: "archived" } });
+        toast({ tone: "info", message: archivedMessage(target.title) });
+      } catch (cause) {
+        toast({ tone: "error", message: `Archive failed — ${(cause as Error).message}` });
+      }
+    })();
+  }, [cursor, openDoc.data, openInActive, toast, updateDoc]);
+
+  /** The board's half of the keyboard seam: §11's bindings, phrased as acts. */
+  const commands = useMemo<BoardCommands>(
+    () => ({
+      moveRowCursor: cursor.move,
+      openRowAtCursor: (fullScreen) => {
+        if (cursor.docId === null || activeColumnId === null) return;
+        navigation.open({ docId: cursor.docId, columnId: activeColumnId });
+        if (fullScreen) {
+          setFocusDoc({ columnTitle: activeColumn?.title ?? "", docId: cursor.docId });
+        }
+      },
+      switchColumn: (delta) => {
+        const next = active.switchBy(delta);
+        if (next !== null) setScrollTo(next);
+      },
+      moveActiveColumn,
+      toggleFocusMode: () => {
+        setFocusDoc((current) => {
+          if (current !== null) return null;
+          if (openInActive === null) return null;
+          return { columnTitle: activeColumn?.title ?? "", docId: openInActive };
+        });
+      },
+      archiveTarget,
+      focusReply: () => {
+        if (focusReplyComposer(replyRoot(board.current, activeColumnId)) === "none") {
+          toast({ tone: "info", message: "No thread to reply to on this document." });
+        }
+      },
+    }),
+    [
+      active,
+      activeColumn,
+      activeColumnId,
+      archiveTarget,
+      cursor,
+      moveActiveColumn,
+      navigation,
+      openInActive,
+      toast,
+    ],
+  );
+
+  useRegisterBoardCommands(commands);
 
   // `Esc` mid-drag restores the pre-drag order and persists nothing.
   useEffect(() => {
@@ -389,8 +504,9 @@ export function Board(): ReactElement {
           isFlashing={column.id === flashing}
           local={forColumn(column.id)}
           selectTitle={openDocId(forColumn(column.id)) === selectTitleFor}
+          cursorDocId={column.id === activeColumnId ? cursor.docId : null}
           onActivate={() => {
-            setActiveId(column.id);
+            active.activate(column.id);
           }}
           onScroll={(scrollTop) => {
             setScroll(column.id, scrollTop);

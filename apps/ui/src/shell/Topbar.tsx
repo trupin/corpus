@@ -22,8 +22,10 @@ function SearchIcon(): ReactElement {
 }
 
 export interface TopbarProps {
-  /** Opens the search overlay. ⌘K does the same thing from the shell. */
+  /** Opens the search overlay. ⌘K does the same thing, through the shortcut registry. */
   readonly onOpenSearch?: () => void;
+  /** Opens the Ask/Capture composer — the same act as `c` (SPEC.md §11). */
+  readonly onOpenCompose?: () => void;
 }
 
 /**
@@ -32,12 +34,11 @@ export interface TopbarProps {
  *
  * The search affordance is a **button**, not an input: the query input lives in
  * the overlay panel (`design/index.html`), and a second one here would be two
- * places to type the same search. The compose button is still an affordance
- * only — the composer is UI-010 — and is deliberately not disabled, because a
- * control that will work the moment its issue lands should not teach the user it
- * is dead.
+ * places to type the same search. The compose button is the same shape for the
+ * same reason, and it carries its `c` hint because a shortcut nobody can see is
+ * a shortcut nobody uses.
  */
-export function Topbar({ onOpenSearch }: TopbarProps = {}): ReactElement {
+export function Topbar({ onOpenSearch, onOpenCompose }: TopbarProps = {}): ReactElement {
   return (
     <header className="topbar">
       <div className="wordmark">
@@ -57,7 +58,13 @@ export function Topbar({ onOpenSearch }: TopbarProps = {}): ReactElement {
       </button>
       <div className="topbar-actions">
         <ThemeToggle />
-        <button type="button" className="btn-compose">
+        <button
+          type="button"
+          className="btn-compose"
+          onClick={() => {
+            onOpenCompose?.();
+          }}
+        >
           ＋ Ask / Capture <kbd>c</kbd>
         </button>
       </div>

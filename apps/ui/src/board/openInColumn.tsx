@@ -45,6 +45,18 @@ export interface OpenTarget {
    * costing a request the caller did not ask for.
    */
   readonly subject?: OpenSubject | null;
+  /**
+   * The column to open in, when the caller is *looking at* the document rather
+   * than resolving where it lives — the keyboard's `↵` on a highlighted row
+   * (SPEC.md §11: "open the highlighted document **in its column**").
+   *
+   * Resolution is skipped when this is given, because a row's column is not a
+   * guess: it is the column that fetched it, and a row visible in a narrower
+   * column than the one `resolveColumn` would pick must not jump elsewhere under
+   * the cursor. Everything else about the act — the scroll, the flash, the push
+   * onto that column's navigation stack — is the same code path.
+   */
+  readonly columnId?: string | null;
   /** Focus *and* select the title on arrival — the omnibox's "ready to type". */
   readonly selectTitle?: boolean;
 }

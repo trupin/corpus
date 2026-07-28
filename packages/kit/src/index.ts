@@ -28,11 +28,13 @@ export {
   CorpusRequestError,
   type AppendTurnInput,
   type AppendTurnUpload,
+  type CaptureInput,
   type CorpusClient,
   type CorpusClientConfig,
   type CorpusEventStreamOptions,
   type CreateDocInput,
   type CreateThreadInput,
+  type CreateThreadUpload,
   type DocsFilter,
   type FormAnswerInput,
   type JobsParams,
@@ -71,7 +73,8 @@ export { useDeleteTurn } from "./query/useDeleteTurn.js";
 export { useRespondToForm, type FormAnswerVariables } from "./query/useRespondToForm.js";
 export { useUpdateDoc, useUpdateDocById, type UpdateDocVariables } from "./query/useUpdateDoc.js";
 export { useCreateDoc } from "./query/useCreateDoc.js";
-export { useCreateThread } from "./query/useCreateThread.js";
+export { useCapture } from "./query/useCapture.js";
+export { useCreateThread, type CreateThreadVariables } from "./query/useCreateThread.js";
 export { useDeleteDoc } from "./query/useDeleteDoc.js";
 export {
   useMarkThreadSeen,
@@ -170,6 +173,7 @@ export {
   type ThreadKind,
 } from "./row/threadRow.js";
 export {
+  archivedMessage,
   triagePrompt,
   useRowActions,
   type RowActions,

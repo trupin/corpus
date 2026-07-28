@@ -1,4 +1,4 @@
-import { FORM_FENCE_PATTERN, FormSchema, type Form } from "@corpus/contract";
+import { FORM_ANSWER_LABEL, FORM_FENCE_PATTERN, FormSchema, type Form } from "@corpus/contract";
 import * as YAML from "yaml";
 
 /**
@@ -20,17 +20,15 @@ import * as YAML from "yaml";
  */
 
 /**
- * The lead-in of the answer turn the server writes
- * (`apps/server/src/threads/forms.ts`'s `FORM_ANSWER_LABEL`).
+ * The lead-in of the answer turn the server writes, re-exported from the
+ * contract (CONTRACT-013) rather than restated.
  *
- * Duplicated here rather than imported because it lives in `apps/server`, which
- * `apps/ui` must not depend on, and it is not on the wire — the answer travels
- * as prose so it reads as prose in `git log`. It is only ever used to decide
- * whether a form has *already* been answered; a drift would show a live submit
- * on an answered form, which the server then rejects, rather than corrupting
- * anything.
+ * It is not a wire field — the answer travels as prose, so it reads as prose in
+ * `git log` — but it *is* a shape both sides have to agree on: this module reads
+ * it to decide whether a form has already been answered, and a local copy that
+ * drifted would offer a live submit on an answered form.
  */
-export const FORM_ANSWER_LABEL = "**Answered:**";
+export { FORM_ANSWER_LABEL };
 
 export interface FormFenceSplit {
   /** Markdown before the fence. */

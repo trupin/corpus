@@ -156,25 +156,6 @@ button.save-chip {
   margin: 3px 4px;
 }
 
-/* The `[[` menu reuses `.ac-menu` / `.ac-item` from `board/Column.css`, which
-   is the prototype's one autocomplete surface. Only the states the board's
-   menus have no use for are declared here. */
-.ac-item.on {
-  background: var(--surface-2);
-}
-
-.ac-item.ac-empty {
-  color: var(--ink-3);
-  cursor: default;
-}
-
-.ac-item .k {
-  font-family: var(--mono);
-  color: var(--accent-ink);
-}
-
-.ac-item .d {
-  font-size: 11px;
-  color: var(--ink-3);
-  margin-left: 6px;
-}
+/* The `[[` suggestion popup renders `.ac-menu` / `.ac-item` — the prototype's
+   one autocomplete surface, which lives in `@corpus/kit`'s `autocomplete.css`
+   together with the `.on` and `.ac-empty` states this popup needs. */

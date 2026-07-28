@@ -266,51 +266,9 @@
   text-align: center;
 }
 
-/* ── Positioned menus (the prototype's `.ac-menu`) ── */
-.ac-menu {
-  position: fixed;
-  z-index: 60;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  box-shadow: var(--shadow);
-  padding: 4px;
-  display: none;
-  min-width: 250px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.ac-menu.open {
-  display: block;
-}
-
-.ac-item {
-  display: block;
-  width: 100%;
-  padding: 6px 9px;
-  border-radius: 6px;
-  font-size: 12.5px;
-}
-
-.ac-item:hover {
-  background: var(--surface-2);
-}
-
-.ac-item .k {
-  font-family: var(--mono);
-  color: var(--accent-ink);
-}
-
-.ac-item .d {
-  font-size: 11px;
-  color: var(--ink-3);
-  margin-left: 6px;
-}
-
-.ac-item-note {
-  cursor: default;
-}
+/* Positioned menus — the column ⋯ menu and the new-list picker — render the
+   prototype's `.ac-menu` / `.ac-item`, which lives in `@corpus/kit`'s
+   `autocomplete.css` beside the component that also emits it. */
 
 /* ── Reader scaffolding (UI-005 replaces this) ── */
 .col .reader {

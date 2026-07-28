@@ -68,6 +68,16 @@ export interface RowProps {
    * additive: the seam already exists and is already tested.
    */
   readonly ListItem?: ComponentType<RowProps> | undefined;
+  /**
+   * The keyboard row cursor is on this row (SPEC.md §11's `↑`/`↓`, `j`/`k`) —
+   * the prototype's `.row.kbd` outline.
+   *
+   * A prop rather than a class the host adds from outside, because the host that
+   * moves the cursor (a board column) does not own this element and reaching
+   * into it would make the outline a second, silent source of truth about which
+   * row is highlighted.
+   */
+  readonly cursor?: boolean | undefined;
 }
 
 /** What a plugin's registered list item must accept. */
@@ -81,7 +91,7 @@ function needsYouText(attention: readonly string[]): string | null {
 }
 
 export function Row(props: RowProps): ReactElement {
-  const { row, onOpen, onNotify, unreadCount, now, ListItem, showReasons } = props;
+  const { row, onOpen, onNotify, unreadCount, now, ListItem, showReasons, cursor } = props;
 
   const level = stalenessLevel(row.stale);
   const showActions = hasStaleActions(level);
@@ -124,7 +134,12 @@ export function Row(props: RowProps): ReactElement {
     event.stopPropagation();
   };
 
-  const className = ["row", stalenessClass(level), actions.isLeaving ? "leaving" : ""]
+  const className = [
+    "row",
+    stalenessClass(level),
+    actions.isLeaving ? "leaving" : "",
+    cursor === true ? "kbd" : "",
+  ]
     .filter((part) => part !== "")
     .join(" ");
 
@@ -135,6 +150,7 @@ export function Row(props: RowProps): ReactElement {
       tabIndex={0}
       data-row-doc={row.id}
       data-row-type={row.type}
+      data-row-status={row.status}
       data-row-level={String(level)}
       aria-label={`${row.type}: ${row.title}`}
       onClick={open}

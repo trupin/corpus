@@ -50,6 +50,15 @@ export function triagePrompt(title: string): string {
   );
 }
 
+/**
+ * What archiving narrates. Exported because archiving has two entry points —
+ * this row action and SPEC.md §11's `e` — and a second wording would be a second
+ * claim about what the same `PUT /api/docs/{id}` write did.
+ */
+export function archivedMessage(title: string): string {
+  return `Archived "${title}" — committed. Archiving is reversible.`;
+}
+
 export function useRowActions(row: RowActionSubject, options: RowActionsOptions = {}): RowActions {
   const { onNotify } = options;
   const clock = options.now ?? (() => new Date());
@@ -87,7 +96,7 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
       { status: "archived" },
       {
         onSuccess: () => {
-          notify("info", `Archived "${row.title}" — committed. Archiving is reversible.`);
+          notify("info", archivedMessage(row.title));
         },
         onError: (error) => {
           setLeaving(false);

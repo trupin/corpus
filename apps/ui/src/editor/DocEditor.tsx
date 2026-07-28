@@ -285,7 +285,20 @@ export function DocEditor({
   }, [docId, editor, onComment]);
 
   return (
-    <div className="doc-editor" data-doc-editor={docId} data-editable={locked ? "false" : "true"}>
+    <div
+      className="doc-editor"
+      data-doc-editor={docId}
+      data-editable={locked ? "false" : "true"}
+      /*
+       * The whole editor subtree opts out of SPEC.md §11's single-letter
+       * bindings, not just the contenteditable node inside it (UI-010's
+       * `isWritingSurface`). ProseMirror re-targets key events and mounts node
+       * views and a selection toolbar that can hold focus, so "is the caret in
+       * a contenteditable" is nearly always right and occasionally not — and
+       * the one time it is wrong, `c` opens a composer mid-sentence.
+       */
+      data-shortcuts="off"
+    >
       <EditorContent
         editor={editor}
         onBlur={() => {

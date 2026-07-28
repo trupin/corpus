@@ -27,6 +27,8 @@ export interface ColumnProps {
   readonly local: ColumnLocalState;
   /** True when the open document was just created — its title is selected. */
   readonly selectTitle: boolean;
+  /** The row the keyboard cursor is on, when this is the active column (SPEC.md §11). */
+  readonly cursorDocId: string | null;
   readonly onActivate: () => void;
   readonly onScroll: (scrollTop: number) => void;
   /** Opens a document in this column's reader — a push onto its navigation stack. */
@@ -46,6 +48,7 @@ export interface ColumnProps {
 interface ColumnBodyProps {
   readonly column: BoardColumn;
   readonly local: ColumnLocalState;
+  readonly cursorDocId: string | null;
   readonly onHandle: (armed: boolean) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpen: (docId: string) => void;
@@ -66,6 +69,7 @@ interface ColumnBodyProps {
 function ColumnBody({
   column,
   local,
+  cursorDocId,
   onHandle,
   onScroll,
   onOpen,
@@ -101,6 +105,7 @@ function ColumnBody({
         isPending={docs.isPending}
         error={docs.error}
         scrollTop={local.scroll}
+        cursorDocId={cursorDocId}
         onScroll={onScroll}
         onOpen={openRow}
         onNotify={onNotify}
@@ -147,6 +152,7 @@ export function Column(props: ColumnProps): ReactElement {
         <ColumnBody
           column={column}
           local={local}
+          cursorDocId={props.cursorDocId}
           onHandle={setDraggable}
           onScroll={props.onScroll}
           onOpen={onOpen}

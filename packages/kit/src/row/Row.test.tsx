@@ -463,3 +463,23 @@ describe("the plugin seam", () => {
     expect(container.querySelector(".row-title")?.textContent).toBe("Fallback");
   });
 });
+
+describe("the keyboard cursor", () => {
+  it("carries the prototype's `.row.kbd` outline only when it is the cursor", () => {
+    const plain = renderRow({ row: docRowFixture() });
+    expect(plain.container.querySelector(".row")?.className).toBe("row");
+
+    const marked = renderRow({ row: docRowFixture(), cursor: true });
+    expect(marked.container.querySelector(".row")?.className).toBe("row kbd");
+  });
+
+  /**
+   * `e` reads the highlighted row's status from what it rendered, rather than
+   * asking the server whether the document the user is looking at is already
+   * archived.
+   */
+  it("publishes its status, so a keyboard act can target it without a request", () => {
+    const { container } = renderRow({ row: docRowFixture({ status: "archived" }) });
+    expect(container.querySelector(".row")?.getAttribute("data-row-status")).toBe("archived");
+  });
+});

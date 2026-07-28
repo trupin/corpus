@@ -4,6 +4,14 @@
  * inherits the same menu rather than approximating it.
  *
  *     import "@corpus/kit/autocomplete.css";
+ *
+ * **Every positioned menu in the product is this surface**, not just the
+ * completions: the editor's `[[` suggestion popup, the column ⋯ menu, the
+ * new-list picker and the search overlay's filter pickers all render
+ * `.ac-menu` / `.ac-item`. They differ in what they list, never in what they
+ * look like, so the states each of them needs live here together rather than in
+ * whichever stylesheet happened to want one first — three copies of
+ * `.ac-item .k` is how one of them silently stops matching the others.
  */
 
 .ac-menu {
@@ -32,9 +40,22 @@
   font-size: 12.5px;
 }
 
+/* `.active` is the textarea composers' keyboard cursor, `.on` the editor
+   suggestion plugin's. Same state, two spellings, one appearance. */
 .ac-item:hover,
-.ac-item.active {
+.ac-item.active,
+.ac-item.on {
   background: var(--surface-2);
+}
+
+/* Present, but not choosable: "no matches", and the pickers' explanatory line. */
+.ac-item.ac-empty,
+.ac-item-note {
+  cursor: default;
+}
+
+.ac-item.ac-empty {
+  color: var(--ink-3);
 }
 
 .ac-item .k {

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { boardTransport, viewRow, type BoardTransport } from "../testing/boardFixture";
+import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { BOARD_STORAGE_KEY } from "../board/useBoardLocalState";
 import { Board } from "./Board";
@@ -29,7 +30,9 @@ function renderBoard(wire: BoardTransport): ReturnType<typeof render> {
   function Wrapper({ children }: { readonly children?: React.ReactNode }): ReactElement {
     return (
       <harness.Wrapper>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <KeyboardHarness>{children}</KeyboardHarness>
+        </ToastProvider>
       </harness.Wrapper>
     );
   }
@@ -526,6 +529,178 @@ describe("Board", () => {
         columns: Record<string, unknown>;
       };
       expect(Object.keys(stored.columns)).toEqual(["doc_one"]);
+    });
+  });
+});
+
+/**
+ * SPEC.md §11's scheme, exercised through real key events over a real board.
+ *
+ * Every assertion here is about what the *board* does with a binding; that the
+ * binding exists, is documented and is suppressed inside writing surfaces is
+ * `keyboard/`'s business, and is tested there. What cannot be tested there is
+ * the part these prove: that the registry's acts land on the board's state and
+ * on the wire.
+ */
+describe("the board's keyboard", () => {
+  const ROWS = {
+    "?folder=inbox": [
+      docRowFixture({ id: "doc_r1", title: "First note" }),
+      docRowFixture({ id: "doc_r2", title: "Second note" }),
+    ],
+  };
+
+  const cursorRow = (container: HTMLElement): string | undefined =>
+    container.querySelector<HTMLElement>(".row.kbd")?.dataset["rowDoc"];
+
+  async function withRows(): Promise<{ wire: BoardTransport; container: HTMLElement }> {
+    const wire = boardTransport({ views: VIEWS, rows: ROWS });
+    const { container } = renderBoard(wire);
+    await waitFor(() => {
+      expect(screen.getByText("First note")).toBeDefined();
+    });
+    return { wire, container };
+  }
+
+  it("moves the row cursor with ↓ and j, outlining exactly one row", async () => {
+    const { container } = await withRows();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(container.querySelectorAll(".row.kbd")).toHaveLength(1);
+    expect(cursorRow(container)).toBe("doc_r1");
+
+    fireEvent.keyDown(document, { key: "j" });
+    expect(cursorRow(container)).toBe("doc_r2");
+    fireEvent.keyDown(document, { key: "k" });
+    expect(cursorRow(container)).toBe("doc_r1");
+  });
+
+  it("clamps the cursor at both ends", async () => {
+    const { container } = await withRows();
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    expect(cursorRow(container)).toBe("doc_r1");
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(cursorRow(container)).toBe("doc_r2");
+  });
+
+  it("↵ opens the highlighted document in its own column", async () => {
+    const { container } = await withRows();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "Enter" });
+    await waitFor(() => {
+      expect(container.querySelector('.reader[data-reader-column="doc_one"]')).not.toBeNull();
+    });
+    expect(container.querySelector(".reader")?.getAttribute("data-reader-doc")).toBe("doc_r1");
+    expect(container.querySelector(".focus.open")).toBeNull();
+  });
+
+  it("⇧↵ opens it directly in full screen, over its column", async () => {
+    const { container } = await withRows();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
+    await waitFor(() => {
+      expect(document.querySelector(".focus.open")).not.toBeNull();
+    });
+    expect(container.querySelector('.reader[data-reader-column="doc_one"]')).not.toBeNull();
+  });
+
+  it("← and → switch the active column, clamping at both ends", async () => {
+    const { container } = await withRows();
+    const activeColumn = (): string | null | undefined =>
+      container.querySelector(".col.kactive")?.getAttribute("data-col");
+    expect(activeColumn()).toBe("doc_one");
+
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(activeColumn()).toBe("doc_two");
+    fireEvent.keyDown(document, { key: "]" });
+    expect(activeColumn()).toBe("doc_three");
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(activeColumn()).toBe("doc_three");
+
+    fireEvent.keyDown(document, { key: "[" });
+    fireEvent.keyDown(document, { key: "ArrowLeft" });
+    fireEvent.keyDown(document, { key: "ArrowLeft" });
+    expect(activeColumn()).toBe("doc_one");
+    expect(container.querySelectorAll(".col.kactive")).toHaveLength(1);
+  });
+
+  it("e archives the row under the cursor, through the document write", async () => {
+    const { wire, container } = await withRows();
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(cursorRow(container)).toBe("doc_r1");
+    fireEvent.keyDown(document, { key: "e" });
+
+    await waitFor(() => {
+      expect(wire.writes("PUT")).toHaveLength(1);
+    });
+    expect(wire.writes("PUT")[0]).toMatchObject({
+      path: "/api/docs/doc_r1",
+      body: { status: "archived" },
+    });
+    expect(screen.getByText(/Archived/)).toBeDefined();
+  });
+
+  it("e archives the open document in preference to the cursor", async () => {
+    const { wire, container } = await withRows();
+    fireEvent.click(screen.getByRole("button", { name: /note: Second note/ }));
+    await waitFor(() => {
+      expect(container.querySelector(".reader")).not.toBeNull();
+    });
+    // `e` targets the open document, so it waits for the document rather than
+    // silently archiving the row behind it.
+    fireEvent.keyDown(document, { key: "e" });
+    await waitFor(() => {
+      expect(screen.getByText(/Still opening/)).toBeDefined();
+    });
+    await waitFor(() => {
+      expect(container.querySelector(".doc-title, .fm-title, input[name=title]")).not.toBeNull();
+    });
+    fireEvent.keyDown(document, { key: "e" });
+    await waitFor(() => {
+      expect(wire.writes("PUT")).toHaveLength(1);
+    });
+    expect(wire.writes("PUT")[0]?.path).toBe("/api/docs/doc_r2");
+  });
+
+  it("e says so rather than writing when there is nothing to archive", async () => {
+    const { wire } = await withRows();
+    fireEvent.keyDown(document, { key: "e" });
+    await waitFor(() => {
+      expect(screen.getByText(/Nothing to archive/)).toBeDefined();
+    });
+    expect(wire.writes("PUT")).toHaveLength(0);
+  });
+
+  it("f toggles focus mode on the open document, and is a no-op on nothing", async () => {
+    const { container } = await withRows();
+    fireEvent.keyDown(document, { key: "f" });
+    expect(document.querySelector(".focus.open")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /note: First note/ }));
+    await waitFor(() => {
+      expect(container.querySelector(".reader")).not.toBeNull();
+    });
+    fireEvent.keyDown(document, { key: "f" });
+    await waitFor(() => {
+      expect(document.querySelector(".focus.open")).not.toBeNull();
+    });
+    fireEvent.keyDown(document, { key: "f" });
+    await waitFor(() => {
+      expect(document.querySelector(".focus.open")).toBeNull();
+    });
+  });
+
+  it("r says so rather than doing nothing when the document has no threads", async () => {
+    const { container } = await withRows();
+    fireEvent.click(screen.getByRole("button", { name: /note: First note/ }));
+    await waitFor(() => {
+      expect(container.querySelector(".reader")).not.toBeNull();
+    });
+    fireEvent.keyDown(document, { key: "r" });
+    await waitFor(() => {
+      expect(screen.getByText(/No thread to reply to/)).toBeDefined();
     });
   });
 });

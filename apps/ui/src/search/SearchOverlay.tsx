@@ -11,6 +11,7 @@ import {
 import { docSubject, useOpenInColumn } from "../board/openInColumn";
 import { INBOX_TARGET, useCreateInColumn } from "../board/useCreateInColumn";
 import { useSaveAsView } from "../board/useSaveAsView";
+import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { useToast } from "../shell/Toasts";
 import { FilterChips } from "./FilterChips";
 import { SearchResults } from "./SearchResults";
@@ -62,6 +63,15 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
   useEffect(() => {
     input.current?.focus();
   }, []);
+
+  /**
+   * The overlay takes its place in the one escape chain (UI-005's layers, above
+   * focus mode and the readers) so a press that lands *outside* the input still
+   * closes search rather than popping a reader behind the scrim. The panel's own
+   * handler below is what serves the common case, because the chain deliberately
+   * ignores keys aimed at a writing surface and the caret starts in the input.
+   */
+  useEscapeLayer({ active: true, priority: EscapeLayerPriority.Overlay, onEscape: onClose });
 
   const offersCreate = shouldOfferCreate(results.items, query.text);
   const targets = cursorTargets(groupResults(results.items), offersCreate);

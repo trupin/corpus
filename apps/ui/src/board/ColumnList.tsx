@@ -25,6 +25,12 @@ export interface ColumnListProps {
   readonly error: Error | null;
   /** Restored browser-local scroll position (SPEC.md §11). */
   readonly scrollTop: number;
+  /**
+   * The document the keyboard cursor is on, or `null` — the prototype's
+   * `.row.kbd` outline. Passed down rather than applied from outside so exactly
+   * one row can ever carry it.
+   */
+  readonly cursorDocId: string | null;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpen: (row: DocRow) => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -36,6 +42,7 @@ export function ColumnList({
   isPending,
   error,
   scrollTop,
+  cursorDocId,
   onScroll,
   onOpen,
   onNotify,
@@ -104,7 +111,15 @@ export function ColumnList({
       {items.length === 0 ? (
         <p className="col-empty">{isPending ? "Loading…" : "Nothing here."}</p>
       ) : (
-        items.map((row) => <Row key={row.id} row={row} onOpen={onOpen} onNotify={onNotify} />)
+        items.map((row) => (
+          <Row
+            key={row.id}
+            row={row}
+            cursor={row.id === cursorDocId}
+            onOpen={onOpen}
+            onNotify={onNotify}
+          />
+        ))
       )}
     </div>
   );

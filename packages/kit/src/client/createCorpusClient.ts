@@ -1,5 +1,6 @@
 import type {
   AppendTurnResponse,
+  CaptureResult,
   CreateDocRequest,
   CreateThreadRequest,
   CreateThreadResponse,
@@ -28,6 +29,8 @@ import {
   createCorpusClient as createContractClient,
   isApiError,
   UploadError,
+  uploadCapture,
+  uploadCreateThread,
   uploadTurn,
   type EventSourceFactory,
   type EventStream,
@@ -84,6 +87,45 @@ export interface AppendTurnUpload {
   readonly text?: string | undefined;
   readonly requestsAgent?: boolean | undefined;
   readonly files: readonly File[];
+}
+
+/**
+ * The multipart form of `POST /api/threads` (SPEC.md §6, §8) — the global
+ * composer's *Ask* with a screenshot, and a selection comment carrying a file.
+ *
+ * Same relationship to {@link CreateThreadInput} as {@link AppendTurnUpload} has
+ * to {@link AppendTurnInput}, and for the same mechanical reason: the multipart
+ * branch names the first turn's prose `text` rather than `body`, carries
+ * `selector` as one JSON-encoded part, and repeats `files` — none of which
+ * `openapi-fetch` can serialise.
+ */
+export interface CreateThreadUpload {
+  readonly parent?: string | undefined;
+  /**
+   * The context strings are genuinely absent rather than present-and-undefined:
+   * every part of a multipart body is a part that was sent, so an `undefined`
+   * suffix would be the string `"undefined"` on the wire.
+   */
+  readonly selector?:
+    { readonly exact: string; readonly prefix?: string; readonly suffix?: string } | undefined;
+  readonly title?: string | undefined;
+  /** Optional: a first turn may be attachment-only, but not empty. */
+  readonly text?: string | undefined;
+  readonly requestsAgent?: boolean | undefined;
+  readonly files: readonly File[];
+}
+
+/**
+ * `POST /api/capture` (SPEC.md §11) — the composer's *Capture*, which is
+ * multipart-only on the wire even without files.
+ *
+ * `text` is required by the contract: a capture becomes a document's body, and
+ * a document with no body is not a thought that should live on.
+ */
+export interface CaptureInput {
+  readonly text: string;
+  readonly requestsAgent?: boolean | undefined;
+  readonly files?: readonly File[] | undefined;
 }
 
 /** The answer to the form in one agent turn (SPEC.md §6). */
@@ -194,6 +236,25 @@ export interface CorpusClient {
   deleteDoc(id: string): Promise<DeleteDocResult>;
   /** `POST /api/threads` — a thread on a selection, a whole document, or standalone (SPEC.md §6). */
   createThread(input: CreateThreadInput): Promise<CreateThreadResponse>;
+  /**
+   * `POST /api/threads` as `multipart/form-data` — a thread whose **first turn**
+   * carries attachments (SPEC.md §6, §8).
+   *
+   * The split mirrors {@link appendTurnWithFiles} exactly: same reason, same
+   * error type, same response, so a caller branches on which one to call and on
+   * nothing else.
+   */
+  createThreadWithFiles(input: CreateThreadUpload): Promise<CreateThreadResponse>;
+  /**
+   * `POST /api/capture` — the composer's Capture (SPEC.md §11).
+   *
+   * One call, because it is one act: the server creates the `data/docs/inbox/`
+   * document, the agent-requested whole-document filing thread that asks for it
+   * to be retitled, moved, expanded and tagged, and the event that wakes the
+   * agent. Composing that client-side from `createDoc` + `createThread` would be
+   * three round trips, two of which can fail after the first succeeded.
+   */
+  capture(input: CaptureInput): Promise<CaptureResult>;
   /** `POST /api/threads/{id}/resolve` — closes a conversation without deleting it (SPEC.md §6). */
   resolveThread(id: string): Promise<ThreadMutationResponse>;
   /** `POST /api/threads/{id}/reopen` — the inverse; an engaged thread re-triggers the agent again. */
@@ -597,6 +658,35 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
     async createThread(input) {
       const body = input as PostThreadBody;
       return unwrap("POST /api/threads", await api.POST("/api/threads", { body }));
+    },
+
+    async createThreadWithFiles(input) {
+      return rethrowUploadError("POST /api/threads", () =>
+        uploadCreateThread({
+          baseUrl: config.baseUrl,
+          token: config.token,
+          ...(config.fetch ? { fetch: config.fetch } : {}),
+          ...(input.parent === undefined ? {} : { parent: input.parent }),
+          ...(input.selector === undefined ? {} : { selector: input.selector }),
+          ...(input.title === undefined ? {} : { title: input.title }),
+          ...(input.text === undefined ? {} : { text: input.text }),
+          ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
+          files: input.files,
+        }),
+      );
+    },
+
+    async capture(input) {
+      return rethrowUploadError("POST /api/capture", () =>
+        uploadCapture({
+          baseUrl: config.baseUrl,
+          token: config.token,
+          ...(config.fetch ? { fetch: config.fetch } : {}),
+          text: input.text,
+          ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
+          files: input.files ?? [],
+        }),
+      );
     },
 
     async resolveThread(id) {
