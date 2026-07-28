@@ -347,7 +347,10 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         // be invented state.
         const job = db.prepare("SELECT 1 AS present FROM jobs WHERE event_id = ?").get(target.id);
         if (job !== undefined) projectJob(db, corpusDir, target.id);
-        keys.push(QUEUE_KEY, JOBS_KEY);
+        // `DOCS_KEY` for the same reason `QUEUE_QUERY_KEYS` carries it: the
+        // `failed-job` needs reason reads `events.status`, so an out-of-band
+        // transition changes what `GET /api/docs?needs=me` answers (SERVER-028).
+        keys.push(QUEUE_KEY, JOBS_KEY, DOCS_KEY);
         return;
       }
       case "lock":

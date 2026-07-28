@@ -355,6 +355,10 @@ describe("the watcher — runtime roots", () => {
       { id: "evt_seed00000000", status: "pending" },
     ]);
     expect(flat()).toContain(JSON.stringify(["jobs"]));
+    // The same table the queue service announces (`QUEUE_QUERY_KEYS`): the
+    // `failed-job` needs reason reads `events.status`, so the document
+    // collection ages with the queue (SERVER-028).
+    expect(flat()).toContain(JSON.stringify(["docs"]));
   });
 
   it("follows an event moved between status directories out of band", async () => {
@@ -372,6 +376,11 @@ describe("the watcher — runtime roots", () => {
         { id: "evt_seed00000000", status: "processed" },
       ]);
     }, WAIT);
+    // A transition is exactly the case SERVER-028 was filed for: moving an
+    // event into (or out of) `failed/` changes what `GET /api/docs?needs=me`
+    // answers, so the frame must name the document collection even though no
+    // document file was touched.
+    expect(flat()).toContain(JSON.stringify(["docs"]));
   });
 
   it("removes an event row when its file is deleted", async () => {

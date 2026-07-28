@@ -107,6 +107,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-008 | CLI hardening batch: PR #9 MINOR findings | done | P2 | CLI-003, CLI-004 |
 | CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | in_progress | P1 | CONTRACT-011 |
 | SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | in_progress | P1 | CONTRACT-012, SERVER-011 |
+| SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | todo | P1 | SERVER-007, SERVER-011 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
 ---

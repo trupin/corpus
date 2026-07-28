@@ -208,10 +208,12 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     );
 
     // The write's own frame, then the queue service's — enqueue announces the
-    // queue and the job list, which is `QUEUE_QUERY_KEYS`, not this module's.
+    // queue, the job list and the document collection, which is
+    // `QUEUE_QUERY_KEYS`, not this module's (`["docs"]` because the
+    // `failed-job` needs reason reads `events.status`, SERVER-028).
     expect(frames).toEqual([
       [["docs"], ["docs", created.id], ["threads", created.id]],
-      [["queue"], ["jobs"]],
+      [["queue"], ["jobs"], ["docs"]],
     ]);
   });
 

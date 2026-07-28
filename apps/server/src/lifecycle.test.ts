@@ -514,10 +514,12 @@ describe("runServerProcess — boot", () => {
       // have been debounced, batched and — if suppression failed — broadcast.
       await new Promise((resolve) => setTimeout(resolve, 800));
 
+      // One frame per transition, each the whole `QUEUE_QUERY_KEYS` table —
+      // and none from the watcher, which is what this test is about.
       expect(batches).toEqual([
-        '[["queue"],["jobs"]]',
-        '[["queue"],["jobs"]]',
-        '[["queue"],["jobs"]]',
+        '[["queue"],["jobs"],["docs"]]',
+        '[["queue"],["jobs"],["docs"]]',
+        '[["queue"],["jobs"],["docs"]]',
       ]);
     } finally {
       await server.close();
