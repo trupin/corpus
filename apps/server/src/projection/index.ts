@@ -37,7 +37,7 @@ export type {
   SqliteDatabase,
   SqliteStatement,
 } from "./db.js";
-export { DRIFT_KINDS, doctor } from "./doctor.js";
+export { DRIFT_KINDS, doctor, inspectProjection } from "./doctor.js";
 export type { Drift, DoctorReport, DriftKind } from "./doctor.js";
 export { clearProjection, populateFromFiles } from "./populate.js";
 export type { PopulateReport, SkippedFile } from "./populate.js";

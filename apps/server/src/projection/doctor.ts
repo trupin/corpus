@@ -186,28 +186,41 @@ function checkEvents(db: ProjectionDb, drift: Drift[]): void {
 }
 
 /**
+ * Compare the files against an **already open** projection.
+ *
+ * The in-process form, for a caller that is holding the server's own handle and
+ * would otherwise open a second connection to the database it is already
+ * attached to — see the boot catch-up in `watcher/catch-up.ts`. It reads and
+ * mutates exactly what {@link doctor} does; the only difference is who owns the
+ * connection.
+ */
+export function inspectProjection(db: ProjectionDb): DoctorReport {
+  const startedAt = Date.now();
+  const files = enumerateDocuments(db.config.workspaceRoot);
+  const drift: Drift[] = [];
+  const counts = checkDocuments(db, files, drift);
+  checkEvents(db, drift);
+  return {
+    ok: drift.length === 0,
+    drift,
+    stats: {
+      files: files.length,
+      documents: counts.documents,
+      hashed: counts.hashed,
+      parsed: counts.parsed,
+      durationMs: Date.now() - startedAt,
+    },
+  };
+}
+
+/**
  * Compare the projection against the files. Returns a structured report;
  * turning it into output and an exit code belongs to the CLI (CLI-004).
  */
 export function doctor(config: ProjectionConfig): DoctorReport {
-  const startedAt = Date.now();
   const db = openProjectionReadonly(config);
   try {
-    const files = enumerateDocuments(config.workspaceRoot);
-    const drift: Drift[] = [];
-    const counts = checkDocuments(db, files, drift);
-    checkEvents(db, drift);
-    return {
-      ok: drift.length === 0,
-      drift,
-      stats: {
-        files: files.length,
-        documents: counts.documents,
-        hashed: counts.hashed,
-        parsed: counts.parsed,
-        durationMs: Date.now() - startedAt,
-      },
-    };
+    return inspectProjection(db);
   } finally {
     db.close();
   }
