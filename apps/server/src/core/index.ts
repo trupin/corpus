@@ -20,3 +20,4 @@ export * from "./paths.js";
 export * from "./refs.js";
 export * from "./time.js";
 export * from "./turns.js";
+export * from "./view-frontmatter.js";

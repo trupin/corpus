@@ -1,0 +1,161 @@
+/*
+ * The always-on editing surface, ported from `design/index.html`'s
+ * "Editing (always-on, Docs-like)" block.
+ *
+ * The document's *typography* is deliberately not here: `.doc-body` ships from
+ * `@corpus/kit/markdown.css` with the renderer, and the editor puts that same
+ * class on its contenteditable element. One set of measures for the read
+ * surface and the write surface is what makes "there is no edit mode" true
+ * visually as well as behaviourally — a document must not reflow when a caret
+ * lands in it.
+ *
+ * No colour literal appears below: every value is a token, which is what makes
+ * the theme toggle total.
+ */
+
+.doc-editor {
+  /* The editor is a block in the reader's flow; the toolbar and the `[[` menu
+     are portalled to the body, so nothing here establishes a stacking context
+     that could clip them. */
+  position: relative;
+}
+
+/* `design/index.html`: `[contenteditable] { outline: none; caret-color: var(--accent) }` */
+.doc-editor [contenteditable] {
+  outline: none;
+  caret-color: var(--accent);
+}
+
+/* A locked document is visually flat: no caret, no text cursor, nothing that
+   invites a keystroke the server would refuse (SPEC.md §7). */
+.doc-editor[data-editable="false"] [contenteditable] {
+  caret-color: transparent;
+  cursor: default;
+  user-select: text;
+}
+
+.doc-editor .ProseMirror {
+  min-height: 1.62em;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* ProseMirror's placeholder for a document that is only frontmatter: an empty
+   paragraph with nothing in it collapses, leaving nowhere to click. */
+.doc-editor .ProseMirror p:only-child:empty::before {
+  content: "";
+  display: inline-block;
+  height: 1.62em;
+}
+
+/* A reference inside the editor is an atom: the caret may sit beside it, never
+   inside it, or typing would edit a resolved title that is not in the file. */
+.doc-editor .ref,
+.doc-editor .ref-broken {
+  user-select: all;
+}
+
+.doc-editor .ProseMirror-selectednode {
+  outline: 2px solid var(--accent-wash);
+  border-radius: 3px;
+}
+
+/* Constructs the schema keeps verbatim rather than modelling (`rawNodes.ts`):
+   inert, monospaced, honest about being source. */
+.md-raw,
+.md-raw-inline {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.md-raw {
+  padding: 8px 10px;
+  margin: 10px 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.md-raw-inline {
+  padding: 0 4px;
+}
+
+/* ── The save chip's states ───────────────────────────────────────────
+   `Reader.css` ships the chip's base (mono, 10.5px, `--ink-3`); the states
+   ship here, with the component that drives them. The first two are
+   `design/index.html`'s. The third is not: the prototype's autosave never
+   fails, and a chip that stayed on "saving…" through a failed request would be
+   the single most dishonest thing on the page. */
+.save-chip.saving {
+  color: var(--sepia-ink);
+}
+
+.save-chip.saved {
+  color: var(--good);
+}
+
+.save-chip.failed {
+  color: var(--signal);
+}
+
+button.save-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+  flex: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── The selection toolbar (`design/index.html`) ── */
+.sel-toolbar {
+  position: fixed;
+  z-index: 50;
+  display: none;
+  gap: 2px;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+
+.sel-toolbar.open {
+  display: flex;
+}
+
+.sel-toolbar button {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.sel-toolbar button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.sel-toolbar button.on {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.sel-toolbar .comment-btn {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.sel-toolbar .divider {
+  width: 1px;
+  background: var(--line);
+  margin: 3px 4px;
+}
+
+/* The `[[` suggestion popup renders `.ac-menu` / `.ac-item` — the prototype's
+   one autocomplete surface, which lives in `@corpus/kit`'s `autocomplete.css`
+   together with the `.on` and `.ac-empty` states this popup needs. */

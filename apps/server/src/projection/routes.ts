@@ -29,6 +29,24 @@ import { rebuild, type RebuildReport } from "./rebuild.js";
  * half of the key vocabulary in **one** frame (SPEC.md §2.2 rule 3). Per-row
  * keys are deliberately absent: after a rebuild every row is new, and naming
  * them individually would be a frame per document rather than a signal.
+ *
+ * **Unconditional, including `["tree"]`, and that is a decision rather than an
+ * oversight (SERVER-020).** SERVER-018 and SERVER-020 made every *mutation*
+ * frame lawful — it carries `["tree"]` exactly when `GET /api/tree`'s response
+ * changed, measured across the write — and this route is deliberately outside
+ * that rule, because it is not reporting a change the server made. It is a
+ * resynchronization instruction: the operator's reset button for a cache, or a
+ * client, nobody trusts any more.
+ *
+ * Folding it into the measured scheme would mean comparing the tree derived
+ * from the rows being discarded against the tree derived from the rows
+ * replacing them, and staying silent when they match. That comparison is blind
+ * to the case the route exists for — a rebuild is usually run because the
+ * *board* looks wrong, which includes a client that missed a frame while the
+ * projection was right all along, and there the two signatures match by
+ * construction. Over-invalidating a rare, manual, whole-cache operation costs
+ * one refetch of a small structure; under-invalidating it costs the point of
+ * the command. `projection/routes.test.ts` pins the decision.
  */
 export const REBUILD_QUERY_KEYS: readonly QueryKey[] = [
   DOCS_KEY,

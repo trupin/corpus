@@ -124,6 +124,16 @@ Implementation work defaults to **Opus** — don't spend Fable on tasks that don
 
 Sequential execution is the exception (real data dependency), not the default.
 
+### Machine-Load Discipline
+
+Parallelism is bounded by the machine (user directive, 2026-07-27 — a 7-agent fleet plus overlapping orchestrator gates overwhelmed the laptop; long sessions die to CPU/memory pressure):
+
+- **Cap concurrent implementation agents at ~3** on a single machine; stagger launches so end-of-session test gates don't collide.
+- **Domain agents run scoped tests only** (each agent definition carries a Machine Resources section); the orchestrator's harvest gate is the **single** repo-wide run.
+- **The orchestrator serializes heavy commands**: one build/test at a time, never while a backgrounded run is still alive; a pre-commit flake means retry the commit once — not an extra verification run plus a commit.
+- **After any interrupted commit, sweep orphaned vitest workers** (`ps aux | grep vitest`, kill by pid).
+- Cap vitest workers (`VITEST_MAX_THREADS=4`) on orchestrator-invoked runs too.
+
 ### Escalation Protocol
 
 1. **Domain agent handles**: implementation, testing, refactoring, lint/type fixes within its domain.
@@ -209,7 +219,8 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 - `npm run format:check` / `npm run format` — Prettier
 - `npm run typecheck` — `tsc --noEmit` in every workspace
 - `npm test` — Vitest across all workspaces
-- `npm run e2e` — Playwright (requires the app; skipped automatically when no specs exist)
+- `npm run e2e` — Playwright against the real Vite dev server (`apps/ui/e2e/`, 13 specs). It also collects browser-side V8 coverage for the merged gate. The dev server's port is `5173` by default; override with `CORPUS_UI_PORT` when something else holds it (`.githooks/pre-push` defaults it to `5273` so a push never fights a running dev server)
+- `npm run coverage` — the combined gate: unit → e2e → merge → **≥ 90%** on all four metrics. This is what CI enforces. `npm run test:coverage` alone emits raw coverage and enforces nothing; `npm run coverage:merge` re-runs just the merge and the gate over existing output. Thresholds and globs live in `scripts/coverage-config.ts`
 - `npm run dev -w apps/cli` — runs the `corpus` bin from source via tsx. Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
 
 ## Testing Conventions

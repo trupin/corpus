@@ -14,7 +14,16 @@ import { sanitizeGitEnv } from "../git/env.js";
 /** Enough for any hand-written document; a blob past it is not something we reconcile. */
 export const MAX_HEAD_BLOB_BYTES = 16 * 1024 * 1024;
 
-/** A `git show` that hangs must not hold a watcher batch — and the answer is optional anyway. */
+/**
+ * A `git show` that hangs must not hold a watcher batch — and the answer is
+ * optional anyway.
+ *
+ * This is `execFileSync`, so the timeout is also a blocking budget: nothing else
+ * in the process runs while it counts down. It bounds **one** read; bounding a
+ * *batch* of them is `WATCH_FLUSH_BUDGET_MS`'s job, and this value is the
+ * overrun term of that bound — the flush checks its budget between entries, so
+ * the entry already in flight when the budget expires may still cost this much.
+ */
 export const GIT_TIMEOUT_MS = 5000;
 
 export type ReadHeadVersion = (workspaceRoot: string, relativePath: string) => string | null;

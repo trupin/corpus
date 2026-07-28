@@ -1,0 +1,130 @@
+/*
+ * The rendered-markdown surface, ported from `design/index.html`'s `.doc-body`
+ * and `.ref` (SPEC.md §11 names the mockup authoritative for look & feel).
+ *
+ * Shipped from the kit rather than from `apps/ui` because `MarkdownView` is part
+ * of the kit contract (SPEC.md §10): a plugin that renders a body must be able
+ * to make it look like every other body in Corpus, and:
+ *
+ *     import "@corpus/kit/markdown.css";
+ *
+ * is how. The reading measure (62ch here, 66ch in focus mode) belongs to the
+ * host, which knows how wide its column is; only the type treatment is here.
+ */
+
+.doc-body {
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.62;
+  max-width: 62ch;
+}
+
+.doc-body > :first-child {
+  margin-top: 0;
+}
+
+.doc-body h1,
+.doc-body h2,
+.doc-body h3 {
+  font-size: 17px;
+  margin: 22px 0 6px;
+}
+
+.doc-body p {
+  margin: 10px 0;
+}
+
+.doc-body ul,
+.doc-body ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.doc-body li {
+  margin: 4px 0;
+}
+
+.doc-body blockquote {
+  margin: 10px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--ink-2);
+}
+
+.doc-body code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.doc-body pre {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.doc-body pre code {
+  background: none;
+  padding: 0;
+}
+
+.doc-body table {
+  border-collapse: collapse;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  margin: 12px 0;
+}
+
+.doc-body th,
+.doc-body td {
+  border: 1px solid var(--line);
+  padding: 4px 9px;
+  text-align: left;
+}
+
+.doc-body th {
+  background: var(--surface-2);
+}
+
+.doc-body hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 18px 0;
+}
+
+.doc-body img {
+  max-width: 100%;
+}
+
+/* GFM task lists render as list items carrying a disabled checkbox. */
+.doc-body input[type="checkbox"] {
+  margin-right: 6px;
+}
+
+.ref {
+  color: var(--accent-ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-wash);
+  cursor: pointer;
+}
+
+.ref:hover {
+  border-bottom-color: var(--accent);
+}
+
+/*
+ * An unresolved ref. SPEC.md §5: referencing a document that does not exist yet
+ * is legitimate, so this is visibly broken and inert — not red, not an error,
+ * and not a link that leads nowhere.
+ */
+.ref-broken {
+  color: var(--ink-3);
+  border-bottom: 1px dotted var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  cursor: default;
+}

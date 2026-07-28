@@ -95,10 +95,13 @@ export async function setArchived(
   id: string,
   archived: boolean,
 ): Promise<ArchiveOutcome> {
-  await (workspace.assertWritable ?? (() => undefined))(id, actor);
   const verb = archived ? "archive" : "unarchive";
 
   return mutex.run(id, async () => {
+    // Inside the lane, so a lease acquired while this verb waited its turn still
+    // refuses it (SERVER-022 finding 7).
+    await (workspace.assertWritable ?? (() => undefined))(id, actor);
+
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
     const move = loaded.row.type === "skill" ? planFolderMove(loaded, archived) : null;
 

@@ -12,6 +12,7 @@ import {
   createThread,
   createThreadWorkspace,
   postForm,
+  threadFrontmatterOf,
   threadPath,
   turnsOf,
   type WriteWorkspace,
@@ -99,6 +100,30 @@ describe("§14 warnings reach every thread response (CONTRACT-006)", () => {
     expect(response.status).toBe(201);
     expect(codesOf(await response.json())).toContain("commit_failed");
   });
+
+  // The rider CONTRACT-007 landed: resolving rewrites the thread's frontmatter
+  // and auto-commits it, so these two owed §14 a response field exactly as the
+  // other four verbs do. They computed the warnings all along and could only
+  // log them.
+  it.each([
+    ["resolve", "resolved"],
+    ["reopen", "open"],
+  ])("carries `commit_failed` on %s, and the status change still stands", async (verb, status) => {
+    const created = await createThread(ws, { body: "one" });
+    if (verb === "reopen") await ws.post(`/api/threads/${created.id}/resolve`, {});
+    refuseCommits(ws);
+    const before = ws.log("%H").length;
+
+    const response = await ws.post(`/api/threads/${created.id}/${verb}`, {});
+    const payload = (await response.json()) as { thread: { status: string } };
+
+    expect(response.status).toBe(200);
+    expect(codesOf(payload)).toContain("commit_failed");
+    // The write stands on disk and in the projection; only the commit did not.
+    expect(payload.thread.status).toBe(status);
+    expect(threadFrontmatterOf(ws, created.id)["status"]).toBe(status);
+    expect(ws.log("%H")).toHaveLength(before);
+  });
 });
 
 describe("a workspace with no git stays fully usable", () => {
@@ -152,6 +177,29 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     expect(frames).toEqual([[["docs"], ["docs", id], ["threads", id]]]);
   });
 
+  // The media type is a wire detail; what the board has to refetch is not. Both
+  // branches run the same `runMutation` with the same plan, and this is what
+  // says so from the outside.
+  it("announces exactly the same frame for a multipart creation as for a JSON one", async () => {
+    const parent = await createDoc(ws, { type: "note", title: "Model", body: PARENT_BODY });
+    let id = "";
+
+    const frames = await framesDuring(async () => {
+      const response = await postForm(ws, "/api/threads", [
+        ["parent", parent.id],
+        ["selector", JSON.stringify({ exact: QUOTE })],
+        ["text", "?"],
+        ["files", new File(["png-bytes"], "shot.png", { type: "image/png" })],
+      ]);
+      expect(response.status).toBe(201);
+      id = ((await response.json()) as { thread: { id: string } }).thread.id;
+    });
+
+    expect(frames).toEqual([
+      [["docs"], ["docs", id], ["threads", id], ["docs", parent.id], ["tree"]],
+    ]);
+  });
+
   it("announces the queue as well when a turn wakes the agent", async () => {
     const created = await createThread(ws, { body: "first" });
 
@@ -160,10 +208,12 @@ describe("invalidation keys (SPEC.md §2.2 rule 3)", () => {
     );
 
     // The write's own frame, then the queue service's — enqueue announces the
-    // queue and the job list, which is `QUEUE_QUERY_KEYS`, not this module's.
+    // queue, the job list and the document collection, which is
+    // `QUEUE_QUERY_KEYS`, not this module's (`["docs"]` because the
+    // `failed-job` needs reason reads `events.status`, SERVER-028).
     expect(frames).toEqual([
       [["docs"], ["docs", created.id], ["threads", created.id]],
-      [["queue"], ["jobs"]],
+      [["queue"], ["jobs"], ["docs"]],
     ]);
   });
 

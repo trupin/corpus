@@ -36,6 +36,9 @@ _Durable facts, decisions, and gotchas for this domain. Append as you learn; kee
 - **2026-07-26 — Client shape.** `@corpus/contract/client` exports a factory taking `{ baseUrl, token }`, wrapping `openapi-fetch` over `openapi-typescript` types. Both `apps/cli` and `packages/kit`/`apps/ui` consume this — never a second client implementation.
 - **2026-07-26 — Schemas are the only type source.** Resource types are `z.infer` of schemas here. If server or UI hand-declares an API shape, that's a bug to flag.
 - **2026-07-26 — Non-fetch surfaces.** SSE (`/events`) and multipart attachment upload get hand-written helpers beside the generated client; they're still documented in the OpenAPI doc.
+- **2026-07-27 — The frontmatter surface is split: closed core, open `extra` (CONTRACT-011).** §11's view keys (`pinned`, `order`, `query`, `column`) are first-class core fields — `pinned` filters and `order` sorts, so they can never be opaque. Everything else non-core rides the flat `extra` object (`schemas/extra.ts`): values typed `unknown` (plugins validate their own keys — a new plugin doc type is zero contract changes), bounded plain JSON (≤ 8 containers, ≤ 64 KiB), `RESERVED_FRONTMATTER_KEYS` (18) rejected inside it on both requests and responses, update = shallow RFC 7386 merge patch (`null` removes a key). The schema descriptions are the published plugin contract; `openapi.test.ts` pins their prose.
+- **2026-07-27 — Open-record schemas stay unregistered.** `ExtraFrontmatterSchema` and `ViewQuerySchema` are deliberately not `.openapi("Name")`-registered components: they are used `.nullable()`/`.optional()`-derived, and zod-to-openapi propagates a registered name onto derived schemas, silently rewriting the shared component (the non-nullable-component invariant would catch it, but inlining removes the hazard). Inline duplication in `openapi.json` is deterministic and fine.
+- **2026-07-27 — Read exit codes from the tool, never a pipeline.** Recorded in CONTRACT-009 and re-relied on here: `cmd | tail; echo $?` reports `tail`'s exit. Redirect to a file and echo `$?` immediately.
 
 ## Escalation
 
@@ -54,3 +57,13 @@ Follow `CLAUDE.md` Lint Discipline. Never disable rules — fix the code.
 ## Code Organization
 
 Follow `CLAUDE.md` Code Organization and `docs/TS_GUIDELINES.md`. Colocate by feature so parallel agents don't conflict.
+
+## Machine Resources
+
+This laptop is shared by several concurrent agents and the orchestrator; heavy parallel load has crashed sessions (2026-07-27). Hard rules:
+
+- Run SCOPED tests during development (`./node_modules/.bin/vitest run <path>`); NEVER run the repo-wide suite or `npm run test:coverage` from a worktree — the orchestrator runs the single full gate at harvest. One workspace-scoped run at the very end of your session is the maximum.
+- Cap workers on every vitest invocation: `VITEST_MAX_THREADS=4`.
+- One heavy command at a time: never overlap builds, test runs, e2e, or `npm install`; wait for each to finish before starting the next.
+- Playwright/e2e is single-holder (it starts its own Vite): never run it while another e2e run or dev server is up.
+- Before ending, kill every process you started (recorded pids only) and verify your ports are free.

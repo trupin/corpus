@@ -177,7 +177,27 @@ describe("POST /api/threads/{id}/seen", () => {
     await ws.post(`/api/threads/${created.id}/seen`, {});
     unsubscribe();
 
-    expect(frames).toEqual([[["docs"], ["threads", created.id], ["docs", parent]]]);
+    expect(frames).toEqual([
+      [["docs"], ["docs", created.id], ["threads", created.id], ["docs", parent]],
+    ]);
+  });
+
+  it("announces the thread's own document key for a standalone thread too", async () => {
+    // SERVER-022 finding 8: mark-seen was the one thread mutation that omitted
+    // `docKey(id)`. On a parented thread the parent's key masked it; a
+    // standalone thread has no parent key, so the frame named the thread under
+    // one spelling only while every other thread mutation names both.
+    const created = await createThread(ws, { body: "standalone" });
+
+    const frames: QueryKey[][] = [];
+    const unsubscribe = ws.server.bus.subscribe((keys) => frames.push(keys.map((key) => [...key])));
+    await ws.post(`/api/threads/${created.id}/seen`, {});
+    unsubscribe();
+
+    expect(frames).toEqual([[["docs"], ["docs", created.id], ["threads", created.id]]]);
+    // Read state moves no folder badge, so no `["tree"]` — and no key outside
+    // the contract's closed vocabulary.
+    expect(frames.flat().flat()).not.toContain("tree");
   });
 
   it("answers 404 for an unknown thread and writes nothing", async () => {

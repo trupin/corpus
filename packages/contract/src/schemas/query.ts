@@ -35,6 +35,14 @@ export const NEEDS_FILTERS = ["me", ...NEEDS_REASONS] as const;
 
 export const NeedsFilterSchema = z.enum(NEEDS_FILTERS);
 
+/**
+ * `order` (CONTRACT-011) sorts ascending by the §11 view key of the same name
+ * — the board's column ordering. Ascending only: a board reads left to right,
+ * and no §11 surface wants the reverse. Ties and absent keys are deterministic
+ * by the documented tiebreak — `order` with nulls **last** (a column with no
+ * `order` is placed, never dropped), then `title`, then `id` — so the same
+ * column set renders in the same sequence on every load.
+ */
 export const DOC_SORTS = [
   "updated",
   "-updated",
@@ -42,6 +50,7 @@ export const DOC_SORTS = [
   "-created",
   "due",
   "title",
+  "order",
   "relevance",
 ] as const;
 
@@ -93,7 +102,23 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
       description:
         "Restrict to a lifecycle status. Omitted, the default result set **excludes** " +
         "`status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so " +
-        "`status=archived` is how the archived chip brings them back.",
+        "`status=archived` selects archived documents *only*. To see archived documents " +
+        "**alongside** the rest, use `includeArchived=true` — that is the archived chip, not this " +
+        "parameter.",
+    }),
+  includeArchived: z
+    .stringbool()
+    .optional()
+    .openapi({
+      ...queryParam("includeArchived"),
+      type: "boolean",
+      description:
+        "Lift the default archived exclusion. `true` widens the default result set into the " +
+        "**union** of archived and non-archived documents — the archived chip's " +
+        '"include archived" reading (SPEC.md §11) — where `status=archived` selects archived ' +
+        "documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** " +
+        "and nothing else, so it is a no-op alongside an explicit `status`: `status` already " +
+        "replaces the default filter, and `status=open&includeArchived=true` is just `status=open`.",
     }),
   tag: z
     .string()
@@ -168,6 +193,19 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
       type: "boolean",
       description: `Threads whose last turn is newer than your last-seen mark (SPEC.md §7).${THREAD_ONLY}`,
     }),
+  pinned: z
+    .stringbool()
+    .optional()
+    .openapi({
+      ...queryParam("pinned"),
+      type: "boolean",
+      description:
+        "Documents whose frontmatter carries `pinned: true` (`false` selects the rest — a " +
+        "missing key reads as `false`). The board's column set is one bounded query — " +
+        "`pinned=true&type=view&sort=order` — with every view's `query`, `order` and `column` " +
+        "on the rows, so no per-column follow-up read is ever needed (SPEC.md §11). Not " +
+        "thread-only: any type may carry the key, though only views render as columns.",
+    }),
   needs: NeedsFilterSchema.optional().openapi({
     ...queryParam("needs"),
     description:
@@ -179,7 +217,9 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
     ...queryParam("sort"),
     description:
       `Sort key; defaults to \`${DEFAULT_DOC_SORT}\`. \`relevance\` requires \`q\` and is rejected ` +
-      "with `400` without it, rather than silently falling back.",
+      "with `400` without it, rather than silently falling back. `order` sorts ascending by the " +
+      "§11 view key — the board's column ordering — with the documented tiebreak: `order` with " +
+      "nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`.",
   }),
 }).refine((query) => query.sort !== "relevance" || query.q !== undefined, {
   message: "`sort=relevance` is only meaningful with a `q` query.",
@@ -236,6 +276,17 @@ const threadRowShape = {
     "The commented document, for a thread row. Null on non-threads and on standalone threads " +
       "(SPEC.md §6) — those two cases are distinguished by `type`, not by this field.",
   ),
+  parentTitle: z
+    .string()
+    .nullable()
+    .describe(
+      "The current title of whatever `parent` names, or null. Resolved at query time like " +
+        "`Job.originTitle` — never a stored copy, so a rename is reflected immediately. Null " +
+        "whenever `parent` is null, and when the parent no longer resolves (a deleted parent, " +
+        "SPEC.md §9.2). An orphaned thread — `parent` set, title gone — renders an **empty** " +
+        "context cell rather than a raw `doc_*` id, which is not the same as a standalone " +
+        "thread (no `parent` at all) and must not be labelled as one.",
+    ),
   agent: ThreadAgentSchema.nullable().describe(
     `Agent participation state (${THREAD_AGENT_STATES.join(", ")}, SPEC.md §6, §8), backing the ` +
       "pending-agent indicator. Null on non-threads.",
@@ -283,8 +334,8 @@ const threadRowShape = {
 /**
  * A row of `GET /api/docs`: the projection's document columns plus what a list
  * needs and a document read does not — why the row wants attention, where the
- * query matched, how stale it is, and the thread affordances §11's type-aware
- * rows render.
+ * query matched, how stale it is, how many of its threads are unread, and the
+ * thread affordances §11's type-aware rows render.
  */
 export const DocRowSchema = z
   .object({
@@ -298,6 +349,22 @@ export const DocRowSchema = z
         "an unknown age is not an old one.",
     ),
     ...threadRowShape,
+    unreadThreads: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "How many of **this document's own threads** are currently unread for the user " +
+          "(SPEC.md §7) — the aggregate behind a document row's unread pill. It counts child " +
+          "threads whose last turn is newer than your last-seen mark, which is exactly the " +
+          "comparison the per-thread `unread` flag makes, so the two agree by construction: this " +
+          "equals the item count of `?parent=<id>&type=thread&unread=true`, and a thread marked " +
+          "seen at a `lastSeenTs` before its last turn (a partial read) still counts as unread " +
+          "in both. It rides on every row so a list never issues one such query per row. " +
+          "**`0` on a thread row** — a thread does not aggregate its own child threads here — " +
+          "**and `0` on a document with no threads.** Never null and never absent, so `0` always " +
+          'means "nothing unread" and never "unknown".',
+      ),
     attention: z
       .array(NeedsReasonSchema)
       .describe(

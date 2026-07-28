@@ -1,0 +1,503 @@
+import type { DocRow, ResolvedAnchor } from "@corpus/contract";
+import { useCreateThread, type RowNotice } from "@corpus/kit";
+import type { Editor, EditorEvents } from "@tiptap/react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useIsEditing } from "../editor/editingRegistry";
+import type { EditorSelection } from "../editor/selection";
+import type { AnchorReport } from "../editor/useAutosave";
+import {
+  anchorDecorationPlugin,
+  anchorPluginKey,
+  setAnchorsTransaction,
+  type AnchorPlacement,
+} from "./anchorDecorations";
+import { detachedThreads, placeAnchors, type AnchoredThread } from "./anchorPlacement";
+import { escapeSelectorValue } from "./cssEscape";
+import { selectorFromSelection, type AnchorSelection } from "./selectorFromSelection";
+import { traceOfBody, traceOfDoc } from "./traceCache";
+
+/**
+ * Everything that has to agree for an anchor to be visible: the server's
+ * ranges, the editor's positions, the layout mode, and the comment being
+ * written right now.
+ *
+ * It is a hook rather than a component because the pieces land in three places
+ * — decorations *inside* the editor, chips *between* its blocks, cards *beside*
+ * it — and a component that owned all three would have to portal into two of
+ * them anyway. `DocView` composes; this decides.
+ *
+ * The ordering rule that makes it safe: **server data is applied only when the
+ * editor is showing exactly the body those offsets index into.** While there
+ * are unsaved edits the highlights ride on the transaction mapping instead, and
+ * the deferred application lands the moment the two agree again. Applying a
+ * report against a document it was not computed for is how a highlight ends up
+ * over the wrong sentence — the one failure mode worse than no highlight.
+ */
+
+/** Above this width a column reader is wide enough for margin cards. */
+export const MARGIN_MIN_WIDTH = 1100;
+
+/** How long the layer waits after a document change before re-checking the anchors. */
+export const REAPPLY_DEBOUNCE_MS = 120;
+
+export interface AnchorLayerOptions {
+  readonly docId: string;
+  /** The body as the server holds it — what `anchors[].range` indexes into. */
+  readonly body: string;
+  readonly anchors: readonly ResolvedAnchor[];
+  /** Threads on this document, from `GET /api/docs?parent=…&type=thread`. */
+  readonly threads: readonly DocRow[];
+  /** Another party holds the lock: no selection toolbar, no comment creation (SPEC.md §7). */
+  readonly locked: boolean;
+  /** The document is rendered by the editor at all — a `view` or a thread is not. */
+  readonly editable: boolean;
+  readonly expandedThreads: readonly string[];
+  /** The thread the 💬 popover just jumped to; its anchor is scrolled to. */
+  readonly flashThread?: string | null;
+  readonly onToggleThread: (threadId: string) => void;
+  readonly onNotify: (notice: RowNotice) => void;
+}
+
+export interface CommentDraft {
+  readonly selection: AnchorSelection;
+  /** The ProseMirror range the optimistic highlight paints, captured on open. */
+  readonly range: { readonly from: number; readonly to: number };
+  readonly top: number;
+  readonly left: number;
+}
+
+export interface AnchorLayer {
+  /** The column the document is in; the margin measures against it. */
+  readonly mainRef: RefObject<HTMLDivElement>;
+  readonly marginRef: RefObject<HTMLDivElement>;
+  /** `DocEditor` props. */
+  readonly onEditor: (editor: Editor | null) => void;
+  readonly onComment: (selection: EditorSelection) => void;
+  readonly onAnchors: (report: AnchorReport) => void;
+  /** Anchored threads, in document order. */
+  readonly anchored: readonly AnchoredThread[];
+  readonly wholeDocument: readonly DocRow[];
+  readonly orphaned: readonly DocRow[];
+  /** True when the cards belong in the margin rather than in chips at the anchor. */
+  readonly marginMode: boolean;
+  /** The element a chip renders into, in chip mode. */
+  readonly slotHost: (threadId: string) => HTMLElement | null;
+  readonly draft: CommentDraft | null;
+  readonly submitting: boolean;
+  readonly submitComment: (body: string, requestsAgent: boolean) => void;
+  readonly cancelComment: () => void;
+}
+
+/** A report, and the anchors payload it was answering about. */
+interface ReportedAgainst {
+  readonly report: AnchorReport;
+  readonly against: readonly ResolvedAnchor[];
+}
+
+interface Optimistic {
+  readonly key: string;
+  readonly quote: string;
+  readonly segments: readonly { readonly from: number; readonly to: number }[];
+}
+
+export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
+  const {
+    docId,
+    body,
+    anchors,
+    threads,
+    locked,
+    editable,
+    expandedThreads,
+    flashThread = null,
+    onToggleThread,
+    onNotify,
+  } = options;
+
+  const mainRef = useRef<HTMLDivElement>(null);
+  const marginRef = useRef<HTMLDivElement>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [marginMode, setMarginMode] = useState(false);
+  const [draft, setDraft] = useState<CommentDraft | null>(null);
+  const [optimistic, setOptimistic] = useState<Optimistic | null>(null);
+  const [report, setReport] = useState<ReportedAgainst | null>(null);
+
+  const createThread = useCreateThread();
+  const editing = useIsEditing(docId);
+
+  /* ── The plugin, and the two refs it reads through ─────────────────── */
+
+  const activate = useRef<((threadId: string) => void) | undefined>(undefined);
+  const slotFor = useRef<((threadId: string) => HTMLElement | null) | undefined>(undefined);
+  const hosts = useRef(new Map<string, HTMLElement>());
+
+  const slotHost = useCallback((threadId: string): HTMLElement => {
+    const existing = hosts.current.get(threadId);
+    if (existing !== undefined) return existing;
+    const element = document.createElement("div");
+    element.className = "anchor-slot";
+    element.setAttribute("data-anchor-slot", threadId);
+    // Not editable and not part of the document: the chip is drawn between two
+    // blocks, and a caret must never be able to land inside it.
+    element.setAttribute("contenteditable", "false");
+    hosts.current.set(threadId, element);
+    return element;
+  }, []);
+
+  useEffect(() => {
+    if (editor === null) return undefined;
+    editor.registerPlugin(anchorDecorationPlugin({ onActivate: activate, slotFor }));
+    return () => {
+      if (!editor.isDestroyed) editor.unregisterPlugin(anchorPluginKey);
+    };
+  }, [editor]);
+
+  /* ── Placement ─────────────────────────────────────────────────────── */
+
+  const source = useMemo(() => traceOfBody(body), [body]);
+
+  const anchorsNow = useRef(anchors);
+  anchorsNow.current = anchors;
+
+  /**
+   * The report's verdict, until the refetch it triggered arrives.
+   *
+   * A `PUT` answers with which anchors it orphaned; the ranges come one round
+   * trip later from `GET /api/docs/{id}`. Honouring the verdict immediately is
+   * what makes an orphaned thread move without a reload (sprint-011 TEST-112),
+   * and tying the overlay to the anchors array it was reported against is what
+   * makes it expire exactly when the server's own answer replaces it.
+   */
+  const overlay = report !== null && report.against === anchors ? report.report : null;
+
+  const effective = useMemo<readonly ResolvedAnchor[]>(() => {
+    if (overlay === null) return anchors;
+    return anchors.map((anchor) =>
+      overlay.orphaned.includes(anchor.anchorId)
+        ? { ...anchor, orphaned: true, range: null }
+        : anchor,
+    );
+  }, [anchors, overlay]);
+
+  const anchored = useMemo(
+    () => placeAnchors({ anchors: effective, rows: threads, body, source }),
+    [body, effective, source, threads],
+  );
+
+  const detached = useMemo(() => detachedThreads(threads, effective), [effective, threads]);
+
+  const placements = useMemo<AnchorPlacement[]>(() => {
+    const live = anchored.map((thread) => thread.placement);
+    if (optimistic === null) return live;
+    return [
+      ...live,
+      {
+        anchorId: optimistic.key,
+        threadId: optimistic.key,
+        resolved: false,
+        turnCount: 1,
+        segments: optimistic.segments,
+      },
+    ];
+  }, [anchored, optimistic]);
+
+  /* ── Applying server data, but only against the body it describes ──── */
+
+  const desired = useRef<readonly AnchorPlacement[]>([]);
+  const wanted = useRef<string>(source.markdown);
+  const applyAnchors = useCallback((): void => {
+    if (editor === null || editor.isDestroyed) return;
+    // The offsets belong to a body; applying them to a different one would put
+    // a highlight over the wrong sentence. Declining is what leaves the local
+    // mapping in charge until the two agree again.
+    if (traceOfDoc(editor.state.doc).markdown !== wanted.current) return;
+    editor.view.dispatch(setAnchorsTransaction(editor.state, desired.current));
+  }, [editor]);
+
+  useEffect(() => {
+    desired.current = placements;
+    wanted.current = source.markdown;
+    applyAnchors();
+  }, [applyAnchors, placements, source.markdown]);
+
+  // Chip mode puts a widget between blocks, so the set has to be rebuilt when
+  // the mode flips as well as when the anchors change.
+  useEffect(() => {
+    slotFor.current = (threadId) => (marginMode ? null : slotHost(threadId));
+    applyAnchors();
+  }, [applyAnchors, marginMode, slotHost]);
+
+  /**
+   * Re-apply after any change to the document this layer did not make.
+   *
+   * Two of them matter and neither is the user typing. A **deferred**
+   * application lands the moment the editor's text comes back into agreement
+   * with the body the offsets describe. And a **replaced document** — which is
+   * what `DocEditor` does when the server's copy moves on, including after this
+   * document's own save settles — throws every decoration away, because a
+   * wholesale replacement maps every range to nothing. Without this the
+   * highlights survive the save and then vanish two seconds later, which is
+   * exactly the failure the browser found.
+   *
+   * Debounced to a trailing tick so a burst of typing costs one check, and
+   * `applyAnchors` is a no-op whenever the two texts disagree — so the local
+   * mapping, not this, is what carries a highlight through an edit.
+   *
+   * **A replacement is not typing, and it does not wait out the debounce.** The
+   * effect above re-applies in the same commit as an adoption it can see, but
+   * the adoption often lands in a *later* commit than the body it adopts — the
+   * incoming copy waits for the editing session to settle, and `editing`
+   * changing re-renders this hook without changing any of that effect's
+   * dependencies. In that ordering the wipe is repaired only here, and a
+   * debounced repair means every highlight in the document blinks off and back
+   * on after a save. TipTap marks exactly the adoption transaction
+   * `preventUpdate` (`setContent(…, false)` in `DocEditor`, which is the only
+   * caller), so that is the signal to re-apply on this tick instead. A
+   * microtask, not a synchronous call: a dispatch is in flight, and the repair
+   * still lands in the same frame.
+   */
+  useEffect(() => {
+    if (editor === null) return undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const reapply = (): void => {
+      timer = null;
+      applyAnchors();
+    };
+    const onTransaction = ({ transaction }: EditorEvents["transaction"]): void => {
+      if (!transaction.docChanged) return;
+      if (transaction.getMeta(anchorPluginKey) !== undefined) return;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (transaction.getMeta("preventUpdate") === true) {
+        queueMicrotask(reapply);
+        return;
+      }
+      timer = setTimeout(reapply, REAPPLY_DEBOUNCE_MS);
+    };
+    editor.on("transaction", onTransaction);
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      editor.off("transaction", onTransaction);
+    };
+  }, [applyAnchors, editor]);
+
+  /* ── Layout mode ───────────────────────────────────────────────────── */
+
+  const anchoredCount = anchored.filter((thread) => !thread.orphaned).length;
+
+  useEffect(() => {
+    const element = mainRef.current;
+    if (element === null || !editable) {
+      setMarginMode(false);
+      return undefined;
+    }
+    // Focus mode is always wide enough; a column has to be measured.
+    const inFocus = element.closest(".focus-inner") !== null;
+    const decide = (): void => {
+      setMarginMode(anchoredCount > 0 && (inFocus || element.clientWidth >= MARGIN_MIN_WIDTH));
+    };
+    decide();
+    if (typeof ResizeObserver !== "function") return undefined;
+    const observer = new ResizeObserver(decide);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [anchoredCount, editable]);
+
+  /**
+   * `.focus-inner.with-margin` is the grid the cards sit in, and it belongs to
+   * the host — focus mode's inner column, or the column reader's scroller.
+   * Toggling it from here is what the prototype does, and it keeps two
+   * components from having to know about a third's layout state.
+   */
+  useEffect(() => {
+    const element = mainRef.current;
+    const host = element?.closest(".focus-inner") ?? element?.parentElement ?? null;
+    if (host === null) return undefined;
+    host.classList.toggle("with-margin", marginMode);
+    return () => {
+      host.classList.remove("with-margin");
+    };
+  }, [marginMode]);
+
+  /* ── Opening a thread from a highlight ─────────────────────────────── */
+
+  const expanded = useRef(expandedThreads);
+  expanded.current = expandedThreads;
+  const toggle = useRef(onToggleThread);
+  toggle.current = onToggleThread;
+
+  useEffect(() => {
+    activate.current = (threadId: string) => {
+      if (!expanded.current.includes(threadId)) toggle.current(threadId);
+      const card = marginRef.current?.querySelector<HTMLElement>(
+        `:scope > .thread-card[data-thread="${escapeSelectorValue(threadId)}"]`,
+      );
+      if (card !== null && card !== undefined && typeof card.scrollIntoView === "function") {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    };
+  }, []);
+
+  /**
+   * The 💬 popover jumped to a thread: bring its anchor into view.
+   *
+   * The card scrolls itself (UI-008 does that on `flashing`); this is the other
+   * half of "jumps to its anchor" — the highlighted words themselves, which in
+   * a long document are what the person is actually looking for.
+   */
+  useEffect(() => {
+    if (flashThread === null) return;
+    const highlight = mainRef.current?.querySelector<HTMLElement>(
+      `.anchor-hl[data-thread="${escapeSelectorValue(flashThread)}"]`,
+    );
+    if (highlight === null || highlight === undefined) return;
+    if (typeof highlight.scrollIntoView === "function") {
+      highlight.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [flashThread]);
+
+  /* ── Commenting ────────────────────────────────────────────────────── */
+
+  const onEditor = useCallback((instance: Editor | null) => {
+    setEditor(instance);
+  }, []);
+
+  const onComment = useCallback(
+    (selection: EditorSelection) => {
+      if (editor === null || locked) return;
+      const live = traceOfDoc(editor.state.doc);
+      const anchor = selectorFromSelection(live, { from: selection.from, to: selection.to });
+      if (anchor === null) {
+        onNotify({
+          tone: "error",
+          message: "That selection has no text to quote — select some words to comment on.",
+        });
+        return;
+      }
+      let top = 0;
+      let left = 0;
+      try {
+        const coords = editor.view.coordsAtPos(selection.to);
+        top = coords.bottom + 6;
+        left = coords.left;
+      } catch {
+        // A position momentarily out of the DOM. The popover still opens, at
+        // the top of the viewport, rather than not opening at all.
+        top = 80;
+      }
+      setDraft({ selection: anchor, range: { from: selection.from, to: selection.to }, top, left });
+    },
+    [editor, locked, onNotify],
+  );
+
+  const onAnchors = useCallback((incoming: AnchorReport): void => {
+    setReport((current) => {
+      // Out-of-order responses are dropped: a report from an older revision
+      // describes a body two saves ago (sprint-011 TEST-109).
+      if (current !== null && incoming.revision <= current.report.revision) return current;
+      // Bound, here and not in an effect, to the anchors array it arrived
+      // against — so the overlay expires exactly when the refetch replaces it,
+      // and applies on the render that carries it rather than one after.
+      return { report: incoming, against: anchorsNow.current };
+    });
+  }, []);
+
+  // Bound to the anchors array the report arrived against, so that the overlay
+  // stops applying the moment the refetch lands.
+  /**
+   * A comment submitted while a save is outstanding waits for it.
+   *
+   * The selector quotes the live document; the server must be holding that
+   * same document when it resolves it, or the anchor arrives orphaned. The
+   * editing registry answers exactly that question — it clears only when no
+   * buffer is pending and no `PUT` is in flight (sprint-011 TEST-107).
+   */
+  const queued = useRef<{ body: string; requestsAgent: boolean } | null>(null);
+
+  const post = useCallback(
+    (input: { body: string; requestsAgent: boolean }, anchor: AnchorSelection, key: string) => {
+      createThread.mutate(
+        {
+          parent: docId,
+          selector: anchor.selector,
+          body: input.body,
+          requestsAgent: input.requestsAgent,
+        },
+        {
+          onSuccess: (result) => {
+            // The temp highlight goes; the server's own anchor arrives with the
+            // refetched document and takes its place.
+            setOptimistic((current) => (current?.key === key ? null : current));
+            for (const warning of result.warnings) {
+              onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
+            }
+          },
+          onError: (error) => {
+            setOptimistic((current) => (current?.key === key ? null : current));
+            onNotify({ tone: "error", message: `Comment failed — ${error.message}` });
+          },
+        },
+      );
+    },
+    [createThread, docId, onNotify],
+  );
+
+  const pendingAnchor = useRef<{ anchor: AnchorSelection; key: string } | null>(null);
+
+  const submitComment = useCallback(
+    (text: string, requestsAgent: boolean) => {
+      if (draft === null) return;
+      const anchor = draft.selection;
+      const key = `pending:${String(Date.now())}`;
+      // Painted from the range the popover was opened on, not from the live
+      // selection: opening the composer moved focus out of the editor.
+      setOptimistic({ key, quote: anchor.selector.exact, segments: [draft.range] });
+      setDraft(null);
+      if (editing) {
+        queued.current = { body: text, requestsAgent };
+        pendingAnchor.current = { anchor, key };
+        return;
+      }
+      post({ body: text, requestsAgent }, anchor, key);
+    },
+    [draft, editing, post],
+  );
+
+  useEffect(() => {
+    if (editing) return;
+    const job = queued.current;
+    const target = pendingAnchor.current;
+    if (job === null || target === null) return;
+    queued.current = null;
+    pendingAnchor.current = null;
+    post(job, target.anchor, target.key);
+  }, [editing, post]);
+
+  const cancelComment = useCallback(() => {
+    setDraft(null);
+  }, []);
+
+  return {
+    mainRef,
+    marginRef,
+    onEditor,
+    onComment,
+    onAnchors,
+    anchored,
+    wholeDocument: detached.wholeDocument,
+    orphaned: detached.orphaned,
+    marginMode,
+    slotHost: useCallback(
+      (threadId: string) => (marginMode ? null : slotHost(threadId)),
+      [marginMode, slotHost],
+    ),
+    draft,
+    submitting: createThread.isPending,
+    submitComment,
+    cancelComment,
+  };
+}

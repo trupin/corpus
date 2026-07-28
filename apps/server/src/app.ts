@@ -377,7 +377,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   const openApiDocument = buildOpenApiDocument();
   app.get(OPENAPI_PATH, (c) => c.json(openApiDocument, 200));
 
-  mountStaticUi(app, { distDir: config.uiDistDir, logger });
+  // The token goes with it: the shell this mount serves is the one channel an
+  // installed build has for learning its credential (SERVER-024 —
+  // `ui-runtime-config.ts` carries the mechanism and its security rationale).
+  mountStaticUi(app, { distDir: config.uiDistDir, logger, token: config.token });
 
   app.notFound((c) => errorResponse(c, notFound(`no route matches ${c.req.method} ${c.req.path}`)));
 

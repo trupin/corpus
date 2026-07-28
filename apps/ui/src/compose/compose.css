@@ -1,0 +1,103 @@
+/**
+ * The global Ask/Capture composer (`design/index.html`'s `#compose-overlay`).
+ *
+ * It reuses the search overlay's scrim and `.search-panel` shell — the same
+ * blurred backdrop, the same card — and adds only what makes it a writing
+ * surface rather than a list: a borderless serif textarea and an action bar. The
+ * two are deliberately the same object at different widths, because they are the
+ * same gesture ("something is about to happen to the corpus") in two directions.
+ */
+
+/* Two classes, deliberately: the panel *is* a `.search-panel` (same card, same
+   scrim, same shell) and only overrides its measure and its offset. A
+   single-class rule here would be the same specificity as `.search-panel`'s
+   and would win or lose on stylesheet order — which is import order, which is
+   not a thing this file gets to depend on. */
+.search-panel.compose-panel {
+  width: min(640px, calc(100vw - 48px));
+  margin: 12vh auto 0;
+}
+
+.compose-panel textarea {
+  border: none;
+  background: none;
+  resize: vertical;
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ink);
+  min-height: 110px;
+  width: 100%;
+  padding: 16px 18px;
+}
+
+.compose-panel textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.compose-panel textarea:focus {
+  outline: none;
+}
+
+/* The pending chips sit under the text, inset to its measure. */
+.compose-panel .pending-atts {
+  padding: 0 18px 8px;
+}
+
+/* The same highlight the thread composer shows while a file is over it. */
+.compose-panel.dropping {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-wash);
+}
+
+.compose-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.compose-actions .hint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.compose-actions .spacer {
+  flex: 1;
+}
+
+.btn-ask {
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-weight: 600;
+}
+
+.btn-capture {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 6px 16px;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.btn-capture:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-ask:disabled,
+.btn-capture:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-capture:disabled:hover {
+  border-color: var(--line-strong);
+  color: var(--ink-2);
+}

@@ -13,10 +13,18 @@
 
 export { AGENT_TURN_DELETE_MESSAGE, deleteThreadTurn } from "./cascade.js";
 export type { TurnDeletion } from "./cascade.js";
-export { createThread, normalizeSelector } from "./create.js";
-export type { ThreadCreation } from "./create.js";
+export { createThread, normalizeSelector, threadRequestBody } from "./create.js";
+export type { ThreadCreateInput, ThreadCreation } from "./create.js";
 export { commentPayload, enqueueComment } from "./events.js";
 export type { CommentEventInput } from "./events.js";
+export {
+  FORM_ANSWER_LABEL,
+  answerThreadForm,
+  formAnswerBody,
+  formCommitSubject,
+  formRespondPayload,
+  requireForm,
+} from "./forms.js";
 export {
   GENERIC_AGENT_MENTION,
   INVOCATION_TYPE,
@@ -43,7 +51,14 @@ export {
   deriveThreadTitle,
   firstProseLine,
 } from "./title.js";
-export { appendThreadTurn, storeTurnFiles, turnRequestBody, whileUnreferenced } from "./turns.js";
-export type { TurnAppend, TurnInput } from "./turns.js";
+export {
+  appendThreadTurn,
+  buildTurnAppend,
+  commitTurnAppend,
+  storeTurnFiles,
+  turnRequestBody,
+  whileUnreferenced,
+} from "./turns.js";
+export type { PreparedTurn, TurnAppend, TurnInput } from "./turns.js";
 export { COMMENT_CREATED, EVENT_SOURCE } from "./workspace.js";
 export type { EnqueueEvent, EnqueueInput, EnqueuedEvent, ThreadsWorkspace } from "./workspace.js";

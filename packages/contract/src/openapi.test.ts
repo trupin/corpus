@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
+import { ERROR_CODES } from "./schemas/error.js";
+import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
 import { QUERY_KEY_NAMES, QUERY_KEY_VOCABULARY } from "./query-keys.js";
@@ -58,12 +60,14 @@ interface SchemaNode {
   readonly type?: string;
   readonly enum?: string[];
   readonly default?: unknown;
+  readonly minimum?: number;
   readonly required?: string[];
   readonly properties?: Record<string, SchemaNode>;
   readonly items?: SchemaNode;
   readonly allOf?: SchemaNode[];
   readonly anyOf?: SchemaNode[];
   readonly oneOf?: SchemaNode[];
+  readonly description?: string;
 }
 
 interface DefaultedProperty {
@@ -304,6 +308,8 @@ describe("GET /api/docs parameter grammar", () => {
     "q",
     "type",
     "status",
+    // CONTRACT-012's rider, declared beside the default it lifts.
+    "includeArchived",
     "tag",
     "folder",
     "parent",
@@ -314,6 +320,7 @@ describe("GET /api/docs parameter grammar", () => {
     "due",
     "stale",
     "unread",
+    "pinned",
     "needs",
     "sort",
   ];
@@ -333,7 +340,7 @@ describe("GET /api/docs parameter grammar", () => {
     ["author", ["user", "agent"]],
     ["stale", ["aging", "stale", "very-stale"]],
     ["needs", ["me", "unread-reply", "form", "due", "stale", "failed-job"]],
-    ["sort", ["updated", "-updated", "created", "-created", "due", "title", "relevance"]],
+    ["sort", ["updated", "-updated", "created", "-created", "due", "title", "order", "relevance"]],
   ])("types %s as a strict enum", (name, values) => {
     expect(parameter("/api/docs", "get", name)?.schema?.enum).toEqual(values);
   });
@@ -354,6 +361,20 @@ describe("GET /api/docs parameter grammar", () => {
     expect(parameter("/api/docs", "get", "unread")?.schema?.type).toBe("boolean");
   });
 
+  it("types `pinned` as a boolean and points it at the board's one column-set query", () => {
+    const param = parameter("/api/docs", "get", "pinned");
+    expect(param?.schema?.type).toBe("boolean");
+    expect(param?.description).toContain("pinned=true&type=view&sort=order");
+  });
+
+  it("documents the order sort's full tiebreak, so column order is deterministic everywhere", () => {
+    const description = parameter("/api/docs", "get", "sort")?.description ?? "";
+    expect(description).toContain("nulls last");
+    expect(description).toContain("`title`");
+    expect(description).toContain("`id`");
+    expect(description).toContain("never dropped");
+  });
+
   it.each(["parent", "agent", "author", "unread"])(
     "documents that the thread-only filter %s no-ops for other types",
     (name) => {
@@ -368,9 +389,166 @@ describe("GET /api/docs parameter grammar", () => {
     expect(description).toContain("overrides");
   });
 
+  /**
+   * CONTRACT-012's rider. `status` takes one lifecycle value, so it can express
+   * "archived only" and never "archived as well". The two parameters have to
+   * publish that distinction, because a chip labelled "include archived" that
+   * returns *only* archived documents is the failure this pair prevents.
+   */
+  it("types `includeArchived` as a boolean that widens the default rather than replacing it", () => {
+    const param = parameter("/api/docs", "get", "includeArchived");
+    expect(param?.schema?.type).toBe("boolean");
+    expect(param?.schema?.default).toBeUndefined();
+    expect(param?.description).toContain("union");
+    expect(param?.description).toContain("no-op alongside an explicit `status`");
+  });
+
+  it("keeps `status=archived` meaning archived-only, and says where the union lives", () => {
+    expect(parameter("/api/docs", "get", "status")?.description).toContain("includeArchived=true");
+    expect(parameter("/api/docs", "get", "includeArchived")?.description).toContain(
+      "`status=archived` selects archived",
+    );
+  });
+
   it("documents that relevance without a query is a 400, not a silent fallback", () => {
     expect(parameter("/api/docs", "get", "sort")?.description).toContain("`400`");
     expect(operation("/api/docs", "get").responses?.["400"]).toBeDefined();
+  });
+});
+
+/**
+ * CONTRACT-011: the extra-frontmatter surface and the first-class §11 view
+ * keys. The schema descriptions here ARE the plugin contract — a plugin author
+ * reads only the generated document — so these invariants pin the published
+ * prose, not just the shapes.
+ */
+describe("the extra-frontmatter surface (CONTRACT-011)", () => {
+  const VIEW_AND_EXTRA_KEYS = ["pinned", "order", "query", "column", "extra"];
+
+  function component(name: string): SchemaNode {
+    const found = componentSchemas?.[name];
+    if (!found) throw new Error(`No ${name} component in the generated document.`);
+    return found;
+  }
+
+  it.each(["DocFrontmatter", "DocRow"])(
+    "carries the view keys and extra on %s, required — the board reads its columns in one list call",
+    (name) => {
+      const schema = component(name);
+      for (const key of VIEW_AND_EXTRA_KEYS) {
+        expect(schema.properties?.[key], `${name}.${key}`).toBeDefined();
+        expect(schema.required, `${name}.${key} must be required`).toContain(key);
+      }
+    },
+  );
+
+  it.each(["CreateDocRequest", "UpdateDocRequest"])(
+    "accepts the view keys and extra on %s without ever demanding them",
+    (name) => {
+      const schema = component(name);
+      for (const key of VIEW_AND_EXTRA_KEYS) {
+        expect(schema.properties?.[key], `${name}.${key}`).toBeDefined();
+        expect(schema.required ?? [], `${name}.${key} must stay optional`).not.toContain(key);
+      }
+    },
+  );
+
+  it.each(["DocFrontmatter", "DocRow", "CreateDocRequest", "UpdateDocRequest"])(
+    "publishes the whole extra contract on %s: the reserved keys, the bounds, the merge patch",
+    (name) => {
+      const description = JSON.stringify(component(name).properties?.["extra"]);
+      for (const key of RESERVED_FRONTMATTER_KEYS) {
+        expect(description, `reserved key ${key}`).toContain(key);
+      }
+      expect(description).toContain("never interprets");
+      expect(description).toContain("merge patch");
+      expect(description).toContain("removes it");
+      expect(description).toContain(`${String(EXTRA_MAX_DEPTH)} containers deep`);
+      expect(description).toContain(String(EXTRA_MAX_BYTES));
+    },
+  );
+
+  it("keeps extra an object of free values — the server never types a plugin's keys", () => {
+    for (const name of ["DocFrontmatter", "DocRow"]) {
+      expect(component(name).properties?.["extra"]?.type).toBe("object");
+    }
+  });
+
+  it("documents that the stored view query is client-compiled, never server-interpreted", () => {
+    const description = JSON.stringify(component("DocFrontmatter").properties?.["query"]);
+    expect(description).toContain("never interprets it");
+    expect(description).toContain("degrades in the client");
+  });
+
+  it("publishes the column reference format where a plugin author will look", () => {
+    const description = JSON.stringify(component("DocFrontmatter").properties?.["column"]);
+    expect(description).toContain("<plugin>/<type>");
+    expect(description).toContain("plugin-missing");
+  });
+
+  it("states the null-clears rule on every clearable update field", () => {
+    for (const key of ["order", "query", "column"]) {
+      expect(
+        JSON.stringify(component("UpdateDocRequest").properties?.[key]),
+        `UpdateDocRequest.${key}`,
+      ).toContain("clears the key");
+    }
+  });
+
+  it("gives DocRow a nullable parent title with Job.originTitle's one-sentence rule", () => {
+    const row = component("DocRow");
+    expect(row.required).toContain("parentTitle");
+    const property = JSON.stringify(row.properties?.["parentTitle"]);
+    expect(property).toContain('"null"');
+    expect(property).toContain("current title of whatever `parent` names");
+    expect(property).toContain("never a stored copy");
+  });
+
+  /**
+   * CONTRACT-012's rider. The published prose has to distinguish an orphaned
+   * thread (`parent` set, title gone → an empty context cell) from a standalone
+   * one (`parent` null): the kit's `rowContext` renders only the second as the
+   * word "standalone", and the description used to promise the opposite.
+   */
+  it("does not tell a client to render an orphaned thread as standalone", () => {
+    const property = JSON.stringify(component("DocRow").properties?.["parentTitle"]);
+    expect(property).toContain("empty");
+    expect(property).not.toContain("render such a thread as standalone");
+  });
+});
+
+/**
+ * CONTRACT-012. The aggregate that lets a document row render its unread pill
+ * from the collection response alone. The description is the whole contract
+ * SERVER-027 implements against, so it is pinned here rather than only inferred
+ * from the type.
+ */
+describe("DocRow.unreadThreads (CONTRACT-012)", () => {
+  const property = () => componentSchemas?.["DocRow"]?.properties?.["unreadThreads"];
+
+  it("is a required, non-negative integer — never nullable, never absent", () => {
+    expect(componentSchemas?.["DocRow"]?.required).toContain("unreadThreads");
+    expect(property()?.type).toBe("integer");
+    expect(property()?.minimum).toBe(0);
+    expect(JSON.stringify(property())).not.toContain('"null"');
+  });
+
+  it("publishes what it counts, the thread-row case, and that 0 is not `unknown`", () => {
+    const description = JSON.stringify(property());
+    expect(description).toContain("SPEC.md §7");
+    expect(description).toContain("?parent=<id>&type=thread&unread=true");
+    expect(description).toContain("`0` on a thread row");
+    expect(description).toContain("no threads");
+    expect(description).toContain("unknown");
+  });
+
+  /**
+   * The aggregate and the per-thread flag must be two readings of one rule, or
+   * a row's pill and the thread list behind it disagree.
+   */
+  it("ties itself to the per-thread `unread` flag rather than defining a second rule", () => {
+    expect(JSON.stringify(property())).toContain("per-thread `unread` flag");
+    expect(componentSchemas?.["DocRow"]?.required).toContain("unread");
   });
 });
 
@@ -605,6 +783,10 @@ describe("§14 warnings reach every mutation response", () => {
     "AppendTurnResponse",
     "CaptureResult",
     "DeleteTurnResult",
+    // CONTRACT-007: resolve/reopen used to return a bare `ThreadSummary`, so the
+    // warnings the server already computed for them could only be logged.
+    "ThreadMutationResponse",
+    "FormAnswerResponse",
   ];
 
   it.each(CARRIERS)("declares `warnings` required on %s", (component) => {
@@ -625,6 +807,145 @@ describe("§14 warnings reach every mutation response", () => {
       .filter(([name]) => !CARRIERS.includes(name))
       .filter(([, schema]) => schema.properties?.["warnings"] !== undefined);
     expect(stray.map(([name]) => name)).toEqual([]);
+  });
+});
+
+/**
+ * CONTRACT-007. The forms surface (SPEC.md §6) and the three riders that shipped
+ * with it, each pinned from the side a careless later edit would break.
+ */
+describe("the forms surface", () => {
+  const FORM_PATH = "/api/threads/{id}/turns/{ts}/form";
+
+  it("addresses the form through the turn that carries it", () => {
+    const params = operation(FORM_PATH, "post").parameters ?? [];
+    const path = params.filter((entry) => entry.in === "path").map((entry) => entry.name);
+    expect(path).toEqual(["id", "ts"]);
+  });
+
+  it("tells clients to URL-encode the form's ISO timestamp", () => {
+    expect(parameter(FORM_PATH, "post", "ts")?.description).toContain("URL-encode");
+  });
+
+  /**
+   * The whole grammar §6 leaves unspecified is published on the route, because
+   * the detector, the write path and the UI all read it from the document rather
+   * than from three private assumptions.
+   */
+  it("publishes the fence grammar it validates answers against", () => {
+    const description = operation(FORM_PATH, "post").description ?? "";
+    for (const phrase of [
+      "info string is exactly `form`",
+      "prompt",
+      "options",
+      "distinct",
+      "single",
+      "verbatim",
+      "form.respond",
+    ]) {
+      expect(description, phrase).toContain(phrase);
+    }
+  });
+
+  it("says a rejected option is a 400 naming the offending field", () => {
+    const op = operation(FORM_PATH, "post");
+    expect(op.description).toContain("body.option");
+    expect(op.responses?.["400"]).toBeDefined();
+  });
+
+  it("declares only the codes an answer can produce", () => {
+    expect(Object.keys(operation(FORM_PATH, "post").responses ?? {})).toEqual([
+      "201",
+      "400",
+      "401",
+      "404",
+    ]);
+  });
+
+  it("keeps the answer body to the answer", () => {
+    expect(Object.keys(componentSchemas?.["FormAnswerRequest"]?.properties ?? {})).toEqual([
+      "option",
+      "note",
+    ]);
+    expect(componentSchemas?.["FormAnswerRequest"]?.required).toEqual(["option"]);
+  });
+
+  /** Nullable, not optional — a resolved thread stops re-triggering the agent (§8). */
+  it("always carries the enqueued event key on the answer response", () => {
+    expect(componentSchemas?.["FormAnswerResponse"]?.required).toEqual([
+      "thread",
+      "turn",
+      "eventId",
+      "warnings",
+    ]);
+  });
+
+  /**
+   * §7 keeps the event `type` open so plugins can define their own; a payload
+   * union keyed on `type` would close it. The core payload is documented on the
+   * envelope instead.
+   */
+  it("leaves the queue event payload open while naming the core form payload", () => {
+    const payload = componentSchemas?.["QueueEvent"]?.properties?.["payload"];
+    expect(payload?.type).toBe("object");
+    expect(payload?.enum).toBeUndefined();
+    const description = JSON.stringify(componentSchemas?.["QueueEvent"]);
+    expect(description).toContain("form.respond");
+    expect(description).toContain("{threadId, formTs, option, note}");
+  });
+});
+
+describe("the CONTRACT-007 riders", () => {
+  it("returns both halves of a reap, and requires both", () => {
+    const schema = componentSchemas?.["ReapStaleResult"];
+    expect(schema?.required).toEqual(["reaped", "failed"]);
+    expect(schema?.properties?.["failed"]?.type).toBe("array");
+  });
+
+  it("wraps resolve and reopen rather than putting warnings on the resource", () => {
+    for (const path of ["/api/threads/{id}/resolve", "/api/threads/{id}/reopen"]) {
+      expect(JSON.stringify(operation(path, "post").responses?.["200"])).toContain(
+        "ThreadMutationResponse",
+      );
+    }
+    expect(componentSchemas?.["ThreadMutationResponse"]?.required).toEqual(["thread", "warnings"]);
+    expect(componentSchemas?.["ThreadSummary"]?.properties?.["warnings"]).toBeUndefined();
+  });
+
+  it("gives Job a nullable origin title without making the component nullable", () => {
+    const job = componentSchemas?.["Job"];
+    expect(job?.type).toBe("object");
+    expect(job?.required).toEqual([
+      "eventId",
+      "type",
+      "status",
+      "started",
+      "updated",
+      "lastLine",
+      "originId",
+      "originTitle",
+    ]);
+    expect(JSON.stringify(job?.properties?.["originTitle"])).toContain('"null"');
+  });
+
+  it("states the origin title's rule in one sentence, for the server and the console", () => {
+    const description = JSON.stringify(componentSchemas?.["Job"]?.properties?.["originTitle"]);
+    expect(description).toContain("current title of whatever `originId` names, or null");
+  });
+
+  /**
+   * CONTRACT-012's rider. The console row is `<event type> · <title>`; without
+   * `type` the console can only say what a job is running *on*. It stays an
+   * open string for the same reason `QueueEvent.type` does.
+   */
+  it("gives Job the event type as an open string, matching QueueEvent", () => {
+    const property = componentSchemas?.["Job"]?.properties?.["type"];
+    expect(property?.type).toBe("string");
+    expect(property?.enum).toBeUndefined();
+    const description = JSON.stringify(property);
+    expect(description).toContain("comment.created, form.respond, agent.done");
+    expect(description).toContain("plugins define");
+    expect(description).toContain("QueueEvent.type");
   });
 });
 
@@ -693,6 +1014,18 @@ describe("multipart, attachments and the stream", () => {
     expect(Object.keys(content)).toEqual(["application/json", "multipart/form-data"]);
   });
 
+  /**
+   * CONTRACT-009. Before it, *Ask*-with-attachments had no wire path at all:
+   * `POST /api/threads` was JSON-only and Capture was the sole attachment
+   * ingest. The key order matters as much as the presence — it is what
+   * `openapi.json`'s byte stability and the generated client's argument order
+   * both rest on.
+   */
+  it("offers both a JSON and a multipart body on thread creation, in the same order", () => {
+    const content = operation("/api/threads", "post").requestBody?.content ?? {};
+    expect(Object.keys(content)).toEqual(["application/json", "multipart/form-data"]);
+  });
+
   it("declares capture as multipart only", () => {
     const content = operation("/api/capture", "post").requestBody?.content ?? {};
     expect(Object.keys(content)).toEqual(["multipart/form-data"]);
@@ -700,11 +1033,74 @@ describe("multipart, attachments and the stream", () => {
 
   it("types the attached files as an array of binaries", () => {
     const schemas = document.components?.schemas ?? {};
-    for (const name of ["MultipartAppendTurnRequest", "CaptureRequest"]) {
+    for (const name of [
+      "MultipartAppendTurnRequest",
+      "MultipartCreateThreadRequest",
+      "CaptureRequest",
+    ]) {
       const files = (schemas[name] as { properties?: Record<string, unknown> } | undefined)
         ?.properties?.["files"];
       expect(files).toMatchObject({ type: "array", items: { type: "string", format: "binary" } });
     }
+  });
+
+  /**
+   * CONTRACT-009. `413` is declared on exactly the routes that accept bytes —
+   * from both sides, so a later route that takes files without declaring it, and
+   * a `413` bolted onto a route that cannot return one, both fail here.
+   */
+  it("declares 413 on exactly the routes that accept file uploads", () => {
+    const accepting: string[] = [];
+    const declaring: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of HTTP_METHODS) {
+        const op = (item as Record<string, Operation> | undefined)?.[method];
+        if (!op) continue;
+        const signature = endpointSignature(method, path);
+        if (Object.keys(op.requestBody?.content ?? {}).includes("multipart/form-data")) {
+          accepting.push(signature);
+        }
+        if (op.responses?.["413"]) declaring.push(signature);
+      }
+    }
+    expect(accepting.sort()).toEqual([
+      "POST /api/capture",
+      "POST /api/threads",
+      "POST /api/threads/{id}/turns",
+    ]);
+    expect(declaring.sort()).toEqual(accepting.sort());
+  });
+
+  /**
+   * Open Conflict 4's adjudication: the over-cap body reuses `bad_request`
+   * rather than an eighth member of a union eight schemas and the CLI's error
+   * renderer narrow on. The status carries the distinction.
+   */
+  it("gives 413 the bad_request body, leaving the error union closed", () => {
+    for (const [path, method] of [
+      ["/api/capture", "post"],
+      ["/api/threads", "post"],
+      ["/api/threads/{id}/turns", "post"],
+    ] as const) {
+      expect(JSON.stringify(operation(path, method).responses?.["413"])).toContain(
+        "ValidationError",
+      );
+    }
+    // The union is untouched: `413` reuses the `bad_request` variant rather
+    // than adding an eighth member every narrowing site would have to learn.
+    expect(componentSchemas?.["ValidationError"]?.properties?.["code"]?.enum).toEqual([
+      "bad_request",
+    ]);
+    expect([...ERROR_CODES]).toEqual([
+      "bad_request",
+      "unauthorized",
+      "forbidden",
+      "not_found",
+      "conflict",
+      "locked",
+      "internal_error",
+    ]);
+    expect(Object.keys(componentSchemas ?? {})).not.toContain("PayloadTooLargeError");
   });
 
   it("declares the attachment route as binary bytes", () => {
@@ -828,7 +1224,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(11);
+    expect(bodies).toHaveLength(12);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -877,6 +1273,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/queue/{id}/fail": false,
       "POST /api/threads/{id}/seen": false,
       "POST /api/threads/{id}/turns": true,
+      "POST /api/threads/{id}/turns/{ts}/form": true,
       "PUT /api/docs/{id}": false,
     });
   });
@@ -885,6 +1282,7 @@ describe("request bodies declare whether they are mandatory", () => {
     const multipart = bodies.filter((body) => body.mediaTypes.includes("multipart/form-data"));
     expect(multipart.map((body) => body.signature)).toEqual([
       "POST /api/capture",
+      "POST /api/threads",
       "POST /api/threads/{id}/turns",
     ]);
     expect(multipart.every((body) => body.declared !== undefined)).toBe(true);

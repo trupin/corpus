@@ -6,7 +6,11 @@ import type { QueryKey } from "@corpus/contract";
 import { createServer } from "../app.js";
 import type { ServerConfig } from "../config.js";
 import { silentLogger } from "../logger.js";
-import { attachProjection, openWorkspaceProjection } from "../projection/index.js";
+import {
+  REBUILD_QUERY_KEYS,
+  attachProjection,
+  openWorkspaceProjection,
+} from "../projection/index.js";
 import { attachWatcher } from "./attach.js";
 import { DEFAULT_ATTACHMENT_LIMITS } from "../attachments/index.js";
 
@@ -79,6 +83,54 @@ describe("attachWatcher", () => {
     // reverse registration order.
     await server.close();
     expect(projection.sqlite.open).toBe(false);
+  });
+
+  /**
+   * SERVER-025, through the real chokidar. The file is written between the boot
+   * scan and `attachWatcher`, which is exactly the shape of the window: the scan
+   * has already run, and `ignoreInitial: true` means the watcher's initial walk
+   * will find the file and say nothing about it. Before the catch-up, this row
+   * never appeared — measured on a real server as 30 documents lost in a 290 ms
+   * band, still missing a minute later.
+   */
+  it("projects a file that landed in the window between the boot scan and the watcher", async () => {
+    const config = makeConfig();
+    writeFileSync(
+      join(workspaceRoot, "data", "docs", "scanned.md"),
+      "---\nid: doc_scanned\ntype: note\ntitle: Scanned\n---\n\nPresent at boot.\n",
+      "utf8",
+    );
+    const projection = openWorkspaceProjection(config, silentLogger);
+    expect(projection.prepare("SELECT id FROM documents").all()).toEqual([{ id: "doc_scanned" }]);
+
+    const server = createServer(config, { logger: silentLogger, projection, heartbeatMs: 0 });
+    attachProjection(server);
+    const batches: QueryKey[][] = [];
+    server.bus.subscribe((keys) => batches.push([...keys]));
+
+    // The window: after the scan, before anything is watching.
+    writeFileSync(
+      join(workspaceRoot, "data", "docs", "missed.md"),
+      "---\nid: doc_missed\ntype: note\ntitle: Missed\n---\n\nWritten into the window.\n",
+      "utf8",
+    );
+
+    const watcher = attachWatcher(server);
+    try {
+      await vi.waitFor(
+        () => {
+          expect(projection.prepare("SELECT id FROM documents ORDER BY id").all()).toEqual([
+            { id: "doc_missed" },
+            { id: "doc_scanned" },
+          ]);
+        },
+        { timeout: 8000, interval: 25 },
+      );
+      expect(batches).toEqual([REBUILD_QUERY_KEYS]);
+    } finally {
+      await watcher?.close();
+      await server.close();
+    }
   });
 
   it("does nothing when the server was built without a projection", () => {

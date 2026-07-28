@@ -83,6 +83,29 @@ export function toWireLine(record: StoredLogLine): JobLogLine {
   return { ts: normalizeInstant(record.ts) ?? record.ts, line: record.line };
 }
 
+/**
+ * True only for a stored record that **is** the cap notice this store wrote —
+ * its `line` equal to {@link FILE_CAP_NOTICE} and its `source` the server.
+ *
+ * A logged line that merely *contains* the notice's text is an ordinary line: a
+ * job echoing its own error output, or an operator pasting the message into a
+ * `printf >>`. Read as a substring (which is how it was read before SERVER-022
+ * finding 2) either of those makes the store believe the notice is already
+ * there, so the genuine one is never written and the log simply stops with no
+ * explanation in it.
+ */
+export function isCapNoticeRecord(text: string): boolean {
+  if (!text.includes(FILE_CAP_NOTICE)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const record = StoredLogLineSchema.safeParse(parsed);
+  return record.success && record.data.line === FILE_CAP_NOTICE && record.data.source === "server";
+}
+
 const isEnoent = (error: unknown): boolean =>
   typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 
@@ -210,7 +233,13 @@ export class JobLogStore {
     try {
       const buffer = Buffer.alloc(length);
       await handle.read(buffer, 0, length, size - length);
-      return buffer.toString("utf8").includes(FILE_CAP_NOTICE);
+      // Record by record, never a substring search over the tail: a job whose
+      // own output quotes the notice's wording would otherwise suppress the real
+      // one forever, and the file would stop growing with nothing saying why.
+      // The window starts mid-line whenever the tail is longer than it, so the
+      // first fragment is expected to be unparseable — {@link isCapNoticeRecord}
+      // drops it like any other line that is not the notice.
+      return buffer.toString("utf8").split("\n").some(isCapNoticeRecord);
     } finally {
       await handle.close();
     }

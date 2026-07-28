@@ -1,10 +1,15 @@
 import { ACTOR_HEADER, type Actor } from "../actor.js";
 import { CaptureResultSchema, type CaptureResult } from "../schemas/capture.js";
 import { ApiErrorSchema, type ApiError } from "../schemas/error.js";
-import { AppendTurnResponseSchema, type AppendTurnResponse } from "../schemas/thread.js";
+import {
+  AppendTurnResponseSchema,
+  CreateThreadResponseSchema,
+  type AppendTurnResponse,
+  type CreateThreadResponse,
+} from "../schemas/thread.js";
 
 /**
- * The two multipart endpoints (SPEC.md §6, §9.2), hand-written beside the
+ * The three multipart endpoints (SPEC.md §6, §8, §9.2), hand-written beside the
  * generated client because `openapi-fetch` serialises JSON: it has no notion of
  * a repeated binary part, and forcing one through its `bodySerializer` would
  * hide the field names this format is entirely about. The shapes are still the
@@ -12,7 +17,7 @@ import { AppendTurnResponseSchema, type AppendTurnResponse } from "../schemas/th
  * these helpers cannot drift from the document either.
  */
 
-/** The part name every attachment is sent under, on both multipart endpoints. */
+/** The part name every attachment is sent under, on all three multipart endpoints. */
 export const FILES_FIELD = "files";
 
 export interface UploadOptions {
@@ -45,6 +50,25 @@ export interface CaptureUpload {
   readonly files?: readonly File[];
 }
 
+/**
+ * The composer's *Ask* with attachments, and a selection comment carrying a file
+ * (SPEC.md §6, §8). `text` is optional for the same reason it is on a turn: a
+ * first turn may be attachment-only — but not empty.
+ */
+export interface ThreadUpload {
+  readonly parent?: string;
+  /** Text-quote selector; serialised into one JSON-encoded part. */
+  readonly selector?: {
+    readonly exact: string;
+    readonly prefix?: string;
+    readonly suffix?: string;
+  };
+  readonly title?: string;
+  readonly text?: string;
+  readonly requestsAgent?: boolean;
+  readonly files?: readonly File[];
+}
+
 /** Thrown when a multipart call comes back with a status the route declares as an error. */
 export class UploadError extends Error {
   override readonly name = "UploadError";
@@ -66,6 +90,25 @@ export class UploadError extends Error {
  */
 export function buildTurnFormData(upload: Omit<TurnUpload, "threadId">): FormData {
   const form = new FormData();
+  if (upload.text !== undefined) form.append("text", upload.text);
+  if (upload.requestsAgent !== undefined) {
+    form.append("requestsAgent", String(upload.requestsAgent));
+  }
+  for (const file of upload.files ?? []) form.append(FILES_FIELD, file);
+  return form;
+}
+
+/**
+ * Builds the body for the multipart form of `POST /api/threads`. `selector` is
+ * JSON-encoded into one part, which is the shape the route declares — every
+ * multipart part is text, and flattening the selector into three parts would
+ * invent a second spelling of a shape the JSON branch already defines.
+ */
+export function buildThreadFormData(upload: ThreadUpload): FormData {
+  const form = new FormData();
+  if (upload.parent !== undefined) form.append("parent", upload.parent);
+  if (upload.selector !== undefined) form.append("selector", JSON.stringify(upload.selector));
+  if (upload.title !== undefined) form.append("title", upload.title);
   if (upload.text !== undefined) form.append("text", upload.text);
   if (upload.requestsAgent !== undefined) {
     form.append("requestsAgent", String(upload.requestsAgent));
@@ -134,6 +177,21 @@ export async function uploadTurn(options: UploadOptions & TurnUpload): Promise<A
     `/api/threads/${encodeURIComponent(options.threadId)}/turns`,
     buildTurnFormData(options),
     (value) => AppendTurnResponseSchema.parse(value),
+  );
+}
+
+/**
+ * Creates a thread whose first turn carries attachments. Rejects an empty first
+ * turn before touching the network, exactly as {@link uploadTurn} does.
+ */
+export async function uploadCreateThread(
+  options: UploadOptions & ThreadUpload,
+): Promise<CreateThreadResponse> {
+  if (options.text === undefined && (options.files ?? []).length === 0) {
+    throw new UploadError(400, "A thread's first turn needs `text`, at least one file, or both.");
+  }
+  return post(options, "/api/threads", buildThreadFormData(options), (value) =>
+    CreateThreadResponseSchema.parse(value),
   );
 }
 

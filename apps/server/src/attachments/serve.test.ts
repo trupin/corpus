@@ -107,6 +107,23 @@ describe("isUnnormalizedAttachmentTarget", () => {
     "/attachments/./th_a/ts/shot.png",
     "/attachments/th_a//shot.png",
     "/attachments/..\\..\\secret.txt",
+    // The encoded spellings the WHATWG URL parser collapses exactly like the
+    // literal ones, each of which reached a real attachment before SERVER-022
+    // finding 1: with these unrefused, `/attachments/<th>/<ts>/%2e%2e/%2e%2e/
+    // <other>/<ts>/x` was answered 200 with the other thread's bytes while its
+    // literal twin was answered 404.
+    "/attachments/th_a/ts/%2e%2e/%2e%2e/th_b/ts/other.png",
+    "/attachments/th_a/ts/%2E%2E/%2E%2E/th_b/ts/other.png",
+    "/attachments/th_a/ts/.%2e/.%2e/th_b/ts/other.png",
+    "/attachments/th_a/ts/%2e./%2e./th_b/ts/other.png",
+    "/attachments/th_a/ts/%2E./.%2E/th_b/ts/other.png",
+    "/attachments/%2e%2e/%2e%2e/outside/secret.txt",
+    "/attachments/.%2E/th_a/ts/shot.png",
+    // A single-dot segment resolves back to a legitimate path rather than out of
+    // the root, and is refused for the same reason its literal `.` twin is: a
+    // harmless traversal is still a traversal.
+    "/attachments/th_a/ts/%2e/shot.png",
+    "/attachments/%2E/th_a/ts/shot.png",
   ])("refuses %j", (target) => {
     expect(isUnnormalizedAttachmentTarget(target)).toBe(true);
   });
@@ -115,7 +132,14 @@ describe("isUnnormalizedAttachmentTarget", () => {
     "/attachments/th_a/ts/shot.png?x=1/../..",
     "/attachments/th_a/ts/shot.png",
     "/attachments/th_a/ts/a..b.png",
+    // Not a dot segment to the URL parser either — `%2f` is not a separator, so
+    // this stays one segment and `parseAttachmentPath` refuses it at layer 4.
     "/attachments/th_a/ts/%2e%2e%2fx",
+    // The percent-encoded colons of a real turn stamp must survive the guard, or
+    // the fix for the encoded traversal breaks every legitimate attachment URL.
+    "/attachments/th_a/2026-07-27T09%3A00%3A00.000Z/shot.png",
+    "/attachments/th_a/ts/%2e%2ename.png",
+    "/attachments/th_a/ts/x%2e%2e",
     "/attachments",
     "/attachmentsx/../../etc/hosts",
     "/api/docs",

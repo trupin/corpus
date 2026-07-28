@@ -1,0 +1,70 @@
+/*
+ * `design/index.html`'s autocomplete, shipped from the kit with the component
+ * that emits it — like `markdown.css` — so a plugin rendering a composer
+ * inherits the same menu rather than approximating it.
+ *
+ *     import "@corpus/kit/autocomplete.css";
+ *
+ * **Every positioned menu in the product is this surface**, not just the
+ * completions: the editor's `[[` suggestion popup, the column ⋯ menu, the
+ * new-list picker and the search overlay's filter pickers all render
+ * `.ac-menu` / `.ac-item`. They differ in what they list, never in what they
+ * look like, so the states each of them needs live here together rather than in
+ * whichever stylesheet happened to want one first — three copies of
+ * `.ac-item .k` is how one of them silently stops matching the others.
+ */
+
+.ac-menu {
+  position: fixed;
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  display: none;
+  min-width: 250px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ac-menu.open {
+  display: block;
+}
+
+.ac-item {
+  display: block;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+/* `.active` is the textarea composers' keyboard cursor, `.on` the editor
+   suggestion plugin's. Same state, two spellings, one appearance. */
+.ac-item:hover,
+.ac-item.active,
+.ac-item.on {
+  background: var(--surface-2);
+}
+
+/* Present, but not choosable: "no matches", and the pickers' explanatory line. */
+.ac-item.ac-empty,
+.ac-item-note {
+  cursor: default;
+}
+
+.ac-item.ac-empty {
+  color: var(--ink-3);
+}
+
+.ac-item .k {
+  font-family: var(--mono);
+  color: var(--accent-ink);
+}
+
+.ac-item .d {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-left: 6px;
+}

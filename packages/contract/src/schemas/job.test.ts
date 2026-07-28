@@ -12,14 +12,17 @@ import {
   JobsQuerySchema,
   MAX_RECENT_JOBS,
 } from "./job.js";
+import { CORE_QUEUE_EVENT_TYPES, QueueEventSchema } from "./queue.js";
 
 const job = {
   eventId: "evt_7c1d",
+  type: "comment.created",
   status: "in-progress",
   started: "2026-07-19T10:05:02Z",
   updated: "2026-07-19T10:05:40Z",
   lastLine: "reading doc_a1b2c3",
   originId: "th_x9y8",
+  originTitle: "Re: 30-year fixed assumption",
 };
 
 describe("Job", () => {
@@ -28,12 +31,58 @@ describe("Job", () => {
   });
 
   it("round-trips a job that has not logged yet and has no origin", () => {
-    const fresh = { ...job, lastLine: null, originId: null };
+    const fresh = { ...job, lastLine: null, originId: null, originTitle: null };
     expect(JobSchema.parse(fresh)).toEqual(fresh);
+  });
+
+  /**
+   * The console labels rows without a second fetch each, so the title rides
+   * along — but it is a denormalised read, and a job whose origin has since been
+   * deleted still has to be representable.
+   */
+  it("keeps a titleless origin representable, and the key present", () => {
+    const untitled = { ...job, originTitle: null };
+    expect(JobSchema.parse(untitled).originTitle).toBeNull();
+
+    const { originTitle: _dropped, ...missing } = job;
+    expect(JobSchema.safeParse(missing).success).toBe(false);
   });
 
   it("mirrors the queue statuses, so a job cannot report a status the queue lacks", () => {
     expect(JobSchema.safeParse({ ...job, status: "running" }).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-012 rider. The console row is `<event type> · <title>`: without
+   * `type` a job says only what it is running *on*, never what it is running.
+   */
+  it.each(CORE_QUEUE_EVENT_TYPES)("carries the core event type %s", (type) => {
+    expect(JobSchema.parse({ ...job, type }).type).toBe(type);
+  });
+
+  it("leaves the type open, because plugins define their own event types", () => {
+    expect(JobSchema.parse({ ...job, type: "todos.sync" }).type).toBe("todos.sync");
+  });
+
+  it("requires a non-empty type: a job always has one, and it is never blank", () => {
+    const { type: _dropped, ...missing } = job;
+    expect(JobSchema.safeParse(missing).success).toBe(false);
+    expect(JobSchema.safeParse({ ...job, type: "" }).success).toBe(false);
+  });
+
+  /** One vocabulary: a job's type is the queue event's type, not a parallel one. */
+  it("agrees with QueueEvent on what a type is", () => {
+    for (const type of CORE_QUEUE_EVENT_TYPES) {
+      expect(JobSchema.parse({ ...job, type }).type).toBe(
+        QueueEventSchema.parse({
+          id: "evt_7c1d",
+          type,
+          created: "2026-07-19T10:05:02Z",
+          source: "ui",
+          payload: {},
+        }).type,
+      );
+    }
   });
 });
 

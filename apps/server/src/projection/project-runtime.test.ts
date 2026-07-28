@@ -239,6 +239,35 @@ describe("projectLocksDir", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
   });
 
+  it("keys the row by the filename, so a disagreeing `docId` field cannot strand it", () => {
+    // SERVER-022 finding 9. The row was inserted under the lock file's *own*
+    // `docId` field while every removal — the watcher's unlink, `projectLock`'s
+    // own miss path, `removeLock` — addresses it by the filename. A file whose
+    // two disagree therefore inserted one row and deleted another, and the
+    // orphan made its document render read-only forever, naming a holder that
+    // had released. `locks/store.ts` already corrects exactly this on the
+    // service path.
+    writeJson("locks/doc_a1b2c3.json", { ...LOCK, docId: "doc_someother" });
+
+    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
+    expect(db.prepare("SELECT doc_id FROM locks").all()).toEqual([{ doc_id: "doc_a1b2c3" }]);
+
+    // Released: the file goes, and the row goes with it.
+    rmSync(join(corpusDir, "locks", "doc_a1b2c3.json"));
+    projectLock(db, corpusDir, "doc_a1b2c3", DURING_LEASE);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
+  });
+
+  it("rebuilds the directory under filename ids too", () => {
+    writeJson("locks/doc_a1b2c3.json", { ...LOCK, docId: "doc_someother" });
+
+    expect(projectLocksDir(db, corpusDir, DURING_LEASE)).toBe(1);
+    expect(db.prepare("SELECT doc_id FROM locks").all()).toEqual([{ doc_id: "doc_a1b2c3" }]);
+    // And the id the API addresses is the one that removes it.
+    removeLock(db, "doc_a1b2c3");
+    expect(db.prepare("SELECT COUNT(*) AS n FROM locks").get()).toEqual({ n: 0 });
+  });
+
   it("ignores files that are not <docId>.json and supports explicit removal", () => {
     writeFileSync(join(corpusDir, "locks", "notes.json"), "{}", "utf8");
     writeJson("locks/doc_a1b2c3.json", LOCK);

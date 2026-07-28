@@ -65,7 +65,10 @@ Shared conventions for **all** Corpus workspaces (`apps/server`, `apps/cli`, `ap
 
 ## Coverage
 
-- Combined coverage (unit + e2e once Playwright specs exist) must stay **≥ 90%** — enforced in CI (`npm run test:coverage`, V8 provider, thresholds on lines/statements/functions/branches). Write code to be testable rather than chasing the number after the fact; untestable glue belongs in thin, excluded entry points, not scattered through logic.
+- Combined coverage — Vitest **plus** the Playwright suite's browser-side V8 — must stay **≥ 90%** on lines, statements, functions and branches. `npm run coverage` runs the whole chain (unit → e2e → merge → gate) and is what CI enforces; `npm run test:coverage` on its own emits raw coverage and enforces nothing. The thresholds and the include/exclude globs live in `scripts/coverage-config.ts` and nowhere else, so there is exactly one gate and it cannot disagree with itself.
+- The merge is `scripts/merge-coverage.ts`. The unit run's istanbul map is the structure — totals never move, so a file no test loads still reports 0% — and the browser run contributes hits onto it: an item counts as covered when every line it spans was fully executed in the browser. Coverage can therefore only rise by adding e2e, never fall. `coverage/merged/e2e-attribution.json` records what the browser actually reached per file, which is how you tell "e2e added nothing because unit already covers it" from "e2e added nothing because the source maps broke".
+- Code exercised only through the browser counts. A Node process an e2e spec spawns counts too, once it is spawned with `nodeCoverageEnv()` from `apps/ui/e2e/coverage.ts` (`NODE_V8_COVERAGE`); nothing in the shipped suite spawns one yet.
+- Write code to be testable rather than chasing the number after the fact; untestable glue belongs in thin, excluded entry points, not scattered through logic.
 
 ## Comments
 

@@ -2,13 +2,11 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { ActorHeaderSchema } from "../schemas/actor.js";
 import { ThreadIdSchema } from "../schemas/id.js";
 import {
-  CreateThreadRequestSchema,
-  CreateThreadResponseSchema,
   DeleteTurnResultSchema,
   MarkSeenRequestSchema,
   MarkSeenResultSchema,
+  ThreadMutationResponseSchema,
   ThreadSchema,
-  ThreadSummarySchema,
 } from "../schemas/thread.js";
 import { IsoDateTimeSchema } from "../schemas/time.js";
 import {
@@ -49,36 +47,6 @@ export const getThread = createRoute({
   },
 });
 
-export const createThread = createRoute({
-  method: "post",
-  path: "/api/threads",
-  tags: ["threads"],
-  summary: "Create a thread on a selection, a whole document, or standalone",
-  description:
-    "With a selector, the server writes the anchor entry into the parent's frontmatter and creates the " +
-    "thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's edit lock, " +
-    "since anchoring mutates the parent.",
-  request: {
-    headers: ActorHeaderSchema,
-    body: {
-      required: true,
-      description:
-        "The thread and its first turn. `body` is mandatory, so the request body is too.",
-      content: { "application/json": { schema: CreateThreadRequestSchema } },
-    },
-  },
-  responses: {
-    201: jsonContent(
-      CreateThreadResponseSchema,
-      "The created thread, its anchor, and any enqueued event.",
-    ),
-    400: VALIDATION_RESPONSE,
-    401: UNAUTHORIZED_RESPONSE,
-    404: NOT_FOUND_RESPONSE,
-    423: LOCKED_RESPONSE,
-  },
-});
-
 export const deleteTurn = createRoute({
   method: "delete",
   path: "/api/threads/{id}/turns/{ts}",
@@ -110,10 +78,15 @@ export const resolveThread = createRoute({
   description:
     "Sets `status: resolved`. The thread collapses in the document view and **later turns stop " +
     "re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a " +
-    "conversation is closed without deleting anything.",
+    "conversation is closed without deleting anything. Resolving rewrites the thread file and " +
+    "auto-commits it, so the response carries §14's warnings — a workspace hook that rejects the " +
+    "commit leaves the status change on disk and uncommitted, and that has to be visible.",
   request: { params: ThreadIdParamSchema, headers: ActorHeaderSchema },
   responses: {
-    200: jsonContent(ThreadSummarySchema, "The updated thread summary."),
+    200: jsonContent(
+      ThreadMutationResponseSchema,
+      "The updated thread summary, and any warnings raised while writing it.",
+    ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
@@ -127,10 +100,14 @@ export const reopenThread = createRoute({
   summary: "Reopen a resolved thread",
   description:
     "Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns " +
-    "(SPEC.md §8).",
+    "(SPEC.md §8). Like `resolve`, it rewrites and auto-commits the thread file, so the response " +
+    "carries §14's warnings.",
   request: { params: ThreadIdParamSchema, headers: ActorHeaderSchema },
   responses: {
-    200: jsonContent(ThreadSummarySchema, "The updated thread summary."),
+    200: jsonContent(
+      ThreadMutationResponseSchema,
+      "The updated thread summary, and any warnings raised while writing it.",
+    ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,

@@ -1,0 +1,190 @@
+/** @vitest-environment jsdom */
+import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState, type ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { readerTransport, threadFixture, type ReaderTransport } from "../testing/readerFixture";
+import {
+  ASK_AGENT_LABEL,
+  COMPOSER_PLACEHOLDER,
+  NOTE_ONLY_LABEL,
+  OPEN_HINT,
+  RESOLVED_HINT,
+  SEND_LABEL,
+  ThreadComposer,
+} from "./ThreadComposer";
+
+afterEach(cleanup);
+
+function wire(failing?: Record<string, number>): ReaderTransport {
+  return readerTransport({
+    threads: [threadFixture({ id: "th_a", turns: [] })],
+    ...(failing ? { failing } : {}),
+  });
+}
+
+function Host({
+  transport,
+  resolved,
+  onNotify,
+}: {
+  readonly transport: ReaderTransport;
+  readonly resolved?: boolean;
+  readonly onNotify?: (notice: { tone: string; message: string }) => void;
+}): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
+  return (
+    <harness.Wrapper>
+      <ThreadComposer
+        threadId="th_a"
+        resolved={resolved ?? false}
+        onNotify={onNotify ?? (() => undefined)}
+      />
+    </harness.Wrapper>
+  );
+}
+
+const input = (): HTMLInputElement => screen.getByLabelText<HTMLInputElement>("Reply");
+const send = (): HTMLElement => screen.getByText(SEND_LABEL);
+
+describe("ThreadComposer", () => {
+  it("is the prototype's, character for character", () => {
+    const { container } = render(<Host transport={wire()} />);
+    expect(input().placeholder).toBe(COMPOSER_PLACEHOLDER);
+    expect(container.querySelector(".clip")?.textContent).toBe("📎");
+    expect(container.querySelector(".toggle")?.textContent).toBe(ASK_AGENT_LABEL);
+    expect(container.querySelector(".toggle")?.className).toBe("toggle on");
+    expect(container.querySelector(".composer-hint")?.textContent).toBe(OPEN_HINT);
+    expect(container.querySelector(".send")?.textContent).toBe(SEND_LABEL);
+  });
+
+  it("warns that a resolved thread reopens on reply, before the reply", () => {
+    const { container } = render(<Host transport={wire()} resolved />);
+    expect(container.querySelector(".composer-hint")?.textContent).toBe(RESOLVED_HINT);
+  });
+
+  it("cannot send an empty turn, and can send an attachment-only one", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    expect((send() as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.drop(container.querySelector(".composer") as HTMLElement, {
+      dataTransfer: { files: [new File(["x"], "shot.png", { type: "image/png" })] },
+    });
+    await waitFor(() => {
+      expect((send() as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    fireEvent.click(send());
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
+    });
+    const call = transport.of("POST", "/api/threads/th_a/turns")[0];
+    expect(call?.files).toEqual(["shot.png"]);
+    expect(call?.parts?.["text"]).toBeUndefined();
+  });
+
+  /** TEST-52: "note only" is an explicit `false`, never an omission. */
+  it("maps the toggle to the tri-state requestsAgent", async () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+
+    fireEvent.change(input(), { target: { value: "asking" } });
+    fireEvent.click(send());
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
+    });
+    expect(transport.of("POST", "/api/threads/th_a/turns")[0]?.body).toEqual({
+      body: "asking",
+      requestsAgent: true,
+    });
+
+    fireEvent.click(screen.getByText(ASK_AGENT_LABEL));
+    expect(screen.getByText(NOTE_ONLY_LABEL)).toBeDefined();
+    fireEvent.change(input(), { target: { value: "just a note" } });
+    fireEvent.click(send());
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(2);
+    });
+    expect(transport.of("POST", "/api/threads/th_a/turns")[1]?.body).toEqual({
+      body: "just a note",
+      requestsAgent: false,
+    });
+  });
+
+  /**
+   * TEST-53: an `@mention` under "note only". The toggle is an explicit
+   * instruction and the UI does not overrule it — it sends `false` and lets the
+   * server decide what a mention means (§8), which for an explicit `false` is
+   * "suppress the enqueue".
+   */
+  it("still sends note-only when the text carries a mention", async () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    fireEvent.click(screen.getByText(ASK_AGENT_LABEL));
+    fireEvent.change(input(), { target: { value: "@agent look at this" } });
+    fireEvent.click(send());
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
+    });
+    expect(transport.of("POST", "/api/threads/th_a/turns")[0]?.body).toEqual({
+      body: "@agent look at this",
+      requestsAgent: false,
+    });
+  });
+
+  it("sends once when Reply is pressed twice", async () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    fireEvent.change(input(), { target: { value: "twice" } });
+    fireEvent.click(send());
+    fireEvent.click(send());
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/turns").length).toBeGreaterThan(0);
+    });
+    expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
+  });
+
+  it("sends on ↵ and clears the input", async () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    fireEvent.change(input(), { target: { value: "by keyboard" } });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
+    });
+    expect(input().value).toBe("");
+  });
+
+  it("restores the text and the chips when the send fails", async () => {
+    const notify = vi.fn();
+    const transport = wire({ "POST /api/threads/th_a/turns": 413 });
+    const { container } = render(<Host transport={transport} onNotify={notify} />);
+
+    fireEvent.change(input(), { target: { value: "with a file" } });
+    fireEvent.drop(container.querySelector(".composer") as HTMLElement, {
+      dataTransfer: { files: [new File(["x"], "big.bin")] },
+    });
+    await waitFor(() => {
+      expect(container.querySelectorAll(".att-chip")).toHaveLength(1);
+    });
+
+    fireEvent.click(send());
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalled();
+    });
+    expect(input().value).toBe("with a file");
+    expect(container.querySelectorAll(".att-chip")).toHaveLength(1);
+    expect(notify.mock.calls[0]?.[0]).toMatchObject({ tone: "error" });
+  });
+
+  /** SPEC.md §11's smart input: one menu, from `GET /api/docs`. */
+  it("opens the shared autocomplete on @", async () => {
+    const { container } = render(<Host transport={wire()} />);
+    fireEvent.change(input(), { target: { value: "@" } });
+    await waitFor(() => {
+      expect(container.querySelector(".ac-menu")).not.toBeNull();
+    });
+    expect(container.querySelector(".ac-item .k")?.textContent).toBe("agent");
+  });
+});

@@ -1,0 +1,63 @@
+/**
+ * The keyboard's own surfaces (`design/index.html`): the `?` cheat sheet and the
+ * row cursor.
+ *
+ * The active-column cue is not here — `.col.kactive` ships with the column in
+ * `board/Column.css`, because "which column am I in" is a property of the board
+ * that the keyboard merely also drives (hover sets it too).
+ */
+
+.kbd-panel {
+  padding: 20px 24px;
+}
+
+.kbd-panel h3 {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+
+.kbd-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 30px;
+}
+
+.kbd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12.5px;
+}
+
+.kbd-row .keys {
+  display: flex;
+  gap: 4px;
+  min-width: 92px;
+  flex: none;
+}
+
+.kbd-row kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--ink-2);
+}
+
+.kbd-row .d {
+  color: var(--ink-2);
+}
+
+/* The row under the cursor. `outline` rather than `border`, so the outline does
+   not move the row by two pixels every time the cursor lands on it. */
+.row.kbd {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

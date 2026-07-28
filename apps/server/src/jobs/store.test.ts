@@ -134,6 +134,65 @@ describe("JobLogStore", () => {
     expect(lines.filter((line) => line.line === FILE_CAP_NOTICE)).toHaveLength(1);
   });
 
+  it("is not fooled by a logged line that quotes the notice", async () => {
+    // SERVER-022 finding 2. The probe used to be a substring search over the
+    // file's tail, so a job that echoed the notice's wording — or an operator
+    // who pasted it in — suppressed the real notice forever, and the log
+    // stopped growing with nothing in it saying why.
+    mkdirSync(join(corpusDir, "jobs"), { recursive: true });
+    const impostor = JSON.stringify({
+      ts: "2026-07-27T08:59:00Z",
+      source: "hook",
+      line: `the runner said: ${FILE_CAP_NOTICE}`,
+    });
+    const forgery = JSON.stringify({
+      ts: "2026-07-27T08:59:30Z",
+      source: "cli",
+      line: FILE_CAP_NOTICE,
+    });
+    const filler = "x".repeat(MAX_LOG_FILE_BYTES - impostor.length - forgery.length - 3);
+    writeFileSync(logPath(), `${filler}\n${impostor}\n${forgery}\n`, "utf8");
+
+    const outcome = await store.append(EVENT, { line: "over the cap", source: "hook", at: AT });
+
+    expect(outcome).toEqual({ stored: undefined, capped: true });
+    const notices = (await store.read(EVENT)).filter((line) => line.line === FILE_CAP_NOTICE);
+    // The forged one and the genuine one — the store wrote its own rather than
+    // trusting either.
+    expect(notices).toHaveLength(2);
+    const lastLine = readFileSync(logPath(), "utf8").trimEnd().split("\n").at(-1) ?? "";
+    expect(StoredLogLineSchema.parse(JSON.parse(lastLine))).toEqual({
+      ts: "2026-07-27T09:00:00Z",
+      source: "server",
+      line: FILE_CAP_NOTICE,
+    });
+  });
+
+  it("recognizes its own notice through a tail window that starts mid-line", async () => {
+    // The probe reads the last 4 KB, and a stored line may be up to 8 KB — so
+    // the first fragment in the window is expected to be unparseable, and must
+    // not stop the genuine notice below it from being recognized.
+    mkdirSync(join(corpusDir, "jobs"), { recursive: true });
+    const notice = JSON.stringify({
+      ts: "2026-07-27T08:59:00Z",
+      source: "server",
+      line: FILE_CAP_NOTICE,
+    });
+    const long = JSON.stringify({
+      ts: "2026-07-27T08:58:00Z",
+      source: "hook",
+      line: "y".repeat(6000),
+    });
+    const filler = "z".repeat(MAX_LOG_FILE_BYTES - long.length - notice.length - 3);
+    writeFileSync(logPath(), `${filler}\n${long}\n${notice}\n`, "utf8");
+
+    await store.append(EVENT, { line: "over the cap", source: "hook", at: AT });
+
+    expect((await store.read(EVENT)).filter((line) => line.line === FILE_CAP_NOTICE)).toHaveLength(
+      1,
+    );
+  });
+
   it("never interleaves two concurrent appends within a line", async () => {
     await Promise.all(
       Array.from({ length: 200 }, async (_unused, index) =>

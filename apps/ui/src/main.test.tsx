@@ -1,13 +1,21 @@
 /** @vitest-environment jsdom */
+import { FakeEventSource } from "@corpus/kit/testing";
 import { waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { THEME_ATTRIBUTE } from "./shell/theme";
 import { memoryStorage } from "./testing/memoryStorage";
 
+/**
+ * Adapted for UI-002 with one added global stub. `main.tsx` renders `App`
+ * without props, so the kit's provider reaches for `globalThis.EventSource` —
+ * which a browser has and neither Node nor jsdom does. Stubbing it keeps this
+ * test about mounting rather than about the bridge's backoff loop.
+ */
 beforeEach(() => {
   vi.resetModules();
   vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
   vi.stubGlobal("localStorage", memoryStorage());
+  vi.stubGlobal("EventSource", FakeEventSource);
   document.body.innerHTML = "";
 });
 

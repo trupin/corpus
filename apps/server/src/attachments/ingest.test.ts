@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WriteWorkspace } from "../docs/write-fixture.js";
+import { UNTITLED_THREAD } from "../threads/index.js";
 import {
   AUTH,
   appendTurn,
@@ -14,8 +15,10 @@ import {
   createThreadWorkspace,
   pendingEvents,
   postForm,
+  threadFrontmatterOf,
   threadPath,
   turnsOf,
+  withBrokenQueue,
 } from "../threads/thread-fixture.js";
 
 let ws: WriteWorkspace;
@@ -301,6 +304,156 @@ describe("sanitization, end to end", () => {
   });
 });
 
+describe("ingest on thread creation (SPEC.md §8 — Ask with attachments)", () => {
+  /** Creates a thread through the multipart branch and reads back its first turn. */
+  async function uploadThread(
+    parts: readonly (readonly [string, string | Blob])[],
+  ): Promise<{ id: string; ts: string; body: string; status: number }> {
+    const response = await postForm(ws, "/api/threads", parts);
+    const payload = (await response.json()) as { thread?: { id: string } };
+    const id = payload.thread?.id ?? "";
+    const turn = id === "" ? undefined : turnsOf(ws, id)[0];
+    return { id, ts: turn?.ts ?? "", body: turn?.body ?? "", status: response.status };
+  }
+
+  it("stores both files and references both from the first turn, in upload order", async () => {
+    const before = ws.log("%H").length;
+
+    const { id, ts, body, status } = await uploadThread([
+      ["text", "why 6.1%?"],
+      ["files", png()],
+      ["files", pdf()],
+    ]);
+
+    expect(status).toBe(201);
+    expect(listTurnFiles(id, ts)).toEqual(["notes.pdf", "shot.png"]);
+    const encoded = encodeURIComponent(ts);
+    expect(body).toBe(
+      `why 6.1%?\n\n![shot.png](attachments/${id}/${encoded}/shot.png)\n` +
+        `[notes.pdf](attachments/${id}/${encoded}/notes.pdf)`,
+    );
+    // Bytes before markdown, and the markdown in exactly one commit — the same
+    // pipeline the JSON branch uses, so the count is the JSON branch's count.
+    expect(ws.log("%H")).toHaveLength(before + 1);
+    // The bytes live under `.corpus/`, which is gitignored: the commit carries
+    // the reference, never the file.
+    expect(ws.git("show", "--name-only", "--format=", "HEAD")).not.toContain("attachments");
+  });
+
+  it("accepts an attachment-only first turn, and titles it rather than quoting a URL", async () => {
+    const { id, ts, body, status } = await uploadThread([["files", png()]]);
+
+    expect(status).toBe(201);
+    expect(body).toBe(`![shot.png](attachments/${id}/${encodeURIComponent(ts)}/shot.png)`);
+    expect(body.startsWith("\n")).toBe(false);
+    expect(readFileSync(attachmentsDir(id, ts, "shot.png"), "utf8")).toBe("png-bytes");
+    // The title is derived from the author's own text, which there is none of —
+    // never from the reference block, or the board would show a URL.
+    expect(threadFrontmatterOf(ws, id)["title"]).toBe(UNTITLED_THREAD);
+  });
+
+  it("lets an explicit title name an attachment-only thread", async () => {
+    const { id } = await uploadThread([
+      ["title", "The failing screenshot"],
+      ["files", png()],
+    ]);
+    expect(threadFrontmatterOf(ws, id)["title"]).toBe("The failing screenshot");
+  });
+
+  it("names the first turn's directory with its ts verbatim, and serves every reference", async () => {
+    const { id, ts, body } = await uploadThread([
+      ["text", "look"],
+      ["files", png("shot.png", "one")],
+      ["files", new File(["c"], "my shot.png")],
+      ["files", new File(["d"], "café.png")],
+    ]);
+
+    expect(ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(readdirSync(attachmentsDir(id))).toEqual([ts]);
+    for (const match of body.matchAll(/\]\((attachments\/[^)]+)\)/g)) {
+      const response = await ws.server.app.request(`/${match[1] ?? ""}`, { headers: AUTH });
+      expect(response.status).toBe(200);
+      expect((await response.text()).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives the first turn and a later one separate directories", async () => {
+    const first = await uploadThread([["files", png("shot.png", "one")]]);
+    ws.advance(2000);
+    const response = await postForm(ws, `/api/threads/${first.id}/turns`, [
+      ["files", png("shot.png", "two")],
+    ]);
+    const second = ((await response.json()) as { turn: { ts: string } }).turn.ts;
+
+    expect(second).not.toBe(first.ts);
+    expect(readdirSync(attachmentsDir(first.id)).sort()).toEqual([first.ts, second].sort());
+    expect(readFileSync(attachmentsDir(first.id, first.ts, "shot.png"), "utf8")).toBe("one");
+    expect(readFileSync(attachmentsDir(first.id, second, "shot.png"), "utf8")).toBe("two");
+  });
+
+  it("creates no attachment directory for a JSON creation or a fileless multipart one", async () => {
+    const json = await createThread(ws, { body: "plain" });
+    expect(existsSync(attachmentsDir(json.id))).toBe(false);
+
+    const form = await uploadThread([["text", "plain"]]);
+    expect(form.body).toBe("plain");
+    expect(existsSync(attachmentsDir(form.id))).toBe(false);
+  });
+
+  it("keeps the bytes when the enqueue fails after the commit (SERVER-021)", async () => {
+    const response = await withBrokenQueue(ws, () =>
+      postForm(ws, "/api/threads", [
+        ["text", "@agent look at this"],
+        ["requestsAgent", "true"],
+        ["files", png()],
+      ]),
+    );
+
+    expect(response.status).toBe(500);
+    // The thread is committed, so the reference it quotes must still resolve:
+    // deleting the bytes here is the one state §6 rules out.
+    const id = readdirSync(join(ws.root, ".corpus", "attachments"))[0] ?? "";
+    expect(id).toMatch(/^th_/);
+    const ts = readdirSync(attachmentsDir(id))[0] ?? "";
+    expect(readFileSync(attachmentsDir(id, ts, "shot.png"), "utf8")).toBe("png-bytes");
+    expect(ws.git("show", `HEAD:${threadPath(id)}`)).toContain("shot.png");
+  });
+
+  it("refuses an over-cap upload with 413, on both the declared and the parsed path", async () => {
+    ws.close();
+    ws = createThreadWorkspace("create-limits", {
+      attachments: { maxFileBytes: 64, maxRequestBytes: 64 },
+    });
+    const before = ws.log("%H").length;
+
+    // Post-parse: the sizes actually received.
+    const parsed = await postForm(ws, "/api/threads", [
+      ["text", "too big"],
+      ["files", new File([new Uint8Array(65)], "huge.png")],
+    ]);
+    expect(parsed.status).toBe(413);
+    expect(((await parsed.json()) as { message: string }).message).toContain("huge.png");
+
+    // Pre-parse: the declared Content-Length, refused before the body is read.
+    const declared = await ws.server.app.request("/api/threads", {
+      method: "POST",
+      headers: {
+        ...AUTH,
+        "content-type": "multipart/form-data; boundary=x",
+        "content-length": "1048576",
+      },
+      body: "--x--\r\n",
+    });
+    expect(declared.status).toBe(413);
+    expect(((await declared.json()) as { code: string }).code).toBe("bad_request");
+
+    // Neither wrote a thread, a byte or a commit.
+    expect(readdirSync(join(ws.root, "data", "threads"))).toEqual([]);
+    expect(existsSync(join(ws.root, ".corpus", "attachments"))).toBe(false);
+    expect(ws.log("%H")).toHaveLength(before);
+  });
+});
+
 describe("ingest on capture", () => {
   it("lands the bytes on the filing thread's first turn", async () => {
     const response = await postForm(ws, "/api/capture", [
@@ -340,7 +493,7 @@ describe("limits", () => {
     ]);
     const payload = (await response.json()) as { message: string; issues: { message: string }[] };
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(413);
     expect(payload.message).toContain("huge.png");
     expect(payload.message).toContain("64 bytes");
     expect(existsSync(attachmentsDir(created.id))).toBe(false);
@@ -360,7 +513,7 @@ describe("limits", () => {
       ["files", new File([new Uint8Array(60)], "b.png")],
     ]);
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(413);
     expect(((await response.json()) as { message: string }).message).toContain("per-request limit");
     expect(existsSync(attachmentsDir(created.id))).toBe(false);
   });
@@ -374,7 +527,7 @@ describe("limits", () => {
       attachments: { maxFileBytes: 128, maxRequestBytes: 128 },
     });
     const strict = await uploadTurn([["files", new File([new Uint8Array(4096)], "big.png")]]);
-    expect(strict.status).toBe(400);
+    expect(strict.status).toBe(413);
     expect(JSON.stringify(strict.payload)).toContain("128 bytes");
   });
 
@@ -395,7 +548,7 @@ describe("limits", () => {
       },
       body: "--x--\r\n",
     });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(413);
     expect(((await response.json()) as { message: string }).message).toContain("per-request limit");
   });
 });

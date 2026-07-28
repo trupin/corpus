@@ -20,11 +20,19 @@
 // living corpus, not a rejected request.
 
 import {
+  isMultipartThreadCreate,
   type Actor,
+  type CreateThreadBody,
   type CreateThreadRequest,
   type TextQuoteSelector,
   type Thread,
 } from "@corpus/contract";
+import {
+  DEFAULT_ATTACHMENT_LIMITS,
+  assertWithinLimits,
+  attachmentReferences,
+  withAttachmentReferences,
+} from "../attachments/index.js";
 import {
   ID_PREFIXES,
   appendTurn,
@@ -56,7 +64,55 @@ import { parseMentions } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toWireThread } from "./read.js";
 import { deriveThreadTitle } from "./title.js";
+import { storeTurnFiles, whileUnreferenced } from "./turns.js";
 import type { ThreadsWorkspace } from "./workspace.js";
+
+/**
+ * A creation request, whichever of the route's two media types it arrived as —
+ * the exact mirror of {@link TurnInput} for turn append.
+ *
+ * `text` is optional because a first turn may be attachment-only (SPEC.md §6);
+ * the JSON branch's `body` is mandatory, so it simply always fills it. Keeping
+ * the two forms behind one shape is what makes "the multipart branch does
+ * everything the JSON branch does" a fact about the code rather than a claim:
+ * there is one creation path below this type.
+ */
+export interface ThreadCreateInput {
+  readonly parent: string | null;
+  readonly selector: CreateThreadRequest["selector"];
+  readonly title: string | undefined;
+  /** Absent for an attachment-only first turn. */
+  readonly text: string | undefined;
+  /** The §8 tri-state, exactly as it arrived; `undefined` means *omitted*. */
+  readonly requestsAgent: boolean | undefined;
+  readonly files: readonly File[];
+}
+
+/**
+ * The request either media type carries. Both read `requestsAgent` the same way
+ * — the JSON form as a boolean, the multipart form through `z.stringbool` — and
+ * neither through a `??` that would turn "note only" into "omitted".
+ */
+export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
+  if (!isMultipartThreadCreate(body)) {
+    return {
+      parent: body.parent ?? null,
+      selector: body.selector,
+      title: body.title,
+      text: body.body,
+      requestsAgent: body.requestsAgent,
+      files: [],
+    };
+  }
+  return {
+    parent: body.parent ?? null,
+    selector: body.selector,
+    title: body.title,
+    text: body.text,
+    requestsAgent: body.requestsAgent,
+    files: body.files,
+  };
+}
 
 export interface ThreadCreation {
   readonly thread: Thread;
@@ -119,38 +175,43 @@ function threadFields(input: {
   };
 }
 
+/**
+ * The title is derived from the author's **own** text, never from the reference
+ * block the server appends: a thread titled
+ * `![shot.png](attachments/th_…/2026-…/shot.png)` would put a URL on the board.
+ * An attachment-only first turn therefore falls through to
+ * {@link UNTITLED_THREAD}, which is exactly what that fallback is for — unless
+ * the request named a `title`, or the thread is anchored or parented, in which
+ * case the quote or the parent's title answers first.
+ */
 const titleInput = (
-  request: CreateThreadRequest,
+  input: ThreadCreateInput,
   selector: TextQuoteSelector | null,
   parent: LoadedDocument | null,
 ): Parameters<typeof deriveThreadTitle>[0] => ({
-  ...(request.title === undefined ? {} : { title: request.title }),
+  ...(input.title === undefined ? {} : { title: input.title }),
   ...(selector === null ? {} : { exact: selector.exact }),
   ...(parent === null ? {} : { parentTitle: parent.row.title }),
-  body: request.body,
+  body: input.text ?? "",
 });
 
 export async function createThread(
   workspace: ThreadsWorkspace,
   mutex: DocumentMutex,
   actor: Actor,
-  request: CreateThreadRequest,
+  input: ThreadCreateInput,
 ): Promise<ThreadCreation> {
-  const parentId = request.parent ?? null;
-  const selector = normalizeSelector(request.selector, parentId);
+  const parentId = input.parent;
+  const selector = normalizeSelector(input.selector, parentId);
+
+  // Before the lanes and before a byte is written, exactly as turn append and
+  // capture do it: a refused upload leaves no directory and takes no lock.
+  assertWithinLimits(input.files, workspace.attachmentLimits ?? DEFAULT_ATTACHMENT_LIMITS);
 
   // An unknown parent is a 404 before anything is written, and it is answered
   // from the read rather than from the projection alone so a row whose file
   // vanished answers the same way.
   if (parentId !== null) loadDocument(workspace.workspaceRoot, workspace.projection, parentId);
-
-  // §7's edit lock, on the **parent's** id and only when the parent is actually
-  // written (sprint-006 Adjudication 1). Commenting is not editing: a
-  // whole-document or standalone thread never asks, and the contract declares no
-  // `423` for either.
-  if (selector !== null && parentId !== null) {
-    await (workspace.assertWritable ?? ((): void => undefined))(parentId, actor);
-  }
 
   // `CREATE_LANE` guards id minting, which is checked against the projection and
   // is therefore only sound while no other create is between its own write and
@@ -159,6 +220,16 @@ export async function createThread(
   // all survive. Order — reserved lane, then document — is never taken the other
   // way round anywhere, which is the deadlock discipline `runInLanes` documents.
   return runInLanes(mutex, [CREATE_LANE, parentId], async () => {
+    // §7's edit lock, on the **parent's** id and only when the parent is
+    // actually written (sprint-006 Adjudication 1). Commenting is not editing: a
+    // whole-document or standalone thread never asks, and the contract declares
+    // no `423` for either. Checked inside the lanes, so a lease the other party
+    // acquires while this comment is queued behind another one still refuses it
+    // (SERVER-022 finding 7).
+    if (selector !== null && parentId !== null) {
+      await (workspace.assertWritable ?? ((): void => undefined))(parentId, actor);
+    }
+
     const id = newId(ID_PREFIXES.thread, (candidate) => isIdTaken(workspace.projection, candidate));
     const stamp = formatInstant(workspace.now());
     // Re-read inside the lane: the copy the guard was run against may be one
@@ -174,62 +245,86 @@ export async function createThread(
         ? null
         : newId(ID_PREFIXES.anchor, (candidate) => Object.hasOwn(existing, candidate));
 
-    const parsed = parseMentions(workspace.projection, request.body);
+    // The author's own text decides participation and mentions — the reference
+    // block the server appends is not something the user wrote, and must never
+    // be able to summon the agent.
+    const parsed = parseMentions(workspace.projection, input.text ?? "");
     // A brand-new thread cannot be `engaged`, so an omitted `requestsAgent` is
     // mention-only here — which is exactly what the contract's
     // `THREAD_CREATE_OMITTED_BEHAVIOUR` promises its callers.
     const decision = decideParticipation({
-      requestsAgent: request.requestsAgent,
+      requestsAgent: input.requestsAgent,
       author: actor,
       parsed,
       thread: null,
     });
 
-    const { body, turn } = appendTurn("", { author: actor, text: request.body, ts: stamp });
+    // Bytes first, then the markdown that quotes them (SPEC.md §6): a committed
+    // reference must never name a file that is not there. The turn's directory
+    // is keyed by the thread id and this stamp, which the first turn owns.
+    const stored = await storeTurnFiles(workspace, id, stamp, input.files);
     const path = `${THREADS_ROOT}/${id}.md`;
-    const text = serializeDocument(
-      setFrontmatterFields(
-        emptyDocument(body),
-        threadFields({
-          id,
-          title: deriveThreadTitle(titleInput(request, selector, parent)),
-          stamp,
-          parent: parentId,
-          anchor: anchorId,
-          agent: decision.agent,
-        }),
-      ),
-    );
-    const warnings = [...validateBeforeWrite(workspace, path, text)];
 
-    const operations: FileOperation[] = [];
-    const stage = [path];
-    const project = [path];
-    const keys = [DOCS_KEY, docKey(id), threadKey(id)];
-    if (parent !== null && anchorId !== null && selector !== null) {
-      const parentText = serializeDocument(
-        setFrontmatterFields(parent.parsed, {
-          anchors: withAnchorEntry(parent.parsed.data["anchors"], anchorId, selector),
-        }),
+    const prepared = whileUnreferenced(workspace.attachmentsRoot, id, stamp, stored, () => {
+      const turnText = withAttachmentReferences(
+        input.text,
+        attachmentReferences(
+          id,
+          stamp,
+          stored.map((file) => file.name),
+        ),
       );
-      warnings.push(...validateBeforeWrite(workspace, parent.path, parentText));
-      operations.push({ kind: "write", path: parent.path, content: parentText } as const);
-      stage.push(parent.path);
-      project.push(parent.path);
-    }
-    // Second, so the rollback has something to undo: the parent is restored when
-    // this write is the one that fails.
-    operations.push({ kind: "write", path, content: text } as const);
+      const { body, turn } = appendTurn("", { author: actor, text: turnText, ts: stamp });
+      const text = serializeDocument(
+        setFrontmatterFields(
+          emptyDocument(body),
+          threadFields({
+            id,
+            title: deriveThreadTitle(titleInput(input, selector, parent)),
+            stamp,
+            parent: parentId,
+            anchor: anchorId,
+            agent: decision.agent,
+          }),
+        ),
+      );
+      const warnings = [...validateBeforeWrite(workspace, path, text)];
+
+      const operations: FileOperation[] = [];
+      const stage = [path];
+      const project = [path];
+      if (parent !== null && anchorId !== null && selector !== null) {
+        const parentText = serializeDocument(
+          setFrontmatterFields(parent.parsed, {
+            anchors: withAnchorEntry(parent.parsed.data["anchors"], anchorId, selector),
+          }),
+        );
+        warnings.push(...validateBeforeWrite(workspace, parent.path, parentText));
+        operations.push({ kind: "write", path: parent.path, content: parentText } as const);
+        stage.push(parent.path);
+        project.push(parent.path);
+      }
+      // Second, so the rollback has something to undo: the parent is restored when
+      // this write is the one that fails.
+      operations.push({ kind: "write", path, content: text } as const);
+
+      return { turn, warnings, operations, stage, project };
+    });
+
+    const keys = [DOCS_KEY, docKey(id), threadKey(id)];
     if (parentId !== null) keys.push(docKey(parentId));
 
+    // Outside the cleanup guard, deliberately (SERVER-021): once `runMutation`
+    // has committed the thread, deleting the bytes it quotes would be the one
+    // state §6 rules out.
     const result = await runMutation(workspace, {
       docId: id,
       actor,
-      warnings,
+      warnings: prepared.warnings,
       plan: {
-        operations,
-        stage,
-        project,
+        operations: prepared.operations,
+        stage: prepared.stage,
+        project: prepared.project,
         unproject: [],
         commit: {
           subject:
@@ -252,7 +347,7 @@ export async function createThread(
       ? await enqueueComment(workspace, {
           threadId: id,
           parentId,
-          turnTs: turn.ts,
+          turnTs: prepared.turn.ts,
           parsed,
         })
       : null;

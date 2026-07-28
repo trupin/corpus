@@ -13,11 +13,16 @@
 // - **Unlinks before adds, within a batch.** A directory rename arrives as
 //   unlink(old) + add(new); projecting the new path while the old row still
 //   holds the id would be refused as a duplicate, and the document would vanish.
+//
+// And one measurement is load-bearing: `["tree"]` is decided by comparing
+// {@link folderTreeSignature} across the batch, never by the *shape* of the
+// events in it (SERVER-020). See {@link FlushContext}.
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { QUEUE_EVENT_STATUSES, type QueryKey } from "@corpus/contract";
 import chokidar, { type FSWatcher } from "chokidar";
+import { folderTreeSignature } from "../docs/tree.js";
 import {
   DOCS_KEY,
   JOBS_KEY,
@@ -70,6 +75,37 @@ export const WATCH_MAX_BATCH_MS = 250;
  */
 export const AWAIT_WRITE_FINISH = { stabilityThreshold: 40, pollInterval: 10 } as const;
 
+/**
+ * How long one `flush()` may hold the event loop before the rest of its batch is
+ * deferred to a later turn.
+ *
+ * `flush()` is synchronous by necessity — projecting rows and reconciling
+ * anchors are both synchronous, and interleaving a second flush with the first
+ * would break the unlink-before-add ordering above. Synchronous *and unbounded*
+ * is the problem: reconciling one anchored document runs `git show` through
+ * `execFileSync` (`git-head.ts`), so a batch of N anchored files is N sequential
+ * subprocess calls with nothing else served in between. Measured on a real
+ * server before this bound existed, a single out-of-band edit to 100 anchored
+ * documents held `GET /api/health` for 575 ms; 25 documents held it for 179 ms.
+ * The cost was linear in N, which is another way of saying there was no bound at
+ * all — a `git checkout` across a large corpus, or one wedged `git` sitting at
+ * its 5 s timeout, could stall every request in the process.
+ *
+ * So a batch that outruns this budget stops and hands its remainder back to
+ * `pending`, which is re-scheduled for the next turn of the loop. Nothing is
+ * dropped: every deferred path is collected — reconciled, projected, announced —
+ * by a later flush, and each flush emits its own correct frame. What changes is
+ * only *when*, which bounds the worst-case blocking at this budget plus the cost
+ * of the one entry that was already in flight when it expired (`GIT_TIMEOUT_MS`
+ * in the wedged-git case), independently of how large the batch is.
+ *
+ * The value leaves the loop free for the majority of any batch window: SPEC.md
+ * §2.2 budgets ~250 ms for a change to reach the UI, and a watcher that owned
+ * the process for longer than that would be missing the budget it exists to
+ * meet.
+ */
+export const WATCH_FLUSH_BUDGET_MS = 100;
+
 export type WatchEventKind = "add" | "change" | "unlink";
 
 export interface WatcherHandle {
@@ -77,7 +113,14 @@ export interface WatcherHandle {
   readonly ready: Promise<void>;
   /** Paths whose events have not been processed yet. */
   readonly pending: number;
-  /** Processes the pending batch immediately instead of waiting for the timer. */
+  /**
+   * Processes the pending batch immediately instead of waiting for the timer.
+   *
+   * Subject to {@link WATCH_FLUSH_BUDGET_MS} like any other flush, so a batch
+   * big enough to outrun the budget leaves a remainder in {@link pending} and
+   * schedules itself to finish; this returns when the *budget* is spent, not
+   * necessarily when the batch is drained.
+   */
   flush(): void;
   close(): Promise<void>;
 }
@@ -89,7 +132,35 @@ export interface StartWatcherOptions {
   readonly logger?: Logger | undefined;
   readonly debounceMs?: number | undefined;
   readonly maxBatchMs?: number | undefined;
+  /** Defaults to {@link WATCH_FLUSH_BUDGET_MS}. */
+  readonly flushBudgetMs?: number | undefined;
   readonly readHead?: ReadHeadVersion | undefined;
+}
+
+/**
+ * Everything one `flush()` accumulates, threaded through `collect` so no state
+ * survives between batches.
+ *
+ * `captureTree` is the whole of SERVER-020. `["tree"]` used to be decided by a
+ * `structural` boolean — true for add/unlink, false for change — and that
+ * heuristic was wrong in both directions, because `GET /api/tree` counts
+ * something narrower than "a document file changed": it lists only
+ * `data/docs/**`, excludes archived documents, and counts a thread under its
+ * *parent's* folder. So an on-disk edit setting `status: archived` emptied a
+ * folder while announcing nothing, and a skill file appearing under
+ * `.claude/skills/` announced `["tree"]` though skills are counted nowhere.
+ *
+ * The fix is the one `runMutation` already uses (SERVER-018): snapshot the
+ * signature of the tree the route itself would return, re-project, compare. It
+ * is a measurement rather than a prediction, so it cannot disagree with
+ * `docs/tree.ts` about what moves a folder badge — and it is taken lazily,
+ * because a batch of queue events or lock files can never move one.
+ */
+interface FlushContext {
+  /** Keys the batch has accumulated, deduped by the bus on the way out. */
+  readonly keys: QueryKey[];
+  /** Snapshots the tree, once per batch, before its first row is touched. */
+  captureTree(): void;
 }
 
 const isEnoent = (error: unknown): boolean =>
@@ -100,6 +171,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
   const logger = options.logger ?? silentLogger;
   const debounceMs = options.debounceMs ?? WATCH_DEBOUNCE_MS;
   const maxBatchMs = options.maxBatchMs ?? WATCH_MAX_BATCH_MS;
+  const flushBudgetMs = options.flushBudgetMs ?? WATCH_FLUSH_BUDGET_MS;
   const workspaceRoot = db.config.workspaceRoot;
   const corpusDir = db.config.corpusDir;
 
@@ -138,13 +210,12 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     db.prepare("SELECT id, type FROM documents WHERE path = ?").get(relativePath) as
       { id: string; type: string } | undefined;
 
-  const documentKeys = (id: string, type: string, structural: boolean): QueryKey[] => [
+  // No `["tree"]` here, deliberately: whether the folder tree moved is measured
+  // once per batch in `flush()`, not guessed per event. See {@link FlushContext}.
+  const documentKeys = (id: string, type: string): QueryKey[] => [
     DOCS_KEY,
     docKey(id),
     ...(type === "thread" ? [threadKey(id)] : []),
-    // The folder tree lists names and counts: a body edit cannot change it, a
-    // file appearing or disappearing can.
-    ...(structural ? [TREE_KEY] : []),
   ];
 
   /**
@@ -166,19 +237,24 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
   };
 
   const collectDocument = (
-    keys: QueryKey[],
+    context: FlushContext,
     root: DocumentRoot,
     absPath: string,
     relativePath: string,
     kind: WatchEventKind,
     content: Buffer | null,
   ): void => {
+    // Before the first row of the batch moves — the tree is derived from rows,
+    // so this is the last moment it still answers what a client already has.
+    context.captureTree();
+    const keys = context.keys;
+
     if (kind === "unlink" || content === null) {
       const row = documentAt(relativePath);
       removeDocument(db, absPath);
       // No row means nothing was projected from that path — an unparseable file,
       // or one deleted before it was ever indexed.
-      if (row !== undefined) keys.push(...documentKeys(row.id, row.type, true));
+      if (row !== undefined) keys.push(...documentKeys(row.id, row.type));
       return;
     }
 
@@ -216,11 +292,11 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     if (outcome.kind === "projected") {
       const type = db.prepare("SELECT type FROM documents WHERE id = ?").get(outcome.id) as
         { type: string } | undefined;
-      keys.push(...documentKeys(outcome.id, type?.type ?? "note", existing === undefined));
+      keys.push(...documentKeys(outcome.id, type?.type ?? "note"));
       return;
     }
     if (outcome.kind === "removed" && existing !== undefined) {
-      keys.push(...documentKeys(existing.id, existing.type, true));
+      keys.push(...documentKeys(existing.id, existing.type));
       return;
     }
     if (outcome.kind === "skipped") {
@@ -234,7 +310,8 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
       existsSync(join(corpusDir, QUEUE_DIR, status, `${id}.json`)),
     );
 
-  const collect = (keys: QueryKey[], absPath: string, kind: WatchEventKind): void => {
+  const collect = (context: FlushContext, absPath: string, kind: WatchEventKind): void => {
+    const keys = context.keys;
     const relativePath = workspaceRelativePath(workspaceRoot, absPath);
     if (relativePath === null) return;
     const target = classifyWatchPath(relativePath);
@@ -257,7 +334,7 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
 
     switch (target.kind) {
       case "document":
-        collectDocument(keys, target.root, absPath, relativePath, effective, content);
+        collectDocument(context, target.root, absPath, relativePath, effective, content);
         return;
       case "queue-event": {
         // A transition is a rename: the unlink half must not delete a row the
@@ -270,7 +347,10 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         // be invented state.
         const job = db.prepare("SELECT 1 AS present FROM jobs WHERE event_id = ?").get(target.id);
         if (job !== undefined) projectJob(db, corpusDir, target.id);
-        keys.push(QUEUE_KEY, JOBS_KEY);
+        // `DOCS_KEY` for the same reason `QUEUE_QUERY_KEYS` carries it: the
+        // `failed-job` needs reason reads `events.status`, so an out-of-band
+        // transition changes what `GET /api/docs?needs=me` answers (SERVER-028).
+        keys.push(QUEUE_KEY, JOBS_KEY, DOCS_KEY);
         return;
       }
       case "lock":
@@ -307,13 +387,36 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
     pending.clear();
 
     const keys: QueryKey[] = [];
+    let treeBefore: string | null = null;
+    const context: FlushContext = {
+      keys,
+      captureTree() {
+        treeBefore ??= folderTreeSignature(db);
+      },
+    };
+
     const ordered = [
       ...batch.filter(([, kind]) => kind === "unlink"),
       ...batch.filter(([, kind]) => kind !== "unlink"),
     ];
-    for (const [absPath, kind] of ordered) {
+    const budgetEnd = Date.now() + flushBudgetMs;
+    let deferred = 0;
+    for (const [index, entry] of ordered.entries()) {
+      const [absPath, kind] = entry;
+      // Deferral is a *suffix* of the batch, never a hole in it: once one entry
+      // is put back, every entry after it goes with it, so unlink-before-add
+      // survives the split (unlinks are the head of `ordered`, and the next
+      // flush re-sorts what it gets). The first entry always runs — a bound
+      // that can decline to make progress is a livelock, not a bound.
+      if (deferred > 0 || (index > 0 && Date.now() >= budgetEnd)) {
+        deferred += 1;
+        // A newer event for the same path, recorded while this batch ran, is
+        // the truer one; putting the old kind back must not overwrite it.
+        if (!pending.has(absPath)) pending.set(absPath, kind);
+        continue;
+      }
       try {
-        collect(keys, absPath, kind);
+        collect(context, absPath, kind);
       } catch (error) {
         // One unreadable file must not cost the rest of the batch its
         // invalidation, nor take the process down.
@@ -323,14 +426,33 @@ export function startWatcher(options: StartWatcherOptions): WatcherHandle {
         });
       }
     }
+
+    // `treeBefore` stays null unless the batch touched a document path, which
+    // is the only kind of change that can move a folder badge.
+    if (treeBefore !== null && folderTreeSignature(db) !== treeBefore) keys.push(TREE_KEY);
     if (keys.length > 0) bus.invalidate(keys);
+
+    if (deferred > 0 && !closed) {
+      logger.debug("watcher deferred the rest of a batch", {
+        processed: ordered.length - deferred,
+        deferred,
+        budgetMs: flushBudgetMs,
+      });
+      // Already overdue, so it waits only for the loop to turn — not for
+      // another debounce window. Holding the batch deadline at *now* rather
+      // than letting `schedule` re-open it is what makes that stick: an event
+      // arriving in the meantime calls `schedule()` with the full debounce, and
+      // an expired deadline collapses it back to zero.
+      batchDeadline = Date.now();
+      schedule(0);
+    }
   };
 
-  const schedule = (): void => {
+  const schedule = (delayMs?: number): void => {
     const at = Date.now();
     if (batchDeadline === 0) batchDeadline = at + maxBatchMs;
     if (timer !== undefined) clearTimeout(timer);
-    timer = setTimeout(flush, Math.max(0, Math.min(debounceMs, batchDeadline - at)));
+    timer = setTimeout(flush, Math.max(0, Math.min(delayMs ?? debounceMs, batchDeadline - at)));
     timer.unref?.();
   };
 

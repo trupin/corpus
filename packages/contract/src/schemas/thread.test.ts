@@ -11,6 +11,7 @@ import {
   MultipartAppendTurnRequestSchema,
   THREAD_AGENT_STATES,
   ThreadAgentSchema,
+  ThreadMutationResponseSchema,
   ThreadSchema,
   ThreadSummarySchema,
   TurnSchema,
@@ -84,6 +85,49 @@ describe("ThreadSummary", () => {
       lastTs: "2026-07-19T10:07:12Z",
     };
     expect(ThreadSummarySchema.parse(summary)).toEqual(summary);
+  });
+
+  /**
+   * The summary is a resource — every thread list row is one — so §14's warnings
+   * ride the mutation's own envelope instead. A warnings array on the row would
+   * be empty on every read and would make "did this mutation warn?" unanswerable.
+   */
+  it("carries no warnings of its own", () => {
+    expect(Object.keys(ThreadSummarySchema.shape)).not.toContain("warnings");
+  });
+});
+
+describe("ThreadMutationResponse", () => {
+  const summary = {
+    id: "th_x9y8",
+    title: "Re: 30-year fixed assumption",
+    status: "resolved" as const,
+    parent: "doc_a1b2c3",
+    anchor: "anc_k4f7",
+    agent: "engaged" as const,
+    created: "2026-07-19T10:05:00Z",
+    updated: "2026-07-19T10:07:12Z",
+    turnCount: 2,
+    lastAuthor: "agent" as const,
+    lastTs: "2026-07-19T10:07:12Z",
+  };
+
+  it("round-trips a resolve that committed cleanly", () => {
+    const response = { thread: summary, warnings: [] };
+    expect(ThreadMutationResponseSchema.parse(response)).toEqual(response);
+  });
+
+  /** Resolving rewrites and auto-commits the thread file: a rejected hook surfaces here. */
+  it("round-trips a resolve whose auto-commit was rejected", () => {
+    const response = {
+      thread: summary,
+      warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+    };
+    expect(ThreadMutationResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it("requires the warnings array rather than letting it be omitted", () => {
+    expect(ThreadMutationResponseSchema.safeParse({ thread: summary }).success).toBe(false);
   });
 });
 

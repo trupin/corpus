@@ -1,6 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { DocumentIdSchema, EventIdSchema } from "./id.js";
-import { QueueEventStatusSchema } from "./queue.js";
+import { CORE_QUEUE_EVENT_TYPES, QueueEventStatusSchema } from "./queue.js";
 import { IsoDateTimeSchema } from "./time.js";
 
 /**
@@ -11,6 +11,17 @@ import { IsoDateTimeSchema } from "./time.js";
 export const JobSchema = z
   .object({
     eventId: EventIdSchema,
+    type: z
+      .string()
+      .min(1)
+      .describe(
+        "The type of the queue event this job is running — the same value as `QueueEvent.type`, " +
+          `read from the projection rather than re-derived. Core values: ${CORE_QUEUE_EVENT_TYPES.join(", ")}. ` +
+          "Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define " +
+          "their own event types (SPEC.md §7, §10). The console's collapsed job row reads " +
+          "`<type> · <originTitle>`, so this is what tells the user *what* is running, not just " +
+          "what it is running on (SPEC.md §11).",
+      ),
     status: QueueEventStatusSchema,
     started: IsoDateTimeSchema,
     updated: IsoDateTimeSchema,
@@ -21,6 +32,16 @@ export const JobSchema = z
     originId: DocumentIdSchema.nullable().describe(
       "Document or thread the job originated from, so the console can link through.",
     ),
+    originTitle: z
+      .string()
+      .nullable()
+      .describe(
+        "**The current title of whatever `originId` names, or null.** Null exactly when `originId` " +
+          "is null, or when the document it names no longer exists. It rides along so the console " +
+          "can label a job row without a second fetch per row; it is a denormalised copy read at " +
+          "response time, never a stored field, so a renamed document shows its new title on the " +
+          "next read.",
+      ),
   })
   .openapi("Job");
 

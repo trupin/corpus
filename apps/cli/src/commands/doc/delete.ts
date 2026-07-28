@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { UsageError } from "../../errors.js";
-import { plural, warningSuffix } from "../../input.js";
+import { plural, stdinIsTTY, stdinStream, warningSuffix } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
 /**
@@ -64,7 +64,7 @@ async function confirmOrRefuse(
   id: string,
   dependencies: DeleteDependencies,
 ): Promise<void> {
-  const isTTY = dependencies.stdinIsTTY ?? process.stdin.isTTY === true;
+  const isTTY = dependencies.stdinIsTTY ?? stdinIsTTY();
   if (!isTTY) {
     throw new UsageError(`refusing to delete ${id} without --yes.`, {
       hint: "Deleting is irreversible in the working tree (git keeps the history). Re-run with --yes, or archive instead.",
@@ -83,7 +83,7 @@ async function confirmOrRefuse(
  */
 export async function promptOnTerminal(
   question: string,
-  input: NodeJS.ReadableStream = process.stdin,
+  input: NodeJS.ReadableStream = stdinStream(),
   output: NodeJS.WritableStream = process.stderr,
 ): Promise<boolean> {
   const rl = createInterface({ input, output });

@@ -1,6 +1,6 @@
 import type { QueryKey } from "@corpus/contract";
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
-import { JOBS_KEY, QUEUE_KEY } from "../events/index.js";
+import { DOCS_KEY, JOBS_KEY, QUEUE_KEY } from "../events/index.js";
 import type { QueueStore, StoredEvent } from "./store.js";
 
 /**
@@ -28,8 +28,15 @@ export const NOOP_QUEUE_MIRROR: QueueMirror = {
  * The query keys a queue transition invalidates (SPEC.md §2.2 rule 3: the server
  * announces staleness, the UI refetches). Every queue event is a job, so the
  * console's job list goes stale with the queue itself (§7).
+ *
+ * `DOCS_KEY` belongs here too, and not as a precaution: `failed-job` is a
+ * `needs=` reason computed from `events.status` (`docs/needs.ts` —
+ * `FAILED_JOB_SQL` matches any failed event whose payload names the row), so a
+ * transition into or out of `failed` changes what `GET /api/docs?needs=me`
+ * answers. §2.2 requires the invalidation set to say so; without it the
+ * Attention column lagged behind the console until a reload (SERVER-028).
  */
-export const QUEUE_QUERY_KEYS: readonly QueryKey[] = [QUEUE_KEY, JOBS_KEY];
+export const QUEUE_QUERY_KEYS: readonly QueryKey[] = [QUEUE_KEY, JOBS_KEY, DOCS_KEY];
 
 export type QueueInvalidate = (keys: readonly QueryKey[]) => void;
 

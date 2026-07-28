@@ -1,0 +1,224 @@
+/** @vitest-environment jsdom */
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { EscapeLayerPriority, resetEscapeLayers, useEscapeLayer } from "../reader/useEscapeStack";
+import type { BoardCommands } from "./boardCommands";
+import type { ShortcutContext } from "./shortcuts";
+import { currentScope, isWritingSurface, resolveShortcut, useShortcuts } from "./useShortcuts";
+
+afterEach(() => {
+  cleanup();
+  resetEscapeLayers();
+  document.body.innerHTML = "";
+});
+
+function boardSpy(): BoardCommands & { readonly calls: string[] } {
+  const calls: string[] = [];
+  const record =
+    (name: string) =>
+    (...args: unknown[]): void => {
+      calls.push(args.length === 0 ? name : `${name}:${String(args[0])}`);
+    };
+  return {
+    calls,
+    moveRowCursor: record("moveRowCursor"),
+    openRowAtCursor: record("openRowAtCursor"),
+    switchColumn: record("switchColumn"),
+    moveActiveColumn: record("moveActiveColumn"),
+    toggleFocusMode: record("toggleFocusMode"),
+    archiveTarget: record("archiveTarget"),
+    focusReply: record("focusReply"),
+  };
+}
+
+function mount(context: ShortcutContext, extra?: ReactElement): void {
+  function Harness(): ReactElement {
+    useShortcuts(context);
+    return <>{extra}</>;
+  }
+  render(<Harness />);
+}
+
+const key = (init: KeyboardEventInit): KeyboardEvent => new KeyboardEvent("keydown", init);
+
+describe("useShortcuts", () => {
+  it("binds every handler from the registry", () => {
+    const board = boardSpy();
+    const openCompose = vi.fn();
+    const openSearch = vi.fn();
+    const toggleCheatSheet = vi.fn();
+    mount({ openCompose, openSearch, toggleCheatSheet, board });
+
+    fireEvent.keyDown(document, { key: "j" });
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    fireEvent.keyDown(document, { key: "Enter" });
+    fireEvent.keyDown(document, { key: "Enter", shiftKey: true });
+    fireEvent.keyDown(document, { key: "]" });
+    fireEvent.keyDown(document, { key: "ArrowRight", shiftKey: true });
+    fireEvent.keyDown(document, { key: "f" });
+    fireEvent.keyDown(document, { key: "e" });
+    fireEvent.keyDown(document, { key: "r" });
+    fireEvent.keyDown(document, { key: "c" });
+    fireEvent.keyDown(document, { key: "k", metaKey: true });
+    fireEvent.keyDown(document, { key: "?", shiftKey: true });
+
+    expect(board.calls).toEqual([
+      "moveRowCursor:1",
+      "moveRowCursor:-1",
+      "openRowAtCursor:false",
+      "openRowAtCursor:true",
+      "switchColumn:1",
+      "moveActiveColumn:1",
+      "toggleFocusMode",
+      "archiveTarget",
+      "focusReply",
+    ]);
+    expect(openCompose).toHaveBeenCalledTimes(1);
+    expect(openSearch).toHaveBeenCalledTimes(1);
+    expect(toggleCheatSheet).toHaveBeenCalledTimes(1);
+  });
+
+  it("never dispatches esc or ⌫ — that chain is the escape layer's", () => {
+    const board = boardSpy();
+    const onEscape = vi.fn();
+    function Layered(): ReactElement {
+      useEscapeLayer({ active: true, priority: EscapeLayerPriority.Reader, onEscape });
+      return <span />;
+    }
+    mount(
+      {
+        openCompose: vi.fn(),
+        openSearch: vi.fn(),
+        toggleCheatSheet: vi.fn(),
+        board,
+      },
+      <Layered />,
+    );
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Backspace" });
+    expect(onEscape).toHaveBeenCalledTimes(2);
+    expect(board.calls).toEqual([]);
+  });
+
+  describe("writing surfaces", () => {
+    it("recognises inputs, textareas, contenteditable and opted-out subtrees", () => {
+      document.body.innerHTML = `
+        <input id="i" />
+        <textarea id="t"></textarea>
+        <div id="ce" contenteditable="true"><span id="inner">x</span></div>
+        <div data-shortcuts="off"><button id="btn">x</button></div>
+        <button id="plain">x</button>`;
+      const at = (id: string): Element | null => document.getElementById(id);
+      expect(isWritingSurface(at("i"))).toBe(true);
+      expect(isWritingSurface(at("t"))).toBe(true);
+      expect(isWritingSurface(at("ce"))).toBe(true);
+      expect(isWritingSurface(at("inner"))).toBe(true);
+      expect(isWritingSurface(at("btn"))).toBe(true);
+      expect(isWritingSurface(at("plain"))).toBe(false);
+      expect(isWritingSurface(null)).toBe(false);
+    });
+
+    /**
+     * The guard reads `document.activeElement`, not the event's target —
+     * ProseMirror re-targets its key events, and a `c` typed into the editor
+     * would otherwise open the composer mid-sentence.
+     */
+    it("suppresses every binding but ⌘K while a field has the caret", () => {
+      const board = boardSpy();
+      const openCompose = vi.fn();
+      const openSearch = vi.fn();
+      mount({ openCompose, openSearch, toggleCheatSheet: vi.fn(), board });
+
+      const field = document.createElement("input");
+      document.body.append(field);
+      field.focus();
+
+      for (const pressed of ["c", "e", "f", "r", "j", "k", "?"]) {
+        fireEvent.keyDown(document, { key: pressed, shiftKey: pressed === "?" });
+      }
+      expect(board.calls).toEqual([]);
+      expect(openCompose).not.toHaveBeenCalled();
+
+      fireEvent.keyDown(document, { key: "k", metaKey: true });
+      expect(openSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('suppresses them under a `data-shortcuts="off"` root even without a caret in a field', () => {
+      const editor = document.createElement("div");
+      editor.setAttribute("data-shortcuts", "off");
+      editor.tabIndex = 0;
+      document.body.append(editor);
+      editor.focus();
+      expect(
+        resolveShortcut(key({ key: "c" }), {
+          scope: "board",
+          editing: isWritingSurface(document.activeElement),
+        }),
+      ).toBeNull();
+    });
+  });
+
+  it("ignores a keystroke that is an IME composition", () => {
+    const board = boardSpy();
+    const openCompose = vi.fn();
+    mount({ openCompose, openSearch: vi.fn(), toggleCheatSheet: vi.fn(), board });
+
+    fireEvent.keyDown(document, { key: "c", isComposing: true });
+    fireEvent.keyDown(document, { key: "c", keyCode: 229 });
+    expect(openCompose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: "c" });
+    expect(openCompose).toHaveBeenCalledTimes(1);
+  });
+
+  describe("scope", () => {
+    it("reads the overlay scope off the DOM contract, not off state", () => {
+      expect(currentScope()).toBe("board");
+      const overlay = document.createElement("div");
+      overlay.className = "overlay open";
+      document.body.append(overlay);
+      expect(currentScope()).toBe("overlay");
+    });
+
+    it("refuses board bindings while an overlay is up, and keeps the global ones", () => {
+      for (const pressed of ["c", "e", "f", "r", "j", "ArrowDown", "Enter"]) {
+        expect(
+          resolveShortcut(key({ key: pressed }), { scope: "overlay", editing: false }),
+          pressed,
+        ).toBeNull();
+      }
+      expect(
+        resolveShortcut(key({ key: "k", metaKey: true }), { scope: "overlay", editing: false })?.id,
+      ).toBe("search.open");
+      // `?` reaches the shell even over an overlay, because the sheet has to be
+      // able to close itself; whether it *replaces* one is the shell's ruling.
+      expect(resolveShortcut(key({ key: "?" }), { scope: "overlay", editing: false })?.id).toBe(
+        "cheatSheet.toggle",
+      );
+    });
+
+    it("stops at the first match rather than running two handlers", () => {
+      expect(resolveShortcut(key({ key: "Enter" }), { scope: "board", editing: false })?.id).toBe(
+        "rows.open",
+      );
+      expect(
+        resolveShortcut(key({ key: "Enter", shiftKey: true }), { scope: "board", editing: false })
+          ?.id,
+      ).toBe("rows.openFullScreen");
+    });
+  });
+
+  it("leaves a key nobody claims alone", () => {
+    const board = boardSpy();
+    mount({
+      openCompose: vi.fn(),
+      openSearch: vi.fn(),
+      toggleCheatSheet: vi.fn(),
+      board,
+    });
+    fireEvent.keyDown(document, { key: "q" });
+    expect(board.calls).toEqual([]);
+  });
+});

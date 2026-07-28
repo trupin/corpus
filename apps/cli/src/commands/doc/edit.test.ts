@@ -8,7 +8,7 @@ import {
   stubContext,
 } from "../../testing/stub-server.js";
 import { pipe } from "../../testing/stdin.js";
-import { describeAnchors, instantNow, mergeTags, runDocEdit } from "./edit.js";
+import { describeAnchors, editCommand, instantNow, mergeTags, runDocEdit } from "./edit.js";
 import { DOC } from "./fixtures.js";
 
 const ARGS = { id: "doc_a1b2c3" };
@@ -182,6 +182,18 @@ describe("edit helpers", () => {
     expect(mergeTags(["a", "b"], ["c"], ["a"])).toEqual(["b", "c"]);
     expect(mergeTags(["a"], ["a"], [])).toEqual(["a"]);
     expect(mergeTags(["a"], ["b"], ["b"])).toEqual(["a"]);
+  });
+
+  it("removing a tag the document does not carry leaves the list alone", () => {
+    expect(mergeTags(["a", "b"], [], ["c"])).toEqual(["a", "b"]);
+    expect(mergeTags([], [], ["c"])).toEqual([]);
+  });
+
+  it("states the accepted read-modify-write race where a caller will read it", () => {
+    // CLI-008 item 3 is WAIVED-with-rationale: there is no conditional write to
+    // mitigate with, so the hazard is documented instead — in the help, which is
+    // what `docs/cli.md` publishes.
+    expect(editCommand.description).toContain("no conditional write");
   });
 
   it("writes instants to the second, like the frontmatter the server stamps", () => {

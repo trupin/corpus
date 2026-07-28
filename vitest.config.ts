@@ -1,4 +1,9 @@
 import { defineConfig } from "vitest/config";
+import {
+  COVERAGE_EXCLUDE,
+  COVERAGE_INCLUDE,
+  UNIT_COVERAGE_DIR,
+} from "./scripts/coverage-config.js";
 
 export default defineConfig({
   test: {
@@ -17,23 +22,17 @@ export default defineConfig({
     passWithNoTests: true,
     coverage: {
       provider: "v8",
-      include: ["apps/*/src/**", "packages/*/src/**", "plugins/*/src/**"],
-      // Bin shims are thin process glue (argv in, stdout out) with no logic of
-      // their own — the logic they delegate to is covered directly. Generated
-      // `*.generated.ts` modules are type-only declarations with no runtime
-      // statements to cover; their generator is tested instead.
-      exclude: ["**/*.test.{ts,tsx}", "apps/*/src/bin/**", "**/*.generated.ts"],
-      // The json reporter emits istanbul-format coverage-final.json; INFRA-004
-      // merges e2e coverage into the same gate at that level once Playwright
-      // specs exist. Until then the unit-test run carries the 90% bar alone.
+      // Globs come from `scripts/coverage-config.ts` so the unit run and the
+      // merged run describe the same file set; `all` (v8 default) is what makes
+      // a file no test ever loads appear at 0% instead of vanishing.
+      include: COVERAGE_INCLUDE,
+      exclude: COVERAGE_EXCLUDE,
+      // This run emits raw istanbul-format coverage-final.json and enforces
+      // NOTHING: INFRA-004 moved the 90% bar onto the merged unit+e2e report,
+      // computed by `scripts/merge-coverage.ts` (`npm run coverage`). Two gates
+      // that can disagree is the outcome that would be worse than no gate.
       reporter: ["text", "json-summary", "json"],
-      reportsDirectory: "coverage",
-      thresholds: {
-        lines: 90,
-        statements: 90,
-        functions: 90,
-        branches: 90,
-      },
+      reportsDirectory: UNIT_COVERAGE_DIR,
     },
   },
 });

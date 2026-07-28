@@ -448,9 +448,13 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     if (allowEmpty) args.push("--allow-empty");
     // `--only` commits the named paths' working-tree content and disregards
     // whatever else is staged, so an operator's staged-but-unrelated work is
-    // never swallowed. It needs a HEAD to compare against, and needs the paths
-    // to be known to git — which the `add` above guarantees.
-    if (paths.length > 0 && head !== null) args.push("--only", "--", ...paths);
+    // never swallowed. It needs the paths to be known to git — which the `add`
+    // above guarantees — and nothing else: git scopes an initial commit the
+    // same way it scopes any other, so the unborn-branch case is not the
+    // exception this once made it (SERVER-022 finding 5). Skipping the flag
+    // there meant the very first auto-commit in a fresh workspace swallowed
+    // whatever the operator happened to have staged.
+    if (paths.length > 0) args.push("--only", "--", ...paths);
 
     const committed = await git.exec(args);
     if (!committed.ok) {

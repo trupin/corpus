@@ -15,8 +15,9 @@ export {
   listJobRows,
   readJobRow,
   recordJobLine,
-  resolveOriginId,
+  resolveOrigin,
 } from "./project.js";
+export type { JobOrigin } from "./project.js";
 export { mountJobRoutes } from "./routes.js";
 export { JobService, RETRY_LOG_LINE, createJobService } from "./service.js";
 export type { JobServiceOptions } from "./service.js";

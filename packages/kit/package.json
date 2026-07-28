@@ -11,18 +11,41 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "default": "./dist/testing/index.js"
+    },
     "./tokens.css": "./src/tokens.css",
+    "./row.css": "./src/row/row.css",
+    "./markdown.css": "./src/markdown/markdown.css",
+    "./autocomplete.css": "./src/components/Autocomplete/autocomplete.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
-    "src/tokens.css"
+    "src/tokens.css",
+    "src/row/row.css",
+    "src/markdown/markdown.css",
+    "src/components/Autocomplete/autocomplete.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@corpus/contract": "*"
+    "@corpus/contract": "*",
+    "@tanstack/react-query": "^5.101.4",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.3.31",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }

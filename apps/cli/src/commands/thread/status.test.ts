@@ -37,12 +37,26 @@ const summary = (status: "open" | "resolved") => ({
   lastTs: "2026-07-27T10:00:00Z",
 });
 
-/** Answers the read with `before` and the flip with the summary the server would return. */
-const scripted = (before: "open" | "resolved", after: "open" | "resolved") =>
+type Warning = { code: string; detail: string };
+
+/**
+ * Answers the read with `before` and the flip with the `{thread, warnings}`
+ * mutation envelope the server actually returns.
+ */
+const scripted = (
+  before: "open" | "resolved",
+  after: "open" | "resolved",
+  warnings: Warning[] = [],
+) =>
   startStubServer((request, response) => {
     if (request.method === "GET") return sendJson(response, 200, thread(before));
-    sendJson(response, 200, summary(after));
+    sendJson(response, 200, { thread: summary(after), warnings });
   });
+
+const COMMIT_FAILED: Warning = {
+  code: "commit_failed",
+  detail: "pre-commit hook rejected the commit",
+};
 
 afterEach(closeStubServers);
 
@@ -69,13 +83,41 @@ describe("corpus thread resolve", () => {
     expect(harness.stdout()).toBe("th_a1b2c3 is already resolved\n");
   });
 
-  it("emits the thread summary under --json", async () => {
-    const stub = await scripted("open", "resolved");
+  it("emits the whole {thread, warnings} envelope under --json", async () => {
+    const stub = await scripted("open", "resolved", [COMMIT_FAILED]);
     const harness = stubContext(stub, { args: ARGS, json: true });
 
     await runThreadStatus(harness.context, "resolved");
 
-    expect(JSON.parse(harness.stdout())).toEqual(summary("resolved"));
+    expect(JSON.parse(harness.stdout())).toEqual({
+      thread: summary("resolved"),
+      warnings: [COMMIT_FAILED],
+    });
+  });
+
+  it("appends a §14 warning raised by the auto-commit to the printed line", async () => {
+    const stub = await scripted("open", "resolved", [COMMIT_FAILED]);
+    const harness = stubContext(stub, { args: ARGS });
+
+    await runThreadStatus(harness.context, "resolved");
+
+    expect(harness.stdout()).toBe(
+      "resolved th_a1b2c3 — warning: commit_failed (pre-commit hook rejected the commit)\n",
+    );
+  });
+
+  it("summarises several warnings by code", async () => {
+    const stub = await scripted("open", "resolved", [
+      COMMIT_FAILED,
+      { code: "anchor_orphaned", detail: "a_1 no longer matches" },
+    ]);
+    const harness = stubContext(stub, { args: ARGS });
+
+    await runThreadStatus(harness.context, "resolved");
+
+    expect(harness.stdout()).toBe(
+      "resolved th_a1b2c3 — 2 warnings: commit_failed, anchor_orphaned\n",
+    );
   });
 });
 
@@ -97,6 +139,17 @@ describe("corpus thread reopen", () => {
     await runThreadStatus(harness.context, "open");
 
     expect(harness.stdout()).toBe("th_a1b2c3 is already open\n");
+  });
+
+  it("appends a §14 warning raised by the auto-commit to the printed line", async () => {
+    const stub = await scripted("resolved", "open", [COMMIT_FAILED]);
+    const harness = stubContext(stub, { args: ARGS });
+
+    await runThreadStatus(harness.context, "open");
+
+    expect(harness.stdout()).toBe(
+      "reopened th_a1b2c3 — warning: commit_failed (pre-commit hook rejected the commit)\n",
+    );
   });
 
   it("reports an unknown thread as a server error", async () => {

@@ -5,16 +5,21 @@
 // synchronous re-projection, invalidation, the §8 enqueue decision) lives in the
 // verb modules, so no handler can forget one and no two handlers can disagree.
 //
-// `POST /api/threads/{id}/turns` is mounted through the contract's own
-// `mountAppendTurn` rather than `app.openapi`: it is the one route with two
-// media types, and the helper is what gives the library its content-type
-// dispatch back without publishing a body the document calls optional.
+// **The two dual-media routes are mounted through the contract's own helpers**
+// — `mountCreateThread` and `mountAppendTurn` — never through `app.openapi`.
+// That is not a style preference: `@hono/zod-openapi` pushes *every* declared
+// media type's validator into the chain when a body is `required: true`, so a
+// route mounted the ordinary way rejects both of its own forms. `app.openapi`
+// still compiles here and would answer `400` to every JSON `POST /api/threads`
+// at runtime, which no type check and no contract test can catch — only a
+// request can (CONTRACT-009).
 
 import type { OpenAPIHono } from "@hono/zod-openapi";
-import { contractRoutes, mountAppendTurn } from "@corpus/contract";
+import { contractRoutes, mountAppendTurn, mountCreateThread } from "@corpus/contract";
 import { actorOf, reportWarnings, serializeWarnings, type DocumentMutex } from "../docs/index.js";
 import { deleteThreadTurn } from "./cascade.js";
-import { createThread } from "./create.js";
+import { createThread, threadRequestBody } from "./create.js";
+import { answerThreadForm } from "./forms.js";
 import { loadThread, toWireThread } from "./read.js";
 import { markThreadSeen } from "./seen.js";
 import { setThreadStatus } from "./status.js";
@@ -38,13 +43,14 @@ export function mountThreadRoutes(
     return c.json(toWireThread(loadThread(workspace, id)), 200);
   });
 
-  app.openapi(contractRoutes.createThread, async (c) => {
+  mountCreateThread(app, async (c) => {
     const actor = actorOf(c.req.valid("header"));
+    const input = threadRequestBody(c.req.valid("json"));
     const { thread, anchorId, eventId, result } = await createThread(
       workspace,
       mutex,
       actor,
-      c.req.valid("json"),
+      input,
     );
     reportWarnings(workspace, thread.id, result);
     return c.json({ thread, anchorId, eventId, warnings: serializeWarnings(result) }, 201);
@@ -65,6 +71,24 @@ export function mountThreadRoutes(
     return c.json({ thread, turn, eventId, warnings: serializeWarnings(result) }, 201);
   });
 
+  // Single media type, so the ordinary mount is correct here — the dual-media
+  // hazard above applies only to the two routes that declare both JSON and
+  // multipart.
+  app.openapi(contractRoutes.respondToForm, async (c) => {
+    const { id, ts } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { thread, turn, eventId, result } = await answerThreadForm(
+      workspace,
+      mutex,
+      actor,
+      id,
+      ts,
+      c.req.valid("json"),
+    );
+    reportWarnings(workspace, id, result);
+    return c.json({ thread, turn, eventId, warnings: serializeWarnings(result) }, 201);
+  });
+
   app.openapi(contractRoutes.deleteTurn, async (c) => {
     const { id, ts } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
@@ -73,12 +97,18 @@ export function mountThreadRoutes(
     return c.json(result, 200);
   });
 
+  // Both carry §14's warnings on the response rather than only in the log:
+  // resolving rewrites the thread's frontmatter and auto-commits it, so a
+  // workspace git hook that refuses the commit leaves the change on disk and
+  // uncommitted — drift the person who clicked *Resolve* has to be told about.
+  // A `null` result is the no-op case (the thread already had that status):
+  // nothing was written, so there is nothing to warn about.
   app.openapi(contractRoutes.resolveThread, async (c) => {
     const { id } = c.req.valid("param");
     const actor = actorOf(c.req.valid("header"));
     const { thread, result } = await setThreadStatus(workspace, mutex, actor, id, "resolved");
     if (result !== null) reportWarnings(workspace, id, result);
-    return c.json(thread, 200);
+    return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
   });
 
   app.openapi(contractRoutes.reopenThread, async (c) => {
@@ -86,7 +116,7 @@ export function mountThreadRoutes(
     const actor = actorOf(c.req.valid("header"));
     const { thread, result } = await setThreadStatus(workspace, mutex, actor, id, "open");
     if (result !== null) reportWarnings(workspace, id, result);
-    return c.json(thread, 200);
+    return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
   });
 
   app.openapi(contractRoutes.markThreadSeen, async (c) => {

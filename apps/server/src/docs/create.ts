@@ -63,6 +63,36 @@ export function allocatePath(
   return `${folder}/${input.id}.md`;
 }
 
+/**
+ * §11's view keys and §12's plugin keys, as frontmatter keys of a brand-new
+ * document (CONTRACT-011).
+ *
+ * Two rules, both the contract's own. **A key whose value is absent is not
+ * written**: `order: null` "is the same as omitting it: no `order` key",
+ * `pinned` defaults to `false` and an absent `pinned` reads as `false`, so a
+ * plain note's frontmatter stays §5's canonical block and nothing else. And
+ * **`extra` is flat, mirroring the file** — a plugin key is a YAML key beside
+ * the core ones (§12's `todo` carries a top-level `items:`), so each key is
+ * spread in as itself rather than nested under an `extra:` mapping the file
+ * format has never had. A `null` extra value is a no-op on create, since there
+ * is nothing yet to remove.
+ *
+ * A key here can never shadow a core one: `ExtraFrontmatterSchema` rejects all
+ * eighteen reserved keys with a `400` before the handler is reached.
+ */
+function viewFields(input: CreateDocRequest): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  if (input.pinned === true) fields["pinned"] = true;
+  if (input.order !== undefined && input.order !== null) fields["order"] = input.order;
+  if (input.query !== undefined && input.query !== null) fields["query"] = input.query;
+  if (input.column !== undefined && input.column !== null) fields["column"] = input.column;
+  for (const [key, value] of Object.entries(input.extra ?? {})) {
+    if (value === null) continue;
+    fields[key] = value;
+  }
+  return fields;
+}
+
 export async function createDocument(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -105,6 +135,7 @@ export async function createDocument(
       due: input.due ?? null,
       reviewed: null,
       evergreen: input.evergreen ?? false,
+      ...viewFields(input),
     };
 
     const text = serializeDocument(setFrontmatterFields(emptyDocument(body), fields));

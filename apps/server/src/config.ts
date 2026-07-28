@@ -104,6 +104,27 @@ export function nonLoopbackBindError(host: string, configPath: string): ConfigEr
   );
 }
 
+/**
+ * The boot-time refusal for a `dataDir` this version cannot honour.
+ *
+ * The layout SPEC.md §4 fixes is spelled out in `projection/roots.ts`, whose own
+ * docstring records deriving it from this key as a deliberate non-goal — "one
+ * deriving it differently would be a silent split-brain". Until SERVER-022 the
+ * value was parsed, resolved into {@link ServerConfig.dataDir} and then read by
+ * nothing at all: a workspace configured with `dataDir: "content"` started
+ * cleanly and kept every document under `data/`, which is the one outcome
+ * nobody asked for. Refusing says so out loud, in the same shape as
+ * {@link nonLoopbackBindError}.
+ */
+export function unsupportedDataDirError(value: string, configPath: string): ConfigError {
+  return new ConfigError(
+    `refusing to start with "dataDir": ${JSON.stringify(value)}: this version of corpus keeps ` +
+      `documents under ${JSON.stringify(DEFAULT_DATA_DIR)} and cannot relocate them — ` +
+      `set "dataDir" to ${JSON.stringify(DEFAULT_DATA_DIR)} in ${configPath}, or remove the key ` +
+      `to use the default`,
+  );
+}
+
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 
 /** Everything `createServer` needs. No field is derived from ambient state later. */
@@ -111,6 +132,12 @@ export interface ServerConfig {
   readonly workspaceRoot: string;
   readonly corpusDir: string;
   readonly attachments: AttachmentLimits;
+  /**
+   * Absolute path of the workspace's document tree. Always `<root>/data`: a
+   * config naming anything else is refused at load
+   * ({@link unsupportedDataDirError}), because the roots that actually read the
+   * tree spell the layout out rather than deriving it.
+   */
   readonly dataDir: string;
   readonly configPath: string;
   readonly host: string;
@@ -291,6 +318,12 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
   const config = readWorkspaceConfig(workspace.root);
   const packageRoot = options.packageRoot ?? defaultPackageRoot();
 
+  const configPath = join(workspace.root, CORPUS_DIR, CONFIG_FILE);
+  const dataDir = resolve(workspace.root, config.dataDir);
+  if (dataDir !== resolve(workspace.root, DEFAULT_DATA_DIR)) {
+    throw unsupportedDataDirError(config.dataDir, configPath);
+  }
+
   const warnings: string[] = [];
   if (config.token.length < RECOMMENDED_TOKEN_LENGTH) {
     warnings.push(
@@ -302,8 +335,8 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
     workspaceRoot: workspace.root,
     corpusDir: join(workspace.root, CORPUS_DIR),
     attachments: config.attachments,
-    dataDir: resolve(workspace.root, config.dataDir),
-    configPath: join(workspace.root, CORPUS_DIR, CONFIG_FILE),
+    dataDir,
+    configPath,
     host: config.host,
     port: resolvePort(config, options.env),
     token: config.token,

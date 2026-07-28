@@ -1,0 +1,3 @@
+- [ ] an open task
+- [x] a completed task
+- [ ] a task mentioning [[doc_a1b2c3]]

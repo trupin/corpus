@@ -2,7 +2,7 @@ import { InternalError } from "../../errors.js";
 import { serverPidfilePath } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { removePidfile, waitForExit } from "./daemon.js";
-import { inspectServer, probeHealth } from "./state.js";
+import { foreignServerDetail, inspectServer, probeHealth } from "./state.js";
 
 export interface StopDependencies {
   /** How long SIGTERM is given before SIGKILL; production uses the daemon default. */
@@ -12,8 +12,12 @@ export interface StopDependencies {
 
 /**
  * Graceful first, forceful only if it must be, and never forceful towards a
- * process that is not ours. The three not-running cases all exit 0: a script
+ * process that is not ours. The four not-running cases all exit 0: a script
  * that stops unconditionally should not have to know which one it hit.
+ *
+ * "Ours" is decided by the health answer's `workspace` field, not by the fact
+ * that something answered: a second workspace pointed at the same port would
+ * otherwise make its neighbour's server look like this one's (CLI-008 item 1).
  */
 export async function runStop(
   context: WorkspaceCommandContext,
@@ -21,7 +25,10 @@ export async function runStop(
 ): Promise<void> {
   const { workspace, out, client } = context;
   const pidfilePath = serverPidfilePath(workspace.root);
-  const state = await inspectServer({ pidfilePath, probe: () => probeHealth(client) });
+  const state = await inspectServer({
+    pidfilePath,
+    probe: () => probeHealth(client, workspace.root),
+  });
 
   if (state.kind === "stopped") {
     out.emit({ stopped: false, running: false, reason: "not running" });
@@ -48,6 +55,24 @@ export async function runStop(
     });
     out.line(
       `not running (stale pidfile removed) — pid ${String(state.record.pid)} is alive but is not this workspace's server, and was left alone`,
+    );
+    return;
+  }
+
+  if (state.kind === "foreign") {
+    // Our pid is alive, but the port answers as another workspace's server, so
+    // this pid is not the process that owns it. Signalling on the strength of a
+    // health check we did not earn would stop somebody else's server.
+    removePidfile(pidfilePath);
+    out.emit({
+      stopped: false,
+      running: false,
+      reason: "stale pidfile removed",
+      unrelatedPid: state.record.pid,
+      foreignWorkspace: state.health.workspace,
+    });
+    out.line(
+      `not running (stale pidfile removed) — ${foreignServerDetail(workspace.port, state.health)}, and pid ${String(state.record.pid)} was left alone`,
     );
     return;
   }

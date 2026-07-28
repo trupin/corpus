@@ -35,6 +35,7 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/threads/{id}",
   "POST /api/threads/{id}/turns",
   "DELETE /api/threads/{id}/turns/{ts}",
+  "POST /api/threads/{id}/turns/{ts}/form",
   "POST /api/threads/{id}/resolve",
   "POST /api/threads/{id}/reopen",
   "POST /api/threads/{id}/seen",

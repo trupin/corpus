@@ -4,15 +4,18 @@ import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { createProjectionQueueMirror } from "../projection/index.js";
 import { createQueueService, type QueueService } from "../queue/index.js";
 import {
+  UNKNOWN_EVENT_TYPE,
   UNKNOWN_INSTANT,
   listJobRows,
   readJobRow,
   recordJobLine,
-  resolveOriginId,
+  resolveOrigin,
 } from "./project.js";
 
 const DOC = "doc_a1b2c3";
+const DOC_TITLE = "Mortgage options";
 const THREAD = "th_x9y8";
+const THREAD_TITLE = 'Re: "a 30-year fixed at 6.1%"';
 const START = Date.parse("2026-07-27T09:00:00Z");
 
 let ws: Workspace;
@@ -24,8 +27,8 @@ const enqueue = async (payload: Record<string, unknown>): Promise<string> =>
 
 beforeEach(() => {
   ws = createWorkspace("s009-jobproject");
-  ws.doc({ id: DOC, title: "Mortgage options" });
-  ws.thread({ id: THREAD, parent: DOC });
+  ws.doc({ id: DOC, title: DOC_TITLE });
+  ws.thread({ id: THREAD, parent: DOC, title: THREAD_TITLE });
   ws.reproject();
   clock = START;
   queue = createQueueService({
@@ -40,30 +43,50 @@ afterEach(() => {
   ws.close();
 });
 
-describe("resolveOriginId", () => {
-  it("prefers the thread, then the parent, then the document", () => {
-    expect(resolveOriginId(ws.db, JSON.stringify({ threadId: THREAD, parentId: DOC }))).toBe(
-      THREAD,
-    );
-    expect(resolveOriginId(ws.db, JSON.stringify({ parentId: DOC }))).toBe(DOC);
-    expect(resolveOriginId(ws.db, JSON.stringify({ docId: DOC }))).toBe(DOC);
+describe("resolveOrigin", () => {
+  it("prefers the thread, then the parent, then the document — each with its own title", () => {
+    // A thread origin is labelled by the *thread's* title, not its parent's:
+    // "Re: …" is what the console row has to read, or two comments on one
+    // document would be indistinguishable.
+    expect(resolveOrigin(ws.db, JSON.stringify({ threadId: THREAD, parentId: DOC }))).toEqual({
+      id: THREAD,
+      title: THREAD_TITLE,
+    });
+    expect(resolveOrigin(ws.db, JSON.stringify({ parentId: DOC }))).toEqual({
+      id: DOC,
+      title: DOC_TITLE,
+    });
+    expect(resolveOrigin(ws.db, JSON.stringify({ docId: DOC }))).toEqual({
+      id: DOC,
+      title: DOC_TITLE,
+    });
   });
 
   it("reads an unresolvable, absent or malformed origin as none", () => {
     // Resolved *through the projection*: an id the corpus no longer holds is not
     // a link the console can offer.
-    expect(resolveOriginId(ws.db, JSON.stringify({ threadId: "th_gone0000" }))).toBeNull();
-    expect(resolveOriginId(ws.db, JSON.stringify({ threadId: "not-an-id" }))).toBeNull();
-    expect(resolveOriginId(ws.db, JSON.stringify({ threadId: 42 }))).toBeNull();
-    expect(resolveOriginId(ws.db, JSON.stringify({}))).toBeNull();
-    expect(resolveOriginId(ws.db, JSON.stringify([1, 2]))).toBeNull();
-    expect(resolveOriginId(ws.db, "{not json")).toBeNull();
+    expect(resolveOrigin(ws.db, JSON.stringify({ threadId: "th_gone0000" }))).toBeNull();
+    expect(resolveOrigin(ws.db, JSON.stringify({ threadId: "not-an-id" }))).toBeNull();
+    expect(resolveOrigin(ws.db, JSON.stringify({ threadId: 42 }))).toBeNull();
+    expect(resolveOrigin(ws.db, JSON.stringify({}))).toBeNull();
+    expect(resolveOrigin(ws.db, JSON.stringify([1, 2]))).toBeNull();
+    expect(resolveOrigin(ws.db, "{not json")).toBeNull();
   });
 
   it("falls through a payload whose preferred id no longer resolves", () => {
-    expect(resolveOriginId(ws.db, JSON.stringify({ threadId: "th_gone0000", parentId: DOC }))).toBe(
-      DOC,
-    );
+    expect(
+      resolveOrigin(ws.db, JSON.stringify({ threadId: "th_gone0000", parentId: DOC })),
+    ).toEqual({ id: DOC, title: DOC_TITLE });
+  });
+
+  it("follows a rename: the title is read at response time, never stored", async () => {
+    const id = await enqueue({ threadId: THREAD });
+    expect(readJobRow(ws.db, id)?.originTitle).toBe(THREAD_TITLE);
+
+    ws.thread({ id: THREAD, parent: DOC, title: "Renamed after the job ran" });
+    ws.reproject();
+
+    expect(readJobRow(ws.db, id)?.originTitle).toBe("Renamed after the job ran");
   });
 });
 
@@ -93,7 +116,7 @@ describe("recordJobLine", () => {
 });
 
 describe("listJobRows", () => {
-  it("returns the contract's six-field row, most recently active first", async () => {
+  it("returns the contract's row, most recently active first", async () => {
     const older = await enqueue({ threadId: THREAD });
     clock += 60_000;
     const newer = await enqueue({});
@@ -105,17 +128,24 @@ describe("listJobRows", () => {
     expect(rows.map((row) => row.eventId)).toEqual([older, newer]);
     expect(rows[0]).toEqual({
       eventId: older,
+      // The event's own type, from the `events` mirror — what the console's
+      // `<type> · <originTitle>` row says the job actually is (CONTRACT-012).
+      type: "comment.created",
       status: "pending",
       started: "2026-07-27T09:02:00Z",
       updated: "2026-07-27T09:02:00Z",
       lastLine: "worked on it",
       originId: THREAD,
+      originTitle: THREAD_TITLE,
     });
     // A job that never logged is still a job: an empty last line, dated by the
-    // event itself, and no origin when the payload names none.
+    // event itself, and no origin when the payload names none — and then the
+    // title is null too, which is the contract's rule ("null exactly when
+    // `originId` is null").
     expect(rows[1]).toMatchObject({
       lastLine: null,
       originId: null,
+      originTitle: null,
       started: "2026-07-27T09:01:00Z",
     });
   });
@@ -142,7 +172,12 @@ describe("readJobRow", () => {
   it("reads one row, and nothing for an unknown event", async () => {
     const id = await enqueue({ parentId: DOC });
 
-    expect(readJobRow(ws.db, id)).toMatchObject({ eventId: id, originId: DOC, lastLine: null });
+    expect(readJobRow(ws.db, id)).toMatchObject({
+      eventId: id,
+      originId: DOC,
+      originTitle: DOC_TITLE,
+      lastLine: null,
+    });
     expect(readJobRow(ws.db, "evt_nothing00")).toBeUndefined();
   });
 
@@ -167,6 +202,33 @@ describe("readJobRow", () => {
     const row = readJobRow(ws.db, "evt_weird0000");
 
     expect(row?.status).toBe("pending");
+    expect(JobSchema.parse(row)).toEqual(row);
+  });
+
+  it("carries a plugin's own event type through untouched", () => {
+    // `Job.type` is open rather than enumerated for exactly this reason: the
+    // console must name a plugin's work, not fall back to a core type
+    // (SPEC.md §7, §10, CONTRACT-012).
+    ws.db
+      .prepare("INSERT INTO events (id, type, status, created, payload_json) VALUES (?,?,?,?,?)")
+      .run("evt_plugin000", "todos.rollup", "pending", "2026-07-27T09:00:00Z", "{}");
+
+    const row = readJobRow(ws.db, "evt_plugin000");
+
+    expect(row?.type).toBe("todos.rollup");
+    expect(JobSchema.parse(row)).toEqual(row);
+  });
+
+  it("names an untyped hand-made row rather than serving a shape the contract rejects", () => {
+    // Unreachable through the queue — `QueueEventSchema.type` is `min(1)` — but
+    // `JobSchema.type` is too, so an empty column must not reach the wire.
+    ws.db
+      .prepare("INSERT INTO events (id, type, status, created, payload_json) VALUES (?,?,?,?,?)")
+      .run("evt_untyped00", "", "pending", "2026-07-27T09:00:00Z", "{}");
+
+    const row = readJobRow(ws.db, "evt_untyped00");
+
+    expect(row?.type).toBe(UNKNOWN_EVENT_TYPE);
     expect(JobSchema.parse(row)).toEqual(row);
   });
 });

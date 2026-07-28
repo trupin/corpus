@@ -6,7 +6,7 @@
 // service calls it rather than reimplementing one.
 
 import type { Job, JobLog } from "@corpus/contract";
-import { conflict, notFound } from "../errors.js";
+import { notFound } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { QueueService } from "../queue/index.js";
@@ -92,14 +92,15 @@ export class JobService {
    * Failed → pending, with the attempt count reset. Retry is only defined for a
    * failed job: asking for it on a job that is still running is a conflict, not
    * a silent no-op that would look like it worked.
+   *
+   * The "is it failed?" question is asked **by the queue, inside its own writer
+   * chain** (`onlyFrom`). Asked here it would be answered before the move, and a
+   * `complete` landing in between would leave `requeue` — which moves the event
+   * from wherever it happens to be — re-running a job that had just finished
+   * (SERVER-022 finding 2).
    */
   async retry(eventId: string): Promise<Job> {
-    const status = await this.queue.store.locate(eventId);
-    if (status === undefined) throw notFound(`no queue event ${eventId}`);
-    if (status !== "failed") {
-      throw conflict(`queue event ${eventId} is ${status}; only a failed job can be retried`);
-    }
-    await this.queue.requeue(eventId);
+    await this.queue.requeue(eventId, { onlyFrom: "failed" });
     // The log file is kept — it is the evidence of why the job failed — and gains
     // a line saying the run was asked for again.
     await this.appendLine(eventId, RETRY_LOG_LINE, "server");

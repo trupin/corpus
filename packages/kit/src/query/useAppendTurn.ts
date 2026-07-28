@@ -1,0 +1,124 @@
+import type { AppendTurnResponse } from "@corpus/contract";
+import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
+import { useCorpusClient, usePendingTurnStore } from "../client/context.js";
+import { DOCS_KEY, docKey, threadKey } from "./keys.js";
+import { isPendingTurn, type PendingTurn, type ThreadView } from "./pendingTurns.js";
+
+/**
+ * `POST /api/threads/{id}/turns` with an optimistic append of the user's own
+ * turn (SPEC.md §11).
+ *
+ * The provisional turn lands in the `["threads", id]` cache synchronously,
+ * marked `pending` so a view can render it differently, and is reconciled by
+ * timestamp: turn timestamps are unique and monotonic within a thread (SPEC.md
+ * §6), so the server's copy *replaces* the provisional one instead of appearing
+ * beside it. A failed mutation restores the pre-mutation snapshot and rethrows.
+ */
+
+export interface AppendTurnVariables {
+  readonly body: string;
+  /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
+  readonly requestsAgent?: boolean;
+  /**
+   * Attachments (SPEC.md §6). Present and non-empty switches the request to
+   * `multipart/form-data`; a turn carrying files may have an empty `body`.
+   */
+  readonly files?: readonly File[];
+}
+
+/** The provisional body an attachment-only turn shows until the server answers. */
+export function provisionalBody(variables: AppendTurnVariables): string {
+  if (variables.body !== "") return variables.body;
+  return (variables.files ?? []).map((file) => file.name).join("\n");
+}
+
+interface AppendTurnContext {
+  readonly snapshot: ThreadView | undefined;
+  readonly clientId: string;
+}
+
+let sequence = 0;
+
+function nextClientId(): string {
+  sequence += 1;
+  return `pending-${String(sequence)}`;
+}
+
+export function useAppendTurn(
+  threadId: string,
+): UseMutationResult<AppendTurnResponse, Error, AppendTurnVariables, AppendTurnContext> {
+  const client = useCorpusClient();
+  const queryClient = useQueryClient();
+  const pendingTurns = usePendingTurnStore();
+  const key = threadKey(threadId);
+
+  return useMutation<AppendTurnResponse, Error, AppendTurnVariables, AppendTurnContext>({
+    mutationFn: (variables) => {
+      const files = variables.files ?? [];
+      const requestsAgent =
+        variables.requestsAgent === undefined ? {} : { requestsAgent: variables.requestsAgent };
+      // Two requests, one call site: the JSON route cannot carry a repeated
+      // binary part, and the multipart route names the prose field `text`.
+      if (files.length === 0)
+        return client.appendTurn(threadId, { body: variables.body, ...requestsAgent });
+      return client.appendTurnWithFiles(threadId, {
+        ...(variables.body === "" ? {} : { text: variables.body }),
+        ...requestsAgent,
+        files,
+      });
+    },
+
+    async onMutate(variables) {
+      const snapshot = queryClient.getQueryData<ThreadView>(key);
+      const provisional: PendingTurn = {
+        author: "user",
+        ts: new Date().toISOString(),
+        body: provisionalBody(variables),
+        pending: true,
+        clientId: nextClientId(),
+      };
+      // Registered before anything is awaited, so `useThread`'s `queryFn` will
+      // re-merge it into any refetch that lands while the POST is in flight.
+      pendingTurns.add(threadId, provisional);
+      if (snapshot !== undefined) {
+        queryClient.setQueryData<ThreadView>(key, {
+          ...snapshot,
+          turns: [...snapshot.turns, provisional],
+        });
+      }
+      // TanStack's mutation-aware pattern: a refetch that was already in flight
+      // would otherwise resolve after the write above and replace it with
+      // server data that does not carry this turn yet. The store makes that
+      // survivable, and cancelling makes it not happen.
+      await queryClient.cancelQueries({ queryKey: key });
+      return { snapshot, clientId: provisional.clientId };
+    },
+
+    onSuccess(data, _variables, context) {
+      pendingTurns.remove(threadId, context.clientId);
+      queryClient.setQueryData<ThreadView>(key, (current) => {
+        if (current === undefined) return current;
+        const confirmed = current.turns.filter(
+          (turn) => !(isPendingTurn(turn) && turn.clientId === context.clientId),
+        );
+        const alreadyPresent = confirmed.some(
+          (turn) => turn.author === data.turn.author && turn.ts === data.turn.ts,
+        );
+        return { ...current, turns: alreadyPresent ? confirmed : [...confirmed, data.turn] };
+      });
+      // The server's own `invalidate` frame covers a connected client; doing it
+      // here too keeps the mutation correct when the stream is down, which is
+      // exactly when a user is most likely to be retrying.
+      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({ queryKey: docKey(threadId) });
+      void queryClient.invalidateQueries({ queryKey: DOCS_KEY });
+    },
+
+    onError(_error, _variables, context) {
+      if (context === undefined) return;
+      pendingTurns.remove(threadId, context.clientId);
+      if (context.snapshot === undefined) queryClient.removeQueries({ queryKey: key, exact: true });
+      else queryClient.setQueryData<ThreadView>(key, context.snapshot);
+    },
+  });
+}

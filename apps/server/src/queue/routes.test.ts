@@ -12,6 +12,7 @@ import {
   ValidationErrorSchema,
 } from "@corpus/contract";
 import { createServer, type CorpusServer } from "../app.js";
+import { DEFAULT_MAX_ATTEMPTS } from "./service.js";
 import { HaltSentinelSchema, type HaltSentinel } from "./store.js";
 import type { ServerConfig } from "../config.js";
 import { silentLogger } from "../logger.js";
@@ -294,12 +295,38 @@ describe("POST /api/queue/reap-stale", () => {
     expect(await server.queue.status()).toMatchObject({ pending: 1, inProgress: 0 });
   });
 
+  it("reports an event past the attempt cap in `failed`, and not in `reaped`", async () => {
+    const [id] = await seed(1);
+    await request("/api/queue/claim-all", { method: "POST" });
+    // A run that crashed on its last permitted attempt: backdated, and already
+    // at the cap, so this reap gives up rather than recovering it.
+    const path = join(root, ".corpus", "queue", "in-progress", `${String(id)}.json`);
+    const stranded: unknown = JSON.parse(readFileSync(path, "utf8"));
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...(stranded as object),
+        attempts: DEFAULT_MAX_ATTEMPTS,
+        updated: "2020-01-01T00:00:00Z",
+      }),
+    );
+
+    const response = await request("/api/queue/reap-stale", { method: "POST" });
+    expect(response.status).toBe(200);
+    const parsed = ReapStaleResultSchema.safeParse(await response.json());
+
+    // The service has always computed this; the route used to drop it, leaving
+    // the CLI unable to report a give-up (CONTRACT-007's rider).
+    expect(parsed.success && parsed.data).toEqual({ reaped: [], failed: [id] });
+    expect(await server.queue.status()).toMatchObject({ pending: 0, inProgress: 0, failed: 1 });
+  });
+
   it("reports nothing when no run is stuck", async () => {
     await seed(1);
     await request("/api/queue/claim-all", { method: "POST" });
     const response = await request("/api/queue/reap-stale", { method: "POST" });
 
-    expect(await response.json()).toEqual({ reaped: [] });
+    expect(await response.json()).toEqual({ reaped: [], failed: [] });
   });
 });
 

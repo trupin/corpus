@@ -143,7 +143,15 @@ export function reconcileAnchors(
       start: mapper.mapStart(oldRange.start),
       end: mapper.mapEnd(oldRange.end),
     });
-    const blank = isBlank(mapped);
+    // The blank-slice guard is gated on the `partial` classification
+    // (SERVER-014, carrying SERVER-022 finding 4): a mapped slice that trims
+    // to nothing is "a deletion in all but name" only when the edit actually
+    // touched the range. On `equal` the slice is the anchor's own text
+    // untouched — for a whitespace-only `exact` (schema-valid: the contract
+    // requires only `min(1)`) a correctly resolved match necessarily trims to
+    // nothing too, and an ungated guard would orphan such an anchor on every
+    // save that never came near it.
+    const blank = classification === "partial" && isBlank(mapped);
     const rewritten =
       classification === "partial" && newBody.slice(mapped.start, mapped.end) !== selector.exact;
     // Boundary repair (SERVER-013, the TEST-67c family): the mapper followed

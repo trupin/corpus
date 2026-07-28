@@ -39,6 +39,13 @@ export interface DocSpec {
   readonly body?: string;
   /** Anchor entries keyed by anchor id, as the *commented* document carries them. */
   readonly anchors?: Readonly<Record<string, SelectorSpec>>;
+  /**
+   * Frontmatter keys written after the §5 block, exactly as a hand-written file
+   * carries them: §11's view keys (`pinned`, `order`, `query`, `column`) and
+   * §12's plugin keys (`items`, …) are both plain YAML keys beside the core
+   * ones, so one escape hatch seeds both (CONTRACT-011).
+   */
+  readonly frontmatter?: Readonly<Record<string, unknown>>;
 }
 
 export interface TurnSpec {
@@ -73,6 +80,11 @@ function frontmatterLines(spec: DocSpec, type: string): string[] {
     `due: ${yamlValue(spec.due ?? null)}`,
     `reviewed: ${yamlValue(spec.reviewed ?? null)}`,
     `evergreen: ${String(spec.evergreen ?? false)}`,
+    // JSON is a valid YAML flow scalar/collection, so any seeded value survives
+    // without a hand-rolled quoting rule.
+    ...Object.entries(spec.frontmatter ?? {}).map(
+      ([key, value]) => `${key}: ${JSON.stringify(value)}`,
+    ),
   ];
 }
 

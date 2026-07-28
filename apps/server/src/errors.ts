@@ -55,6 +55,19 @@ export function badRequest(message: string, issues: ValidationIssue[] = []): Htt
 }
 
 /**
+ * An upload past the workspace's size caps, on the three routes that take files.
+ *
+ * The body is `bad_request`, not an eighth error code: the contract's `413`
+ * declares `ValidationError` (CONTRACT-009), because an over-cap upload is a
+ * request-shape problem and `{code, message, issues[]}` already carries the
+ * field-level detail — which part was too large, and what the cap is. The status
+ * is what distinguishes it, which is what status codes are for.
+ */
+export function payloadTooLarge(message: string, issues: ValidationIssue[] = []): HttpError {
+  return new HttpError(413, { code: "bad_request", message, issues });
+}
+
+/**
  * `WWW-Authenticate: Bearer` is part of the contract with the CLI: a 401 that
  * does not carry it is indistinguishable from a route that simply refused.
  */

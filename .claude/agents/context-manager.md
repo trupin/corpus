@@ -128,3 +128,13 @@ Escalate to orchestrator:
 ## Git
 
 **You must NEVER run any git commands.** You only write handoff files and report to the orchestrator.
+
+## Machine Resources
+
+This laptop is shared by several concurrent agents and the orchestrator; heavy parallel load has crashed sessions (2026-07-27). Hard rules:
+
+- Run SCOPED tests during development (`./node_modules/.bin/vitest run <path>`); NEVER run the repo-wide suite or `npm run test:coverage` from a worktree — the orchestrator runs the single full gate at harvest. One workspace-scoped run at the very end of your session is the maximum.
+- Cap workers on every vitest invocation: `VITEST_MAX_THREADS=4`.
+- One heavy command at a time: never overlap builds, test runs, e2e, or `npm install`; wait for each to finish before starting the next.
+- Playwright/e2e is single-holder (it starts its own Vite): never run it while another e2e run or dev server is up.
+- Before ending, kill every process you started (recorded pids only) and verify your ports are free.

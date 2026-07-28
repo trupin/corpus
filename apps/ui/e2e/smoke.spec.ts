@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+// `test` comes from the coverage fixture, not from `@playwright/test`: it is the
+// same runner plus the browser-side V8 collection the merged gate needs.
+import { expect, test } from "./coverage";
 import { DARK_BG, LIGHT_ACCENT, LIGHT_BG } from "./tokens";
 
 const boardCss = readFileSync(
@@ -70,7 +73,7 @@ test.describe("shell", () => {
     await expect(compose).toHaveCSS("background-color", LIGHT_ACCENT);
   });
 
-  test("the not-yet-wired affordances are enabled and inert", async ({ page }) => {
+  test("the search bar and the compose button are both wired", async ({ page }) => {
     const uncaught: string[] = [];
     page.on("pageerror", (error) => uncaught.push(error.message));
     await page.goto("/");
@@ -79,8 +82,20 @@ test.describe("shell", () => {
       const button = page.locator(selector);
       await expect(button).toBeEnabled();
       expect(await button.getAttribute("aria-disabled")).toBeNull();
-      await button.click();
     }
+
+    // UI-009 wired the search bar: it opens the overlay.
+    await page.locator(".searchbar").click();
+    await expect(page.locator(".overlay.open")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
+
+    // UI-010 wired the composer: it opens the Ask/Capture panel, and Escape
+    // closes it through the same layer the search overlay uses.
+    await page.locator(".btn-compose").click();
+    await expect(page.locator(".overlay.open")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
 
     await expect(page.locator(".topbar")).toBeVisible();
     expect(uncaught).toEqual([]);

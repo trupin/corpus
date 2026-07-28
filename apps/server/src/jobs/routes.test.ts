@@ -26,6 +26,7 @@ const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
 const DOC = "doc_a1b2c3";
 const THREAD = "th_x9y8";
+const THREAD_TITLE = 'Re: "a 30-year fixed at 6.1%"';
 const START = Date.parse("2026-07-27T09:00:00Z");
 
 /** The bindings `@hono/node-server` supplies; `Hono#request`'s third argument is that same hook. */
@@ -105,7 +106,7 @@ const logLines = (eventId: string): StoredLine[] =>
 beforeEach(() => {
   ws = createWorkspace("s009-jobroutes");
   ws.doc({ id: DOC, title: "Mortgage options" });
-  ws.thread({ id: THREAD, parent: DOC });
+  ws.thread({ id: THREAD, parent: DOC, title: THREAD_TITLE });
   ws.reproject();
   clock = START;
   keys = [];
@@ -374,15 +375,23 @@ describe("GET /api/jobs", () => {
       "eventId",
       "lastLine",
       "originId",
+      "originTitle",
       "started",
       "status",
+      "type",
       "updated",
     ]);
     expect(body.jobs[0]).toMatchObject({
       eventId: id,
+      // The queue event's own type, so the console can say what kind of work is
+      // running and not only what it runs on (CONTRACT-012, UI-011's row).
+      type: "comment.created",
       status: "failed",
       lastLine: "working",
       originId: THREAD,
+      // Populated, not merely present: the console labels the row without a
+      // second fetch (CONTRACT-007's rider, UI-011's consumer).
+      originTitle: THREAD_TITLE,
     });
   });
 

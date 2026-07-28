@@ -64,8 +64,10 @@ export interface paths {
                     q?: string;
                     /** @description Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because plugins define their own types (SPEC.md §5, §10). */
                     type?: string;
-                    /** @description Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` is how the archived chip brings them back. */
+                    /** @description Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter. */
                     status?: "open" | "resolved" | "archived";
+                    /** @description Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's "include archived" reading (SPEC.md §11) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`. */
+                    includeArchived?: boolean;
                     /** @description Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme. */
                     tag?: string;
                     /** @description Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §11). */
@@ -86,10 +88,12 @@ export interface paths {
                     stale?: "aging" | "stale" | "very-stale";
                     /** @description Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
                     unread?: boolean;
+                    /** @description Documents whose frontmatter carries `pinned: true` (`false` selects the rest — a missing key reads as `false`). The board's column set is one bounded query — `pinned=true&type=view&sort=order` — with every view's `query`, `order` and `column` on the rows, so no per-column follow-up read is ever needed (SPEC.md §11). Not thread-only: any type may carry the key, though only views render as columns. */
+                    pinned?: boolean;
                     /** @description The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder. */
                     needs?: "me" | "unread-reply" | "form" | "due" | "stale" | "failed-job";
-                    /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. */
-                    sort?: "updated" | "-updated" | "created" | "-created" | "due" | "title" | "relevance";
+                    /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. `order` sorts ascending by the §11 view key — the board's column ordering — with the documented tiebreak: `order` with nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`. */
+                    sort?: "updated" | "-updated" | "created" | "-created" | "due" | "title" | "order" | "relevance";
                 };
                 header?: never;
                 path?: never;
@@ -700,7 +704,7 @@ export interface paths {
         put?: never;
         /**
          * Capture text (and attachments) as an inbox document
-         * @description The composer's Capture action (SPEC.md §11): creates the document in `data/docs/inbox/` **plus** its whole-document filing thread asking the agent to retitle, move, expand and tag it, in one call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board show the pending-agent indicator immediately and the console link the job back to the capture.
+         * @description The composer's Capture action (SPEC.md §11): creates the document in `data/docs/inbox/` **plus** its whole-document filing thread asking the agent to retitle, move, expand and tag it, in one call. `multipart/form-data`, so a screenshot plus one line is a first-class capture; build the body with `uploadCapture` from `@corpus/contract/client`. The returned `eventId` lets the board show the pending-agent indicator immediately and the console link the job back to the capture. An upload past the workspace's size caps is a `413`.
          */
         post: {
             parameters: {
@@ -746,6 +750,15 @@ export interface paths {
                         "application/json": components["schemas"]["UnauthorizedError"];
                     };
                 };
+                /** @description An attached file, or the request as a whole, is past the workspace's upload caps. `issues` names the offending part and the limit it exceeded. The body is the same `bad_request` shape every other validation failure uses — the status is what distinguishes it. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -766,6 +779,8 @@ export interface paths {
         /**
          * Create a thread on a selection, a whole document, or standalone
          * @description With a selector, the server writes the anchor entry into the parent's frontmatter and creates the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's edit lock, since anchoring mutates the parent.
+         *
+         *     Send `application/json` for a plain thread, or `multipart/form-data` to attach files to the first turn — the composer's *Ask* with a screenshot (SPEC.md §8). The multipart form takes the same repeated `files` part as `POST /api/capture`, names the first turn's prose `text` rather than `body`, and carries `selector` as one JSON-encoded part; a first turn may be attachment-only, but a request with neither text nor files is a `400`. Multipart bodies are built by `uploadCreateThread` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountCreateThread` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.
          */
         post: {
             parameters: {
@@ -777,10 +792,11 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            /** @description The thread and its first turn. `body` is mandatory, so the request body is too. */
+            /** @description The thread and its first turn, as JSON or as multipart. Mandatory: the JSON form demands `body`, a multipart body carrying neither `text` nor `files` is a `400`, and a thread with no first turn is not a thread. */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["CreateThreadRequest"];
+                    "multipart/form-data": components["schemas"]["MultipartCreateThreadRequest"];
                 };
             };
             responses: {
@@ -818,6 +834,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description An attached file, or the request as a whole, is past the workspace's upload caps. `issues` names the offending part and the limit it exceeded. The body is the same `bad_request` shape every other validation failure uses — the status is what distinguishes it. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
                     };
                 };
                 /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
@@ -917,7 +942,7 @@ export interface paths {
         put?: never;
         /**
          * Append a turn to a thread
-         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from `@corpus/contract`, which dispatches validation on `content-type`.
+         * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.
          */
         post: {
             parameters: {
@@ -974,6 +999,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description An attached file, or the request as a whole, is past the workspace's upload caps. `issues` names the offending part and the limit it exceeded. The body is the same `bad_request` shape every other validation failure uses — the status is what distinguishes it. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
                     };
                 };
             };
@@ -1076,6 +1110,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{id}/turns/{ts}/form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer the form in an agent turn
+         * @description Submits an answer to the ```` ```form ```` block in the turn at `{ts}`: the server appends a structured answer turn carrying the chosen option and any note, and enqueues a `form.respond` event that re-triggers the agent like any engaged-thread reply (SPEC.md §6). The thread then leaves `needs=form`.
+         *
+         *     **The fence grammar**, which this route validates the answer against: an opening fence whose info string is exactly `form` (so ```` ```formula ```` is not one), then YAML with `prompt` (non-empty) and `options` (at least one, each non-empty, all distinct), then a closing fence. Selection is single: the answer names exactly one option, verbatim. A `note` is free text and always optional. Nothing else is part of the grammar — no form id, no per-option types, no required markers, no multi-select.
+         *
+         *     `400` when `option` is not one of the offered options, naming `body.option` in `issues`; `404` when the thread has no such turn, or that turn carries no form.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                    /** @description Timestamp of the agent turn carrying the form, which is that turn's identity and therefore the form's (SPEC.md §6). An ISO 8601 instant contains `:`, so clients must URL-encode it — `2026-07-19T10%3A05%3A00Z`. */
+                    ts: string;
+                };
+                cookie?: never;
+            };
+            /** @description The answer. `option` is mandatory — an answer that chooses nothing is not an answer — so the body is too. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["FormAnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description The appended answer turn, the updated thread summary, and the enqueued event. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FormAnswerResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{id}/resolve": {
         parameters: {
             query?: never;
@@ -1087,7 +1204,7 @@ export interface paths {
         put?: never;
         /**
          * Resolve a thread
-         * @description Sets `status: resolved`. The thread collapses in the document view and **later turns stop re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything.
+         * @description Sets `status: resolved`. The thread collapses in the document view and **later turns stop re-triggering the agent** even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving rewrites the thread file and auto-commits it, so the response carries §14's warnings — a workspace hook that rejects the commit leaves the status change on disk and uncommitted, and that has to be visible.
          */
         post: {
             parameters: {
@@ -1104,13 +1221,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The updated thread summary. */
+                /** @description The updated thread summary, and any warnings raised while writing it. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ThreadSummary"];
+                        "application/json": components["schemas"]["ThreadMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -1159,7 +1276,7 @@ export interface paths {
         put?: never;
         /**
          * Reopen a resolved thread
-         * @description Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8).
+         * @description Sets `status: open` again. An `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Like `resolve`, it rewrites and auto-commits the thread file, so the response carries §14's warnings.
          */
         post: {
             parameters: {
@@ -1176,13 +1293,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The updated thread summary. */
+                /** @description The updated thread summary, and any warnings raised while writing it. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ThreadSummary"];
+                        "application/json": components["schemas"]["ThreadMutationResponse"];
                     };
                 };
                 /** @description The request failed schema validation; `issues` names the offending fields. */
@@ -2863,6 +2980,20 @@ export interface components {
             evergreen: boolean;
             /** @description Leading plain-text excerpt of the body, for list rows. */
             excerpt: string;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
+            pinned: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. */
+            order: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
+            query: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
+            column: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra: {
+                [key: string]: unknown;
+            };
             /**
              * @description Staleness tier from SPEC.md §5's age ramp (aging, stale, very-stale), driving the row's age rail, dimming and age chip. **`null` is fresh** — the tiers name degrees of staleness and freshness is their absence, which is also why `stale=` takes a tier and never `fresh`. Always null for `evergreen: true` documents, which opt out of staleness entirely, and for a document whose age is unknown (`updated` and `reviewed` both null): an unknown age is not an old one.
              * @enum {string|null}
@@ -2873,6 +3004,8 @@ export interface components {
              * @example doc_a1b2c3
              */
             parent: string | null;
+            /** @description The current title of whatever `parent` names, or null. Resolved at query time like `Job.originTitle` — never a stored copy, so a rename is reflected immediately. Null whenever `parent` is null, and when the parent no longer resolves (a deleted parent, SPEC.md §9.2). An orphaned thread — `parent` set, title gone — renders an **empty** context cell rather than a raw `doc_*` id, which is not the same as a standalone thread (no `parent` at all) and must not be labelled as one. */
+            parentTitle: string | null;
             /**
              * @description Agent participation state (none, requested, engaged, SPEC.md §6, §8), backing the pending-agent indicator. Null on non-threads.
              * @enum {string|null}
@@ -2894,6 +3027,8 @@ export interface components {
             unread: boolean | null;
             /** @description True when the agent has been drawn into an open thread and the last turn is not yet its reply — the pending-agent indicator (SPEC.md §8). Null on non-threads. */
             awaitingAgent: boolean | null;
+            /** @description How many of **this document's own threads** are currently unread for the user (SPEC.md §7) — the aggregate behind a document row's unread pill. It counts child threads whose last turn is newer than your last-seen mark, which is exactly the comparison the per-thread `unread` flag makes, so the two agree by construction: this equals the item count of `?parent=<id>&type=thread&unread=true`, and a thread marked seen at a `lastSeenTs` before its last turn (a partial read) still counts as unread in both. It rides on every row so a list never issues one such query per row. **`0` on a thread row** — a thread does not aggregate its own child threads here — **and `0` on a document with no threads.** Never null and never absent, so `0` always means "nothing unread" and never "unknown". */
+            unreadThreads: number;
             /** @description Attention reasons for this row, populated on every response rather than only under `needs=`, so any list can render reason chips. Empty when nothing applies; never contains `me`, which is the union filter and not a reason. */
             attention: ("unread-reply" | "form" | "due" | "stale" | "failed-job")[];
             /** @description Search highlights for this row; empty when the query carried no `q`. */
@@ -3001,6 +3136,20 @@ export interface components {
             reviewed: string | null;
             /** @description True opts the document out of staleness entirely. */
             evergreen: boolean;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
+            pinned: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. */
+            order: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
+            query: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
+            column: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra: {
+                [key: string]: unknown;
+            };
         };
         TextQuoteSelector: {
             /** @description The quoted text the thread is attached to. */
@@ -3076,6 +3225,20 @@ export interface components {
             due?: string | null;
             /** @description True opts the document out of staleness entirely. Defaults to `false`. */
             evergreen?: boolean;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. Defaults to `false` — a view renders as a board column only once pinned. */
+            pinned?: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. Null is the same as omitting it: no `order` key. */
+            order?: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. Null is the same as omitting it: no `query` key. */
+            query?: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). Null is the same as omitting it: no `column` key. */
+            column?: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra?: {
+                [key: string]: unknown;
+            };
         };
         NotFoundError: {
             /** @enum {string} */
@@ -3138,6 +3301,20 @@ export interface components {
              */
             reviewed?: string | null;
             evergreen?: boolean;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
+            pinned?: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. On update, `null` clears the key from the file. */
+            order?: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. On update, `null` clears the key from the file. */
+            query?: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). On update, `null` clears the key from the file. */
+            column?: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra?: {
+                [key: string]: unknown;
+            };
         };
         DeleteDocResult: {
             /**
@@ -3289,6 +3466,23 @@ export interface components {
             /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues only when the body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a `/<skill>` invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
             requestsAgent?: boolean;
         };
+        MultipartCreateThreadRequest: {
+            /**
+             * @description Document being commented on. Omitted creates a standalone thread.
+             * @example doc_a1b2c3
+             */
+            parent?: string;
+            /** @description Text-quote selector as a JSON object encoded into one part, e.g. `{"exact":"assume a 30-year fixed at 6.1%","prefix":"the model we "}`. Same fields and same meaning as the JSON body's `selector`. Omit it to anchor the thread to the whole document, or to nothing when `parent` is absent. */
+            selector?: string;
+            /** @description Defaults to the anchor quote or the first turn. */
+            title?: string;
+            /** @description Body of the thread's first turn. Optional: a first turn may be attachment-only. */
+            text?: string;
+            /** @description Enqueue signal for the agent (SPEC.md §8), independent of who authored the turn. Omitted: the server enqueues only when the body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a `/<skill>` invocation. `true`: request the agent. `false`: "note only" — suppress the enqueue even when the thread is engaged. */
+            requestsAgent?: boolean;
+            /** @description Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6). */
+            files?: string[];
+        };
         AppendTurnResponse: {
             thread: components["schemas"]["ThreadSummary"];
             turn: components["schemas"]["Turn"];
@@ -3378,6 +3572,28 @@ export interface components {
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
             warnings: components["schemas"]["Warning"][];
         };
+        FormAnswerResponse: {
+            thread: components["schemas"]["ThreadSummary"];
+            turn: components["schemas"]["Turn"] & unknown;
+            /**
+             * @description The enqueued `form.respond` event, which re-triggers the agent like any engaged-thread reply (SPEC.md §6). Null when the answer does not re-trigger it — a resolved thread stops re-triggering the agent even while it is engaged (SPEC.md §8).
+             * @example evt_7c1d
+             */
+            eventId: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        FormAnswerRequest: {
+            /** @description The chosen option, matched verbatim against the answered form's `options`. An option the form does not offer is a `400` naming `body.option` — validating the answer against the fence it answers is the point of the route. */
+            option: string;
+            /** @description Free-text note recorded beside the chosen option (SPEC.md §6). Optional. */
+            note?: string;
+        };
+        ThreadMutationResponse: {
+            thread: components["schemas"]["ThreadSummary"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
         MarkSeenResult: {
             /**
              * @description Identifier of a thread document.
@@ -3429,7 +3645,7 @@ export interface components {
             created: string;
             /** @description What produced the event, e.g. `ui` or `cli`. */
             source: string;
-            /** @description Type-specific payload; plugins own the shape of their own event types. */
+            /** @description Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, option, note}` (SPEC.md §6). */
             payload: {
                 [key: string]: unknown;
             };
@@ -3440,6 +3656,8 @@ export interface components {
         ReapStaleResult: {
             /** @description Events recovered from `in-progress/` back to `pending/` after a crashed run. */
             reaped: string[];
+            /** @description Events the reap gave up on rather than recovering, having exhausted their attempts. They are **not** in `reaped`: the two arrays are disjoint, and an empty one is the normal case. */
+            failed: string[];
         };
         HaltQueueRequest: {
             /** @description Human-readable halt reason, recorded in the `.corpus/HALT` sentinel. */
@@ -3492,6 +3710,8 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
+            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
+            type: string;
             /**
              * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in.
              * @enum {string}
@@ -3514,6 +3734,8 @@ export interface components {
              * @example doc_a1b2c3
              */
             originId: string | null;
+            /** @description **The current title of whatever `originId` names, or null.** Null exactly when `originId` is null, or when the document it names no longer exists. It rides along so the console can label a job row without a second fetch per row; it is a denormalised copy read at response time, never a stored field, so a renamed document shows its new title on the next read. */
+            originTitle: string | null;
         };
         JobLog: {
             /** @description Log lines from `cursor` onwards, oldest first. */

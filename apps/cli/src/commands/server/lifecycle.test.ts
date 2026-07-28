@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_ACTOR } from "@corpus/contract";
@@ -289,6 +289,94 @@ describe("the server lifecycle, end to end", () => {
     expect(stop.harness.stdout()).toContain("it ignored SIGTERM and was killed");
     expect(isProcessAlive(record?.pid ?? 0)).toBe(false);
     expect(existsSync(serverPidfilePath(harness.root))).toBe(false);
+  }, 30_000);
+
+  it("refuses to start when another workspace's server holds the port, and writes no pidfile", async () => {
+    // Two real workspaces, one port — the shape a copied `.corpus/config.json`
+    // or a shared `CORPUS_PORT` produces. Before CLI-008, B's child died
+    // EADDRINUSE while the readiness probe was answered by A, so `start`
+    // reported success and recorded a pidfile naming the dead child.
+    const a = await makeWorkspace("life-contend-a");
+    const b = await makeWorkspace("life-contend-b", CRASHING_SERVER);
+    await runStart(context(a).ctx, stubEntry(a));
+
+    const contended = {
+      ...b,
+      workspace: { ...b.workspace, port: a.workspace.port, baseUrl: a.workspace.baseUrl },
+    };
+    const start = context(contended);
+    const error = await runStart(start.ctx, { ...stubEntry(b), readyTimeoutMs: 5000 })
+      .then(() => undefined)
+      .catch((thrown: unknown) => thrown);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.serverUnreachable);
+    expect((error as Error).message).toBe(
+      `:${String(a.workspace.port)} is held by another workspace's server (${a.root})`,
+    );
+    expect(existsSync(serverPidfilePath(b.root))).toBe(false);
+    expect(start.harness.stdout()).toBe("");
+
+    // A is untouched by the attempt, and B still reports itself as stopped.
+    const statusB = context(contended, { json: true });
+    await statusCommand.handler(statusB.ctx).catch(() => undefined);
+    expect(JSON.parse(statusB.harness.stdout())).toMatchObject({ running: false, pid: null });
+
+    const statusA = context(a, { json: true });
+    await statusCommand.handler(statusA.ctx);
+    expect(JSON.parse(statusA.harness.stdout())).toMatchObject({ running: true, healthy: true });
+
+    await stopCommand.handler(context(a).ctx);
+  }, 30_000);
+
+  it("refuses to start over a live pid whose port answers for another workspace", async () => {
+    // The pidfile names a live process (this test runner) and something healthy
+    // IS on the port — the exact pair that used to read as "already running".
+    const a = await makeWorkspace("life-foreign-a");
+    const b = await makeWorkspace("life-foreign-b");
+    await runStart(context(a).ctx, stubEntry(a));
+
+    writePidfile(serverPidfilePath(b.root), {
+      pid: process.pid,
+      port: a.workspace.port,
+      startedAt: new Date().toISOString(),
+      version: "9.9.9",
+    });
+    const contended = {
+      ...b,
+      workspace: { ...b.workspace, port: a.workspace.port, baseUrl: a.workspace.baseUrl },
+    };
+
+    const error = await runStart(context(contended).ctx, stubEntry(b))
+      .then(() => undefined)
+      .catch((thrown: unknown) => thrown);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.serverUnreachable);
+    expect((error as Error).message).toContain("is held by another workspace's server");
+    expect((error as Error).message).toContain(a.root);
+
+    await stopCommand.handler(context(a).ctx);
+  }, 30_000);
+
+  it("refuses to start a second server for this workspace when no pidfile names the first", async () => {
+    const harness = await makeWorkspace("life-orphan-daemon");
+    await runStart(context(harness).ctx, stubEntry(harness));
+    const record = readPidfile(serverPidfilePath(harness.root));
+
+    // The pidfile is gone but the daemon is not — a deleted `.corpus/` file, or
+    // a server started by hand. Spawning here would only produce EADDRINUSE.
+    rmSync(serverPidfilePath(harness.root));
+
+    const error = await runStart(context(harness).ctx, stubEntry(harness))
+      .then(() => undefined)
+      .catch((thrown: unknown) => thrown);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.serverUnreachable);
+    expect((error as Error).message).toContain("already listening on");
+    expect((error as Error).message).toContain("no pidfile names it");
+    expect(existsSync(serverPidfilePath(harness.root))).toBe(false);
+
+    process.kill(record?.pid ?? 0, "SIGTERM");
+    await waitForPortToFree(harness.workspace.port);
   }, 30_000);
 
   it("refuses to start over a live pid that answers nothing", async () => {

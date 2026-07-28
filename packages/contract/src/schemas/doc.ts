@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { TextQuoteSelectorSchema } from "./anchor.js";
+import { ExtraFrontmatterSchema } from "./extra.js";
 import { AnchorIdSchema, DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { ThreadStatusSchema } from "./thread.js";
 import { IsoDateSchema, IsoDateTimeSchema } from "./time.js";
@@ -65,6 +66,78 @@ const UNDATED_DESCRIPTION = (which: string): string =>
   "hand-written skill file legitimately has none. Render it as “—” rather than " +
   "substituting a date; staleness treats an unknown age as fresh.";
 
+/**
+ * **The §11 view keys are first-class core fields, not extra frontmatter**
+ * (CONTRACT-011 design decision, 2026-07-27). Three reasons, in force order:
+ *
+ * 1. Two of the four are server semantics — `pinned` is a `GET /api/docs`
+ *    filter and `order` is a sort key, and a key the server filters and sorts
+ *    on is by definition not opaque passthrough. Routing them through `extra`
+ *    would mean the server reaching into a blob it promises never to read.
+ * 2. §11 makes columns core product ("a column IS a `type: view` document");
+ *    core keys are closed and validated here, and `query`'s well-formedness
+ *    and `column`'s `<plugin>/<type>` format deserve `400`s at the write
+ *    boundary, which `extra` deliberately never provides.
+ * 3. It keeps `extra`'s contract absolute — *nothing* in it is ever
+ *    interpreted by the server, with no view-key asterisk.
+ *
+ * Plugin keys (`todo.items`, SPEC.md §12) stay in `extra` (`./extra.js`);
+ * that split — closed core, open extra — is the whole shape of the surface.
+ *
+ * Carried on **every** document, not only views: frontmatter is per-file and
+ * `type` is an open string, so any file may hold the keys; they simply mean
+ * nothing off a view. Shared verbatim between the list row and the single
+ * read — `doc.test.ts` pins the descriptions identical, the same rule the
+ * nullable timestamps follow.
+ */
+const PINNED_DESCRIPTION =
+  "True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when " +
+  "the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`.";
+
+const ORDER_DESCRIPTION =
+  "Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the " +
+  "file carries no `order` key — such a column is still placed, by the documented tiebreak " +
+  "(`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder " +
+  "may write midpoints between neighbours instead of renumbering every column.";
+
+const VIEW_QUERY_DESCRIPTION =
+  "The stored board query of a `type: view` document (SPEC.md §11): a flat map from " +
+  "`GET /api/docs` parameter names to a value or an array of values — arrays OR together, like " +
+  'the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server ' +
+  "stores it and never interprets it: the client compiles it into the collection query and " +
+  "renders it as filter chips, so an unknown key degrades in the client, never on the wire. " +
+  "`null` when the file carries no `query` key.";
+
+const COLUMN_DESCRIPTION =
+  'Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — ' +
+  "e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an " +
+  "uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15).";
+
+const viewQueryValue = z.union([z.string(), z.number(), z.boolean()]);
+
+export const ViewQuerySchema = z
+  .record(z.string().min(1), z.union([viewQueryValue, z.array(viewQueryValue)]))
+  .openapi({ description: VIEW_QUERY_DESCRIPTION });
+
+/** Exactly one `/` between non-empty, whitespace-free plugin and type names. */
+export const COLUMN_REF_PATTERN = /^[^/\s]+\/[^/\s]+$/;
+
+/**
+ * Response-side view keys plus the open extra object, spread into both
+ * `DocFrontmatterSchema` and `docRowBaseShape` — the same instances, so the
+ * two routes cannot describe the same file key differently. All present on
+ * every response (`false`/`null`/`{}` when the file omits the key): the
+ * nullable-not-optional convention `threadRowShape` documents, and what lets
+ * the board read its whole column set from the list response with no N+1.
+ */
+const viewFrontmatterShape = {
+  pinned: z.boolean().describe(PINNED_DESCRIPTION),
+  order: z.number().nullable().describe(ORDER_DESCRIPTION),
+  query: ViewQuerySchema.nullable().describe(VIEW_QUERY_DESCRIPTION),
+  column: z.string().nullable().describe(COLUMN_DESCRIPTION),
+  extra: ExtraFrontmatterSchema,
+} as const;
+
 export const DocFrontmatterSchema = z
   .object({
     id: DocumentIdSchema,
@@ -84,6 +157,7 @@ export const DocFrontmatterSchema = z
       'Last explicit "still current" confirmation; staleness runs from max(updated, reviewed).',
     ),
     evergreen: z.boolean().describe("True opts the document out of staleness entirely."),
+    ...viewFrontmatterShape,
   })
   .openapi("DocFrontmatter");
 
@@ -138,6 +212,7 @@ export const docRowBaseShape = {
   reviewed: IsoDateTimeSchema.nullable(),
   evergreen: z.boolean(),
   excerpt: z.string().describe("Leading plain-text excerpt of the body, for list rows."),
+  ...viewFrontmatterShape,
 } as const;
 
 /**
@@ -164,6 +239,28 @@ export const CreateDocRequestSchema = z
       .boolean()
       .optional()
       .describe("True opts the document out of staleness entirely. Defaults to `false`."),
+    pinned: z
+      .boolean()
+      .optional()
+      .describe(
+        `${PINNED_DESCRIPTION} Defaults to \`false\` — a view renders as a board column only ` +
+          "once pinned.",
+      ),
+    order: z
+      .number()
+      .nullable()
+      .optional()
+      .describe(`${ORDER_DESCRIPTION} Null is the same as omitting it: no \`order\` key.`),
+    query: ViewQuerySchema.nullable()
+      .optional()
+      .describe(`${VIEW_QUERY_DESCRIPTION} Null is the same as omitting it: no \`query\` key.`),
+    column: z
+      .string()
+      .regex(COLUMN_REF_PATTERN, 'A column reference is `"<plugin>/<type>"` — exactly one slash.')
+      .nullable()
+      .optional()
+      .describe(`${COLUMN_DESCRIPTION} Null is the same as omitting it: no \`column\` key.`),
+    extra: ExtraFrontmatterSchema.optional(),
   })
   .openapi("CreateDocRequest");
 
@@ -178,6 +275,25 @@ export const UpdateDocRequestSchema = z
       .optional()
       .describe('Set to the current instant to record "still current" (SPEC.md §5).'),
     evergreen: z.boolean().optional(),
+    // The view keys follow the request's own convention — name only what you
+    // change. `null` clears the key from the file; subsequent reads report
+    // `null` (`false` for `pinned`, whose absent and false states are one).
+    pinned: z.boolean().optional().describe(PINNED_DESCRIPTION),
+    order: z
+      .number()
+      .nullable()
+      .optional()
+      .describe(`${ORDER_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+    query: ViewQuerySchema.nullable()
+      .optional()
+      .describe(`${VIEW_QUERY_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+    column: z
+      .string()
+      .regex(COLUMN_REF_PATTERN, 'A column reference is `"<plugin>/<type>"` — exactly one slash.')
+      .nullable()
+      .optional()
+      .describe(`${COLUMN_DESCRIPTION} On update, \`null\` clears the key from the file.`),
+    extra: ExtraFrontmatterSchema.optional(),
   })
   .openapi("UpdateDocRequest");
 
@@ -238,6 +354,7 @@ export const DeleteDocResultSchema = z
   })
   .openapi("DeleteDocResult");
 
+export type ViewQuery = z.infer<typeof ViewQuerySchema>;
 export type DocType = z.infer<typeof DocTypeSchema>;
 export type CoreDocType = z.infer<typeof CoreDocTypeSchema>;
 export type DocStatus = z.infer<typeof DocStatusSchema>;

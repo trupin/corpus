@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 coverage/
+coverage-raw/
 design/
 SPEC.md
 issues/
@@ -10,3 +11,8 @@ packages/contract/openapi.json
 # The workspace template is product code: its bytes are what `corpus init`
 # installs into a user's workspace, so Prettier must never rewrap or re-mark it.
 assets/workspace/
+# The editor's round-trip corpus. Each fixture is markdown in the exact shape
+# the serializer emits, and the suite asserts `serialize(parse(md)) === md` byte
+# for byte — Prettier rewrapping one would make the assertion test Prettier's
+# markdown style instead of the serializer's.
+apps/ui/src/editor/markdown/fixtures/

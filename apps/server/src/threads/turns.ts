@@ -26,7 +26,14 @@
 // out. The cleanup window closes at `runMutation` (SERVER-021) — see
 // {@link whileUnreferenced}.
 
-import type { Actor, AppendTurnBody, ThreadSummary, Turn } from "@corpus/contract";
+import type {
+  Actor,
+  AppendTurnBody,
+  ThreadAgent,
+  ThreadSummary,
+  Turn,
+  Warning,
+} from "@corpus/contract";
 import { isMultipartTurn } from "@corpus/contract";
 import {
   DEFAULT_ATTACHMENT_LIMITS,
@@ -55,7 +62,7 @@ import { internalError } from "../errors.js";
 import { enqueueComment } from "./events.js";
 import { parseMentions } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
-import { loadThread, toThreadSummary } from "./read.js";
+import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
 export interface TurnInput {
@@ -90,6 +97,90 @@ export function turnRequestBody(body: AppendTurnBody): TurnInput {
   return { text: body.text, requestsAgent: body.requestsAgent, files: body.files };
 }
 
+/** The bytes an append will write, and what §14 noticed about them. */
+export interface PreparedTurn {
+  readonly appended: { readonly body: string; readonly turn: Turn };
+  /** The whole thread file, frontmatter included, ready to be written. */
+  readonly text: string;
+  readonly warnings: readonly Warning[];
+}
+
+/**
+ * Build the thread file a turn append will write — the turn itself, the
+ * frontmatter it moves, and §14's verdict on the result.
+ *
+ * Extracted so the form-answer path (SERVER-016) appends through *this* code
+ * rather than a second copy of it. A form answer is a turn like any other: the
+ * only things it does differently are which event it enqueues and what its
+ * commit says, so those are the only things its verb writes for itself. Two
+ * copies of the "append a turn" bytes is how one path stops stamping `updated`,
+ * or stops moving `agent`, and nothing notices until a thread's list row goes
+ * stale for good.
+ */
+export function buildTurnAppend(
+  workspace: ThreadsWorkspace,
+  thread: LoadedThread,
+  input: {
+    readonly author: Actor;
+    readonly text: string;
+    readonly ts: string;
+    /** The thread's `agent` field after this turn, per §8's matrix. */
+    readonly agent: ThreadAgent;
+  },
+): PreparedTurn {
+  const appended = appendTurn(thread.loaded.parsed.body, {
+    author: input.author,
+    text: input.text,
+    ts: input.ts,
+  });
+  // `updated` is the turn's own stamp rather than the wall clock: they differ
+  // exactly when the stamp was bumped for uniqueness, and the useful answer is
+  // "when the last turn is dated", which is what every list sorts on.
+  const text = serializeDocument(
+    setFrontmatterFields(setBody(thread.loaded.parsed, appended.body), {
+      updated: appended.turn.ts,
+      agent: input.agent,
+    }),
+  );
+  return { appended, text, warnings: validateBeforeWrite(workspace, thread.loaded.path, text) };
+}
+
+/**
+ * Write, commit and re-project a prepared turn, and announce it.
+ *
+ * `subject` is the caller's because it names the *act*: a reply and a form
+ * answer are both turns on the same file, and a reader of `git log` should be
+ * able to tell which one happened. Everything else — the atomic write, the
+ * staged path, the synchronous re-projection, the invalidated keys — is
+ * identical by construction rather than by agreement.
+ */
+export async function commitTurnAppend(
+  workspace: ThreadsWorkspace,
+  thread: LoadedThread,
+  actor: Actor,
+  prepared: PreparedTurn,
+  subject: string,
+): Promise<MutationResult> {
+  const keys = [DOCS_KEY, docKey(thread.id), threadKey(thread.id)];
+  // A thread mutation invalidates "both the thread and its parent"
+  // (`query-keys.ts`): the parent's reader draws this thread's chip.
+  if (thread.parent !== null) keys.push(docKey(thread.parent));
+
+  return runMutation(workspace, {
+    docId: thread.id,
+    actor,
+    warnings: prepared.warnings,
+    plan: {
+      operations: [{ kind: "write", path: thread.loaded.path, content: prepared.text }],
+      stage: [thread.loaded.path],
+      project: [thread.loaded.path],
+      unproject: [],
+      commit: { subject },
+      keys,
+    },
+  });
+}
+
 export async function appendThreadTurn(
   workspace: ThreadsWorkspace,
   mutex: DocumentMutex,
@@ -117,8 +208,8 @@ export async function appendThreadTurn(
     const stored = await storeTurnFiles(workspace, id, ts, input.files);
 
     // Everything that *builds* the reference, and nothing that writes it.
-    const prepared = whileUnreferenced(workspace.attachmentsRoot, id, ts, stored, () => {
-      const appended = appendTurn(thread.loaded.parsed.body, {
+    const prepared = whileUnreferenced(workspace.attachmentsRoot, id, ts, stored, () =>
+      buildTurnAppend(workspace, thread, {
         author: actor,
         text: withAttachmentReferences(
           input.text,
@@ -129,38 +220,18 @@ export async function appendThreadTurn(
           ),
         ),
         ts,
-      });
-      // `updated` is the turn's own stamp rather than the wall clock: they differ
-      // exactly when the stamp was bumped for uniqueness, and the useful answer is
-      // "when the last turn is dated", which is what every list sorts on.
-      const text = serializeDocument(
-        setFrontmatterFields(setBody(thread.loaded.parsed, appended.body), {
-          updated: appended.turn.ts,
-          agent: decision.agent,
-        }),
-      );
-      return { appended, text, warnings: validateBeforeWrite(workspace, thread.loaded.path, text) };
-    });
-
-    const keys = [DOCS_KEY, docKey(id), threadKey(id)];
-    // A thread mutation invalidates "both the thread and its parent"
-    // (`query-keys.ts`): the parent's reader draws this thread's chip.
-    if (thread.parent !== null) keys.push(docKey(thread.parent));
+        agent: decision.agent,
+      }),
+    );
 
     // From here on the bytes stay, whatever fails.
-    const result = await runMutation(workspace, {
-      docId: id,
+    const result = await commitTurnAppend(
+      workspace,
+      thread,
       actor,
-      warnings: prepared.warnings,
-      plan: {
-        operations: [{ kind: "write", path: thread.loaded.path, content: prepared.text }],
-        stage: [thread.loaded.path],
-        project: [thread.loaded.path],
-        unproject: [],
-        commit: { subject: `comment: turn on ${id} by ${actor}` },
-        keys,
-      },
-    });
+      prepared,
+      `comment: turn on ${id} by ${actor}`,
+    );
 
     const eventId = decision.enqueue
       ? await enqueueComment(workspace, {

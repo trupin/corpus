@@ -303,12 +303,12 @@ describe("the watcher — ignores", () => {
     await waitForKey(["docs", "doc_real"]);
     expect(rows("SELECT id FROM documents")).toEqual([{ id: "doc_real" }]);
     // Only the real save produced keys — nothing named a swap file or a .txt.
+    // And no `["tree"]`: the document landed at the *root* of `data/docs/`,
+    // which belongs to no folder node, so `GET /api/tree` is byte-identical
+    // either side of it. The `structural` heuristic used to announce the key
+    // here purely because a file had appeared (SERVER-020).
     expect(new Set(flat())).toEqual(
-      new Set([
-        JSON.stringify(["docs"]),
-        JSON.stringify(["docs", "doc_real"]),
-        JSON.stringify(["tree"]),
-      ]),
+      new Set([JSON.stringify(["docs"]), JSON.stringify(["docs", "doc_real"])]),
     );
   });
 });
@@ -355,6 +355,10 @@ describe("the watcher — runtime roots", () => {
       { id: "evt_seed00000000", status: "pending" },
     ]);
     expect(flat()).toContain(JSON.stringify(["jobs"]));
+    // The same table the queue service announces (`QUEUE_QUERY_KEYS`): the
+    // `failed-job` needs reason reads `events.status`, so the document
+    // collection ages with the queue (SERVER-028).
+    expect(flat()).toContain(JSON.stringify(["docs"]));
   });
 
   it("follows an event moved between status directories out of band", async () => {
@@ -372,6 +376,11 @@ describe("the watcher — runtime roots", () => {
         { id: "evt_seed00000000", status: "processed" },
       ]);
     }, WAIT);
+    // A transition is exactly the case SERVER-028 was filed for: moving an
+    // event into (or out of) `failed/` changes what `GET /api/docs?needs=me`
+    // answers, so the frame must name the document collection even though no
+    // document file was touched.
+    expect(flat()).toContain(JSON.stringify(["docs"]));
   });
 
   it("removes an event row when its file is deleted", async () => {

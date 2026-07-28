@@ -12,6 +12,7 @@ import {
   updateDoc,
 } from "./docs.js";
 import { streamEvents } from "./events.js";
+import { respondToForm } from "./forms.js";
 import { getHealth } from "./health.js";
 import { abandonJob, appendJobLog, getJobLog, listJobs, retryJob } from "./jobs.js";
 import { acquireLock, breakLock, listLocks, reapLocks, releaseLock } from "./locks.js";
@@ -26,14 +27,8 @@ import {
   reapStale,
   resumeQueue,
 } from "./queue.js";
-import {
-  createThread,
-  deleteTurn,
-  getThread,
-  markThreadSeen,
-  reopenThread,
-  resolveThread,
-} from "./threads.js";
+import { createThread } from "./thread-create.js";
+import { deleteTurn, getThread, markThreadSeen, reopenThread, resolveThread } from "./threads.js";
 import { appendTurn } from "./turn-append.js";
 import { getTree } from "./tree.js";
 
@@ -42,12 +37,15 @@ export * from "./capture.js";
 export * from "./db.js";
 export * from "./docs.js";
 export * from "./events.js";
+export * from "./forms.js";
 export * from "./health.js";
 export * from "./inventory.js";
 export * from "./jobs.js";
 export * from "./locks.js";
 export * from "./queue.js";
+export * from "./dual-media.js";
 export * from "./responses.js";
+export * from "./thread-create.js";
 export * from "./threads.js";
 export * from "./tree.js";
 export * from "./turn-append.js";
@@ -85,6 +83,7 @@ export const contractRoutes = {
   getThread,
   appendTurn,
   deleteTurn,
+  respondToForm,
   resolveThread,
   reopenThread,
   markThreadSeen,

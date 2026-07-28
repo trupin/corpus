@@ -1,5 +1,6 @@
 import { appendFileSync, closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname } from "node:path";
+import type { Health } from "@corpus/contract";
 import { ServerUnreachableError } from "../../errors.js";
 import { serverLogPath, serverPidfilePath } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
@@ -15,7 +16,7 @@ import {
   type ServerEntry,
 } from "./daemon.js";
 import { tailLines } from "./logs.js";
-import { inspectServer, probeHealth } from "./state.js";
+import { foreignServerDetail, inspectServer, probeHealth } from "./state.js";
 
 /** Log lines shown when the daemon never becomes ready — enough to see the cause. */
 export const FAILURE_LOG_LINES = 20;
@@ -30,6 +31,13 @@ export interface StartDependencies {
  * Spawn detached → wait for `/api/health` → record the pidfile. The pidfile is
  * written last on purpose: a file naming a pid that never became a server is
  * worse than no file, because the next `start` would refuse on account of it.
+ *
+ * That guarantee only holds if readiness means *our* server answered. Two
+ * workspaces pointed at one port used to defeat it completely: the child died
+ * `EADDRINUSE` while the readiness probe was answered by the workspace that got
+ * there first, so `start` wrote a pidfile for a corpse and reported success
+ * (CLI-008 item 1). The port is therefore attributed twice — once before
+ * spawning anything, and again on every readiness poll.
  */
 export async function runStart(
   context: WorkspaceCommandContext,
@@ -40,7 +48,10 @@ export async function runStart(
   const logPath = serverLogPath(workspace.root);
   const url = workspace.baseUrl;
 
-  const state = await inspectServer({ pidfilePath, probe: () => probeHealth(client) });
+  const state = await inspectServer({
+    pidfilePath,
+    probe: () => probeHealth(client, workspace.root),
+  });
 
   if (state.kind === "running") {
     out.emit({
@@ -64,8 +75,20 @@ export async function runStart(
     );
   }
 
+  if (state.kind === "foreign") {
+    throw new ServerUnreachableError(foreignServerDetail(workspace.port, state.health), {
+      hint: PORT_CONFLICT_HINT,
+    });
+  }
+
   // A pidfile whose process is gone is exactly what `kill -9` leaves behind.
   if (state.kind === "stale") removePidfile(pidfilePath);
+
+  // Nothing of ours is running, so anything answering on the port belongs to
+  // someone else. Asking now costs one request and saves spawning a child whose
+  // only possible fate is `EADDRINUSE` — and, before this check existed, a
+  // pidfile naming that child after it died.
+  await refuseAnOccupiedPort(context);
 
   const entry = dependencies.entry ?? resolveServerEntry();
   mkdirSync(dirname(logPath), { recursive: true });
@@ -92,7 +115,7 @@ export async function runStart(
     appendFileSync(logPath, startBanner(record));
 
     const ready = await waitForHealth({
-      probe: () => probeHealth(client),
+      probe: () => ourHealth(context),
       hasExited: () => exited,
       ...(dependencies.readyTimeoutMs === undefined
         ? {}
@@ -128,6 +151,46 @@ export async function runStart(
   }
 }
 
+const PORT_CONFLICT_HINT =
+  "Give this workspace its own port: change `port` in .corpus/config.json (or set CORPUS_PORT), then start again.";
+
+/**
+ * The readiness poll's single question: did **our** server answer? A healthy
+ * response from another workspace's server is not readiness, and treating it as
+ * such is what let a dead child be recorded as a running one.
+ */
+async function ourHealth(context: WorkspaceCommandContext): Promise<Health | undefined> {
+  const outcome = await probeHealth(context.client, context.workspace.root);
+  return outcome.kind === "ours" ? outcome.health : undefined;
+}
+
+/**
+ * Refuses when the port is already serving — whoever it serves. A foreign
+ * server means the two workspaces are contending and the config has to change;
+ * one of ours means a server for this workspace is up with no pidfile naming it,
+ * which `stop` cannot clear and which `start` must not paper over by spawning a
+ * child that dies on the bind.
+ */
+async function refuseAnOccupiedPort(context: WorkspaceCommandContext): Promise<void> {
+  const { workspace, client } = context;
+  const holder = await probeHealth(client, workspace.root);
+
+  if (holder.kind === "foreign") {
+    throw new ServerUnreachableError(foreignServerDetail(workspace.port, holder.health), {
+      hint: PORT_CONFLICT_HINT,
+    });
+  }
+
+  if (holder.kind === "ours") {
+    throw new ServerUnreachableError(
+      `a server for this workspace is already listening on :${String(workspace.port)}, but no pidfile names it`,
+      {
+        hint: `Find it with \`lsof -nP -iTCP:${String(workspace.port)} -sTCP:LISTEN\` and stop it by pid, then start again.`,
+      },
+    );
+  }
+}
+
 /**
  * A child that never became ready must not be left running: it would hold the
  * port against the next `corpus server start` while answering nothing, and no
@@ -154,10 +217,12 @@ export const startCommand: WorkspaceCommandSpec = {
   summary: "Start this workspace's server as a background daemon.",
   description:
     "Spawns the server detached, with its output appended to `.corpus/server.log`, and waits " +
-    "until `GET /api/health` answers before reporting the board URL. The daemon outlives the " +
-    "shell that started it. Idempotent: an already-running server is reported and the command " +
-    "exits 0. If it never becomes ready, the tail of the log is printed rather than a silent " +
-    "failure.",
+    "until `GET /api/health` answers **for this workspace** before reporting the board URL. The " +
+    "daemon outlives the shell that started it. Idempotent: an already-running server is reported " +
+    "and the command exits 0. A port that another workspace's server already holds is refused " +
+    "before anything is spawned (exit 4) — its health answer is never mistaken for this " +
+    "workspace's, and no pidfile is written. If the daemon never becomes ready, the tail of the " +
+    "log is printed rather than a silent failure.",
   args: [],
   flags: [],
   examples: [

@@ -11,7 +11,7 @@
  * rows a reader would see. A database stamped with a different value is dropped
  * and rebuilt from files, so there is deliberately no migration path.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -63,6 +63,19 @@ export const REPOPULATED_TABLES = [
  *
  * Columns are positional for `snippet()`: 0 `ref`, 1 `kind`, 2 `doc_id`,
  * 3 `title`, 4 `body`.
+ *
+ * **`documents` carries five columns past §9.1's list** — `pinned`,
+ * `sort_order`, `query_json`, `column_ref`, `extra_json` (CONTRACT-011,
+ * SERVER-026). §9.1 enumerated the columns the queries of the day needed; §11
+ * then made a board column *be* a pinned view document, and `pinned` is a
+ * `GET /api/docs` filter while `order` is one of its sort keys. A filter and a
+ * sort cannot be answered from the files at request time without one read per
+ * row — the N+1 the collection query exists to avoid — so they are columns.
+ * `query_json`, `column_ref` and `extra_json` ride along because the board
+ * reads its whole column set, queries and all, from that one bounded response.
+ * Every one of them is still *derived*: `db rebuild` reconstructs all five from
+ * frontmatter, and nothing durable lives here. `sort_order` is spelled apart
+ * from the frontmatter key because `order` is SQL.
  */
 export const PROJECTION_DDL = `
 CREATE TABLE documents (
@@ -77,7 +90,12 @@ CREATE TABLE documents (
   due TEXT,
   reviewed TEXT,
   evergreen INTEGER NOT NULL,
-  body_excerpt TEXT NOT NULL
+  body_excerpt TEXT NOT NULL,
+  pinned INTEGER NOT NULL,
+  sort_order REAL,
+  query_json TEXT,
+  column_ref TEXT,
+  extra_json TEXT NOT NULL
 );
 
 CREATE TABLE threads (
@@ -173,6 +191,7 @@ CREATE INDEX documents_status ON documents (status);
 CREATE INDEX documents_updated ON documents (updated);
 CREATE INDEX documents_created ON documents (created);
 CREATE INDEX documents_due ON documents (due);
+CREATE INDEX documents_pinned ON documents (pinned);
 CREATE INDEX threads_parent_id ON threads (parent_id);
 CREATE INDEX threads_last_ts ON threads (last_ts);
 CREATE INDEX turns_thread_idx ON turns (thread_id, idx);

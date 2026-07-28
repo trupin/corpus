@@ -4,7 +4,7 @@ import { isWellFormedText } from "./code-points.js";
 import { computeContext } from "./context.js";
 import { computeOffsetMapper } from "./diff.js";
 import { reconcileAnchors } from "./reconcile.js";
-import { resolveAnchor } from "./resolve.js";
+import { resolveAnchor, resolveAnchorExact } from "./resolve.js";
 import type { AnchorsMap, Range, TextQuoteSelector } from "./types.js";
 
 const SENTENCE = "assume a 30-year fixed at 6.1%";
@@ -1126,27 +1126,166 @@ describe("reconcileAnchors — property sweep (seeded)", () => {
   });
 });
 
-describe("reconcileAnchors — bounded work", () => {
-  it("reconciles 50 anchors over a ~1 MB body in under a second", () => {
-    const paragraphs: string[] = [];
-    for (let i = 0; paragraphs.join("\n\n").length < 1_000_000; i++) {
-      paragraphs.push(
-        `Paragraph ${i}: filler prose about lenders, rates, and scenarios, stretched with enough words to make each block meaningfully sized for the benchmark.`,
-      );
-    }
-    const oldBody = paragraphs.join("\n\n");
-    const anchors: AnchorsMap = {};
-    const step = Math.floor(paragraphs.length / 50);
-    for (let a = 0; a < 50; a++) {
-      const needle = `Paragraph ${a * step}: filler prose about lenders`;
-      anchors[`anc_${String(a).padStart(3, "0")}`] = capture(oldBody, needle);
-    }
-    const middle = oldBody.indexOf(`Paragraph ${25 * step}:`);
-    const newBody = `${oldBody.slice(0, middle)}An inserted paragraph right in the middle.\n\n${oldBody.slice(middle)}`;
-    const startedAt = performance.now();
-    const { report } = reconcileAnchors(oldBody, newBody, anchors);
-    const elapsedMs = performance.now() - startedAt;
-    expect(report.orphaned).toEqual([]);
-    expect(elapsedMs).toBeLessThan(1000);
+describe("reconcileAnchors — duplicate-survivor fast path: the mapper's causal choice is blessed (SERVER-014)", () => {
+  // The SERVER-013-eval TEST-64 escalation, 4-step reproduction. Unlike the
+  // fixture at "a non-unique survivor goes through the chain's uniqueness
+  // rules (TEST-64)" above — where the exact already occurred TWICE in
+  // `oldBody`, the anchor's own occurrence relocates, the range classifies
+  // "deleted" and `verifiedSurvivor` orphans — here B occurs ONCE in
+  // `oldBody` and is duplicated only as an artifact of the edit. The range
+  // classifies `equal`, the mapped slice is byte-identical to the exact, and
+  // the engine takes the trusted-slice fast path (`newRange: mapped`)
+  // without ever consulting the uniqueness rules. SPEC.md §6 as amended
+  // (SHARED-002) blesses that outcome: B's text is not "genuinely gone", the
+  // diff's positional alignment is the demonstration that the text was
+  // carried forward, and `prefix`/`suffix` refreshed is REQUIRED of a remap
+  // — byte-preservation of the whole selector is promised for orphans only.
+  const A = "Alpha section covers onboarding rituals and the welcome checklist.";
+  const B = "Bravo section explains the quarterly budget review and its sign-off flow.";
+  const C = "Charlie section documents incident escalation paths for the on-call rota.";
+  const D = "Delta section closes with archival policy and retention timelines.";
+  const oldBody = `# Doc\n\n${A}\n\n${B}\n\n${C}\n\n${D}\n`;
+  const newBody = `# Doc\n\n${C}\n\n${B}\n\n${A}\n\n${B}\n\n${D}\n`;
+  const input: AnchorsMap = { anc_b: capture(oldBody, B) };
+
+  it("probe: the fixture exercises the trusted-slice fast path, where the chain would have orphaned", () => {
+    // B is duplicated by the edit (occurrence count 2 in newBody, 1 in oldBody)…
+    const first = newBody.indexOf(B);
+    expect(oldBody.indexOf(B, oldBody.indexOf(B) + 1)).toBe(-1);
+    expect(newBody.indexOf(B, first + 1)).toBeGreaterThan(first);
+    // …the classification is `equal` (not "deleted": the verification chain is
+    // never entered; not "partial": `rewritten` and the blank guard are
+    // structurally off), and the mapped slice is byte-identical to the exact —
+    // together these entail the `newRange: mapped` fast path by the code's own
+    // structure, with `verifiedSurvivor` unreachable for this anchor…
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    const oldRange = resolveAnchor(oldBody, input["anc_b"] ?? { exact: "" });
+    expect(oldRange).not.toBeNull();
+    expect(mapper.classify(oldRange ?? { start: 0, end: 0 })).toBe("equal");
+    const mapped = {
+      start: mapper.mapStart(oldRange?.start ?? 0),
+      end: mapper.mapEnd(oldRange?.end ?? 0),
+    };
+    expect(newBody.slice(mapped.start, mapped.end)).toBe(B);
+    // …while the verification chain's verdict on the same selector is
+    // "orphan": with two occurrences and the old context surviving nowhere,
+    // exact-tier resolution refuses to pick. A remap in the full engine can
+    // therefore only come from the fast path having fired.
+    expect(resolveAnchorExact(newBody, input["anc_b"] ?? { exact: "" })).toBeNull();
   });
+
+  it("evaluator's 4-step reproduction: a survivor duplicated by the edit stays remapped to the mapper's choice — never orphaned, context refreshed (SERVER-013-eval escalation, blessed)", () => {
+    const { anchors, report } = reconcileAnchors(oldBody, newBody, input);
+    // Blessed policy — an orphan-on-ambiguity engine fails here:
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_b"], orphaned: [] });
+    const emitted = anchors["anc_b"];
+    // The quote is untouched; the context is refreshed from the new
+    // surroundings (a rewritten suffix on a REMAP is required behavior, not a
+    // violated byte-preservation promise — that promise is for orphans).
+    expect(emitted?.exact).toBe(B);
+    expect(emitted?.suffix).not.toBe(input["anc_b"]?.suffix);
+    // The thread lands exactly where the diff's positional alignment put it —
+    // the mapper's causal choice, not an arbitrary pick among duplicates…
+    const mapper = computeOffsetMapper(oldBody, newBody);
+    const oldRange = resolveAnchor(oldBody, input["anc_b"] ?? { exact: "" });
+    const range = resolveAnchor(newBody, emitted ?? { exact: "" });
+    expect(range?.start).toBe(mapper.mapStart(oldRange?.start ?? 0));
+    expect(newBody.slice(range?.start, range?.end)).toBe(B);
+    // …and the emitted selector round-trips unambiguously despite the
+    // duplicate (rung 1: refreshed context disambiguates the occurrences).
+    expect(range?.end).toBe((range?.start ?? 0) + B.length);
+  });
+});
+
+describe("reconcileAnchors — whitespace-only exact: the blank-slice guard is classification-gated (SERVER-014 rider, SERVER-022 finding 4)", () => {
+  // `TextQuoteSelectorSchema.exact` requires only `min(1)`, so an anchor whose
+  // exact is pure whitespace is schema-valid. For such an anchor a CORRECTLY
+  // resolved match necessarily trims to nothing, so an ungated blank-slice
+  // guard fires on every save — orphaning the anchor even when the edit never
+  // came near it. The guard is therefore gated on the `partial`
+  // classification: blank-on-`equal` is the anchor's own text untouched.
+  const WS = "   ";
+  const wsBody = `# Alignment\n\nalpha${WS}beta sits in the first paragraph.\n\nMiddle prose paragraph that nobody is editing today.\n\nTail paragraph carrying words that the save below rewrites.\n`;
+  const wsInput = (): AnchorsMap => ({ anc_ws: capture(wsBody, WS) });
+
+  it("a save that never touched the whitespace anchor leaves it attached, selector byte-identical", () => {
+    const newBody = wsBody.replace(
+      "Tail paragraph carrying words that the save below rewrites.",
+      "Tail paragraph now carrying entirely different words after an unrelated save.",
+    );
+    const input = wsInput();
+    const { anchors, report } = reconcileAnchors(wsBody, newBody, input);
+    expect(report).toEqual({ unchanged: ["anc_ws"], remapped: [], orphaned: [] });
+    expect(anchors["anc_ws"]).toEqual(input["anc_ws"]);
+  });
+
+  it("an edit inside the context window keeps the whitespace anchor attached — remapped, exact preserved", () => {
+    const newBody = wsBody.replace("beta sits in", "beta now sits in");
+    const { anchors, report } = reconcileAnchors(wsBody, newBody, wsInput());
+    expect(report).toEqual({ unchanged: [], remapped: ["anc_ws"], orphaned: [] });
+    expect(anchors["anc_ws"]?.exact).toBe(WS);
+    expect(anchors["anc_ws"]?.suffix.startsWith("beta now sits")).toBe(true);
+  });
+
+  it("deleting the whitespace anchor's own text still orphans it, selector preserved (deleted classification)", () => {
+    const newBody = wsBody.replace(`alpha${WS}beta`, "alphabeta");
+    const input = wsInput();
+    const { anchors, report } = reconcileAnchors(wsBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_ws"] });
+    expect(anchors["anc_ws"]).toEqual(input["anc_ws"]);
+  });
+
+  it("the blank-slice guard still fires on partial: whitespace edited down goes through verification and orphans", () => {
+    // 3 spaces -> 1 space: one character survives (partial), the mapped slice
+    // trims to nothing, and no verbatim occurrence of the exact survives —
+    // the guard routes through the verification chain, which orphans.
+    const newBody = wsBody.replace(`alpha${WS}beta`, "alpha beta");
+    const input = wsInput();
+    const { anchors, report } = reconcileAnchors(wsBody, newBody, input);
+    expect(report).toEqual({ unchanged: [], remapped: [], orphaned: ["anc_ws"] });
+    expect(anchors["anc_ws"]).toEqual(input["anc_ws"]);
+  });
+});
+
+describe("reconcileAnchors — bounded work", () => {
+  /**
+   * An **order-of-magnitude** guard, not a benchmark. What it exists to catch is
+   * a complexity regression — a reconcile that goes quadratic in body size or
+   * anchor count blows past this by orders of magnitude, whatever the machine.
+   * What it must not do is fail because the machine was busy: this suite runs
+   * alongside every other workspace's, and often alongside several agents'.
+   * A tight bound here has flaked repeatedly while measuring nothing about the
+   * code. The measured time on an idle machine is tens of milliseconds, so five
+   * seconds is ~100× headroom and still two orders of magnitude below what a
+   * genuine regression costs. The vitest timeout is raised past the assertion so
+   * an overrun is reported as a slow reconcile rather than as a killed test.
+   */
+  const RECONCILE_BUDGET_MS = 5000;
+
+  it(
+    "reconciles 50 anchors over a ~1 MB body without going superlinear",
+    () => {
+      const paragraphs: string[] = [];
+      for (let i = 0; paragraphs.join("\n\n").length < 1_000_000; i++) {
+        paragraphs.push(
+          `Paragraph ${i}: filler prose about lenders, rates, and scenarios, stretched with enough words to make each block meaningfully sized for the benchmark.`,
+        );
+      }
+      const oldBody = paragraphs.join("\n\n");
+      const anchors: AnchorsMap = {};
+      const step = Math.floor(paragraphs.length / 50);
+      for (let a = 0; a < 50; a++) {
+        const needle = `Paragraph ${a * step}: filler prose about lenders`;
+        anchors[`anc_${String(a).padStart(3, "0")}`] = capture(oldBody, needle);
+      }
+      const middle = oldBody.indexOf(`Paragraph ${25 * step}:`);
+      const newBody = `${oldBody.slice(0, middle)}An inserted paragraph right in the middle.\n\n${oldBody.slice(middle)}`;
+      const startedAt = performance.now();
+      const { report } = reconcileAnchors(oldBody, newBody, anchors);
+      const elapsedMs = performance.now() - startedAt;
+      expect(report.orphaned).toEqual([]);
+      expect(elapsedMs).toBeLessThan(RECONCILE_BUDGET_MS);
+    },
+    RECONCILE_BUDGET_MS * 4,
+  );
 });

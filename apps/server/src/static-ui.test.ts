@@ -9,13 +9,19 @@ import {
   REVALIDATE_CACHE_CONTROL,
   RESERVED_PREFIXES,
   UI_MISSING_MESSAGE,
+  isAppShellPath,
   isImmutableAsset,
   isReservedPath,
   mountStaticUi,
 } from "./static-ui.js";
+import { RUNTIME_CONFIG_ELEMENT_ID, TOKEN_SHELL_CACHE_CONTROL } from "./ui-runtime-config.js";
 
-const INDEX_HTML = '<!doctype html><html><body><div id="root"></div></body></html>';
+const INDEX_HTML =
+  '<!doctype html><html><head><title>Corpus</title></head><body><div id="root"></div></body></html>';
 const ASSET_JS = "export const board = 1;\n";
+const TOKEN = "tok_s024_abcdef0123456789";
+/** `app.request`'s third argument: the bindings `getPeerAddress` reads. */
+const LOOPBACK = { incoming: { socket: { remoteAddress: "127.0.0.1" } } };
 
 let root: string;
 
@@ -41,6 +47,15 @@ function appWith(distDir: string | undefined, logger = silentLogger): Hono {
   const app = new Hono();
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   mountStaticUi(app, { distDir, logger });
+  app.notFound((c) => c.json({ code: "not_found", message: c.req.path }, 404));
+  return app;
+}
+
+/** The same app with a token to provision — the installed-tool shape (SERVER-024). */
+function appWithToken(distDir: string | undefined, token = TOKEN): Hono {
+  const app = new Hono();
+  app.get("/api/health", (c) => c.json({ status: "ok" }));
+  mountStaticUi(app, { distDir, logger: silentLogger, token });
   app.notFound((c) => c.json({ code: "not_found", message: c.req.path }, 404));
   return app;
 }
@@ -185,6 +200,180 @@ describe("with no UI build", () => {
     const lines: string[] = [];
     appWith(undefined, createLogger("silent", { write: (line) => lines.push(line) }));
     expect(lines).toEqual([]);
+  });
+});
+
+describe("isAppShellPath", () => {
+  it.each([
+    ["/", true],
+    ["/index.html", true],
+    // A nested index.html is a file the build shipped, not the SPA shell: it
+    // keeps `serveStatic`'s old behaviour and gets no token.
+    ["/sub/", false],
+    ["/sub/index.html", false],
+    ["/doc/abc", false],
+    ["/assets/app.a1b2c3d4.js", false],
+    ["/favicon.svg", false],
+  ])("%s -> %s", (path, expected) => {
+    expect(isAppShellPath(path)).toBe(expected);
+  });
+});
+
+describe("provisioning the token into the served shell (SERVER-024)", () => {
+  function injectedToken(html: string): string {
+    const match = new RegExp(
+      `<script id="${RUNTIME_CONFIG_ELEMENT_ID}" type="application/json">([\\s\\S]*?)</script>`,
+    ).exec(html);
+    if (match === null) throw new Error("no runtime config block in the shell");
+    const parsed = JSON.parse(match[1] ?? "") as { token?: unknown };
+    return typeof parsed.token === "string" ? parsed.token : "";
+  }
+
+  it("hands the root shell a runtime config block carrying the token", async () => {
+    const response = await appWithToken(makeDist()).request("/", undefined, LOOPBACK);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(injectedToken(await response.text())).toBe(TOKEN);
+  });
+
+  it("hands a deep SPA route the same block, since it is the same shell", async () => {
+    const response = await appWithToken(makeDist()).request("/doc/abc", undefined, LOOPBACK);
+    expect(injectedToken(await response.text())).toBe(TOKEN);
+  });
+
+  it("answers /index.html through the shell path too, not raw off disk", async () => {
+    const response = await appWithToken(makeDist()).request("/index.html", undefined, LOOPBACK);
+    expect(injectedToken(await response.text())).toBe(TOKEN);
+  });
+
+  it("never stores a credential-bearing shell", async () => {
+    const response = await appWithToken(makeDist()).request("/", undefined, LOOPBACK);
+    expect(response.headers.get("cache-control")).toBe(TOKEN_SHELL_CACHE_CONTROL);
+    expect(response.headers.get("cache-control")).not.toContain("immutable");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+  });
+
+  it("injects into no other asset, and leaves immutable caching intact", async () => {
+    const app = appWithToken(makeDist());
+
+    for (const path of ["/assets/app.a1b2c3d4.js", "/favicon.svg"]) {
+      const response = await app.request(path, undefined, LOOPBACK);
+      const body = await response.text();
+      expect(body).not.toContain(TOKEN);
+      expect(body).not.toContain(RUNTIME_CONFIG_ELEMENT_ID);
+    }
+
+    const asset = await app.request("/assets/app.a1b2c3d4.js", undefined, LOOPBACK);
+    expect(asset.headers.get("cache-control")).toBe(IMMUTABLE_CACHE_CONTROL);
+  });
+
+  it("escapes a token that would otherwise break out of the block", async () => {
+    const hostile = "</script><script>steal()</script>";
+    const response = await appWithToken(makeDist(), hostile).request("/", undefined, LOOPBACK);
+    const body = await response.text();
+
+    expect(body).not.toContain("<script>steal()</script>");
+    expect(injectedToken(body)).toBe(hostile);
+  });
+
+  it("refuses a non-loopback peer rather than handing over the token", async () => {
+    const response = await appWithToken(makeDist()).request(
+      "/",
+      { headers: { "X-Forwarded-For": "127.0.0.1" } },
+      { incoming: { socket: { remoteAddress: "198.51.100.9" } } },
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain(TOKEN);
+  });
+
+  it.each(["https://evil.example", "http://127.0.0.1:8935"])(
+    "refuses a request carrying Origin: %s",
+    async (origin) => {
+      const response = await appWithToken(makeDist()).request(
+        "/",
+        { headers: { Origin: origin } },
+        LOOPBACK,
+      );
+
+      expect(response.status).toBe(403);
+      expect(await response.text()).not.toContain(TOKEN);
+    },
+  );
+
+  it("refuses a rebound hostname rather than handing over the token", async () => {
+    // The DNS-rebinding shape end to end: loopback peer, no `Origin` (a
+    // top-level navigation), and the attacker's own hostname in `Host`.
+    const response = await appWithToken(makeDist()).request(
+      "/",
+      { headers: { Host: "evil.test:8935" } },
+      LOOPBACK,
+    );
+
+    expect(response.status).toBe(403);
+    const body = await response.text();
+    expect(body).not.toContain(TOKEN);
+    expect(body).not.toContain(RUNTIME_CONFIG_ELEMENT_ID);
+  });
+
+  it("refuses a rebound hostname on a deep SPA route too", async () => {
+    const response = await appWithToken(makeDist()).request(
+      "/doc/abc",
+      { headers: { Host: "evil.test:8935" } },
+      LOOPBACK,
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain(TOKEN);
+  });
+
+  it.each(["127.0.0.1:8935", "localhost:8935", "[::1]:8935"])(
+    "serves the tokenized shell under Host: %s",
+    async (host) => {
+      const response = await appWithToken(makeDist()).request(
+        "/",
+        { headers: { Host: host } },
+        LOOPBACK,
+      );
+
+      expect(response.status).toBe(200);
+      expect(injectedToken(await response.text())).toBe(TOKEN);
+    },
+  );
+
+  it("still serves ordinary assets to an Origin-bearing request", async () => {
+    // Same-origin module scripts are fetched in CORS mode and DO send `Origin`.
+    // Guarding every static response would break the app it is protecting.
+    const response = await appWithToken(makeDist()).request(
+      "/assets/app.a1b2c3d4.js",
+      { headers: { Origin: "http://127.0.0.1:8935" } },
+      LOOPBACK,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(ASSET_JS);
+  });
+
+  it("keeps the missing-build 503 a 503, whoever asks", async () => {
+    const refused = await appWithToken(undefined).request(
+      "/",
+      { headers: { Origin: "https://evil.example" } },
+      { incoming: { socket: { remoteAddress: "198.51.100.9" } } },
+    );
+
+    expect(refused.status).toBe(503);
+    expect(await refused.text()).toContain(UI_MISSING_MESSAGE);
+  });
+
+  it("provisions nothing, and guards nothing, when no token is configured", async () => {
+    // The `appWith` shape: a shell with no credential is the plain bytes, and
+    // stays reachable from a test harness that has no socket at all.
+    const response = await appWith(makeDist()).request("/");
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(INDEX_HTML);
+    expect(response.headers.get("cache-control")).toBe(REVALIDATE_CACHE_CONTROL);
   });
 });
 

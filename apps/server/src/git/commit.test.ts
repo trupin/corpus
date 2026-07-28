@@ -396,6 +396,32 @@ describe("createAutoCommitter", () => {
     expect(r.git("status", "--porcelain")).toContain("staged.txt");
   });
 
+  it("commits only the mutation's paths on an unborn branch too", async () => {
+    // SERVER-022 finding 5: the `--only` scoping was skipped when there was no
+    // HEAD, so the *first* auto-commit in a fresh workspace committed the whole
+    // index — an operator who had staged something before the server's first
+    // write found it swallowed into a `doc create`, authored by `user`.
+    const r = makeRepo("scoped-unborn", { seed: false });
+    r.touch("staged.txt", "staged but unrelated\n");
+    r.git("add", "-A", "--", "staged.txt");
+
+    r.touch(DOC, "one");
+    const outcome = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc create",
+      paths: [DOC],
+    });
+
+    expect(outcome.kind).toBe("committed");
+    const stat = r.git("show", "--stat", "--format=", "HEAD");
+    expect(stat).toContain(DOC);
+    expect(stat).not.toContain("staged.txt");
+    // Still staged, still uncommitted: the operator's index is exactly as they
+    // left it.
+    expect(r.git("status", "--porcelain").trim()).toBe("A  staged.txt");
+  });
+
   it("stages a removal and skips a path git has never heard of", async () => {
     const r = makeRepo("removal");
     r.touch(DOC, "one");

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CorpusServer } from "./app.js";
+import { createServer, type CorpusServer } from "./app.js";
 import { CorpusError } from "./errors.js";
 import { createLogger, type LogSink } from "./logger.js";
 import {
@@ -340,6 +340,71 @@ describe("runServerProcess — boot", () => {
     await server?.close();
   });
 
+  /**
+   * SERVER-025. The race this pins is the one UI-002 reported and nobody could
+   * reproduce: a client refetching the instant a restarted server answers,
+   * before the file written while it was down had been projected. It is not
+   * reproducible because it is not possible — `runServerProcess` projects the
+   * workspace synchronously at :134 and only binds the socket at :150, so the
+   * first request a client can *make* is already served from a populated
+   * projection.
+   *
+   * That is an ordering, not a guarantee anything else defends, which is why it
+   * is asserted here: a refactor that moves the projection off the boot path, or
+   * makes `populateFromFiles` asynchronous, has to fail in this file rather than
+   * in a browser three phases later.
+   */
+  it("has finished projecting the workspace before it binds, and before its first request", async () => {
+    const workspace = makeWorkspace("ws-boot-ordering");
+    mkdirSync(join(workspace, "data", "docs"), { recursive: true });
+    // Written "while the server was down".
+    writeFileSync(
+      join(workspace, "data", "docs", "offline.md"),
+      "---\nid: doc_offline\ntype: note\ntitle: Offline\n---\n\nWritten while it was down.\n",
+      "utf8",
+    );
+
+    const h = harness();
+    let rowsAtBind: unknown[] | undefined;
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      createServerFn: (config, deps) => {
+        const real = createServer(config, deps);
+        return {
+          ...real,
+          start: async () => {
+            // The last instant before anything can connect.
+            rowsAtBind = deps.projection?.prepare("SELECT id FROM documents").all();
+            return real.start();
+          },
+        };
+      },
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+
+    try {
+      expect(rowsAtBind).toEqual([{ id: "doc_offline" }]);
+
+      // And the same fact from the outside: the very first request a client can
+      // make already sees the row.
+      const address = h.lines
+        .map((line) => JSON.parse(line) as { msg: string; url?: string })
+        .find((entry) => entry.msg.startsWith("listening on"))?.url;
+      expect(address).toBeDefined();
+      const response = await fetch(`${address ?? ""}/api/docs`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      });
+      const body = (await response.json()) as { items: { id: string }[] };
+      expect(body.items.map((item) => item.id)).toEqual(["doc_offline"]);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("hands the open projection to the app, so the read routes answer from it", async () => {
     const workspace = makeWorkspace("ws-read-routes");
     mkdirSync(join(workspace, "data", "docs", "finance"), { recursive: true });
@@ -449,10 +514,12 @@ describe("runServerProcess — boot", () => {
       // have been debounced, batched and — if suppression failed — broadcast.
       await new Promise((resolve) => setTimeout(resolve, 800));
 
+      // One frame per transition, each the whole `QUEUE_QUERY_KEYS` table —
+      // and none from the watcher, which is what this test is about.
       expect(batches).toEqual([
-        '[["queue"],["jobs"]]',
-        '[["queue"],["jobs"]]',
-        '[["queue"],["jobs"]]',
+        '[["queue"],["jobs"],["docs"]]',
+        '[["queue"],["jobs"],["docs"]]',
+        '[["queue"],["jobs"],["docs"]]',
       ]);
     } finally {
       await server.close();

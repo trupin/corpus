@@ -29,9 +29,11 @@ export async function moveDocument(
   id: string,
   folder: string,
 ): Promise<MoveOutcome> {
-  await (workspace.assertWritable ?? (() => undefined))(id, actor);
-
   return mutex.run(id, async () => {
+    // Inside the lane, so a lease acquired while this move waited its turn still
+    // refuses it (SERVER-022 finding 7).
+    await (workspace.assertWritable ?? (() => undefined))(id, actor);
+
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
 
     const source = parseDocumentPath(loaded.path);

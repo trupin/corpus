@@ -346,7 +346,7 @@ corpus doc delete doc_a1b2c3 --yes --json
 
 Edit a document's body and frontmatter.
 
-The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only edit** and the body is left exactly as it is — the CLI never sends an empty body it was not given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: remapped anchors moved with the text, orphaned ones name the threads that just became detached. `--reviewed` records the current instant as a “still current” confirmation, which is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's current tags first, so they cost one extra request; nothing else does. A `423` from the other party's edit lock is reported as a server error (exit 5) and is never retried — the orchestrate skill defers instead. An edit that names no change at all is a usage error, not an empty request.
+The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only edit** and the body is left exactly as it is — the CLI never sends an empty body it was not given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: remapped anchors moved with the text, orphaned ones name the threads that just became detached. `--reviewed` records the current instant as a “still current” confirmation, which is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's current tags first, so they cost one extra request; nothing else does — and because the API offers no conditional write, two tag edits racing on one document can end with only the later one's tag. A `423` from the other party's edit lock is reported as a server error (exit 5) and is never retried — the orchestrate skill defers instead. An edit that names no change at all is a usage error, not an empty request.
 
 ```
 corpus doc edit <id> [flags]
@@ -597,7 +597,7 @@ corpus lock acquire doc_a1b2c3 --ttl 60 --json
 
 Force-unlock a document (an operator action).
 
-Clears whoever holds the document's edit lock and records the break in the audit trail. This is the one verb the CLI sends as **`user` rather than `agent`**: breaking a lock is a human recovery action, and the server refuses it from the agent precisely so that an agent cannot break its own contention. Idempotent by design — a document with no lock reports `no lock held` and exits 0, which also means an unknown document id exits 0 rather than 5.
+Clears whoever holds the document's edit lock and records the break in the audit trail. **The agent may not run this.** `--from agent` (or `CORPUS_FROM=agent`) is refused here, before any request is sent, with exit 2: breaking a lock is a human recovery action, and an agent that could break its own contention would defeat the mechanism the lock exists to provide (SPEC.md §7). The server refuses it too; this guard exists so the agent gets the reason rather than a `403`. Idempotent by design — a document with no lock reports `no lock held` and exits 0, which also means an unknown document id exits 0 rather than 5.
 
 ```
 corpus lock break <doc-id> [flags]
@@ -994,7 +994,7 @@ corpus server logs -f
 
 Start this workspace's server as a background daemon.
 
-Spawns the server detached, with its output appended to `.corpus/server.log`, and waits until `GET /api/health` answers before reporting the board URL. The daemon outlives the shell that started it. Idempotent: an already-running server is reported and the command exits 0. If it never becomes ready, the tail of the log is printed rather than a silent failure.
+Spawns the server detached, with its output appended to `.corpus/server.log`, and waits until `GET /api/health` answers **for this workspace** before reporting the board URL. The daemon outlives the shell that started it. Idempotent: an already-running server is reported and the command exits 0. A port that another workspace's server already holds is refused before anything is spawned (exit 4) — its health answer is never mistaken for this workspace's, and no pidfile is written. If the daemon never becomes ready, the tail of the log is printed rather than a silent failure.
 
 ```
 corpus server start [flags]
@@ -1018,7 +1018,7 @@ corpus server start --json
 
 Report whether this workspace's server is running, and how it is doing.
 
-Combines the pidfile with a live `GET /api/health` so a stale or reused pid is never reported as running — a pidfile whose process is gone is cleaned up on the spot. Exits 0 when the server is running and answering, and 6 when it is not, so scripts can gate on it (`corpus server status || corpus server start`). Under `--json` the whole report is one object on stdout in both states.
+Combines the pidfile with a live `GET /api/health` so a stale or reused pid is never reported as running — a pidfile whose process is gone is cleaned up on the spot. The health answer has to name **this** workspace: a server another workspace owns on the same port is reported as such, never as ours. Exits 0 when the server is running and answering, and 6 when it is not, so scripts can gate on it (`corpus server status || corpus server start`). Under `--json` the whole report is one object on stdout in both states.
 
 ```
 corpus server status [flags]
@@ -1078,7 +1078,7 @@ A comment opens a thread anchored to the text it is about; every later turn appe
 
 Reopen a resolved thread.
 
-Sets `status: open` again; an `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Reopening an already-open thread reports “already open” and exits 0, having written and committed nothing.
+Sets `status: open` again; an `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Reopening an already-open thread reports “already open” and exits 0, having written and committed nothing. A real flip rewrites the thread's frontmatter and commits it, so any SPEC.md §14 warning it raises is appended to the printed line.
 
 ```
 corpus thread reopen <id> [flags]
@@ -1098,7 +1098,7 @@ Bring a resolved conversation back because something new came up.
 corpus thread reopen th_a1b2c3
 ```
 
-One JSON value: the thread summary, with `status` back to `open`.
+One JSON value — `{"thread":{…},"warnings":[]}` — the summary carrying `status: open` again, alongside any warning the commit raised.
 
 ```
 corpus thread reopen th_a1b2c3 --json
@@ -1153,7 +1153,7 @@ corpus thread reply th_a1b2c3 --file answer.md --json
 
 Resolve a thread.
 
-Sets `status: resolved`. The thread collapses in the document view and later turns stop re-triggering the agent even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving an already-resolved thread reports “already resolved” and exits 0, having written and committed nothing.
+Sets `status: resolved`. The thread collapses in the document view and later turns stop re-triggering the agent even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving an already-resolved thread reports “already resolved” and exits 0, having written and committed nothing. A real flip rewrites the thread's frontmatter and commits it, so any SPEC.md §14 warning it raises (`commit_failed`, say) is appended to the printed line.
 
 ```
 corpus thread resolve <id> [flags]
@@ -1173,7 +1173,7 @@ Close a conversation that has run its course.
 corpus thread resolve th_a1b2c3
 ```
 
-One JSON value: the thread summary, with `status` now `resolved`.
+One JSON value — `{"thread":{…},"warnings":[]}` — the summary carrying `status: resolved`, alongside any warning the commit raised.
 
 ```
 corpus thread resolve th_a1b2c3 --from agent --json

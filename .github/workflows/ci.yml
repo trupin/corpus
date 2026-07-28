@@ -30,13 +30,24 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
-      - name: unit tests + coverage gate (>=90%)
+      # unit → e2e → merge → gate. The unit run enforces no threshold of its own
+      # (INFRA-004): it emits raw istanbul coverage, the e2e run emits raw V8,
+      # and the merged report below is the single place the 90% bar is applied.
+      - name: unit tests (raw coverage, no gate)
         run: npm run test:coverage
-      - name: e2e (Playwright)
+      # The `compgen -G "apps/ui/e2e/*.spec.ts"` guard that used to wrap this is
+      # gone: the specs exist, and e2e output is now an INPUT to the gate. A run
+      # that quietly produced none has to fail, not skip.
+      - name: e2e (Playwright, browser V8 coverage)
         run: |
-          if compgen -G "apps/ui/e2e/*.spec.ts" > /dev/null; then
-            npx playwright install --with-deps chromium
-            npm run e2e
-          else
-            echo "e2e skipped (no specs in apps/ui/e2e/ yet)"
-          fi
+          npx playwright install --with-deps chromium
+          npm run e2e
+      - name: merged coverage gate (unit + e2e, >=90%)
+        run: npm run coverage:merge
+      - name: upload merged coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-coverage
+          path: coverage/merged
+          if-no-files-found: warn

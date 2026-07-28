@@ -168,7 +168,6 @@ export async function deleteDocument(
   // depends on.
   if (actor === "agent") throw forbidden(AGENT_DELETE_MESSAGE);
   const guard = workspace.assertWritable ?? ((): void => undefined);
-  await guard(id, actor);
 
   // Read before entering the lanes, because which lanes to hold is a question
   // only the document's own frontmatter answers. Re-read inside; this copy
@@ -176,11 +175,15 @@ export async function deleteDocument(
   const anchored = anchoredThreadParent(
     loadDocument(workspace.workspaceRoot, workspace.projection, id),
   );
-  // The parent's frontmatter is genuinely rewritten, so the other party's edit
-  // lock on it refuses this deletion — sprint-006 Adjudication 1.
-  if (anchored !== null) await guard(anchored.parentId, actor);
 
-  return runInLanes(mutex, [id, anchored?.parentId], () =>
-    deleteDocumentLocked(workspace, actor, id),
-  );
+  return runInLanes(mutex, [id, anchored?.parentId], async () => {
+    // Inside the lanes, so a lease acquired while this deletion waited its turn
+    // still refuses it (SERVER-022 finding 7). The parent's frontmatter is
+    // genuinely rewritten, so the other party's edit lock on it refuses this
+    // deletion too — sprint-006 Adjudication 1.
+    await guard(id, actor);
+    if (anchored !== null) await guard(anchored.parentId, actor);
+
+    return deleteDocumentLocked(workspace, actor, id);
+  });
 }

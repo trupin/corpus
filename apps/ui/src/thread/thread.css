@@ -1,0 +1,338 @@
+/*
+ * The conversation surface, ported from `design/index.html` (SPEC.md §11 names
+ * the mockup authoritative for look & feel): the turn stream's delete arming and
+ * trace line, the composer and its foot, attachments in both states, live form
+ * controls, the honest `.working` row, and nested child threads.
+ *
+ * `.thread-card`, `.t-head`, `.t-quote`, `.t-status`, `.t-context`, `.t-collapse`
+ * and the base `.turn` rules ship from `reader/Reader.css`, where the reader
+ * already declared them; this file is what UI-008 adds on top rather than a
+ * second copy of them.
+ *
+ * The `prefers-reduced-motion` guard is declared once, in `app/global.css`, and
+ * already names `.working-dot`. It is deliberately not repeated here.
+ */
+
+/* ── Turns ── */
+.turn-comment,
+.turn-del {
+  margin-left: auto;
+  opacity: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  padding: 0 4px;
+  transition: opacity 0.12s ease;
+}
+
+/* Only one of the two claims the auto margin, or they separate. */
+.turn-comment + .turn-del {
+  margin-left: 0;
+}
+
+.turn:hover .turn-comment,
+.turn:hover .turn-del,
+.turn-comment:focus-visible,
+.turn-del:focus-visible {
+  opacity: 1;
+}
+
+.turn-del:hover {
+  color: var(--signal);
+}
+
+.turn-comment:hover {
+  color: var(--accent-ink);
+}
+
+.turn-del.armed {
+  opacity: 1;
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.turn.pending {
+  opacity: 0.6;
+}
+
+.turn-trace {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+
+/* The arrow is CSS content, never a character in the document's bytes. */
+.turn-trace::before {
+  content: "↳ ";
+}
+
+/* ── The honest pending indicator (SPEC.md §8) ── */
+.working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+/* ── Composer ── */
+.composer {
+  margin-top: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.composer input[type="text"],
+.composer > input:not([type]) {
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  width: 100%;
+}
+
+.composer > input::placeholder {
+  color: var(--ink-3);
+}
+
+.composer.dropping {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--ink-3);
+}
+
+.composer-foot .toggle {
+  cursor: pointer;
+}
+
+.composer-foot .toggle.on {
+  color: var(--accent-ink);
+}
+
+.composer-foot .send {
+  margin-left: auto;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.composer-foot .send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Attachments ── */
+.pending-atts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pending-atts:empty {
+  display: none;
+}
+
+.att-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--ink-2);
+  background: var(--surface-2);
+}
+
+.att-chip img {
+  height: 34px;
+  border-radius: 4px;
+  display: block;
+}
+
+.att-chip button {
+  color: var(--ink-3);
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.att-chip button:hover {
+  color: var(--signal);
+}
+
+.clip {
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 0 4px;
+}
+
+.clip:hover {
+  color: var(--accent-ink);
+}
+
+.turn-att-img {
+  max-width: 240px;
+  max-height: 180px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  display: block;
+  margin-top: 6px;
+}
+
+.att-file {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.att-file:hover {
+  border-color: var(--accent);
+}
+
+/* ── Forms in turns (SPEC.md §6) ── */
+.form-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.form-prompt {
+  margin: 0;
+  color: var(--ink);
+}
+
+.form-opt {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+  width: 100%;
+}
+
+.form-opt:hover {
+  border-color: var(--accent);
+}
+
+.form-opt.picked {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.form-opt:disabled {
+  cursor: default;
+}
+
+.form-opt .price {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.form-note {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 9px;
+}
+
+.form-submit {
+  align-self: flex-start;
+  margin-top: 3px;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.form-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.form-answered {
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.form-warning {
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--sepia-ink);
+}
+
+/* ── Nested conversations (SPEC.md §6 recursion) ── */
+
+/* The card's own left inset: `Reader.css` gives `.thread-card` a 3px accent left
+   border and 14px of padding. Named here because the flush rule below has to
+   cancel exactly that much, and a bare `-17px` would silently stop matching the
+   day either value moves. */
+.thread-card {
+  --card-inset: 17px;
+}
+
+.child-threads {
+  margin-left: 14px;
+  border-left: 1px solid var(--line);
+  padding-left: 10px;
+}
+
+/* Past the cap the nesting stops insetting: the wrapper cancels the parent
+   card's own inset so the child's left edge lands on the parent's, and every
+   deeper level lands on the same line. What tells them apart from there is the
+   `.t-depth` indicator, not another 24px of margin — indenting forever is how a
+   deep conversation squeezes its own composer out of existence. */
+.child-threads.flush {
+  margin-left: calc(-1 * var(--card-inset));
+  padding-left: 0;
+  border-left: none;
+}
+
+.t-depth {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+
+.t-context-id {
+  font-family: var(--mono);
+}
+
+.child-composer {
+  margin-left: 14px;
+}

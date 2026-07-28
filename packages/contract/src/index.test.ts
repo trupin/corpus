@@ -10,6 +10,8 @@ describe("@corpus/contract entry point", () => {
   it.each([
     "DocSchema",
     "DocFrontmatterSchema",
+    "ExtraFrontmatterSchema",
+    "ViewQuerySchema",
     "ThreadSchema",
     "TurnSchema",
     "QueueEventSchema",

@@ -42,17 +42,21 @@ describe("assertWithinLimits", () => {
     }).not.toThrow();
   });
 
-  it("refuses an over-cap file with a 400 naming the file and the cap", () => {
+  it("refuses an over-cap file with a 413 naming the file and the cap", () => {
     try {
       assertWithinLimits([file("huge.png", 101)], limits);
       expect.unreachable("expected a refusal");
     } catch (error) {
       expect(error).toBeInstanceOf(HttpError);
       const http = error as HttpError;
-      // Sprint-007 Open Conflict 5b: the declared 400, not an undeclared 413.
-      expect(http.status).toBe(400);
+      // CONTRACT-009 declared 413 on every file-taking route, which retired
+      // sprint-007 Open Conflict 5b's interim 400.
+      expect(http.status).toBe(413);
       expect(http.message).toContain("huge.png");
       expect(http.message).toContain("100 bytes");
+      // The status carries the distinction; the body stays the one
+      // `ValidationError` shape every refusal uses, which is exactly what the
+      // contract declares for 413 — no eighth error code.
       expect(http.body).toMatchObject({ code: "bad_request" });
     }
   });
@@ -63,7 +67,7 @@ describe("assertWithinLimits", () => {
       expect.unreachable("expected a refusal");
     } catch (error) {
       const http = error as HttpError;
-      expect(http.status).toBe(400);
+      expect(http.status).toBe(413);
       expect(http.message).toContain("per-request limit");
     }
   });

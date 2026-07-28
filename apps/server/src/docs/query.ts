@@ -125,6 +125,15 @@ export function folderPathPrefix(folder: string): string {
 const calendarDate = (nowMs: number, days = 0): string =>
   new Date(nowMs + days * MS_PER_DAY).toISOString().slice(0, 10);
 
+/**
+ * §11's default lifecycle rule — "archived documents are organizational, not
+ * deleted, and drop out of the default set" — as one fragment parameterized by
+ * the row it judges. Written once because it is applied in two places that must
+ * agree: the collection query's own WHERE clause, and the `unreadThreads`
+ * aggregate, whose contract is to equal the count that clause returns.
+ */
+const notArchivedSql = (alias: string): string => `${alias}.status <> 'archived'`;
+
 interface Compiled {
   readonly conditions: string[];
   readonly binder: Binder;
@@ -153,11 +162,23 @@ function compileFilters(query: DocsQuery, nowMs: number): Compiled {
   }
 
   // SPEC.md §11: archived documents are organizational, not deleted — they drop
-  // out of the default set and come back only when `status` is asked for.
+  // out of the default set and come back only when they are asked for. There are
+  // two ways to ask and they mean different things (CONTRACT-012): `status`
+  // *narrows* to one lifecycle state, so `status=archived` is archived and
+  // nothing else, while `includeArchived` *widens* the default into the union the
+  // board's "include archived" chip promises. `status` replaces the default
+  // outright, which is why `includeArchived` alongside it is a documented no-op
+  // rather than a second filter — nothing below reads it in that case.
+  //
+  // The union is spelled `1` rather than by pushing nothing, so this rule always
+  // contributes a condition: `conditions` is never empty and the WHERE clause
+  // always parses, whatever else the caller asked for.
   conditions.push(
-    query.status === undefined
-      ? "d.status <> 'archived'"
-      : `d.status = ${binder.next("status", query.status)}`,
+    query.status !== undefined
+      ? `d.status = ${binder.next("status", query.status)}`
+      : query.includeArchived === true
+        ? "1"
+        : notArchivedSql("d"),
   );
 
   if (query.tag !== undefined) {
@@ -231,6 +252,13 @@ function compileFilters(query: DocsQuery, nowMs: number): Compiled {
     );
   }
 
+  // Not thread-only: any document may carry `pinned`, though only a view
+  // renders as a column (SPEC.md §11). `pinned=true&type=view&sort=order` is
+  // the board's entire column set, in one bounded query.
+  if (query.pinned !== undefined) {
+    conditions.push(`d.pinned = ${binder.next("pinned", query.pinned ? 1 : 0)}`);
+  }
+
   if (query.needs !== undefined) {
     conditions.push(query.needs === "me" ? ANY_REASON_SQL : NEEDS_REASON_SQL[query.needs]);
   }
@@ -249,6 +277,13 @@ const ORDER_BY: Readonly<Record<DocSort, string>> = {
   "-created": "d.created DESC, d.id ASC",
   due: "d.due IS NULL, d.due ASC, d.id ASC",
   title: "d.title COLLATE NOCASE ASC, d.id ASC",
+  // The board's column ordering (SPEC.md §11, CONTRACT-011): ascending, with
+  // the contract's documented tiebreak spelled out — `order` **nulls last** (a
+  // view with no `order` key is placed, never dropped), then `title`, then
+  // `id`. `IS NULL` yields 0 before 1, which is what puts the nulls after the
+  // numbers; the title rung matches the `title` sort's collation so two ways of
+  // asking for alphabetical never disagree.
+  order: "d.sort_order IS NULL, d.sort_order ASC, d.title COLLATE NOCASE ASC, d.id ASC",
   // FTS5 `rank` is a bm25 score: more negative is a better match.
   relevance: "m.rank ASC, d.id ASC",
 };
@@ -258,16 +293,24 @@ const FROM_SQL = `FROM documents d
   LEFT JOIN seen s ON s.thread_id = d.id`;
 
 /**
- * Two more joins the *page* needs and the COUNT does not: the anchor a thread
- * hangs off (stored on the commented document, keyed by anchor id — SPEC.md §6)
- * and the thread's last turn. Both are keyed on their table's full primary key,
- * so neither can multiply a row; the COUNT deliberately keeps {@link FROM_SQL}
- * so it does no work the total does not depend on. Nothing in the WHERE clause
- * names either alias, which is what makes the two statements' row sets equal.
+ * Three more joins the *page* needs and the COUNT does not: the anchor a thread
+ * hangs off (stored on the commented document, keyed by anchor id — SPEC.md §6),
+ * the thread's last turn, and the parent document a thread names. All three are
+ * keyed on their table's full primary key, so none can multiply a row; the COUNT
+ * deliberately keeps {@link FROM_SQL} so it does no work the total does not
+ * depend on. Nothing in the WHERE clause names any of these aliases, which is
+ * what makes the two statements' row sets equal.
+ *
+ * `pd` is `parentTitle`'s source and is read **at query time**, never stored:
+ * `Job.originTitle`'s rule, so renaming a parent is reflected on its threads'
+ * rows immediately and a deleted parent reads as `null` rather than as a stale
+ * copy of a title that no longer exists (CONTRACT-011). The alias is not `p`
+ * because the folder filter's correlated subquery already binds that name.
  */
 const ROW_FROM_SQL = `${FROM_SQL}
   LEFT JOIN anchors an ON an.doc_id = t.parent_id AND an.anchor_id = t.anchor_id
-  LEFT JOIN turns lt ON lt.thread_id = t.id AND lt.ts = t.last_ts`;
+  LEFT JOIN turns lt ON lt.thread_id = t.id AND lt.ts = t.last_ts
+  LEFT JOIN documents pd ON pd.id = t.parent_id`;
 
 /**
  * `NULL` for a row that is not a thread, the fragment's own value otherwise —
@@ -277,12 +320,57 @@ const ROW_FROM_SQL = `${FROM_SQL}
  */
 const threadOnly = (sql: string): string => `CASE WHEN t.id IS NULL THEN NULL ELSE ${sql} END`;
 
+/**
+ * `unreadThreads` (CONTRACT-012): how many of *this document's own* threads are
+ * currently unread, so a document row carries the aggregate its unread pill
+ * needs without the list issuing one `?parent=<id>&type=thread&unread=true` per
+ * row — the N+1 the deferral that filed this field named by name.
+ *
+ * A correlated subquery, not a change to {@link FROM_SQL}: joining `threads` a
+ * second time on `parent_id` would multiply the outer row (a document with four
+ * threads is one row of the page, not four) and the COUNT would then disagree
+ * with the page. `threads_parent_id` is what keeps it a bounded index seek per
+ * row rather than a scan.
+ *
+ * The subquery re-binds `t` and `s` — precisely the aliases {@link UNREAD_SQL}
+ * names — so the aggregate and the per-thread `unread` column are the *same*
+ * comparison rather than two copies of it that could drift (SERVER-021's
+ * one-source-of-truth rule). `d` still resolves to the outer document, which is
+ * what correlates the subquery to the row. A partial mark (`lastSeenTs` before
+ * the last turn) therefore counts as unread here exactly as it does there.
+ *
+ * `0` on a thread row: `t.id IS NOT NULL` outside the subquery is the outer
+ * join, so a thread reports the contract's `0` rather than aggregating threads
+ * that happen to hang off it. A childless document counts zero rows and reports
+ * `0` too — COUNT is never NULL, so the column is never "unknown".
+ *
+ * Archived threads are excluded, by the same {@link notArchivedSql} fragment the
+ * collection query's default lifecycle rule uses (§11). Without it the two sides
+ * of the contract's stated equality disagreed the moment a thread was archived:
+ * the filtered query dropped it and the pill did not, leaving a document
+ * advertising unread work that nothing visible on the board could explain or
+ * clear (PR #10 review, finding 4). The exclusion is *fixed* rather than taking
+ * the request's `status`/`includeArchived`: the equality the contract states is
+ * with the default query, and the pill answers "what is still asking for me",
+ * which archiving settles — a chip that widens what a listing *shows* does not
+ * revive attention the user already dismissed. A thread's own lifecycle lives on
+ * its `documents` row (every thread is a document), which is what `td` joins.
+ */
+export const UNREAD_THREADS_SQL = `CASE WHEN t.id IS NOT NULL THEN 0 ELSE (
+           SELECT COUNT(*) FROM threads t
+                  LEFT JOIN seen s ON s.thread_id = t.id
+                  JOIN documents td ON td.id = t.id
+            WHERE t.parent_id = d.id AND ${notArchivedSql("td")} AND ${UNREAD_SQL}
+         ) END`;
+
 /** The §11 thread affordances and the staleness tier, as columns of the page query. */
 const ROW_COLUMNS = `${STALE_TIER_SQL} AS stale,
-         t.parent_id AS parent, t.agent AS agent, an.exact_text AS anchor_quote,
+         t.parent_id AS parent, pd.title AS parent_title, t.agent AS agent,
+         an.exact_text AS anchor_quote,
          t.turn_count AS turn_count, t.last_author AS last_author, lt.body_md AS last_turn,
          ${threadOnly(UNREAD_SQL)} AS unread,
-         ${threadOnly(AWAITING_AGENT_SQL)} AS awaiting_agent`;
+         ${threadOnly(AWAITING_AGENT_SQL)} AS awaiting_agent,
+         ${UNREAD_THREADS_SQL} AS unread_threads`;
 
 /**
  * `snippet()` is an FTS5 auxiliary function and refuses to run in an aggregate
@@ -321,9 +409,15 @@ interface RawRow {
   readonly reviewed: string | null;
   readonly evergreen: number;
   readonly excerpt: string;
+  readonly pinned: number;
+  readonly sort_order: number | null;
+  readonly query_json: string | null;
+  readonly column_ref: string | null;
+  readonly extra_json: string;
   readonly snippets_json: string | null;
   readonly stale: string | null;
   readonly parent: string | null;
+  readonly parent_title: string | null;
   readonly agent: string | null;
   readonly anchor_quote: string | null;
   readonly turn_count: number | null;
@@ -331,6 +425,7 @@ interface RawRow {
   readonly last_turn: string | null;
   readonly unread: number | null;
   readonly awaiting_agent: number | null;
+  readonly unread_threads: number;
 }
 
 /**
@@ -354,6 +449,25 @@ function parseTags(json: string): string[] {
   }
 }
 
+/**
+ * A JSON object column back into an object. Both callers store JSON this module
+ * itself produced from an already-validated value (`docs/read.ts` and the
+ * projection read the file through the same `core/view-frontmatter.ts`), so the
+ * fallbacks are for a database written by an older schema or corrupted
+ * underneath us — never a normal path.
+ */
+function parseJsonObject(json: string | null): Record<string, unknown> | null {
+  if (json === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
   return {
     id: row.id,
@@ -370,12 +484,26 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     reviewed: row.reviewed,
     evergreen: row.evergreen !== 0,
     excerpt: row.excerpt,
+    // The §11 view keys, from the columns the projection filled by parsing the
+    // file with the contract's own schemas — so the row and `GET /api/docs/{id}`
+    // report one file's frontmatter identically (CONTRACT-011).
+    pinned: row.pinned !== 0,
+    order: row.sort_order,
+    query: parseJsonObject(row.query_json) as DocRow["query"],
+    column: row.column_ref,
+    extra: parseJsonObject(row.extra_json) ?? {},
     // Same reasoning as `status`: the tier is this module's own CASE over the
     // contract's closed enum, and `agent`/`last_author` are parsed with the
     // contract's enums before the projection inserts them, so each column can
     // only hold a declared value.
     stale: row.stale as DocRow["stale"],
     parent: row.parent,
+    // Null whenever `parent` is null *and* when the parent no longer resolves —
+    // the LEFT JOIN misses a deleted parent. The contract's rule for that second
+    // case is an *empty* context cell rather than a raw `doc_*` id: an orphaned
+    // thread still has a `parent`, so it is not a standalone thread and must not
+    // be labelled as one (CONTRACT-012).
+    parentTitle: row.parent_title,
     agent: row.agent as DocRow["agent"],
     anchorQuote: row.anchor_quote,
     turnCount: row.turn_count,
@@ -385,6 +513,9 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     lastTurn: row.last_turn === null ? null : bodyExcerpt(row.last_turn),
     unread: asBoolean(row.unread),
     awaitingAgent: asBoolean(row.awaiting_agent),
+    // A COUNT, so already a non-negative integer — and `0` on a thread row and
+    // on a childless document by the same CASE, never null (CONTRACT-012).
+    unreadThreads: row.unread_threads,
     attention: rowAttention(row),
     snippets: parseSnippets(row.snippets_json),
   };
@@ -415,6 +546,8 @@ export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): Do
   const rowsSql = `${searching ? `WITH ${HITS_CTE}\n` : ""}SELECT d.id AS id, d.type AS type, d.title AS title, d.path AS path,
          d.status AS status, d.tags_json AS tags_json, d.created AS created, d.updated AS updated,
          d.due AS due, d.reviewed AS reviewed, d.evergreen AS evergreen, d.body_excerpt AS excerpt,
+         d.pinned AS pinned, d.sort_order AS sort_order, d.query_json AS query_json,
+         d.column_ref AS column_ref, d.extra_json AS extra_json,
          ${searching ? "m.snippets" : "NULL"} AS snippets_json,
          ${ROW_COLUMNS},
          ${REASON_COLUMNS}

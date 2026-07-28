@@ -240,8 +240,26 @@ function rawRequestTarget(c: Context): string | undefined {
 }
 
 /**
+ * The spellings the URL Standard treats as a dot segment, lowercased. The
+ * parser's "single-dot path segment" is `.` or `%2e`, and its "double-dot path
+ * segment" is `..`, `.%2e`, `%2e.` or `%2e%2e` — each ASCII case-insensitive.
+ * All six are removed (or pop a segment) *before* Corpus code runs, so all six
+ * have to be refused here; comparing against the two literal spellings alone
+ * left `%2e%2e` reaching a real attachment through a sideways traversal
+ * (SERVER-022 finding 1).
+ */
+const DOT_SEGMENT_SPELLINGS: ReadonlySet<string> = new Set([
+  ".",
+  "%2e",
+  "..",
+  ".%2e",
+  "%2e.",
+  "%2e%2e",
+]);
+
+/**
  * True when the *unnormalized* target names an attachment path containing a
- * dot segment, an empty segment, or a backslash.
+ * dot segment in any of its spellings, an empty segment, or a backslash.
  *
  * This exists because the traversal never reaches {@link parseAttachmentPath}.
  * Every `Request` is built by the WHATWG URL parser, which resolves `.` and
@@ -270,7 +288,7 @@ export function isUnnormalizedAttachmentTarget(target: string): boolean {
     .slice(ATTACHMENTS_PATH_PREFIX.length)
     .split("/")
     .slice(1)
-    .some((segment) => segment === "" || segment === "." || segment === "..");
+    .some((segment) => segment === "" || DOT_SEGMENT_SPELLINGS.has(segment.toLowerCase()));
 }
 
 /**
