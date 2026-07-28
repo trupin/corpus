@@ -27,6 +27,12 @@ import { META_SCHEMA_VERSION, PROJECTION_TABLES, SCHEMA_VERSION } from "./schema
  * §9.1's column lists, retyped from the spec rather than imported from the DDL:
  * a test that read the same constant the code did would only prove the code
  * agrees with itself.
+ *
+ * `documents` carries five columns past §9.1's list, retyped from CONTRACT-011
+ * for the same reason: §11 makes a board column a pinned view document, so
+ * `pinned` is a `GET /api/docs` filter and `order` one of its sorts, and the
+ * board reads every view's `query`, `column` and plugin keys off the same
+ * bounded response rather than one follow-up read per column.
  */
 const SPEC_COLUMNS: Record<string, readonly string[]> = {
   documents: [
@@ -42,6 +48,11 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "reviewed",
     "evergreen",
     "body_excerpt",
+    "pinned",
+    "sort_order",
+    "query_json",
+    "column_ref",
+    "extra_json",
   ],
   threads: [
     "id",

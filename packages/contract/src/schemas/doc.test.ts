@@ -32,6 +32,26 @@ const frontmatter = {
   due: null,
   reviewed: null,
   evergreen: false,
+  pinned: false,
+  order: null,
+  query: null,
+  column: null,
+  extra: {},
+};
+
+/**
+ * The seed `attention.md` view document (assets/workspace), as the wire carries
+ * it — the frontmatter CONTRACT-011's surface exists to round-trip.
+ */
+const viewFrontmatter = {
+  ...frontmatter,
+  id: "doc_seedattention",
+  type: "view",
+  title: "Attention",
+  evergreen: true,
+  pinned: true,
+  order: 1,
+  query: { needs: "me" },
 };
 
 const doc = {
@@ -113,6 +133,66 @@ describe("DocFrontmatter", () => {
   );
 });
 
+/**
+ * CONTRACT-011: the §11 view keys are first-class core fields on every
+ * response surface, so the board reads its whole column set — query, order,
+ * column type — from the list response with no per-view follow-up read.
+ */
+describe("view frontmatter keys", () => {
+  it("round-trips the seed attention view's frontmatter", () => {
+    expect(DocFrontmatterSchema.parse(viewFrontmatter)).toEqual(viewFrontmatter);
+  });
+
+  it("round-trips a multi-filter query with an array value, as the chips render it", () => {
+    const withQuery = {
+      ...viewFrontmatter,
+      query: { type: "thread", status: "open", tag: ["finance", "house"] },
+    };
+    expect(DocFrontmatterSchema.parse(withQuery)).toEqual(withQuery);
+  });
+
+  it("round-trips a plugin column view", () => {
+    const pluginView = { ...viewFrontmatter, query: null, column: "todos/board" };
+    expect(DocFrontmatterSchema.parse(pluginView)).toEqual(pluginView);
+  });
+
+  it.each(["pinned", "order", "query", "column", "extra"] as const)(
+    "requires %s to be present — absent-on-disk is false/null/{}, never a missing key",
+    (field) => {
+      const { [field]: _dropped, ...without } = frontmatter as Record<string, unknown>;
+      expect(DocFrontmatterSchema.safeParse(without).success).toBe(false);
+    },
+  );
+
+  it.each(["pinned", "order", "query", "column", "extra"] as const)(
+    "describes %s identically to the list row, since they describe the same file key",
+    (field) => {
+      expect(DocFrontmatterSchema.shape[field].meta()?.description).toBe(
+        docRowBaseShape[field].meta()?.description,
+      );
+    },
+  );
+
+  it("rejects a nested object as a query value — the query is one flat level of filters", () => {
+    const nested = { ...viewFrontmatter, query: { needs: { me: true } } };
+    expect(DocFrontmatterSchema.safeParse(nested).success).toBe(false);
+  });
+
+  it("accepts any finite number for order, so a reorder can write midpoints", () => {
+    expect(DocFrontmatterSchema.parse({ ...viewFrontmatter, order: 1.5 }).order).toBe(1.5);
+  });
+
+  it("carries extra frontmatter beside the core keys", () => {
+    const withExtra = { ...frontmatter, type: "todo", extra: { items: [{ done: false }] } };
+    expect(DocFrontmatterSchema.parse(withExtra)).toEqual(withExtra);
+  });
+
+  it("rejects a core key smuggled through extra, on the read shape too", () => {
+    const shadowed = { ...frontmatter, extra: { title: "shadowed" } };
+    expect(DocFrontmatterSchema.safeParse(shadowed).success).toBe(false);
+  });
+});
+
 describe("Doc", () => {
   it("round-trips a document with a resolved anchor", () => {
     expect(DocSchema.parse(doc)).toEqual(doc);
@@ -187,6 +267,40 @@ describe("CreateDocRequest", () => {
   it.each(["finance", "data/docs/finance"])("accepts the folder spelling %s", (folder) => {
     expect(CreateDocRequestSchema.parse({ type: "note", title: "T", folder }).folder).toBe(folder);
   });
+
+  it("creates a pinned view in one call — the new-list picker's shape", () => {
+    const request = {
+      type: "view",
+      title: "Finance",
+      pinned: true,
+      order: 40,
+      query: { folder: "finance" },
+    };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("accepts extra frontmatter on create", () => {
+    const request = { type: "todo", title: "Chores", extra: { items: [] } };
+    expect(CreateDocRequestSchema.parse(request)).toEqual(request);
+  });
+
+  it("rejects a core key smuggled through extra on create", () => {
+    const request = { type: "note", title: "T", extra: { status: "resolved" } };
+    expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
+  });
+
+  it.each(["todos/board", "publish/status"])("accepts the column reference %s", (column) => {
+    const request = { type: "view", title: "T", pinned: true, column };
+    expect(CreateDocRequestSchema.parse(request).column).toBe(column);
+  });
+
+  it.each(["todos", "todos/", "/board", "todos/b/oard", "to dos/board"])(
+    "rejects the malformed column reference %s — the format is <plugin>/<type>",
+    (column) => {
+      const request = { type: "view", title: "T", column };
+      expect(CreateDocRequestSchema.safeParse(request).success).toBe(false);
+    },
+  );
 });
 
 describe("MoveDocRequest", () => {
@@ -239,6 +353,30 @@ describe("UpdateDocRequest and UpdateDocResponse", () => {
     expect(UpdateDocRequestSchema.parse({ reviewed: "2026-07-26T12:00:00Z" })).toEqual({
       reviewed: "2026-07-26T12:00:00Z",
     });
+  });
+
+  it("accepts a reorder naming only `order` — the drag's minimal write", () => {
+    expect(UpdateDocRequestSchema.parse({ order: 15 })).toEqual({ order: 15 });
+  });
+
+  it("accepts a query edit, and null to clear the key", () => {
+    expect(UpdateDocRequestSchema.parse({ query: { needs: "me" } })).toEqual({
+      query: { needs: "me" },
+    });
+    expect(UpdateDocRequestSchema.parse({ query: null })).toEqual({ query: null });
+    expect(UpdateDocRequestSchema.parse({ order: null, column: null })).toEqual({
+      order: null,
+      column: null,
+    });
+  });
+
+  it("accepts a per-key extra merge patch, null removing the named key", () => {
+    const patch = { extra: { items: [{ text: "x", done: true }], draft: null } };
+    expect(UpdateDocRequestSchema.parse(patch)).toEqual(patch);
+  });
+
+  it("rejects a core key smuggled through extra on update", () => {
+    expect(UpdateDocRequestSchema.safeParse({ extra: { reviewed: "now" } }).success).toBe(false);
   });
 
   it("round-trips the anchor reconciliation report", () => {

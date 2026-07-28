@@ -86,10 +86,12 @@ export interface paths {
                     stale?: "aging" | "stale" | "very-stale";
                     /** @description Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2). */
                     unread?: boolean;
+                    /** @description Documents whose frontmatter carries `pinned: true` (`false` selects the rest — a missing key reads as `false`). The board's column set is one bounded query — `pinned=true&type=view&sort=order` — with every view's `query`, `order` and `column` on the rows, so no per-column follow-up read is ever needed (SPEC.md §11). Not thread-only: any type may carry the key, though only views render as columns. */
+                    pinned?: boolean;
                     /** @description The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder. */
                     needs?: "me" | "unread-reply" | "form" | "due" | "stale" | "failed-job";
-                    /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. */
-                    sort?: "updated" | "-updated" | "created" | "-created" | "due" | "title" | "relevance";
+                    /** @description Sort key; defaults to `-updated`. `relevance` requires `q` and is rejected with `400` without it, rather than silently falling back. `order` sorts ascending by the §11 view key — the board's column ordering — with the documented tiebreak: `order` with nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`. */
+                    sort?: "updated" | "-updated" | "created" | "-created" | "due" | "title" | "order" | "relevance";
                 };
                 header?: never;
                 path?: never;
@@ -2976,6 +2978,20 @@ export interface components {
             evergreen: boolean;
             /** @description Leading plain-text excerpt of the body, for list rows. */
             excerpt: string;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
+            pinned: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. */
+            order: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
+            query: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
+            column: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra: {
+                [key: string]: unknown;
+            };
             /**
              * @description Staleness tier from SPEC.md §5's age ramp (aging, stale, very-stale), driving the row's age rail, dimming and age chip. **`null` is fresh** — the tiers name degrees of staleness and freshness is their absence, which is also why `stale=` takes a tier and never `fresh`. Always null for `evergreen: true` documents, which opt out of staleness entirely, and for a document whose age is unknown (`updated` and `reviewed` both null): an unknown age is not an old one.
              * @enum {string|null}
@@ -2986,6 +3002,8 @@ export interface components {
              * @example doc_a1b2c3
              */
             parent: string | null;
+            /** @description The current title of whatever `parent` names, or null. Resolved at query time like `Job.originTitle` — never a stored copy, so a rename is reflected immediately. Null whenever `parent` is null, and when the parent no longer resolves (a deleted parent, SPEC.md §9.2); render such a thread as standalone rather than showing a raw id. */
+            parentTitle: string | null;
             /**
              * @description Agent participation state (none, requested, engaged, SPEC.md §6, §8), backing the pending-agent indicator. Null on non-threads.
              * @enum {string|null}
@@ -3114,6 +3132,20 @@ export interface components {
             reviewed: string | null;
             /** @description True opts the document out of staleness entirely. */
             evergreen: boolean;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
+            pinned: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. */
+            order: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. */
+            query: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). */
+            column: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra: {
+                [key: string]: unknown;
+            };
         };
         TextQuoteSelector: {
             /** @description The quoted text the thread is attached to. */
@@ -3189,6 +3221,20 @@ export interface components {
             due?: string | null;
             /** @description True opts the document out of staleness entirely. Defaults to `false`. */
             evergreen?: boolean;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. Defaults to `false` — a view renders as a board column only once pinned. */
+            pinned?: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. Null is the same as omitting it: no `order` key. */
+            order?: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. Null is the same as omitting it: no `query` key. */
+            query?: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). Null is the same as omitting it: no `column` key. */
+            column?: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra?: {
+                [key: string]: unknown;
+            };
         };
         NotFoundError: {
             /** @enum {string} */
@@ -3251,6 +3297,20 @@ export interface components {
              */
             reviewed?: string | null;
             evergreen?: boolean;
+            /** @description True pins this `type: view` document to the board as a column (SPEC.md §11). `false` when the file carries no `pinned` key. Filter the column set with `GET /api/docs?pinned=true`. */
+            pinned?: boolean;
+            /** @description Board position of a pinned view, ascending under `sort=order` (SPEC.md §11). `null` when the file carries no `order` key — such a column is still placed, by the documented tiebreak (`order` with nulls last, then `title`, then `id`). Any finite number is legal, so a reorder may write midpoints between neighbours instead of renumbering every column. On update, `null` clears the key from the file. */
+            order?: number | null;
+            /** @description The stored board query of a `type: view` document (SPEC.md §11): a flat map from `GET /api/docs` parameter names to a value or an array of values — arrays OR together, like the comma-separated wire form (`{type: ["note", "view"]}` ≡ `type=note,view`). The server stores it and never interprets it: the client compiles it into the collection query and renders it as filter chips, so an unknown key degrades in the client, never on the wire. `null` when the file carries no `query` key. On update, `null` clears the key from the file. */
+            query?: {
+                [key: string]: string | number | boolean | (string | number | boolean)[];
+            } | null;
+            /** @description Plugin column type rendered for this pinned view, as `"<plugin>/<type>"` (SPEC.md §10) — e.g. `todos/board`. `null` when the view is a plain filtered list. A view referencing an uninstalled plugin keeps its board position and renders a plugin-missing card (SPEC.md §15). On update, `null` clears the key from the file. */
+            column?: string | null;
+            /** @description Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update. */
+            extra?: {
+                [key: string]: unknown;
+            };
         };
         DeleteDocResult: {
             /**

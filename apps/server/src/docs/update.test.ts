@@ -222,7 +222,11 @@ describe("PUT /api/docs/{id}", () => {
     expect(frames).toEqual([]);
   });
 
-  it("serializes concurrent saves and chains them correctly", async () => {
+  // Wall-clock concurrency tests: ~3s alone, and full-suite parallelism can push
+  // them past vitest's 5s default. The generous timeout tolerates load; the
+  // assertions still catch serialization regressions (SERVER-023's adjudicated
+  // pattern for load-sensitive tests).
+  it("serializes concurrent saves and chains them correctly", { timeout: 20_000 }, async () => {
     anchored("update-concurrent");
 
     const responses = await Promise.all(
@@ -242,22 +246,26 @@ describe("PUT /api/docs/{id}", () => {
     expect(ws.git("status", "--porcelain").includes(".tmp-")).toBe(false);
   });
 
-  it("appends markers from ten parallel body saves without losing one", async () => {
-    ws = createWriteWorkspace("update-parallel-body");
-    ws.reproject();
-    const created = await createDoc(ws, { type: "note", title: "Parallel", body: "start" });
+  it(
+    "appends markers from ten parallel body saves without losing one",
+    { timeout: 20_000 },
+    async () => {
+      ws = createWriteWorkspace("update-parallel-body");
+      ws.reproject();
+      const created = await createDoc(ws, { type: "note", title: "Parallel", body: "start" });
 
-    // Read-modify-write per request, serialized by the per-document mutex: each
-    // save sees the previous one's bytes on disk.
-    for (let index = 0; index < 10; index += 1) {
-      const current = parseDocument(ws.read(created.path)).body;
-      await ws.put(`/api/docs/${created.id}`, { body: `${current}\nmarker-${index}` });
-    }
-    const body = parseDocument(ws.read(created.path)).body;
-    for (let index = 0; index < 10; index += 1) {
-      expect(body).toContain(`marker-${index}`);
-    }
-  });
+      // Read-modify-write per request, serialized by the per-document mutex: each
+      // save sees the previous one's bytes on disk.
+      for (let index = 0; index < 10; index += 1) {
+        const current = parseDocument(ws.read(created.path)).body;
+        await ws.put(`/api/docs/${created.id}`, { body: `${current}\nmarker-${index}` });
+      }
+      const body = parseDocument(ws.read(created.path)).body;
+      for (let index = 0; index < 10; index += 1) {
+        expect(body).toContain(`marker-${index}`);
+      }
+    },
+  );
 
   it("404s an unknown id and 400s a malformed one", async () => {
     ws = createWriteWorkspace("update-ids");

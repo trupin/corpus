@@ -3,6 +3,7 @@ import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
 import { ERROR_CODES } from "./schemas/error.js";
+import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
 import { QUERY_KEY_NAMES, QUERY_KEY_VOCABULARY } from "./query-keys.js";
@@ -65,6 +66,7 @@ interface SchemaNode {
   readonly allOf?: SchemaNode[];
   readonly anyOf?: SchemaNode[];
   readonly oneOf?: SchemaNode[];
+  readonly description?: string;
 }
 
 interface DefaultedProperty {
@@ -315,6 +317,7 @@ describe("GET /api/docs parameter grammar", () => {
     "due",
     "stale",
     "unread",
+    "pinned",
     "needs",
     "sort",
   ];
@@ -334,7 +337,7 @@ describe("GET /api/docs parameter grammar", () => {
     ["author", ["user", "agent"]],
     ["stale", ["aging", "stale", "very-stale"]],
     ["needs", ["me", "unread-reply", "form", "due", "stale", "failed-job"]],
-    ["sort", ["updated", "-updated", "created", "-created", "due", "title", "relevance"]],
+    ["sort", ["updated", "-updated", "created", "-created", "due", "title", "order", "relevance"]],
   ])("types %s as a strict enum", (name, values) => {
     expect(parameter("/api/docs", "get", name)?.schema?.enum).toEqual(values);
   });
@@ -355,6 +358,20 @@ describe("GET /api/docs parameter grammar", () => {
     expect(parameter("/api/docs", "get", "unread")?.schema?.type).toBe("boolean");
   });
 
+  it("types `pinned` as a boolean and points it at the board's one column-set query", () => {
+    const param = parameter("/api/docs", "get", "pinned");
+    expect(param?.schema?.type).toBe("boolean");
+    expect(param?.description).toContain("pinned=true&type=view&sort=order");
+  });
+
+  it("documents the order sort's full tiebreak, so column order is deterministic everywhere", () => {
+    const description = parameter("/api/docs", "get", "sort")?.description ?? "";
+    expect(description).toContain("nulls last");
+    expect(description).toContain("`title`");
+    expect(description).toContain("`id`");
+    expect(description).toContain("never dropped");
+  });
+
   it.each(["parent", "agent", "author", "unread"])(
     "documents that the thread-only filter %s no-ops for other types",
     (name) => {
@@ -372,6 +389,95 @@ describe("GET /api/docs parameter grammar", () => {
   it("documents that relevance without a query is a 400, not a silent fallback", () => {
     expect(parameter("/api/docs", "get", "sort")?.description).toContain("`400`");
     expect(operation("/api/docs", "get").responses?.["400"]).toBeDefined();
+  });
+});
+
+/**
+ * CONTRACT-011: the extra-frontmatter surface and the first-class §11 view
+ * keys. The schema descriptions here ARE the plugin contract — a plugin author
+ * reads only the generated document — so these invariants pin the published
+ * prose, not just the shapes.
+ */
+describe("the extra-frontmatter surface (CONTRACT-011)", () => {
+  const VIEW_AND_EXTRA_KEYS = ["pinned", "order", "query", "column", "extra"];
+
+  function component(name: string): SchemaNode {
+    const found = componentSchemas?.[name];
+    if (!found) throw new Error(`No ${name} component in the generated document.`);
+    return found;
+  }
+
+  it.each(["DocFrontmatter", "DocRow"])(
+    "carries the view keys and extra on %s, required — the board reads its columns in one list call",
+    (name) => {
+      const schema = component(name);
+      for (const key of VIEW_AND_EXTRA_KEYS) {
+        expect(schema.properties?.[key], `${name}.${key}`).toBeDefined();
+        expect(schema.required, `${name}.${key} must be required`).toContain(key);
+      }
+    },
+  );
+
+  it.each(["CreateDocRequest", "UpdateDocRequest"])(
+    "accepts the view keys and extra on %s without ever demanding them",
+    (name) => {
+      const schema = component(name);
+      for (const key of VIEW_AND_EXTRA_KEYS) {
+        expect(schema.properties?.[key], `${name}.${key}`).toBeDefined();
+        expect(schema.required ?? [], `${name}.${key} must stay optional`).not.toContain(key);
+      }
+    },
+  );
+
+  it.each(["DocFrontmatter", "DocRow", "CreateDocRequest", "UpdateDocRequest"])(
+    "publishes the whole extra contract on %s: the reserved keys, the bounds, the merge patch",
+    (name) => {
+      const description = JSON.stringify(component(name).properties?.["extra"]);
+      for (const key of RESERVED_FRONTMATTER_KEYS) {
+        expect(description, `reserved key ${key}`).toContain(key);
+      }
+      expect(description).toContain("never interprets");
+      expect(description).toContain("merge patch");
+      expect(description).toContain("removes it");
+      expect(description).toContain(`${String(EXTRA_MAX_DEPTH)} containers deep`);
+      expect(description).toContain(String(EXTRA_MAX_BYTES));
+    },
+  );
+
+  it("keeps extra an object of free values — the server never types a plugin's keys", () => {
+    for (const name of ["DocFrontmatter", "DocRow"]) {
+      expect(component(name).properties?.["extra"]?.type).toBe("object");
+    }
+  });
+
+  it("documents that the stored view query is client-compiled, never server-interpreted", () => {
+    const description = JSON.stringify(component("DocFrontmatter").properties?.["query"]);
+    expect(description).toContain("never interprets it");
+    expect(description).toContain("degrades in the client");
+  });
+
+  it("publishes the column reference format where a plugin author will look", () => {
+    const description = JSON.stringify(component("DocFrontmatter").properties?.["column"]);
+    expect(description).toContain("<plugin>/<type>");
+    expect(description).toContain("plugin-missing");
+  });
+
+  it("states the null-clears rule on every clearable update field", () => {
+    for (const key of ["order", "query", "column"]) {
+      expect(
+        JSON.stringify(component("UpdateDocRequest").properties?.[key]),
+        `UpdateDocRequest.${key}`,
+      ).toContain("clears the key");
+    }
+  });
+
+  it("gives DocRow a nullable parent title with Job.originTitle's one-sentence rule", () => {
+    const row = component("DocRow");
+    expect(row.required).toContain("parentTitle");
+    const property = JSON.stringify(row.properties?.["parentTitle"]);
+    expect(property).toContain('"null"');
+    expect(property).toContain("current title of whatever `parent` names");
+    expect(property).toContain("never a stored copy");
   });
 });
 

@@ -32,8 +32,14 @@ const row = {
   reviewed: "2026-07-20T09:00:00Z",
   evergreen: false,
   excerpt: "Body is plain markdown.",
+  pinned: false,
+  order: null,
+  query: null,
+  column: null,
+  extra: {},
   stale: null,
   parent: null,
+  parentTitle: null,
   agent: null,
   anchorQuote: null,
   turnCount: null,
@@ -54,6 +60,7 @@ const threadRow = {
   path: "data/threads/th_x9y8.md",
   stale: "aging",
   parent: "doc_a1b2c3",
+  parentTitle: "Mortgage options",
   agent: "engaged",
   anchorQuote: "assume a 30-year fixed at 6.1%",
   turnCount: 3,
@@ -163,6 +170,28 @@ describe("DocsQuery filter grammar", () => {
   it("rejects a non-id for parent and references", () => {
     expect(DocsQuerySchema.safeParse({ parent: "finance" }).success).toBe(false);
     expect(DocsQuerySchema.safeParse({ references: "finance" }).success).toBe(false);
+  });
+
+  it.each([
+    ["true", true],
+    ["false", false],
+  ])("reads pinned=%s as the boolean it spells", (raw, expected) => {
+    expect(DocsQuerySchema.parse({ pinned: raw }).pinned).toBe(expected);
+  });
+
+  it.each(["maybe", ""])("rejects pinned=%s rather than coercing it", (raw) => {
+    expect(DocsQuerySchema.safeParse({ pinned: raw }).success).toBe(false);
+  });
+
+  /** The board's one column-set query (SPEC.md §11; sprint-009 TEST-2). */
+  it("composes the board query: pinned views sorted by order", () => {
+    expect(DocsQuerySchema.parse({ pinned: "true", type: "view", sort: "order" })).toEqual({
+      pinned: true,
+      type: "view",
+      sort: "order",
+      limit: 50,
+      offset: 0,
+    });
   });
 });
 
@@ -314,6 +343,7 @@ describe("DocRow", () => {
   it.each([
     "stale",
     "parent",
+    "parentTitle",
     "agent",
     "anchorQuote",
     "turnCount",
@@ -321,6 +351,9 @@ describe("DocRow", () => {
     "lastTurn",
     "unread",
     "awaitingAgent",
+    "order",
+    "query",
+    "column",
   ])("carries %s as null on a non-thread row rather than omitting it", (field) => {
     expect(DocRowSchema.parse(row)).toHaveProperty(field, null);
     const { [field]: _dropped, ...without } = row as Record<string, unknown>;
@@ -351,6 +384,40 @@ describe("DocRow", () => {
 
   it("rejects a negative turn count", () => {
     expect(DocRowSchema.safeParse({ ...threadRow, turnCount: -1 }).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-011: the row carries the whole §11 view surface, so one
+   * `pinned=true&type=view&sort=order` query is the entire column set — no
+   * per-view `GET /api/docs/{id}` follow-up (sprint-009 TEST-2).
+   */
+  it("carries a pinned view row with its query, order and extra", () => {
+    const viewRow = {
+      ...row,
+      id: "doc_seedattention",
+      type: "view",
+      title: "Attention",
+      pinned: true,
+      order: 1,
+      query: { needs: "me" },
+      extra: { boardIcon: "🔔" },
+    };
+    expect(DocRowSchema.parse(viewRow)).toEqual(viewRow);
+  });
+
+  it.each([
+    ["pinned", { pinned: undefined }],
+    ["extra", { extra: undefined }],
+  ])("requires %s — the absent-on-disk reading is false/{}, not a missing key", (_l, override) => {
+    expect(DocRowSchema.safeParse({ ...row, ...override }).success).toBe(false);
+  });
+
+  it("rejects a core key inside a row's extra — shadowing is impossible on reads too", () => {
+    expect(DocRowSchema.safeParse({ ...row, extra: { id: "doc_other" } }).success).toBe(false);
+  });
+
+  it("carries the parent's live title on a thread row, mirroring Job.originTitle", () => {
+    expect(DocRowSchema.parse(threadRow).parentTitle).toBe("Mortgage options");
   });
 });
 

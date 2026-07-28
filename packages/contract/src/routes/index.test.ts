@@ -24,6 +24,11 @@ const frontmatter = {
   due: null,
   reviewed: null,
   evergreen: false,
+  pinned: false,
+  order: null,
+  query: null,
+  column: null,
+  extra: {},
 };
 
 const doc = { frontmatter, body: "Body.", path: "data/docs/mortgage.md", anchors: [] };
@@ -41,8 +46,14 @@ const row = {
   reviewed: null,
   evergreen: false,
   excerpt: "Body.",
+  pinned: false,
+  order: null,
+  query: null,
+  column: null,
+  extra: {},
   stale: null,
   parent: null,
+  parentTitle: null,
   agent: null,
   anchorQuote: null,
   turnCount: null,

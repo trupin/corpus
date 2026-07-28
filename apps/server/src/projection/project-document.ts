@@ -21,6 +21,7 @@ import {
 import { z } from "zod";
 import { resolveAnchorExact } from "../anchors/index.js";
 import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/document.js";
+import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { parseThreadBody, type TurnAuthor } from "../core/turns.js";
@@ -122,6 +123,12 @@ type DocumentFields = {
   readonly reviewed: string | null;
   readonly evergreen: boolean;
   readonly anchors: Record<string, TextQuoteSelector>;
+  /**
+   * §11's view keys and §12's plugin keys, read by the same functions
+   * `docs/read.ts` uses — so a row and a single-document read can never
+   * describe one file's frontmatter differently (CONTRACT-011).
+   */
+  readonly view: ViewFrontmatter;
 };
 
 /**
@@ -161,6 +168,7 @@ function readDocumentFields(
     reviewed: asInstant(data["reviewed"]),
     evergreen: data["evergreen"] === true,
     anchors: readAnchors(data["anchors"]),
+    view: readViewFrontmatter(data),
   };
 }
 
@@ -235,8 +243,9 @@ function insertDocumentRow(
 ): void {
   db.prepare(
     `INSERT INTO documents
-       (id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen, body_excerpt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen,
+        body_excerpt, pinned, sort_order, query_json, column_ref, extra_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fields.id,
     fields.type,
@@ -250,6 +259,13 @@ function insertDocumentRow(
     fields.reviewed,
     fields.evergreen ? 1 : 0,
     bodyExcerpt(body),
+    fields.view.pinned ? 1 : 0,
+    fields.view.order,
+    fields.view.query === null ? null : JSON.stringify(fields.view.query),
+    fields.view.column,
+    // Always a JSON object, `{}` for a file with only core keys — the wire says
+    // the field is present on every response, so the column is NOT NULL.
+    JSON.stringify(fields.view.extra),
   );
 }
 

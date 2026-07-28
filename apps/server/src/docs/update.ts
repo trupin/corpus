@@ -31,15 +31,59 @@ export type UpdateOutcome = {
   readonly result: MutationResult;
 };
 
-/** Structural equality for the scalar/array frontmatter values a `PUT` can carry. */
-const sameValue = (a: unknown, b: unknown): boolean =>
-  a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** Bounded so a YAML value that aliases its own ancestor cannot spin forever. */
+const MAX_CANONICAL_DEPTH = 12;
 
 /**
- * The `UpdateDocRequest` fields that are **frontmatter** keys. `body` is
- * deliberately absent: it is the markdown below the fence, and copying the
- * request's fields wholesale into the frontmatter patch would write a `body:`
- * key into the YAML block beside the real body.
+ * A value in a form whose JSON text depends on its *content* and not on the
+ * order its keys happen to sit in. `query: {type: thread, status: open}` and
+ * `query: {status: open, type: thread}` are one value, and re-sending the same
+ * query with its keys in another order must not count as a change — otherwise
+ * the save stamps `updated` and commits a file whose bytes did not move
+ * (CONTRACT-011 made `query` and `extra` the first object-valued keys a `PUT`
+ * can carry, so this is new ground for {@link sameValue}).
+ */
+function canonicalize(value: unknown, depth: number): unknown {
+  if (value === null || typeof value !== "object" || depth >= MAX_CANONICAL_DEPTH) {
+    return value ?? null;
+  }
+  if (Array.isArray(value)) return value.map((item) => canonicalize(item, depth + 1));
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => [key, canonicalize(item, depth + 1)]),
+  );
+}
+
+/** `undefined` for a value with no JSON text at all — a cycle, or a bigint. */
+const canonicalJson = (value: unknown): string | undefined => {
+  try {
+    return JSON.stringify(canonicalize(value, 0));
+  } catch {
+    return undefined;
+  }
+};
+
+/** Structural equality for the frontmatter values a `PUT` can carry. */
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  const left = canonicalJson(a);
+  // A value that cannot be compared is treated as different, so the patch's own
+  // value replaces it — which is what "the named key is replaced wholesale"
+  // means for a file the reader could not make sense of.
+  return left !== undefined && left === canonicalJson(b);
+};
+
+/**
+ * The `UpdateDocRequest` fields that are **frontmatter** keys and whose value
+ * is written literally. `body` is deliberately absent: it is the markdown below
+ * the fence, and copying the request's fields wholesale into the frontmatter
+ * patch would write a `body:` key into the YAML block beside the real body.
+ *
+ * `pinned` belongs here rather than with the clearable keys because it is not
+ * nullable on the wire: its absent and `false` states mean the same thing, so
+ * `pinned: false` is written as itself — an explicit `pinned: false` in the
+ * file and no `pinned` key at all both read back as `false` (CONTRACT-011).
  */
 export const UPDATABLE_FRONTMATTER_KEYS = [
   "title",
@@ -48,12 +92,30 @@ export const UPDATABLE_FRONTMATTER_KEYS = [
   "due",
   "reviewed",
   "evergreen",
+  "pinned",
+] as const satisfies readonly (keyof UpdateDocRequest)[];
+
+/**
+ * The §11 view keys whose `null` **clears the key from the file** rather than
+ * writing `null` into it (CONTRACT-011). `due` and `reviewed` are pointedly not
+ * here: they are §5 canonical-block fields whose `null` is a written value.
+ */
+export const CLEARABLE_FRONTMATTER_KEYS = [
+  "order",
+  "query",
+  "column",
 ] as const satisfies readonly (keyof UpdateDocRequest)[];
 
 /**
  * The frontmatter fields the request actually changes. A `PUT` names only what
  * it changes, and autosave re-sends unchanged values constantly, so "present in
  * the request" is not the same question as "different from the file".
+ *
+ * A key mapped to `undefined` is a **removal**: that is `setFrontmatterFields`'
+ * own spelling for deleting a key, and it is how a clearing `null` and a
+ * removing `extra` entry reach the file. Removals of keys the file does not
+ * carry are dropped here rather than passed on, so a `null` that clears nothing
+ * does not make the save stamp `updated`.
  */
 export function changedFields(
   current: Readonly<Record<string, unknown>>,
@@ -66,7 +128,34 @@ export function changedFields(
     if (sameValue(current[key], value)) continue;
     changed[key] = value;
   }
+  for (const key of CLEARABLE_FRONTMATTER_KEYS) {
+    applyPatchEntry(changed, current, key, patch[key]);
+  }
+  // **`extra` is a shallow merge patch** (RFC 7386 at the top level): a named
+  // key replaces the file's key wholesale, `null` removes it, and a key the
+  // request does not name is left alone byte-for-byte — which is what lets two
+  // plugins write different keys of one document without racing each other.
+  // Never a read-modify-write of the whole object, and never a nested merge.
+  for (const [key, value] of Object.entries(patch.extra ?? {})) {
+    applyPatchEntry(changed, current, key, value);
+  }
   return changed;
+}
+
+/** One merge-patch entry: `undefined` skips, `null` removes, anything else replaces. */
+function applyPatchEntry(
+  changed: Record<string, unknown>,
+  current: Readonly<Record<string, unknown>>,
+  key: string,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  if (value === null) {
+    if (Object.hasOwn(current, key)) changed[key] = undefined;
+    return;
+  }
+  if (sameValue(current[key], value)) return;
+  changed[key] = value;
 }
 
 export async function updateDocument(

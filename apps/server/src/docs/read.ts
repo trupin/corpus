@@ -22,7 +22,12 @@ import {
   type ThreadStatus,
 } from "@corpus/contract";
 import { resolveAnchorExact } from "../anchors/index.js";
-import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/index.js";
+import {
+  DocumentParseError,
+  parseDocument,
+  readViewFrontmatter,
+  type ParsedDocument,
+} from "../core/index.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { internalError, notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
@@ -149,6 +154,11 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
     due: due === null ? null : normalizeCalendarDate(due),
     reviewed: reviewed === null ? null : normalizeInstant(reviewed),
     evergreen: data["evergreen"] === true,
+    // §11's view keys and §12's plugin keys, read by the same functions the
+    // projection uses for the list row (CONTRACT-011). Shared rather than
+    // restated for the reason the nullable timestamps above document: one file
+    // read through two routes must not answer two different things.
+    ...readViewFrontmatter(data),
   };
 }
 

@@ -35,6 +35,14 @@ export const NEEDS_FILTERS = ["me", ...NEEDS_REASONS] as const;
 
 export const NeedsFilterSchema = z.enum(NEEDS_FILTERS);
 
+/**
+ * `order` (CONTRACT-011) sorts ascending by the §11 view key of the same name
+ * — the board's column ordering. Ascending only: a board reads left to right,
+ * and no §11 surface wants the reverse. Ties and absent keys are deterministic
+ * by the documented tiebreak — `order` with nulls **last** (a column with no
+ * `order` is placed, never dropped), then `title`, then `id` — so the same
+ * column set renders in the same sequence on every load.
+ */
 export const DOC_SORTS = [
   "updated",
   "-updated",
@@ -42,6 +50,7 @@ export const DOC_SORTS = [
   "-created",
   "due",
   "title",
+  "order",
   "relevance",
 ] as const;
 
@@ -168,6 +177,19 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
       type: "boolean",
       description: `Threads whose last turn is newer than your last-seen mark (SPEC.md §7).${THREAD_ONLY}`,
     }),
+  pinned: z
+    .stringbool()
+    .optional()
+    .openapi({
+      ...queryParam("pinned"),
+      type: "boolean",
+      description:
+        "Documents whose frontmatter carries `pinned: true` (`false` selects the rest — a " +
+        "missing key reads as `false`). The board's column set is one bounded query — " +
+        "`pinned=true&type=view&sort=order` — with every view's `query`, `order` and `column` " +
+        "on the rows, so no per-column follow-up read is ever needed (SPEC.md §11). Not " +
+        "thread-only: any type may carry the key, though only views render as columns.",
+    }),
   needs: NeedsFilterSchema.optional().openapi({
     ...queryParam("needs"),
     description:
@@ -179,7 +201,9 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
     ...queryParam("sort"),
     description:
       `Sort key; defaults to \`${DEFAULT_DOC_SORT}\`. \`relevance\` requires \`q\` and is rejected ` +
-      "with `400` without it, rather than silently falling back.",
+      "with `400` without it, rather than silently falling back. `order` sorts ascending by the " +
+      "§11 view key — the board's column ordering — with the documented tiebreak: `order` with " +
+      "nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`.",
   }),
 }).refine((query) => query.sort !== "relevance" || query.q !== undefined, {
   message: "`sort=relevance` is only meaningful with a `q` query.",
@@ -236,6 +260,15 @@ const threadRowShape = {
     "The commented document, for a thread row. Null on non-threads and on standalone threads " +
       "(SPEC.md §6) — those two cases are distinguished by `type`, not by this field.",
   ),
+  parentTitle: z
+    .string()
+    .nullable()
+    .describe(
+      "The current title of whatever `parent` names, or null. Resolved at query time like " +
+        "`Job.originTitle` — never a stored copy, so a rename is reflected immediately. Null " +
+        "whenever `parent` is null, and when the parent no longer resolves (a deleted parent, " +
+        "SPEC.md §9.2); render such a thread as standalone rather than showing a raw id.",
+    ),
   agent: ThreadAgentSchema.nullable().describe(
     `Agent participation state (${THREAD_AGENT_STATES.join(", ")}, SPEC.md §6, §8), backing the ` +
       "pending-agent indicator. Null on non-threads.",

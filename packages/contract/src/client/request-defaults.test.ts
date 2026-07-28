@@ -35,6 +35,11 @@ const fullCreateDoc: CreateDocBody = {
   status: "open",
   due: null,
   evergreen: false,
+  pinned: false,
+  order: null,
+  query: null,
+  column: null,
+  extra: { source: "import" },
 };
 
 /** A standalone thread: no parent, no selector, no title. */
@@ -74,6 +79,11 @@ function createTestClient() {
             due: request.due ?? null,
             reviewed: null,
             evergreen: request.evergreen ?? false,
+            pinned: request.pinned ?? false,
+            order: request.order ?? null,
+            query: request.query ?? null,
+            column: request.column ?? null,
+            extra: request.extra ?? {},
           },
           body: request.body ?? "",
           path: `data/docs/${request.folder ?? "inbox"}/mortgage-options.md`,

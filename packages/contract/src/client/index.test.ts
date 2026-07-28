@@ -19,6 +19,11 @@ const frontmatter = {
   due: null,
   reviewed: null,
   evergreen: false,
+  pinned: false,
+  order: null,
+  query: null,
+  column: null,
+  extra: {},
 };
 
 /**
@@ -82,8 +87,14 @@ function createServer() {
             reviewed: null,
             evergreen: false,
             excerpt: "Body.",
+            pinned: false,
+            order: null,
+            query: null,
+            column: null,
+            extra: {},
             stale: "aging" as const,
             parent: null,
+            parentTitle: null,
             agent: null,
             anchorQuote: null,
             turnCount: null,
