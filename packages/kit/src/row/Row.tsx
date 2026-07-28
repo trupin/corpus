@@ -28,15 +28,6 @@ export interface RowProps {
   /** Opening the row. Never fired by a quick action, which stops propagation. */
   readonly onOpen?: ((row: DocRow) => void) | undefined;
   /**
-   * The parent document's title for a whole-document thread row.
-   *
-   * TODO(CONTRACT-011): remove once `DocRow.parentTitle` reaches the wire — the
-   * row will read it off `row` and this prop becomes an override. Until then a
-   * caller that already holds the title may pass it, and a caller that does not
-   * gets a row with no context cell rather than a raw `doc_*` id.
-   */
-  readonly parentTitle?: string | null | undefined;
-  /**
    * Unread turns, when something richer than a `DocRow` knows the count.
    *
    * Two gaps live behind this prop, both wire gaps rather than rendering
@@ -78,7 +69,7 @@ function needsYouText(attention: readonly string[]): string | null {
 }
 
 export function Row(props: RowProps): ReactElement {
-  const { row, onOpen, onNotify, parentTitle, unreadCount, now, ListItem, showReasons } = props;
+  const { row, onOpen, onNotify, unreadCount, now, ListItem, showReasons } = props;
 
   const level = stalenessLevel(row.stale);
   const showActions = hasStaleActions(level);
@@ -96,7 +87,7 @@ export function Row(props: RowProps): ReactElement {
   if (ListItem !== undefined) return <ListItem {...props} ListItem={undefined} />;
 
   const excerpt = rowExcerpt(row);
-  const context = rowContext(row, parentTitle);
+  const context = rowContext(row);
   const age = ageLabel(row, now ?? new Date());
   const chips = showReasons === false ? [] : reasonChips(row.attention, row.stale);
   const needsYou = needsYouText(row.attention);

@@ -112,15 +112,28 @@ describe("rowContext", () => {
     expect(rowContext(threadRow({ parent: null }))).toBe("standalone");
   });
 
-  it("names the parent when the caller supplies its title", () => {
-    expect(rowContext(threadRow(), "Mortgage options")).toBe("Mortgage options");
+  it("names the parent the row itself carries, in the prototype's phrasing", () => {
+    expect(rowContext(threadRow({ parentTitle: "Mortgage options" }))).toBe("on Mortgage options");
   });
 
-  it("renders nothing rather than a raw id when no title is available", () => {
-    // CONTRACT-011 adds `DocRow.parentTitle`; until then a row will not print
-    // `doc_mortgage` where a title was promised, and will not fetch one.
-    expect(rowContext(threadRow())).toBeNull();
-    expect(rowContext(threadRow(), null)).toBeNull();
-    expect(rowContext(threadRow(), "   ")).toBeNull();
+  it("names the parent of an anchored thread too, not just a whole-document one", () => {
+    const anchored = threadRow({
+      parentTitle: "Mortgage options",
+      anchorQuote: "assume a 30-year fixed",
+    });
+    expect(rowContext(anchored)).toBe("on Mortgage options");
+  });
+
+  it("reflects a renamed parent, because the title is resolved per query", () => {
+    expect(rowContext(threadRow({ parentTitle: "Mortgage options v2" }))).toBe(
+      "on Mortgage options v2",
+    );
+  });
+
+  it("renders nothing rather than a raw id when the parent no longer resolves", () => {
+    // An orphaned thread (deleted parent, SPEC.md §9.2) keeps its `parent` id but
+    // loses its title; the row prints neither `doc_mortgage` nor "null".
+    expect(rowContext(threadRow({ parentTitle: null }))).toBeNull();
+    expect(rowContext(threadRow({ parentTitle: "   " }))).toBeNull();
   });
 });

@@ -338,14 +338,23 @@ describe("thread rows", () => {
     expect(container.querySelector(".row-context")?.textContent).toBe("standalone");
   });
 
-  it("names the parent when the caller holds its title, and blanks it otherwise", () => {
-    const whole = { ...anchored, anchorQuote: null };
-    const named = renderRow({ row: whole, parentTitle: "Mortgage options" });
-    expect(named.container.querySelector(".row-context")?.textContent).toBe("Mortgage options");
+  it("names the parent the row carries, for a whole-document thread", () => {
+    const whole = { ...anchored, anchorQuote: null, parentTitle: "Mortgage options" };
+    const { container } = renderRow({ row: whole });
+    expect(container.querySelector(".row-context")?.textContent).toBe("on Mortgage options");
+  });
 
-    const anonymous = renderRow({ row: whole });
-    expect(anonymous.container.querySelector(".row-context")?.textContent).toBe("");
-    expect(anonymous.container.textContent).not.toContain("doc_mortgage");
+  it("names the parent of an anchored thread as well", () => {
+    const { container } = renderRow({ row: { ...anchored, parentTitle: "Mortgage options" } });
+    expect(container.querySelector(".row-context")?.textContent).toBe("on Mortgage options");
+  });
+
+  it("blanks the context for an orphaned thread rather than printing an id or null", () => {
+    const orphan = { ...anchored, anchorQuote: null, parentTitle: null };
+    const { container } = renderRow({ row: orphan });
+    expect(container.querySelector(".row-context")?.textContent).toBe("");
+    expect(container.textContent).not.toContain("doc_mortgage");
+    expect(container.textContent).not.toContain("null");
   });
 
   it("prints neither author nor text for a thread with no turns", () => {

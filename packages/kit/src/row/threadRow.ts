@@ -63,22 +63,23 @@ export function folderOf(path: string): string {
  * The first cell of the row's meta line.
  *
  * A standalone thread says so — "the conversation is the document" (SPEC.md §6).
- * A thread on a document names that document, which needs the parent's **title**;
- * `DocRow.parent` is an id and the wire carries no title for it yet
- * (CONTRACT-011 adds `DocRow.parentTitle`, mirroring `Job.originTitle`). Until it
- * lands the caller may supply one it already holds, and when nobody can, the row
- * renders **nothing** rather than a raw `doc_*` id — an id in the place a title
- * was promised is worse than a blank, and fetching one per row is the N+1 this
- * module exists to avoid.
+ * A thread on a document names that document: `on <parent title>`, the
+ * prototype's phrasing (`design/index.html`, "on Mortgage options"), read off
+ * `DocRow.parentTitle`. The server resolves that title at query time next to the
+ * row itself, so naming the parent costs no extra request — a per-row
+ * `useDoc(parent)` would be the N+1 this module exists to avoid.
+ *
+ * `parentTitle` is null when the parent no longer resolves (a deleted parent
+ * leaves an orphaned thread, SPEC.md §9.2), and then the row renders **nothing**
+ * rather than a raw `doc_*` id — an id in the place a title was promised is
+ * worse than a blank.
  */
-export function rowContext(row: DocRow, parentTitle?: string | null): string | null {
+export function rowContext(row: DocRow): string | null {
   if (!isThreadRow(row)) {
     const folder = folderOf(row.path);
     return folder === "" ? null : folder;
   }
   if (threadKind(row) === "standalone") return "standalone";
-  // TODO(CONTRACT-011): drop the parameter and read `row.parentTitle` once the
-  // collection response carries it.
-  const title = parentTitle?.trim() ?? "";
-  return title === "" ? null : title;
+  const title = row.parentTitle?.trim() ?? "";
+  return title === "" ? null : `on ${title}`;
 }
