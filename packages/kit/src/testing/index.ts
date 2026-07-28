@@ -20,6 +20,7 @@ export {
   failingEventSourceFactory,
   type RecordingEventSourceFactory,
 } from "./fakeEventSource.js";
+export { docRowFixture } from "./docRow.js";
 export {
   createCorpusTestHarness,
   type CorpusTestHarness,

@@ -17,11 +17,13 @@
       "default": "./dist/testing/index.js"
     },
     "./tokens.css": "./src/tokens.css",
+    "./row.css": "./src/row/row.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
-    "src/tokens.css"
+    "src/tokens.css",
+    "src/row/row.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

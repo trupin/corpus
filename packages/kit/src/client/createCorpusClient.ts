@@ -1,5 +1,7 @@
 import type {
   AppendTurnResponse,
+  CreateThreadRequest,
+  CreateThreadResponse,
   Doc,
   DocList,
   FolderTree,
@@ -7,6 +9,8 @@ import type {
   JobList,
   LockList,
   Thread,
+  UpdateDocRequest,
+  UpdateDocResponse,
 } from "@corpus/contract";
 import {
   createCorpusClient as createContractClient,
@@ -74,6 +78,17 @@ export interface CorpusClient {
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
+   * `PUT /api/docs/{id}` — the frontmatter/body edit (SPEC.md §9.2).
+   *
+   * Every field is optional and the server changes only what the body names, so
+   * `{ reviewed }` is the "still current" act of SPEC.md §5 and nothing else: it
+   * must not carry `body`, and it must not carry `updated`, which is not even a
+   * settable field. See {@link UpdateDocChanges}.
+   */
+  updateDoc(id: string, changes: UpdateDocChanges): Promise<UpdateDocResponse>;
+  /** `POST /api/threads` — a thread on a selection, a whole document, or standalone (SPEC.md §6). */
+  createThread(input: CreateThreadInput): Promise<CreateThreadResponse>;
+  /**
    * Opens the SSE invalidation stream. Kept off `api` upstream because
    * EventSource is not fetch; kept here because the bridge needs it and nothing
    * else does.
@@ -83,6 +98,12 @@ export interface CorpusClient {
 
 type DocsQueryParams = NonNullable<paths["/api/docs"]["get"]["parameters"]["query"]>;
 type JobsQueryParams = NonNullable<paths["/api/jobs"]["get"]["parameters"]["query"]>;
+type PutDocBody = NonNullable<
+  paths["/api/docs/{id}"]["put"]["requestBody"]
+>["content"]["application/json"];
+type PostThreadBody = NonNullable<
+  paths["/api/threads"]["post"]["requestBody"]
+>["content"]["application/json"];
 
 /**
  * The full `GET /api/docs` grammar (SPEC.md §9.2), with the two comma-separated
@@ -106,6 +127,18 @@ export type DocsFilter = Clearable<Omit<DocsQueryParams, "tag" | "type">> & {
 };
 
 export type JobsParams = Clearable<JobsQueryParams>;
+
+/**
+ * The `PUT /api/docs/{id}` body, exactly as the contract declares it.
+ *
+ * Aliased rather than redeclared: the set of editable fields is the contract's
+ * decision, and a hand-written copy here would be one more place to forget
+ * `reviewed` — the field whose absence makes staleness lie (SPEC.md §5).
+ */
+export type UpdateDocChanges = UpdateDocRequest;
+
+/** The JSON form of `POST /api/threads`. Attachments are multipart and are not this. */
+export type CreateThreadInput = CreateThreadRequest;
 
 /**
  * A non-2xx response, or a 2xx with no body. Carries the parsed `ApiError` when
@@ -258,6 +291,23 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           },
         }),
       );
+    },
+
+    async updateDoc(id, changes) {
+      // `openapi-fetch` types the body from the generated `paths`, which spells
+      // the same optional fields with a different `exactOptionalPropertyTypes`
+      // stance than the zod-inferred `UpdateDocRequest`. The values are
+      // identical; only the two spellings of "optional" differ.
+      const body = changes as PutDocBody;
+      return unwrap(
+        "PUT /api/docs/{id}",
+        await api.PUT("/api/docs/{id}", { params: { path: { id } }, body }),
+      );
+    },
+
+    async createThread(input) {
+      const body = input as PostThreadBody;
+      return unwrap("POST /api/threads", await api.POST("/api/threads", { body }));
     },
 
     connectEvents(options) {

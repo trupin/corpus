@@ -13,9 +13,11 @@
  * because CSS has no compile step:
  *
  *     import "@corpus/kit/tokens.css";
+ *     import "@corpus/kit/row.css";
  *
- * Importing it is how a plugin — or `apps/ui` itself — inherits Corpus theming,
- * including the light/dark contract described in `src/tokens.css`.
+ * Importing them is how a plugin — or `apps/ui` itself — inherits Corpus theming,
+ * including the light/dark contract described in `src/tokens.css`, and the row
+ * anatomy described in `src/row/row.css`.
  */
 
 export { PACKAGE_NAME } from "./packageName.js";
@@ -28,9 +30,11 @@ export {
   type CorpusClient,
   type CorpusClientConfig,
   type CorpusEventStreamOptions,
+  type CreateThreadInput,
   type DocsFilter,
   type JobsParams,
   type RequestOptions,
+  type UpdateDocChanges,
 } from "./client/createCorpusClient.js";
 export {
   CorpusProvider,
@@ -51,6 +55,8 @@ export { useHealth } from "./query/useHealth.js";
 
 // The write path the board needs today.
 export { useAppendTurn, type AppendTurnVariables } from "./query/useAppendTurn.js";
+export { useUpdateDoc } from "./query/useUpdateDoc.js";
+export { useCreateThread } from "./query/useCreateThread.js";
 export {
   isPendingTurn,
   mergePendingTurns,
@@ -82,6 +88,53 @@ export {
   type QueryKey,
   type QueryKeySegment,
 } from "./query/keys.js";
+
+// Type-aware rows (SPEC.md §11). `Row` is the default renderer and the seam a
+// plugin's registered `ListItem` replaces (PLUGINS-001) — which is why the prop
+// types ship beside the component: a conforming `ListItem` cannot be written
+// without them.
+export { Row, type ListItemComponent, type RowProps } from "./row/Row.js";
+export {
+  AgeChip,
+  LockChip,
+  NeedsYouBadge,
+  UnreadBadge,
+  WorkingDot,
+  type AgeChipProps,
+  type LockChipProps,
+  type NeedsYouBadgeProps,
+  type UnreadBadgeProps,
+  type WorkingDotProps,
+} from "./row/badges.js";
+export { reasonChip, reasonChips, REASON_CHIP_CLASSES, type ReasonChip } from "./row/reasons.js";
+export {
+  ageAnchor,
+  ageLabel,
+  hasStaleActions,
+  humanizeAge,
+  stalenessClass,
+  stalenessLevel,
+  UNKNOWN_AGE_LABEL,
+  type StalenessLevel,
+} from "./row/staleness.js";
+export {
+  folderOf,
+  isThreadRow,
+  rowContext,
+  rowExcerpt,
+  threadExcerpt,
+  threadKind,
+  THREAD_DOC_TYPE,
+  type ThreadKind,
+} from "./row/threadRow.js";
+export {
+  triagePrompt,
+  useRowActions,
+  type RowActions,
+  type RowActionsOptions,
+  type RowNotice,
+} from "./row/useRowActions.js";
+export { useAgentActivity, useDocLock, type AgentActivity } from "./row/useRowSignals.js";
 
 // The live-update connection.
 export { useConnectionState } from "./events/useConnectionState.js";
