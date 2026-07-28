@@ -2015,3 +2015,24 @@ with them.
 13. **`⇧↵` (three scopes)**: follows the prototype in every scope — compose textarea: newline;
     search overlay: save-as-view/new list; board: open-in-full-screen. The active escape layer
     decides which scope owns the keystroke; TEST-133 stands as written.
+
+## Wave-B Addendum (orchestrator, 2026-07-28 — post wave A)
+
+1. **Autocomplete (TEST-59 reinterpretation).** Wave A legitimately produced two trigger
+   detectors: kit's textarea caret-scanner (`detectTrigger`, UI-008) and UI-006's ProseMirror
+   `@tiptap/suggestion` plugin — the mechanisms are genuinely different and neither can absorb
+   the other. The ruling: **one menu (`AutocompleteMenu`) and one matcher, both in kit; exactly
+   two trigger detectors, each native to its surface.** UI-010 unifies presentation: its composer
+   uses the kit pieces, and if `.ac-menu`/`.ac-item` CSS moves to kit, UI-006's added states
+   (`.on`, `.ac-empty`, `.k`, `.d`) move with it. The evaluator greps for menu/matcher
+   singularity, not detector singularity.
+2. **Sprint-text correction**: the lock CLI flag is `--from` (there is no `--holder`) — TEST-34
+   verifies with `corpus lock list` / `--from`.
+3. **Rider chores for UI-010** (one-liners flagged by other agents, same domain):
+   `apps/ui/src/thread/parseFormBlock.ts` imports `FORM_ANSWER_LABEL` from `@corpus/contract`
+   and deletes its local copy (CONTRACT-013 landed the contract side).
+4. **UI-007 heads-up**: `EditorSelection.range/selector` are *located, not mapped* — `null` when
+   the selection spans markup the body spells differently; never treat `null` as a bug. The
+   position↔offset map is UI-007's own crux (`markdown/serialize.ts` is the emission trace to
+   derive it from). `DocEditor.onEditor` publishes the live instance for decoration plugins;
+   `onAnchors` fires each save with `{remapped, orphaned, warnings}`.

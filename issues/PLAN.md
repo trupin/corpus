@@ -89,10 +89,10 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-004 | Type-aware rows: badges, reasons, staleness ramp | done | P0 | UI-002 |
 | UI-005 | Reader, navigation stacks, doc menu, focus shell, lock banner | done | P0 | UI-003, UI-004 |
 | UI-006 | Always-editable TipTap document editor | in_progress | P0 | UI-005 |
-| UI-007 | Anchored threads: highlights, comment-from-selection, chips ↔ margin cards | todo | P0 | UI-006 |
+| UI-007 | Anchored threads: highlights, comment-from-selection, chips ↔ margin cards | in_progress | P0 | UI-006 |
 | UI-008 | Thread view, composer, attachments, forms, read state | in_progress | P0 | UI-005, SERVER-010, CONTRACT-007, CONTRACT-009, SERVER-016, SERVER-023 |
 | UI-009 | Search overlay, omnibox create, save-as-view | done | P0 | UI-003 |
-| UI-010 | Global Ask/Capture composer + keyboard scheme | todo | P1 | UI-008, UI-009 |
+| UI-010 | Global Ask/Capture composer + keyboard scheme | in_progress | P1 | UI-008, UI-009 |
 | UI-011 | Console drawer: jobs master-detail, live logs, HALT | done | P1 | UI-002, SERVER-009, UI-009, SERVER-027 |
 | CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | done | P1 | CONTRACT-002 |
 | CONTRACT-009 | Multipart createThread + declared 413 (attachments rider) | done | P1 | CONTRACT-002 |
