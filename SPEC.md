@@ -285,7 +285,7 @@ The stewardship rules live in the skills (orchestrate/comment), not in code — 
 
 The projection defines **derived tables only** — the server maps files → rows, and the whole database is reconstructible from the workspace at any time (`corpus db rebuild`).
 
-- `documents(id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen, body_excerpt)`
+- `documents(id, type, title, path, status, tags_json, created, updated, due, reviewed, evergreen, body_excerpt, pinned, sort_order, query_json, column_ref, extra_json)` — the §11 view keys (`pinned`, `order` — projected as `sort_order` — `query`, and the `column` plugin-column reference) are projected so the board's column set is one bounded query (`pinned` filter, `order` sort) with no per-document file read; `extra_json` carries the plugin extra-frontmatter object (§12) as opaque passthrough the server never interprets
 - `threads(id, parent_id, status, agent, anchor_id, title, created, updated, turn_count, last_author, last_ts)`
 - `anchors(doc_id, anchor_id, exact_text, prefix, suffix, resolved_offset)` — extracted from parent frontmatter at projection time; `resolved_offset` is NULL when the selector no longer resolves (its thread is orphaned)
 - `turns(thread_id, idx, author, ts, body_md)`
