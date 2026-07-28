@@ -19,6 +19,7 @@ import { contractRoutes, mountAppendTurn, mountCreateThread } from "@corpus/cont
 import { actorOf, reportWarnings, serializeWarnings, type DocumentMutex } from "../docs/index.js";
 import { deleteThreadTurn } from "./cascade.js";
 import { createThread, threadRequestBody } from "./create.js";
+import { answerThreadForm } from "./forms.js";
 import { loadThread, toWireThread } from "./read.js";
 import { markThreadSeen } from "./seen.js";
 import { setThreadStatus } from "./status.js";
@@ -65,6 +66,24 @@ export function mountThreadRoutes(
       actor,
       id,
       input,
+    );
+    reportWarnings(workspace, id, result);
+    return c.json({ thread, turn, eventId, warnings: serializeWarnings(result) }, 201);
+  });
+
+  // Single media type, so the ordinary mount is correct here — the dual-media
+  // hazard above applies only to the two routes that declare both JSON and
+  // multipart.
+  app.openapi(contractRoutes.respondToForm, async (c) => {
+    const { id, ts } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { thread, turn, eventId, result } = await answerThreadForm(
+      workspace,
+      mutex,
+      actor,
+      id,
+      ts,
+      c.req.valid("json"),
     );
     reportWarnings(workspace, id, result);
     return c.json({ thread, turn, eventId, warnings: serializeWarnings(result) }, 201);
