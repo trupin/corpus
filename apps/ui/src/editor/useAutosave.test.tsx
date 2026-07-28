@@ -304,6 +304,9 @@ describe("the chip", () => {
     });
     expect(reports[0]).toEqual({
       docId: "doc_a1b2c3",
+      // The first save of this session; the stamp is what lets UI-007 drop a
+      // report that describes a body two saves ago.
+      revision: 1,
       remapped: ["an_1"],
       orphaned: ["an_2"],
       warnings: [],

@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { parseMarkdown } from "./parse.js";
 import { refSource } from "./refNode.js";
-import { canonicalizeMarkdown, normalizeBody, serializeDoc, toMdast } from "./serialize.js";
-import { NODE, type PmNode } from "./schema.js";
+import {
+  canonicalizeMarkdown,
+  LEAF_NODES,
+  normalizeBody,
+  serializeDoc,
+  TEXT_BLOCKS,
+  toMdast,
+} from "./serialize.js";
+import { corpusSchema, NODE, type PmNode } from "./schema.js";
 
 /**
  * The ProseMirror → markdown walk, node by node and mark by mark.
@@ -207,5 +214,55 @@ describe("the mdast bridge", () => {
     expect(JSON.stringify(toMdast(parseMarkdown(markdown)))).toBe(
       JSON.stringify(toMdast(parseMarkdown(canonicalizeMarkdown(markdown)))),
     );
+  });
+});
+
+describe("the position trace", () => {
+  it("is an option on this serializer, and changes nothing about its output", () => {
+    const markdown = "# T\n\nSome **bold** text and [[doc_a1b2c3]].\n\n- a\n- b\n";
+    const source = parseMarkdown(markdown);
+    expect(serializeDoc(source, { trace: true }).markdown).toBe(serializeDoc(source));
+  });
+
+  it("agrees with the real schema about which nodes are leaves", () => {
+    const schema = corpusSchema();
+    const leaves = Object.values(schema.nodes)
+      .filter((type) => type.isLeaf && !type.isText)
+      .map((type) => type.name)
+      .sort();
+    expect([...LEAF_NODES].sort()).toEqual(leaves);
+  });
+
+  it("agrees with the real schema about which nodes are textblocks", () => {
+    const schema = corpusSchema();
+    const textblocks = Object.values(schema.nodes)
+      .filter((type) => type.isTextblock)
+      .map((type) => type.name)
+      .sort();
+    expect([...TEXT_BLOCKS].sort()).toEqual(textblocks);
+  });
+
+  it("answers an empty trace for an empty document", () => {
+    expect(serializeDoc(parseMarkdown(""), { trace: true })).toEqual({ markdown: "", trace: [] });
+  });
+
+  it("addresses a run by both of its coordinate systems", () => {
+    const traced = serializeDoc(parseMarkdown("hello\n"), { trace: true });
+    expect(traced.trace).toEqual([
+      { pmFrom: 1, pmTo: 6, mdStart: 0, mdEnd: 5, block: 1, atomic: false },
+    ]);
+  });
+
+  it("splits an escaped run so both sides of the split stay one-for-one", () => {
+    // `escape.ts` writes `\*`; the run either side of the inserted backslash is
+    // still exact, which is what keeps the arithmetic inside a run honest.
+    const traced = serializeDoc(parseMarkdown("a \\*b\\* c\n"), { trace: true });
+    for (const run of traced.trace) {
+      expect(run.mdEnd - run.mdStart).toBe(run.pmTo - run.pmFrom);
+      expect(traced.markdown.slice(run.mdStart, run.mdEnd)).not.toContain("\\");
+    }
+    // `a \*b\* c` is three runs — "a ", "b", " c" — with the two inserted
+    // backslashes belonging to neither.
+    expect(traced.trace).toHaveLength(3);
   });
 });

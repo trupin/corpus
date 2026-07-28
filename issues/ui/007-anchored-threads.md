@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+in_progress
 
 ## Priority
 
@@ -39,19 +39,19 @@ The offset-mapping module is the crux of this issue: get it right and unit-teste
 
 ## Acceptance Criteria
 
-- [ ] `GET /api/docs/:id` anchors with a resolved range render as `.anchor-hl` spans over the corresponding editor text, with a superscript `.anchor-pip` showing the thread's turn count; resolved-status threads use `.anchor-hl.resolved` (dotted `--ink-3` underline, no wash) and a grey pip.
-- [ ] Highlights are implemented as a ProseMirror **`Decoration.inline` set** in a plugin — never as schema marks. Assertion test: with highlights rendered, `serialize(editor.state.doc)` is byte-identical to the same document with no highlights.
-- [ ] An offset-mapping module converts a markdown `[start, end)` character range into a ProseMirror `{from, to}` (and back), derived from the same serializer used in UI-006, and is unit-tested across headings, lists (nested), code fences, blockquotes, inline marks, and `[[ref]]` nodes — including ranges that begin or end inside an inline mark and ranges spanning a block boundary.
-- [ ] **Comment from selection**: with text selected, the `.sel-toolbar`'s **💬 Comment** opens a small composer popover anchored to the selection with a text input, an `◉ ask agent / ○ note only` toggle, and a submit; submitting computes `{exact, prefix, suffix}` (~32 characters of context each side, clamped at document bounds) **against the markdown source** (not the DOM text), POSTs `POST /api/threads` with `{ parent, selector, firstTurn, agent }`, and paints the highlight optimistically before the response lands. On error the optimistic highlight is rolled back with a toast.
-- [ ] Typing inside, before, or after a highlighted range just edits — no mode, no dialog. Decorations remap locally through each transaction's `mapping`; after the debounced `PUT` returns, decorations are **refreshed from the response's remapped/orphaned report**, which is authoritative over the local mapping.
-- [ ] An anchor the server reports as orphaned loses its highlight and its thread moves into the "detached threads" section below the body, without a reload.
-- [ ] **Adaptive placement — narrow (column reader)**: each anchored thread renders as a `.thread-slot` containing a collapsed `.t-chip` labelled `💬 <n> · <last author>[· resolved]` positioned at the anchor's block; clicking expands the `.thread-card` in place (`.thread-slot.expanded`) and marks the thread seen; `–` (`.t-collapse`) collapses it back.
-- [ ] **Adaptive placement — focus/wide**: `.focus-inner.with-margin` switches to the two-column grid (`minmax(0,1fr) 300px`, 30px gap); thread cards are absolutely positioned in `.focus-margin`, each measured against its anchor's vertical offset, sorted by that offset and cascaded downward so no two overlap (`y = max(anchorTop, lastBottom)`, 12px gutter), with the `::before` connector to the anchor. Layout recomputes on first render, on reply/expand (height change), on window resize, and on editor content height change.
-- [ ] Clicking an `.anchor-hl` opens/expands its thread (scrolls the margin card into view in wide mode, expands the chip in narrow mode) and marks it seen.
-- [ ] Whole-document threads (anchor `null`) and detached/orphaned threads are listed below the body in their own sections, with the prototype's `whole-document thread` / `standalone` head text in place of the anchor quote.
-- [ ] Resolved threads render collapsed (chip in narrow, `.thread-card.resolved` — grey left border, 0.75 opacity — in margin) and their highlight switches to the resolved style.
-- [ ] Deleting a thread (or its last turn, per §6's cascade) removes its highlight live via SSE, with no stale decoration left behind.
-- [ ] The reader header's `.comments-btn` (`💬 <n>`) opens the `.comments-pop` list of this document's threads (italic serif quote + mono meta); clicking an entry jumps to its anchor.
+- [x] `GET /api/docs/:id` anchors with a resolved range render as `.anchor-hl` spans over the corresponding editor text, with a superscript `.anchor-pip` showing the thread's turn count; resolved-status threads use `.anchor-hl.resolved` (dotted `--ink-3` underline, no wash) and a grey pip.
+- [x] Highlights are implemented as a ProseMirror **`Decoration.inline` set** in a plugin — never as schema marks. Assertion test: with highlights rendered, `serialize(editor.state.doc)` is byte-identical to the same document with no highlights.
+- [x] An offset-mapping module converts a markdown `[start, end)` character range into a ProseMirror `{from, to}` (and back), derived from the same serializer used in UI-006, and is unit-tested across headings, lists (nested), code fences, blockquotes, inline marks, and `[[ref]]` nodes — including ranges that begin or end inside an inline mark and ranges spanning a block boundary.
+- [x] **Comment from selection**: with text selected, the `.sel-toolbar`'s **💬 Comment** opens a small composer popover anchored to the selection with a text input, an `◉ ask agent / ○ note only` toggle, and a submit; submitting computes `{exact, prefix, suffix}` (~32 characters of context each side, clamped at document bounds) **against the markdown source** (not the DOM text), POSTs `POST /api/threads` with `{ parent, selector, firstTurn, agent }`, and paints the highlight optimistically before the response lands. On error the optimistic highlight is rolled back with a toast.
+- [x] Typing inside, before, or after a highlighted range just edits — no mode, no dialog. Decorations remap locally through each transaction's `mapping`; after the debounced `PUT` returns, decorations are **refreshed from the response's remapped/orphaned report**, which is authoritative over the local mapping.
+- [x] An anchor the server reports as orphaned loses its highlight and its thread moves into the "detached threads" section below the body, without a reload.
+- [x] **Adaptive placement — narrow (column reader)**: each anchored thread renders as a `.thread-slot` containing a collapsed `.t-chip` labelled `💬 <n> · <last author>[· resolved]` positioned at the anchor's block; clicking expands the `.thread-card` in place (`.thread-slot.expanded`) and marks the thread seen; `–` (`.t-collapse`) collapses it back.
+- [x] **Adaptive placement — focus/wide**: `.focus-inner.with-margin` switches to the two-column grid (`minmax(0,1fr) 300px`, 30px gap); thread cards are absolutely positioned in `.focus-margin`, each measured against its anchor's vertical offset, sorted by that offset and cascaded downward so no two overlap (`y = max(anchorTop, lastBottom)`, 12px gutter), with the `::before` connector to the anchor. Layout recomputes on first render, on reply/expand (height change), on window resize, and on editor content height change.
+- [x] Clicking an `.anchor-hl` opens/expands its thread (scrolls the margin card into view in wide mode, expands the chip in narrow mode) and marks it seen.
+- [x] Whole-document threads (anchor `null`) and detached/orphaned threads are listed below the body in their own sections, with the prototype's `whole-document thread` / `standalone` head text in place of the anchor quote.
+- [x] Resolved threads render collapsed (chip in narrow, `.thread-card.resolved` — grey left border, 0.75 opacity — in margin) and their highlight switches to the resolved style.
+- [x] Deleting a thread (or its last turn, per §6's cascade) removes its highlight live via SSE, with no stale decoration left behind.
+- [x] The reader header's `.comments-btn` (`💬 <n>`) opens the `.comments-pop` list of this document's threads (italic serif quote + mono meta); clicking an entry jumps to its anchor.
 
 ## Technical Design
 
@@ -154,21 +154,264 @@ Vitest in `apps/ui`:
 
 _Filled in by the implementing agent as proof-of-work. Must be from real E2E testing — no mocks, no test clients. Real application, real requests, real interfaces. Include specific commands run, actual outputs observed, and pass/fail conclusions. State which model the implementing agent ran on ("implemented on: opus | fable")._
 
+**Implemented on: opus.**
+
 ### Reproduction (bugs only)
 
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+Not a bug issue. Two bugs *were* found by this E2E pass and are logged under
+"Bugs the browser found" below, each with its pre-fix observation.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+Real workspace, real server, real browser throughout. Nothing is mocked.
+
+**Stack**
+
+```
+$ corpus init                       # /tmp/corpus-s011-ui007-ws, port set to 9012
+Initialized Corpus workspace at /private/tmp/corpus-s011-ui007-ws
+$ corpus server start
+corpus 0.0.0 listening on http://127.0.0.1:9012 (pid 99621)
+$ corpus health
+ok — corpus 0.0.0, up 6s, workspace /private/tmp/corpus-s011-ui007-ws
+$ corpus doc create --type note --title "Mortgage options" --folder finance --file …
+created doc_nbhfw6m6 — data/docs/finance/mortgage-options.md
+$ CORPUS_SERVER_ORIGIN=http://127.0.0.1:9012 VITE_CORPUS_TOKEN=… vite --port 5280 --strictPort
+```
+
+The browser is Chromium, driven by Playwright scripts under
+`/tmp/corpus-s011-ui007-e2e/` against `http://localhost:5280`. Every document is
+opened the way a person opens one: ⌘K omnibox → the result row.
+
+**1. §15 M3's gold path — select, comment, note only (TEST-101…104)**
+
+Selected `6.1%` in the first paragraph. The `.sel-toolbar` opened with
+`💬 Comment` **enabled**; the popover opened carrying the markdown quote:
+
+```
+selection: 6.1%      toolbar: 1      comment button disabled: false
+popover quote: “6.1%”
+toggle now: ○ note only          (default was ◉ ask agent)
+POST /api/threads {"parent":"doc_nbhfw6m6",
+  "selector":{"exact":"6.1%","prefix":"mes from the broker, who quoted ",
+              "suffix":" on Tuesday.\n\nThe **30-year fixe"},
+  "body":"Where does 6.1% come from?","requestsAgent":false}
+```
+
+Without a reload: `highlights: 1`, `highlight text: 6.1%`, `pip: 1`,
+`chip: 💬 1 · user`, `console errors: []`. Screenshot:
+`after-comment.png` — the wash + accent underline, the superscript pip, the chip
+directly under the anchor's paragraph, and the thread live in *Open threads* as
+`Re: "6.1%"`.
+
+On disk, one auto-commit carrying both files:
+
+```
+$ git show --stat --oneline HEAD
+55eac15 comment: new thread on doc_nbhfw6m6 (th_uaj7q6rc) by user
+ data/docs/finance/mortgage-options.md |  9 ++++++++-
+ data/threads/th_uaj7q6rc.md           | 14 ++++++++++++++
+$ sed -n '8,18p' data/docs/finance/mortgage-options.md
+anchors:
+  anc_9d3833b9:
+    exact: 6.1%
+    prefix: "mes from the broker, who quoted "
+    suffix: |2-
+       on Tuesday.
+$ cat data/threads/th_uaj7q6rc.md | head -12
+parent: doc_nbhfw6m6
+anchor: anc_9d3833b9
+$ ls .corpus/queue/pending/
+.gitkeep                       # EMPTY — it was note-only
+```
+
+**2. Ask agent (TEST-105).** Same flow on `6.4%` with the default `◉ ask agent`:
+`requestsAgent: true` on the wire, and
+
+```
+$ cat .corpus/queue/pending/evt_q2oe2mgi75bo.json
+{"id":"evt_q2oe2mgi75bo","type":"comment.created", …
+ "payload":{"threadId":"th_xyk65mnq","parentId":"doc_nbhfw6m6", …}}
+```
+
+**3. Serialization purity — the disk proof (TEST-89 / TEST-161).** After both
+comments, `git diff` on the document over the whole session:
+
+```
+$ git diff 9a00130 HEAD -- data/docs/finance/mortgage-options.md
+  -anchors: {}
+  +anchors:
+  +  anc_9d3833b9: …
+  +  anc_f9c3771b: …
+```
+
+The **body hunk is absent entirely**: no `<span>`, no `class=`, no marker
+character. Only the frontmatter map changed. The unit assertion is the byte one
+(`anchorDecorations.test.ts` → "serializes byte-identically with every highlight
+rendered").
+
+**4. §15 M1's reconciliation semantics, through the UI (TEST-110).** Typed in the
+live editor, each step waited past the 700 ms autosave and its `PUT -> 200`:
+
+| sequence | on screen | in the parent's frontmatter |
+| --- | --- | --- |
+| (a) insert `Note: ` **before** the range | `highlights=["6.1%","6.4%"]` | `exact: 6.1%` unchanged; prefix unchanged — correctly, the 32 characters *immediately* before the quote did not move |
+| (b) insert ` sharp` **after** | `highlights=["6.1%","6.4%"]` | `exact` unchanged, **suffix refreshed** to `" on Tuesday sharp.\n\nThe **30-yea"` |
+| (c) edit **inside** | `highlights=["6.5%%","6.4%"]` | **`exact: 6.5%%`** — updated, and the highlight followed the edited text |
+| (d) **delete** the range | mid-debounce: `highlights=["6.4%"]`, `chips: 1` — the thread did **not** flicker away (TEST-111). After the save: highlight gone, thread in `DETACHED THREADS`, `stale decoration for the orphan? []` | `exact: 6.5%%` preserved byte-for-byte on an orphaned anchor (§6) |
+
+No reload at any point; `errors: []` throughout.
+
+**5. Highlights survive the save and the settle (TEST-108/109).**
+
+```
+t0        highlights: ['6.4%']
+t+900ms   highlights: ['6.4%']  chips: 1     ← autosave PUT landed
+t+2000ms  highlights: ['6.4%']  chips: 1     ← editing session settled
+t+3000ms  highlights: ['6.4%']  chips: 1
+t+4000ms  highlights: ['6.4%']  chips: 1
+```
+
+**6. Adaptive placement (TEST-114…120).** Narrow column: chips at the anchor —
+`.anchor-slot[data-anchor-slot]` widgets inside `.doc-body`, label
+`💬 <n> · <author>`, expanding in place with one seen POST. Focus mode (⤢):
+
+```
+focus-inner classes: focus-inner with-margin
+margin cards: 3      chips visible in focus: 0
+cascade: [{thread:th_pu2e6i7h, top:"0px",   height:226, position:"absolute"},
+          {thread:th_xyk65mnq, top:"238px", height:263, position:"absolute"},
+          {thread:th_76ypec7r, top:"513px", height:226, position:"absolute"}]
+margin minHeight: 751px
+anchor tops: [{th_xyk65mnq:151}, {th_76ypec7r:151}]
+```
+
+which is the prototype's arithmetic exactly: `max(151, 0+226+12)=238`,
+`max(151, 238+263+12)=513`, `minHeight = 513+226+12 = 751`. Screenshot
+`focus-margin.png` shows the two-column grid, the 23 px connectors, and the
+detached section below the body. A document with no anchors never gains
+`.with-margin` (asserted in `anchorReader.test.tsx`).
+
+**7. Overlapping anchors (TEST-100).** Two threads, one on `Re-run the payoff
+table` and one on `payoff table` strictly inside it:
+
+```
+spans: [{"text":"Re-run the ","thread":"th_hwcemr37"},
+        {"text":"payoff table","thread":"th_feu62rym"}]
+pips:  [{"thread":"th_feu62rym","x":220,"y":369},
+        {"thread":"th_hwcemr37","x":239,"y":369}]
+pips side by side (distinct x, same y): true
+expanded after clicking the overlap: ["th_feu62rym"]   ← the INNERMOST
+expanded card quote: “payoff table”
+```
+
+**8. Resolve, live (TEST-98).** Resolving from the expanded card, over SSE, with
+no reload:
+
+```
+before: [{"t":"Friday","cls":"anchor-hl","border":"solid"}]
+after : [{"t":"Friday","cls":"anchor-hl resolved","border":"dotted",
+          "bg":"rgba(0, 0, 0, 0)"}]
+```
+
+**9. Deletion from another client (TEST-113).** `corpus doc delete th_76ypec7r`
+run in a terminal while the browser sat on the document:
+
+```
+t0        hl: ['Friday']  pips: 2  chips: 2
+deleted th_76ypec7r
+t+500ms   hl: ['Friday']  pips: 1  chips: 1
+t+5000ms  hl: ['Friday']  pips: 1  chips: 1
+```
+
+The surviving anchor is untouched, the deleted one leaves no stale decoration,
+and on disk the parent's `anchors` entry for it is gone.
+
+**10. The 💬 popover (TEST-122).**
+
+```
+popover entries: ['“Friday” | 1 turn · last: user · open',
+                  '“6.4%” | 1 turn · last: user · open',
+                  '“6.5%%” | 1 turn · last: user · open']
+expanded slot after jump: 1
+```
+
+**11. A locked document (§7, TEST-122's last clause).** `corpus lock acquire
+doc_nbhfw6m6 --from agent`:
+
+```
+lock banner: 1        editable: false
+highlights still render: ['written quotes','Re-run the ','payoff table']
+chips still there: 3
+selection toolbar under lock: 0        ← no comment creation
+composer in the expanded card: 2       ← replying still works
+```
+
+**12. TEST-88's measurement.** The trace is cached by document version — the
+ProseMirror document object for the live text, the body string for the server's.
+`traceCache.test.ts` measures it: twenty `traceOfBody` calls and ten
+`mdRangeToPm` placements cost **one** computation
+(`expect(traceStats().computations).toBe(1)`), and a changed body costs exactly
+one more.
+
+### Bugs the browser found (both fixed, both now covered by tests)
+
+1. **Highlights vanished two seconds after every save.** Observed: after the
+   orphaning sequence, `after save: highlights []` — the *surviving* anchor's
+   highlight disappeared too, and came back on reload. Cause: `DocEditor` adopts
+   the server's copy with `setContent` once the editing session settles, and a
+   wholesale document replacement maps every decoration range to nothing. Fix:
+   the layer re-applies on any document-changing transaction it did not make,
+   debounced to 120 ms, and still only when the editor's text matches the body
+   the offsets describe. Regression tests: `useAnchorLayer.test.tsx` → "a
+   document replaced under the layer".
+2. **The margin cascade never ran.** Observed: cards `position: absolute` with
+   `top: ""` and no `minHeight`, stacked at the top of the margin. Cause: the
+   unmount cleanup cancelled the pending animation frame but left the handle
+   set, and React StrictMode's mount/unmount/mount left the scheduler
+   permanently convinced a pass was already queued. Fix: clear the handle with
+   the frame. Verified by the cascade output in §6 above.
+
+### Deviations, stated
+
+- **Optimistic insertion is a local placement, not a fabricated query-cache
+  row.** The highlight paints under a client-side temp id before the response
+  lands and is swapped/rolled back on settle (`useAnchorLayer.test.tsx` proves
+  both). What is *not* done is writing a synthetic `DocRow` into the
+  `["docs", …]` cache: every field of that row is the server's to compute, and
+  inventing one would put made-up turn counts and authors on the board. The
+  chip arrives with the invalidation a moment later — no reload, which is what
+  TEST-104 asks for.
+- **Server ranges are declined when they cannot be vouched for.** The trace
+  indexes the canonical spelling of the body; the server's offsets index the
+  bytes on disk. Equal strings and equal-length respellings (`*`→`-`, `_x_`→
+  `*x*`) are safe and are used. A length-changing difference (a setext heading,
+  indented code) is not: those documents render their threads as chips with no
+  highlight until the first save canonicalises the file. `offsetsComparable` in
+  `anchorPlacement.ts` states the rule and is unit-tested. A highlight over the
+  wrong sentence is the failure this avoids.
+- **A margin card marks its thread seen on mount**, as `ThreadCard` (UI-008)
+  does everywhere — no `IntersectionObserver` was added. This matches the
+  prototype (`maybeMargin` marks every thread it renders) and §7's "displayed
+  content", since a margin card renders the whole conversation.
+- **Two anchors over *identical* ranges** render as one `.anchor-hl` span —
+  ProseMirror cannot nest a decoration inside an equal one — so the span's
+  `data-thread` names only one of them. Both pips still render (one widget
+  each), and the margin measurement falls back to the pip for the thread the
+  span does not name.
+
+### Cleanup
+
+`corpus server stop`, Vite killed by recorded pid, `/tmp/corpus-s011-ui007-*`
+removed by name. Ports 9010–9014 and 5280 verified free; 8765 never bound.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

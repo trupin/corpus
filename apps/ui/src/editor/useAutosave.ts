@@ -46,6 +46,16 @@ export type SaveState =
 /** What the server said about anchors, forwarded so UI-007 can refresh decorations. */
 export interface AnchorReport {
   readonly docId: string;
+  /**
+   * Monotonic per save, so a consumer can ignore a report that describes a body
+   * two saves ago.
+   *
+   * Nothing here can currently deliver one out of order — a second `PUT` is
+   * never started while one is in flight — but the anchor layer treats the
+   * report as authoritative over its own mapping, and "authoritative" has to
+   * mean the newest one (sprint-011 TEST-109).
+   */
+  readonly revision: number;
   readonly remapped: readonly string[];
   readonly orphaned: readonly string[];
   readonly warnings: readonly string[];
@@ -95,6 +105,8 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
   const lastSaved = useRef<string>(savedBody);
   const inFlight = useRef(false);
   const retried = useRef(false);
+  /** Stamps each save so a late response cannot overwrite a newer one's report. */
+  const revision = useRef(0);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutate = useRef(update.mutateAsync);
@@ -136,6 +148,8 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
     (job: Pending): void => {
       pending.current = null;
       inFlight.current = true;
+      revision.current += 1;
+      const stamp = revision.current;
       setState({ kind: "saving" });
       void mutate
         .current({ id: job.docId, changes: { body: job.body } })
@@ -150,6 +164,7 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
           });
           anchors.current?.({
             docId: job.docId,
+            revision: stamp,
             remapped: response.anchors.remapped,
             orphaned: response.anchors.orphaned,
             warnings: response.warnings.map((warning) => `${warning.code}: ${warning.detail}`),

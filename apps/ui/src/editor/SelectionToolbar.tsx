@@ -58,6 +58,7 @@ export function SelectionToolbar({
   onComment,
 }: SelectionToolbarProps): ReactElement | null {
   const [placement, setPlacement] = useState<Placement | null>(null);
+  const [quoted, setQuoted] = useState(false);
   // Re-read on every transaction: which marks are active changes as the caret
   // moves inside the selection, and the buttons report state (TEST-30).
   const [, bump] = useState(0);
@@ -75,6 +76,10 @@ export function SelectionToolbar({
         setPlacement(null);
         return;
       }
+      // A selection of nothing but whitespace cannot anchor a thread: `exact`
+      // is `min(1)` on the wire and a selector of spaces would resolve against
+      // every indent in the document (sprint-011 TEST-103).
+      setQuoted(editor.state.doc.textBetween(from, to, "\n", "").trim() !== "");
       // `coordsAtPos` reads layout. A position that is momentarily not in the
       // DOM — a node view still mounting, a decoration being replaced —
       // throws, and a toolbar is not worth taking the reader down for.
@@ -156,7 +161,14 @@ export function SelectionToolbar({
         <i>I</i>
       </button>
       <span className="divider" />
-      <button type="button" className="comment-btn" data-sel-comment onClick={onComment}>
+      <button
+        type="button"
+        className="comment-btn"
+        data-sel-comment
+        disabled={!quoted}
+        title={quoted ? "Comment on the selection" : "Select some text to comment on"}
+        onClick={onComment}
+      >
         💬 Comment
       </button>
     </div>,

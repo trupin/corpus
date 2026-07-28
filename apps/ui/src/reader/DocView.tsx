@@ -1,9 +1,11 @@
 import type { Lock } from "@corpus/contract";
 import { MarkdownView, type RowNotice } from "@corpus/kit";
 import type { ReactElement } from "react";
+import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
+import { CommentPopover } from "../anchors/CommentPopover";
+import { useAnchorLayer } from "../anchors/useAnchorLayer";
+import { useMarginLayout } from "../anchors/useMarginLayout";
 import { DocEditor, editorHandlesType } from "../editor/DocEditor";
-import type { EditorSelection } from "../editor/selection";
-import type { AnchorReport } from "../editor/useAutosave";
 import { ThreadCard } from "../thread/ThreadCard";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
@@ -50,10 +52,6 @@ export interface DocViewProps {
   /** A `[[ref]]`, a backlink or a thread-context link was followed. */
   readonly onNavigate: (docId: string) => void;
   readonly onNotify: (notice: RowNotice) => void;
-  /** 💬 Comment in the editor's selection toolbar. UI-007 consumes the payload. */
-  readonly onComment?: ((selection: EditorSelection) => void) | undefined;
-  /** Every save's anchor reconciliation report (SPEC.md §6). UI-007 consumes it. */
-  readonly onAnchors?: ((report: AnchorReport) => void) | undefined;
 }
 
 export function DocView({
@@ -64,11 +62,37 @@ export function DocView({
   onToggleThread,
   onNavigate,
   onNotify,
-  onComment,
-  onAnchors,
 }: DocViewProps): ReactElement {
   const { doc } = reader;
   const lock = foreignLock(reader.lock);
+  const anchorsHost =
+    doc !== undefined && !reader.isThread && editorHandlesType(doc.frontmatter.type);
+
+  /*
+   * Hooks run before the early returns below, so the layer is asked about a
+   * document that may not have arrived yet — which is why it takes the body and
+   * the anchors rather than the reader, and answers about nothing when there is
+   * nothing.
+   */
+  const anchors = useAnchorLayer({
+    docId: reader.docId,
+    body: doc?.body ?? "",
+    anchors: doc?.anchors ?? [],
+    threads: reader.threads,
+    locked: lock !== null,
+    editable: anchorsHost,
+    expandedThreads,
+    flashThread,
+    onToggleThread,
+    onNotify,
+  });
+
+  useMarginLayout({
+    main: anchors.mainRef,
+    margin: anchors.marginRef,
+    active: anchors.marginMode,
+    threadIds: anchors.anchored.map((thread) => thread.threadId),
+  });
 
   if (reader.isMissing) {
     return (
@@ -97,78 +121,131 @@ export function DocView({
 
   return (
     <>
-      <FrontmatterForm
-        doc={doc}
-        selectTitle={selectTitle}
-        locked={lock !== null}
-        onNotify={onNotify}
-        banner={
-          <>
-            {lock === null ? null : <LockBanner lock={lock} onNotify={onNotify} />}
-            {reader.isArchived ? (
-              <div className="archived-banner" role="status">
-                This document is <b>archived</b> — it is hidden from default lists. Archiving is
-                reversible; set its status back to open to restore it.
-              </div>
-            ) : null}
-          </>
-        }
-      />
-
-      {/*
-       * The one body-rendering call site. A thread document's body IS its
-       * conversation (SPEC.md §6: "the conversation is the document"), which is
-       * why a thread opened from a column reads as turns rather than as the
-       * markdown file behind them.
-       */}
-      {reader.isThread ? (
-        <div className="doc-body thread-conversation">
-          <ThreadCard
-            threadId={reader.docId}
-            host="standalone"
-            onOpenDoc={onNavigate}
-            onNotify={onNotify}
-          />
-        </div>
-      ) : editorHandlesType(doc.frontmatter.type) ? (
-        /*
-         * Keyed by document id: a navigation is a remount, which is what
-         * flushes the outgoing document's pending save before the editor
-         * rebinds. A lock arriving, a rename or an SSE refresh changes no key
-         * and therefore keeps the caret, the scroll and the selection.
-         */
-        <DocEditor
-          key={doc.frontmatter.id}
-          docId={doc.frontmatter.id}
-          body={doc.body}
+      <div className="doc-main" ref={anchors.mainRef}>
+        <FrontmatterForm
+          doc={doc}
+          selectTitle={selectTitle}
           locked={lock !== null}
-          onOpenRef={onNavigate}
-          onComment={onComment}
-          onAnchors={onAnchors}
+          onNotify={onNotify}
+          banner={
+            <>
+              {lock === null ? null : <LockBanner lock={lock} onNotify={onNotify} />}
+              {reader.isArchived ? (
+                <div className="archived-banner" role="status">
+                  This document is <b>archived</b> — it is hidden from default lists. Archiving is
+                  reversible; set its status back to open to restore it.
+                </div>
+              ) : null}
+            </>
+          }
         />
-      ) : (
-        <MarkdownView markdown={doc.body} className="doc-body" onOpenRef={onNavigate} />
-      )}
 
-      {reader.threads.length === 0 ? null : (
-        <div className="thread-slots">
-          {reader.threads.map((row) => (
-            <ThreadSlot
-              key={row.id}
-              row={row}
-              expanded={expandedThreads.includes(row.id)}
-              flashing={flashThread === row.id}
-              onToggle={() => {
-                onToggleThread(row.id);
-              }}
+        {/*
+         * The one body-rendering call site. A thread document's body IS its
+         * conversation (SPEC.md §6: "the conversation is the document"), which is
+         * why a thread opened from a column reads as turns rather than as the
+         * markdown file behind them.
+         */}
+        {reader.isThread ? (
+          <div className="doc-body thread-conversation">
+            <ThreadCard
+              threadId={reader.docId}
+              host="standalone"
               onOpenDoc={onNavigate}
               onNotify={onNotify}
             />
-          ))}
-        </div>
-      )}
+          </div>
+        ) : anchorsHost ? (
+          /*
+           * Keyed by document id: a navigation is a remount, which is what
+           * flushes the outgoing document's pending save before the editor
+           * rebinds. A lock arriving, a rename or an SSE refresh changes no key
+           * and therefore keeps the caret, the scroll and the selection.
+           */
+          <DocEditor
+            key={doc.frontmatter.id}
+            docId={doc.frontmatter.id}
+            body={doc.body}
+            locked={lock !== null}
+            onOpenRef={onNavigate}
+            onComment={anchors.onComment}
+            onAnchors={anchors.onAnchors}
+            onEditor={anchors.onEditor}
+          />
+        ) : (
+          <MarkdownView markdown={doc.body} className="doc-body" onOpenRef={onNavigate} />
+        )}
 
-      <Backlinks backlinks={reader.backlinks} onOpen={onNavigate} />
+        {/*
+         * Anchored threads sit at their anchors (a chip between two blocks, or a
+         * card in the margin); only the ones that hang off no text are listed
+         * here. A document the editor does not own has no anchors to place, so
+         * every thread on it stays below the body, where UI-005 put them.
+         */}
+        {anchorsHost ? (
+          <>
+            <AnchorChips
+              threads={anchors.anchored}
+              expandedThreads={expandedThreads}
+              flashThread={flashThread}
+              onToggleThread={onToggleThread}
+              onOpenDoc={onNavigate}
+              onNotify={onNotify}
+              hostFor={anchors.slotHost}
+            />
+            <DetachedThreads
+              wholeDocument={anchors.wholeDocument}
+              orphaned={anchors.orphaned}
+              expandedThreads={expandedThreads}
+              flashThread={flashThread}
+              onToggleThread={onToggleThread}
+              onOpenDoc={onNavigate}
+              onNotify={onNotify}
+            />
+          </>
+        ) : reader.threads.length === 0 ? null : (
+          <div className="thread-slots">
+            {reader.threads.map((row) => (
+              <ThreadSlot
+                key={row.id}
+                row={row}
+                expanded={expandedThreads.includes(row.id)}
+                flashing={flashThread === row.id}
+                onToggle={() => {
+                  onToggleThread(row.id);
+                }}
+                onOpenDoc={onNavigate}
+                onNotify={onNotify}
+              />
+            ))}
+          </div>
+        )}
+
+        <Backlinks backlinks={reader.backlinks} onOpen={onNavigate} />
+      </div>
+
+      {anchors.marginMode ? (
+        <MarginColumn
+          threads={anchors.anchored.filter((thread) => !thread.orphaned)}
+          expandedThreads={expandedThreads}
+          flashThread={flashThread}
+          onToggleThread={onToggleThread}
+          onOpenDoc={onNavigate}
+          onNotify={onNotify}
+          innerRef={anchors.marginRef}
+        />
+      ) : null}
+
+      {anchors.draft === null ? null : (
+        <CommentPopover
+          quote={anchors.draft.selection.selector.exact}
+          top={anchors.draft.top}
+          left={anchors.draft.left}
+          pending={anchors.submitting}
+          onSubmit={anchors.submitComment}
+          onClose={anchors.cancelComment}
+        />
+      )}
     </>
   );
 }
