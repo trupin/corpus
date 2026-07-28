@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
@@ -9,16 +10,19 @@ import {
   threadRowFixture,
   type ReaderTransport,
 } from "../testing/readerFixture";
-import { ThreadSlot } from "./ThreadSlot";
-import { turnStamp } from "./Turns";
+import { chipLabel, ThreadSlot } from "./ThreadSlot";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetSeenMarks();
+});
 
 const ROW = threadRowFixture({
   id: "th_rate",
   parent: "doc_m",
   anchorQuote: "assume a 30-year fixed at 6.1%",
   turnCount: 2,
+  lastAuthor: "agent",
   unread: true,
 });
 
@@ -43,11 +47,9 @@ function wire(): ReaderTransport {
 
 function Host({
   transport,
-  onOpenThread,
   flashing,
 }: {
   readonly transport: ReaderTransport;
-  readonly onOpenThread?: (id: string) => void;
   readonly flashing?: boolean;
 }): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
@@ -61,26 +63,28 @@ function Host({
         onToggle={() => {
           setExpanded(!expanded);
         }}
-        onOpenRef={() => undefined}
-        onOpenThread={onOpenThread ?? (() => undefined)}
+        onOpenDoc={() => undefined}
+        onNotify={() => undefined}
       />
     </harness.Wrapper>
   );
 }
 
-describe("turnStamp", () => {
-  it("degrades to the raw value rather than printing Invalid Date", () => {
-    expect(turnStamp("nonsense")).toBe("nonsense");
-    expect(turnStamp("2026-07-01T10:05:00.000Z")).toContain("Jul");
+describe("chipLabel", () => {
+  it("names the turn count, the last author and resolution", () => {
+    expect(chipLabel(ROW)).toBe("💬 2 · agent");
+    expect(
+      chipLabel(threadRowFixture({ status: "resolved", turnCount: 1, lastAuthor: "user" })),
+    ).toBe("💬 1 · user · resolved");
+    expect(chipLabel(threadRowFixture({ turnCount: 0, lastAuthor: null }))).toBe("💬 0 · new");
   });
 });
 
 describe("ThreadSlot", () => {
-  it("collapses to a chip naming the anchored text", () => {
+  it("collapses to a chip carrying the unread badge", () => {
     const { container } = render(<Host transport={wire()} />);
-    expect(container.querySelector(".t-chip")?.textContent).toBe(
-      "💬 2 · “assume a 30-year fixed at 6.1%”",
-    );
+    expect(container.querySelector(".t-chip")?.textContent).toContain("💬 2 · agent");
+    expect(container.querySelector(".t-chip .unread")).not.toBeNull();
     expect(container.querySelector(".thread-slot.expanded")).toBeNull();
   });
 
@@ -99,7 +103,7 @@ describe("ThreadSlot", () => {
   });
 
   /** SPEC.md §7: expanding a collapsed chip is displayed content, and marks it seen. */
-  it("marks the thread seen on expansion, once", async () => {
+  it("marks the thread seen on expansion, once per (thread, last turn)", async () => {
     const transport = wire();
     const { container } = render(<Host transport={transport} />);
     expect(transport.of("POST", "/api/threads/th_rate/seen")).toHaveLength(0);
@@ -117,18 +121,7 @@ describe("ThreadSlot", () => {
     expect(transport.of("POST", "/api/threads/th_rate/seen")).toHaveLength(1);
   });
 
-  it("offers the thread-context link that opens the thread as a document", async () => {
-    const onOpenThread = vi.fn();
-    const { container } = render(<Host transport={wire()} onOpenThread={onOpenThread} />);
-    fireEvent.click(container.querySelector(".t-chip") as HTMLElement);
-    await waitFor(() => {
-      expect(container.querySelector(".t-context .ref")).not.toBeNull();
-    });
-    fireEvent.click(container.querySelector(".t-context .ref") as HTMLElement);
-    expect(onOpenThread).toHaveBeenCalledWith("th_rate");
-  });
-
-  it("flashes and scrolls itself into view when the 💬 popover jumps to it", () => {
+  it("flashes and scrolls itself into view when the 💬 popover jumps to it", async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       value: scrollIntoView,
@@ -136,7 +129,10 @@ describe("ThreadSlot", () => {
       writable: true,
     });
     const { container } = render(<Host transport={wire()} flashing />);
-    expect(container.querySelector(".thread-card.flash")).not.toBeNull();
+    fireEvent.click(container.querySelector(".t-chip") as HTMLElement);
+    await waitFor(() => {
+      expect(container.querySelector(".thread-card.flash")).not.toBeNull();
+    });
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
   });
 
@@ -149,13 +145,13 @@ describe("ThreadSlot", () => {
     });
   });
 
-  it("ships no composer — UI-008 owns the writing half", async () => {
+  it("carries the composer and the collapse control the slot host gives it", async () => {
     const { container } = render(<Host transport={wire()} />);
     fireEvent.click(container.querySelector(".t-chip") as HTMLElement);
     await waitFor(() => {
       expect(container.querySelectorAll(".turn")).toHaveLength(2);
     });
-    expect(container.querySelector(".composer")).toBeNull();
-    expect(container.querySelector(".turn-del")).toBeNull();
+    expect(container.querySelector(".composer")).not.toBeNull();
+    expect(container.querySelector(".t-collapse")?.textContent).toBe("–");
   });
 });

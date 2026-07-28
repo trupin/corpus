@@ -19,6 +19,17 @@ export interface AppendTurnVariables {
   readonly body: string;
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
+  /**
+   * Attachments (SPEC.md §6). Present and non-empty switches the request to
+   * `multipart/form-data`; a turn carrying files may have an empty `body`.
+   */
+  readonly files?: readonly File[];
+}
+
+/** The provisional body an attachment-only turn shows until the server answers. */
+export function provisionalBody(variables: AppendTurnVariables): string {
+  if (variables.body !== "") return variables.body;
+  return (variables.files ?? []).map((file) => file.name).join("\n");
 }
 
 interface AppendTurnContext {
@@ -42,20 +53,27 @@ export function useAppendTurn(
   const key = threadKey(threadId);
 
   return useMutation<AppendTurnResponse, Error, AppendTurnVariables, AppendTurnContext>({
-    mutationFn: (variables) =>
-      client.appendTurn(threadId, {
-        body: variables.body,
-        ...(variables.requestsAgent === undefined
-          ? {}
-          : { requestsAgent: variables.requestsAgent }),
-      }),
+    mutationFn: (variables) => {
+      const files = variables.files ?? [];
+      const requestsAgent =
+        variables.requestsAgent === undefined ? {} : { requestsAgent: variables.requestsAgent };
+      // Two requests, one call site: the JSON route cannot carry a repeated
+      // binary part, and the multipart route names the prose field `text`.
+      if (files.length === 0)
+        return client.appendTurn(threadId, { body: variables.body, ...requestsAgent });
+      return client.appendTurnWithFiles(threadId, {
+        ...(variables.body === "" ? {} : { text: variables.body }),
+        ...requestsAgent,
+        files,
+      });
+    },
 
     async onMutate(variables) {
       const snapshot = queryClient.getQueryData<ThreadView>(key);
       const provisional: PendingTurn = {
         author: "user",
         ts: new Date().toISOString(),
-        body: variables.body,
+        body: provisionalBody(variables),
         pending: true,
         clientId: nextClientId(),
       };

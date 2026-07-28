@@ -19,13 +19,15 @@
     "./tokens.css": "./src/tokens.css",
     "./row.css": "./src/row/row.css",
     "./markdown.css": "./src/markdown/markdown.css",
+    "./autocomplete.css": "./src/components/Autocomplete/autocomplete.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "src/tokens.css",
     "src/row/row.css",
-    "src/markdown/markdown.css"
+    "src/markdown/markdown.css",
+    "src/components/Autocomplete/autocomplete.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

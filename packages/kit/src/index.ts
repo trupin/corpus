@@ -27,12 +27,14 @@ export {
   createCorpusClient,
   CorpusRequestError,
   type AppendTurnInput,
+  type AppendTurnUpload,
   type CorpusClient,
   type CorpusClientConfig,
   type CorpusEventStreamOptions,
   type CreateDocInput,
   type CreateThreadInput,
   type DocsFilter,
+  type FormAnswerInput,
   type JobsParams,
   type RequestOptions,
   type UpdateDocChanges,
@@ -64,7 +66,9 @@ export { useLocks } from "./query/useLocks.js";
 export { useHealth } from "./query/useHealth.js";
 
 // The write path the board needs today.
-export { useAppendTurn, type AppendTurnVariables } from "./query/useAppendTurn.js";
+export { provisionalBody, useAppendTurn, type AppendTurnVariables } from "./query/useAppendTurn.js";
+export { useDeleteTurn } from "./query/useDeleteTurn.js";
+export { useRespondToForm, type FormAnswerVariables } from "./query/useRespondToForm.js";
 export { useUpdateDoc, useUpdateDocById, type UpdateDocVariables } from "./query/useUpdateDoc.js";
 export { useCreateDoc } from "./query/useCreateDoc.js";
 export { useCreateThread } from "./query/useCreateThread.js";
@@ -74,6 +78,13 @@ export {
   useSetThreadStatus,
   type ThreadStatusVariables,
 } from "./query/useThreadStatus.js";
+export {
+  hasSeenMark,
+  resetSeenMarks,
+  useMarkSeenOnce,
+  type MarkSeenOnce,
+} from "./query/useMarkSeenOnce.js";
+export { attachmentKey, useAttachment, type AttachmentBytes } from "./query/useAttachment.js";
 export { useBreakLock } from "./query/useBreakLock.js";
 export {
   useAbandonJob,
@@ -182,6 +193,31 @@ export {
   REF_PATTERN,
   type DocRef,
 } from "./markdown/refs.js";
+
+// SPEC.md §11's "smart input everywhere": one `@` / `/` / `[[` implementation,
+// shared by the thread composer, the document editor and the global composer.
+// Its stylesheet is a subpath, like the tokens: `import "@corpus/kit/autocomplete.css"`.
+export {
+  applyCompletion,
+  AUTOCOMPLETE_LIMIT,
+  AutocompleteMenu,
+  completionText,
+  detectTrigger,
+  GENERIC_AGENT_TOKEN,
+  invocableName,
+  MENTION_DOC_TYPE,
+  rowToken,
+  SKILL_DOC_TYPE,
+  TRIGGER_KINDS,
+  useAutocomplete,
+  type AutocompleteItem,
+  type AutocompleteMenuProps,
+  type AutocompleteState,
+  type CompletionResult,
+  type TriggerKind,
+  type TriggerMatch,
+  type UseAutocompleteOptions,
+} from "./components/Autocomplete/index.js";
 
 // The live-update connection.
 export { useConnectionState } from "./events/useConnectionState.js";

@@ -15,7 +15,11 @@ export interface ReaderCall {
   readonly method: string;
   readonly path: string;
   readonly search: string;
+  /** The parsed JSON body, or the raw text when it is not JSON. */
   readonly body: unknown;
+  /** Multipart parts by field name; `files` collects every repeated file part. */
+  readonly parts?: Readonly<Record<string, string>> | undefined;
+  readonly files?: readonly string[] | undefined;
 }
 
 export interface ReaderTransport {
@@ -111,17 +115,21 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
     const url = new URL(request.url);
-    const raw = await request.text();
-    calls.push({
-      method: request.method,
-      path: url.pathname,
-      search: url.search,
-      body: raw === "" ? undefined : (JSON.parse(raw) as unknown),
-    });
+    const call = await recordCall(request, url, init);
+    calls.push(call);
 
     const failure = options.failing?.[`${request.method} ${url.pathname}`];
     if (failure !== undefined) {
-      return json({ code: "conflict", message: "the server refused" }, failure);
+      return json(
+        failure === 413
+          ? { code: "payload_too_large", message: "the upload is over the per-file limit" }
+          : { code: "conflict", message: "the server refused" },
+        failure,
+      );
+    }
+
+    if (url.pathname.startsWith("/attachments/")) {
+      return new Response("bytes", { status: 200, headers: { "content-type": "image/png" } });
     }
 
     if (url.pathname === "/api/locks") return json({ locks });
@@ -149,7 +157,8 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
 
     if (url.pathname.startsWith("/api/threads/")) {
       const rest = url.pathname.slice("/api/threads/".length);
-      const [id = "", verb] = rest.split("/");
+      const [rawId = "", verb, rawTs, subverb] = rest.split("/");
+      const id = decodeURIComponent(rawId);
       if (verb === "seen") {
         return json({ threadId: id, lastSeenTs: "2026-07-02T09:00:00.000Z", unread: false });
       }
@@ -157,8 +166,71 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
         return json({ thread: threadSummary(id, verb === "resolve"), warnings: [] });
       }
       const thread = threads.get(id);
+      if (verb === "turns" && rawTs !== undefined && subverb === "form") {
+        if (thread === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
+        const answer = call.body as { option: string; note?: string };
+        const turn = {
+          author: "user" as const,
+          ts: nextTs(thread),
+          body: `**Answered:** ${answer.option}`,
+        };
+        threads.set(id, { ...thread, turns: [...thread.turns, turn] });
+        return json(
+          {
+            thread: threadSummary(id, thread.status === "resolved"),
+            turn,
+            eventId: "evt_form",
+            warnings: [],
+          },
+          201,
+        );
+      }
+      if (verb === "turns" && rawTs !== undefined && request.method === "DELETE") {
+        if (thread === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
+        const ts = decodeURIComponent(rawTs);
+        const remaining = thread.turns.filter((turn) => turn.ts !== ts);
+        const deletedThread = remaining.length === 0;
+        if (deletedThread) threads.delete(id);
+        else threads.set(id, { ...thread, turns: remaining });
+        return json({
+          deletedTurn: true,
+          deletedThread,
+          removedAnchor: deletedThread ? thread.anchor : null,
+          parentId: thread.parent,
+          warnings: [],
+        });
+      }
+      if (verb === "turns" && rawTs === undefined) {
+        if (thread === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
+        const text =
+          call.parts?.["text"] ?? (call.body as { body?: string } | undefined)?.body ?? "";
+        const references = (call.files ?? []).map(
+          (name) => `[${name}](attachments/${id}/t/${name})`,
+        );
+        const turn = {
+          author: "user" as const,
+          ts: nextTs(thread),
+          body: [text, references.join("\n")].filter((part) => part !== "").join("\n\n"),
+        };
+        threads.set(id, { ...thread, turns: [...thread.turns, turn] });
+        return json(
+          {
+            thread: threadSummary(id, thread.status === "resolved"),
+            turn,
+            eventId: null,
+            warnings: [],
+          },
+          201,
+        );
+      }
       if (thread === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
       return json(thread);
+    }
+
+    if (url.pathname === "/api/threads" && request.method === "POST") {
+      const created = threadFixture({ id: `th_child_${String(threads.size)}` });
+      threads.set(created.id, created);
+      return json({ thread: created, anchorId: "a_1", eventId: null, warnings: [] }, 201);
     }
 
     if (url.pathname.endsWith("/break")) {
@@ -180,6 +252,49 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
       locks = next;
     },
   };
+}
+
+/**
+ * Reads a request's body without assuming JSON: the multipart turn/thread routes
+ * send `FormData`, and a fixture that blindly `JSON.parse`d would throw on
+ * exactly the attachment paths it exists to exercise.
+ */
+async function recordCall(request: Request, url: URL, init?: RequestInit): Promise<ReaderCall> {
+  const base = { method: request.method, path: url.pathname, search: url.search };
+  const contentType = request.headers.get("content-type") ?? "";
+  // The `init` is read first because jsdom's `FormData` and Node's `Request`
+  // are different realms: a multipart body survives on the init but its
+  // content-type header does not survive the `Request` construction. The same
+  // environment defect `canForwardAbortSignal` documents in the kit's client.
+  const form =
+    init?.body instanceof FormData
+      ? init.body
+      : contentType.startsWith("multipart/form-data")
+        ? await request.formData()
+        : undefined;
+  if (form !== undefined) {
+    const parts: Record<string, string> = {};
+    const files: string[] = [];
+    for (const [key, value] of form.entries()) {
+      if (typeof value === "string") parts[key] = value;
+      else files.push(value.name);
+    }
+    return { ...base, body: undefined, parts, files };
+  }
+  const raw = await request.text();
+  if (raw === "") return { ...base, body: undefined };
+  try {
+    return { ...base, body: JSON.parse(raw) as unknown };
+  } catch {
+    return { ...base, body: raw };
+  }
+}
+
+/** A timestamp strictly after every turn the thread already holds (SPEC.md §6). */
+function nextTs(thread: Thread): string {
+  const last = thread.turns.at(-1)?.ts;
+  const at = last === undefined ? Date.now() : new Date(last).getTime() + 60_000;
+  return new Date(at).toISOString();
 }
 
 function threadSummary(id: string, resolved: boolean): unknown {

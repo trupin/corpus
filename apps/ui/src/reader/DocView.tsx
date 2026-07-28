@@ -1,10 +1,10 @@
 import { MarkdownView, type RowNotice } from "@corpus/kit";
 import type { ReactElement } from "react";
+import { ThreadCard } from "../thread/ThreadCard";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { LockBanner } from "./LockBanner";
 import { ThreadSlot } from "./ThreadSlot";
-import { TurnList } from "./Turns";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
@@ -96,7 +96,12 @@ export function DocView({
        */}
       {reader.isThread ? (
         <div className="doc-body thread-conversation">
-          <TurnList turns={reader.thread?.turns ?? []} onOpenRef={onNavigate} />
+          <ThreadCard
+            threadId={reader.docId}
+            host="standalone"
+            onOpenDoc={onNavigate}
+            onNotify={onNotify}
+          />
         </div>
       ) : (
         <MarkdownView markdown={doc.body} className="doc-body" onOpenRef={onNavigate} />
@@ -113,8 +118,8 @@ export function DocView({
               onToggle={() => {
                 onToggleThread(row.id);
               }}
-              onOpenRef={onNavigate}
-              onOpenThread={onNavigate}
+              onOpenDoc={onNavigate}
+              onNotify={onNotify}
             />
           ))}
         </div>

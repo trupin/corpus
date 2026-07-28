@@ -1,0 +1,207 @@
+import { AutocompleteMenu, useAppendTurn, useAutocomplete, type RowNotice } from "@corpus/kit";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
+import { PendingAttachments } from "./PendingAttachments";
+import { useAttachmentIntake, type PendingAttachment } from "./useAttachmentIntake";
+
+/**
+ * The thread composer (`design/index.html`'s `.composer`): one input, the shared
+ * `@` / `/` / `[[` autocomplete, the `◉ ask agent` / `○ note only` toggle, and
+ * three ways to attach a file.
+ *
+ * **The toggle is the tri-state `requestsAgent`, and `○ note only` sends an
+ * explicit `false`.** Omitting it means "enqueue if the thread is already
+ * engaged" (SPEC.md §8), which is the opposite of what the person just asked
+ * for: on an engaged thread an omitted flag re-triggers the agent and the note
+ * they meant to leave quietly becomes a job. `false` is the only spelling of
+ * "note only" the wire has, and it suppresses the enqueue even when the text
+ * carries an `@mention` — the toggle is an explicit instruction and the UI does
+ * not overrule it. What the UI never does is *resolve* routing: it sends the raw
+ * text and the flag, and the server parses mentions authoritatively (§8).
+ */
+
+/** Character for character from the prototype. */
+export const COMPOSER_PLACEHOLDER = "Reply — @ route · / skill · [[ link · paste or drop files";
+
+export const ASK_AGENT_LABEL = "◉ ask agent";
+export const NOTE_ONLY_LABEL = "○ note only";
+export const OPEN_HINT = "thread stays open";
+export const RESOLVED_HINT = "reopens on reply";
+export const SEND_LABEL = "Reply ↵";
+
+export interface ThreadComposerProps {
+  readonly threadId: string;
+  /** Drives the hint: replying to a resolved thread reopens it, server-side. */
+  readonly resolved: boolean;
+  readonly onNotify: (notice: RowNotice) => void;
+}
+
+export function ThreadComposer({
+  threadId,
+  resolved,
+  onNotify,
+}: ThreadComposerProps): ReactElement {
+  const [text, setText] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [asking, setAsking] = useState(true);
+  const input = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
+  const intake = useAttachmentIntake();
+  const append = useAppendTurn(threadId);
+
+  const applyCompletionResult = useCallback((result: { text: string; caret: number }) => {
+    setText(result.text);
+    setCaret(result.caret);
+    const element = input.current;
+    if (element !== null) {
+      element.value = result.text;
+      element.setSelectionRange(result.caret, result.caret);
+      element.focus();
+    }
+  }, []);
+
+  const autocomplete = useAutocomplete({
+    value: text,
+    caret,
+    onComplete: applyCompletionResult,
+  });
+
+  useLayoutEffect(() => {
+    if (!autocomplete.isOpen || input.current === null) return;
+    const rect = input.current.getBoundingClientRect();
+    setMenuStyle({ top: rect.bottom + 4, left: rect.left });
+  }, [autocomplete.isOpen, autocomplete.items.length]);
+
+  const trimmed = text.trim();
+  const hasContent = trimmed !== "" || intake.pending.length > 0;
+  const canSend = hasContent && !append.isPending;
+
+  const send = useCallback(() => {
+    if (!hasContent || append.isPending) return;
+    const body = text.trim();
+    const attachments: readonly PendingAttachment[] = intake.take();
+    setText("");
+    setCaret(0);
+    append.mutate(
+      {
+        body,
+        requestsAgent: asking,
+        ...(attachments.length === 0
+          ? {}
+          : { files: attachments.map((attachment) => attachment.file) }),
+      },
+      {
+        onSuccess: (result) => {
+          intake.release(attachments);
+          // SPEC.md §14: a non-fatal problem "surfaces loudly". The turn landed
+          // either way — files are the source of truth — so this is a notice
+          // beside a success, not a failure.
+          for (const warning of result.warnings) {
+            onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
+          }
+        },
+        onError: (error) => {
+          // Nothing was written — the server refuses the whole turn when the
+          // upload fails — so the composer goes back to exactly what it held.
+          setText(body);
+          setCaret(body.length);
+          intake.restore(attachments);
+          onNotify({ tone: "error", message: `Reply failed — ${error.message}` });
+        },
+      },
+    );
+  }, [append, asking, hasContent, intake, onNotify, text]);
+
+  return (
+    <div
+      className={intake.dropping ? "composer dropping" : "composer"}
+      data-dropzone={threadId}
+      onDragEnter={intake.onDragEnter}
+      onDragOver={intake.onDragOver}
+      onDragLeave={intake.onDragLeave}
+      onDrop={intake.onDrop}
+    >
+      <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
+
+      <input
+        ref={input}
+        value={text}
+        placeholder={COMPOSER_PLACEHOLDER}
+        aria-label="Reply"
+        data-composer={threadId}
+        onChange={(event) => {
+          setText(event.target.value);
+          setCaret(event.target.selectionStart ?? event.target.value.length);
+        }}
+        onSelect={(event) => {
+          setCaret(event.currentTarget.selectionStart ?? 0);
+        }}
+        onPaste={intake.onPaste}
+        onKeyDown={(event) => {
+          if (autocomplete.handleKeyDown(event)) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            send();
+          }
+        }}
+      />
+
+      <div className="composer-foot">
+        <button
+          type="button"
+          className="clip"
+          title="Attach files from disk"
+          aria-label="Attach files"
+          onClick={() => {
+            picker.current?.click();
+          }}
+        >
+          📎
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          data-attach-input={threadId}
+          onChange={(event) => {
+            intake.add(event.target.files);
+            // Re-picking the same file must fire `change` again.
+            event.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          className={asking ? "toggle on" : "toggle"}
+          aria-pressed={asking}
+          onClick={() => {
+            setAsking((current) => !current);
+          }}
+        >
+          {asking ? ASK_AGENT_LABEL : NOTE_ONLY_LABEL}
+        </button>
+        <span className="composer-hint">{resolved ? RESOLVED_HINT : OPEN_HINT}</span>
+        <button type="button" className="send" disabled={!canSend} onClick={send}>
+          {SEND_LABEL}
+        </button>
+      </div>
+
+      <AutocompleteMenu
+        open={autocomplete.isOpen}
+        items={autocomplete.items}
+        activeIndex={autocomplete.activeIndex}
+        onHover={autocomplete.setActiveIndex}
+        onChoose={autocomplete.choose}
+        style={menuStyle}
+        label="Reply completions"
+      />
+    </div>
+  );
+}

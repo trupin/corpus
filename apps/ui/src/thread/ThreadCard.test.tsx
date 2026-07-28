@@ -1,0 +1,354 @@
+/** @vitest-environment jsdom */
+import type { Thread } from "@corpus/contract";
+import { resetSeenMarks } from "@corpus/kit";
+import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState, type ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetEscapeLayers } from "../reader/useEscapeStack";
+import {
+  docFixture,
+  readerTransport,
+  threadFixture,
+  threadRowFixture,
+  type ReaderTransport,
+} from "../testing/readerFixture";
+import { DELETE_ARMED_LABEL } from "./Turn";
+import { ThreadCard, type ThreadHost } from "./ThreadCard";
+
+afterEach(() => {
+  cleanup();
+  resetEscapeLayers();
+  resetSeenMarks();
+});
+
+const TURNS = [
+  { author: "user" as const, ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" },
+  {
+    author: "agent" as const,
+    ts: "2026-07-01T10:07:00.000Z",
+    body: "6.4% is closer.\n↳ edited the model doc — 3 lines",
+  },
+];
+
+const PARENT = docFixture({
+  frontmatter: { id: "doc_m", title: "Mortgage options" },
+  anchors: [
+    {
+      anchorId: "a_1",
+      selector: { exact: "assume a 30-year fixed at 6.1%", prefix: "", suffix: "" },
+      threadId: "th_a",
+      threadStatus: "open",
+      range: { start: 4, end: 33 },
+      orphaned: false,
+    },
+  ],
+});
+
+function wire(thread: Partial<Thread> = {}, options: Parameters<typeof readerTransport>[0] = {}) {
+  return readerTransport({
+    docs: [PARENT],
+    threads: [
+      threadFixture({ id: "th_a", parent: "doc_m", anchor: "a_1", turns: TURNS, ...thread }),
+    ],
+    ...options,
+  });
+}
+
+function Host({
+  transport,
+  host,
+  onOpenDoc,
+  onCollapse,
+  onNotify,
+}: {
+  readonly transport: ReaderTransport;
+  readonly host?: ThreadHost;
+  readonly onOpenDoc?: (docId: string, anchorId?: string | null) => void;
+  readonly onCollapse?: () => void;
+  readonly onNotify?: (notice: { tone: string; message: string }) => void;
+}): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
+  return (
+    <harness.Wrapper>
+      <ThreadCard
+        threadId="th_a"
+        host={host ?? "standalone"}
+        onOpenDoc={onOpenDoc ?? (() => undefined)}
+        {...(onCollapse ? { onCollapse } : {})}
+        onNotify={onNotify ?? (() => undefined)}
+      />
+    </harness.Wrapper>
+  );
+}
+
+async function loaded(container: HTMLElement): Promise<void> {
+  await waitFor(() => {
+    expect(container.querySelectorAll(".turn").length).toBeGreaterThan(0);
+  });
+}
+
+describe("the head", () => {
+  it("shows the anchor quote, the status chip and resolve", async () => {
+    const { container } = render(<Host transport={wire()} />);
+    await loaded(container);
+    expect(container.querySelector(".t-quote")?.textContent).toBe(
+      "“assume a 30-year fixed at 6.1%”",
+    );
+    expect(container.querySelector(".chip.t-status")?.textContent).toBe("open");
+    expect(container.querySelector(".t-resolve")?.textContent).toBe("✓ resolve");
+  });
+
+  it("reads `whole-document thread` with a parent and no anchor", async () => {
+    const transport = readerTransport({
+      docs: [docFixture({ frontmatter: { id: "doc_m", title: "Mortgage options" } })],
+      threads: [threadFixture({ id: "th_a", parent: "doc_m", anchor: null, turns: TURNS })],
+    });
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    expect(container.querySelector(".t-quote")?.textContent).toBe("whole-document thread");
+    expect(container.querySelector(".t-context")?.textContent).toContain("whole document");
+  });
+
+  it("reads `standalone` with no parent at all", async () => {
+    const transport = readerTransport({
+      threads: [threadFixture({ id: "th_a", parent: null, turns: TURNS })],
+    });
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    expect(container.querySelector(".t-quote")?.textContent).toBe("standalone");
+    expect(container.querySelector(".t-context")?.textContent).toBe("standalone thread · th_a");
+  });
+
+  it("dims a resolved card and offers reopen", async () => {
+    const { container } = render(<Host transport={wire({ status: "resolved" })} />);
+    await loaded(container);
+    expect(container.querySelector(".thread-card")?.className).toContain("resolved");
+    expect(container.querySelector(".t-resolve")?.textContent).toBe("reopen");
+  });
+
+  it("renders the collapse control only when the host gave it one", async () => {
+    const collapse = vi.fn();
+    const first = render(<Host transport={wire()} host="slot" onCollapse={collapse} />);
+    await loaded(first.container);
+    fireEvent.click(first.container.querySelector(".t-collapse") as HTMLElement);
+    expect(collapse).toHaveBeenCalled();
+
+    cleanup();
+    resetSeenMarks();
+    const second = render(<Host transport={wire()} host="margin" />);
+    await loaded(second.container);
+    expect(second.container.querySelector(".t-collapse")).toBeNull();
+  });
+
+  it("resolves and reopens through the thread routes", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    fireEvent.click(container.querySelector(".t-resolve") as HTMLElement);
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/resolve")).toHaveLength(1);
+    });
+  });
+});
+
+describe("the context line", () => {
+  it("names the parent and links back at the anchor", async () => {
+    const open = vi.fn();
+    const { container } = render(<Host transport={wire()} onOpenDoc={open} />);
+    await waitFor(() => {
+      expect(container.querySelector(".t-context .ref")).not.toBeNull();
+    });
+    expect(container.querySelector(".t-context")?.textContent).toBe(
+      "on Mortgage options · at “assume a 30-year fixed at 6.1%”",
+    );
+    fireEvent.click(container.querySelector(".t-context .ref") as HTMLElement);
+    expect(open).toHaveBeenCalledWith("doc_m", "a_1");
+  });
+
+  /** SPEC.md §9: a deleted parent leaves an orphaned record, not a crash. */
+  it("degrades to the stored parent id when the parent is gone", async () => {
+    const transport = readerTransport({
+      docs: [],
+      threads: [threadFixture({ id: "th_a", parent: "doc_gone", turns: TURNS })],
+    });
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".t-context")?.textContent).toContain("doc_gone");
+    });
+    expect(container.querySelector(".t-context .ref")).toBeNull();
+  });
+});
+
+describe("the turns", () => {
+  it("marks the agent's author and renders its trace with no arrow in the text", async () => {
+    const { container } = render(<Host transport={wire()} />);
+    await loaded(container);
+    const authors = [...container.querySelectorAll(".turn-who .who")].map((node) => node.className);
+    expect(authors).toEqual(["who", "who agent"]);
+    expect(container.querySelector(".turn-trace")?.textContent).toBe(
+      "edited the model doc — 3 lines",
+    );
+    // The arrow is CSS `::before` content — never a character in the body.
+    expect(container.querySelector(".turn-trace")?.textContent).not.toContain("↳");
+  });
+
+  /** SPEC.md §6: turn identity is the timestamp, never the array index. */
+  it("keys turns by timestamp", async () => {
+    const { container } = render(<Host transport={wire()} />);
+    await loaded(container);
+    expect(
+      [...container.querySelectorAll(".turn")].map((node) => node.getAttribute("data-turn-ts")),
+    ).toEqual([TURNS[0]?.ts, TURNS[1]?.ts]);
+  });
+
+  it("arms deletion before firing it, and never offers it on an agent turn", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+
+    const turns = [...container.querySelectorAll(".turn")];
+    expect(turns[1]?.querySelector(".turn-del")).toBeNull();
+
+    const control = turns[0]?.querySelector(".turn-del") as HTMLElement;
+    fireEvent.click(control);
+    expect(control.textContent).toBe(DELETE_ARMED_LABEL);
+    expect(control.className).toContain("armed");
+    // Arming reaches no network at all.
+    expect(transport.of("DELETE")).toHaveLength(0);
+
+    fireEvent.click(control);
+    await waitFor(() => {
+      expect(transport.of("DELETE")).toHaveLength(1);
+    });
+    expect(transport.of("DELETE")[0]?.path).toBe(
+      `/api/threads/th_a/turns/${encodeURIComponent(TURNS[0]?.ts ?? "")}`,
+    );
+  });
+
+  it("disarms on Escape without deleting", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    const control = container.querySelector(".turn-del") as HTMLElement;
+    fireEvent.click(control);
+    expect(control.textContent).toBe(DELETE_ARMED_LABEL);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => {
+      expect(container.querySelector(".turn-del")?.textContent).toBe("✕");
+    });
+    expect(transport.of("DELETE")).toHaveLength(0);
+  });
+
+  it("reports the cascade honestly when the last turn goes", async () => {
+    const notify = vi.fn<(notice: { tone: string; message: string }) => void>();
+    const transport = readerTransport({
+      docs: [PARENT],
+      threads: [threadFixture({ id: "th_a", parent: "doc_m", turns: [TURNS[0] as never] })],
+    });
+    const { container } = render(<Host transport={transport} onNotify={notify} />);
+    await loaded(container);
+    const control = container.querySelector(".turn-del") as HTMLElement;
+    fireEvent.click(control);
+    fireEvent.click(control);
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalled();
+    });
+    expect(notify.mock.calls[0]?.[0].message).toContain("thread went with it");
+  });
+});
+
+describe("the pending indicator", () => {
+  it("appears only while the agent owes a reply on an open thread", async () => {
+    const engaged = render(
+      <Host transport={wire({ agent: "engaged", turns: [TURNS[0] as never] })} />,
+    );
+    await loaded(engaged.container);
+    expect(engaged.container.querySelector(".working")).not.toBeNull();
+
+    cleanup();
+    resetSeenMarks();
+    const answered = render(<Host transport={wire({ agent: "engaged" })} />);
+    await loaded(answered.container);
+    expect(answered.container.querySelector(".working")).toBeNull();
+
+    cleanup();
+    resetSeenMarks();
+    const quiet = render(<Host transport={wire({ agent: "none", turns: [TURNS[0] as never] })} />);
+    await loaded(quiet.container);
+    expect(quiet.container.querySelector(".working")).toBeNull();
+  });
+
+  it("shows no progress bar, no percentage, no stream", async () => {
+    const { container } = render(
+      <Host transport={wire({ agent: "engaged", turns: [TURNS[0] as never] })} />,
+    );
+    await loaded(container);
+    expect(container.querySelector("progress")).toBeNull();
+    expect(container.querySelector("[role='progressbar']")).toBeNull();
+    expect(container.querySelector(".working")?.textContent).toContain("working");
+  });
+});
+
+describe("read state", () => {
+  it("marks the displayed conversation seen exactly once", async () => {
+    const transport = wire();
+    const { container, rerender } = render(<Host transport={transport} />);
+    await loaded(container);
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/seen")).toHaveLength(1);
+    });
+    rerender(<Host transport={transport} />);
+    expect(transport.of("POST", "/api/threads/th_a/seen")).toHaveLength(1);
+  });
+});
+
+describe("child threads", () => {
+  it("nests a child under the turn its anchor quotes", async () => {
+    const transport = readerTransport({
+      docs: [PARENT],
+      threads: [
+        threadFixture({ id: "th_a", parent: "doc_m", turns: TURNS }),
+        threadFixture({
+          id: "th_child",
+          parent: "th_a",
+          turns: [{ author: "user", ts: "2026-07-01T10:09:00.000Z", body: "where from?" }],
+        }),
+      ],
+      rows: {
+        "?parent=th_a&type=thread": [
+          threadRowFixture({ id: "th_child", parent: "th_a", anchorQuote: "6.4% is closer." }),
+        ],
+      },
+    });
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector("[data-thread='th_child']")).not.toBeNull();
+    });
+    const child = container.querySelector("[data-thread='th_child']");
+    expect(child?.closest(".turn")?.getAttribute("data-turn-ts")).toBe(TURNS[1]?.ts);
+    expect(child?.getAttribute("data-depth")).toBe("1");
+  });
+
+  it("creates a child thread anchored into the turn", async () => {
+    const transport = wire();
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+    fireEvent.click(container.querySelector(".turn-comment") as HTMLElement);
+    fireEvent.change(screen.getByLabelText("Comment on this turn"), {
+      target: { value: "where from?" },
+    });
+    fireEvent.click(screen.getByText("Comment ↵"));
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    expect(transport.of("POST", "/api/threads")[0]?.body).toMatchObject({
+      parent: "th_a",
+      selector: { exact: "is 6.1% right?" },
+      requestsAgent: false,
+    });
+  });
+});

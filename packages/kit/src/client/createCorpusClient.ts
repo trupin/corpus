@@ -4,10 +4,12 @@ import type {
   CreateThreadRequest,
   CreateThreadResponse,
   DeleteDocResult,
+  DeleteTurnResult,
   Doc,
   DocList,
   DocMutationResponse,
   FolderTree,
+  FormAnswerResponse,
   Health,
   Job,
   JobList,
@@ -24,6 +26,8 @@ import type {
 import {
   createCorpusClient as createContractClient,
   isApiError,
+  UploadError,
+  uploadTurn,
   type EventSourceFactory,
   type EventStream,
   type EventStreamOptions,
@@ -69,6 +73,26 @@ export interface AppendTurnInput {
   readonly requestsAgent?: boolean;
 }
 
+/**
+ * The multipart form of the same append (SPEC.md §6 — attachments).
+ *
+ * `text` is optional because a turn may be attachment-only; a call carrying
+ * neither text nor files is rejected before it reaches the network.
+ */
+export interface AppendTurnUpload {
+  readonly text?: string | undefined;
+  readonly requestsAgent?: boolean | undefined;
+  readonly files: readonly File[];
+}
+
+/** The answer to the form in one agent turn (SPEC.md §6). */
+export interface FormAnswerInput {
+  /** Timestamp of the agent turn carrying the form — the form's identity. */
+  readonly ts: string;
+  readonly option: string;
+  readonly note?: string | undefined;
+}
+
 export interface CorpusEventStreamOptions extends Omit<
   EventStreamOptions,
   "baseUrl" | "token" | "onInvalidate"
@@ -97,6 +121,49 @@ export interface CorpusClient {
   getQueueStatus(options?: RequestOptions): Promise<QueueStatus>;
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
+  /**
+   * `POST /api/threads/{id}/turns` as `multipart/form-data` — the attachment
+   * path (SPEC.md §6).
+   *
+   * A separate method rather than an optional `files` on {@link appendTurn}
+   * because the two are different requests: `openapi-fetch` serialises JSON and
+   * has no notion of a repeated binary part, so the multipart branch goes
+   * through the contract's hand-written `uploadTurn`. Both answer the same
+   * `AppendTurnResponse` and both raise {@link CorpusRequestError}, so a caller
+   * branches on which one to call and on nothing else — in particular the `413`
+   * an over-cap upload earns arrives with `status: 413` here exactly as a `409`
+   * does from the JSON path.
+   */
+  appendTurnWithFiles(threadId: string, input: AppendTurnUpload): Promise<AppendTurnResponse>;
+  /**
+   * `DELETE /api/threads/{id}/turns/{ts}` — **user-only** (SPEC.md §6).
+   *
+   * `ts` is the turn's identity and contains `:`, so it is URL-encoded on the
+   * way out. The result names every consequence of the cascade — the thread may
+   * have gone with the turn, and the parent's anchor entry with the thread — so
+   * a caller drops the right caches instead of guessing.
+   */
+  deleteTurn(threadId: string, ts: string): Promise<DeleteTurnResult>;
+  /**
+   * `POST /api/threads/{id}/turns/{ts}/form` — answering the form an agent turn
+   * carries (SPEC.md §6).
+   *
+   * The dedicated route, never a hand-composed turn posted to `/turns`: the
+   * server validates the option against the fence it answers, writes the
+   * structured answer turn, and enqueues the `form.respond` event that
+   * re-triggers the agent. A turn built by hand produces the first of those and
+   * none of the rest.
+   */
+  respondToForm(threadId: string, input: FormAnswerInput): Promise<FormAnswerResponse>;
+  /**
+   * `GET /attachments/<thread>/<turn-ts>/<name>` — the bytes behind a turn's
+   * attachment reference (SPEC.md §6).
+   *
+   * Fetched rather than linked because the route is behind the workspace bearer
+   * token and an `<img src>` carries no `Authorization` header. The caller gets
+   * a `Blob` and owns the object URL it makes from it.
+   */
+  fetchAttachment(target: string, options?: RequestOptions): Promise<Blob>;
   /**
    * `POST /api/docs` — zero-form creation (SPEC.md §11).
    *
@@ -275,6 +342,39 @@ export function toQueryParams(filter: Readonly<Record<string, unknown>>): Record
   return params;
 }
 
+/**
+ * Runs a multipart upload and re-raises its failure as the kit's own error.
+ *
+ * The contract's upload helpers throw `UploadError` because they predate this
+ * client; a caller must not have to catch two error types depending on whether
+ * the turn it sent carried a file. The parsed `ApiError` is carried through, so
+ * `code` and `status` survive the translation and a `413` still reads as one.
+ */
+async function rethrowUploadError<T>(operation: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof UploadError) {
+      throw new CorpusRequestError(
+        operation,
+        error.status,
+        error.apiError ?? { code: "bad_request", message: error.message, issues: [] },
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * An attachment reference as it appears in a turn body is relative
+ * (`attachments/<thread>/<ts>/<name>`); the route is absolute. Leading slashes
+ * are normalised away rather than trusted, so a body cannot point this at
+ * another origin's path by writing `//evil.example/x`.
+ */
+function normalizeAttachmentTarget(target: string): string {
+  return target.replace(/^\/+/, "");
+}
+
 let abortSignalIsPortable: boolean | undefined;
 
 /**
@@ -392,6 +492,56 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           },
         }),
       );
+    },
+
+    async appendTurnWithFiles(threadId, input) {
+      return rethrowUploadError("POST /api/threads/{id}/turns", () =>
+        uploadTurn({
+          baseUrl: config.baseUrl,
+          token: config.token,
+          ...(config.fetch ? { fetch: config.fetch } : {}),
+          threadId,
+          ...(input.text === undefined ? {} : { text: input.text }),
+          ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
+          files: input.files,
+        }),
+      );
+    },
+
+    async deleteTurn(threadId, ts) {
+      return unwrap(
+        "DELETE /api/threads/{id}/turns/{ts}",
+        await api.DELETE("/api/threads/{id}/turns/{ts}", {
+          params: { path: { id: threadId, ts } },
+        }),
+      );
+    },
+
+    async respondToForm(threadId, input) {
+      return unwrap(
+        "POST /api/threads/{id}/turns/{ts}/form",
+        await api.POST("/api/threads/{id}/turns/{ts}/form", {
+          params: { path: { id: threadId, ts: input.ts } },
+          body: {
+            option: input.option,
+            ...(input.note === undefined ? {} : { note: input.note }),
+          },
+        }),
+      );
+    },
+
+    async fetchAttachment(target, options) {
+      const send = config.fetch ?? globalThis.fetch;
+      const url = new URL(normalizeAttachmentTarget(target), `${config.baseUrl}/`);
+      const response = await send(url, {
+        headers: { Authorization: `Bearer ${config.token}` },
+        ...(options?.signal && canForwardAbortSignal() ? { signal: options.signal } : {}),
+      });
+      if (!response.ok) {
+        const payload: unknown = await response.json().catch(() => null);
+        throw new CorpusRequestError("GET /attachments", response.status, payload);
+      }
+      return response.blob();
     },
 
     async createDoc(input) {

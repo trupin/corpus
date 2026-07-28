@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
@@ -19,6 +20,7 @@ import { resetEscapeLayers } from "./useEscapeStack";
 afterEach(() => {
   cleanup();
   resetEscapeLayers();
+  resetSeenMarks();
 });
 
 const MORTGAGE = docFixture({
@@ -77,7 +79,16 @@ function Host({ wire, initial, isActive, onFocusMode, onNav }: HostProps): React
 function fullWire(overrides: Partial<Parameters<typeof readerTransport>[0]> = {}): ReaderTransport {
   return readerTransport({
     docs: [MORTGAGE, RATES, THREAD_DOC],
-    threads: [threadFixture({ id: "th_rate", parent: "doc_m", turns: [] })],
+    threads: [
+      threadFixture({
+        id: "th_rate",
+        parent: "doc_m",
+        // A thread always has at least one turn — it is created with its first
+        // one — and the seen mark is keyed on the last turn, so a turnless
+        // fixture would be testing a state the server cannot produce.
+        turns: [{ author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" }],
+      }),
+    ],
     rows: {
       [threadsSearch("doc_m")]: [
         threadRowFixture({
@@ -348,6 +359,10 @@ describe("Reader", () => {
     expect(parentWire.of("POST").filter((call) => call.path.endsWith("/seen"))).toHaveLength(0);
 
     cleanup();
+    // The de-duplication record is module state and outlives the unmount, which
+    // is the point of it — a second host reading the same thread would not post
+    // again. This half of the test is about the *first* read.
+    resetSeenMarks();
 
     const threadWire = fullWire();
     render(<Host wire={threadWire} initial={[{ docId: "th_rate", scrollY: 0 }]} />);
@@ -376,8 +391,10 @@ describe("Reader", () => {
       expect(container.querySelectorAll(".thread-conversation .turn")).toHaveLength(2);
     });
     expect(screen.getByText("is 6.1% right?")).toBeDefined();
-    // UI-008's surfaces are absent rather than half-built.
-    expect(container.querySelector(".composer")).toBeNull();
+    // The standalone host is the same card, composer included, and has nothing
+    // to collapse back into.
+    expect(container.querySelector(".thread-conversation .composer")).not.toBeNull();
+    expect(container.querySelector(".thread-conversation .t-collapse")).toBeNull();
   });
 
   it("degrades honestly when the open document was deleted out of band", async () => {

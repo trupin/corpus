@@ -1,11 +1,16 @@
-import { useMarkThreadSeen } from "@corpus/kit";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
  * The behaviour a reading surface has regardless of the chrome around it:
- * scroll restoration, which threads are expanded, the 💬 jump-and-flash, and
- * SPEC.md §7's read rule.
+ * scroll restoration, which threads are expanded, and the 💬 jump-and-flash.
+ *
+ * **The read mark is deliberately not here.** SPEC.md §7 counts *displayed*
+ * content, and the only component that knows a conversation was displayed is
+ * the one that displayed it — so `ThreadCard` marks seen on mount and the kit
+ * de-duplicates per `(thread, last turn)`. A surface-level effect keyed on
+ * "the open document is a thread" would mark a thread seen whose turns had not
+ * arrived yet, and would say nothing at all about an expanded chip.
  *
  * Shared by the column reader and focus mode for the same reason `DocView` is —
  * these are properties of *reading a document*, and two copies would drift.
@@ -63,8 +68,6 @@ export function useReaderSurface({
   const restore = useRef<RestoreState | null>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const markSeen = useMarkThreadSeen();
-  const seenFor = useRef<string | null>(null);
 
   const hasContent = reader.doc !== undefined || reader.isMissing || reader.error !== null;
 
@@ -121,19 +124,6 @@ export function useReaderSurface({
     setExpanded([]);
     setFlash(null);
   }, [reader.docId]);
-
-  /**
-   * SPEC.md §7: opening a thread marks it seen. Opening a *parent* document
-   * marks nothing — its threads are collapsed chips, and a chip has displayed
-   * nothing. That asymmetry is the rule, and it is enforced by this condition
-   * being `isThread` and by `ThreadSlot` firing on expansion instead.
-   */
-  useEffect(() => {
-    if (!reader.isThread || reader.doc === undefined) return;
-    if (seenFor.current === reader.docId) return;
-    seenFor.current = reader.docId;
-    markSeen.mutate(reader.docId);
-  }, [markSeen, reader.doc, reader.docId, reader.isThread]);
 
   useEffect(
     () => () => {

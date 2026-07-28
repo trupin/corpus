@@ -28,6 +28,15 @@ export default defineConfig({
         // redirects, so the browser's Host header passes through untouched.
         changeOrigin: false,
       },
+      // Attachment bytes (SPEC.md §6). The installed server hands them out from
+      // the same origin as `/api`, so the dev server has to look like that too;
+      // without this a turn's image would 404 from Vite and read exactly like a
+      // missing file. The kit fetches them with the workspace bearer token, so
+      // nothing about the route's auth changes here.
+      "/attachments": {
+        target: SERVER_ORIGIN,
+        changeOrigin: false,
+      },
       "/events": {
         target: SERVER_ORIGIN,
         changeOrigin: false,
