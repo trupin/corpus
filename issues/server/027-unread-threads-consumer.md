@@ -43,3 +43,11 @@ _Filled in by the implementing agent ("implemented on: opus")._
 
 - [ ] `/evaluate` passes
 - [ ] Committed with CONTRACT-012
+
+## Riders (orchestrator, 2026-07-28 — sprint-010 adjudications)
+
+Consume both CONTRACT-012 riders in the same coupled commit:
+
+1. **Populate `Job.type`** in job rows from the projection's `events.type`.
+2. **Implement `includeArchived=true`**: lift the default `d.status <> 'archived'` exclusion
+   (union). Absent/false unchanged; explicit `status=archived` still returns only archived.

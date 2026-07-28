@@ -161,3 +161,11 @@ _[Agent fills: application restarted, exact commands, observed output, confirmat
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-009]` prefix
+
+## Correction (orchestrator, 2026-07-28 — sprint-010 Conflict 4/6)
+
+- Any criteria about sanitizing `<mark>`/HTML in snippets are **struck**: `SnippetSchema` ships
+  `{text, match}` segments so highlights render from data, never `dangerouslySetInnerHTML`.
+- `[[ref]]` title lookups: use cache-deduped per-id `useDoc` (no `ids` batch filter exists);
+  state this strategy in the E2E log.
+- Dev server port for this issue: `CORPUS_UI_PORT=5275`.

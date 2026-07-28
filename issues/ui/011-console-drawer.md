@@ -161,3 +161,15 @@ _[Agent fills: application restarted, exact commands, observed output, confirmat
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-011]` prefix
+
+## Correction (orchestrator, 2026-07-28 — sprint-010 Conflicts 1/5 + deps)
+
+- **No SSE log streaming** — that text was stale. Logs arrive by cursored HTTP refetch
+  (`JobLog.nextCursor`) triggered by `jobKey` invalidation; the append path deliberately
+  broadcasts nothing (SPEC §2.2 rule 3, `jobs/service.ts`).
+- **`↗ open` reads `originId`** — `Job` has no `payload`.
+- **Do not reuse `.c-failed`** for the failed-count span; `smoke.spec.ts:235` asserts on
+  `.console-strip .c-failed` in strict mode and must keep passing unmodified.
+- **Dependencies corrected**: also depends on UI-009 (`useOpenInColumn`) and SERVER-027
+  (`Job.type`) — wave B of sprint-010.
+- Dev server port for this issue: `CORPUS_UI_PORT=5276`.
