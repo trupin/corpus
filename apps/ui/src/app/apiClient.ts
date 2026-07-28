@@ -15,23 +15,67 @@ function currentOrigin(): string {
 }
 
 /**
+ * The `id` the server gives the runtime config block it splices into the shell
+ * it serves (`apps/server/src/ui-runtime-config.ts` — same constant, and the
+ * security rationale for the mechanism lives there). A JSON data block, not
+ * executable script, so reading it is a parse and never an evaluation.
+ */
+const RUNTIME_CONFIG_ELEMENT_ID = "corpus-runtime-config";
+
+/**
+ * The token the server that served this page put in it, or `""` when the page
+ * was not served by the workspace server (the Vite dev server serves the
+ * unmodified `index.html`) or the block is unusable.
+ *
+ * Every failure is the same answer — absent. A malformed block means no token,
+ * which surfaces as visible `401`s and an honest console strip; it must never
+ * become an exception at module load, because this runs before React mounts and
+ * a throw here is a blank page.
+ */
+function injectedToken(): string {
+  const element = document.getElementById(RUNTIME_CONFIG_ELEMENT_ID);
+  if (element === null) return "";
+
+  try {
+    const parsed: unknown = JSON.parse(element.textContent ?? "");
+    if (typeof parsed !== "object" || parsed === null) return "";
+    const token: unknown = (parsed as Record<string, unknown>)["token"];
+    return typeof token === "string" ? token : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Where the bearer token comes from — and the only place in the app that decides.
  *
  * The kit takes the token as *configuration* and never sources it: it reads no
  * file, no cookie and no environment variable, so a plugin cannot reach through
- * it for credentials. That leaves provisioning here, and it is split in two:
+ * it for credentials. That leaves provisioning here, and there are two sources:
  *
- * - **Development** (this function): `VITE_CORPUS_TOKEN`, exported by whoever
- *   starts the dev server from the workspace's `.corpus/config.json`. See
- *   `apps/ui/README.md`.
- * - **Production**: the server that serves the built UI injects it. That half is
- *   SERVER-024; until it lands an installed build has no token, and every
- *   authenticated query fails with a visible 401 rather than silently.
+ * - **Production**: the workspace server injects the token into the very shell
+ *   it serves, and `injectedToken()` reads it back out of the document
+ *   (SERVER-024). Zero manual steps.
+ * - **Development**: `VITE_CORPUS_TOKEN`, exported by whoever starts the dev
+ *   server from the workspace's `.corpus/config.json`. See `apps/ui/README.md`.
+ *   `import.meta.env` carries an index signature, so the value arrives untyped
+ *   and is narrowed here rather than trusted.
  *
- * `import.meta.env` carries an index signature, so the value arrives untyped and
- * is narrowed here rather than trusted.
+ * **Precedence: the injected value wins.** It is decided rather than incidental.
+ * `VITE_CORPUS_TOKEN` is baked into the bundle at *build* time, so it can only
+ * ever be a guess about which workspace the build would later be served from —
+ * possibly a stale one, possibly another workspace's. The injected value comes
+ * from the running server that just handed out this exact page, and it is by
+ * construction the token that server will accept. The two only ever collide
+ * when a bundle built with the env var is then served by the server, and in
+ * that case the runtime answer is the right one. A non-empty injected token
+ * therefore shadows the env var; an absent or empty one falls back to it, which
+ * is what makes the dev flow unchanged.
  */
 function configuredToken(): string {
+  const injected = injectedToken();
+  if (injected !== "") return injected;
+
   const configured: unknown = import.meta.env.VITE_CORPUS_TOKEN;
   return typeof configured === "string" ? configured : "";
 }

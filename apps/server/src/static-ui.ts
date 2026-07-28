@@ -6,9 +6,15 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { Context, MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "./logger.js";
+import {
+  TOKEN_SHELL_CACHE_CONTROL,
+  injectRuntimeConfig,
+  refuseUnsafeTokenDelivery,
+  type GuardedContext,
+} from "./ui-runtime-config.js";
 
 /**
  * Path prefixes the UI never owns. They must fall through to routing (and from
@@ -43,6 +49,14 @@ export interface StaticUiOptions {
   /** Absolute path of the built UI, or `undefined` when none was resolvable. */
   readonly distDir: string | undefined;
   readonly logger: Logger;
+  /**
+   * The workspace bearer token, provisioned into the served shell so an
+   * installed build can authenticate with no manual step (SERVER-024; the
+   * mechanism and its security rationale live in `ui-runtime-config.ts`).
+   * Omitted or empty means "provision nothing": the shell is then the plain
+   * bytes on disk and carries no credential to guard.
+   */
+  readonly token?: string | undefined;
 }
 
 /**
@@ -59,8 +73,22 @@ export interface StaticUiTarget {
  * `GET`/`HEAD` requests outside the reserved prefixes; everything else calls
  * `next()` and ends up in routing, so the API keeps working with no UI present.
  */
+/**
+ * True for the two paths `serveStatic` would answer with the SPA shell itself:
+ * the root (which it rewrites directory → `index.html`) and that file by name.
+ * Both are routed to `serveAppShell` instead, so every response carrying the
+ * shell — and therefore the injected token — goes through one guarded,
+ * never-cached path rather than two. Every other path keeps its old behaviour:
+ * a real file is served by `serveStatic`, and a miss falls through to the SPA
+ * fallback, which is the same guarded shell.
+ */
+export function isAppShellPath(path: string): boolean {
+  return path === "/" || path === "/index.html";
+}
+
 export function mountStaticUi(app: StaticUiTarget, options: StaticUiOptions): void {
   const { distDir, logger } = options;
+  const token = options.token ?? "";
   const available = distDir !== undefined && existsSync(distDir);
 
   if (distDir !== undefined && !available) {
@@ -74,7 +102,7 @@ export function mountStaticUi(app: StaticUiTarget, options: StaticUiOptions): vo
     if (method !== "GET" && method !== "HEAD") return next();
     if (isReservedPath(c.req.path)) return next();
 
-    if (staticHandler !== undefined) {
+    if (staticHandler !== undefined && !isAppShellPath(c.req.path)) {
       // `serveStatic` returns a Response when it found a file and delegates to
       // the `next` we hand it otherwise; that inner `next` must not advance the
       // real chain, or a miss would skip the SPA fallback below.
@@ -92,7 +120,7 @@ export function mountStaticUi(app: StaticUiTarget, options: StaticUiOptions): vo
       }
     }
 
-    return serveAppShell(c, distDir, logger);
+    return serveAppShell(c, distDir, logger, token);
   });
 }
 
@@ -102,26 +130,56 @@ export function mountStaticUi(app: StaticUiTarget, options: StaticUiOptions): vo
  * present it degrades to a 503 naming the fix — plain text, because this path is
  * outside `/api` and its reader is a person who just opened the board URL, not
  * a client expecting the contract's `ApiError`.
+ *
+ * With a token configured the shell also carries the runtime config block
+ * (SERVER-024). The guard runs *after* the read, not before, so a workspace
+ * with no UI build still answers the documented 503 rather than a 403 that
+ * would send the operator looking for a permissions problem they do not have.
  */
-function serveAppShell(c: Context, distDir: string | undefined, logger: Logger): Response {
-  if (distDir !== undefined) {
-    const indexPath = join(distDir, "index.html");
-    try {
-      const html = readFileSync(indexPath, "utf8");
+async function serveAppShell(
+  c: GuardedContext,
+  distDir: string | undefined,
+  logger: Logger,
+  token: string,
+): Promise<Response> {
+  const html = distDir === undefined ? undefined : readShell(distDir, logger);
+
+  if (html !== undefined) {
+    if (token === "") {
       return c.newResponse(html, 200, {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": REVALIDATE_CACHE_CONTROL,
       });
-    } catch (cause) {
-      logger.error("UI dist directory has no readable index.html", {
-        indexPath,
-        reason: cause instanceof Error ? cause.message : String(cause),
-      });
     }
+
+    const refusal = await refuseUnsafeTokenDelivery(c);
+    if (refusal !== undefined) return refusal;
+
+    return c.newResponse(injectRuntimeConfig(html, { token }), 200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": TOKEN_SHELL_CACHE_CONTROL,
+      // A cross-origin frame navigation carries no `Origin` and so reaches
+      // this response; the same-origin policy stops the framer reading it,
+      // and this stops it clickjacking the board.
+      "X-Frame-Options": "DENY",
+    });
   }
 
   return c.newResponse(`${UI_MISSING_MESSAGE}\n`, 503, {
     "Content-Type": "text/plain; charset=utf-8",
     "Cache-Control": REVALIDATE_CACHE_CONTROL,
   });
+}
+
+function readShell(distDir: string, logger: Logger): string | undefined {
+  const indexPath = join(distDir, "index.html");
+  try {
+    return readFileSync(indexPath, "utf8");
+  } catch (cause) {
+    logger.error("UI dist directory has no readable index.html", {
+      indexPath,
+      reason: cause instanceof Error ? cause.message : String(cause),
+    });
+    return undefined;
+  }
 }

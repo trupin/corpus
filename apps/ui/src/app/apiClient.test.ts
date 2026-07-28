@@ -18,8 +18,29 @@ function jsonResponse(body: unknown): Response {
 
 const HEALTH = { status: "ok", version: "0.0.0", uptimeSeconds: 1, workspace: "/tmp/ws" };
 
+const RUNTIME_CONFIG_ELEMENT_ID = "corpus-runtime-config";
+
+/** Writes the block the workspace server splices into the shell it serves. */
+function serveWithRuntimeConfig(json: string): void {
+  const script = document.createElement("script");
+  script.id = RUNTIME_CONFIG_ELEMENT_ID;
+  script.type = "application/json";
+  script.textContent = json;
+  document.head.append(script);
+}
+
+/** The `Authorization` header a default-configured client actually sends. */
+async function bearerSent(): Promise<string | null> {
+  const injected = vi.fn().mockResolvedValue(jsonResponse(HEALTH));
+  await createUiClient({ fetch: injected }).getHealth();
+  const request: unknown = injected.mock.calls[0]?.[0];
+  return request instanceof Request ? request.headers.get("authorization") : null;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  document.head.querySelector(`#${RUNTIME_CONFIG_ELEMENT_ID}`)?.remove();
 });
 
 describe("createUiClient", () => {
@@ -64,6 +85,48 @@ describe("createUiClient", () => {
     await createUiClient({ fetch: injected }).getHealth();
     const request: unknown = injected.mock.calls[0]?.[0];
     expect(request instanceof Request ? request.headers.get("authorization") : null).toBe("Bearer");
+  });
+
+  it("reads the token the server injected into the page it served", async () => {
+    serveWithRuntimeConfig('{"token":"tok_from_server"}');
+    expect(await bearerSent()).toBe("Bearer tok_from_server");
+  });
+
+  it("prefers the injected token over the build-time env var", async () => {
+    vi.stubEnv("VITE_CORPUS_TOKEN", "tok_from_build");
+    serveWithRuntimeConfig('{"token":"tok_from_server"}');
+    // The runtime value comes from the server that served this exact page; the
+    // env var was baked in at build time and can only be a guess.
+    expect(await bearerSent()).toBe("Bearer tok_from_server");
+  });
+
+  it("falls back to the env var when the page carries no injected config", async () => {
+    vi.stubEnv("VITE_CORPUS_TOKEN", "tok_from_build");
+    expect(await bearerSent()).toBe("Bearer tok_from_build");
+  });
+
+  it("falls back to the env var when the injected token is empty", async () => {
+    vi.stubEnv("VITE_CORPUS_TOKEN", "tok_from_build");
+    serveWithRuntimeConfig('{"token":""}');
+    expect(await bearerSent()).toBe("Bearer tok_from_build");
+  });
+
+  it("survives a token carrying characters that had to be escaped in the HTML", async () => {
+    const hostile = "</script><b>&\"'";
+    serveWithRuntimeConfig(JSON.stringify({ token: hostile }));
+    expect(await bearerSent()).toBe(`Bearer ${hostile}`);
+  });
+
+  it.each([
+    ["malformed JSON", "{not json"],
+    ["a JSON scalar", '"just a string"'],
+    ["an object with no token", '{"baseUrl":"http://127.0.0.1:8935"}'],
+    ["a non-string token", '{"token":42}'],
+    ["nothing at all", ""],
+  ])("degrades quietly when the block holds %s", async (_name, json) => {
+    serveWithRuntimeConfig(json);
+    // No throw, no token — the same visible-401 state as an unprovisioned build.
+    expect(await bearerSent()).toBe("Bearer");
   });
 
   it("opens the SSE stream against the same origin", () => {

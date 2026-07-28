@@ -21,6 +21,7 @@ import {
 } from "./errors.js";
 import { createLogger, silentLogger, type LogSink } from "./logger.js";
 import { UI_MISSING_MESSAGE } from "./static-ui.js";
+import { RUNTIME_CONFIG_ELEMENT_ID } from "./ui-runtime-config.js";
 import { DEFAULT_ATTACHMENT_LIMITS } from "./attachments/index.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
@@ -305,14 +306,40 @@ describe("createServer — errors", () => {
 });
 
 describe("createServer — UI serving", () => {
+  // The shell now carries the workspace token (SERVER-024), so it is served
+  // only to a loopback peer with no `Origin`. `app.request` synthesizes no
+  // socket, hence the explicit bindings.
+  const LOOPBACK = { incoming: { socket: { remoteAddress: "127.0.0.1" } } };
+
   it("serves the shell and hashed assets when a build is present", async () => {
     const { app } = createServer(makeConfig({ uiDistDir: makeDist() }));
 
-    expect((await app.request("/")).status).toBe(200);
+    expect((await app.request("/", undefined, LOOPBACK)).status).toBe(200);
     expect((await app.request("/assets/app.a1b2c3d4.js")).headers.get("cache-control")).toContain(
       "immutable",
     );
-    expect((await app.request("/doc/abc")).status).toBe(200);
+    expect((await app.request("/doc/abc", undefined, LOOPBACK)).status).toBe(200);
+  });
+
+  it("provisions the workspace token into the shell it serves", async () => {
+    const { app } = createServer(makeConfig({ uiDistDir: makeDist() }));
+
+    const shell = await (await app.request("/", undefined, LOOPBACK)).text();
+    expect(shell).toContain(`<script id="${RUNTIME_CONFIG_ELEMENT_ID}" type="application/json">`);
+    expect(shell).toContain(TOKEN);
+  });
+
+  it("refuses the shell to a browser page on another origin", async () => {
+    const { app } = createServer(makeConfig({ uiDistDir: makeDist() }));
+
+    const response = await app.request(
+      "/",
+      { headers: { Origin: "https://evil.example" } },
+      LOOPBACK,
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain(TOKEN);
   });
 
   it("degrades to 503 without a build while the API keeps working", async () => {
