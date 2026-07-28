@@ -302,5 +302,5 @@ verified free, no stray probe scripts left in the worktree.
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (if qualifying)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[SERVER-024]` prefix

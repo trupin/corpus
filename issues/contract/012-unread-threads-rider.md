@@ -43,3 +43,10 @@ _Filled in by the implementing agent ("implemented on: opus")._
 
 - [ ] `/evaluate` passes
 - [ ] Committed (coupled with SERVER-027)
+
+## Rider (orchestrator, 2026-07-28)
+
+`DocRow.parentTitle`'s description in `packages/contract/src/schemas/query.ts` ends
+"render such a thread as standalone rather than showing a raw id" — adjudicated wrong during the
+UI-004 parentTitle fix: an orphaned thread had a parent, and kit renders an empty context cell,
+not the word "standalone". Correct the description to match (one line) while touching this file.

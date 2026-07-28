@@ -85,8 +85,8 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
 | UI-002 | @corpus/kit data layer: hooks + SSE bridge | done | P0 | CONTRACT-002, SERVER-007, UI-001 |
-| UI-003 | Board columns: pinned view docs, reorder, new-list | todo | P0 | UI-002, SERVER-011, SERVER-024, SERVER-026 |
-| UI-004 | Type-aware rows: badges, reasons, staleness ramp | in_progress | P0 | UI-002 |
+| UI-003 | Board columns: pinned view docs, reorder, new-list | done | P0 | UI-002, SERVER-011, SERVER-024, SERVER-026 |
+| UI-004 | Type-aware rows: badges, reasons, staleness ramp | done | P0 | UI-002 |
 | UI-005 | Reader, navigation stacks, doc menu, focus shell, lock banner | todo | P0 | UI-003, UI-004 |
 | UI-006 | Always-editable TipTap document editor | todo | P0 | UI-005 |
 | UI-007 | Anchored threads: highlights, comment-from-selection, chips ↔ margin cards | todo | P0 | UI-006 |
@@ -96,15 +96,17 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-011 | Console drawer: jobs master-detail, live logs, HALT | todo | P1 | UI-002, SERVER-009 |
 | CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | done | P1 | CONTRACT-002 |
 | CONTRACT-009 | Multipart createThread + declared 413 (attachments rider) | done | P1 | CONTRACT-002 |
-| SERVER-016 | Form answer write path (form.respond producer) | in_progress | P1 | CONTRACT-007, SERVER-006 |
+| SERVER-016 | Form answer write path (form.respond producer) | done | P1 | CONTRACT-007, SERVER-006 |
 | SERVER-020 | Watcher path breaks the tree-key invariant (heuristic vs. signature) | done | P2 | SERVER-018 |
 | SERVER-022 | Server hardening batch: PR #9 MINOR findings | done | P2 | SERVER-010, SERVER-018 |
 | SERVER-023 | Consume CONTRACT-007/009 riders: warnings, reap failed, originTitle, multipart, 413 | done | P1 | CONTRACT-007, CONTRACT-009, SERVER-006, SERVER-010 |
-| SERVER-024 | Provision the bearer token to the served UI | in_progress | P1 | SERVER-003 |
-| SERVER-025 | Emit an invalidate when the boot projection completes | in_progress | P2 | SERVER-007 |
-| CONTRACT-011 | Extra-frontmatter surface: view keys, pinned/order, parentTitle | in_progress | P0 | CONTRACT-005 |
-| SERVER-026 | Consume CONTRACT-011: extra frontmatter, pinned/order, parentTitle | todo | P0 | CONTRACT-011, SERVER-011, SERVER-015 |
+| SERVER-024 | Provision the bearer token to the served UI | done | P1 | SERVER-003 |
+| SERVER-025 | Emit an invalidate when the boot projection completes | done | P2 | SERVER-007 |
+| CONTRACT-011 | Extra-frontmatter surface: view keys, pinned/order, parentTitle | done | P0 | CONTRACT-005 |
+| SERVER-026 | Consume CONTRACT-011: extra frontmatter, pinned/order, parentTitle | done | P0 | CONTRACT-011, SERVER-011, SERVER-015 |
 | CLI-008 | CLI hardening batch: PR #9 MINOR findings | done | P2 | CLI-003, CLI-004 |
+| CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | todo | P1 | CONTRACT-011 |
+| SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | todo | P1 | CONTRACT-012, SERVER-011 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
 ---

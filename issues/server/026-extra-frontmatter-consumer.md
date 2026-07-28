@@ -216,5 +216,5 @@ save of that document; that is a §14 policy call, not this issue's.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] `/evaluate` passes
+- [x] `/evaluate` passes
 - [ ] Committed with CONTRACT-011

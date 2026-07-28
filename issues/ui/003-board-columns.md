@@ -573,5 +573,5 @@ await create(INBOX_TARGET, "Whatever the user typed");   // → new document id
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (P0, cross-domain — writes corpus state, consumed by plugins)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-003]` prefix

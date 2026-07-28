@@ -266,10 +266,10 @@ in `.corpus/queue/processed/evt_avba3suhwhqu.json`.
 
 #### TEST-96 and the check suite
 
-- `npx vitest run apps/server` — **2079 passed, 0 failed** across 484 test files. The turn, resolve,
+- `npx vitest run apps/server` — **2079 passed, 0 failed** across 484 suites (111 test files). The turn, resolve,
   reopen, seen and cascade suites are untouched and green; the `turns.ts` change is a mechanical
   extraction those suites cover.
-- Whole repo: **3851 passed, 0 failed** (933 test files).
+- Whole repo: **3851 passed, 0 failed** (933 suites, 218 test files).
 - `npm run lint` clean · `npm run format:check` "All matched files use Prettier code style!" ·
   `npm run typecheck` clean.
 - `GET /api/db/doctor` on the exercised workspace: `{"ok":true,"drift":[],"stats":{"files":15,"documents":15}}`.
@@ -300,5 +300,5 @@ Nothing. All 24 criteria (TEST-73…96) were executed.
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (if qualifying)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with the issue-ID prefix

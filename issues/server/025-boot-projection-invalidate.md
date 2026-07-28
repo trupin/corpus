@@ -263,5 +263,5 @@ and 0 on 8945.
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (if qualifying)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[SERVER-025]` prefix

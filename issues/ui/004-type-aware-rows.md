@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -365,5 +365,5 @@ green. `npm test`: **223 files, 3962 tests passed** (baseline 214 / 3872 — 9 n
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (P0, kit surface consumed by plugins; writes corpus state)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-004]` prefix

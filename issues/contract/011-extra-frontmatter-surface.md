@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -167,5 +167,5 @@ issue file — no stray files, scratch dir `/tmp/corpus-c011-*` created and remo
 
 ## Completion Checklist (orchestrator)
 
-- [ ] `/evaluate` passes
+- [x] `/evaluate` passes
 - [ ] Committed (coupled with SERVER-026)
