@@ -302,6 +302,46 @@ describe("provisioning the token into the served shell (SERVER-024)", () => {
     },
   );
 
+  it("refuses a rebound hostname rather than handing over the token", async () => {
+    // The DNS-rebinding shape end to end: loopback peer, no `Origin` (a
+    // top-level navigation), and the attacker's own hostname in `Host`.
+    const response = await appWithToken(makeDist()).request(
+      "/",
+      { headers: { Host: "evil.test:8935" } },
+      LOOPBACK,
+    );
+
+    expect(response.status).toBe(403);
+    const body = await response.text();
+    expect(body).not.toContain(TOKEN);
+    expect(body).not.toContain(RUNTIME_CONFIG_ELEMENT_ID);
+  });
+
+  it("refuses a rebound hostname on a deep SPA route too", async () => {
+    const response = await appWithToken(makeDist()).request(
+      "/doc/abc",
+      { headers: { Host: "evil.test:8935" } },
+      LOOPBACK,
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain(TOKEN);
+  });
+
+  it.each(["127.0.0.1:8935", "localhost:8935", "[::1]:8935"])(
+    "serves the tokenized shell under Host: %s",
+    async (host) => {
+      const response = await appWithToken(makeDist()).request(
+        "/",
+        { headers: { Host: host } },
+        LOOPBACK,
+      );
+
+      expect(response.status).toBe(200);
+      expect(injectedToken(await response.text())).toBe(TOKEN);
+    },
+  );
+
   it("still serves ordinary assets to an Origin-bearing request", async () => {
     // Same-origin module scripts are fetched in CORS mode and DO send `Origin`.
     // Guarding every static response would break the app it is protecting.

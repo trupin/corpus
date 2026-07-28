@@ -11,8 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatInstant } from "../core/time.js";
 import { EXCERPT_LENGTH } from "../projection/index.js";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
-import { UNREAD_SQL } from "./needs.js";
-import { folderPathPrefix, queryDocs } from "./query.js";
+import { UNREAD_THREADS_SQL, folderPathPrefix, queryDocs } from "./query.js";
 
 const NOW = Date.parse("2026-07-26T12:00:00Z");
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -948,9 +947,11 @@ describe("unreadThreads", () => {
 
   beforeAll(() => {
     hub = createWorkspace("unread-threads");
-    hub.doc({ id: "doc_hub", title: "Four threads" });
+    hub.doc({ id: "doc_hub", title: "Four live threads and an archived one" });
     hub.doc({ id: "doc_quiet", title: "No threads at all" });
     hub.doc({ id: "doc_settled", title: "One thread, read" });
+    hub.doc({ id: "doc_archivedonly", title: "Its only unread thread is archived" });
+    hub.doc({ id: "doc_archiving", title: "Archived mid-test" });
 
     // Two plainly unread…
     hub.thread({
@@ -989,10 +990,33 @@ describe("unreadThreads", () => {
       ],
     });
 
+    // …and one that is unread but ARCHIVED, which §11 drops from the default
+    // set. `?parent=doc_hub&type=thread&unread=true` does not return it, so the
+    // aggregate must not count it either (PR #10 review, finding 4).
+    hub.thread({
+      id: "th_archived",
+      parent: "doc_hub",
+      status: "archived",
+      turns: [{ author: "user", ts: daysAgo(2), body: "Dealt with, then archived." }],
+    });
+
     hub.thread({
       id: "th_ondoc",
       parent: "doc_settled",
       turns: [{ author: "user", ts: daysAgo(9), body: "Read." }],
+    });
+    // A document whose *only* unread thread is archived: its pill is 0, not 1.
+    hub.thread({
+      id: "th_onlyarchived",
+      parent: "doc_archivedonly",
+      status: "archived",
+      turns: [{ author: "user", ts: daysAgo(3), body: "Archived, never opened." }],
+    });
+    // Live at seeding; archived later, to watch the pill drop.
+    hub.thread({
+      id: "th_archiving",
+      parent: "doc_archiving",
+      turns: [{ author: "user", ts: daysAgo(3), body: "Still open for now." }],
     });
     // A thread hanging off a *thread*: the row it hangs on still reports 0.
     hub.thread({
@@ -1016,14 +1040,28 @@ describe("unreadThreads", () => {
   });
 
   it("counts the document's unread threads, with a partial read counting as unread", () => {
-    // Four threads: two unread, one read to its last turn, one marked seen at a
-    // `lastSeenTs` before its last turn.
+    // Four live threads: two unread, one read to its last turn, one marked seen
+    // at a `lastSeenTs` before its last turn. The fifth is archived.
     expect(aggregate("doc_hub")).toBe(3);
   });
 
   it("reports 0 for a childless document and for one whose threads are all read", () => {
     expect(aggregate("doc_quiet")).toBe(0);
     expect(aggregate("doc_settled")).toBe(0);
+  });
+
+  it("does not count archived threads, which the default set excludes (§11)", () => {
+    // The fixture's archived thread IS unread — it is excluded for its
+    // lifecycle, not for its read state.
+    const archived = rows({ status: "archived", type: "thread", unread: "true" }).map((i) => i.id);
+    expect(archived).toContain("th_archived");
+    expect(archived).toContain("th_onlyarchived");
+
+    // doc_hub has five child threads and counts the four live ones' unread; the
+    // document whose only unread thread is archived shows no pill at all.
+    expect(aggregate("doc_hub")).toBe(3);
+    expect(aggregate("doc_archivedonly")).toBe(0);
+    expect(perRowQuery("doc_archivedonly")).toBe(0);
   });
 
   it("reports 0 on every thread row, including one that has a thread of its own", () => {
@@ -1047,8 +1085,11 @@ describe("unreadThreads", () => {
     for (const item of documents) {
       expect(item.unreadThreads, `unreadThreads for ${item.id}`).toBe(perRowQuery(item.id));
     }
-    // Not vacuously true: at least one document has a non-zero count.
+    // Not vacuously true: at least one document has a non-zero count, and the
+    // corpus contains an *archived* unread thread — the case that made the two
+    // sides disagree, and the one this property is worth asserting over.
     expect(documents.some((item) => item.unreadThreads > 0)).toBe(true);
+    expect(rows({ status: "archived", type: "thread", unread: "true" }).length).toBeGreaterThan(0);
   });
 
   it("moves in both directions as read state changes", () => {
@@ -1076,15 +1117,32 @@ describe("unreadThreads", () => {
     expect(perRowQuery("doc_hub")).toBe(3);
   });
 
+  it("drops the pill when the unread thread behind it is archived", () => {
+    expect(aggregate("doc_archiving")).toBe(1);
+    expect(perRowQuery("doc_archiving")).toBe(1);
+
+    // Same file, same turns, same unread state — only its lifecycle changed.
+    hub.thread({
+      id: "th_archiving",
+      parent: "doc_archiving",
+      status: "archived",
+      turns: [{ author: "user", ts: daysAgo(3), body: "Still open for now." }],
+    });
+    hub.reproject();
+
+    expect(aggregate("doc_archiving")).toBe(0);
+    expect(perRowQuery("doc_archiving")).toBe(0);
+  });
+
   it("seeks the parent index rather than scanning threads per row", () => {
     // The `threads_parent_id` index is what keeps the correlated subquery
-    // bounded; without it every row of every page would scan the table.
+    // bounded; without it every row of every page would scan the table. The
+    // shipped fragment is spliced verbatim, so this measures the real SQL —
+    // including the `documents` join the archived exclusion added.
     const plan = hub.db
       .prepare(
-        `EXPLAIN QUERY PLAN SELECT (
-           SELECT COUNT(*) FROM threads t LEFT JOIN seen s ON s.thread_id = t.id
-            WHERE t.parent_id = d.id AND ${UNREAD_SQL}
-         ) FROM documents d`,
+        `EXPLAIN QUERY PLAN SELECT ${UNREAD_THREADS_SQL}
+           FROM documents d LEFT JOIN threads t ON t.id = d.id`,
       )
       .all() as { detail: string }[];
     const details = plan.map((step) => step.detail).join("\n");

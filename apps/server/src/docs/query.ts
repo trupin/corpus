@@ -125,6 +125,15 @@ export function folderPathPrefix(folder: string): string {
 const calendarDate = (nowMs: number, days = 0): string =>
   new Date(nowMs + days * MS_PER_DAY).toISOString().slice(0, 10);
 
+/**
+ * §11's default lifecycle rule — "archived documents are organizational, not
+ * deleted, and drop out of the default set" — as one fragment parameterized by
+ * the row it judges. Written once because it is applied in two places that must
+ * agree: the collection query's own WHERE clause, and the `unreadThreads`
+ * aggregate, whose contract is to equal the count that clause returns.
+ */
+const notArchivedSql = (alias: string): string => `${alias}.status <> 'archived'`;
+
 interface Compiled {
   readonly conditions: string[];
   readonly binder: Binder;
@@ -169,7 +178,7 @@ function compileFilters(query: DocsQuery, nowMs: number): Compiled {
       ? `d.status = ${binder.next("status", query.status)}`
       : query.includeArchived === true
         ? "1"
-        : "d.status <> 'archived'",
+        : notArchivedSql("d"),
   );
 
   if (query.tag !== undefined) {
@@ -334,10 +343,24 @@ const threadOnly = (sql: string): string => `CASE WHEN t.id IS NULL THEN NULL EL
  * join, so a thread reports the contract's `0` rather than aggregating threads
  * that happen to hang off it. A childless document counts zero rows and reports
  * `0` too — COUNT is never NULL, so the column is never "unknown".
+ *
+ * Archived threads are excluded, by the same {@link notArchivedSql} fragment the
+ * collection query's default lifecycle rule uses (§11). Without it the two sides
+ * of the contract's stated equality disagreed the moment a thread was archived:
+ * the filtered query dropped it and the pill did not, leaving a document
+ * advertising unread work that nothing visible on the board could explain or
+ * clear (PR #10 review, finding 4). The exclusion is *fixed* rather than taking
+ * the request's `status`/`includeArchived`: the equality the contract states is
+ * with the default query, and the pill answers "what is still asking for me",
+ * which archiving settles — a chip that widens what a listing *shows* does not
+ * revive attention the user already dismissed. A thread's own lifecycle lives on
+ * its `documents` row (every thread is a document), which is what `td` joins.
  */
-const UNREAD_THREADS_SQL = `CASE WHEN t.id IS NOT NULL THEN 0 ELSE (
-           SELECT COUNT(*) FROM threads t LEFT JOIN seen s ON s.thread_id = t.id
-            WHERE t.parent_id = d.id AND ${UNREAD_SQL}
+export const UNREAD_THREADS_SQL = `CASE WHEN t.id IS NOT NULL THEN 0 ELSE (
+           SELECT COUNT(*) FROM threads t
+                  LEFT JOIN seen s ON s.thread_id = t.id
+                  JOIN documents td ON td.id = t.id
+            WHERE t.parent_id = d.id AND ${notArchivedSql("td")} AND ${UNREAD_SQL}
          ) END`;
 
 /** The §11 thread affordances and the staleness tier, as columns of the page query. */

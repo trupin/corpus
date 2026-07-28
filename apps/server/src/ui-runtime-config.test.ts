@@ -4,6 +4,7 @@ import {
   RUNTIME_CONFIG_ELEMENT_ID,
   TOKEN_SHELL_CACHE_CONTROL,
   injectRuntimeConfig,
+  isTokenDeliveryHost,
   refuseUnsafeTokenDelivery,
   renderRuntimeConfigScript,
   serializeRuntimeConfig,
@@ -115,9 +116,10 @@ describe("refuseUnsafeTokenDelivery", () => {
   async function request(
     remoteAddress: string | undefined,
     headers: Record<string, string> = {},
+    target = "/shell",
   ): Promise<Response> {
     return await guardedApp().request(
-      "/shell",
+      target,
       { headers },
       { incoming: { socket: { remoteAddress } } },
     );
@@ -149,6 +151,59 @@ describe("refuseUnsafeTokenDelivery", () => {
   ])("refuses %s even from loopback", async (_name, origin) => {
     const response = await request("127.0.0.1", { Origin: origin });
     expect(response.status).toBe(403);
+  });
+
+  // DNS rebinding: the victim's browser resolves the attacker's own hostname to
+  // 127.0.0.1 and navigates there. The peer IS loopback and a top-level
+  // navigation carries NO Origin, so guards 1 and 2 are both satisfied — only
+  // the authority gives it away.
+  it("refuses a rebound hostname arriving from a loopback peer with no Origin", async () => {
+    const response = await request("127.0.0.1", { Host: "evil.test:8935" });
+    expect(response.status).toBe(403);
+  });
+
+  it("refuses a rebound hostname carried in the request URL rather than a header", async () => {
+    const response = await request("127.0.0.1", {}, "http://evil.test:8935/shell");
+    expect(response.status).toBe(403);
+  });
+
+  it.each([
+    ["localhost", "localhost"],
+    ["localhost with a port", "localhost:8935"],
+    ["the IPv4 loopback", "127.0.0.1:8935"],
+    ["another address in 127.0.0.0/8", "127.0.0.2:8935"],
+    ["the bracketed IPv6 loopback", "[::1]:8935"],
+    ["the IPv6 loopback with no port", "[::1]"],
+    ["an upper-cased spelling", "LOCALHOST:8935"],
+  ])("serves %s, the ways the board URL is legitimately spelled", async (_name, host) => {
+    expect((await request("127.0.0.1", { Host: host })).status).toBe(200);
+  });
+});
+
+describe("isTokenDeliveryHost", () => {
+  it.each([
+    // A name the attacker holds — the rebinding case, and any subdomain of one.
+    "evil.test",
+    "evil.test:8935",
+    "board.internal",
+    // `*.localhost` and the absolute-root spelling resolve to loopback on some
+    // resolvers but are *different origins*, so they are not served either.
+    "evil.localhost:8935",
+    "localhost.",
+    "localhost.evil.test",
+    // Not loopback, however local it looks.
+    "0.0.0.0:8935",
+    "192.168.1.10",
+    "128.0.0.1",
+    // Malformed authorities are refused rather than parsed generously.
+    "",
+    "::1",
+    "user@localhost",
+    "localhost:8935 evil.test",
+    "localhost:notaport",
+    "[::1]:8935/../",
+  ])("refuses %j", (authority) => {
+    expect(isTokenDeliveryHost(authority)).toBe(false);
   });
 });
 

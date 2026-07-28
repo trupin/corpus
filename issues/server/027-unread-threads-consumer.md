@@ -285,3 +285,72 @@ Consume both CONTRACT-012 riders in the same coupled commit:
 1. **Populate `Job.type`** in job rows from the projection's `events.type`.
 2. **Implement `includeArchived=true`**: lift the default `d.status <> 'archived'` exclusion
    (union). Absent/false unchanged; explicit `status=archived` still returns only archived.
+
+---
+
+## Fix Addendum (2026-07-28) — PR #10 review, finding 4 [MAJOR]: archived children counted
+
+**Model:** opus (server-dev).
+
+### The defect
+
+`UNREAD_THREADS_SQL` carried no lifecycle predicate, so the aggregate counted **archived** child
+threads. The contract states this field equals the item count of
+`?parent=<id>&type=thread&unread=true` (`packages/contract/src/schemas/query.ts:352`), and that
+query carries §11's default archived exclusion — so the two disagreed the moment a thread was
+archived. Symptom: archive a thread holding an unread reply and the parent keeps a pill that
+nothing visible on the board explains or clears. The property test at `query.test.ts` was vacuous
+on this: the fixture had no archived thread.
+
+### Pre-fix reproduction (real server, port 9040; one live unread thread + one archived unread thread)
+
+```
+  unreadThreads       = 2
+  filtered query items = 1        # ?parent=doc_byqaujiv&type=thread&unread=true
+```
+
+### The fix
+
+The subquery joins the thread's own `documents` row and applies the exclusion:
+
+```
+SELECT COUNT(*) FROM threads t
+       LEFT JOIN seen s ON s.thread_id = t.id
+       JOIN documents td ON td.id = t.id
+ WHERE t.parent_id = d.id AND ${notArchivedSql("td")} AND ${UNREAD_SQL}
+```
+
+`notArchivedSql(alias)` is new and is the *same* fragment the collection query's default lifecycle
+rule now splices (`compileFilters` was changed to call it) — the SERVER-027 splice discipline, one
+comparison rather than two copies. The exclusion is **fixed**, not driven by the request's
+`status`/`includeArchived`: the equality the contract states is with the default query, and the
+pill answers "what is still asking for me", which archiving settles — widening what a *listing*
+shows does not revive dismissed attention. Rationale is in the constant's doc comment.
+
+`UNREAD_THREADS_SQL` is now exported so the index-plan test EXPLAINs the shipped fragment (it still
+seeks `threads_parent_id` and never scans `t`) instead of a hand-copied twin that could drift.
+
+### Tests (`apps/server/src/docs/query.test.ts`)
+
+- Fixture gains three archived-unread cases: `th_archived` (a fifth child of `doc_hub`),
+  `th_onlyarchived` (sole child of a new `doc_archivedonly`), and `th_archiving` (live at seeding).
+- New `does not count archived threads, which the default set excludes (§11)`: asserts the archived
+  threads *are* unread (`?status=archived&type=thread&unread=true` returns them), that `doc_hub`
+  still reports 3 of its 5 children, and that `doc_archivedonly` reports 0 on both sides.
+- New `drops the pill when the unread thread behind it is archived`: 1 → archive → 0, aggregate and
+  filtered query in lockstep.
+- The property test is no longer vacuous — it now asserts the corpus contains at least one archived
+  unread thread, and it **fails** on the pre-fix SQL (verified by reverting: 5 of these fail).
+
+### E2E (real server, real workspace)
+
+```
+before archive:                 unreadThreads = 2   filtered query items = 2
+archive th_2r2grorc  (status now: archived)
+after archiving one:            unreadThreads = 1   filtered query items = 1
+archive th_4aloemkh
+after archiving both:           unreadThreads = 0   filtered query items = 0
+unarchive th_2r2grorc
+after unarchive:                unreadThreads = 1   filtered query items = 1
+corpus db doctor → projection is clean — 9 documents from 9 files (1ms)
+```

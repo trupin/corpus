@@ -304,3 +304,70 @@ verified free, no stray probe scripts left in the worktree.
 - [ ] `/audit` run (if qualifying)
 - [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[SERVER-024]` prefix
+
+---
+
+## Fix Addendum (2026-07-28) — PR #10 review, finding 1 [MAJOR]: DNS rebinding
+
+**Model:** opus (server-dev).
+
+### The hole
+
+The two guards this issue shipped (`localhostOnly` + `noBrowserOrigin`) are both satisfied, by
+construction, by a DNS-rebinding attack. The victim opens `http://evil.test:<port>/`; the
+attacker's DNS re-answers `evil.test` as `127.0.0.1`; the browser reconnects here and the
+attacker's page reads its *own* origin's document. That request arrives over loopback (guard 1
+passes) and is a top-level navigation, so it carries no `Origin` (guard 2 passes) — and the shell
+hands it the workspace token, i.e. full `/api/*` access. This is exposure **introduced by this
+issue**: before it, a rebound page reached the shell but every API call 401'd.
+
+### Pre-fix reproduction (real server, `corpus init` workspace, port 9040)
+
+```
+$ curl -i -H 'Host: evil.test:9040' http://127.0.0.1:9040/
+HTTP/1.1 200 OK
+…<script id="corpus-runtime-config" type="application/json">{"token":"Gqp…
+  token readable in that body? matches = 1
+```
+
+### The fix
+
+A third guard, `loopbackHostOnly` in `ui-runtime-config.ts`, in the same
+`refuseUnsafeTokenDelivery` chokepoint — so it covers every path that can inject (`/`,
+`/index.html` and every SPA fallback route; `mountStaticUi` has exactly one such call site, and
+`app.ts:383` is the only mount). It parses the request's authority (the `Host` header, falling
+back to the request URL's authority for HTTP/2 `:authority` and for `Request` objects built
+without a header) and requires it to match `isLoopbackHost` — **reused** from `config.ts`, which
+pins the invariant "the token rides only under an authority this server would have been willing to
+bind". Every accepted spelling is an IP literal or the reserved name `localhost`; `evil.localhost`,
+`localhost.`, `0.0.0.0` and anything malformed are refused.
+
+**Degraded answer: 403, not a plain untokenized shell.** Documented in the module. Serving the
+shell without the token would hand a rebinding page a working SPA whose every call 401s (an attack
+that half-succeeds visually) and would give a legitimate operator on the wrong hostname a board
+that silently fails everywhere instead of an answer naming the problem. 403 is also what the other
+two guards already answer, so "this response will not carry a credential" has one status code. The
+refusal body is the API's `ApiError` JSON and contains no token.
+
+### Tests
+
+- `ui-runtime-config.test.ts`: the rebinding case via `Host` and via the request URL; the seven
+  legitimate spellings served (`localhost`, `localhost:9040`, `127.0.0.1:…`, `127.0.0.2:…`,
+  `[::1]:…`, `[::1]`, `LOCALHOST:…`); a table of 15 refused authorities (attacker names,
+  `*.localhost`, trailing-dot FQDN, non-loopback IPs, malformed).
+- `static-ui.test.ts`: end-to-end through `mountStaticUi` — rebound `Host` on `/` and on a deep SPA
+  route both 403 with neither the token nor the block id in the body; the tokenized shell still
+  served under the three real spellings.
+- Non-vacuity checked by reverting the guard: 4 of these fail without it.
+
+### E2E (real server, same workspace, post-fix)
+
+```
+Host: evil.test:9040        -> HTTP 403  {"code":"forbidden","message":"this endpoint serves the app shell to loopback hostnames only"}
+                               token matches in body = 0
+Host: evil.test:9040 /doc/abc -> HTTP 403
+Host: 127.0.0.1:9040        -> HTTP 200  token in shell: 1
+Host: localhost:9040        -> HTTP 200  token in shell: 1
+Host: [::1]:9040            -> HTTP 200  token in shell: 1
+Host: 127.0.0.2:9040        -> HTTP 200  token in shell: 1
+```

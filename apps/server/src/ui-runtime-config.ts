@@ -26,21 +26,48 @@
 // pull on it.
 //
 // WHO CAN OBTAIN THE TOKEN THROUGH THIS PATH. Exactly the callers that satisfy
-// both guards below, which are the same two the job-log ingest route already
-// relies on (SPEC.md §7, `middleware/localhost.ts`):
+// all three guards below. The first two are the ones the job-log ingest route
+// already relies on (SPEC.md §7, `middleware/localhost.ts`):
 //
 //   1. `localhostOnly` — the peer must be on the loopback interface, judged by
 //      the kernel-reported socket address. `X-Forwarded-For` is deliberately
 //      ignored: a header cannot talk this guard out of its answer.
 //   2. `noBrowserOrigin` — the request must carry no `Origin` header at all,
-//      whatever its value. This is the load-bearing one. A top-level browser
-//      navigation — the legitimate way a person opens the board URL — sends no
-//      `Origin`; every cross-origin `fetch`/`XMLHttpRequest` sends one. So a
-//      page on any other origin the user happens to be visiting cannot read
-//      this response, which is the drive-by-localhost attack that would
-//      otherwise turn "unauthenticated shell" into "workspace compromise from
-//      a web ad". An allowlist comparison would be worse than useless here: a
-//      same-origin-looking `Origin` is precisely what an attacker sends.
+//      whatever its value. A top-level browser navigation — the legitimate way
+//      a person opens the board URL — sends no `Origin`; every cross-origin
+//      `fetch`/`XMLHttpRequest` sends one. So a page on any other origin the
+//      user happens to be visiting cannot read this response, which is the
+//      drive-by-localhost attack that would otherwise turn "unauthenticated
+//      shell" into "workspace compromise from a web ad". An allowlist
+//      comparison would be worse than useless here: a same-origin-looking
+//      `Origin` is precisely what an attacker sends.
+//   3. `loopbackHostOnly` — the request must *address* this server by a
+//      loopback authority (`localhost`, `127.0.0.0/8`, `[::1]` and the other
+//      spellings `isLoopbackHost` already accepts, with an optional port).
+//      This one closes DNS rebinding, and unlike guard 2 it is a value
+//      comparison — because here the value is not attacker-*chosen*, it is
+//      attacker-*revealed*: a rebinding attack works precisely by making the
+//      browser keep sending the attacker's own hostname.
+//
+// DNS REBINDING, THE ATTACK GUARDS 1 AND 2 DO NOT SEE. The victim opens
+// `http://evil.test:<port>/`; the attacker's DNS re-answers `evil.test` as
+// `127.0.0.1`; the browser reconnects to this server and the page then reads
+// its *own* origin's documents. That request is a same-origin navigation, so it
+// carries no `Origin`; it arrives over the loopback interface, so the socket
+// peer is `127.0.0.1`. Both shipped guards are satisfied by construction, and
+// the token would be read out of the shell by a page the attacker wrote. The
+// only thing that distinguishes the request is the authority it asks for:
+// `evil.test`, never a loopback name. Hence guard 3.
+//
+// WHY 403 AND NOT A PLAIN, UNTOKENIZED SHELL. Degrading to the shell-without-
+// token was the other candidate and was declined. It would hand a rebinding
+// page a working SPA whose every API call 401s — an attack that half-succeeds
+// visually — and it would give an operator who reached the board under some
+// other hostname a board that silently fails on every request instead of an
+// answer naming the problem. A refusal is also the answer the other two guards
+// already give, so "this response will not carry a credential" has exactly one
+// status code. The refusal body is the API's `ApiError` JSON and contains no
+// token, which is the property that actually matters.
 //
 // WHAT AN UNAUTHORIZED PROCESS WOULD HAVE TO DO. It would have to run on this
 // machine and open a TCP connection to the loopback port — the server refuses
@@ -61,8 +88,12 @@
 //
 // WHAT WOULD MAKE IT WEAKER — the list this module exists to keep true:
 //
-//   - Dropping either guard, or replacing the `Origin` presence check with a
-//     value allowlist.
+//   - Dropping any of the three guards, or replacing the `Origin` presence
+//     check with a value allowlist.
+//   - Widening the `Host` allowlist to a name the attacker could hold. Every
+//     entry is an IP literal or the reserved name `localhost`; a wildcard
+//     (`*.localhost`), a trailing-dot FQDN or "whatever we were configured to
+//     bind" would each let an origin that is not the board's read the shell.
 //   - Letting the token ride any response that can be cached: the shell that
 //     carries it is sent `no-store`, never `no-cache` and never the immutable
 //     asset header. Hashed assets keep their immutable caching precisely
@@ -82,6 +113,8 @@
 //     inside it would end the data block and turn a credential into markup.
 
 import type { MiddlewareHandler } from "hono";
+import { isLoopbackHost } from "./config.js";
+import { errorResponse, forbidden } from "./errors.js";
 import { localhostOnly, noBrowserOrigin } from "./middleware/localhost.js";
 
 /**
@@ -157,15 +190,74 @@ export function injectRuntimeConfig(html: string, config: UiRuntimeConfig): stri
 }
 
 /**
- * Runs the two shipped guards against a request that is about to be answered
- * with a token-bearing shell, and returns their refusal if either objects.
+ * The authority the request asked for: the `Host` header when it has one, the
+ * request URL's authority otherwise.
  *
- * They are *reused*, not reimplemented: peer-address handling and the
+ * Under `@hono/node-server` the two are the same string — it builds the request
+ * URL as `<scheme>://<Host header><target>` — so the fallback is not a second
+ * source of truth but the same one, reached differently. It earns its keep for
+ * the callers that have no `Host` header to read: an HTTP/2 request carries
+ * `:authority` instead (node-server folds it into the URL), and a `Request`
+ * built directly in a test carries only its URL. Neither is a rebinding vector:
+ * a rebinding browser always sends `Host`, and sends the attacker's name in it.
+ */
+export function requestAuthority(c: GuardedContext): string {
+  const header = c.req.header("Host");
+  return header === undefined || header === "" ? new URL(c.req.url).host : header;
+}
+
+/**
+ * `host` or `host:port`, with an IPv6 literal bracketed as RFC 3986 requires.
+ * Anything else — userinfo, whitespace, a bare IPv6 address, a non-numeric port
+ * — fails to match and is refused rather than being parsed generously: this is
+ * a security decision, and a guess about a malformed authority is not evidence.
+ */
+const HOST_AUTHORITY = /^(\[[0-9A-Fa-f:.]+\]|[^:[\]]+)(?::\d{1,5})?$/;
+
+/**
+ * Whether a token-bearing shell may be served under this authority (guard 3
+ * above). {@link isLoopbackHost} is *reused* rather than restated, which pins a
+ * useful invariant: the shell carries the token only under an authority this
+ * server would have been willing to bind. Every spelling it accepts is an IP
+ * literal or the reserved name `localhost`, so none of them is a name an
+ * attacker can point anywhere.
+ */
+export function isTokenDeliveryHost(authority: string): boolean {
+  const parsed = HOST_AUTHORITY.exec(authority);
+  return parsed !== null && isLoopbackHost(parsed[1] ?? "");
+}
+
+/**
+ * Refuses a request that reaches this server under a hostname it does not serve
+ * — the DNS-rebinding case the peer-address and `Origin` guards cannot see.
+ *
+ * It lives here rather than beside them in `middleware/localhost.ts` because it
+ * is not one of §7's ingest guards: it is specific to responses that carry the
+ * workspace credential, and nothing else in the API needs it (every other route
+ * demands the bearer token, which a rebinding page does not have).
+ */
+export const loopbackHostOnly: MiddlewareHandler = async (c, next) => {
+  if (!isTokenDeliveryHost(requestAuthority(c))) {
+    // 403 for the same reason `localhostOnly` gives one: a credential would not
+    // help, because the caller asked the wrong server for it.
+    return errorResponse(
+      c,
+      forbidden("this endpoint serves the app shell to loopback hostnames only"),
+    );
+  }
+  return next();
+};
+
+/**
+ * Runs the three guards against a request that is about to be answered with a
+ * token-bearing shell, and returns their refusal if any objects.
+ *
+ * The first two are *reused*, not reimplemented: peer-address handling and the
  * `Origin`-presence rule have exactly one definition in this codebase, and a
  * second copy here is how the two would drift apart.
  */
 export async function refuseUnsafeTokenDelivery(c: GuardedContext): Promise<Response | undefined> {
-  for (const guard of [localhostOnly, noBrowserOrigin]) {
+  for (const guard of [localhostOnly, loopbackHostOnly, noBrowserOrigin]) {
     const refusal = await guard(c, () => Promise.resolve());
     if (refusal !== undefined) return refusal;
   }
