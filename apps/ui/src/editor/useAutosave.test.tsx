@@ -202,6 +202,200 @@ describe("debouncing", () => {
   });
 });
 
+describe("edits typed while a save is on the wire", () => {
+  /**
+   * The interleaving this whole block exists for: the `PUT` takes longer than
+   * the debounce window that scheduled it, so the debounce re-fires *during*
+   * the flight and declines to start a second request. Before the completion
+   * handler picked the buffer up, the tail edit stayed in memory with the chip
+   * reading `committed · git ✓` over it, and nothing — no timer, no event —
+   * would ever have sent it.
+   */
+  async function typeThenSaveLandsLate(transport: Wire): Promise<void> {
+    // 2 s of latency against a 700 ms window: realistic for a large document.
+    transport.delayMs = 2_000;
+    act(() => {
+      type("start one\n");
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+    expect(transport.puts()).toHaveLength(1);
+    expect(transport.puts()[0]?.body).toEqual({ body: "start one\n" });
+
+    // The tail edit, typed while the first PUT is still out.
+    act(() => {
+      type("start one two\n");
+    });
+    // The debounce fires mid-flight and, correctly, starts nothing.
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+    expect(transport.puts()).toHaveLength(1);
+  }
+
+  it("sends the tail edit when the PUT lands, with no further input", async () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    await typeThenSaveLandsLate(transport);
+
+    // Nothing but the response arriving.
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(2);
+    });
+    expect(transport.puts()[1]?.body).toEqual({ body: "start one two\n" });
+    expect(transport.puts()[1]?.path).toBe("/api/docs/doc_a1b2c3");
+  });
+
+  it("never says committed while newer text is still only in memory", async () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    await typeThenSaveLandsLate(transport);
+
+    // The crash window: from here to the second response the buffer is dirty,
+    // and the chip must not claim otherwise at any point in it.
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(2);
+    });
+    // The first response has landed and the chip is still `saving…`: the second
+    // request went out before the state could report a save.
+    expect(chip().className).toBe("save-chip saving");
+    expect(chip().textContent).toBe("saving…");
+
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(chip().textContent).toBe("committed · git ✓");
+    });
+    // And the chip only said so once the server had the tail edit.
+    expect(transport.puts()).toHaveLength(2);
+  });
+
+  it("settles the editing session, so deferred SSE and queued comments unblock", async () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    await typeThenSaveLandsLate(transport);
+
+    // `useAnchorLayer.submitComment` parks a comment on exactly this flag; a
+    // session that never settles never posts it.
+    expect(isEditing("doc_a1b2c3")).toBe(true);
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(2);
+    });
+    expect(isEditing("doc_a1b2c3")).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(chip().textContent).toBe("committed · git ✓");
+    });
+    // Still open until the settle window elapses — but now it *will* close.
+    expect(isEditing("doc_a1b2c3")).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(EDIT_SETTLE_MS);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(isEditing("doc_a1b2c3")).toBe(false);
+    });
+  });
+
+  it("sends the tail edit even when the surface went away mid-flight", async () => {
+    const transport = wire();
+    const view = render(<Host transport={transport} />);
+    await typeThenSaveLandsLate(transport);
+
+    view.unmount();
+    await settle();
+    // The unmount flush cannot send it — a request is in flight — so the
+    // completion handler is the only thing standing between the tail edit and
+    // a closed tab.
+    expect(transport.puts()).toHaveLength(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(2);
+    });
+    expect(transport.puts()[1]?.body).toEqual({ body: "start one two\n" });
+  });
+
+  it("issues nothing extra when the buffer came back to what was just sent", async () => {
+    const transport = wire();
+    transport.delayMs = 2_000;
+    render(<Host transport={transport} />);
+
+    act(() => {
+      type("start one\n");
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+    act(() => {
+      type("start one two\n");
+      type("start one\n");
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(4_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(chip().textContent).toBe("committed · git ✓");
+    });
+    expect(transport.puts()).toHaveLength(1);
+  });
+
+  it("waits for a foreign lock to clear rather than reporting a save", async () => {
+    const transport = wire();
+    const view = render(<Host transport={transport} />);
+    await typeThenSaveLandsLate(transport);
+
+    // The agent took the lock while the save was out.
+    view.rerender(<Host transport={transport} locked />);
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(chip().className).toBe("save-chip failed");
+    });
+    expect(transport.puts()).toHaveLength(1);
+
+    view.rerender(<Host transport={transport} locked={false} />);
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(2);
+    });
+    expect(transport.puts()[1]?.body).toEqual({ body: "start one two\n" });
+  });
+});
+
 describe("the chip", () => {
   it("stays on `saving…` for as long as the request is in flight", async () => {
     const transport = wire();

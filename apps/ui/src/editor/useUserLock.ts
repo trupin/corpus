@@ -79,6 +79,24 @@ export function useUserLock({ docId, enabled }: UseUserLockOptions): UserLock {
     [stopTimers],
   );
 
+  /**
+   * Hands back a grant that arrived after the session had already ended.
+   *
+   * Every path that stops holding the lock (blur, idle, unmount, a foreign lock
+   * arriving) releases it — but a release issued while the acquire is still on
+   * the wire loses the race: the grant lands afterwards and the document stays
+   * locked, against a surface nobody is looking at, until the lease is reaped.
+   *
+   * Through the client rather than the mutation, because this is reached from
+   * an unmounted component as often as from a live one.
+   */
+  const returnGrant = useCallback(
+    (id: string): void => {
+      void client.releaseLock(id).catch(() => undefined);
+    },
+    [client],
+  );
+
   const touch = useCallback((): void => {
     if (!isEnabled.current || docId === "") return;
 
@@ -93,11 +111,26 @@ export function useUserLock({ docId, enabled }: UseUserLockOptions): UserLock {
     void acquireRef
       .current({ docId, ttlSeconds: LOCK_TTL_SECONDS })
       .then(() => {
+        // `held` is the liveness flag, re-read here and not before the request:
+        // a heartbeat installed past a blur or an unmount re-acquires the lock
+        // every 90 s forever — an interval nothing owns any more, which would
+        // undo even an explicit `corpus lock break` within the minute.
+        if (!held.current) {
+          returnGrant(docId);
+          return;
+        }
         if (heartbeat.current !== null) return;
         heartbeat.current = setInterval(() => {
           // Re-acquiring a lock already held renews its lease — the same call,
           // which is why there is no separate heartbeat route.
-          void acquireRef.current({ docId, ttlSeconds: LOCK_TTL_SECONDS }).catch(() => undefined);
+          void acquireRef
+            .current({ docId, ttlSeconds: LOCK_TTL_SECONDS })
+            .then(() => {
+              // The same race one lease later: the renewal may land after the
+              // session ended, and a renewed lease is just as stuck.
+              if (!held.current) returnGrant(docId);
+            })
+            .catch(() => undefined);
         }, LOCK_HEARTBEAT_MS);
       })
       .catch(() => {
@@ -105,7 +138,7 @@ export function useUserLock({ docId, enabled }: UseUserLockOptions): UserLock {
         held.current = false;
         stopTimers();
       });
-  }, [docId, giveBack, stopTimers]);
+  }, [docId, giveBack, returnGrant, stopTimers]);
 
   const blur = useCallback((): void => {
     giveBack(docId);

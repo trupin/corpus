@@ -157,17 +157,57 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
           inFlight.current = false;
           retried.current = false;
           lastSaved.current = job.body;
-          setState({
-            kind: "saved",
-            remapped: response.anchors.remapped.length,
-            orphaned: response.anchors.orphaned.length,
-          });
           anchors.current?.({
             docId: job.docId,
             revision: stamp,
             remapped: response.anchors.remapped,
             orphaned: response.anchors.orphaned,
             warnings: response.warnings.map((warning) => `${warning.code}: ${warning.detail}`),
+          });
+
+          /**
+           * The buffer moved on while this `PUT` was on the wire.
+           *
+           * Nothing else would ever send it. The debounce that fired during the
+           * flight declined to start a second request and did not re-arm, and a
+           * `flush` refuses while one is in flight — so without this the newest
+           * text lives only in memory until the *next* keystroke, which on a
+           * document the user has stopped typing into never comes. A save that
+           * takes longer than the 700 ms window is not exotic; a large document
+           * over a busy server is the ordinary case.
+           *
+           * It is sent immediately rather than re-debounced, because everything
+           * downstream is waiting on it: the chip would claim `committed` over
+           * unsaved text, the editing session would never settle, the deferred
+           * SSE update would never land, and a comment queued behind the
+           * editing session (`useAnchorLayer.submitComment`) would never post.
+           * Requests stay serialized — one `PUT` at a time, coalescing whatever
+           * was typed during the previous one.
+           */
+          const next = pending.current;
+          const superseded =
+            next !== null && next.docId === job.docId && next.body === lastSaved.current;
+          if (superseded) pending.current = null;
+          if (next !== null && !superseded) {
+            clearTimer(debounce);
+            if (isLocked.current) {
+              // A foreign lock arrived mid-save: the server would refuse this
+              // one too, so it waits — but the chip says so rather than
+              // reporting a save that the buffer contradicts. The effect below
+              // sends it the moment the lock clears.
+              setState({
+                kind: "error",
+                message: "the document is locked — this edit is not saved yet",
+              });
+              return;
+            }
+            send(next);
+            return;
+          }
+          setState({
+            kind: "saved",
+            remapped: response.anchors.remapped.length,
+            orphaned: response.anchors.orphaned.length,
           });
           armSettle(job.docId);
         })
@@ -193,6 +233,13 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
     [armSettle],
   );
 
+  /**
+   * Send the buffer now, unless something is already carrying it.
+   *
+   * Declining while a `PUT` is in flight is not a drop: the completion handler
+   * picks the buffer up and sends it, so a flush that lands mid-request still
+   * ends with the text on disk.
+   */
   const flush = useCallback((): void => {
     clearTimer(debounce);
     const job = pending.current;
@@ -223,6 +270,9 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
       debounce.current = setTimeout(() => {
         debounce.current = null;
         const job = pending.current;
+        // Two `PUT`s for one document must never overlap — the second could
+        // land first and resurrect an older body. When one is in flight the
+        // buffer stays put and its completion handler sends it.
         if (job !== null && !inFlight.current) send(job);
       }, AUTOSAVE_DEBOUNCE_MS);
     },
@@ -233,6 +283,18 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
     retried.current = false;
     flush();
   }, [flush]);
+
+  /**
+   * The lock cleared and a buffer is still waiting on it.
+   *
+   * The only way to get here is the race the completion handler parks on: a
+   * foreign lock arrived while the user's save was on the wire. Nothing else
+   * would restart that save — the editor was read-only in the meantime, so
+   * there is no keystroke coming to re-arm the debounce.
+   */
+  useEffect(() => {
+    if (!locked) flush();
+  }, [flush, locked]);
 
   /** The server's copy moved on (a save landed, or somebody else wrote). */
   useEffect(() => {

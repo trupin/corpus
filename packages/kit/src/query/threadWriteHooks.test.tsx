@@ -25,28 +25,52 @@ interface Recorded {
   readonly text: string;
 }
 
+/**
+ * Records a call **without ever handing a body to `new Request`**.
+ *
+ * This test runs in jsdom, so `FormData` is jsdom's while `Request` is Node's
+ * undici — different realms. Constructing a `Request` around a foreign-realm
+ * body is not portable: Node 22 (what CI runs) rejects it, which killed the
+ * multipart mutation before a single call was recorded and left the assertion
+ * below waiting for a request that would never arrive; Node 25 (what this
+ * machine runs) tolerates it, which is why every local gate was green. The
+ * rule this fixture keeps: read `input`/`init` directly, and only clone a
+ * `Request` that the caller itself constructed.
+ *
+ * It is the same realm split the `rawBody` field records — the multipart
+ * content-type is not observable here either, so which branch a hook took is
+ * read off the `init` body, not off a header.
+ */
+async function record(input: RequestInfo | URL, init?: RequestInit): Promise<Recorded> {
+  // `openapi-fetch` builds its own `Request` and passes it as `input`; the
+  // multipart helpers pass a `URL` plus an `init` carrying the `FormData`.
+  const source = input instanceof Request ? input : null;
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  const headers = new Headers(init?.headers ?? source?.headers);
+  const body = init?.body;
+  return {
+    method: (init?.method ?? source?.method ?? "GET").toUpperCase(),
+    path: url.pathname,
+    contentType: headers.get("content-type"),
+    rawBody: body,
+    text:
+      typeof body === "string"
+        ? body
+        : body === undefined && source !== null
+          ? await source
+              .clone()
+              .text()
+              .catch(() => "")
+          : "",
+  };
+}
+
 function wire(options: { readonly failSeen?: boolean } = {}) {
   const calls: Recorded[] = [];
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = new Request(input, init);
-    const url = new URL(request.url);
-    const text = await request
-      .clone()
-      .text()
-      .catch(() => "");
-    calls.push({
-      method: request.method,
-      path: url.pathname,
-      contentType: request.headers.get("content-type"),
-      // jsdom's `FormData` and Node's `Request` are different realms, so the
-      // multipart content-type is not observable through a constructed
-      // `Request` here (the same environment defect the client's
-      // `canForwardAbortSignal` documents). The `init` is, and it is the honest
-      // record of which branch the hook took.
-      rawBody: init?.body,
-      text,
-    });
-    if (options.failSeen === true && url.pathname.endsWith("/seen")) {
+    const recorded = await record(input, init);
+    calls.push(recorded);
+    if (options.failSeen === true && recorded.path.endsWith("/seen")) {
       return new Response("{}", { status: 500 });
     }
     return new Response(

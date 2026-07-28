@@ -113,7 +113,19 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
   let locks = options.locks ?? [];
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = new Request(input, init);
+    // The body is deliberately withheld from `new Request`. These suites run in
+    // jsdom, so a multipart body is jsdom's `FormData` while `Request` is
+    // Node's undici — a foreign realm, which Node 22 (what CI runs) refuses to
+    // construct a `Request` around even though Node 25 tolerates it. A caller
+    // that built its own `Request` (`openapi-fetch` does) is used as-is; a
+    // caller that passed a URL plus an `init` is read off the `init`.
+    const request =
+      input instanceof Request
+        ? input
+        : new Request(String(input), {
+            method: init?.method ?? "GET",
+            ...(init?.headers === undefined ? {} : { headers: init.headers }),
+          });
     const url = new URL(request.url);
     const call = await recordCall(request, url, init);
     calls.push(call);
@@ -281,7 +293,10 @@ async function recordCall(request: Request, url: URL, init?: RequestInit): Promi
     }
     return { ...base, body: undefined, parts, files };
   }
-  const raw = await request.text();
+  // A string body only ever reaches the fixture on the `init`; a `Request` the
+  // caller built is the only thing this may read a body off (see the realm note
+  // in `readerTransport`).
+  const raw = typeof init?.body === "string" ? init.body : await request.text().catch(() => "");
   if (raw === "") return { ...base, body: undefined };
   try {
     return { ...base, body: JSON.parse(raw) as unknown };

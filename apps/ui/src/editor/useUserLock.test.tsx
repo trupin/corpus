@@ -28,7 +28,11 @@ interface Wire {
   readonly fetch: typeof globalThis.fetch;
   readonly calls: Call[];
   readonly locks: () => Call[];
+  readonly posts: () => Call[];
+  readonly deletes: () => Call[];
   refuse: boolean;
+  /** How long the server takes to grant a lock. The races live in this window. */
+  grantDelayMs: number;
 }
 
 function wire(): Wire {
@@ -37,7 +41,12 @@ function wire(): Wire {
     fetch: null as unknown as typeof globalThis.fetch,
     calls,
     locks: () => calls.filter((call) => call.path.startsWith("/api/locks/")),
+    posts: () =>
+      calls.filter((call) => call.path.startsWith("/api/locks/") && call.method === "POST"),
+    deletes: () =>
+      calls.filter((call) => call.path.startsWith("/api/locks/") && call.method === "DELETE"),
     refuse: false,
+    grantDelayMs: 0,
   };
   Object.assign(state, {
     fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -62,6 +71,9 @@ function wire(): Wire {
               },
               409,
             );
+          }
+          if (state.grantDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, state.grantDelayMs));
           }
           return json({ docId, holder: "user", acquired: "2026-07-28T09:00:00Z", ttl: 300 }, 201);
         }
@@ -182,6 +194,122 @@ describe("acquiring", () => {
     expect(transport.locks().filter((call) => call.method === "POST")).toHaveLength(1);
     // And nothing to release.
     expect(transport.locks().filter((call) => call.method === "DELETE")).toHaveLength(0);
+  });
+});
+
+/**
+ * The window between asking for the lock and being granted it.
+ *
+ * Every way an editing session ends — blur, idle, unmount, a foreign lock
+ * arriving — releases the lock, and a release issued inside this window is
+ * answered before the grant exists. What comes back is a lock held by a surface
+ * that is gone; a heartbeat installed on top of it renews that lock every 90 s
+ * for as long as the tab lives, which outlives even `corpus lock break`.
+ */
+describe("a grant that arrives after the session ended", () => {
+  it("installs no heartbeat and hands the lock back, after an unmount", async () => {
+    const transport = wire();
+    transport.grantDelayMs = 5_000;
+    const view = render(<Host transport={transport} />);
+    await act(async () => {
+      touch();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.posts()).toHaveLength(1);
+    });
+
+    // The tab closes with the acquire still on the wire.
+    view.unmount();
+    await waitFor(() => {
+      expect(transport.deletes()).toHaveLength(1);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+      await Promise.resolve();
+    });
+    // The grant landed on a surface that no longer exists: given back.
+    await waitFor(() => {
+      expect(transport.deletes()).toHaveLength(2);
+    });
+
+    // And nothing was scheduled. Three lease-lengths later the lock has not
+    // been re-acquired — before the fix this is where it became permanent.
+    await act(async () => {
+      vi.advanceTimersByTime(LOCK_HEARTBEAT_MS * 3);
+      await Promise.resolve();
+    });
+    expect(transport.posts()).toHaveLength(1);
+  });
+
+  it("does the same when the editor blurred before the grant arrived", async () => {
+    const transport = wire();
+    transport.grantDelayMs = 5_000;
+    render(<Host transport={transport} />);
+    await act(async () => {
+      touch();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.posts()).toHaveLength(1);
+    });
+
+    await act(async () => {
+      blur();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.deletes()).toHaveLength(1);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.deletes()).toHaveLength(2);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(LOCK_HEARTBEAT_MS * 3);
+      await Promise.resolve();
+    });
+    expect(transport.posts()).toHaveLength(1);
+  });
+
+  it("still heartbeats when the grant arrives to a session that is still live", async () => {
+    const transport = wire();
+    transport.grantDelayMs = 1_000;
+    render(<Host transport={transport} />);
+    await act(async () => {
+      touch();
+      await Promise.resolve();
+    });
+    // The request is out — and only now is the server's delay on the clock.
+    await waitFor(() => {
+      expect(transport.posts()).toHaveLength(1);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      // The interval is installed in the grant's continuation, so the response
+      // has to be fully processed before the clock moves again.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      // Keep typing, so the idle release does not fire first.
+      for (let elapsed = 0; elapsed < LOCK_HEARTBEAT_MS * 2; elapsed += LOCK_IDLE_RELEASE_MS / 2) {
+        touch();
+        vi.advanceTimersByTime(LOCK_IDLE_RELEASE_MS / 2);
+      }
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.posts().length).toBeGreaterThanOrEqual(2);
+    });
+    // A renewal is not a release: the session kept the lock throughout.
+    expect(transport.deletes()).toHaveLength(0);
   });
 });
 

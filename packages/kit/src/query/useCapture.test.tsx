@@ -28,7 +28,18 @@ function wire(options: { readonly eventId?: string | null; readonly status?: num
   const eventId = options.eventId === undefined ? "evt_1" : options.eventId;
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const request = input instanceof Request ? input : new Request(String(input), init);
+    // The `init` body is deliberately withheld from `new Request`: this test
+    // runs in jsdom, so a `FormData` here is jsdom's while `Request` is Node's
+    // undici, and constructing one around a foreign-realm body is rejected on
+    // Node 22 (what CI runs) though tolerated on Node 25. Everything the
+    // fixture asserts is read off `init` or off a `Request` the caller built.
+    const request =
+      input instanceof Request
+        ? input
+        : new Request(String(input), {
+            method: init?.method ?? "GET",
+            ...(init?.headers === undefined ? {} : { headers: init.headers }),
+          });
     const url = new URL(request.url);
     const sent = init?.body ?? null;
 

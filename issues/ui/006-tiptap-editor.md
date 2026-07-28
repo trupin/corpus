@@ -685,3 +685,129 @@ Binding; where this contradicts the sections above, this wins. See
   LockBanner; typing does nothing). Title stays in FrontmatterForm — the editor is body-only.
   UI-006 owns §7's user-side lock acquire: first keystroke acquires, heartbeat while focused,
   release on blur/idle (add kit client lock methods additively if missing).
+
+## E2E Verification Log — addendum: two save/lock lifecycle defects (PR #10 review, 2026-07-28)
+
+**Implemented on: opus.** Fixes for the PR #10 pr-reviewer's MAJOR findings 2 and 3,
+in the worktree `.claude/worktrees/fix-ui` (branch `wt-fix-ui`).
+Environment: real workspace `corpus init /tmp/corpus-fix-ui-ws --port 9045`, real
+server (`corpus server start`, pid recorded), the worktree's Vite dev server on
+**5283** proxying to it, real headless Chromium via Playwright. A 134 KB document
+(`doc_psku3f3i`, `data/docs/inbox/latency-probe.md`) with `PUT /api/docs/*` held
+for 4 s by a route interceptor — a large document over a busy server, i.e. the
+latency the 700 ms debounce was never dimensioned for. `8765` unbound throughout.
+
+### Finding 2 — edits typed during an in-flight `PUT` were stranded unsaved
+
+**Reproduction (pre-fix code, real browser).** Typed `PREFIXA`, waited past the
+debounce so the `PUT` went out, typed `PREFIXB` while it was in flight, then
+touched nothing for 15 s:
+
+```
+t+ 3195ms PUT #1 sent — 132327 bytes, carries [PREFIXA]
+t+ 4766ms typed PREFIXB (while PUT #1 is in flight) — NO further input after this point
+t+ 7293ms PUT response 200
+t+ 7805ms chip: "committed · git ✓" | puts: 1 | disk has PREFIXA: true PREFIXB: false
+   ... 15 s of stillness, chip unchanged, one PUT ever ...
+file on disk contains PREFIXB: false
+```
+
+The chip claimed `committed · git ✓` over text that existed only in the browser's
+memory, the editing session never settled (so the deferred SSE update and any
+comment queued in `useAnchorLayer.submitComment` would have waited forever), and
+`PREFIXB` is *still* absent from the file — the tab closed and the edit was gone.
+
+**The fix.** `useAutosave`'s `PUT` completion handler now checks the buffer: if it
+holds content newer than what was just sent, the next save is sent immediately and
+the chip stays `saving…` — the `saved` state and the registry settle are reached
+only with a clean buffer. A buffer that came back to what was just saved is
+dropped without a request. Under a foreign lock that arrived mid-flight the chip
+reports the error rather than a save, and a new effect flushes when the lock
+clears. `useUserLock` is untouched by this half.
+
+**Verification (fixed code, same browser, same latency).**
+
+```
+t+ 3077ms PUT #1 sent — 132334 bytes, carries [FIXEDA]
+t+ ~4.6s  typed FIXEDB (while PUT #1 is in flight) — NO further input after this point
+t+ 7182ms PUT response 200
+t+ 7191ms PUT #2 sent — 132341 bytes, carries [FIXEDA, FIXEDB]   ← 9 ms later, no input
+t+ 7701ms chip: "saving…"          | disk has FIXEDA: true FIXEDB: false
+t+11338ms PUT response 200
+t+11958ms chip: "committed · git ✓" | disk has FIXEDA: true FIXEDB: true
+   ... 12 s idle, still 2 PUTs total: no save loop ...
+```
+
+The chip never read `committed` while the buffer was dirty (samples at t+7.7 s,
+8.7 s, 9.7 s, 10.7 s all read `saving…`, spanning the moment the first response
+landed), and the tail edit reached disk with no further input.
+
+### Finding 3 — an acquire resolving after the session ended leaked a permanent heartbeat
+
+**Reproduction (pre-fix code).** `POST /api/locks/*` held for 5 s; typed one
+character, then ended the editing session 1 s later, while the acquire was still
+out:
+
+```
+t+  1506ms POST /api/locks/doc_psku3f3i sent
+t+  2686ms DELETE /api/locks/doc_psku3f3i → 404   ← the release lost the race
+t+  6522ms POST  /api/locks/doc_psku3f3i → 201   ← granted to a surface that is gone
+t+ 13687ms corpus lock list → [{docId: doc_psku3f3i, holder: "user", ttl: 300}]
+t+ 44476ms corpus lock break → {"broken":true}
+t+ 96526ms POST /api/locks/doc_psku3f3i sent     ← the leaked heartbeat, 90 s later
+t+101540ms POST /api/locks/doc_psku3f3i → 201    ← the operator's break, undone
+```
+
+**The fix.** The acquire's continuation re-reads `held` — the flag blur, idle,
+unmount and "a foreign lock arrived" all clear — and, when the session is gone,
+hands the grant straight back through the client instead of installing the
+interval. Skipping only the interval would have left the lock held to its TTL, so
+the release is the point. The heartbeat's own renewal carries the same guard: a
+renewal that lands after the session ended is just as stuck.
+
+**Verification (fixed code, same race, watched past one heartbeat period).**
+
+```
+t+  1508ms POST /api/locks/doc_psku3f3i sent
+t+  2688ms DELETE /api/locks/doc_psku3f3i → 404  ← same lost race
+t+  6525ms POST  /api/locks/doc_psku3f3i → 201   ← same late grant
+t+  6527ms DELETE /api/locks/doc_psku3f3i → 200  ← handed straight back
+t+13.7s … t+116.5s  corpus lock list → {"locks":[]}   (11 samples, 110 s > the 90 s period)
+```
+
+No lock held, and no re-acquire ever fired: the interval was never installed.
+
+### Regression tests
+
+- `apps/ui/src/editor/useAutosave.test.tsx` — new block *"edits typed while a save
+  is on the wire"* (6 tests, fake timers): the latency>debounce interleaving sends
+  the tail edit with no further input; the chip never reads `committed` over a
+  dirty buffer (the crash window); the editing session settles, which is what
+  releases the deferred SSE update and `useAnchorLayer.submitComment`'s queued
+  comment; an unmount mid-flight still gets the tail edit out; a buffer that came
+  back to the saved body costs no request; a lock arriving mid-flight parks the
+  save and the clearing lock sends it.
+- `apps/ui/src/editor/useUserLock.test.tsx` — new block *"a grant that arrives
+  after the session ended"* (3 tests): after an unmount and after a blur, the late
+  grant is released and no heartbeat is installed (three lease-lengths of silence);
+  a grant to a still-live session still heartbeats and releases nothing.
+- Both blocks were run against the pre-fix code: 7 of the 9 new tests fail there
+  (the two that pass are the no-regression guards), with the chip literally
+  asserting `committed · git ✓` over the stranded buffer.
+
+Suites: `apps/ui` 1206/1206 pass, `packages/kit` query+client 158/158 pass;
+eslint, prettier and `tsc --noEmit` clean for `apps/ui` and `packages/kit`.
+
+### Also fixed here: a Node-22-only test-fixture defect (CI)
+
+`packages/kit/src/query/threadWriteHooks.test.tsx`'s wire fixture built
+`new Request(input, init)` with jsdom's `FormData` as the body. jsdom's `FormData`
+and Node's undici `Request` are different realms: Node 22 (CI) rejects the
+construction, so the multipart mutation died before a single call was recorded and
+`"switches the append to multipart when files are present"` timed out; Node 25
+(local) tolerates it, which is why every local gate was green. The fixture now
+reads `input`/`init` directly and only clones a `Request` the caller itself built —
+no body is ever handed to a foreign-realm constructor. The same hazard was fixed
+identically in `packages/kit/src/query/useCapture.test.tsx` and
+`apps/ui/src/testing/readerFixture.ts` (the only other jsdom fixtures that receive
+a `FormData` body). No assertion changed in any of the three.
