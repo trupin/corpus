@@ -55,6 +55,8 @@ const RUNTIME_SURFACE = [
   "useMarkThreadSeen",
   "useSetThreadStatus",
   "useBreakLock",
+  "useAcquireLock",
+  "useReleaseLock",
   "useHaltQueue",
   "useResumeQueue",
   "useRetryJob",

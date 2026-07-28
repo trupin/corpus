@@ -130,8 +130,9 @@ describe("FocusMode", () => {
   });
 
   it("names the hint after what it can actually do", () => {
-    // The prototype adds "· click anywhere to edit"; there is no editor yet.
-    expect(FOCUS_HINT).toBe("esc closes");
+    // The prototype's second clause became true with UI-006: the body below is
+    // a live editor and clicking anywhere in it does place a caret.
+    expect(FOCUS_HINT).toBe("esc closes · click anywhere to edit");
   });
 
   it("keeps its own stack: navigating in focus leaves the column's history alone", async () => {

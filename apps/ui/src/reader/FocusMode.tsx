@@ -1,6 +1,7 @@
 import type { RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, type ReactElement } from "react";
 import { createPortal } from "react-dom";
+import { SaveStatusProvider } from "../editor/SaveChip";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
 import { useMemoryNavStack } from "./useNavStack";
@@ -32,11 +33,11 @@ export interface FocusModeProps {
 }
 
 /**
- * The prototype reads `esc closes · click anywhere to edit`. The second clause
- * is UI-006's — there is no editing surface to click into yet — and a hint that
- * tells the user to do something the build cannot do is worse than a short hint.
+ * `design/index.html`'s hint, in full now that the second clause is true: the
+ * body below is a live editor and clicking anywhere in it does place a caret
+ * (UI-006). It was deliberately truncated while it was not.
  */
-export const FOCUS_HINT = "esc closes";
+export const FOCUS_HINT = "esc closes · click anywhere to edit";
 
 export function FocusMode({ docId, listTitle, onClose, onNotify }: FocusModeProps): ReactElement {
   const stack = useMemoryNavStack([{ docId, scrollY: 0 }]);
@@ -66,49 +67,51 @@ export function FocusMode({ docId, listTitle, onClose, onNotify }: FocusModeProp
   }, [onClose, stack.depth]);
 
   return createPortal(
-    <div className="focus open" role="dialog" aria-modal="true" aria-label="Full screen reader">
-      <ReaderHead
-        docId={current}
-        doc={reader.doc}
-        threads={reader.threads}
-        threadStatus={reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null}
-        previous={stack.previous}
-        listTitle={listTitle}
-        hint={FOCUS_HINT}
-        variant="focus"
-        leading={
-          <button type="button" className="back" data-close-focus onClick={onClose}>
-            ✕ Close
-          </button>
-        }
-        onBack={(toList) => {
-          if (toList) stack.toList();
-          else stack.back();
-        }}
-        onSelectThread={surface.jumpToThread}
-        onGone={stack.back}
-        onNotify={onNotify}
-      />
-      <div
-        ref={surface.scrollRef}
-        className="focus-scroll"
-        onScroll={(event) => {
-          surface.handleScroll(event.currentTarget.scrollTop);
-        }}
-      >
-        <div className="focus-inner">
-          <DocView
-            reader={reader}
-            selectTitle={false}
-            expandedThreads={surface.expandedThreads}
-            flashThread={surface.flashThread}
-            onToggleThread={surface.toggleThread}
-            onNavigate={navigate}
-            onNotify={onNotify}
-          />
+    <SaveStatusProvider>
+      <div className="focus open" role="dialog" aria-modal="true" aria-label="Full screen reader">
+        <ReaderHead
+          docId={current}
+          doc={reader.doc}
+          threads={reader.threads}
+          threadStatus={reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null}
+          previous={stack.previous}
+          listTitle={listTitle}
+          hint={FOCUS_HINT}
+          variant="focus"
+          leading={
+            <button type="button" className="back" data-close-focus onClick={onClose}>
+              ✕ Close
+            </button>
+          }
+          onBack={(toList) => {
+            if (toList) stack.toList();
+            else stack.back();
+          }}
+          onSelectThread={surface.jumpToThread}
+          onGone={stack.back}
+          onNotify={onNotify}
+        />
+        <div
+          ref={surface.scrollRef}
+          className="focus-scroll"
+          onScroll={(event) => {
+            surface.handleScroll(event.currentTarget.scrollTop);
+          }}
+        >
+          <div className="focus-inner">
+            <DocView
+              reader={reader}
+              selectTitle={false}
+              expandedThreads={surface.expandedThreads}
+              flashThread={surface.flashThread}
+              onToggleThread={surface.toggleThread}
+              onNavigate={navigate}
+              onNotify={onNotify}
+            />
+          </div>
         </div>
       </div>
-    </div>,
+    </SaveStatusProvider>,
     document.body,
   );
 }

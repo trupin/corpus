@@ -86,6 +86,7 @@ export {
 } from "./query/useMarkSeenOnce.js";
 export { attachmentKey, useAttachment, type AttachmentBytes } from "./query/useAttachment.js";
 export { useBreakLock } from "./query/useBreakLock.js";
+export { useAcquireLock, useReleaseLock, type AcquireLockVariables } from "./query/useEditLock.js";
 export {
   useAbandonJob,
   useHaltQueue,

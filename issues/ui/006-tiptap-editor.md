@@ -144,21 +144,421 @@ Vitest in `apps/ui`:
 
 _Filled in by the implementing agent as proof-of-work. Must be from real E2E testing — no mocks, no test clients. Real application, real requests, real interfaces. Include specific commands run, actual outputs observed, and pass/fail conclusions. State which model the implementing agent ran on ("implemented on: opus | fable")._
 
+**Implemented on: opus.**
+
 ### Reproduction (bugs only)
 
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+Not a bug. Two defects *were* found by this E2E pass and fixed before it
+finished; both are recorded below under "Defects found and fixed".
+
+### Verification environment
+
+Real workspace, real server, real browser — no mocks, no test client.
+
+```
+$ WS=$(mktemp -d /tmp/corpus-s011-ui006-XXXXXX)
+$ node --import tsx apps/cli/src/bin/corpus.ts init "$WS" --port 9002
+Initialized Corpus workspace at /tmp/corpus-s011-ui006-HICsEa
+  port 9002, token in .corpus/config.json (mode 600)
+  git: initialized on main, one commit authored as user
+$ CORPUS_WORKSPACE="$WS" node --import tsx apps/cli/src/bin/corpus.ts server start
+corpus 0.0.0 listening on http://127.0.0.1:9002 (pid 48898)
+$ curl -s -H "authorization: Bearer $TOK" http://127.0.0.1:9002/api/health
+{"status":"ok","version":"0.0.0","uptimeSeconds":1.229,"workspace":"/tmp/corpus-s011-ui006-HICsEa"}
+$ CORPUS_SERVER_ORIGIN=http://127.0.0.1:9002 VITE_CORPUS_TOKEN=$TOK vite --port 5278 --strictPort
+```
+
+Seeded: `doc_mhvjje2q` (Rates), `doc_ikx2jmxp` (Mortgage options — headings,
+nested bullet and ordered lists, a fenced python block, a blockquote, two
+`[[refs]]` including the alias form, one broken ref, and a paragraph of
+punctuation chosen to catch escaping churn: `amortization_schedule`, `2 * 3 = 6`,
+`[draft]`, a bare `https://example.com`), `doc_i6hmyfyr` (Lockable note), and a
+pinned `type: view` column. Browser: real headless Chromium driven by Playwright
+against `http://localhost:5278`.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+**TEST-1 — the body is editable, with no mode and no ceremony.** Clicking
+mid-paragraph places a caret:
+
+```
+contenteditable: true
+class: tiptap ProseMirror doc-body
+caret-color: rgb(59, 95, 151)      --accent: #3b5f97      ← the same colour
+```
+
+Grepping every button in the rendered tree for a save/edit-mode control returns
+only `FrontmatterForm`'s frontmatter-expander chip (`edit`, UI-005's, opens the
+tags/status/due strip). There is no save button, no mode toggle and no "Done
+editing" anywhere.
+
+**TEST-4 — prototype typography, from computed style.**
+
+```
+font-family: "Iowan Old Style", … serif     font-size: 15px    line-height: 24.3px  (= 15 × 1.62)
+max-width: 517.222px  →  62ch
+h2  17px, margin 22px 0px 6px      ul  margin 8px 0px, padding-left 22px      li  margin 4px 0px
+p   margin 0px 0px 10px            ← the first paragraph; `.doc-body > :first-child` zeroes its top margin (kit's shipped rule)
+```
+
+**TEST-2 / TEST-5 — the editor replaces exactly one branch.** `DocView.tsx`'s
+non-thread branch is the single call site that changed; the `reader.isThread`
+branch still renders `TurnList`, and `MarkdownView` is still exported from
+`@corpus/kit` and still renders turn bodies, snippets and the two document types
+the editor is not for. Navigating to the `type: view` column document through a
+`[[ref]]` in the browser:
+
+```
+reader now on: doc_3ov5qeq4
+editor mounted for the view document: 0
+.doc-body present: 1        contenteditable on it: null        class: doc-body
+```
+
+**TEST-15 / TEST-22 / TEST-23 — fifteen characters, one PUT, one commit, one
+line of diff.**
+
+```
+typed in 437 ms (15 characters)
+PUTs immediately after typing: 0
+PUTs after the debounce settled: 1   ["/api/docs/doc_ikx2jmxp"]
+commits before: 6      commits after: 7
+last commit: user <user@corpus.local> :: doc edit: Mortgage options (doc_ikx2jmxp) by user
+
+$ git -C $WS diff HEAD~1 -- data/docs/finance/mortgage-options.md
+-updated: 2026-07-28T17:21:16Z
++updated: 2026-07-28T17:24:23Z
+@@
+-see also [[doc_mhvjje2q|the rate note]].
++see also [[doc_mhvjje2q|the rate note]]. Typed live 15!
+```
+
+**That diff is the criterion the serializer exists for.** Only the edited
+paragraph and the `updated` timestamp changed. The nested lists, the ordered
+list, the fenced python block, the blockquote, `**30-year fixed**`, `*5.85%*`,
+`amortization_schedule`, `2 * 3 = 6`, `[draft]` and the bare
+`https://example.com` are all byte-identical — none of them was re-escaped,
+reflowed or re-marked.
+
+**TEST-16 — a no-op edit issues nothing.** Typing a character and deleting it,
+then idling: `PUTs after typing a character and deleting it: 0`. The comparison
+is against the last *saved* markdown string, not against "the editor fired an
+update".
+
+**TEST-17 — the chip is the response, not a timer.** Sampled every 100 ms:
+
+```
+   0ms  class="save-chip"        colour=rgb(155,161,168)  text=""
+ 700ms  class="save-chip saving" colour=rgb(122,98,56)    text="saving…"      (--sepia-ink #7a6238)
+ 800ms  class="save-chip saved"  colour=rgb(78,122,70)    text="committed · git ✓"  (--good #4e7a46)
+```
+
+With the request artificially delayed the chip stays on `saving…` for the whole
+delay (asserted on fake timers in `useAutosave.test.tsx`: 4 s into a 5 s request
+it still reads `saving…`).
+
+**TEST-18 / Adjudication 1 — two states, and `committed` is true.** The `PUT`
+answers only after the server has committed (`git rev-list --count` goes 6 → 7
+and `git log -1` names the commit *before* the response is rendered), so the
+`.saved` copy reads `committed · git ✓` truthfully. **No asynchrony was
+observed; nothing to escalate.** The anchor half of the copy is the response's
+`{remapped, orphaned}` and is asserted in `useAutosave.test.tsx`:
+`committed · git ✓ · 2 anchors moved`, and with an orphan
+`committed · git ✓ · 1 anchor orphaned` — which never says `anchors ✓`.
+
+**TEST-12 — every input shortcut, live and on disk.** Typed
+`## `, `- `, `1. `, `> `, `**bold**`, `*italic*`, `` `code` ``:
+
+```
+live DOM: P,H2,UL,OL,BLOCKQUOTE,P
+$ cat $WS/data/docs/finance/rates.md      (body)
+6.4% this week. Sampled.
+
+## New section
+
+- bullet one
+- bullet two
+
+1. first step
+
+> quoted line
+
+**bolded** and *italic* and `code` here
+```
+
+**TEST-13 — shortcuts are inert inside a fence.** Opening one with ` ``` ` +
+space, then typing the same shortcuts inside it:
+
+```
+node types after the fence rule:        P,PRE
+node types after typing inside it:      P,PRE       ← no H2, no UL, no <strong>
+disk: "```ts\n## not a heading\n- not a bullet\n**not bold**…\n```\n"
+```
+
+**TEST-14 — paste.** A plain-text markdown paste parses; the same paste inside a
+code block stays literal; no HTML reaches disk.
+
+```
+paste into a paragraph → node types: P,H2,UL,P
+disk: "## Pasted heading\n\n- pasted one\n- pasted two\n\n6.4% this week.\n"
+no <span|<div|style=|class= on disk: true
+paste into a fence     → node types: P,H2,UL,P,PRE
+disk: "```\n## Not a heading\n- not a bullet…\n```"
+```
+
+**TEST-19 — a failed PUT keeps the buffer.** With a 500 injected on the next
+`PUT`:
+
+```
+chip class: "save-chip failed"   text: "save failed — retry"   element: BUTTON
+chip colour: rgb(196,85,46)      --signal: #c4552e
+typed text still in the editor: true        file NOT updated: true
+after clicking retry → chip: "save-chip saved" "committed · git ✓"   file now matches the editor: true
+```
+
+**TEST-20 — pending saves flush before the buffer can be lost.** Typing and then
+immediately leaving for another document, inside the 700 ms window:
+
+```
+PUTs issued by the switch: ["PUT /api/docs/doc_i6hmyfyr"]      ← the OUTGOING id
+outgoing file on disk: "*This doc*ument will be locked by the agent. Flushed on switch.\n"
+incoming file on disk: "**6.4%** this week.\n"                 ← untouched
+```
+
+Unmount and `visibilitychange → hidden` are covered on fake timers in
+`useAutosave.test.tsx`.
+
+**TEST-21 — autosave never touches undo history.** A save landed mid-sequence,
+then ⌘Z repeatedly:
+
+```
+disk after the save:  "**6.4%** this week. WILL FAIL FIRST UNDO-ME\n"
+after one ⌘Z the editor no longer shows UNDO-ME: true
+after further ⌘Z, editor text: "6.4% this week."      ← walked back past the save point
+disk after the undos: "**6.4%** this week.\n"
+```
+
+**TEST-24 / TEST-25 — the `[[` menu is the prototype's, and keyboard-first.**
+
+```
+menu class: "ac-menu open"
+computed: position fixed, background rgb(255,255,255), border 1px solid rgb(227,225,218),
+          radius 9px, padding 4px, min-width 250px, max-height 200px, overflow-y auto, box-shadow yes
+items: ["Rates","Mortgage options","Finance","Lockable note","Attention","Inbox","Open threads","Note template"]
+first item class: "ac-item on"
+ArrowDown → aria-selected ["false","true", …]      ArrowUp → ["true","false", …]
+Escape    → menu count 0 · editor still focused: true · reader still open: 1
+            literal characters kept: "week. See [["
+```
+
+Escape here does **not** reach the reader's escape layer.
+
+**TEST-26 — the id goes to disk, the title goes to the screen.** Typing
+`[[mort` filtered the list to `["Rates","Mortgage options"]`; choosing the
+second inserted a ref rendering as its title, and the file got the id:
+
+```
+rendered ref text: "Rates" / "Mortgage options"     (resolved, live)
+ref computed: color rgb(46,75,120) (--accent-ink), border-bottom 1px solid rgba(59,95,151,0.1) (--accent-wash)
+disk: "6.4% this week. See [[doc_mhvjje2q]]\n"      ← the bracket form, never the title
+```
+
+**TEST-27 — a broken ref.** `[[doc_deadbeef]]` renders as
+`.ref-broken` (`data-corpus-ref-broken`), line-through, `cursor: default`, not a
+link, and serialises back byte-identical. The only console output is the
+browser's own network log line for the `404` on `GET /api/docs/doc_deadbeef` —
+the probe that *establishes* the ref is unresolved. Nothing is logged or
+toasted by Corpus, and no page error was collected in any run.
+
+**TEST-28 — one request per distinct id.** A body citing `doc_mhvjje2q` twice
+plus one broken id:
+
+```
+GET /api/docs/doc_ikx2jmxp    (the document itself)
+GET /api/docs/doc_mhvjje2q    ← once, for two citations
+GET /api/docs/doc_deadbeef    ← once, and it 404s
+```
+
+Cache-deduped per-id `useDoc`, per sprint-010 Adjudication 6.
+
+**TEST-29 / TEST-30 — the selection toolbar.** A real mouse drag across a
+paragraph:
+
+```
+selection: "his docume"
+class: "sel-toolbar open"        buttons: ["B","I","💬 Comment"]
+computed: position fixed, display flex, background rgb(255,255,255),
+          border 1px solid rgb(227,225,218), radius 9px, padding 4px, z-index 50
+comment-btn: color rgb(46,75,120) (--accent-ink), font-weight 600
+divider: width 1px, background rgb(227,225,218) (--line)
+B: aria-pressed false → click → disk "**6.4%** this week.\n"
+I: click              → disk "*This doc*ument will be locked by the agent.\n"
+```
+
+**TEST-31 — Comment hands off and writes nothing.**
+
+```
+PUTs issued by the comment click: 0
+file byte-identical after the click: true
+git status: ""
+```
+
+The `onComment` prop exists on `DocEditor` and `DocView` and is called with the
+payload below (exact payload asserted in `DocEditor.test.tsx`); `Reader` and
+`FocusMode` do not pass a handler yet, which is UI-007's wiring. **The payload
+UI-007 consumes** (`apps/ui/src/editor/selection.ts`):
+
+```ts
+interface EditorSelection {
+  docId: string;
+  from: number; to: number;              // ProseMirror positions
+  text: string;                          // the selection as the editor reads it
+  body: string;                          // the serialized markdown the offsets index into
+  range: { start: number; end: number } | null;               // character offsets into `body`
+  selector: { exact: string; prefix: string; suffix: string } | null;   // SPEC.md §6
+}
+```
+
+`range`/`selector` are **located, not mapped**: the selected text is found in
+the serialized body, disambiguated by how many earlier occurrences precede it.
+Exact for prose; `null` — never a guess — when the selection spans markup the
+body spells differently. A true position↔offset map is UI-007's crux.
+
+**TEST-32 — an agent lock, over SSE, with no reload.**
+
+```
+$ corpus lock acquire doc_ikx2jmxp --from agent
+locked doc_ikx2jmxp for agent, lease 300s.
+
+contenteditable: false      aria-readonly: true      data-editable: false
+caret-color: rgba(0, 0, 0, 0)
+lock banner: "agent is editing — holding the edit lock, started just now · document is read-onlyForce unlock"
+typed "THIS MUST NOT APPEAR" → editor shows it: false
+file unchanged while locked: true      PUTs while locked: 0
+lock requests from the editor while locked: 0
+selection toolbar under the lock: 0    `[[` menu under the lock: 0
+```
+
+Lock state is read from `useLocks`/`useDocLock` + the `["locks"]` keys, never
+from `GET /api/docs/:id` (Adjudication 3a). The sprint text says
+`--holder agent`; the shipped flag is `--from`.
+
+**TEST-33 — unlocking restores editability without a remount.**
+
+```
+scrollTop before the lock: 236
+$ corpus lock release doc_ikx2jmxp --from agent
+contenteditable after release: true
+same DOM node (identity probe survived): 1     ← stamped before the lock, still there
+scrollTop after release: 236 (was 236)
+caret-color after release: rgb(59, 95, 151)
+```
+
+**TEST-34 — SPEC.md §7's user-side lock is implemented, not struck.** The first
+keystroke acquires; a second client sees it; idle releases it.
+
+```
+lock calls from the first keystroke: ["POST /api/locks/doc_ikx2jmxp"]
+
+$ corpus lock list          # while typing
+doc_ikx2jmxp — user, acquired 2026-07-28T17:34:01Z, lease 300s
+
+$ corpus lock list          # after the idle window
+no locks held.
+```
+
+Also released on blur, on unmount, on `pagehide`, and when a foreign lock
+arrives; renewed by re-acquiring while the session stays live (asserted in
+`useUserLock.test.tsx`). The lease TTL and `corpus lock reap` remain the backstop
+for a tab killed mid-request. Observed in passing, and it is the mechanism
+working: an `acquire --from agent` against a document the browser was still
+holding was refused with `409 … is locked by user`, which is exactly the
+deferral §7 asks for.
+
+**TEST-35 — an SSE invalidation does not clobber the buffer, and lands once.**
+
+```
+typed " LOCAL-TYPING-IN-PROGRESS"; agent edit issued mid-word
+during the edit, local text preserved: true
+after settling, local text on disk: true
+title on disk: title: Mortgage options (agent touched)     ← the external change did land
+```
+
+Both halves: the guard holds while typing and releases when the session settles
+(the registry's idle window with no pending buffer and nothing in flight). The
+"exactly once" half is asserted directly in `DocEditor.test.tsx`.
+
+**TEST-36 — the registry is keyed by document.**
+
+```
+doc A's buffer intact: true
+doc B's row title updated live: "…Rates (renamed by the agent)…"
+```
+
+**TEST-3 — focus mode is the same editor at the focus measures.**
+
+```
+column measures: {fontSize 15px,   lineHeight 24.3px,  62ch}
+focus  measures: {fontSize 16.5px, lineHeight 28.05px, 66ch, contenteditable "true"}
+focus hint: "esc closes · click anywhere to edit"
+PUTs from focus editing: ["PUT /api/docs/doc_ikx2jmxp"]
+focus save chip: "committed · git ✓"
+disk contains the focus edit: true
+```
+
+**TEST-6 to TEST-11 — the serializer.** Verified in `apps/ui/src/editor/markdown/`
+over a **14-fixture** corpus (headings h1–h6, emphasis/inline code/strike,
+bullet and ordered lists at two nesting levels, fenced code with and without a
+language, blockquotes including one containing a list, links and images,
+`[[ref]]` and `[[ref|alias]]`, horizontal rules, hard breaks, tables with
+alignment, task lists, HTML/footnote/definition constructs kept verbatim, and
+two mixed documents): `serialize(parse(md)) === md` byte for byte for all 14,
+plus idempotence-from-the-second-pass over 20 non-canonical inputs. `git grep`
+confirms no `turndown` or equivalent in either `package.json`; `parse.ts` and
+`serialize.ts` both import `./schema.js` — one extension list, two directions.
+TEST-11's rename half was exercised in the browser: renaming the target with
+`corpus doc edit --title` changed the rendered text and left the parent's file
+byte-identical.
+
+### Defects found and fixed during this pass
+
+1. **`&#x20;` in the file.** Inserting a `[[ref]]` at the end of a paragraph
+   left a trailing space, which markdown cannot spell — the printer's faithful
+   output is the character reference `&#x20;`, and it landed on disk:
+   `"6.4% this week. See [[doc_mhvjje2q]]&#x20;\n"`. Fixed twice over: the
+   suggestion no longer appends a space, and the serializer drops trailing
+   whitespace at the end of a block (never inside one, and never in a code
+   block).
+2. **Escape stopped closing focus mode.** `useEscapeStack` ignores keys typed
+   inside a contenteditable — correct for `⌫`, but once the body became
+   editable it meant Escape with the caret in the text did nothing, while focus
+   mode's own hint says "esc closes". Fixed in the editor rather than in the
+   shared chain: the first Escape blurs the writing surface (and gives the edit
+   lock back), the second reaches the chain and closes the layer. Verified:
+   `after the 1st esc — focus open: 1, editor still focused: false` /
+   `after the 2nd esc — focus open: 0`. The `[[` menu still answers Escape
+   first, and neither press reaches the reader.
+3. **`.save-chip.saving` and `.save-chip.saved` had no colours.** `Reader.css`
+   shipped only the chip's base. The prototype's `--sepia-ink` / `--good` are
+   now in `editor.css` and verified live: `rgb(122,98,56)` / `rgb(78,122,70)`.
+
+### Cross-checks and process
+
+- No page error was collected in any browser run (`pageerror` listener), apart
+  from the browser's own network log line for the deliberate unresolved-ref
+  `404` and the deliberately injected `500` in TEST-19.
+- `8765` was never bound; the Playwright run's proxy `ECONNREFUSED 127.0.0.1:8765`
+  lines confirm it.
+- `git -C $WS log` shows every mutation committed with `user` as author.
+- `git status` in the worktree is clean of stray files; the scratch workspace is
+  `/tmp/corpus-s011-ui006-HICsEa` and every `git` invocation carried `-C $WS`.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

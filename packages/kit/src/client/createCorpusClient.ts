@@ -14,6 +14,7 @@ import type {
   Job,
   JobList,
   JobLog,
+  Lock,
   LockList,
   MarkSeenResult,
   QueueStatus,
@@ -204,6 +205,28 @@ export interface CorpusClient {
    * that *displayed* a thread, and SPEC.md §7's rule is displayed content only.
    */
   markThreadSeen(id: string): Promise<MarkSeenResult>;
+  /**
+   * `POST /api/locks/{docId}` — take (or renew) this document's edit lock.
+   *
+   * SPEC.md §7 gives the user's editor session a lock *while actively editing*:
+   * "acquired via the server on first keystroke, released on idle/close". It is
+   * what the orchestrator's deferral has to look at — without it the agent has
+   * no way to know a human is typing, and §7's "the work stays queued and
+   * applies when the lock clears" has nothing to wait on.
+   *
+   * Re-acquiring a lock the caller already holds **renews the lease**, which is
+   * how an editing session heartbeats. A lock held by the other party is a
+   * `409` carrying that lock — the caller's document is already read-only in
+   * that case, so the refusal is information, not an error to surface.
+   */
+  acquireLock(docId: string, ttlSeconds?: number): Promise<Lock>;
+  /**
+   * `DELETE /api/locks/{docId}` — give the lock back.
+   *
+   * Only the holder may release; releasing somebody else's is
+   * {@link CorpusClient.breakLock}, which is a different, audited act.
+   */
+  releaseLock(docId: string): Promise<ReleaseLockResult>;
   /**
    * `POST /api/locks/{docId}/break` — the Force unlock escape hatch (SPEC.md §7).
    *
@@ -594,6 +617,24 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/threads/{id}/seen",
         await api.POST("/api/threads/{id}/seen", { params: { path: { id } } }),
+      );
+    },
+
+    async acquireLock(docId, ttlSeconds) {
+      // The body is optional on the wire, but sending `{}` rather than nothing
+      // keeps one code path: a bodyless POST would have to negotiate
+      // content-type with the route's JSON validator.
+      const body = ttlSeconds === undefined ? {} : { ttl: ttlSeconds };
+      return unwrap(
+        "POST /api/locks/{docId}",
+        await api.POST("/api/locks/{docId}", { params: { path: { docId } }, body }),
+      );
+    },
+
+    async releaseLock(docId) {
+      return unwrap(
+        "DELETE /api/locks/{docId}",
+        await api.DELETE("/api/locks/{docId}", { params: { path: { docId } } }),
       );
     },
 

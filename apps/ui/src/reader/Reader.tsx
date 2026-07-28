@@ -1,6 +1,7 @@
 import type { RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, type ReactElement } from "react";
 import type { NavEntry } from "../board/useBoardLocalState";
+import { SaveStatusProvider } from "../editor/SaveChip";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
 import { dropMissing, useNavStack } from "./useNavStack";
@@ -86,42 +87,49 @@ export function Reader({
   if (stack.docId === null) return null;
 
   return (
-    <div className="reader" data-reader-doc={docId} data-reader-column={columnId}>
-      <ReaderHead
-        docId={docId}
-        doc={reader.doc}
-        threads={reader.threads}
-        threadStatus={reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null}
-        previous={stack.previous}
-        listTitle={columnTitle}
-        onExpand={() => {
-          onFocusMode(docId);
-        }}
-        onBack={(toList) => {
-          if (toList) stack.toList();
-          else stack.back();
-        }}
-        onSelectThread={surface.jumpToThread}
-        onGone={stack.back}
-        onNotify={onNotify}
-      />
-      <div
-        ref={surface.scrollRef}
-        className="reader-scroll"
-        onScroll={(event) => {
-          surface.handleScroll(event.currentTarget.scrollTop);
-        }}
-      >
-        <DocView
-          reader={reader}
-          selectTitle={selectTitle}
-          expandedThreads={surface.expandedThreads}
-          flashThread={surface.flashThread}
-          onToggleThread={surface.toggleThread}
-          onNavigate={navigate}
+    /*
+     * The provider wraps the head *and* the body: the `.save-chip` lives in the
+     * head and the editor that drives it lives in the scroll area below, and
+     * they are siblings.
+     */
+    <SaveStatusProvider>
+      <div className="reader" data-reader-doc={docId} data-reader-column={columnId}>
+        <ReaderHead
+          docId={docId}
+          doc={reader.doc}
+          threads={reader.threads}
+          threadStatus={reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null}
+          previous={stack.previous}
+          listTitle={columnTitle}
+          onExpand={() => {
+            onFocusMode(docId);
+          }}
+          onBack={(toList) => {
+            if (toList) stack.toList();
+            else stack.back();
+          }}
+          onSelectThread={surface.jumpToThread}
+          onGone={stack.back}
           onNotify={onNotify}
         />
+        <div
+          ref={surface.scrollRef}
+          className="reader-scroll"
+          onScroll={(event) => {
+            surface.handleScroll(event.currentTarget.scrollTop);
+          }}
+        >
+          <DocView
+            reader={reader}
+            selectTitle={selectTitle}
+            expandedThreads={surface.expandedThreads}
+            flashThread={surface.flashThread}
+            onToggleThread={surface.toggleThread}
+            onNavigate={navigate}
+            onNotify={onNotify}
+          />
+        </div>
       </div>
-    </div>
+    </SaveStatusProvider>
   );
 }

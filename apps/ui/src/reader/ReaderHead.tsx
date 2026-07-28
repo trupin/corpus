@@ -1,6 +1,7 @@
 import type { Doc, DocRow } from "@corpus/contract";
 import { useDoc, type RowNotice } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
+import { SaveChip } from "../editor/SaveChip";
 import { CommentsPopover } from "./CommentsPopover";
 import { DocMenu } from "./DocMenu";
 import type { NavEntry } from "./useNavStack";
@@ -15,10 +16,11 @@ import type { NavEntry } from "./useNavStack";
  * actions; focus mode adds a close control and the esc hint and drops ⤢, since
  * it *is* full screen.
  *
- * The `.save-chip` is deliberately present and empty. It is UI-006's slot for
- * the autosave state; leaving the element out would make the head reflow the
- * moment autosave lands, and leaving a *word* in it would claim a save path that
- * does not exist yet.
+ * The `.save-chip` is now UI-006's `SaveChip`, which reads the editor's save
+ * state from a context the reader host mounts. With no editor below it — a
+ * thread's conversation, a plugin-typed document — it renders as the empty
+ * element the head has always carried, so the head does not reflow when the
+ * surface changes.
  */
 
 export interface ReaderHeadProps {
@@ -87,7 +89,7 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
       </button>
       {props.hint === undefined ? null : <span className="focus-hint">{props.hint}</span>}
       <span className="reader-id">{props.docId} · git ✓</span>
-      <span className="save-chip" data-save-chip />
+      <SaveChip />
       {threads.length === 0 ? null : (
         <button
           type="button"
