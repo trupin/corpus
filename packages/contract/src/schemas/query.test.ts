@@ -47,6 +47,7 @@ const row = {
   lastTurn: null,
   unread: null,
   awaitingAgent: null,
+  unreadThreads: 0,
   attention: [],
   snippets: [],
 };
@@ -181,6 +182,36 @@ describe("DocsQuery filter grammar", () => {
 
   it.each(["maybe", ""])("rejects pinned=%s rather than coercing it", (raw) => {
     expect(DocsQuerySchema.safeParse({ pinned: raw }).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-012 rider. The archived chip wants "these *as well as* the rest",
+   * which `status` cannot spell: it takes one lifecycle value, so
+   * `status=archived` is archived-only. `includeArchived` lifts the default
+   * exclusion instead of replacing the filter.
+   */
+  it.each([
+    ["true", true],
+    ["false", false],
+    ["1", true],
+    ["0", false],
+  ])("reads includeArchived=%s as the boolean it spells", (raw, expected) => {
+    expect(DocsQuerySchema.parse({ includeArchived: raw }).includeArchived).toBe(expected);
+  });
+
+  it.each(["maybe", ""])("rejects includeArchived=%s rather than coercing it", (raw) => {
+    expect(DocsQuerySchema.safeParse({ includeArchived: raw }).success).toBe(false);
+  });
+
+  it("leaves includeArchived absent rather than defaulting it, so the server owns the default", () => {
+    expect("includeArchived" in DocsQuerySchema.parse({})).toBe(false);
+  });
+
+  it("composes includeArchived with a status, which the server resolves in status's favour", () => {
+    expect(DocsQuerySchema.parse({ status: "open", includeArchived: "true" })).toMatchObject({
+      status: "open",
+      includeArchived: true,
+    });
   });
 
   /** The board's one column-set query (SPEC.md §11; sprint-009 TEST-2). */
@@ -418,6 +449,72 @@ describe("DocRow", () => {
 
   it("carries the parent's live title on a thread row, mirroring Job.originTitle", () => {
     expect(DocRowSchema.parse(threadRow).parentTitle).toBe("Mortgage options");
+  });
+
+  /**
+   * CONTRACT-012 rider. An orphaned thread keeps its `parent` and loses its
+   * `parentTitle`; the kit's `rowContext` returns null for it and the row
+   * renders an empty context cell. "Standalone" is a different state — no
+   * `parent` at all — and the description used to conflate the two.
+   */
+  it("keeps an orphaned thread distinguishable from a standalone one", () => {
+    const orphaned = DocRowSchema.parse({ ...threadRow, parentTitle: null });
+    expect(orphaned.parent).toBe("doc_a1b2c3");
+    expect(orphaned.parentTitle).toBeNull();
+
+    const standalone = DocRowSchema.parse({ ...threadRow, parent: null, parentTitle: null });
+    expect(standalone.parent).toBeNull();
+  });
+
+  it("does not tell a reader to render an orphaned thread as standalone", () => {
+    const description = DocRowSchema.shape.parentTitle.description ?? "";
+    expect(description).toContain("current title of whatever `parent` names");
+    expect(description).toContain("never a stored copy");
+    expect(description).toContain("empty");
+    expect(description).not.toContain("render such a thread as standalone");
+  });
+});
+
+/**
+ * CONTRACT-012. The aggregate exists so a document row can render its unread
+ * pill from the collection response alone; the per-row
+ * `?parent=<id>&type=thread&unread=true` it replaces is the N+1 sprint-009
+ * TEST-66 forbids by name.
+ */
+describe("DocRow.unreadThreads", () => {
+  it("carries a document's unread thread count", () => {
+    expect(DocRowSchema.parse({ ...row, unreadThreads: 3 }).unreadThreads).toBe(3);
+  });
+
+  /** `0` is a count, not a stand-in for "unknown" — hence required, not nullable. */
+  it("requires the count: absent and null are both invalid, 0 is the empty answer", () => {
+    const { unreadThreads: _dropped, ...without } = row;
+    expect(DocRowSchema.safeParse(without).success).toBe(false);
+    expect(DocRowSchema.safeParse({ ...row, unreadThreads: null }).success).toBe(false);
+    expect(DocRowSchema.parse({ ...row, unreadThreads: 0 }).unreadThreads).toBe(0);
+  });
+
+  it("is 0 rather than null on a thread row, which aggregates nothing here", () => {
+    expect(DocRowSchema.parse(threadRow).unreadThreads).toBe(0);
+    expect(DocRowSchema.safeParse({ ...threadRow, unreadThreads: null }).success).toBe(false);
+  });
+
+  it.each([-1, 1.5, "2"])("rejects %s — it is a non-negative integer count", (value) => {
+    expect(DocRowSchema.safeParse({ ...row, unreadThreads: value }).success).toBe(false);
+  });
+
+  /**
+   * The description IS the contract for the server half (SERVER-027) and for
+   * the kit's pill: a reader who only sees the generated document has to learn
+   * the thread-row case and the "0 is not unknown" rule from it.
+   */
+  it("publishes the semantics the server and the pill both depend on", () => {
+    const description = DocRowSchema.shape.unreadThreads.description ?? "";
+    expect(description).toContain("SPEC.md §7");
+    expect(description).toContain("?parent=<id>&type=thread&unread=true");
+    expect(description).toContain("`0` on a thread row");
+    expect(description).toContain("no threads");
+    expect(description).toContain('"unknown"');
   });
 });
 

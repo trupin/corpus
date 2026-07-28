@@ -61,6 +61,7 @@ const row = {
   lastTurn: null,
   unread: null,
   awaitingAgent: null,
+  unreadThreads: 2,
   attention: ["unread-reply" as const, "due" as const],
   snippets: [
     {
@@ -137,6 +138,7 @@ const CAPPED_JOB_ID = "evt_full";
 
 const job = {
   eventId: "evt_7c1d",
+  type: "comment.created",
   status: "in-progress" as const,
   started: "2026-07-19T10:05:02Z",
   updated: "2026-07-19T10:05:40Z",
@@ -503,6 +505,22 @@ describe("routes mounted on a Hono app", () => {
     expect(list.items[0]?.excerpt).toBe("-updated");
   });
 
+  /**
+   * CONTRACT-012's rider. The string-boolean is validated at the route, not
+   * coerced: `includeArchived=maybe` would otherwise read as `true` and quietly
+   * widen a result set the caller never asked to widen.
+   */
+  it.each(["true", "false", "1", "0"])(
+    "accepts includeArchived=%s on the collection query",
+    async (raw) => {
+      expect((await createStubApp().request(`/api/docs?includeArchived=${raw}`)).status).toBe(200);
+    },
+  );
+
+  it.each(["maybe", "archived", ""])("rejects includeArchived=%s with a 400", async (raw) => {
+    expect((await createStubApp().request(`/api/docs?includeArchived=${raw}`)).status).toBe(400);
+  });
+
   it("rejects sort=relevance without a query, rather than falling back", async () => {
     const app = createStubApp();
     expect((await app.request("/api/docs?sort=relevance")).status).toBe(400);
@@ -765,6 +783,13 @@ describe("routes mounted on a Hono app", () => {
     const list = (await response.json()) as { jobs: { originId: string; originTitle: string }[] };
     expect(list.jobs[0]?.originId).toBe("th_x9y8");
     expect(list.jobs[0]?.originTitle).toBe("Re: 30-year fixed assumption");
+  });
+
+  /** CONTRACT-012's rider: the console row is `<event type> · <title>`. */
+  it("carries the event type on a job row, so the console can say what is running", async () => {
+    const response = await createStubApp().request("/api/jobs");
+    const list = (await response.json()) as { jobs: { type: string }[] };
+    expect(list.jobs[0]?.type).toBe("comment.created");
   });
 
   it('preserves an explicit "note only" through the multipart capture body', async () => {

@@ -325,7 +325,11 @@ green. `npm test`: **223 files, 3962 tests passed** (baseline 214 / 3872 — 9 n
 - `DEFERRED → CONTRACT-011` — **TEST-66's parent title.** The wire carries `DocRow.parent` (an id) and
   no title. Shipped: the `parentTitle` prop, an empty context cell when nobody supplies it, and no
   per-row fetch. Verified above that no `doc_*` id leaks into the UI and that no N+1 occurs.
-- `DEFERRED → a filed CONTRACT issue` — **TEST-49's aggregate unread on a document row.**
+- `CLOSED → CONTRACT-012` (2026-07-28) — **TEST-49's aggregate unread on a document row.**
+  Filed and shipped as `DocRow.unreadThreads` (required `number`, `0` on thread rows and on
+  childless documents), computed server-side by SERVER-027 in the same commit. `Row`'s
+  `unreadCount` docblock no longer describes the wire gap. Original entry, for the record:
+- ~~`DEFERRED → a filed CONTRACT issue`~~ — **TEST-49's aggregate unread on a document row.**
   `DocRow.unread` is `null` on non-threads and carries **no count** even for threads, so a document
   row has no wire data for "all of its threads have been seen" (SPEC.md §7). Deriving it client-side
   needs one `?parent=<id>&type=thread&unread=true` per row — the N+1 TEST-66 forbids by name. Shipped:

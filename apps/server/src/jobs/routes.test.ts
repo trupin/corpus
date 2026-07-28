@@ -378,10 +378,14 @@ describe("GET /api/jobs", () => {
       "originTitle",
       "started",
       "status",
+      "type",
       "updated",
     ]);
     expect(body.jobs[0]).toMatchObject({
       eventId: id,
+      // The queue event's own type, so the console can say what kind of work is
+      // running and not only what it runs on (CONTRACT-012, UI-011's row).
+      type: "comment.created",
       status: "failed",
       lastLine: "working",
       originId: THREAD,

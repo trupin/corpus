@@ -102,6 +102,7 @@ function createServer() {
             lastTurn: null,
             unread: null,
             awaitingAgent: null,
+            unreadThreads: 0,
             attention: ["unread-reply" as const, "stale" as const],
             snippets:
               q === undefined
@@ -305,6 +306,28 @@ describe("the typed collection query", () => {
       params: { query: { folder: "finance" } },
     });
     expect(data?.items[0]?.snippets).toEqual([]);
+  });
+
+  /**
+   * CONTRACT-012. `unreadThreads` is a plain `number` on the generated type —
+   * not `number | null` and not optional — so a consumer renders the pill from
+   * the row it already has, with no per-row thread query and no null check.
+   */
+  it("types the unread aggregate as a required number, so the pill needs no fallback", async () => {
+    const { data } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { folder: "finance" } },
+    });
+    const count: number | undefined = data?.items[0]?.unreadThreads;
+    expect(count).toBe(0);
+  });
+
+  /** The rider's parameter has to exist on the generated client, not only in the schema. */
+  it("accepts includeArchived on the typed query", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { includeArchived: true, sort: "-updated" } },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.items).toHaveLength(1);
   });
 });
 

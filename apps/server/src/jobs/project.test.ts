@@ -4,6 +4,7 @@ import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { createProjectionQueueMirror } from "../projection/index.js";
 import { createQueueService, type QueueService } from "../queue/index.js";
 import {
+  UNKNOWN_EVENT_TYPE,
   UNKNOWN_INSTANT,
   listJobRows,
   readJobRow,
@@ -127,6 +128,9 @@ describe("listJobRows", () => {
     expect(rows.map((row) => row.eventId)).toEqual([older, newer]);
     expect(rows[0]).toEqual({
       eventId: older,
+      // The event's own type, from the `events` mirror — what the console's
+      // `<type> · <originTitle>` row says the job actually is (CONTRACT-012).
+      type: "comment.created",
       status: "pending",
       started: "2026-07-27T09:02:00Z",
       updated: "2026-07-27T09:02:00Z",
@@ -198,6 +202,33 @@ describe("readJobRow", () => {
     const row = readJobRow(ws.db, "evt_weird0000");
 
     expect(row?.status).toBe("pending");
+    expect(JobSchema.parse(row)).toEqual(row);
+  });
+
+  it("carries a plugin's own event type through untouched", () => {
+    // `Job.type` is open rather than enumerated for exactly this reason: the
+    // console must name a plugin's work, not fall back to a core type
+    // (SPEC.md §7, §10, CONTRACT-012).
+    ws.db
+      .prepare("INSERT INTO events (id, type, status, created, payload_json) VALUES (?,?,?,?,?)")
+      .run("evt_plugin000", "todos.rollup", "pending", "2026-07-27T09:00:00Z", "{}");
+
+    const row = readJobRow(ws.db, "evt_plugin000");
+
+    expect(row?.type).toBe("todos.rollup");
+    expect(JobSchema.parse(row)).toEqual(row);
+  });
+
+  it("names an untyped hand-made row rather than serving a shape the contract rejects", () => {
+    // Unreachable through the queue — `QueueEventSchema.type` is `min(1)` — but
+    // `JobSchema.type` is too, so an empty column must not reach the wire.
+    ws.db
+      .prepare("INSERT INTO events (id, type, status, created, payload_json) VALUES (?,?,?,?,?)")
+      .run("evt_untyped00", "", "pending", "2026-07-27T09:00:00Z", "{}");
+
+    const row = readJobRow(ws.db, "evt_untyped00");
+
+    expect(row?.type).toBe(UNKNOWN_EVENT_TYPE);
     expect(JobSchema.parse(row)).toEqual(row);
   });
 });

@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatInstant } from "../core/time.js";
 import { EXCERPT_LENGTH } from "../projection/index.js";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
+import { UNREAD_SQL } from "./needs.js";
 import { folderPathPrefix, queryDocs } from "./query.js";
 
 const NOW = Date.parse("2026-07-26T12:00:00Z");
@@ -192,6 +193,7 @@ describe("the envelope", () => {
       "turnCount",
       "type",
       "unread",
+      "unreadThreads",
       "updated",
     ]);
   });
@@ -227,6 +229,42 @@ describe("structured filters", () => {
     expect(ids(run())).not.toContain("doc_archived");
     expect(ids(run({ status: "archived" }))).toEqual(["doc_archived"]);
     expect(ids(run({ status: "open" }))).not.toContain("doc_archived");
+  });
+
+  it("widens the default into the union with `includeArchived`, rather than narrowing", () => {
+    // The chip reads "include archived", so it must be a union: everything the
+    // default returns, plus the archived rows — not `status=archived`'s
+    // archived-only narrowing (CONTRACT-012).
+    const included = ids(run({ includeArchived: "true", limit: "200" }));
+    const defaulted = ids(run({ limit: "200" }));
+    expect(included).toContain("doc_archived");
+    for (const id of defaulted) expect(included).toContain(id);
+    expect(included).toEqual([...defaulted, "doc_archived"].sort());
+    // …and the archived-only reading is still available, unchanged.
+    expect(ids(run({ status: "archived" }))).toEqual(["doc_archived"]);
+  });
+
+  it("leaves `includeArchived=false` as today's behaviour, exactly", () => {
+    expect(ids(run({ includeArchived: "false", limit: "200" }))).toEqual(
+      ids(run({ limit: "200" })),
+    );
+  });
+
+  it("is a documented no-op alongside an explicit `status`", () => {
+    // `status` replaces the default filter outright, so there is no default left
+    // to widen: each pair is the same result set as the `status` alone.
+    expect(ids(run({ status: "open", includeArchived: "true", limit: "200" }))).toEqual(
+      ids(run({ status: "open", limit: "200" })),
+    );
+    expect(ids(run({ status: "archived", includeArchived: "true" }))).toEqual(["doc_archived"]);
+  });
+
+  it("counts the union it returns", () => {
+    // The page and the COUNT share the WHERE clause, so the widened default is
+    // one change, not two that could disagree.
+    const page = run({ includeArchived: "true", limit: "200" });
+    expect(page.page.total).toBe(page.items.length);
+    expect(page.page.total).toBe(run({ limit: "200" }).page.total + 1);
   });
 
   it("ORs tags case-insensitively", () => {
@@ -885,6 +923,173 @@ describe("field/filter agreement", () => {
         awaitingAgent: null,
       });
     }
+  });
+});
+
+// The aggregate a document row carries so a list never issues one
+// `?parent=<id>&type=thread&unread=true` per row (CONTRACT-012). Its own
+// workspace because the interesting cases are read-state combinations, and the
+// property below is only meaningful over a corpus that has all of them.
+describe("unreadThreads", () => {
+  let hub: Workspace;
+
+  const rows = (params: Record<string, string> = {}): DocRow[] =>
+    queryDocs(hub.db, DocsQuerySchema.parse({ limit: "200", ...params }), NOW).items;
+
+  const aggregate = (id: string): number => {
+    const found = rows().find((item) => item.id === id);
+    expect(found, `no row for ${id}`).toBeDefined();
+    return (found as DocRow).unreadThreads;
+  };
+
+  /** What a client would otherwise have had to ask per row — the N+1 this field replaces. */
+  const perRowQuery = (id: string): number =>
+    rows({ parent: id, type: "thread", unread: "true" }).length;
+
+  beforeAll(() => {
+    hub = createWorkspace("unread-threads");
+    hub.doc({ id: "doc_hub", title: "Four threads" });
+    hub.doc({ id: "doc_quiet", title: "No threads at all" });
+    hub.doc({ id: "doc_settled", title: "One thread, read" });
+
+    // Two plainly unread…
+    hub.thread({
+      id: "th_unreadnew",
+      parent: "doc_hub",
+      turns: [{ author: "user", ts: daysAgo(3), body: "Never opened." }],
+    });
+    hub.thread({
+      id: "th_unreadreply",
+      parent: "doc_hub",
+      agent: "engaged",
+      turns: [
+        { author: "user", ts: daysAgo(5), body: "Question." },
+        { author: "agent", ts: daysAgo(2), body: "Answer." },
+      ],
+    });
+    // …one read right up to its last turn…
+    hub.thread({
+      id: "th_read",
+      parent: "doc_hub",
+      agent: "engaged",
+      turns: [
+        { author: "user", ts: daysAgo(6), body: "Ping." },
+        { author: "agent", ts: daysAgo(4), body: "Pong." },
+      ],
+    });
+    // …and one marked seen at an instant BEFORE its last turn: a partial read,
+    // which the contract counts as unread in both places (SPEC.md §7).
+    hub.thread({
+      id: "th_partial",
+      parent: "doc_hub",
+      agent: "engaged",
+      turns: [
+        { author: "user", ts: daysAgo(8), body: "First." },
+        { author: "agent", ts: daysAgo(7), body: "Second, unseen." },
+      ],
+    });
+
+    hub.thread({
+      id: "th_ondoc",
+      parent: "doc_settled",
+      turns: [{ author: "user", ts: daysAgo(9), body: "Read." }],
+    });
+    // A thread hanging off a *thread*: the row it hangs on still reports 0.
+    hub.thread({
+      id: "th_onthread",
+      parent: "th_unreadnew",
+      turns: [{ author: "user", ts: daysAgo(1), body: "About that thread." }],
+    });
+    // A thread with no parent aggregates onto nothing.
+    hub.thread({
+      id: "th_loose",
+      parent: null,
+      turns: [{ author: "user", ts: daysAgo(1), body: "Standalone." }],
+    });
+
+    hub.seen({ th_read: daysAgo(4), th_partial: daysAgo(8), th_ondoc: daysAgo(9) });
+    hub.reproject();
+  });
+
+  afterAll(() => {
+    hub.close();
+  });
+
+  it("counts the document's unread threads, with a partial read counting as unread", () => {
+    // Four threads: two unread, one read to its last turn, one marked seen at a
+    // `lastSeenTs` before its last turn.
+    expect(aggregate("doc_hub")).toBe(3);
+  });
+
+  it("reports 0 for a childless document and for one whose threads are all read", () => {
+    expect(aggregate("doc_quiet")).toBe(0);
+    expect(aggregate("doc_settled")).toBe(0);
+  });
+
+  it("reports 0 on every thread row, including one that has a thread of its own", () => {
+    for (const item of rows({ type: "thread" })) expect(item.unreadThreads).toBe(0);
+    // `th_unreadnew` is the parent of an unread thread and is itself unread —
+    // and still reports 0, because a thread does not aggregate here.
+    const parentThread = rows({ type: "thread" }).find((item) => item.id === "th_unreadnew");
+    expect(parentThread).toMatchObject({ unread: true, unreadThreads: 0 });
+  });
+
+  it("is never null or absent — `0` means nothing unread, never unknown", () => {
+    for (const item of rows()) {
+      expect(Number.isInteger(item.unreadThreads)).toBe(true);
+      expect(item.unreadThreads).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("equals the per-row query it replaces, for every document in the corpus", () => {
+    const documents = rows().filter((item) => item.type !== "thread");
+    expect(documents.length).toBeGreaterThan(0);
+    for (const item of documents) {
+      expect(item.unreadThreads, `unreadThreads for ${item.id}`).toBe(perRowQuery(item.id));
+    }
+    // Not vacuously true: at least one document has a non-zero count.
+    expect(documents.some((item) => item.unreadThreads > 0)).toBe(true);
+  });
+
+  it("moves in both directions as read state changes", () => {
+    expect(aggregate("doc_hub")).toBe(3);
+
+    // Reading the partial thread through to its last turn.
+    hub.seen({ th_read: daysAgo(4), th_partial: daysAgo(7), th_ondoc: daysAgo(9) });
+    hub.reproject();
+    expect(aggregate("doc_hub")).toBe(2);
+    expect(perRowQuery("doc_hub")).toBe(2);
+
+    // A new turn on an already-read thread makes it unread again.
+    hub.thread({
+      id: "th_read",
+      parent: "doc_hub",
+      agent: "engaged",
+      turns: [
+        { author: "user", ts: daysAgo(6), body: "Ping." },
+        { author: "agent", ts: daysAgo(4), body: "Pong." },
+        { author: "agent", ts: daysAgo(1), body: "One more thing." },
+      ],
+    });
+    hub.reproject();
+    expect(aggregate("doc_hub")).toBe(3);
+    expect(perRowQuery("doc_hub")).toBe(3);
+  });
+
+  it("seeks the parent index rather than scanning threads per row", () => {
+    // The `threads_parent_id` index is what keeps the correlated subquery
+    // bounded; without it every row of every page would scan the table.
+    const plan = hub.db
+      .prepare(
+        `EXPLAIN QUERY PLAN SELECT (
+           SELECT COUNT(*) FROM threads t LEFT JOIN seen s ON s.thread_id = t.id
+            WHERE t.parent_id = d.id AND ${UNREAD_SQL}
+         ) FROM documents d`,
+      )
+      .all() as { detail: string }[];
+    const details = plan.map((step) => step.detail).join("\n");
+    expect(details).toContain("threads_parent_id");
+    expect(details).not.toMatch(/SCAN t\b/);
   });
 });
 

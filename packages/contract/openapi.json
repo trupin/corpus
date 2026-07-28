@@ -281,7 +281,7 @@
               "string",
               "null"
             ],
-            "description": "The current title of whatever `parent` names, or null. Resolved at query time like `Job.originTitle` — never a stored copy, so a rename is reflected immediately. Null whenever `parent` is null, and when the parent no longer resolves (a deleted parent, SPEC.md §9.2); render such a thread as standalone rather than showing a raw id."
+            "description": "The current title of whatever `parent` names, or null. Resolved at query time like `Job.originTitle` — never a stored copy, so a rename is reflected immediately. Null whenever `parent` is null, and when the parent no longer resolves (a deleted parent, SPEC.md §9.2). An orphaned thread — `parent` set, title gone — renders an **empty** context cell rather than a raw `doc_*` id, which is not the same as a standalone thread (no `parent` at all) and must not be labelled as one."
           },
           "agent": {
             "type": [
@@ -345,6 +345,11 @@
             ],
             "description": "True when the agent has been drawn into an open thread and the last turn is not yet its reply — the pending-agent indicator (SPEC.md §8). Null on non-threads."
           },
+          "unreadThreads": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many of **this document's own threads** are currently unread for the user (SPEC.md §7) — the aggregate behind a document row's unread pill. It counts child threads whose last turn is newer than your last-seen mark, which is exactly the comparison the per-thread `unread` flag makes, so the two agree by construction: this equals the item count of `?parent=<id>&type=thread&unread=true`, and a thread marked seen at a `lastSeenTs` before its last turn (a partial read) still counts as unread in both. It rides on every row so a list never issues one such query per row. **`0` on a thread row** — a thread does not aggregate its own child threads here — **and `0` on a document with no threads.** Never null and never absent, so `0` always means \"nothing unread\" and never \"unknown\"."
+          },
           "attention": {
             "type": "array",
             "items": {
@@ -396,6 +401,7 @@
           "lastTurn",
           "unread",
           "awaitingAgent",
+          "unreadThreads",
           "attention",
           "snippets"
         ]
@@ -2213,6 +2219,11 @@
             "description": "Identifier of a queue event.",
             "example": "evt_7c1d"
           },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11)."
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -2260,6 +2271,7 @@
         },
         "required": [
           "eventId",
+          "type",
           "status",
           "started",
           "updated",
@@ -2647,11 +2659,21 @@
                 "resolved",
                 "archived"
               ],
-              "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` is how the archived chip brings them back."
+              "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter."
             },
             "required": false,
-            "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` is how the archived chip brings them back.",
+            "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter.",
             "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "description": "Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's \"include archived\" reading (SPEC.md §11) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`."
+            },
+            "required": false,
+            "description": "Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's \"include archived\" reading (SPEC.md §11) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`.",
+            "name": "includeArchived",
             "in": "query"
           },
           {

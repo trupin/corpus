@@ -19,6 +19,16 @@ import type { ProjectionDb } from "../projection/index.js";
 export const UNKNOWN_INSTANT = "1970-01-01T00:00:00Z";
 
 /**
+ * Stand-in for `Job.type` when the projected event carries none. Every event the
+ * queue writes is parsed with `QueueEventSchema` before it is projected, whose
+ * `type` is a non-empty string — so, like {@link UNKNOWN_INSTANT}, this is
+ * reachable only from a row written by hand. `JobSchema.type` is `min(1)`, and
+ * naming the gap is better than emitting an empty string the contract rejects or
+ * dropping the job from the console.
+ */
+export const UNKNOWN_EVENT_TYPE = "unknown";
+
+/**
  * Payload keys that can name the document or thread a job came from, in the
  * order the console prefers them: a `comment.created` event names its thread,
  * and the thread is where "open in its home column" should land.
@@ -27,6 +37,7 @@ const ORIGIN_KEYS = ["threadId", "parentId", "docId"] as const;
 
 interface JobJoinRow {
   readonly event_id: string;
+  readonly type: string;
   readonly status: string;
   readonly created: string | null;
   readonly payload_json: string;
@@ -107,6 +118,11 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
   const origin = resolveOrigin(db, row.payload_json);
   return {
     eventId: row.event_id,
+    // What kind of work this is, straight from the `events` mirror rather than
+    // re-derived from the payload (CONTRACT-012): the queue already parsed the
+    // event file, and the console's `<type> · <originTitle>` row is only honest
+    // if it names the same type the queue does.
+    type: row.type === "" ? UNKNOWN_EVENT_TYPE : row.type,
     // The directory a file sits in is the authority on its status, and that is
     // what the mirror recorded; an unrecognised value can only come from a
     // hand-made row, and `pending` is the harmless reading.
@@ -120,7 +136,7 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
 }
 
 const SELECT_JOBS = `
-  SELECT e.id AS event_id, e.status AS status, e.created AS created,
+  SELECT e.id AS event_id, e.type AS type, e.status AS status, e.created AS created,
          e.payload_json AS payload_json,
          j.started AS started, j.updated AS updated, j.last_line AS last_line
   FROM events e

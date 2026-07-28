@@ -34,6 +34,7 @@ export function docRowFixture(overrides: Partial<DocRow> = {}): DocRow {
     lastTurn: null,
     unread: null,
     awaitingAgent: null,
+    unreadThreads: 0,
     attention: [],
     snippets: [],
     parentTitle: null,

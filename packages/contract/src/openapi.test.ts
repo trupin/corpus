@@ -60,6 +60,7 @@ interface SchemaNode {
   readonly type?: string;
   readonly enum?: string[];
   readonly default?: unknown;
+  readonly minimum?: number;
   readonly required?: string[];
   readonly properties?: Record<string, SchemaNode>;
   readonly items?: SchemaNode;
@@ -307,6 +308,8 @@ describe("GET /api/docs parameter grammar", () => {
     "q",
     "type",
     "status",
+    // CONTRACT-012's rider, declared beside the default it lifts.
+    "includeArchived",
     "tag",
     "folder",
     "parent",
@@ -384,6 +387,27 @@ describe("GET /api/docs parameter grammar", () => {
     expect(description).toContain("excludes");
     expect(description).toContain("archived");
     expect(description).toContain("overrides");
+  });
+
+  /**
+   * CONTRACT-012's rider. `status` takes one lifecycle value, so it can express
+   * "archived only" and never "archived as well". The two parameters have to
+   * publish that distinction, because a chip labelled "include archived" that
+   * returns *only* archived documents is the failure this pair prevents.
+   */
+  it("types `includeArchived` as a boolean that widens the default rather than replacing it", () => {
+    const param = parameter("/api/docs", "get", "includeArchived");
+    expect(param?.schema?.type).toBe("boolean");
+    expect(param?.schema?.default).toBeUndefined();
+    expect(param?.description).toContain("union");
+    expect(param?.description).toContain("no-op alongside an explicit `status`");
+  });
+
+  it("keeps `status=archived` meaning archived-only, and says where the union lives", () => {
+    expect(parameter("/api/docs", "get", "status")?.description).toContain("includeArchived=true");
+    expect(parameter("/api/docs", "get", "includeArchived")?.description).toContain(
+      "`status=archived` selects archived",
+    );
   });
 
   it("documents that relevance without a query is a 400, not a silent fallback", () => {
@@ -478,6 +502,53 @@ describe("the extra-frontmatter surface (CONTRACT-011)", () => {
     expect(property).toContain('"null"');
     expect(property).toContain("current title of whatever `parent` names");
     expect(property).toContain("never a stored copy");
+  });
+
+  /**
+   * CONTRACT-012's rider. The published prose has to distinguish an orphaned
+   * thread (`parent` set, title gone → an empty context cell) from a standalone
+   * one (`parent` null): the kit's `rowContext` renders only the second as the
+   * word "standalone", and the description used to promise the opposite.
+   */
+  it("does not tell a client to render an orphaned thread as standalone", () => {
+    const property = JSON.stringify(component("DocRow").properties?.["parentTitle"]);
+    expect(property).toContain("empty");
+    expect(property).not.toContain("render such a thread as standalone");
+  });
+});
+
+/**
+ * CONTRACT-012. The aggregate that lets a document row render its unread pill
+ * from the collection response alone. The description is the whole contract
+ * SERVER-027 implements against, so it is pinned here rather than only inferred
+ * from the type.
+ */
+describe("DocRow.unreadThreads (CONTRACT-012)", () => {
+  const property = () => componentSchemas?.["DocRow"]?.properties?.["unreadThreads"];
+
+  it("is a required, non-negative integer — never nullable, never absent", () => {
+    expect(componentSchemas?.["DocRow"]?.required).toContain("unreadThreads");
+    expect(property()?.type).toBe("integer");
+    expect(property()?.minimum).toBe(0);
+    expect(JSON.stringify(property())).not.toContain('"null"');
+  });
+
+  it("publishes what it counts, the thread-row case, and that 0 is not `unknown`", () => {
+    const description = JSON.stringify(property());
+    expect(description).toContain("SPEC.md §7");
+    expect(description).toContain("?parent=<id>&type=thread&unread=true");
+    expect(description).toContain("`0` on a thread row");
+    expect(description).toContain("no threads");
+    expect(description).toContain("unknown");
+  });
+
+  /**
+   * The aggregate and the per-thread flag must be two readings of one rule, or
+   * a row's pill and the thread list behind it disagree.
+   */
+  it("ties itself to the per-thread `unread` flag rather than defining a second rule", () => {
+    expect(JSON.stringify(property())).toContain("per-thread `unread` flag");
+    expect(componentSchemas?.["DocRow"]?.required).toContain("unread");
   });
 });
 
@@ -846,6 +917,7 @@ describe("the CONTRACT-007 riders", () => {
     expect(job?.type).toBe("object");
     expect(job?.required).toEqual([
       "eventId",
+      "type",
       "status",
       "started",
       "updated",
@@ -859,6 +931,21 @@ describe("the CONTRACT-007 riders", () => {
   it("states the origin title's rule in one sentence, for the server and the console", () => {
     const description = JSON.stringify(componentSchemas?.["Job"]?.properties?.["originTitle"]);
     expect(description).toContain("current title of whatever `originId` names, or null");
+  });
+
+  /**
+   * CONTRACT-012's rider. The console row is `<event type> · <title>`; without
+   * `type` the console can only say what a job is running *on*. It stays an
+   * open string for the same reason `QueueEvent.type` does.
+   */
+  it("gives Job the event type as an open string, matching QueueEvent", () => {
+    const property = componentSchemas?.["Job"]?.properties?.["type"];
+    expect(property?.type).toBe("string");
+    expect(property?.enum).toBeUndefined();
+    const description = JSON.stringify(property);
+    expect(description).toContain("comment.created, form.respond, agent.done");
+    expect(description).toContain("plugins define");
+    expect(description).toContain("QueueEvent.type");
   });
 });
 

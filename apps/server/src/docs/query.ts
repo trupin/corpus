@@ -153,11 +153,23 @@ function compileFilters(query: DocsQuery, nowMs: number): Compiled {
   }
 
   // SPEC.md §11: archived documents are organizational, not deleted — they drop
-  // out of the default set and come back only when `status` is asked for.
+  // out of the default set and come back only when they are asked for. There are
+  // two ways to ask and they mean different things (CONTRACT-012): `status`
+  // *narrows* to one lifecycle state, so `status=archived` is archived and
+  // nothing else, while `includeArchived` *widens* the default into the union the
+  // board's "include archived" chip promises. `status` replaces the default
+  // outright, which is why `includeArchived` alongside it is a documented no-op
+  // rather than a second filter — nothing below reads it in that case.
+  //
+  // The union is spelled `1` rather than by pushing nothing, so this rule always
+  // contributes a condition: `conditions` is never empty and the WHERE clause
+  // always parses, whatever else the caller asked for.
   conditions.push(
-    query.status === undefined
-      ? "d.status <> 'archived'"
-      : `d.status = ${binder.next("status", query.status)}`,
+    query.status !== undefined
+      ? `d.status = ${binder.next("status", query.status)}`
+      : query.includeArchived === true
+        ? "1"
+        : "d.status <> 'archived'",
   );
 
   if (query.tag !== undefined) {
@@ -299,13 +311,43 @@ const ROW_FROM_SQL = `${FROM_SQL}
  */
 const threadOnly = (sql: string): string => `CASE WHEN t.id IS NULL THEN NULL ELSE ${sql} END`;
 
+/**
+ * `unreadThreads` (CONTRACT-012): how many of *this document's own* threads are
+ * currently unread, so a document row carries the aggregate its unread pill
+ * needs without the list issuing one `?parent=<id>&type=thread&unread=true` per
+ * row — the N+1 the deferral that filed this field named by name.
+ *
+ * A correlated subquery, not a change to {@link FROM_SQL}: joining `threads` a
+ * second time on `parent_id` would multiply the outer row (a document with four
+ * threads is one row of the page, not four) and the COUNT would then disagree
+ * with the page. `threads_parent_id` is what keeps it a bounded index seek per
+ * row rather than a scan.
+ *
+ * The subquery re-binds `t` and `s` — precisely the aliases {@link UNREAD_SQL}
+ * names — so the aggregate and the per-thread `unread` column are the *same*
+ * comparison rather than two copies of it that could drift (SERVER-021's
+ * one-source-of-truth rule). `d` still resolves to the outer document, which is
+ * what correlates the subquery to the row. A partial mark (`lastSeenTs` before
+ * the last turn) therefore counts as unread here exactly as it does there.
+ *
+ * `0` on a thread row: `t.id IS NOT NULL` outside the subquery is the outer
+ * join, so a thread reports the contract's `0` rather than aggregating threads
+ * that happen to hang off it. A childless document counts zero rows and reports
+ * `0` too — COUNT is never NULL, so the column is never "unknown".
+ */
+const UNREAD_THREADS_SQL = `CASE WHEN t.id IS NOT NULL THEN 0 ELSE (
+           SELECT COUNT(*) FROM threads t LEFT JOIN seen s ON s.thread_id = t.id
+            WHERE t.parent_id = d.id AND ${UNREAD_SQL}
+         ) END`;
+
 /** The §11 thread affordances and the staleness tier, as columns of the page query. */
 const ROW_COLUMNS = `${STALE_TIER_SQL} AS stale,
          t.parent_id AS parent, pd.title AS parent_title, t.agent AS agent,
          an.exact_text AS anchor_quote,
          t.turn_count AS turn_count, t.last_author AS last_author, lt.body_md AS last_turn,
          ${threadOnly(UNREAD_SQL)} AS unread,
-         ${threadOnly(AWAITING_AGENT_SQL)} AS awaiting_agent`;
+         ${threadOnly(AWAITING_AGENT_SQL)} AS awaiting_agent,
+         ${UNREAD_THREADS_SQL} AS unread_threads`;
 
 /**
  * `snippet()` is an FTS5 auxiliary function and refuses to run in an aggregate
@@ -360,6 +402,7 @@ interface RawRow {
   readonly last_turn: string | null;
   readonly unread: number | null;
   readonly awaiting_agent: number | null;
+  readonly unread_threads: number;
 }
 
 /**
@@ -433,8 +476,10 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     stale: row.stale as DocRow["stale"],
     parent: row.parent,
     // Null whenever `parent` is null *and* when the parent no longer resolves —
-    // the LEFT JOIN misses a deleted parent, which is exactly the contract's
-    // "render such a thread as standalone rather than showing a raw id".
+    // the LEFT JOIN misses a deleted parent. The contract's rule for that second
+    // case is an *empty* context cell rather than a raw `doc_*` id: an orphaned
+    // thread still has a `parent`, so it is not a standalone thread and must not
+    // be labelled as one (CONTRACT-012).
     parentTitle: row.parent_title,
     agent: row.agent as DocRow["agent"],
     anchorQuote: row.anchor_quote,
@@ -445,6 +490,9 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     lastTurn: row.last_turn === null ? null : bodyExcerpt(row.last_turn),
     unread: asBoolean(row.unread),
     awaitingAgent: asBoolean(row.awaiting_agent),
+    // A COUNT, so already a non-negative integer — and `0` on a thread row and
+    // on a childless document by the same CASE, never null (CONTRACT-012).
+    unreadThreads: row.unread_threads,
     attention: rowAttention(row),
     snippets: parseSnippets(row.snippets_json),
   };

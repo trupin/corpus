@@ -12,9 +12,11 @@ import {
   JobsQuerySchema,
   MAX_RECENT_JOBS,
 } from "./job.js";
+import { CORE_QUEUE_EVENT_TYPES, QueueEventSchema } from "./queue.js";
 
 const job = {
   eventId: "evt_7c1d",
+  type: "comment.created",
   status: "in-progress",
   started: "2026-07-19T10:05:02Z",
   updated: "2026-07-19T10:05:40Z",
@@ -48,6 +50,39 @@ describe("Job", () => {
 
   it("mirrors the queue statuses, so a job cannot report a status the queue lacks", () => {
     expect(JobSchema.safeParse({ ...job, status: "running" }).success).toBe(false);
+  });
+
+  /**
+   * CONTRACT-012 rider. The console row is `<event type> · <title>`: without
+   * `type` a job says only what it is running *on*, never what it is running.
+   */
+  it.each(CORE_QUEUE_EVENT_TYPES)("carries the core event type %s", (type) => {
+    expect(JobSchema.parse({ ...job, type }).type).toBe(type);
+  });
+
+  it("leaves the type open, because plugins define their own event types", () => {
+    expect(JobSchema.parse({ ...job, type: "todos.sync" }).type).toBe("todos.sync");
+  });
+
+  it("requires a non-empty type: a job always has one, and it is never blank", () => {
+    const { type: _dropped, ...missing } = job;
+    expect(JobSchema.safeParse(missing).success).toBe(false);
+    expect(JobSchema.safeParse({ ...job, type: "" }).success).toBe(false);
+  });
+
+  /** One vocabulary: a job's type is the queue event's type, not a parallel one. */
+  it("agrees with QueueEvent on what a type is", () => {
+    for (const type of CORE_QUEUE_EVENT_TYPES) {
+      expect(JobSchema.parse({ ...job, type }).type).toBe(
+        QueueEventSchema.parse({
+          id: "evt_7c1d",
+          type,
+          created: "2026-07-19T10:05:02Z",
+          source: "ui",
+          payload: {},
+        }).type,
+      );
+    }
   });
 });
 

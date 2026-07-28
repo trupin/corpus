@@ -145,7 +145,13 @@ describe("GET /api/docs", () => {
       prepare.mockRestore();
     }
     expect(executed).toHaveLength(2);
-    expect(executed.filter((sql) => sql.includes("COUNT(*)"))).toHaveLength(1);
+    // The total, and only the total: `COUNT(*)` alone no longer separates the
+    // two statements, because the page's `unreadThreads` column counts a
+    // document's unread threads in a correlated subquery (CONTRACT-012). What
+    // still separates them is which statement *is* a count — the aggregate is
+    // the whole SELECT list there and a single column here.
+    expect(executed.filter((sql) => sql.includes("SELECT COUNT(*) AS total"))).toHaveLength(1);
+    expect(executed.filter((sql) => sql.includes("AS unread_threads"))).toHaveLength(1);
   });
 });
 

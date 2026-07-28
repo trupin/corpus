@@ -28,14 +28,16 @@ export interface RowProps {
   /** Opening the row. Never fired by a quick action, which stops propagation. */
   readonly onOpen?: ((row: DocRow) => void) | undefined;
   /**
-   * Unread turns, when something richer than a `DocRow` knows the count.
+   * The number the unread badge shows, when the host has one.
    *
-   * Two gaps live behind this prop, both wire gaps rather than rendering
-   * choices: `DocRow.unread` is a boolean and carries no count, and it is
-   * **null on non-thread documents** — so a document row cannot today show the
-   * aggregate unread SPEC.md §7 describes ("opening a parent document does not
-   * mark its collapsed-chip threads seen"). Deriving it here would mean one
-   * `?parent=<id>` query per row, which is the N+1 this component refuses.
+   * For a **document** row that number is `DocRow.unreadThreads`
+   * (CONTRACT-012): the server-computed count of this document's unread
+   * threads, carried on the row itself, so the aggregate SPEC.md §7 describes
+   * ("opening a parent document does not mark its collapsed-chip threads seen")
+   * needs neither a richer type here nor the per-row `?parent=<id>` query that
+   * would be the N+1 this component refuses. It stays optional because
+   * `DocRow.unread` is still the boolean that decides whether the badge renders
+   * at all, and a host with nothing better to say renders it without a number.
    */
   readonly unreadCount?: number | null | undefined;
   /** Narration for a host's toast surface. Errors also render inside the row. */
