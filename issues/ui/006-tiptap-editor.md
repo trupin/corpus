@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -663,7 +663,7 @@ format and typecheck clean.
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-006]` prefix
 
 ## Corrections (orchestrator, 2026-07-28 — sprint-011 adjudications)

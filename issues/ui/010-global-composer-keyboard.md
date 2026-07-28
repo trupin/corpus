@@ -591,7 +591,7 @@ Server stopped (`corpus server stop`), Vite (pid 97021) killed by pid, ports `52
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-010]` prefix
 
 ## Corrections (orchestrator, 2026-07-28 — sprint-011 adjudications)

@@ -153,5 +153,5 @@ passes, proving nothing downstream broke.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] `/evaluate` passes
-- [ ] Committed
+- [x] `/evaluate` passes
+- [x] Committed
