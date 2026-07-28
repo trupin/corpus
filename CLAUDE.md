@@ -124,6 +124,16 @@ Implementation work defaults to **Opus** — don't spend Fable on tasks that don
 
 Sequential execution is the exception (real data dependency), not the default.
 
+### Machine-Load Discipline
+
+Parallelism is bounded by the machine (user directive, 2026-07-27 — a 7-agent fleet plus overlapping orchestrator gates overwhelmed the laptop; long sessions die to CPU/memory pressure):
+
+- **Cap concurrent implementation agents at ~3** on a single machine; stagger launches so end-of-session test gates don't collide.
+- **Domain agents run scoped tests only** (each agent definition carries a Machine Resources section); the orchestrator's harvest gate is the **single** repo-wide run.
+- **The orchestrator serializes heavy commands**: one build/test at a time, never while a backgrounded run is still alive; a pre-commit flake means retry the commit once — not an extra verification run plus a commit.
+- **After any interrupted commit, sweep orphaned vitest workers** (`ps aux | grep vitest`, kill by pid).
+- Cap vitest workers (`VITEST_MAX_THREADS=4`) on orchestrator-invoked runs too.
+
 ### Escalation Protocol
 
 1. **Domain agent handles**: implementation, testing, refactoring, lint/type fixes within its domain.
