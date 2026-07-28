@@ -172,6 +172,128 @@ describe("marks", () => {
   });
 });
 
+/**
+ * The whitespace markdown has no spelling for.
+ *
+ * Every case here was an HTML character reference on disk before the tree was
+ * normalised (`**alpha beta&#x20;**&#x67;amma`) — a permanent, compounding
+ * corruption of the body for a first-minute action. The rule the assertions
+ * state: a space at a mark boundary moves *outside* the markers, a blank at a
+ * line edge is dropped, and nothing is ever encoded as an entity.
+ */
+describe("whitespace at a boundary markdown cannot spell", () => {
+  const ref = (id: string): PmNode => ({ type: NODE.docRef, attrs: { id, alias: null } });
+
+  it("moves a trailing space at a mark boundary outside the markers", () => {
+    // Select "alpha beta " — the trailing space included, as an ordinary drag
+    // produces — and press B.
+    const source = doc(paragraph(text("alpha beta ", "bold"), text("gamma delta")));
+    expect(serializeDoc(source)).toBe("**alpha beta** gamma delta\n");
+  });
+
+  it("moves a leading space at a mark boundary outside the markers", () => {
+    const source = doc(paragraph(text("alpha"), text(" beta gamma", "bold"), text(" delta")));
+    expect(serializeDoc(source)).toBe("alpha **beta gamma** delta\n");
+  });
+
+  it("drops a mark that covers nothing but whitespace", () => {
+    expect(serializeDoc(doc(paragraph(text("a"), text(" ", "bold"), text("b"))))).toBe("a b\n");
+  });
+
+  it("drops a trailing space at the end of a block, marked or not", () => {
+    expect(serializeDoc(doc(paragraph(text("alpha beta ", "bold"))))).toBe("**alpha beta**\n");
+    expect(serializeDoc(doc(paragraph(text("alpha beta "))))).toBe("alpha beta\n");
+  });
+
+  it("drops a leading blank at the start of a block, marked or not", () => {
+    expect(serializeDoc(doc(paragraph(text(" alpha", "bold"), text(" beta"))))).toBe(
+      "**alpha** beta\n",
+    );
+    expect(serializeDoc(doc(paragraph(text("    four spaces"))))).toBe("four spaces\n");
+  });
+
+  it("hoists through nested marks, innermost first", () => {
+    const source = doc(paragraph(text("alpha ", "bold", "italic"), text("beta")));
+    expect(serializeDoc(source)).toBe("***alpha*** beta\n");
+  });
+
+  it("hoists out of strikethrough, which flanks by the same rules", () => {
+    const source = doc(paragraph(text("gone ", "strike"), text("next")));
+    expect(serializeDoc(source)).toBe("~~gone~~ next\n");
+  });
+
+  it("hoists in a heading and in a list item, not only in a paragraph", () => {
+    const heading = doc({
+      type: NODE.heading,
+      attrs: { level: 2 },
+      content: [text("Head ", "bold"), text("er")],
+    });
+    expect(serializeDoc(heading)).toBe("## **Head** er\n");
+    const list = doc({
+      type: NODE.bulletList,
+      content: [{ type: NODE.listItem, content: [paragraph(text("item ", "bold"), text("tail"))] }],
+    });
+    expect(serializeDoc(list)).toBe("- **item** tail\n");
+  });
+
+  it("survives a ref inserted straight after a bold run", () => {
+    // The second path the evaluator found: type before a bold run, then insert
+    // a `[[ref]]` from the `[[` menu.
+    const source = doc(
+      paragraph(text("link: ", "bold"), ref("doc_mbc52nvo"), text("6.4%", "bold"), text(" week.")),
+    );
+    expect(serializeDoc(source)).toBe("**link:** [[doc_mbc52nvo]]**6.4%** week.\n");
+  });
+
+  it("leaves a space that is not at a boundary exactly where it is", () => {
+    expect(serializeDoc(doc(paragraph(text("a  b"))))).toBe("a  b\n");
+    expect(serializeDoc(doc(paragraph(text("one ", "bold"), text("two", "bold"))))).toBe(
+      "**one two**\n",
+    );
+    // Inside a code span whitespace is content, and the span is a leaf.
+    expect(serializeDoc(doc(paragraph(text("code ", "code"), text("next"))))).toBe("`code `next\n");
+  });
+
+  it("moves a no-break space too, and never deletes one", () => {
+    // CommonMark's flanking rules count Unicode whitespace, so a no-break
+    // space against a `**` closes nothing either. It is visible content, so it
+    // moves out of the markers and stays: an ASCII blank at a line edge is
+    // dropped because markdown itself drops it, and this one is not.
+    const nbsp = String.fromCharCode(0xa0);
+    const source = doc(paragraph(text(`alpha${nbsp}`, "bold"), text("beta")));
+    expect(serializeDoc(source)).toBe(`**alpha**${nbsp}beta\n`);
+    expect(serializeDoc(doc(paragraph(text(`alpha${nbsp}`, "bold"))))).toBe(`**alpha**${nbsp}\n`);
+  });
+
+  it("drops the blanks around a soft break rather than encoding them", () => {
+    expect(serializeDoc(doc(paragraph(text("a  \nb"))))).toBe("a\nb\n");
+    expect(serializeDoc(doc(paragraph(text("a\n  b"))))).toBe("a\nb\n");
+    const hard = doc(paragraph(text("a"), { type: NODE.hardBreak }, text(" b")));
+    expect(serializeDoc(hard)).toBe("a\\\nb\n");
+  });
+
+  it("writes no character reference next to any escapeworthy character", () => {
+    const neighbours = ["\\x", "`x", "*x", "_x", "~x", "<x", "&amp", "[x](y)", "#x", "- x", "1. x"];
+    for (const neighbour of neighbours) {
+      for (const mark of ["bold", "italic", "strike"] as const) {
+        const trailing = serializeDoc(doc(paragraph(text("a ", mark), text(neighbour))));
+        const leading = serializeDoc(doc(paragraph(text(neighbour), text(" a", mark))));
+        for (const output of [trailing, leading]) {
+          expect(output, `${mark} beside ${JSON.stringify(neighbour)}`).not.toMatch(/&#x/i);
+          // And what it does write still means what the document said.
+          expect(canonicalizeMarkdown(output)).toBe(output);
+        }
+      }
+    }
+  });
+
+  it("heals a body that already carries the entities", () => {
+    expect(canonicalizeMarkdown("**alpha beta&#x20;**&#x67;amma delta\n")).toBe(
+      "**alpha beta** gamma delta\n",
+    );
+  });
+});
+
 describe("references (SPEC.md §5)", () => {
   it("spells the bracket form from the attributes", () => {
     expect(refSource({ id: "doc_a", alias: null })).toBe("[[doc_a]]");

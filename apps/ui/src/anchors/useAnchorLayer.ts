@@ -242,18 +242,39 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    * Debounced to a trailing tick so a burst of typing costs one check, and
    * `applyAnchors` is a no-op whenever the two texts disagree — so the local
    * mapping, not this, is what carries a highlight through an edit.
+   *
+   * **A replacement is not typing, and it does not wait out the debounce.** The
+   * effect above re-applies in the same commit as an adoption it can see, but
+   * the adoption often lands in a *later* commit than the body it adopts — the
+   * incoming copy waits for the editing session to settle, and `editing`
+   * changing re-renders this hook without changing any of that effect's
+   * dependencies. In that ordering the wipe is repaired only here, and a
+   * debounced repair means every highlight in the document blinks off and back
+   * on after a save. TipTap marks exactly the adoption transaction
+   * `preventUpdate` (`setContent(…, false)` in `DocEditor`, which is the only
+   * caller), so that is the signal to re-apply on this tick instead. A
+   * microtask, not a synchronous call: a dispatch is in flight, and the repair
+   * still lands in the same frame.
    */
   useEffect(() => {
     if (editor === null) return undefined;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const reapply = (): void => {
+      timer = null;
+      applyAnchors();
+    };
     const onTransaction = ({ transaction }: EditorEvents["transaction"]): void => {
       if (!transaction.docChanged) return;
       if (transaction.getMeta(anchorPluginKey) !== undefined) return;
-      if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => {
+      if (timer !== null) {
+        clearTimeout(timer);
         timer = null;
-        applyAnchors();
-      }, REAPPLY_DEBOUNCE_MS);
+      }
+      if (transaction.getMeta("preventUpdate") === true) {
+        queueMicrotask(reapply);
+        return;
+      }
+      timer = setTimeout(reapply, REAPPLY_DEBOUNCE_MS);
     };
     editor.on("transaction", onTransaction);
     return () => {

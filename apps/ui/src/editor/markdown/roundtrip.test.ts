@@ -91,6 +91,11 @@ const NON_CANONICAL: readonly (readonly [string, string])[] = [
   ["html block", "<section>\n  <p>x</p>\n</section>\n"],
   ["escaped characters", "a \\* b \\_ c \\[ d\n"],
   ["reference link", "[text][id]\n\n[id]: https://example.com\n"],
+  // The body an older serializer wrote when a bold selection carried its
+  // trailing space: it has to heal on the next save, not survive.
+  ["character references in a body", "**alpha beta&#x20;**&#x67;amma delta\n"],
+  ["a space against an emphasis marker", "**alpha beta ** gamma\n"],
+  ["a ref straight after a bold run", "**link:&#x20;**[[doc_mbc52nvo]]**6.4%** week\n"],
 ];
 
 describe("non-canonical input", () => {
@@ -104,6 +109,36 @@ describe("non-canonical input", () => {
     // Every non-empty input produces non-empty output: the failure this
     // catches is a construct the walk does not know silently vanishing.
     expect(once.trim().length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The body is markdown, and only markdown (SPEC.md §6).
+ *
+ * A character reference is the printer's escape hatch for whitespace markdown
+ * cannot spell, and once written it is permanent: it survives every later
+ * round trip and shows up in every later diff. Nothing this serializer emits
+ * may contain one — asserted over the whole corpus rather than case by case,
+ * because the cases that produced them were the ones nobody thought to write a
+ * case for.
+ */
+describe("character references", () => {
+  it.each(fixtureNames())("%s is written back without one", (name) => {
+    const markdown = readFileSync(join(FIXTURES, name), "utf8");
+    expect(canonicalizeMarkdown(markdown)).not.toMatch(/&#x/i);
+  });
+
+  it.each(NON_CANONICAL)("%s normalises without one", (_name, input) => {
+    expect(canonicalizeMarkdown(input)).not.toMatch(/&#x/i);
+  });
+
+  it("heals a body that already carries them", () => {
+    expect(canonicalizeMarkdown("**alpha beta&#x20;**&#x67;amma delta\n")).toBe(
+      "**alpha beta** gamma delta\n",
+    );
+    expect(canonicalizeMarkdown("**link:&#x20;**[[doc_a]]**6.4%** week\n")).toBe(
+      "**link:** [[doc_a]]**6.4%** week\n",
+    );
   });
 });
 

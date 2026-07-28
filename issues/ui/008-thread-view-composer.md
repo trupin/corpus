@@ -437,6 +437,67 @@ log above.
   `ThreadCard` mounting, so any host that renders the card records the read, and none that does not
   can.
 
+## E2E Verification Log — addendum: Escape disarms the delete button (2026-07-28)
+
+**Implemented on: opus.** Fix for `issues/evals/UI-008-eval.md` → FAIL-1
+(TEST-46, "clicking elsewhere or pressing esc disarms"). Main tree, branch
+`phase-3-ui`, production build served by `corpus server start` on **9030**,
+workspace `/tmp/corpus-s011fix-gKidsH`, real Chromium.
+
+### Reproduction, and the actual cause
+
+`Turn` was already registering an escape layer at `Popover` priority while
+armed, so the arming state was not the problem. The press never reached the
+chain: `useEscapeStack`'s `isEditing` guard asked whether the event target has
+*any* editable ancestor, and in chip mode a thread card is rendered into an
+`anchor-slot` — a `contenteditable=false` island **inside the document's
+contenteditable**. The armed button therefore always had an editable ancestor,
+the capture-phase listener returned early, and no layer was consulted. That is
+exactly the evaluator's observation that neither the card nor the reader closed:
+the key reached no handler at all.
+
+Reproduced first as a failing unit test (`useEscapeStack.test.tsx` → "treats a
+control inside a contenteditable=false island as not typing": `expected "spy" to
+be called 1 times, but got 0 times`), then in the browser — the diagnostic below
+is from the live page:
+
+```
+armed:                              "delete?" | turn-del armed
+focused element:                    turn-del armed
+inside contenteditable ancestor:    true        ← the guard's mistake
+```
+
+### The fix
+
+`apps/ui/src/reader/useEscapeStack.ts` — the **nearest** editable host decides,
+not any ancestor: `closest("input, textarea, select, [contenteditable]")`, then
+a field is typing and a `[contenteditable]` host is typing only when its
+attribute says `""`/`"true"`. A control inside a `false` island is not typing; a
+field inside that same island still is, because the textarea is nearer.
+
+### Evidence (live, after the fix)
+
+```
+armed:                     "delete?" | turn-del armed
+after Escape:              "✕"       | turn-del          ← disarmed
+thread card still open: 1   reader open: 1               ← one layer per press
+after one more click:      "delete?"                     ← re-arms, does not delete
+DELETE requests:           none
+page errors:               none
+```
+
+### Tests
+
+- `useEscapeStack.test.tsx`: the island case above (fails without the fix).
+- `ThreadCard.test.tsx`: "disarms on Escape pressed at the button, inside the
+  editor's chip slot" — the card rendered inside a `contenteditable` host with a
+  `contenteditable=false` slot, the press dispatched **at the button** (where the
+  browser sends it) rather than at `document`, asserting the label returns to
+  `✕`, that no `DELETE` is issued, and that the next click only re-arms. The
+  pre-existing document-level test stays: it covers the other target.
+
+`apps/ui` + `packages/kit`: 1660 tests passing; lint, format and typecheck clean.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

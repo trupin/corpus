@@ -405,6 +405,64 @@ one more.
 `corpus server stop`, Vite killed by recorded pid, `/tmp/corpus-s011-ui007-*`
 removed by name. Ports 9010–9014 and 5280 verified free; 8765 never bound.
 
+## E2E Verification Log — addendum: the `setAnchors` refresh path (2026-07-28)
+
+**Implemented on: opus.** Follow-up to the sprint-011 cross-issue report's
+observation 3 — highlights seen vanishing once after an edit, recovered on
+reload, three retries clean, recorded but not scored.
+
+### What the re-reading found
+
+Not a race between `onAnchors` and the adoption — those two interleave safely,
+because the report only ever *narrows* what is drawn and the layer's own effect
+re-applies in the same commit it can see the adoption in. What is real is a
+**timing hole in the repair**:
+
+- `DocEditor` adopts the server's copy with `setContent(…, false)`, which
+  replaces the whole document. The plugin re-derives its placements through
+  `mapAnchors`, and a wholesale replacement maps every range to a collapsed
+  one — so **every highlight in the document goes out at once**. That is by
+  design; the layer is supposed to put them back.
+- The adoption usually lands in a **later commit** than the body it adopts: the
+  incoming copy waits for the editing session to settle, and `editing` changing
+  re-renders the hook without touching `placements` or `source.markdown`, so the
+  effect that re-applies does not re-run. In that ordering the only repair was
+  the 120 ms trailing debounce on `transaction` — i.e. every highlight blinks
+  off and back on after a save, which is exactly the symptom reported.
+
+### The fix
+
+`useAnchorLayer.ts` — the transaction listener now distinguishes the adoption
+from typing. TipTap marks `setContent(content, false)` with `preventUpdate`
+(`DocEditor` is its only caller), so that transaction re-applies on a microtask
+instead of waiting out the debounce; a user edit still debounces, and
+`applyAnchors` still refuses to apply offsets against a body they were not
+computed for. The repair lands in the same frame, so there is no frame in which
+the highlights are absent.
+
+### Evidence
+
+Live, against the production-served board on 9030 (workspace
+`/tmp/corpus-s011fix-gKidsH`): with one anchored thread on the document, an edit
+typed at the end of the anchored paragraph, then the DOM sampled every 100 ms
+for 4 s across the whole save cycle —
+
+```
+first sample: { hl: 1, chip: "" }
+last sample:  { hl: 1, chip: "committed · git ✓ · 1 anchor moved" }
+samples with zero highlights: 0
+page errors: none
+```
+
+### Test
+
+`useAnchorLayer.test.tsx` → "repairs an adoption of the server's copy without
+waiting out the debounce": the fake editor now dispatches the replacement with
+the `preventUpdate` meta the real `setContent` carries, and the assertion runs
+after **one microtask** with no timer advanced. Verified to fail without the fix
+(the segments are still collapsed at that point). The existing debounce test is
+untouched and still covers an unmarked replacement.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

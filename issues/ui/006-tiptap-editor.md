@@ -524,10 +524,21 @@ byte-identical.
 1. **`&#x20;` in the file.** Inserting a `[[ref]]` at the end of a paragraph
    left a trailing space, which markdown cannot spell — the printer's faithful
    output is the character reference `&#x20;`, and it landed on disk:
-   `"6.4% this week. See [[doc_mhvjje2q]]&#x20;\n"`. Fixed twice over: the
+   `"6.4% this week. See [[doc_mhvjje2q]]&#x20;\n"`. Two changes were made: the
    suggestion no longer appends a space, and the serializer drops trailing
    whitespace at the end of a block (never inside one, and never in a code
    block).
+
+   **Correction (2026-07-28).** This entry originally read "fixed twice over"
+   and claimed the class of defect was closed. It was not, and the wording
+   overclaimed: the trailing-space trim only ever looked at an *unmarked* text
+   node at the end of a block, so it covered neither a trailing space **inside
+   a mark** (the ordinary case — select a phrase with its trailing space and
+   press **B**) nor blanks at any other line edge. The evaluator hit it on the
+   first try and it was sprint-011's blocking failure (`issues/evals/UI-006-eval.md`
+   → FAIL-1). What was actually broken, and what the real fix is, is recorded
+   in the addendum below — the honest summary of this entry is: **one narrow
+   symptom was fixed, the defect was not.**
 2. **Escape stopped closing focus mode.** `useEscapeStack` ignores keys typed
    inside a contenteditable — correct for `⌫`, but once the body became
    editable it meant Escape with the caret in the text did nothing, while focus
@@ -551,6 +562,95 @@ byte-identical.
 - `git -C $WS log` shows every mutation committed with `user` as author.
 - `git status` in the worktree is clean of stray files; the scratch workspace is
   `/tmp/corpus-s011-ui006-HICsEa` and every `git` invocation carried `-C $WS`.
+
+## E2E Verification Log — addendum: the character-reference defect (2026-07-28)
+
+**Implemented on: opus.** Fix for `issues/evals/UI-006-eval.md` → FAIL-1 (and the
+sprint-011 cross-issue FAIL-1 / TEST-161). Main tree, branch `phase-3-ui`.
+Workspace `/tmp/corpus-s011fix-gKidsH`, production build (`npm run build`),
+`corpus server start` on **9030**, real Chromium via Playwright. `8765` unbound
+throughout.
+
+### What was actually wrong
+
+Two positions have no markdown spelling for whitespace, and the printer answers
+both with a character reference:
+
+- **inside an emphasis marker** — `**alpha beta ** ` cannot close, so
+  `mdast-util-to-markdown` writes `**alpha beta&#x20;**` and then has to encode
+  the character after the marker too, which is where the `&#x67;` for a plain
+  `g` came from;
+- **at a line edge** — a blank at the start or end of a line, or against a soft
+  or hard break.
+
+The old trim covered exactly one corner of the second case (an unmarked text
+node at the end of a block). Reproduced before fixing, in the same browser, on
+seven shapes — `**bold **`, `** bold**`, a bold run holding only a space, bold
+at a block edge, `***nested ***`, `~~struck ~~`, and a ref inserted after a bold
+run — **13 of 18 probe documents carried entities**.
+
+### The fix
+
+`apps/ui/src/editor/markdown/serialize.ts` — the mdast tree is normalised so the
+printer never needs an entity:
+
+- `hoistEdgeWhitespace` moves whitespace at the edge of a `strong`/`emphasis`/
+  `delete` wrapper **outside** the markers (`**alpha beta** gamma`), by
+  CommonMark's flanking rules, so a no-break space moves too. A wrapper left
+  holding only whitespace disappears. Nested marks need no case of their own —
+  the inner wrapper is hoisted before the outer one is built.
+- `trimLineEdges` (with `splitSoftLines`) drops ASCII blanks at every line edge
+  of a block — start, end, and either side of a hard or soft break — which is
+  what markdown itself does to them. Visible content (a no-break space) is
+  moved, never deleted.
+- Both keep the UI-007 trace exact: a text node is **split** rather than
+  rewritten, so every run stays one-for-one with the text it came from.
+
+### Evidence
+
+The eval's exact repro, re-run:
+
+```
+selection:            "alpha beta "
+editor html after B:  <p><strong>alpha beta </strong>gamma delta</p>
+save chip:            committed · git ✓
+$ od -c data/docs/notes/bold-space-test.md | tail -2
+0000300    -   -   -  \n   *   *   a   l   p   h   a       b   e   t   a   *
+0000320    *       g   a   m   m   a       d   e   l   t   a  \n
+```
+
+`**alpha beta** gamma delta` — no entity, and the space is between the runs
+where it belongs. Adjacent cases, all driven in the browser against the same
+server:
+
+```
+reload + type "!"      → **alpha beta** gamma delta!          (stable, idempotent)
+type "link: " + [[ref]] → **link:** [[doc_ax4jl7j7]]**6.4%** this week. See mort
+bold mid-block          → **second para** for block start
+nested bold+italic in a list item → - ***bullet*** with émphasis here
+unicode line untouched  → héllo wörld — ok
+
+$ grep -rn '&#' data/          → (no matches anywhere in the workspace)
+$ git -C $WS diff HEAD~1 HEAD  → only the edited lines + `updated:`
+```
+
+### Tests
+
+`apps/ui/src/editor/markdown/serialize.test.ts` gains a
+"whitespace at a boundary markdown cannot spell" suite (14 cases: trailing and
+leading space at a mark boundary, whitespace-only mark, block edges, nested
+marks, strikethrough, heading and list item, ref after a bold run, no-break
+space kept, soft/hard-break edges, marks beside every escapeworthy character
+class, and healing a body that already carries the entities).
+`roundtrip.test.ts` asserts **no output of the whole corpus, canonical or not,
+contains a character reference**, and carries the three entity-bearing bodies as
+non-canonical inputs that must settle. `emphasis.md` gains the boundary shapes
+as byte-for-byte fixtures. `offsetMap.test.ts` gains six trace cases built from
+edited ProseMirror documents (which the parser can never produce), checked
+against its independent `pmTextBetween` oracle.
+
+`apps/ui` + `packages/kit`: **1660 tests, 112 files, all passing**; lint,
+format and typecheck clean.
 
 ## Completion Checklist (domain agent)
 

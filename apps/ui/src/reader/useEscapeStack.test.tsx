@@ -142,6 +142,40 @@ describe("useEscapeLayer", () => {
     expect(onEscape).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * The other half of that guard: a control inside the editor is not the
+   * editor.
+   *
+   * A thread chip is rendered into an `anchor-slot` — a `contenteditable=false`
+   * island *inside* the document's contenteditable — so every button on an
+   * expanded card has an editable ancestor and none of them is editable. Asking
+   * only whether some ancestor is editable answered "the user is typing" for
+   * the armed delete button, and Escape was dropped before the chain saw it
+   * (UI-008 FAIL-1).
+   */
+  it("treats a control inside a contenteditable=false island as not typing", () => {
+    const onEscape = vi.fn();
+    render(
+      <>
+        <Layer priority={EscapeLayerPriority.Popover} onEscape={onEscape} />
+        <div contentEditable suppressContentEditableWarning data-editor>
+          <div contentEditable={false} data-slot>
+            <button type="button">delete?</button>
+            <textarea aria-label="Reply" />
+          </div>
+        </div>
+      </>,
+    );
+
+    fireEvent.keyDown(screen.getByRole("button"), { key: "Escape" });
+    expect(onEscape).toHaveBeenCalledTimes(1);
+
+    // A field inside the same island still keeps the key: the nearest editable
+    // host is what decides, and there it is the textarea.
+    fireEvent.keyDown(screen.getByLabelText("Reply"), { key: "Escape" });
+    expect(onEscape).toHaveBeenCalledTimes(1);
+  });
+
   it("hands the layer the event, so a modified press can mean something else", () => {
     const onEscape = vi.fn<(event: KeyboardEvent) => void>();
     render(<Layer priority={EscapeLayerPriority.Reader} onEscape={onEscape} />);

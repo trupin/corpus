@@ -41,8 +41,10 @@ afterEach(() => {
 interface FakeEditor {
   readonly editor: Editor;
   state: () => EditorState;
-  /** Replaces the whole document, the way `setContent` does. */
+  /** Replaces the whole document, carrying no meta of its own. */
   replace: (markdown: string) => void;
+  /** The same replacement `DocEditor`'s `setContent(…, false)` dispatches. */
+  adopt: (markdown: string) => void;
 }
 
 function fakeEditor(markdown: string): FakeEditor {
@@ -90,6 +92,15 @@ function fakeEditor(markdown: string): FakeEditor {
     replace: (next: string) => {
       const replacement = PmModelNode.fromJSON(corpusSchema(), parseMarkdown(next));
       dispatch(state.tr.replaceWith(0, state.doc.content.size, replacement.content));
+    },
+    adopt: (next: string) => {
+      const replacement = PmModelNode.fromJSON(corpusSchema(), parseMarkdown(next));
+      dispatch(
+        state.tr
+          .replaceWith(0, state.doc.content.size, replacement.content)
+          // What `editor.commands.setContent(content, false)` marks it with.
+          .setMeta("preventUpdate", true),
+      );
     },
   };
 }
@@ -146,6 +157,7 @@ interface Mounted {
   readonly notices: RowNotice[];
   readonly editorState: () => EditorState;
   readonly replaceDocument: (markdown: string) => void;
+  readonly adoptDocument: (markdown: string) => void;
 }
 
 function mount(
@@ -177,6 +189,7 @@ function mount(
     notices,
     editorState: fake.state,
     replaceDocument: fake.replace,
+    adoptDocument: fake.adopt,
     layer: () => {
       if (current === null) throw new Error("not mounted");
       return current;
@@ -426,6 +439,33 @@ describe("a document replaced under the layer", () => {
         { from: RATE_FROM, to: RATE_TO, block: 1 },
       ]);
     });
+  });
+
+  /**
+   * The adoption that follows a save is the common case, and it does not get
+   * to blink.
+   *
+   * `DocEditor` adopts the server's copy once the editing session settles —
+   * often a commit or two after the body arrived, so the layer's own effect has
+   * already run and only the transaction listener is left to repair the wipe.
+   * On the debounce that is a visible flicker of every highlight in the
+   * document; the adoption is marked, so it is repaired on this tick.
+   */
+  it("repairs an adoption of the server's copy without waiting out the debounce", async () => {
+    const app = mount([anchorFixture()], [threadRowFixture({ id: "th_1", parent: "doc_m" })]);
+    await waitFor(() => {
+      expect(anchorState(app.editorState())?.anchors[0]?.segments).toHaveLength(1);
+    });
+
+    await act(async () => {
+      app.adoptDocument(BODY);
+      // One microtask — no timers advanced, nothing waited out.
+      await Promise.resolve();
+    });
+
+    expect(anchorState(app.editorState())?.anchors[0]?.segments).toEqual([
+      { from: RATE_FROM, to: RATE_TO, block: 1 },
+    ]);
   });
 
   it("leaves a replacement it cannot vouch for alone", async () => {

@@ -341,38 +341,223 @@ function inlineChildren(nodes: readonly PmNode[]): MdNode[] {
 }
 
 /**
- * The same, with trailing whitespace dropped from the end of the block.
+ * The same, with the whitespace markdown has no spelling for taken out.
  *
- * Markdown has no spelling for a space at the end of a line. The printer's
- * faithful one is the character reference `&#x20;` — observed landing in a real
- * document the first time a `[[ref]]` ended a paragraph — and a file full of
- * `&#x20;` is worse than a lost space nobody can see. Whitespace *inside* a
- * block is untouched, and a code block never comes through here, so the only
- * thing this discards is a character markdown was going to discard anyway.
+ * Two positions have none: the edge of a *line* (a space there is dropped on
+ * the way back in, or — before a line ending — turns into a hard break), and
+ * the inside edge of an emphasis marker (`** **` neither opens nor closes, so
+ * the emphasis stops being emphasis). The printer's faithful answer in both is
+ * the character reference: `**alpha beta&#x20;**`, and then `&#x67;amma`
+ * because the letter after a marker it could not close has to be encoded too.
+ * A body full of entities is a data-integrity failure (SPEC.md §6) and it
+ * compounds into every later diff.
+ *
+ * So the tree is fixed instead of the output. Whitespace at a mark boundary is
+ * **moved outside** the markers by {@link hoistEdgeWhitespace} — the space
+ * between two runs belongs between them, and `**alpha beta** gamma` says
+ * exactly what the document meant. Whitespace at a line edge is **dropped**,
+ * which is what markdown itself does to it. Whitespace anywhere else is
+ * untouched, and a code block never comes through here.
  */
 function blockInlineChildren(nodes: readonly PmNode[]): MdNode[] {
-  const children = inlineChildren(nodes);
-  for (let index = children.length - 1; index >= 0; index -= 1) {
-    const child = children[index];
-    if (child === undefined || child.type !== "text") break;
-    const value = child.value ?? "";
-    const trimmed = value.replace(/[ \t]+$/, "");
-    if (trimmed === value) break;
-    if (trimmed === "") {
-      mdSpans.delete(child);
-      children.splice(index, 1);
-      continue;
-    }
-    child.value = trimmed;
-    // The run is now shorter than the text it came from, and a trace that said
-    // otherwise would claim addresses for characters the file does not have.
-    const span = mdSpans.get(child);
-    if (span !== undefined) {
-      mdSpans.set(child, { ...span, to: span.to - (value.length - trimmed.length) });
-    }
-    break;
+  return trimLineEdges(inlineChildren(nodes).flatMap(splitSoftLines));
+}
+
+/** The length of the run `pattern` matches in `value`, or 0. */
+function runLength(pattern: RegExp, value: string): number {
+  return pattern.exec(value)?.[0].length ?? 0;
+}
+
+/** Leading/trailing ASCII blanks — the ones a line edge silently eats. */
+const LEADING_BLANK = /^[ \t]+/;
+const TRAILING_BLANK = /[ \t]+$/;
+
+/**
+ * Leading/trailing whitespace by CommonMark's flanking rules, which count
+ * Unicode whitespace — a no-break space against a `**` closes nothing either.
+ */
+const LEADING_SPACE = /^\s+/;
+const TRAILING_SPACE = /\s+$/;
+
+/** Shortens a text node from one end, keeping the range it claims honest. */
+function trimTextNode(node: MdNode, count: number, side: "start" | "end"): void {
+  const value = node.value ?? "";
+  node.value = side === "start" ? value.slice(count) : value.slice(0, value.length - count);
+  const span = mdSpans.get(node);
+  if (span === undefined) return;
+  // A run that still claimed the trimmed characters would hand out addresses
+  // for text the file does not contain.
+  mdSpans.set(
+    node,
+    side === "start" ? { ...span, from: span.from + count } : { ...span, to: span.to - count },
+  );
+}
+
+/**
+ * Splits a text node at `offset`. The node keeps the head; the tail is
+ * returned, with the two ranges dividing the original between them.
+ */
+function splitTextNode(node: MdNode, offset: number): MdNode {
+  const value = node.value ?? "";
+  const tail: MdNode = { type: "text", value: value.slice(offset) };
+  node.value = value.slice(0, offset);
+  const span = mdSpans.get(node);
+  if (span !== undefined) {
+    mdSpans.set(tail, { ...span, from: span.from + offset });
+    mdSpans.set(node, { ...span, to: span.from + offset });
   }
-  return children;
+  return tail;
+}
+
+/** Wrappers whose delimiters have to sit flush against their own text. */
+const FLANKING_WRAPPERS: ReadonlySet<string> = new Set(["strong", "emphasis", "delete"]);
+
+/**
+ * An emphasis wrapper, with any whitespace at its edges moved outside it.
+ *
+ * `<strong>alpha beta </strong>gamma` — what pressing **B** over a selection
+ * that includes its trailing space produces — becomes `**alpha beta** gamma`:
+ * the same words, the same spacing, and markers that close. A wrapper left
+ * holding nothing but whitespace disappears entirely, since a mark over a
+ * space is not something the file can say.
+ *
+ * Nested marks need no special case: the inner wrapper is hoisted before the
+ * outer one is built, so its whitespace is already a sibling by the time this
+ * looks at the outer one's edges.
+ */
+function hoistEdgeWhitespace(node: MdNode): MdNode[] {
+  if (!FLANKING_WRAPPERS.has(node.type)) return [node];
+  const children = [...(node.children ?? [])];
+  const before: MdNode[] = [];
+  const after: MdNode[] = [];
+
+  const first = children[0];
+  if (first !== undefined && first.type === "text") {
+    const count = runLength(LEADING_SPACE, first.value ?? "");
+    if (count > 0) {
+      const rest = splitTextNode(first, count);
+      before.push(first);
+      if ((rest.value ?? "") === "") {
+        mdSpans.delete(rest);
+        children.shift();
+      } else {
+        children[0] = rest;
+      }
+    }
+  }
+
+  const last = children.at(-1);
+  if (last !== undefined && last.type === "text") {
+    const value = last.value ?? "";
+    const count = runLength(TRAILING_SPACE, value);
+    if (count > 0) {
+      after.push(splitTextNode(last, value.length - count));
+      if ((last.value ?? "") === "") {
+        mdSpans.delete(last);
+        children.pop();
+      }
+    }
+  }
+
+  if (before.length === 0 && after.length === 0) return [node];
+  if (children.length === 0) return [...before, ...after];
+  node.children = children;
+  return [...before, node, ...after];
+}
+
+/**
+ * A text value carrying a soft break with blanks against it, as one node per
+ * line — so that the outer pass can see those inner line edges at all.
+ *
+ * Splitting rather than rewriting the value in place is what keeps a run
+ * one-for-one with the text it came from: each piece gets its own range, and
+ * the blanks between them belong to no run because they reach no file.
+ */
+function splitSoftLines(node: MdNode): MdNode[] {
+  if (node.type !== "text") return [node];
+  const value = node.value ?? "";
+  if (!/[ \t]\n|\n[ \t]/.test(value)) return [node];
+  const span = mdSpans.get(node);
+  const out: MdNode[] = [];
+  const push = (start: number, end: number): void => {
+    if (end <= start) return;
+    const piece: MdNode = { type: "text", value: value.slice(start, end) };
+    if (span !== undefined) {
+      mdSpans.set(piece, { ...span, from: span.from + start, to: span.from + end });
+    }
+    out.push(piece);
+  };
+
+  const lines = value.split("\n");
+  let at = 0;
+  lines.forEach((line, index) => {
+    const start = at;
+    at += line.length + 1;
+    // The break itself is content; the blanks either side of it are not.
+    if (index > 0) push(start - 1, start);
+    const lead = index === 0 ? 0 : runLength(LEADING_BLANK, line);
+    const trail = index === lines.length - 1 ? 0 : runLength(TRAILING_BLANK, line);
+    push(start + lead, start + line.length - trail);
+  });
+  mdSpans.delete(node);
+  return out;
+}
+
+/** Whether the node at `index` opens a line, and so cannot start with a blank. */
+function startsLine(nodes: readonly MdNode[], index: number): boolean {
+  const previous = nodes[index - 1];
+  if (previous === undefined) return true;
+  return previous.type === "break" || (previous.value ?? "").endsWith("\n");
+}
+
+/** Whether the node at `index` closes a line, and so cannot end with a blank. */
+function endsLine(nodes: readonly MdNode[], index: number): boolean {
+  const next = nodes[index + 1];
+  if (next === undefined) return true;
+  return next.type === "break" || (next.value ?? "").startsWith("\n");
+}
+
+/**
+ * Blanks at the start and end of every line of the block, removed.
+ *
+ * Repeated to a fixed point because removing a node makes its neighbours
+ * adjacent: two whitespace-only nodes at the head of a block — one of them
+ * just hoisted out of an emphasis — are only both at a line start once the
+ * first is gone.
+ */
+function trimLineEdges(children: MdNode[]): MdNode[] {
+  let nodes = children;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const kept: MdNode[] = [];
+    for (let index = 0; index < nodes.length; index += 1) {
+      const child = nodes[index];
+      if (child === undefined) continue;
+      if (child.type !== "text") {
+        kept.push(child);
+        continue;
+      }
+      const value = child.value ?? "";
+      const lead = startsLine(nodes, index) ? runLength(LEADING_BLANK, value) : 0;
+      const trail = endsLine(nodes, index) ? runLength(TRAILING_BLANK, value) : 0;
+      if (lead === 0 && trail === 0) {
+        if (value === "") changed = true;
+        else kept.push(child);
+        continue;
+      }
+      changed = true;
+      if (lead + trail >= value.length) {
+        mdSpans.delete(child);
+        continue;
+      }
+      if (lead > 0) trimTextNode(child, lead, "start");
+      if (trail > 0) trimTextNode(child, trail, "end");
+      kept.push(child);
+    }
+    nodes = kept;
+  }
+  return nodes;
 }
 
 function runsToMdast(nodes: readonly PmNode[], applied: readonly PmMark[]): MdNode[] {
@@ -396,7 +581,7 @@ function runsToMdast(nodes: readonly PmNode[], applied: readonly PmMark[]): MdNo
       end += 1;
     }
     const inner = runsToMdast(nodes.slice(index, end), [...applied, next]);
-    out.push(wrapMark(next, inner));
+    out.push(...hoistEdgeWhitespace(wrapMark(next, inner)));
     index = end;
   }
   return out;

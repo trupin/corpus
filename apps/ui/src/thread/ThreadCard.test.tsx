@@ -242,6 +242,39 @@ describe("the turns", () => {
     expect(transport.of("DELETE")).toHaveLength(0);
   });
 
+  /**
+   * The press the browser actually delivers: the armed button holds focus, so
+   * Escape is dispatched at the button — which, in chip mode, sits in an
+   * `anchor-slot` island inside the document's contenteditable. The press was
+   * being read as typing and dropped (UI-008 FAIL-1).
+   */
+  it("disarms on Escape pressed at the button, inside the editor's chip slot", async () => {
+    const transport = wire();
+    const { container } = render(
+      <div contentEditable suppressContentEditableWarning>
+        <div contentEditable={false} className="anchor-slot">
+          <Host transport={transport} host="slot" />
+        </div>
+      </div>,
+    );
+    await loaded(container);
+    const control = container.querySelector(".turn-del") as HTMLElement;
+    fireEvent.click(control);
+    expect(control.textContent).toBe(DELETE_ARMED_LABEL);
+
+    control.focus();
+    fireEvent.keyDown(control, { key: "Escape" });
+    await waitFor(() => {
+      expect(container.querySelector(".turn-del")?.textContent).toBe("✕");
+    });
+    expect(transport.of("DELETE")).toHaveLength(0);
+
+    // And the disarmed button is inert again: one more click only re-arms it.
+    fireEvent.click(container.querySelector(".turn-del") as HTMLElement);
+    expect(container.querySelector(".turn-del")?.textContent).toBe(DELETE_ARMED_LABEL);
+    expect(transport.of("DELETE")).toHaveLength(0);
+  });
+
   it("reports the cascade honestly when the last turn goes", async () => {
     const notify = vi.fn<(notice: { tone: string; message: string }) => void>();
     const transport = readerTransport({

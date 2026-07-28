@@ -53,19 +53,25 @@ const CLOSE_KEYS = new Set(["Escape", "Backspace"]);
  *
  * The listener is on the capture phase, so without this the chain would consume
  * Escape *before* a field's own "revert my draft" handler ever saw it — and
- * `⌫` would close the reader instead of deleting a character. Same guard, same
- * selector, as `Board.tsx`'s keyboard drag.
+ * `⌫` would close the reader instead of deleting a character.
+ *
+ * It is the **nearest** editable host that decides, not any ancestor at all.
+ * `contenteditable=false` nests inside `contenteditable=true`, and the board
+ * uses exactly that: a thread chip is an island inside the document's editor,
+ * so every control on an expanded card has an editable ancestor while being no
+ * part of the editing surface. Taking "has an editable ancestor" for "the user
+ * is typing" dropped Escape for the armed delete button before the chain saw
+ * the press (UI-008 FAIL-1).
  */
 function isEditing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
   // The attribute as well as the property: `isContentEditable` is computed from
-  // layout, which jsdom does not have, and UI-006's editor is a whole
-  // contenteditable subtree that this must already be keeping clear of.
-  return (
-    target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !==
-    null
-  );
+  // layout, which jsdom does not have.
+  const host = target.closest("input, textarea, select, [contenteditable]");
+  if (host === null) return false;
+  if (host.matches("input, textarea, select")) return true;
+  const editable = host.getAttribute("contenteditable");
+  return editable === "" || editable === "true";
 }
 
 const layers = new Set<Layer>();

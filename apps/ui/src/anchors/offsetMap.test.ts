@@ -108,6 +108,98 @@ describe("the position trace", () => {
   });
 });
 
+/* ── The trace over documents only the editor can produce ───────────── */
+
+/**
+ * Whitespace the serializer had to move or drop, and the runs either side of
+ * it.
+ *
+ * The parser never produces a mark with a space against its markers, so no
+ * fixture can cover this: it takes an edit — select a phrase whose selection
+ * includes its trailing space, press **B** — and the serializer answers by
+ * putting the space outside the markers. Every character it moves or drops
+ * shifts the two coordinate systems apart, so the oracle below is the same one
+ * the fixtures get: each run must quote, character for character, the
+ * ProseMirror text it claims.
+ */
+describe("the trace over an edited document", () => {
+  const text = (value: string, ...marks: readonly string[]): PmNode => ({
+    type: "text",
+    text: value,
+    ...(marks.length === 0 ? {} : { marks: marks.map((type) => ({ type })) }),
+  });
+  const paragraph = (...content: readonly PmNode[]): PmNode => ({ type: "paragraph", content });
+  const build = (...content: readonly PmNode[]): Traced => {
+    const doc: PmNode = { type: "doc", content };
+    const traced = serializeDoc(doc, { trace: true });
+    return { markdown: traced.markdown, trace: traced.trace, doc };
+  };
+
+  const CASES: readonly (readonly [string, Traced, string])[] = [
+    [
+      "a trailing space moved out of a bold run",
+      build(paragraph(text("alpha beta ", "bold"), text("gamma delta"))),
+      "**alpha beta** gamma delta\n",
+    ],
+    [
+      "a leading space moved out of a bold run",
+      build(paragraph(text("alpha"), text(" beta", "bold"), text(" delta"))),
+      "alpha **beta** delta\n",
+    ],
+    [
+      "a mark that covered nothing but a space",
+      build(paragraph(text("a"), text(" ", "bold"), text("b"))),
+      "a b\n",
+    ],
+    [
+      "a trailing space dropped at the end of a block",
+      build(paragraph(text("alpha ", "bold"), text("beta "))),
+      "**alpha** beta\n",
+    ],
+    [
+      "blanks dropped around a soft break",
+      build(paragraph(text("first  \n  second"))),
+      "first\nsecond\n",
+    ],
+    [
+      "a blank dropped after a hard break",
+      build(paragraph(text("first"), { type: "hardBreak" }, text(" second"))),
+      "first\\\nsecond\n",
+    ],
+  ];
+
+  it.each(CASES)("%s: quotes the markdown it claims", (_name, source, expected) => {
+    expect(source.markdown).toBe(expected);
+    expect(source.trace.length).toBeGreaterThan(0);
+    for (const run of source.trace) {
+      if (run.atomic) continue;
+      expect(run.mdEnd - run.mdStart).toBe(run.pmTo - run.pmFrom);
+      expect(source.markdown.slice(run.mdStart, run.mdEnd)).toBe(
+        pmTextBetween(source.doc, run.pmFrom, run.pmTo),
+      );
+    }
+  });
+
+  it.each(CASES)("%s: stays ordered in both coordinate systems", (_name, source) => {
+    let md = 0;
+    let pm = 0;
+    for (const run of source.trace) {
+      expect(run.mdStart).toBeGreaterThanOrEqual(md);
+      expect(run.pmFrom).toBeGreaterThanOrEqual(pm);
+      md = run.mdEnd;
+      pm = run.pmTo;
+    }
+  });
+
+  it("maps a word after the moved space back to that word", () => {
+    const source = CASES[0]?.[1];
+    expect(source).toBeDefined();
+    if (source === undefined) return;
+    expect(shownFor(source, "gamma")).toBe("gamma");
+    expect(shownFor(source, "alpha beta")).toBe("alpha beta");
+  });
+});
+
 /* ── TEST-90: markdown range → ProseMirror range, table-driven ──────── */
 
 describe("markdown range → ProseMirror range", () => {
