@@ -1078,7 +1078,7 @@ A comment opens a thread anchored to the text it is about; every later turn appe
 
 Reopen a resolved thread.
 
-Sets `status: open` again; an `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Reopening an already-open thread reports “already open” and exits 0, having written and committed nothing.
+Sets `status: open` again; an `engaged` thread resumes re-triggering the agent on later turns (SPEC.md §8). Reopening an already-open thread reports “already open” and exits 0, having written and committed nothing. A real flip rewrites the thread's frontmatter and commits it, so any SPEC.md §14 warning it raises is appended to the printed line.
 
 ```
 corpus thread reopen <id> [flags]
@@ -1098,7 +1098,7 @@ Bring a resolved conversation back because something new came up.
 corpus thread reopen th_a1b2c3
 ```
 
-One JSON value: the thread summary, with `status` back to `open`.
+One JSON value — `{"thread":{…},"warnings":[]}` — the summary carrying `status: open` again, alongside any warning the commit raised.
 
 ```
 corpus thread reopen th_a1b2c3 --json
@@ -1153,7 +1153,7 @@ corpus thread reply th_a1b2c3 --file answer.md --json
 
 Resolve a thread.
 
-Sets `status: resolved`. The thread collapses in the document view and later turns stop re-triggering the agent even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving an already-resolved thread reports “already resolved” and exits 0, having written and committed nothing.
+Sets `status: resolved`. The thread collapses in the document view and later turns stop re-triggering the agent even while it is `engaged` (SPEC.md §8) — resolving is how a conversation is closed without deleting anything. Resolving an already-resolved thread reports “already resolved” and exits 0, having written and committed nothing. A real flip rewrites the thread's frontmatter and commits it, so any SPEC.md §14 warning it raises (`commit_failed`, say) is appended to the printed line.
 
 ```
 corpus thread resolve <id> [flags]
@@ -1173,7 +1173,7 @@ Close a conversation that has run its course.
 corpus thread resolve th_a1b2c3
 ```
 
-One JSON value: the thread summary, with `status` now `resolved`.
+One JSON value — `{"thread":{…},"warnings":[]}` — the summary carrying `status: resolved`, alongside any warning the commit raised.
 
 ```
 corpus thread resolve th_a1b2c3 --from agent --json
