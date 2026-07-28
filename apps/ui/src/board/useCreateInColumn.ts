@@ -1,4 +1,4 @@
-import type { Doc } from "@corpus/contract";
+import { DEFAULT_DOC_FOLDER, type Doc } from "@corpus/contract";
 import { useCreateDoc, type CreateDocInput } from "@corpus/kit";
 import { useCallback } from "react";
 import type { PluginColumnRef } from "./viewDoc";
@@ -33,15 +33,19 @@ export const INBOX_TARGET: CreateTarget = { folder: null, plugin: null };
 export const DEFAULT_DOC_TYPE = "note";
 
 /**
- * `folder` is **omitted** rather than set to `"inbox"` for a non-folder column:
- * the contract documents the server-applied default (`DEFAULT_DOC_FOLDER`), and
- * naming it here would be a second copy of that decision that a workspace
- * retuning the default would silently contradict.
+ * `folder` is always **sent**, never left to a default.
+ *
+ * The row that offers this act says the document goes to the inbox, and a
+ * promise made in the copy must not depend on a default declared in another
+ * package — a server that retuned it would leave the UI quietly lying about
+ * where the thought went. The constant is the contract's own
+ * `DEFAULT_DOC_FOLDER`, so this is the *same* decision named at the call site,
+ * not a second copy of it (`useSaveAsView` already sends `"views"` outright for
+ * exactly this reason).
  */
 export function creationRequest(target: CreateTarget, title: string): CreateDocInput {
   const type = target.plugin?.type ?? DEFAULT_DOC_TYPE;
-  if (target.folder !== null) return { type, title, folder: target.folder };
-  return { type, title };
+  return { type, title, folder: target.folder ?? DEFAULT_DOC_FOLDER };
 }
 
 export interface CreateInColumn {

@@ -324,6 +324,16 @@
   margin-top: 2px;
 }
 
+/* The destructive item is `--signal` on **both** its lines (sprint-010
+   TEST-18). The prototype only colours the label, because there the sub-label
+   is decoration; here it carries the two facts that make Delete different from
+   every other item in this menu — that it is user-only, and that it takes two
+   clicks — and a warning rendered in `--ink-3` reads as the same muted
+   footnote as "reversible — hidden from default lists" one item above. */
+.cp-danger .cp-meta {
+  color: var(--signal);
+}
+
 .cp-empty {
   padding: 8px 10px;
 }

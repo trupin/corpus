@@ -20,6 +20,17 @@ import "./Toasts.css";
  * writes to the workspace — pinning a list creates a document, a reorder
  * rewrites `order` in several — and a mutation that changes files on disk
  * without saying so is the one interaction that must never be silent.
+ *
+ * **One live region, announced once.** The wrapper is the live region — it is
+ * the node that persists while toasts come and go, which is the only
+ * arrangement assistive tech reliably announces. The toasts inside it are plain
+ * elements: giving each one `role="status"` too (an implicit
+ * `aria-live="polite"`) nested a live region inside a live region, and a nested
+ * live region is announced by its own region *and* by its ancestor — the same
+ * notice, read twice. That was the one real duplication behind sprint-010's
+ * FIND-4. The two *DOM* nodes the finding counted are `.toast-wrap` and its
+ * single `.toast` child, which a `[class*="toast"]` probe matches both of, and
+ * whose text is identical whenever exactly one toast is up.
  */
 
 export type ToastTone = "info" | "error";
@@ -88,9 +99,13 @@ export function ToastProvider({ children }: { readonly children?: ReactNode }): 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="toast-wrap" aria-live="polite">
+      {/* `aria-live` and no `role`: the console strip's "server unreachable"
+          is the surface that genuinely *is* a `role="status"`, and two of them
+          would leave "the status" ambiguous. `aria-atomic="false"` keeps a new
+          toast announced on its own rather than re-reading the whole stack. */}
+      <div className="toast-wrap" aria-live="polite" aria-atomic="false">
         {toasts.map((toast) => (
-          <div key={toast.id} className="toast" data-tone={toast.tone} role="status">
+          <div key={toast.id} className="toast" data-tone={toast.tone}>
             <span className="tick" aria-hidden="true">
               {toast.tone === "error" ? "!" : "✓"}
             </span>

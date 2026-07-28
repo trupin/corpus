@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { DEFAULT_DOC_FOLDER } from "@corpus/contract";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -21,18 +22,23 @@ describe("creationRequest", () => {
     });
   });
 
-  it("omits the folder everywhere else, so the server's inbox-first default applies", () => {
+  /**
+   * sprint-010 UI-009 FIND-1: the omnibox row promises the inbox, so the
+   * request says `inbox` rather than trusting a default declared elsewhere.
+   */
+  it("names the inbox explicitly everywhere else, rather than relying on the server default", () => {
     expect(creationRequest(INBOX_TARGET, "Untitled")).toEqual({
       type: "note",
       title: "Untitled",
+      folder: DEFAULT_DOC_FOLDER,
     });
-    expect(creationRequest(INBOX_TARGET, "Untitled")).not.toHaveProperty("folder");
+    expect(DEFAULT_DOC_FOLDER).toBe("inbox");
   });
 
   it("creates a plugin column's own document type", () => {
     expect(
       creationRequest({ folder: null, plugin: { plugin: "todos", type: "todo" } }, "Untitled"),
-    ).toEqual({ type: "todo", title: "Untitled" });
+    ).toEqual({ type: "todo", title: "Untitled", folder: DEFAULT_DOC_FOLDER });
   });
 
   it("prefers the folder when a column is both folder-scoped and plugin-rendered", () => {
@@ -71,6 +77,7 @@ describe("useCreateInColumn", () => {
     expect(wire.writes("POST")[0]?.body).toEqual({
       type: "note",
       title: "Mortgage options",
+      folder: DEFAULT_DOC_FOLDER,
     });
   });
 

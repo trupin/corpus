@@ -76,6 +76,7 @@ const RUNTIME_SURFACE = [
   "LockChip",
   "NeedsYouBadge",
   "UnreadBadge",
+  "unreadBadgeProps",
   "WorkingDot",
   "reasonChip",
   "reasonChips",

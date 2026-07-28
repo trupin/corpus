@@ -2,6 +2,8 @@
 import type { RowNotice } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
 import {
@@ -158,5 +160,27 @@ describe("DocMenu", () => {
     mount({ onClose });
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * jsdom applies no stylesheet, so the colours are asserted against the
+ * stylesheet itself — the same approach `theme.test.ts` takes to `index.html`'s
+ * pre-paint script. The browser measurement lives in the issue's E2E log.
+ */
+describe("the destructive item's treatment (TEST-18)", () => {
+  const css = readFileSync(join(import.meta.dirname, "Reader.css"), "utf8");
+  const rule = (selector: string): string =>
+    new RegExp(`${selector.replace(/\./g, "\\.")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+
+  it.each([".cp-danger .cp-quote", ".cp-danger .cp-meta"])(
+    "renders %s in --signal, so both of Delete's lines read as the warning they are",
+    (selector) => {
+      expect(rule(selector)).toContain("color: var(--signal)");
+    },
+  );
+
+  it("leaves every other item's sub-label in --ink-3", () => {
+    expect(rule(".cp-meta")).toContain("color: var(--ink-3)");
   });
 });

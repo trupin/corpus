@@ -408,8 +408,12 @@ describe("the create row", () => {
     await waitFor(() => {
       expect(wire.writes("POST").length).toBe(1);
     });
-    // No folder: the server's own inbox default is not restated by the client.
-    expect(wire.writes("POST")[0]?.body).toEqual({ type: "note", title: "a new thought" });
+    // The create row's copy promises the inbox, so the request names it.
+    expect(wire.writes("POST")[0]?.body).toEqual({
+      type: "note",
+      title: "a new thought",
+      folder: "inbox",
+    });
     expect(onClose).toHaveBeenCalled();
     await waitFor(() => {
       expect(handlers.open).toHaveBeenCalledWith({
@@ -418,7 +422,9 @@ describe("the create row", () => {
         selectTitle: true,
       });
     });
-    expect(screen.getByRole("status").textContent).toContain("Created “a new thought”");
+    // The toast surface is an `aria-live` region, not a `role="status"` element:
+    // the console strip owns that role (see `Toasts.tsx`).
+    expect(document.querySelector(".toast")?.textContent).toContain("Created “a new thought”");
   });
 
   it("is the only row, and the cursor's first stop, when nothing matched", async () => {
@@ -459,7 +465,7 @@ describe("failures", () => {
     await user.click(screen.getByRole("button", { name: "save as view" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("status").textContent).toContain("Save as view failed");
+      expect(document.querySelector(".toast")?.textContent).toContain("Save as view failed");
     });
     expect(onClose).not.toHaveBeenCalled();
     expect(handlers.revealColumn).not.toHaveBeenCalled();

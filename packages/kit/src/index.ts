@@ -123,11 +123,17 @@ export {
   LockChip,
   NeedsYouBadge,
   UnreadBadge,
+  // A plugin's own `ListItem` replaces `Row` wholesale, so the rule deciding
+  // which unread pill a row draws ships with the badge rather than staying
+  // private — re-deriving it per plugin is how the aggregate pill goes missing
+  // again, one surface at a time.
+  unreadBadgeProps,
   WorkingDot,
   type AgeChipProps,
   type LockChipProps,
   type NeedsYouBadgeProps,
   type UnreadBadgeProps,
+  type UnreadUnit,
   type WorkingDotProps,
 } from "./row/badges.js";
 export { reasonChip, reasonChips, REASON_CHIP_CLASSES, type ReasonChip } from "./row/reasons.js";

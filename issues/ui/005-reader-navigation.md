@@ -494,6 +494,123 @@ each with its pre-fix observation.
 - **Ref-resolution strategy** (for UI-006/UI-007): one cache-deduped `useDoc`
   per distinct id, no retry on `4xx`.
 
+### Addendum — sprint-010 evaluator fixes (2026-07-28)
+
+**Implemented on: opus.**
+
+Six items from `issues/evals/sprint-010-cross-issue-eval.md` (FAIL-1, FIND-2)
+and `issues/evals/UI-005-eval.md` (FAIL-1, FIND-2/3/4). Verified against a real
+`corpus init` workspace on **8960**, the **production-served** board
+(`corpus server start` → `http://127.0.0.1:8960/`, SERVER-024's injected token,
+no Vite), real headless Chromium at 1440×900, with every mutation issued through
+the real UI or the real CLI/HTTP API. Scratch: `/tmp/corpus-s010fix-*`.
+
+1. **TEST-116 — the aggregate unread pill (the FAIL).** `Row` gated its badge on
+   `row.unread === true`, which is `null` on a document row by contract, so
+   `unreadThreads` rode every row and drew nothing. The decision now lives in
+   `unreadBadgeProps(row, override)` (`packages/kit/src/row/badges.tsx`, exported
+   from the kit so a plugin's `ListItem` cannot re-create the bug): a thread row
+   keeps its `unread`-flag badge, a document row draws `unreadThreads > 0` with
+   the count, and the two branches are exclusive — **never both**. No call site
+   changed; every host that renders a `Row` gets the aggregate.
+
+   **The observable, end to end.** Note `doc_hdnfod6p` with 2 unread threads:
+
+   ```
+   wire  GET /api/docs?folder=finance → doc_hdnfod6p  unread=null  unreadThreads=2
+   DOM   <span class="unread" aria-label="2 unread threads" title="2 unread threads">2</span>
+   ```
+
+   Clicked one of its threads' rows (`th_iihrss3v`) → exactly one write,
+   `POST /api/threads/th_iihrss3v/seen`; back to the list:
+
+   ```
+   wire  unreadThreads=1
+   DOM   <span class="unread" aria-label="1 unread thread" title="1 unread thread">1</span>
+   ```
+
+   `performance.getEntriesByType("navigation").length` **unchanged across the
+   whole act (0 reloads)**, `pageerror` list `[]` — the invalidation on `["docs"]`
+   + the parent's docKey repaints it. Thread rows in the same columns: the two
+   still-unread ones carry exactly **1** pill each (`new`), the two seen ones
+   carry **0**. The singular label is real: "1 unread thread", not "1 unread
+   threads".
+
+2. **TEST-18 — Delete's sub-label.** `.cp-danger .cp-meta { color: var(--signal) }`
+   (`apps/ui/src/reader/Reader.css`). The prototype colours only the item's label
+   because there the sub-label is decoration; here it carries the two facts that
+   make Delete different from every other item, and `--ink-3` read as the same
+   muted footnote as "reversible — hidden from default lists". Measured in the
+   browser: `--signal` `#c4552e`; delete `.cp-quote` **rgb(196, 85, 46)**, delete
+   `.cp-meta` **rgb(196, 85, 46)**, Archive's `.cp-meta` still
+   **rgb(155, 161, 168)** (`--ink-3`). jsdom applies no stylesheet, so the rule
+   itself is asserted in `DocMenu.test.tsx` the way `theme.test.ts` asserts
+   `index.html`.
+
+3. **FIND-2 — the force-unlock toast's requeue claim.** `ReleaseLockResult` is
+   `{docId, released, holder}` — there is no field to make the clause conditional
+   *on*, so the claim is gone rather than guessed. Observed verbatim in the
+   browser after `corpus lock acquire doc_hdnfod6p --from agent` → Force unlock:
+   *"Lock broken — agent's lock on doc_hdnfod6p was force-released. The break is
+   recorded in the audit trail."* Both banners cleared, no reload. Restoring the
+   clause needs a response field, not a sentence in the UI.
+
+4. **UI-009 FIND-1 — omnibox create omits `folder`.** `creationRequest` now
+   always sends it, using the contract's own `DEFAULT_DOC_FOLDER` (so the
+   decision is *named* at the call site, not copied). ⌘K → typed a title →
+   clicked the create row, whose copy reads *"＋ Create "…" — opens ready to
+   edit, in inbox/"*; the request body was
+   `{"type":"note","title":"…","folder":"inbox"}`.
+
+5. **FIND-3 — a non-id `[[token]]` rendered as a live link.** Kit's `REF_PATTERN`
+   is now the server's candidate grammar character for character, and each
+   candidate is validated against the contract's `DocumentIdSchema` — the same
+   two-step `apps/server/src/core/refs.ts` uses, so no client recognises more
+   tokens than the corpus records. A rejected candidate does not move the split
+   cursor, so it stays inside its text run. Body
+   `"A mortgage overview. See [[not-a-real-doc]] and [[doc_notyet]] and [[not an id]]."`
+   renders: `a.ref` count **0**, `.ref-broken` = `["doc_notyet"]` (unchanged), and
+   the literal text `[[not-a-real-doc]]` and `[[not an id]]` in the body. Zero
+   `GET /api/docs/{id}` for the non-ids.
+
+6. **FIND-4 — "every toast renders as two identical DOM nodes".** Measured with
+   one toast up: `.toast` → **1**, `.toast-wrap` → **1**, `[class*="toast"]` →
+   **2**, and node A `contains` node B. The finding's two nodes are the wrapper
+   and its single child — a `[class*=…]` probe matches both, and their
+   `textContent` is identical whenever exactly one toast is up. A `MutationObserver`
+   over `document.body` recorded **no** repeated insertion, and with two distinct
+   notices up the counts were `.toast` 2 / `[class*="toast"]` 3 (N notices → N+1
+   matches). **There was no double mount.** There *was* a real duplicate one layer
+   down: each `.toast` carried `role="status"` inside the wrapper's
+   `aria-live="polite"` — a live region nested in a live region, announced by its
+   own region and again by its ancestor. The wrapper is now the only live region
+   (`aria-live="polite" aria-atomic="false"`, no `role`, so the console strip's
+   `role="status"` stays unambiguous); measured in the browser:
+   `.toast-wrap [aria-live], [role=status], [role=alert]` → **0**. Pinned by
+   `Toasts.test.tsx` → *"one notice, one node"*, including under `StrictMode`.
+
+**Checks.** `npm run lint` clean · `npm run format:check` clean ·
+`npm run typecheck` clean across all workspaces ·
+`VITEST_MAX_THREADS=4 vitest run apps/ui packages/kit` → **71 files / 963 tests,
+all passing** (from 68 files / 940 tests before these fixes: +23 tests). Repo-wide
+suite, coverage and e2e left to the orchestrator's harvest gate.
+
+**Not fixed — found while verifying, needs its own issue.** The ⋯ menu's
+**Still current**, **Archive** and **Resolve** perform their mutation and then
+call `onClose()` synchronously, which unmounts `DocMenu` before the request
+settles; TanStack v5 drops a `mutate()` call's `onSuccess`/`onError` when the
+observer is torn down, so **none of those three ever reaches the toast surface**.
+Observed: clicking "Still current" issued
+`PUT /api/docs/doc_hdnfod6p {"reviewed":"2026-07-28T16:23:36.536Z"}` and produced
+**zero** toasts over 3 s (`.toast` → 0 throughout). Delete is unaffected because
+it closes *inside* `onSuccess`. This is a silent committed write, which
+`Toasts.tsx` names as the one interaction that must never be silent — but the fix
+changes menu-close timing, so it is reported rather than folded into this batch.
+
+**Cleanup.** Server stopped by pid (58288, and 47745 before the rebuild);
+`/tmp/corpus-s010fix-*` removed by name; `8960` free; `8765` unbound throughout;
+no orphaned Chromium, vitest or Vite children.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

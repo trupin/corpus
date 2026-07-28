@@ -134,6 +134,32 @@ describe("MarkdownView", () => {
   });
 
   /**
+   * sprint-010 FIND-3: `[[doc_notyet]]` is a *reference to a document that does
+   * not exist yet* and gets the broken treatment; `[[not-a-real-doc]]` is not a
+   * reference at all. It used to render as an enabled `<a class="ref">` that
+   * navigated a reader to an id no document can ever have.
+   */
+  it("renders a non-id token as the literal text the author typed", async () => {
+    const transport = wire();
+    const harness = createCorpusTestHarness({ fetch: transport.fetch });
+    const { container } = render(
+      <MarkdownView
+        markdown="see [[not-a-real-doc]] and [[not an id]]"
+        onOpenRef={() => undefined}
+      />,
+      { wrapper: harness.Wrapper },
+    );
+    await waitFor(() => {
+      expect(container.textContent).toContain("[[not-a-real-doc]]");
+    });
+    expect(container.textContent).toContain("[[not an id]]");
+    expect(container.querySelector("a.ref")).toBeNull();
+    expect(container.querySelector(".ref-broken")).toBeNull();
+    // And nothing was looked up: there is no id to look up.
+    expect(transport.reads.filter((path) => path.startsWith("/api/docs/"))).toHaveLength(0);
+  });
+
+  /**
    * The adjudicated strategy (`GET /api/docs` has no `ids=` filter): one
    * cache-deduped `useDoc` per **distinct** id, never one per occurrence.
    */

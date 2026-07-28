@@ -325,8 +325,13 @@ describe("Board", () => {
     await waitFor(() => {
       expect(wire.writes("POST")).toHaveLength(1);
     });
-    // No folder: the server's documented inbox-first default applies.
-    expect(wire.writes("POST")[0]?.body).toEqual({ type: "note", title: "Untitled" });
+    // A non-folder column creates into the inbox, and says so on the wire
+    // rather than leaving it to a default in another package.
+    expect(wire.writes("POST")[0]?.body).toEqual({
+      type: "note",
+      title: "Untitled",
+      folder: "inbox",
+    });
   });
 
   it("unpins by archiving the view document, never by deleting it", async () => {

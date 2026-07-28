@@ -7,15 +7,20 @@ import type { ReactElement } from "react";
  *
  * While the agent holds a document's edit lock the document renders read-only
  * with a banner naming the holder, and Force unlock is the human escape hatch:
- * it breaks the lock immediately, the break is recorded in the audit trail, and
- * the agent's deferred edit re-enters the queue rather than being lost.
+ * it breaks the lock immediately and the break is recorded in the audit trail.
  *
- * **The toast reports what the server said, not what the button hoped.** Both of
- * those claims are the server's to make — `forceBreak` writes the audit commit
- * and re-queues the deferred event — so the success copy fires on the response
- * and the failure copy fires on the failure. A UI that clears the banner
- * optimistically eventually tells somebody a lock was broken when it was not,
- * and that is the one thing a lock UI must never do.
+ * **The toast reports what the server said, not what the button hoped.** It
+ * fires on the response, never optimistically: a UI that cleared the banner
+ * first eventually tells somebody a lock was broken when it was not, and that
+ * is the one thing a lock UI must never do.
+ *
+ * It also claims **only what the response carries**. `ReleaseLockResult` is
+ * `{docId, released, holder}` — so the audit-trail sentence is the server's own
+ * documented behaviour for this route, while the deferred edit this toast used
+ * to promise had been re-queued is not on the wire in any form. It was asserted
+ * unconditionally and observed firing on a lock with nothing deferred at all
+ * (sprint-010 FIND-2). Restoring the clause needs a field on the response
+ * saying what was re-queued, not a sentence here hoping it was.
  */
 
 export interface LockBannerProps {
@@ -62,7 +67,7 @@ export function LockBanner({ lock, onNotify }: LockBannerProps): ReactElement {
                 tone: "info",
                 message:
                   `Lock broken — ${result.holder}'s lock on ${result.docId} was force-released. ` +
-                  "The break is recorded in the audit trail and the agent's deferred edit was re-queued.",
+                  "The break is recorded in the audit trail.",
               });
             },
             onError: (error) => {

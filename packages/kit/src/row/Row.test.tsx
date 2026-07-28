@@ -103,9 +103,27 @@ describe("badges", () => {
     expect(container.querySelector(".unread")).not.toBeNull();
   });
 
-  it("shows no unread pill for a document, whose `unread` is null on the wire", () => {
-    const { container } = renderRow({ row: docRowFixture({ unread: null }) });
+  // TEST-116. `unread` is null on a document row *by contract*; its aggregate
+  // lives in `unreadThreads`, and gating the pill on the boolean alone is what
+  // left the count correct on the wire and invisible on screen.
+  it("shows the aggregate pill on a document row with unread threads", () => {
+    const { container } = renderRow({ row: docRowFixture({ unreadThreads: 3 }) });
+    const badge = container.querySelector(".unread");
+    expect(badge?.textContent).toBe("3");
+    expect(badge?.getAttribute("aria-label")).toBe("3 unread threads");
+  });
+
+  it("shows no unread pill for a document with nothing unread", () => {
+    const { container } = renderRow({ row: docRowFixture({ unread: null, unreadThreads: 0 }) });
     expect(container.querySelector(".unread")).toBeNull();
+  });
+
+  it("draws exactly one unread pill, never one per axis", () => {
+    const { container } = renderRow({
+      row: docRowFixture({ type: "thread", parent: "doc_a", unread: true, unreadThreads: 4 }),
+    });
+    expect(container.querySelectorAll(".unread")).toHaveLength(1);
+    expect(container.querySelector(".unread")?.textContent).toBe("new");
   });
 
   it("renders a supplied unread count", () => {

@@ -35,6 +35,31 @@ describe("parseRefs", () => {
     expect(parseRefs("[[not an id]] and [[ ]]")).toEqual([]);
   });
 
+  /**
+   * sprint-010 FIND-3. Refs are id-based (SPEC.md §5) and the server ignores
+   * anything else, so a token that merely *looks* structured is prose too — a
+   * client recognising more than the server does renders a live link into a
+   * document the corpus has no record of.
+   */
+  it.each([
+    "[[not-a-real-doc]]",
+    "[[TODO]]",
+    "[[doc]]",
+    "[[note_a1b2]]",
+    "[[doc-a1b2]]",
+    "[[doc_]]",
+    "[[_a1b2]]",
+    "[[doc_a1b2|alias]] and [[whatever_else|alias]]",
+  ])("ignores %s, which is not a document id", (body) => {
+    expect(parseRefs(body).every((ref) => /^(doc|th)_[A-Za-z0-9]+$/.test(ref.id))).toBe(true);
+  });
+
+  it("keeps the real refs in a body that mixes them with prose tokens", () => {
+    expect(parseRefs("[[not-a-real-doc]] then [[doc_a1b2]]")).toEqual([
+      { id: "doc_a1b2", alias: null },
+    ]);
+  });
+
   it("reads an empty alias as no alias — an invisible link is worse than an id", () => {
     expect(parseRefs("[[doc_a|]] [[doc_b|   ]]")).toEqual([
       { id: "doc_a", alias: null },
@@ -64,6 +89,15 @@ describe("refIds", () => {
 describe("splitTextNode", () => {
   it("returns null for text with no refs, so the node is left untouched", () => {
     expect(splitTextNode("plain prose")).toBeNull();
+  });
+
+  it("leaves a non-id token inside the text run, character for character", () => {
+    // Not `["text", ref, "text"]` with the token dropped, and not a ref node:
+    // the author typed those characters and they render as those characters.
+    expect(splitTextNode("see [[not-a-real-doc]] now")).toBeNull();
+    const mixed = splitTextNode("[[not-a-real-doc]] then [[doc_a]]");
+    expect(mixed?.map((part) => part.type)).toEqual(["text", REF_NODE_TYPE]);
+    expect(mixed?.[0]?.value).toBe("[[not-a-real-doc]] then ");
   });
 
   it("keeps the text around a ref", () => {

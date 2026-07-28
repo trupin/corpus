@@ -1,3 +1,4 @@
+import type { DocRow } from "@corpus/contract";
 import type { ReactElement } from "react";
 
 /**
@@ -13,25 +14,71 @@ import type { ReactElement } from "react";
  * staleness axis. No badge here borrows another's colour.
  */
 
+/** What the number on an unread pill counts. Only the accessible copy differs. */
+export type UnreadUnit = "turns" | "threads";
+
 export interface UnreadBadgeProps {
   /**
-   * Unread turns, when the caller knows. **The wire does not**: `DocRow.unread`
-   * is a boolean, so the badge reads `new` from collection data alone and shows
-   * a number only when something richer supplies one.
+   * The count, when there is an honest one. A *thread* row usually has none —
+   * `DocRow.unread` is a boolean — and then the badge reads `new`. A *document*
+   * row always has one: `DocRow.unreadThreads` (CONTRACT-012).
    */
   readonly count?: number | null | undefined;
+  /**
+   * What `count` counts. A document row's number is unread **threads**, not
+   * turns, and telling a screen reader "3 unread turns" about a document with
+   * three unread conversations is simply a false statement.
+   */
+  readonly unit?: UnreadUnit | undefined;
 }
 
 /** The accent pill with the leading 6px dot; `.unread::before` draws the dot. */
-export function UnreadBadge({ count }: UnreadBadgeProps): ReactElement {
+export function UnreadBadge({ count, unit = "turns" }: UnreadBadgeProps): ReactElement {
   const known = typeof count === "number" && count > 0;
   const text = known ? String(count) : "new";
-  const label = known ? `${String(count)} unread turns` : "Unread — a turn you have not seen";
+  // "1 unread threads" is the sort of thing only a screen reader has to sit
+  // through, which is exactly why it gets fixed rather than shrugged at.
+  const noun = count === 1 ? unit.slice(0, -1) : unit;
+  const label = known ? `${String(count)} unread ${noun}` : "Unread — a turn you have not seen";
   return (
     <span className="unread" aria-label={label} title={label}>
       {text}
     </span>
   );
+}
+
+/**
+ * Which unread pill a row shows — **at most one, never two** (sprint-010
+ * TEST-116).
+ *
+ * The two axes look alike and are not the same fact, and the wire keeps them
+ * apart by type:
+ *
+ * - a **thread** row carries `unread: boolean` — has *this conversation* moved
+ *   since you last looked — and no count, so its pill reads `new` unless a host
+ *   supplies something richer;
+ * - a **document** row carries `unread: null` by contract and
+ *   `unreadThreads: number` — how many of *its* threads have moved — which is
+ *   the aggregate the prototype renders as `<span class="unread">2</span>`
+ *   (`design/index.html`, `doc_mortgage`). Gating on `unread === true` alone is
+ *   why that pill was computed on the wire and never drawn.
+ *
+ * `override` is the host's `unreadCount` and wins over both, for a surface that
+ * knows better than the collection row does. Returns the badge's props, or
+ * `null` for "this row has nothing unread to say".
+ */
+export function unreadBadgeProps(
+  row: Pick<DocRow, "unread" | "unreadThreads">,
+  override?: number | null,
+): UnreadBadgeProps | null {
+  const supplied = typeof override === "number" ? override : null;
+  if (row.unread !== null) {
+    // A thread row. The boolean decides; the count is decoration when present.
+    if (!row.unread) return null;
+    return supplied === null ? { unit: "turns" } : { count: supplied, unit: "turns" };
+  }
+  const count = supplied ?? row.unreadThreads;
+  return count > 0 ? { count, unit: "threads" } : null;
 }
 
 export interface NeedsYouBadgeProps {

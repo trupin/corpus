@@ -47,8 +47,8 @@ describe("LockBanner", () => {
   });
 
   /**
-   * Both of the toast's claims are the server's — the audit-trail commit and
-   * the re-queued deferred edit — so the copy only fires on the response.
+   * The toast's claim is the server's — the audit-trail commit — and it fires
+   * on the response, never before it.
    */
   it("breaks the lock and reports what the server did", async () => {
     const notify = vi.fn<(notice: RowNotice) => void>();
@@ -65,8 +65,32 @@ describe("LockBanner", () => {
       expect(notify).toHaveBeenCalled();
     });
     const message = notify.mock.calls[0]?.[0]?.message ?? "";
+    expect(message).toContain("agent's lock on doc_m was force-released");
     expect(message).toContain("recorded in the audit trail");
-    expect(message).toContain("re-queued");
+  });
+
+  /**
+   * sprint-010 FIND-2: the toast used to assert "the agent's deferred edit was
+   * re-queued" on every break, including breaks of locks with nothing deferred.
+   * `ReleaseLockResult` carries no such field, so there is nothing to make the
+   * clause conditional *on* — the copy may claim only `{docId, released,
+   * holder}` and the route's documented audit commit.
+   */
+  it("claims nothing the response does not carry", async () => {
+    const notify = vi.fn<(notice: RowNotice) => void>();
+    const wire = readerTransport();
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    render(<LockBanner lock={LOCK} onNotify={notify} />, { wrapper: harness.Wrapper });
+
+    fireEvent.click(screen.getByRole("button", { name: "Force unlock" }));
+
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalled();
+    });
+    const message = notify.mock.calls[0]?.[0]?.message ?? "";
+    expect(message).not.toContain("re-queued");
+    expect(message).not.toContain("deferred");
+    expect(message).not.toContain("queue");
   });
 
   it("never claims a break that did not happen", async () => {

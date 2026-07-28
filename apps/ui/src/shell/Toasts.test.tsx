@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_TOASTS, TOAST_DURATION_MS, ToastProvider, useToast } from "./Toasts";
 
@@ -112,5 +113,55 @@ describe("ToastProvider", () => {
     expect(() => {
       fireEvent.click(screen.getByText("say"));
     }).not.toThrow();
+  });
+
+  /**
+   * sprint-010 FIND-4. What the finding counted was `.toast-wrap` and its one
+   * `.toast` child — a `[class*="toast"]` probe matches both, and their text is
+   * identical because the wrapper holds exactly one item. The assertions below
+   * pin the shape that makes that reading unambiguous, so a genuine double
+   * mount would fail here instead of being argued about in a browser.
+   */
+  describe("one notice, one node", () => {
+    it("renders exactly one element per notice, inside the wrapper", () => {
+      render(
+        <StrictMode>
+          <ToastProvider>
+            <Narrator />
+          </ToastProvider>
+        </StrictMode>,
+      );
+
+      fireEvent.click(screen.getByText("say"));
+
+      const wraps = document.querySelectorAll(".toast-wrap");
+      const toasts = document.querySelectorAll(".toast");
+      expect(wraps).toHaveLength(1);
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0]?.parentElement).toBe(wraps[0]);
+      // The count the finding reported, and why it is 2 rather than 1.
+      expect(document.querySelectorAll('[class*="toast"]')).toHaveLength(2);
+    });
+
+    /**
+     * A `role="status"` inside an `aria-live` region is a live region inside a
+     * live region: announced by its own region and again by its ancestor. One
+     * region, one announcement.
+     */
+    it("announces through exactly one live region", () => {
+      render(
+        <ToastProvider>
+          <Narrator />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("say"));
+
+      const regions = document.querySelectorAll("[aria-live], [role='status'], [role='alert']");
+      expect(regions).toHaveLength(1);
+      expect(regions[0]?.className).toBe("toast-wrap");
+      expect(regions[0]?.getAttribute("aria-live")).toBe("polite");
+      // Additive, not re-read in full every time a toast joins the stack.
+      expect(regions[0]?.getAttribute("aria-atomic")).toBe("false");
+    });
   });
 });

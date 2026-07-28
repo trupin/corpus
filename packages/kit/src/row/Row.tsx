@@ -1,6 +1,13 @@
 import type { DocRow } from "@corpus/contract";
 import type { ComponentType, KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { AgeChip, LockChip, NeedsYouBadge, UnreadBadge, WorkingDot } from "./badges.js";
+import {
+  AgeChip,
+  LockChip,
+  NeedsYouBadge,
+  UnreadBadge,
+  WorkingDot,
+  unreadBadgeProps,
+} from "./badges.js";
 import { reasonChips } from "./reasons.js";
 import { ageLabel, hasStaleActions, stalenessClass, stalenessLevel } from "./staleness.js";
 import { isThreadRow, rowContext, rowExcerpt } from "./threadRow.js";
@@ -28,16 +35,19 @@ export interface RowProps {
   /** Opening the row. Never fired by a quick action, which stops propagation. */
   readonly onOpen?: ((row: DocRow) => void) | undefined;
   /**
-   * The number the unread badge shows, when the host has one.
+   * Overrides the number the unread badge shows. **Optional, and normally
+   * omitted** — the row already carries its own count.
    *
-   * For a **document** row that number is `DocRow.unreadThreads`
-   * (CONTRACT-012): the server-computed count of this document's unread
+   * For a **document** row that count is `DocRow.unreadThreads`
+   * (CONTRACT-012): the server-computed number of this document's unread
    * threads, carried on the row itself, so the aggregate SPEC.md §7 describes
    * ("opening a parent document does not mark its collapsed-chip threads seen")
    * needs neither a richer type here nor the per-row `?parent=<id>` query that
-   * would be the N+1 this component refuses. It stays optional because
-   * `DocRow.unread` is still the boolean that decides whether the badge renders
-   * at all, and a host with nothing better to say renders it without a number.
+   * would be the N+1 this component refuses. Because it rides on the row, the
+   * pill needs no wiring at any call site — every host that renders a `Row`
+   * gets the aggregate, and no host can forget to pass it. This prop exists for
+   * the surface that genuinely knows better (a thread row, whose `unread` is a
+   * bare boolean on the wire, rendered next to a turn count it already has).
    */
   readonly unreadCount?: number | null | undefined;
   /** Narration for a host's toast surface. Errors also render inside the row. */
@@ -93,6 +103,7 @@ export function Row(props: RowProps): ReactElement {
   const age = ageLabel(row, now ?? new Date());
   const chips = showReasons === false ? [] : reasonChips(row.attention, row.stale);
   const needsYou = needsYouText(row.attention);
+  const unread = unreadBadgeProps(row, unreadCount);
   const anchorQuote = isThreadRow(row) ? row.anchorQuote : null;
 
   const open = (): void => {
@@ -133,7 +144,7 @@ export function Row(props: RowProps): ReactElement {
         <span className="type-glyph">{row.type}</span>
         <span className="row-title">{row.title}</span>
         <span className="row-badges">
-          {row.unread === true ? <UnreadBadge count={unreadCount} /> : null}
+          {unread !== null ? <UnreadBadge {...unread} /> : null}
           {needsYou !== null ? <NeedsYouBadge text={needsYou} /> : null}
           {activity.active ? <WorkingDot title={activity.title} /> : null}
           {lock !== null ? <LockChip holder={lock.holder} /> : null}
