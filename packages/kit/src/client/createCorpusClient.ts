@@ -9,9 +9,12 @@ import type {
   DocMutationResponse,
   FolderTree,
   Health,
+  Job,
   JobList,
+  JobLog,
   LockList,
   MarkSeenResult,
+  QueueStatus,
   ReleaseLockResult,
   Thread,
   ThreadMutationResponse,
@@ -80,7 +83,18 @@ export interface CorpusClient {
   getThread(id: string, options?: RequestOptions): Promise<Thread>;
   getTree(options?: RequestOptions): Promise<FolderTree>;
   listJobs(params: JobsParams, options?: RequestOptions): Promise<JobList>;
+  /**
+   * `GET /api/jobs/{id}/log?cursor=` — the console's log pane (SPEC.md §7).
+   *
+   * Cursored because the stream never carries log content: SSE announces that a
+   * job's log grew and the console refetches over HTTP. Passing back the
+   * previous `nextCursor` is what makes that refetch incremental *and* what
+   * prevents duplicates — there is no client-side line diff.
+   */
+  getJobLog(eventId: string, cursor: number, options?: RequestOptions): Promise<JobLog>;
   listLocks(options?: RequestOptions): Promise<LockList>;
+  /** `GET /api/queue/status` — halted flag plus per-status counts (SPEC.md §7). */
+  getQueueStatus(options?: RequestOptions): Promise<QueueStatus>;
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
@@ -131,6 +145,20 @@ export interface CorpusClient {
    * report both — but only after this resolves, never optimistically.
    */
   breakLock(docId: string): Promise<ReleaseLockResult>;
+  /**
+   * `POST /api/queue/halt` — writes the `.corpus/HALT` sentinel (SPEC.md §7).
+   *
+   * The halted flag is **server** state, not a console toggle: `corpus queue
+   * halt` from a terminal and this button write the same sentinel, and both
+   * surfaces read it back from {@link CorpusClient.getQueueStatus}.
+   */
+  haltQueue(reason?: string): Promise<QueueStatus>;
+  /** `POST /api/queue/resume` — removes the sentinel. */
+  resumeQueue(): Promise<QueueStatus>;
+  /** `POST /api/jobs/{id}/retry` — returns a failed job's event to `pending/`. */
+  retryJob(eventId: string): Promise<Job>;
+  /** `POST /api/jobs/{id}/abandon` — gives up on a job; nothing is deleted. */
+  abandonJob(eventId: string): Promise<Job>;
   /**
    * Opens the SSE invalidation stream. Kept off `api` upstream because
    * EventSource is not fetch; kept here because the bridge needs it and nothing
@@ -328,8 +356,25 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       );
     },
 
+    async getJobLog(eventId, cursor, options) {
+      return unwrap(
+        "GET /api/jobs/{id}/log",
+        await api.GET("/api/jobs/{id}/log", {
+          params: { path: { id: eventId }, query: { cursor } },
+          ...signalOf(options),
+        }),
+      );
+    },
+
     async listLocks(options) {
       return unwrap("GET /api/locks", await api.GET("/api/locks", { ...signalOf(options) }));
+    },
+
+    async getQueueStatus(options) {
+      return unwrap(
+        "GET /api/queue/status",
+        await api.GET("/api/queue/status", { ...signalOf(options) }),
+      );
     },
 
     async getHealth(options) {
@@ -406,6 +451,35 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/locks/{docId}/break",
         await api.POST("/api/locks/{docId}/break", { params: { path: { docId } } }),
+      );
+    },
+
+    async haltQueue(reason) {
+      // The body is optional in full — a bare POST halts — so an omitted reason
+      // sends no body at all rather than `{reason: undefined}`, which would
+      // serialise to `{}` and re-record the sentinel with an empty annotation.
+      const body = reason === undefined ? undefined : { reason };
+      return unwrap(
+        "POST /api/queue/halt",
+        await api.POST("/api/queue/halt", body === undefined ? {} : { body }),
+      );
+    },
+
+    async resumeQueue() {
+      return unwrap("POST /api/queue/resume", await api.POST("/api/queue/resume", {}));
+    },
+
+    async retryJob(eventId) {
+      return unwrap(
+        "POST /api/jobs/{id}/retry",
+        await api.POST("/api/jobs/{id}/retry", { params: { path: { id: eventId } } }),
+      );
+    },
+
+    async abandonJob(eventId) {
+      return unwrap(
+        "POST /api/jobs/{id}/abandon",
+        await api.POST("/api/jobs/{id}/abandon", { params: { path: { id: eventId } } }),
       );
     },
 

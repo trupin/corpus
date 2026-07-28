@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { BoardNavigationProvider } from "../board/openInColumn";
+import { Console } from "../console/Console";
 import { SearchOverlay } from "../search/SearchOverlay";
 import { Board } from "./Board";
-import { ConsoleStrip } from "./ConsoleStrip";
 import { ToastProvider } from "./Toasts";
 import { Topbar } from "./Topbar";
 import "./Shell.css";
@@ -58,7 +58,7 @@ export function Shell(): ReactElement {
         <div className="app">
           <Topbar onOpenSearch={openSearch} />
           <Board />
-          <ConsoleStrip />
+          <Console />
         </div>
         {searchOpen ? <SearchOverlay onClose={closeSearch} /> : null}
       </BoardNavigationProvider>

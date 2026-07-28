@@ -69,18 +69,11 @@ export const EMPTY_SEARCH_QUERY: SearchQuery = {
 };
 
 /**
- * `GET /api/docs` parameters, plus the one the contract has not grown yet.
- *
- * `includeArchived` is CONTRACT-012's rider (sprint-010 adjudication 3). It is
- * declared as an intersection rather than waited for so the overlay ships the
- * chip its label promises: the kit forwards unknown filters verbatim and zod
- * strips unknown query keys server-side, so the parameter is inert — not wrong —
- * until the contract and server halves land, at which point this declaration
- * collapses into the generated one.
+ * `GET /api/docs` parameters, exactly as the contract declares them —
+ * `includeArchived` included, since CONTRACT-012's rider landed (sprint-010
+ * adjudication 3).
  */
-export type SearchApiParams = DocsFilter & {
-  readonly includeArchived?: boolean | undefined;
-};
+export type SearchApiParams = DocsFilter;
 
 /** The sort a text search wants; the contract rejects it without a `q`. */
 export const RELEVANCE_SORT = "relevance";

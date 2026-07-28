@@ -51,6 +51,15 @@ export { useDoc } from "./query/useDoc.js";
 export { useThread } from "./query/useThread.js";
 export { useTree } from "./query/useTree.js";
 export { useJobs } from "./query/useJobs.js";
+export {
+  capLogLines,
+  EMPTY_JOB_LOG,
+  MAX_BUFFERED_LOG_LINES,
+  useJobLog,
+  type JobLogView,
+  type UseJobLogOptions,
+} from "./query/useJobLog.js";
+export { useQueueStatus } from "./query/useQueueStatus.js";
 export { useLocks } from "./query/useLocks.js";
 export { useHealth } from "./query/useHealth.js";
 
@@ -66,6 +75,12 @@ export {
   type ThreadStatusVariables,
 } from "./query/useThreadStatus.js";
 export { useBreakLock } from "./query/useBreakLock.js";
+export {
+  useAbandonJob,
+  useHaltQueue,
+  useResumeQueue,
+  useRetryJob,
+} from "./query/useQueueControl.js";
 export {
   isPendingTurn,
   mergePendingTurns,

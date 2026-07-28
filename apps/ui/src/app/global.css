@@ -60,6 +60,7 @@ input:focus-visible,
  */
 @media (prefers-reduced-motion: reduce) {
   .agent-pill .dot.busy,
+  .job-dot.running,
   .working-dot,
   .row.flash,
   .thread-card.flash {
