@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { contractRoutes, mountAppendTurn } from "../routes/index.js";
+import * as client from "./index.js";
 import { createCorpusClient, isApiError, type FetchPaths, type paths } from "./index.js";
 
 const BASE_URL = "http://127.0.0.1:8765";
@@ -463,6 +464,60 @@ describe("the multipart helpers on the client", () => {
   it('carries an explicit "note only" capture through to a null event', async () => {
     const result = await createTestClient().capture({ text: "a thought", requestsAgent: false });
     expect(result.eventId).toBeNull();
+  });
+});
+
+/**
+ * `@corpus/contract`'s `exports` map publishes exactly two entry points — `.`
+ * and `./client` — so anything a consumer cannot reach through this barrel it
+ * cannot reach at all. All three multipart endpoints are therefore pinned here,
+ * including `uploadCreateThread`, which the kit needs to attach a file to a
+ * *new* thread and which the barrel silently omitted (CONTRACT-013).
+ */
+describe("the client barrel", () => {
+  it.each([
+    "uploadTurn",
+    "uploadCreateThread",
+    "uploadCapture",
+    "buildTurnFormData",
+    "buildThreadFormData",
+    "buildCaptureFormData",
+    "UploadError",
+    "FILES_FIELD",
+    "createCorpusClient",
+    "createEventStream",
+    "eventStreamUrl",
+    "isApiError",
+  ])("exports %s", (name) => {
+    expect(client).toHaveProperty(name);
+  });
+
+  /**
+   * Compile-time: the upload payload types travel with their functions, so a
+   * consumer can name the argument it builds. Dropping one from the barrel is a
+   * typecheck failure here rather than a deep import at the call site.
+   */
+  it("exports the upload payload types beside their functions", () => {
+    const thread: client.ThreadUpload = { title: "New thread", text: "look at this" };
+    const turn: client.TurnUpload = { threadId: "th_x9y8", text: "look" };
+    const capture: client.CaptureUpload = { text: "a thought" };
+    const options: client.UploadOptions = { baseUrl: BASE_URL, token: TOKEN };
+    expect([thread.title, turn.threadId, capture.text, options.baseUrl]).toEqual([
+      "New thread",
+      "th_x9y8",
+      "a thought",
+      BASE_URL,
+    ]);
+  });
+
+  it("builds the multipart body of a thread creation with attachments", () => {
+    const form = client.buildThreadFormData({
+      title: "New thread",
+      text: "look at this",
+      files: [new File(["bytes"], "shot.png", { type: "image/png" })],
+    });
+    expect(form.get("title")).toBe("New thread");
+    expect(form.getAll(client.FILES_FIELD)).toHaveLength(1);
   });
 });
 

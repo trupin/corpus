@@ -67,6 +67,25 @@ export function containsFormFence(body: string): boolean {
 }
 
 /**
+ * The lead-in of an answer turn's body: the marker the server writes when a form
+ * is answered, and the marker a reader uses to tell an answered form from an
+ * open one.
+ *
+ * An answer is written as a sentence rather than as a second machine-readable
+ * fence — a thread is markdown a person owns, not a serialization format, and
+ * the answer has to read as prose in `git log` and in a plain-text reader. The
+ * *structure* travels in the `form.respond` event payload
+ * ({@link FormRespondPayloadSchema}), which is what the agent consumes.
+ *
+ * It lives in the contract for the same reason the rest of the grammar does:
+ * two sides depend on it and neither may import the other. The server's form
+ * route composes the body with it; the UI matches turn bodies against it to know
+ * whether the form above is already answered — and `apps/ui` cannot import
+ * `apps/server`. One spelling, in the module that owns the grammar (CONTRACT-013).
+ */
+export const FORM_ANSWER_LABEL = "**Answered:**";
+
+/**
  * The parsed contents of a form fence. Deliberately **not** a registered OpenAPI
  * component: no route returns a form — turn bodies travel as markdown — and a
  * component with no producer would be contract surface nobody can reach. The

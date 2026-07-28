@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   containsFormFence,
   extractFormSource,
+  FORM_ANSWER_LABEL,
   FORM_FENCE_INFO_STRING,
   FORM_RESPOND_EVENT_TYPE,
   FormAnswerRequestSchema,
@@ -25,6 +26,16 @@ const form = FormSchema.parse({
 describe("the form fence", () => {
   it("names the info string the whole grammar hangs on", () => {
     expect(FORM_FENCE_INFO_STRING).toBe("form");
+  });
+
+  /**
+   * The writer (the server's form route) and the reader (the UI's answered-form
+   * detector) cannot import each other, so the marker is pinned here — a change
+   * to it is a change to the turn format, and this is where it has to be made.
+   */
+  it("names the answered-form marker both the writer and the reader match on", () => {
+    expect(FORM_ANSWER_LABEL).toBe("**Answered:**");
+    expect(`${FORM_ANSWER_LABEL} 6.4%`.startsWith(FORM_ANSWER_LABEL)).toBe(true);
   });
 
   it("extracts the YAML of a form fence in an agent turn", () => {

@@ -29,14 +29,26 @@ export {
   type EventStream,
   type EventStreamOptions,
 } from "./events.js";
+/**
+ * All three multipart helpers, not just the two the client wraps as methods.
+ * `uploadCreateThread` has no `CorpusClient` method — creating a thread is a
+ * plain `POST /api/threads` on the fetch surface whenever it carries no files —
+ * but a caller that *does* have files (the composer's *Ask* with an attachment,
+ * a selection comment carrying one) must reach the multipart form without a deep
+ * import, since `@corpus/contract`'s `exports` map publishes no subpath below
+ * `./client` (CONTRACT-013).
+ */
 export {
   buildCaptureFormData,
+  buildThreadFormData,
   buildTurnFormData,
   uploadCapture,
+  uploadCreateThread,
   uploadTurn,
   UploadError,
   FILES_FIELD,
   type CaptureUpload,
+  type ThreadUpload,
   type TurnUpload,
   type UploadOptions,
 } from "./upload.js";

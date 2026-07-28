@@ -88,9 +88,9 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-003 | Board columns: pinned view docs, reorder, new-list | done | P0 | UI-002, SERVER-011, SERVER-024, SERVER-026 |
 | UI-004 | Type-aware rows: badges, reasons, staleness ramp | done | P0 | UI-002 |
 | UI-005 | Reader, navigation stacks, doc menu, focus shell, lock banner | done | P0 | UI-003, UI-004 |
-| UI-006 | Always-editable TipTap document editor | todo | P0 | UI-005 |
+| UI-006 | Always-editable TipTap document editor | in_progress | P0 | UI-005 |
 | UI-007 | Anchored threads: highlights, comment-from-selection, chips ↔ margin cards | todo | P0 | UI-006 |
-| UI-008 | Thread view, composer, attachments, forms, read state | todo | P0 | UI-005, SERVER-010, CONTRACT-007, CONTRACT-009, SERVER-016, SERVER-023 |
+| UI-008 | Thread view, composer, attachments, forms, read state | in_progress | P0 | UI-005, SERVER-010, CONTRACT-007, CONTRACT-009, SERVER-016, SERVER-023 |
 | UI-009 | Search overlay, omnibox create, save-as-view | done | P0 | UI-003 |
 | UI-010 | Global Ask/Capture composer + keyboard scheme | todo | P1 | UI-008, UI-009 |
 | UI-011 | Console drawer: jobs master-detail, live logs, HALT | done | P1 | UI-002, SERVER-009, UI-009, SERVER-027 |
@@ -108,6 +108,8 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | done | P1 | CONTRACT-011 |
 | SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | done | P1 | CONTRACT-012, SERVER-011 |
 | SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | done | P1 | SERVER-007, SERVER-011 |
+| CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | todo | P1 | CONTRACT-007, CONTRACT-009 |
+| UI-012 | DocMenu actions never toast (callback teardown) | todo | P2 | UI-005 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
 ---
@@ -121,6 +123,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | SERVER-019 | Mount validation + skill-rollback handlers | todo | P1 | CONTRACT-008 |
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | todo | P1 | CLI-003, SERVER-019 |
 | AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, CLI-006, AGENT-002 |
+| AGENT-004 | Emit trace lines in agent turns | todo | P2 | AGENT-002, spec amendment |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | todo | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | todo | P1 | CLI-002, UI-010 |

@@ -34,6 +34,7 @@
 
 import type { Actor, Form, FormAnswerRequest, FormRespondPayload } from "@corpus/contract";
 import {
+  FORM_ANSWER_LABEL,
   FORM_RESPOND_EVENT_TYPE,
   FormSchema,
   extractFormSource,
@@ -50,13 +51,12 @@ import { buildTurnAppend, commitTurnAppend, type TurnAppend } from "./turns.js";
 import { EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
 
 /**
- * The lead-in of an answer turn's body. A form answer has to read as prose in
- * `git log` and in a plain-text reader — a thread is markdown a person owns, not
- * a serialization format — so the answer is written as a sentence rather than as
- * a second machine-readable fence. The *structure* travels in the event payload,
- * which is what the agent actually consumes (SPEC.md §7).
+ * The answer turn's lead-in, the contract's like the rest of the grammar: the
+ * UI matches turn bodies against it to tell an answered form from an open one,
+ * and it cannot import this module (CONTRACT-013). Re-exported so `threads/`'s
+ * surface still names it for the callers that compose an answer.
  */
-export const FORM_ANSWER_LABEL = "**Answered:**";
+export { FORM_ANSWER_LABEL };
 
 /** The turn body an answer writes: the chosen option, then any note (SPEC.md §6). */
 export function formAnswerBody(answer: FormAnswerRequest): string {
