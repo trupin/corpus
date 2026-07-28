@@ -64,3 +64,10 @@ _(to be filled by the implementing agent)_
 
 - [ ] `/evaluate` passes
 - [ ] Committed
+
+## Rider (orchestrator, 2026-07-28 — re-review finding 2)
+
+`useAutosave.ts:243-248` — a buffer parked behind a foreign lock is lost if the surface unmounts
+before the lock clears. The chip is honest while mounted and the server would refuse the write
+anyway, so there may be no better move — but consider surfacing the parked state more loudly
+(the text's only copy dies with the tab). Decide and document rather than leave implicit.
