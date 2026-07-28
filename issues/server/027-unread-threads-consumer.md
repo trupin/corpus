@@ -275,7 +275,7 @@ measurement directory deleted from the worktree (`git status` shows only source 
 
 ## Completion Checklist (orchestrator)
 
-- [ ] `/evaluate` passes
+- [x] `/evaluate` passes
 - [ ] Committed with CONTRACT-012
 
 ## Riders (orchestrator, 2026-07-28 — sprint-010 adjudications)

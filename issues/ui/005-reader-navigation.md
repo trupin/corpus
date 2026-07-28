@@ -622,5 +622,5 @@ no orphaned Chromium, vitest or Vite children.
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (P0, large surface, includes a destructive user-only action)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-005]` prefix

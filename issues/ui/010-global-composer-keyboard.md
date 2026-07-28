@@ -166,3 +166,22 @@ _[Agent fills: application restarted, exact commands, observed output, confirmat
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
 - [ ] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-010]` prefix
+
+## Corrections (orchestrator, 2026-07-28 — sprint-011 adjudications)
+
+Binding; where this contradicts the sections above, this wins. See
+`issues/sprints/sprint-011.md` → Orchestrator Adjudications for the full rulings.
+
+- **Paths**: there is no `apps/ui/src/features/` — the domain folders are
+  `editor/` (UI-006), `thread/` (UI-008), `anchors/` (UI-007), `compose/` (UI-010).
+- **Attachments**: 25 MB/file, 100 MB/request; multipart's text field is `text`; `ts` path
+  params are URL-encoded.
+- **`requestsAgent` is tri-state**: "note only" sends explicit `false`; omitted means
+  "enqueue if the agent is engaged".
+- **Lock state** reads via `useLocks`/`useDocLock` + `["locks"]` keys (`DocView.tsx` is the
+  example) — never from `GET /api/docs/:id`.
+- **UI-010 specific**: no `ShortcutScopeProvider` — register into UI-005's `useEscapeLayer`
+  chain (extend `EscapeLayerPriority` additively if needed). Compose panel and cheat sheet carry
+  `.overlay.open` (the `isOverlayOpen()` DOM contract) and register at `Overlay` priority.
+  `⇧↵` follows the prototype in every scope: newline in the compose textarea, save-as-view in
+  search, open-full-screen on the board.

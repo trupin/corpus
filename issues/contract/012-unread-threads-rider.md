@@ -218,7 +218,7 @@ exact call sites.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] `/evaluate` passes
+- [x] `/evaluate` passes
 - [ ] Committed (coupled with SERVER-027)
 
 ## Rider (orchestrator, 2026-07-28)

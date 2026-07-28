@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -396,7 +396,7 @@ this issue's files.
 ## Completion Checklist (orchestrator)
 
 - [ ] `/audit` run (if qualifying — P0, cross-domain, large, or security-sensitive)
-- [ ] `/evaluate` passes (if evaluator active)
+- [x] `/evaluate` passes (if evaluator active)
 - [ ] Committed with `[UI-009]` prefix
 
 ## Correction (orchestrator, 2026-07-28 — sprint-010 Conflict 4/6)

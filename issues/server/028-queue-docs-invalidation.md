@@ -45,7 +45,7 @@ half, fixed at the source of truth.
 
 ## Acceptance Criteria
 
-- [ ] `QUEUE_QUERY_KEYS` includes `DOCS_KEY`; the watcher's `queue-event` branch emits it too.
+- [x] `QUEUE_QUERY_KEYS` includes `DOCS_KEY`; the watcher's `queue-event` branch emits it too.
 - [x] E2E: `corpus queue fail` with a browser attached → the Attention row appears with no reload
       (the exact reproduction from UI-011's TEST-107 evidence, now passing).
 - [x] Colocated tests updated (key-table pins in `queue/project.test.ts` / watcher tests).
@@ -111,5 +111,5 @@ SSE-frame assertions updated to `[["queue"],["jobs"],["docs"]]`.
 
 ## Completion Checklist (orchestrator)
 
-- [ ] `/evaluate` passes
-- [ ] Committed
+- [x] `/evaluate` passes
+- [x] Committed

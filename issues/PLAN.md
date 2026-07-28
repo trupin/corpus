@@ -87,13 +87,13 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-002 | @corpus/kit data layer: hooks + SSE bridge | done | P0 | CONTRACT-002, SERVER-007, UI-001 |
 | UI-003 | Board columns: pinned view docs, reorder, new-list | done | P0 | UI-002, SERVER-011, SERVER-024, SERVER-026 |
 | UI-004 | Type-aware rows: badges, reasons, staleness ramp | done | P0 | UI-002 |
-| UI-005 | Reader, navigation stacks, doc menu, focus shell, lock banner | in_progress | P0 | UI-003, UI-004 |
+| UI-005 | Reader, navigation stacks, doc menu, focus shell, lock banner | done | P0 | UI-003, UI-004 |
 | UI-006 | Always-editable TipTap document editor | todo | P0 | UI-005 |
 | UI-007 | Anchored threads: highlights, comment-from-selection, chips ↔ margin cards | todo | P0 | UI-006 |
 | UI-008 | Thread view, composer, attachments, forms, read state | todo | P0 | UI-005, SERVER-010, CONTRACT-007, CONTRACT-009, SERVER-016, SERVER-023 |
-| UI-009 | Search overlay, omnibox create, save-as-view | in_progress | P0 | UI-003 |
+| UI-009 | Search overlay, omnibox create, save-as-view | done | P0 | UI-003 |
 | UI-010 | Global Ask/Capture composer + keyboard scheme | todo | P1 | UI-008, UI-009 |
-| UI-011 | Console drawer: jobs master-detail, live logs, HALT | todo | P1 | UI-002, SERVER-009, UI-009, SERVER-027 |
+| UI-011 | Console drawer: jobs master-detail, live logs, HALT | done | P1 | UI-002, SERVER-009, UI-009, SERVER-027 |
 | CONTRACT-007 | Forms surface: formAnswer schema + form.respond producer routes | done | P1 | CONTRACT-002 |
 | CONTRACT-009 | Multipart createThread + declared 413 (attachments rider) | done | P1 | CONTRACT-002 |
 | SERVER-016 | Form answer write path (form.respond producer) | done | P1 | CONTRACT-007, SERVER-006 |
@@ -105,9 +105,9 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-011 | Extra-frontmatter surface: view keys, pinned/order, parentTitle | done | P0 | CONTRACT-005 |
 | SERVER-026 | Consume CONTRACT-011: extra frontmatter, pinned/order, parentTitle | done | P0 | CONTRACT-011, SERVER-011, SERVER-015 |
 | CLI-008 | CLI hardening batch: PR #9 MINOR findings | done | P2 | CLI-003, CLI-004 |
-| CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | in_progress | P1 | CONTRACT-011 |
-| SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | in_progress | P1 | CONTRACT-012, SERVER-011 |
-| SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | todo | P1 | SERVER-007, SERVER-011 |
+| CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | done | P1 | CONTRACT-011 |
+| SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | done | P1 | CONTRACT-012, SERVER-011 |
+| SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | done | P1 | SERVER-007, SERVER-011 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
 ---
