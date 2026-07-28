@@ -108,6 +108,11 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | done | P1 | CONTRACT-011 |
 | SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | done | P1 | CONTRACT-012, SERVER-011 |
 | SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | done | P1 | SERVER-007, SERVER-011 |
+| UI-013 | UI hardening batch: PR #10 MINOR findings | todo | P2 | UI-006, UI-007, UI-008 |
+| SERVER-029 | Server hardening batch: PR #10 MINOR findings | todo | P2 | SERVER-016, SERVER-026 |
+| CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | todo | P2 | CONTRACT-007, CONTRACT-013 |
+| CLI-009 | `server stop` must not delete a live foreign pidfile | todo | P2 | CLI-002 |
+| INFRA-009 | Coverage gate: empty in-scope set must fail | todo | P2 | INFRA-004 |
 | CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | todo | P1 | CONTRACT-007, CONTRACT-009 |
 | UI-012 | DocMenu actions never toast (callback teardown) | todo | P2 | UI-005 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
