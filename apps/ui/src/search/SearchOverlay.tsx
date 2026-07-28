@@ -1,0 +1,274 @@
+import type { DocRow } from "@corpus/contract";
+import { useTree } from "@corpus/kit";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement,
+} from "react";
+import { docSubject, useOpenInColumn } from "../board/openInColumn";
+import { INBOX_TARGET, useCreateInColumn } from "../board/useCreateInColumn";
+import { useSaveAsView } from "../board/useSaveAsView";
+import { useToast } from "../shell/Toasts";
+import { FilterChips } from "./FilterChips";
+import { SearchResults } from "./SearchResults";
+import { cursorTargets, groupResults, moveCursor, shouldOfferCreate } from "./results";
+import { EMPTY_SEARCH_QUERY, type SearchQuery } from "./searchQuery";
+import { useSearch } from "./useSearch";
+import "./search.css";
+
+/**
+ * The search overlay (SPEC.md §11, `design/index.html`'s `#search-overlay`): one
+ * query input, a chip row, snippet-highlighted results grouped by type, and a
+ * footer legend — over a blurred scrim.
+ *
+ * Three acts hang off it and all three write to the corpus rather than to the
+ * browser: `↵` opens a result in its home column, `⇧↵` and the `save as view`
+ * chip pin the current search as a new column (a document), and the create row
+ * makes the query into a document in `inbox/`.
+ *
+ * **The keyboard is handled on the panel, not on the document.** While the
+ * overlay is open it owns `↑`, `↓`, `↵`, `⇧↵` and `Escape`, and the board's own
+ * shortcuts never see them — the board's `⇧←`/`⇧→` handler already ignores
+ * events originating in an input, and everything else here is bound to the
+ * panel. The only global listener the overlay needs is the one that *opens* it,
+ * and that lives in the shell.
+ */
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+export interface SearchOverlayProps {
+  /** Closes the overlay and returns focus to whatever opened it. */
+  readonly onClose: () => void;
+}
+
+export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
+  const [query, setQuery] = useState<SearchQuery>(EMPTY_SEARCH_QUERY);
+  const [cursor, setCursor] = useState(-1);
+
+  const results = useSearch(query);
+  const tree = useTree();
+  const saveAsView = useSaveAsView();
+  const createInColumn = useCreateInColumn();
+  const board = useOpenInColumn();
+  const toast = useToast();
+
+  const panel = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
+
+  const offersCreate = shouldOfferCreate(results.items, query.text);
+  const targets = cursorTargets(groupResults(results.items), offersCreate);
+
+  // A shrinking result set must not leave the cursor pointing past the end.
+  useEffect(() => {
+    setCursor((current) => (current >= targets.length ? targets.length - 1 : current));
+  }, [targets.length]);
+
+  const openRow = useCallback(
+    (row: DocRow) => {
+      onClose();
+      board.open({ docId: row.id, subject: docSubject(row) });
+    },
+    [board, onClose],
+  );
+
+  const createFromQuery = useCallback(() => {
+    const title = query.text.trim();
+    onClose();
+    void (async () => {
+      try {
+        const doc = await createInColumn.createDocument(INBOX_TARGET, title);
+        board.open({
+          docId: doc.frontmatter.id,
+          subject: docSubject({
+            path: doc.path,
+            type: doc.frontmatter.type,
+            status: doc.frontmatter.status,
+          }),
+          selectTitle: true,
+        });
+        toast({
+          tone: "info",
+          message: `Created “${title}” — committed in inbox/; the title is selected.`,
+        });
+      } catch (cause) {
+        toast({ tone: "error", message: `Create failed — ${(cause as Error).message}` });
+      }
+    })();
+  }, [board, createInColumn, onClose, query.text, toast]);
+
+  /**
+   * The chip and `⇧↵` are the same call, deliberately: the keyboard shortcut is
+   * not allowed to build a different request body from the button.
+   */
+  const saveView = useCallback(() => {
+    void (async () => {
+      try {
+        const { docId, duplicate } = await saveAsView.save(query);
+        onClose();
+        board.revealColumn(docId);
+        toast({
+          tone: "info",
+          message: duplicate
+            ? "Pinned — a column already queries exactly this; the new view document was created anyway."
+            : "Pinned — a view document was created for this search (pinned: true, order: last).",
+        });
+      } catch (cause) {
+        // The overlay stays open: there is no column, so there is nothing to
+        // return to, and the query the user refined is still worth keeping.
+        toast({ tone: "error", message: `Save as view failed — ${(cause as Error).message}` });
+      }
+    })();
+  }, [board, onClose, query, saveAsView, toast]);
+
+  const activate = useCallback(() => {
+    const target = targets[cursor < 0 ? 0 : cursor];
+    if (target === undefined) return;
+    if (target === "create") {
+      createFromQuery();
+      return;
+    }
+    const row = results.items.find((item) => item.id === target);
+    if (row !== undefined) openRow(row);
+  }, [createFromQuery, cursor, openRow, results.items, targets]);
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setCursor((current) =>
+        moveCursor(current, event.key === "ArrowDown" ? 1 : -1, targets.length),
+      );
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (event.shiftKey) saveView();
+      else activate();
+      return;
+    }
+    if (event.key === "Tab") trapFocus(event, panel.current);
+  };
+
+  return (
+    <div
+      className="overlay open"
+      onMouseDown={(event) => {
+        // The scrim, and only the scrim: a click that began inside the panel and
+        // ended on it (a drag-select over the input) must not close anything.
+        if (event.target !== event.currentTarget) return;
+        // The scrim is not a focus target. Without this the browser's default
+        // mousedown handling runs *after* the handler and blurs whatever the
+        // close just restored focus to — so `esc` would return focus to the
+        // search bar and a scrim click would not, for no reason a user could
+        // see.
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      <div
+        className="search-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
+        ref={panel}
+        onKeyDown={onKeyDown}
+      >
+        <div className="search-input-row">
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            ref={input}
+            aria-label="Search query"
+            placeholder="Search corpus — documents, threads, skills…"
+            value={query.text}
+            onChange={(event) => {
+              setCursor(-1);
+              setQuery((current) => ({ ...current, text: event.target.value }));
+            }}
+          />
+          <button type="button" className="chip ghost" data-save-view="" onClick={saveView}>
+            save as view
+          </button>
+        </div>
+
+        <FilterChips
+          query={query}
+          tree={tree.data}
+          items={results.items}
+          onChange={(next) => {
+            setCursor(-1);
+            setQuery(next);
+          }}
+        />
+
+        <SearchResults
+          items={results.items}
+          query={query.text}
+          offersCreate={offersCreate}
+          cursor={cursor}
+          isPending={results.isPending || results.isDebouncing}
+          error={results.error}
+          onOpen={openRow}
+          onCreate={createFromQuery}
+        />
+
+        <div className="search-foot">
+          <span className="hint">
+            <b>↑↓</b> navigate
+          </span>
+          <span className="hint">
+            <b>↵</b> open in its list
+          </span>
+          <span className="hint">
+            <b>⇧↵</b> new list from search
+          </span>
+          <span className="right hint">
+            <b>@</b> agents · <b>/</b> skills · <b>[[</b> refs
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Tab never leaves the panel: the overlay is `aria-modal`, and a Tab that landed
+ * on the board behind a blurred scrim would be focus the user cannot see.
+ */
+function trapFocus(event: ReactKeyboardEvent, panel: HTMLElement | null): void {
+  if (panel === null) return;
+  const focusable = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (first === undefined || last === undefined) return;
+  const active = document.activeElement;
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}

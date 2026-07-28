@@ -1,9 +1,11 @@
 /** @vitest-environment jsdom */
 import { createCorpusTestHarness, type CorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { boardTransport } from "../testing/boardFixture";
 import { memoryStorage } from "../testing/memoryStorage";
-import { Shell } from "./Shell";
+import { isOverlayOpen, Shell } from "./Shell";
 import { THEME_ATTRIBUTE } from "./theme";
 
 /**
@@ -65,5 +67,74 @@ describe("Shell", () => {
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".board")).not.toBeNull();
     expect(container.querySelector(".console")).not.toBeNull();
+  });
+});
+
+describe("the search overlay's one global key", () => {
+  const openShell = (): ReturnType<typeof render> =>
+    renderShell(boardTransport({ views: [], tree: { folders: [] } }).fetch);
+
+  it("is closed until asked for — the overlay is mounted, not hidden", () => {
+    const { container } = openShell();
+    expect(container.querySelector(".overlay")).toBeNull();
+    expect(isOverlayOpen()).toBe(false);
+  });
+
+  it("opens on ⌘K and on the top bar's search button, and closes on Escape", async () => {
+    const user = userEvent.setup();
+    openShell();
+
+    await user.keyboard("{Meta>}k{/Meta}");
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Search" })).toBeDefined();
+    });
+    expect(isOverlayOpen()).toBe(true);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Search corpus" }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Search" })).toBeDefined();
+    });
+  });
+
+  it("opens on ⌃K too, for the keyboard the rest of the world uses", async () => {
+    const user = userEvent.setup();
+    openShell();
+    await user.keyboard("{Control>}k{/Control}");
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Search" })).toBeDefined();
+    });
+  });
+
+  it("returns focus to whatever opened it", async () => {
+    const user = userEvent.setup();
+    openShell();
+    const searchbar = screen.getByRole("button", { name: "Search corpus" });
+
+    await user.click(searchbar);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText("Search query"));
+    });
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(searchbar);
+    });
+  });
+
+  it("does not toggle itself shut when ⌘K is pressed again", async () => {
+    const user = userEvent.setup();
+    openShell();
+    await user.keyboard("{Meta>}k{/Meta}");
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Search" })).toBeDefined();
+    });
+
+    await user.keyboard("{Meta>}k{/Meta}");
+    expect(screen.getByRole("dialog", { name: "Search" })).toBeDefined();
   });
 });

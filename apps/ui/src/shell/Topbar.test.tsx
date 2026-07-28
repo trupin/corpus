@@ -43,20 +43,31 @@ describe("Topbar", () => {
     expect(compose?.querySelector("kbd")?.textContent).toBe("c");
   });
 
-  it("leaves the not-yet-wired affordances enabled and inert", async () => {
+  it("wires the search button to the overlay", async () => {
+    const user = userEvent.setup();
+    const onOpenSearch = vi.fn();
+    render(<Topbar onOpenSearch={onOpenSearch} />);
+
+    await user.click(screen.getByRole("button", { name: "Search corpus" }));
+    expect(onOpenSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves compose enabled and inert until UI-010 lands", async () => {
     const user = userEvent.setup();
     const { container } = render(<Topbar />);
-    const search = screen.getByRole("button", { name: "Search corpus" });
     const compose = container.querySelector(".btn-compose");
     expect(compose).not.toBeNull();
+    expect(compose?.hasAttribute("disabled")).toBe(false);
+    expect(compose?.getAttribute("aria-disabled")).toBeNull();
 
-    for (const button of [search, compose]) {
-      expect(button?.hasAttribute("disabled")).toBe(false);
-      expect(button?.getAttribute("aria-disabled")).toBeNull();
-    }
-
-    await user.click(search);
     if (compose !== null) await user.click(compose);
+    expect(container.querySelector(".topbar")).not.toBeNull();
+  });
+
+  it("clicks harmlessly with no handler wired — the shell owns the overlay", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Topbar />);
+    await user.click(screen.getByRole("button", { name: "Search corpus" }));
     expect(container.querySelector(".topbar")).not.toBeNull();
   });
 

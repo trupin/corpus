@@ -28,6 +28,16 @@
   width: 560px;
 }
 
+/*
+ * Lit for 1.5 s when the board scrolls a column into view — search's `↵`, the
+ * console's `↗ open`, a new column from "save as view". `.col` already
+ * transitions `border-color`, and that transition is already inside
+ * `app/global.css`'s reduced-motion guard.
+ */
+.col.flash {
+  border-color: var(--accent);
+}
+
 .col.dragging {
   opacity: 0.55;
   border-style: dashed;

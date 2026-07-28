@@ -21,22 +21,36 @@ function SearchIcon(): ReactElement {
   );
 }
 
+export interface TopbarProps {
+  /** Opens the search overlay. ⌘K does the same thing from the shell. */
+  readonly onOpenSearch?: () => void;
+}
+
 /**
  * Wordmark · centred search affordance · Ask/Capture (SPEC.md §11). Agent and
  * queue status belong to the console strip and are deliberately absent here.
  *
- * The search button and the compose button are affordances only in this issue:
- * the search overlay is UI-009 and the composer is UI-010. They are *not*
- * disabled — a control that will work the moment its issue lands should not
- * teach the user it is dead — so clicking them is a no-op until then.
+ * The search affordance is a **button**, not an input: the query input lives in
+ * the overlay panel (`design/index.html`), and a second one here would be two
+ * places to type the same search. The compose button is still an affordance
+ * only — the composer is UI-010 — and is deliberately not disabled, because a
+ * control that will work the moment its issue lands should not teach the user it
+ * is dead.
  */
-export function Topbar(): ReactElement {
+export function Topbar({ onOpenSearch }: TopbarProps = {}): ReactElement {
   return (
     <header className="topbar">
       <div className="wordmark">
         Corpus <small>workbench</small>
       </div>
-      <button type="button" className="searchbar" aria-label="Search corpus">
+      <button
+        type="button"
+        className="searchbar"
+        aria-label="Search corpus"
+        onClick={() => {
+          onOpenSearch?.();
+        }}
+      >
         <SearchIcon />
         <span>{SEARCH_PLACEHOLDER}</span>
         <kbd>⌘K</kbd>

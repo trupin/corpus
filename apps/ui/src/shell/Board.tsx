@@ -11,6 +11,12 @@ import {
 } from "../board/newList";
 import { NewListGhost } from "../board/NewListGhost";
 import { NewListPicker } from "../board/NewListPicker";
+import {
+  COLUMN_FLASH_MS,
+  resolveColumn,
+  useRegisterBoardNavigation,
+  type BoardNavigation,
+} from "../board/openInColumn";
 import { useBoardLocalState } from "../board/useBoardLocalState";
 import { useColumns } from "../board/useColumns";
 import { useColumnOrder } from "../board/useColumnOrder";
@@ -51,6 +57,7 @@ export function Board(): ReactElement {
   const [picker, setPicker] = useState<MenuPosition | null>(null);
   const [selectTitleFor, setSelectTitleFor] = useState<string | null>(null);
   const [scrollTo, setScrollTo] = useState<string | null>(null);
+  const [flashing, setFlashing] = useState<string | null>(null);
 
   const board = useRef<HTMLElement>(null);
   /** Set by the board's own `drop`; a drag that ends anywhere else persists nothing. */
@@ -117,6 +124,49 @@ export function Board(): ReactElement {
     }
     setScrollTo(null);
   }, [ordered, scrollTo]);
+
+  // The accent border the prototype lights for 1.5 s after a column is scrolled
+  // to. Its transition is covered by the shipped `.col` reduced-motion guard in
+  // `app/global.css`, which is why nothing is re-declared for it.
+  useEffect(() => {
+    if (flashing === null) return undefined;
+    const timer = setTimeout(() => {
+      setFlashing(null);
+    }, COLUMN_FLASH_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [flashing]);
+
+  /**
+   * The board's half of the `useOpenInColumn` seam (SPEC.md §11).
+   *
+   * Resolution reads the *rendered* column set through a ref so the published
+   * handlers keep a stable identity: the search overlay holds them across every
+   * keystroke, and a new function per render would re-register on each one.
+   */
+  const orderedRef = useRef<readonly BoardColumn[]>(ordered);
+  orderedRef.current = ordered;
+
+  const navigation = useMemo<BoardNavigation>(
+    () => ({
+      open: (target) => {
+        const columnId = resolveColumn(orderedRef.current, target.subject ?? null);
+        if (columnId === null) return;
+        setOpen(columnId, target.docId);
+        setSelectTitleFor(target.selectTitle === true ? target.docId : null);
+        setScrollTo(columnId);
+        setFlashing(columnId);
+      },
+      revealColumn: (columnId) => {
+        setScrollTo(columnId);
+        setFlashing(columnId);
+      },
+    }),
+    [setOpen],
+  );
+
+  useRegisterBoardNavigation(navigation);
 
   const notify = useCallback(
     (notice: RowNotice) => {
@@ -319,6 +369,7 @@ export function Board(): ReactElement {
           column={column}
           isActive={column.id === activeColumnId}
           isDragging={column.id === dragId}
+          isFlashing={column.id === flashing}
           local={forColumn(column.id)}
           selectTitle={forColumn(column.id).open === selectTitleFor}
           onActivate={() => {
@@ -383,8 +434,10 @@ export function Board(): ReactElement {
       {picker === null ? null : (
         <NewListPicker
           position={picker}
-          // UI-009 owns the search overlay; until it lands there is never a
-          // query, so the "from current search" entry is correctly absent.
+          // The overlay owns its query and does not outlive itself: "save as
+          // view" and `⇧↵` pin a search from inside the overlay, where the query
+          // is live. Handing the board a copy of a search the user has already
+          // closed would offer to pin a query nothing is showing.
           searchQuery=""
           onChoose={(choice) => {
             void chooseNewList(choice);

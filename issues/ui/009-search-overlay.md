@@ -38,21 +38,21 @@ Build the search overlay: the top-bar search bar (click or ⌘K) expands into a 
 
 ## Acceptance Criteria
 
-- [ ] Clicking the top-bar `.searchbar` or pressing ⌘K opens the overlay: `.overlay.open` (blurred scrim, `backdrop-filter: blur(3px)`, `color-mix(in srgb, var(--ink) 18%, transparent)`) with the `.search-panel` (`min(760px, 100vw - 48px)`, `7vh` top margin, `max-height: 78vh`), and focus lands in the query input.
-- [ ] The query input is serif 19px, borderless, on `.search-input-row`; the `save as view` ghost chip sits at its right.
-- [ ] Typing issues a **single** debounced (~200 ms) `GET /api/docs` request combining `q` with every active filter. There is **no** client-side filtering of the result set and **no** second request for a second group.
-- [ ] Filter chips render in `.search-filters` and toggle query parameters: `type`, `tag`, `status`, `folder` (options sourced from `GET /api/tree`), date (`since`), `due`, `unread`, `references:`; plus thread-only chips for agent participation (`agent`), awaiting a form answer (`needs=form`), and `parent`. Active chips take `.chip.on`.
-- [ ] **Archived default**: with no status chip set, the request excludes `status: archived`. An `include archived` chip (`.chip.warn`) adds them back. Toggling it re-queries.
-- [ ] Results render **grouped by type** with `.sr-group` headers formatted `Documents · 3` / `Threads · 2` (label + count), each `.sr` row showing a `.type-glyph`, a serif `.sr-title`, a `.sr-snippet` carrying the server's `<mark>` highlights, and a mono `.sr-path` (folder + updated, or thread context like `on Mortgage options · open`).
-- [ ] Snippet HTML from the server is rendered with **only** `<mark>` permitted — sanitize before injecting; never `dangerouslySetInnerHTML` on raw server text without the allowlist.
-- [ ] `↑`/`↓` move a cursor across results (including the create row), showing `.sr.kbd` (2px accent outline, inset). The list scrolls the cursor into view.
-- [ ] `↵` on a highlighted result closes the overlay and **opens the document in its home column**: the board `scrollIntoView({ behavior: "smooth", inline: "center" })`s that column, applies `.col.flash` (accent border) for 1.5 s, and opens the document in that column's reader. A document with no home column opens in the nearest column that would match it, falling back to the first column.
-- [ ] `⇧↵` creates a **new list from the current search** — the same effect as `save as view`, executed from the keyboard.
-- [ ] **Save as view** creates a `type: view` document with `pinned: true` whose frontmatter holds the current query (filters + search text + sort) and an `order` placing it at the end of the board; the overlay closes and the new column appears (and is scrolled to). The view document is verifiable on disk.
-- [ ] **Omnibox create**: when the query is ≥2 characters and **no** document title matches it exactly (case-insensitive), a `.sr-create` row renders first reading `＋ Create "<query>" — opens ready to edit, in inbox/` (query in serif bold). Activating it `POST /api/docs` into `data/docs/inbox/` with the query as title and an empty body (or the type's template body per §11), closes the overlay, scrolls the inbox column into view with the flash, and opens the new document in that column **with its title field focused and selected**, ready to type. No form, no dialog.
-- [ ] The `.search-foot` legend renders `↑↓ navigate`, `↵ open in its list`, `⇧↵ new list from search`, and right-aligned `@ agents · / skills · [[ refs`.
-- [ ] `esc` closes the overlay and restores focus to the search bar; clicking the scrim closes it; clicking inside the panel does not.
-- [ ] The overlay is a `role="dialog"` with an accessible label, traps Tab focus, and returns focus on close.
+- [x] Clicking the top-bar `.searchbar` or pressing ⌘K opens the overlay: `.overlay.open` (blurred scrim, `backdrop-filter: blur(3px)`, `color-mix(in srgb, var(--ink) 18%, transparent)`) with the `.search-panel` (`min(760px, 100vw - 48px)`, `7vh` top margin, `max-height: 78vh`), and focus lands in the query input.
+- [x] The query input is serif 19px, borderless, on `.search-input-row`; the `save as view` ghost chip sits at its right.
+- [x] Typing issues a **single** debounced (~200 ms) `GET /api/docs` request combining `q` with every active filter. There is **no** client-side filtering of the result set and **no** second request for a second group.
+- [x] Filter chips render in `.search-filters` and toggle query parameters: `type`, `tag`, `status`, `folder` (options sourced from `GET /api/tree`), date (`since`), `due`, `unread`, `references:`; plus thread-only chips for agent participation (`agent`), awaiting a form answer (`needs=form`), and `parent`. Active chips take `.chip.on`.
+- [x] **Archived default**: with no status chip set, the request excludes `status: archived`. An `include archived` chip (`.chip.warn`) adds them back. Toggling it re-queries. — _the chip emits `includeArchived=true` per sprint-010 adjudication 3; the parameter is inert until CONTRACT-012 + SERVER-027 land (recorded below as `DEFERRED`)._
+- [x] Results render **grouped by type** with `.sr-group` headers formatted `Documents · 3` / `Threads · 2` (label + count), each `.sr` row showing a `.type-glyph`, a serif `.sr-title`, a `.sr-snippet` carrying the server's highlights, and a mono `.sr-path` (folder + updated, or thread context like `on Mortgage options · open`).
+- [x] ~~Snippet HTML from the server is rendered with **only** `<mark>` permitted — sanitize before injecting~~ — **STRUCK → Open Conflict 4.** `SnippetSchema` ships `{text, match}` segments; highlights are `<mark>` elements React creates and there is no HTML string on the path. `dangerouslySetInnerHTML` appears nowhere in `apps/ui/src`.
+- [x] `↑`/`↓` move a cursor across results (including the create row), showing `.sr.kbd` (2px accent outline, inset). The list scrolls the cursor into view.
+- [x] `↵` on a highlighted result closes the overlay and **opens the document in its home column**: the board `scrollIntoView({ behavior: "smooth", inline: "center" })`s that column, applies `.col.flash` (accent border) for 1.5 s, and opens the document in that column's reader. A document with no home column opens in the nearest column that would match it, falling back to the first column.
+- [x] `⇧↵` creates a **new list from the current search** — the same effect as `save as view`, executed from the keyboard.
+- [x] **Save as view** creates a `type: view` document with `pinned: true` whose frontmatter holds the current query (filters + search text + sort) and an `order` placing it at the end of the board; the overlay closes and the new column appears (and is scrolled to). The view document is verifiable on disk.
+- [x] **Omnibox create**: when the query is ≥2 characters and **no** document title matches it exactly (case-insensitive), a `.sr-create` row renders first reading `＋ Create "<query>" — opens ready to edit, in inbox/` (query in serif bold). Activating it `POST /api/docs` into `data/docs/inbox/` with the query as title and an empty body (or the type's template body per §11), closes the overlay, scrolls the inbox column into view with the flash, and opens the new document in that column **with its title field focused and selected**, ready to type. No form, no dialog.
+- [x] The `.search-foot` legend renders `↑↓ navigate`, `↵ open in its list`, `⇧↵ new list from search`, and right-aligned `@ agents · / skills · [[ refs`.
+- [x] `esc` closes the overlay and restores focus to the search bar; clicking the scrim closes it; clicking inside the panel does not.
+- [x] The overlay is a `role="dialog"` with an accessible label, traps Tab focus, and returns focus on close.
 
 ## Technical Design
 
@@ -140,21 +140,258 @@ Vitest + Testing Library in `apps/ui`:
 
 _Filled in by the implementing agent as proof-of-work. Must be from real E2E testing — no mocks, no test clients. Real application, real requests, real interfaces. Include specific commands run, actual outputs observed, and pass/fail conclusions. State which model the implementing agent ran on ("implemented on: opus | fable")._
 
+**Implemented on: opus.**
+
 ### Reproduction (bugs only)
 
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+Not a bug — a feature issue. No pre-fix reproduction required.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+#### The environment (real, not a fixture)
+
+```
+$ WS=$(mktemp -d /tmp/corpus-s010-ui009-XXXXXX)          # → /tmp/corpus-s010-ui009-J34iPy
+$ node --import tsx apps/cli/src/bin/corpus.ts init "$WS" --port 8967
+Initialized Corpus workspace at /tmp/corpus-s010-ui009-J34iPy
+  port 8967, token in .corpus/config.json (mode 600)
+  git: initialized on main, one commit authored as user
+$ node --import tsx apps/cli/src/bin/corpus.ts server start --workspace "$WS"
+corpus 0.0.0 listening on http://127.0.0.1:8967 (pid 88622)
+```
+
+Seeded through the real CLI and the real HTTP API (five notes across `finance/housing`,
+`home`, `finance`, `inbox`; one thread on `doc_7pbd7zpz`; one standalone thread; one
+document archived), then a `Finance` folder column pinned so `↵` had a non-seed column to
+resolve into:
+
+```
+created doc_7pbd7zpz — data/docs/finance/housing/mortgage-options.md   ("Mortgage options")
+created doc_avttnloi — data/docs/finance/housing/payoff-maths.md
+created doc_tqvfll3l — data/docs/home/house-criteria.md
+created doc_iippbgcn — data/docs/finance/old-mortgage-note.md          (then: doc archive)
+created doc_bnt3b553 — data/docs/inbox/markup-in-a-body.md             (body carries literal <script>)
+POST /api/threads → th_35opcmkt (parent doc_7pbd7zpz), th_kpfbldr6 (standalone)
+POST /api/docs    → doc_zv77irqs "Finance" (pinned view, query {folder: finance})
+```
+
+UI: the real Vite dev server on **`CORPUS_UI_PORT=5275`** with
+`CORPUS_SERVER_ORIGIN=http://127.0.0.1:8967` and `VITE_CORPUS_TOKEN=<workspace token>`,
+driven by a **real headless Chromium** (Playwright 1.62 browser API pointed at the running
+dev server — a real browser against the real server, not the mocked `npm run e2e` fixture).
+Port `8765` was verified UNBOUND throughout.
+
+#### The wire, before the UI (`curl` against 8967 — the ground truth the rendering is compared to)
+
+```
+GET /api/docs?q=mortgage&sort=relevance   → total 6
+  thread th_35opcmkt | Re: Mortgage options
+    snippets: [{"field":"title", segments:[…{"text":"Mortgage","match":true}…]},
+               {"field":"turn","threadId":"th_35opcmkt", segments:[…{"text":"mortgage","match":true}…]}]
+  note   doc_7pbd7zpz | Mortgage options
+  thread th_kpfbldr6 | Rent vs mortgage breakeven at current rates.
+  note   doc_tqvfll3l | House criteria
+  note   doc_avttnloi | Payoff maths
+  note   doc_bnt3b553 | Markup in a body
+    snippets: […{"text":"A ","match":false},{"text":"mortgage","match":true},
+               {"text":" note whose body contains <script>alert(1)</script> and <img…","match":false}]
+
+GET /api/docs?q=mortgage&status=archived  → total 1  ['Old mortgage note']
+```
+
+Two facts this pins: the archived document is **absent by default** (6 of 7), and
+`status=archived` **narrows to archived-only** — the reason the chip cannot be spelled
+`status=archived` (Open Conflict 3).
+
+#### Browser run — observed output, step by step
+
+```
+STEP 1  board columns: doc_seedattention:Attention, doc_seedinbox:Inbox,
+                       doc_seedopenthreads:Open threads, doc_zv77irqs:Finance
+
+STEP 2  ⌘K → .overlay.open count 1
+        focused element aria-label: "Search query"
+        .search-panel role/aria-label: dialog/Search
+        overlay computed: {position: fixed, zIndex: 40, backdropFilter: blur(3px),
+                           background: color(srgb 0.113725 0.129412 0.14902 / 0.18)}
+        panel box: {x: 340, y: 63, width: 760, height: 702}   (1440×900 viewport: 7vh = 63px)
+        input computed: {fontSize: 19px, fontFamily: "Iowan Old Style", …, borderWidth: 0px}
+
+STEP 3  typed "mortgage" one character at a time (25 ms apart)
+        /api/docs requests for the WHOLE burst: ["?q=mortgage&sort=relevance"]     ← ONE
+        groups: ["Documents · 4", "Threads · 2"]
+        rows:   [doc_7pbd7zpz, doc_tqvfll3l, doc_avttnloi, doc_bnt3b553, th_35opcmkt, th_kpfbldr6]
+        first row: {glyph: "note", title: "noteMortgage options",
+                    marks: ["mortgage"], path: "finance/housing/ · updated just now"}
+        thread row path: "on Mortgage options · open"
+        markup row: {text: 'A mortgage note whose body contains <script>alert(1)</script> and <img…',
+                     scripts: 0, imgs: 0}
+        uncaught page errors: []
+
+STEP 4  "Old mortgage note" present by default? 0
+        click `include archived` → requests: ["?includeArchived=true&q=mortgage&sort=relevance"]
+        chip classes: "chip warn on";  "Old mortgage note" now present? 0   ← see DEFERRED below
+
+STEP 5  click `folder:` → label "folder: finance",
+        requests: ["?folder=finance&q=mortgage&sort=relevance"]
+        rows now: [doc_7pbd7zpz, doc_avttnloi, th_35opcmkt]
+
+STEP 6  ↓ → exactly 1 `.sr.kbd`: the create row
+              {"create":true,"text":"＋ Create \"mortgage\" — opens ready to edit, in inbox/",
+               "outline":"rgb(59, 95, 151) solid 2px","offset":"-2px"}     (rgb(59,95,151) = --accent)
+        ↓↓ → {"sr":"doc_7pbd7zpz","create":false,…}; still exactly one lit
+        ↵ → overlay count 0
+             flashing column: [{"id":"doc_zv77irqs", border → rgb(59, 95, 151) once settled}]
+             reader open on: ["doc_zv77irqs:doc_7pbd7zpz"]
+             flash after 1.7 s: 0;  column border back to rgb(227, 225, 218) (= --line)
+
+STEP 7  ⌘K, "mortgage", click `save as view`
+        POST /api/docs ×1;  overlay 0
+        toast: "Pinned — a view document was created for this search (pinned: true, order: last)."
+        columns now: …, doc_zv77irqs:Finance, doc_2uovkdqt:mortgage      ← new column, at the end
+
+STEP 8  ⌘K, typed "Mortgage options" (an EXACT title) → .sr-create count 0
+        typed one more character → '＋ Create "Mortgage options!" — opens ready to edit, in inbox/'
+
+STEP 9  activated the create row
+        POST /api/docs ×1;  overlay 0;  flashing column: ["doc_seedinbox"]
+        readers: ["doc_seedinbox:doc_tiw5aznb", "doc_zv77irqs:doc_7pbd7zpz"]
+        focused element class: "doc-title"
+        selection: {value: "Mortgage options!", start: 0, end: 17}       ← SELECTED, not just focused
+        typed immediately → field value: "Typed over"
+
+STEP 10 esc → overlay 0, document.activeElement.className = "searchbar"
+
+UNCAUGHT PAGE ERRORS: []
+```
+
+A second run with `colorScheme: light` forced and a 500 ms settle confirmed the flash colour
+after the 0.3 s `border-color` transition finishes: `rgb(59, 95, 151)` = `--accent`, back to
+`rgb(227, 225, 218)` = `--line` once the 1.5 s elapses. That run also resolved
+`Payoff maths` (`finance/housing`) into the **Finance** column (`folder: finance`) rather
+than into a seed column — folder precedence, observed.
+
+#### On disk and in git (the same workspace, after the browser run)
+
+```
+$ ls $WS/data/docs/views
+attention.md  finance.md  inbox.md  mortgage.md  open-threads.md
+
+$ cat $WS/data/docs/views/mortgage.md
+---
+id: doc_2uovkdqt
+type: view
+title: mortgage
+created: 2026-07-28T06:10:10Z
+updated: 2026-07-28T06:10:10Z
+tags: []
+status: open
+anchors: {}
+due: null
+reviewed: null
+evergreen: true
+pinned: true
+order: 50
+query:
+  q: mortgage
+  sort: relevance
+---
+
+$ git -C $WS log --format='%h %an | %s' -6
+2f56820 user | doc edit: Typed over (doc_tiw5aznb) by user
+ae9baac user | doc create: mortgage (doc_2uovkdqt) by user
+877b36e user | doc create: Finance (doc_zv77irqs) by user
+dbfabba user | doc archive: Old mortgage note (doc_iippbgcn) by user
+…
+
+$ git -C $WS show --stat 2f56820
+ data/docs/inbox/mortgage-options.md | 19 +++++++++++++++++++
+```
+
+The omnibox document landed in `data/docs/inbox/`, auto-committed as `user`. Its create and
+its title edit arrived inside the server's commit-squash window and are one commit — the
+server's §4 behaviour, not the UI's. Its body is the `note` type's template
+(`## Context / ## Notes / ## Open questions`), which is the contract's documented
+`POST /api/docs` behaviour when `body` is omitted.
+
+#### Deferred and struck verdicts
+
+- **`STRUCK → Open Conflict 4`** — the two `<mark>`-sanitization criteria and
+  `Snippet.test.tsx`'s "strips `<script>`" case. Substitute evidence:
+  `grep -rn "dangerouslySetInnerHTML" apps/ui/src packages/kit/src` → exactly one line,
+  `apps/ui/src/search/Snippet.tsx:9`, inside the docblock quoting `SnippetSchema`'s rationale.
+  **No call site anywhere.**
+  `Snippet.tsx` renders `segments` as `<mark>` elements and text nodes; the browser run
+  showed the `<script>`-bearing snippet as literal text with `scripts: 0, imgs: 0` inside
+  the row and an empty page-error list.
+- **`DEFERRED → CONTRACT-012 + SERVER-027`** — the *effect* of `include archived`. The chip
+  emits `includeArchived=true` on the one request (quoted at STEP 4), which is the parameter
+  sprint-010 adjudication 3 assigns to those two issues; the contract on this branch has no
+  such parameter yet, so zod strips it server-side and the archived document is still
+  filtered out. Verified inert-not-wrong: the request carries it, `status` is **never** sent
+  in its place, and nothing errors. Substitute evidence for the default half:
+  `q=mortgage` returned 6 of 7 documents with the archived one absent, and
+  `status=archived` returned only it.
+- **`DEFERRED → UI-005`** — registering into the escape-layer registry (sprint TEST-58 /
+  TEST-35). That registry does not exist on this branch. Substitute: every overlay key is
+  bound to the `.search-panel` element, not to `document`; the only global listener this
+  issue adds is the one that *opens* the overlay (⌘K, in `Shell.tsx`). `isOverlayOpen()` is
+  exported from `apps/ui/src/shell/Shell.tsx` as the "an overlay is open" signal UI-010 asked
+  for. Verified in the browser: `Shift+ArrowRight` / `Shift+ArrowLeft` inside the overlay do
+  not reach the board's keyboard-drag handler and raise no error.
+- **`DEFERRED → UI-005`** — `↵` opening into a *real* reader. `ColumnReaderScaffold` is what
+  exists today; the browser run shows the document opening in the resolved column's reader
+  (`doc_zv77irqs:doc_7pbd7zpz`) through the same `onOpen` path UI-005 replaces.
+
+#### `[[ref]]` title-lookup strategy (recorded per the 2026-07-28 correction)
+
+The overlay resolves **no** `[[ref]]` titles: `[[`, `@` and `/` are literal query text here
+(verified — typing `[[ref]] @agent /skill` opened no autocomplete and reached `q=` verbatim).
+Where this issue does need a title for an id — the `references:` and `parent:` chips — it
+takes it from the rows the current response already carries (`titleOf(items, id)`), so those
+pickers issue **zero** requests. The adjudicated strategy for bodies, **cache-deduped per-id
+`useDoc`**, is therefore untouched here and remains UI-005's to implement; nothing in this
+issue introduces an `ids` batch or a second lookup path.
+
+#### Checks
+
+```
+$ VITEST_MAX_THREADS=4 vitest run apps/ui packages/kit
+  Test Files  51 passed (51)
+       Tests  699 passed (699)          (apps/ui alone: 33 files, 362 tests — was 24 / 222)
+
+$ CORPUS_UI_PORT=5275 playwright test --config apps/ui/playwright.config.ts
+  31 passed (7.6s)                      (20 shipped + 11 new in e2e/search.spec.ts)
+
+$ eslint apps/ui packages/kit --max-warnings=0     → clean
+$ prettier --check "apps/ui/**/*.{ts,tsx,css}"     → all files use Prettier code style
+$ tsc --noEmit -p apps/ui/tsconfig.json            → clean
+```
+
+Two defects the tests caught and the fix for each, for the record:
+
+1. `resolveColumn` fell through to `columns[0]` even when an earlier column *contradicted*
+   the document's type — a note could open in a `type: thread` column while an unfiltered
+   column sat right next to it. Candidacy is now a filter (folder, type and status must all
+   be compatible) and `columns[0]` is the last resort only when no column would have it.
+2. `.sr-path` read `updated just now ago`. `humanizeAge` returns a phrase under an hour, so
+   the label special-cases it.
+
+#### Cleanup
+
+`corpus server stop` → `stopped (pid 88622)`; the dev Vite killed by pid; `rm -rf` on the one
+scratch path created here. `lsof -nP -iTCP:<port> -sTCP:LISTEN` reports **8765 free, 8967
+free, 5275 free, 5273 free**. No stray `vitest` or `playwright` processes.
+`apps/ui/test-results/` and `coverage-raw/` removed; `git status` in the worktree shows only
+this issue's files.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

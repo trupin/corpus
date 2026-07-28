@@ -22,6 +22,8 @@ export interface ColumnProps {
   readonly column: BoardColumn;
   readonly isActive: boolean;
   readonly isDragging: boolean;
+  /** Lit for 1.5 s after the board scrolled this column into view (SPEC.md §11). */
+  readonly isFlashing: boolean;
   readonly local: ColumnLocalState;
   /** True when the open document was just created — its title is selected. */
   readonly selectTitle: boolean;
@@ -104,13 +106,14 @@ function ColumnBody({
 }
 
 export function Column(props: ColumnProps): ReactElement {
-  const { column, isActive, isDragging, local, onActivate, onOpen } = props;
+  const { column, isActive, isDragging, isFlashing, local, onActivate, onOpen } = props;
   const [draggable, setDraggable] = useState(false);
 
   const className = [
     "col",
     isDragging ? "dragging" : "",
     isActive ? "kactive" : "",
+    isFlashing ? "flash" : "",
     local.open === null ? "" : "reading",
   ]
     .filter((part) => part !== "")

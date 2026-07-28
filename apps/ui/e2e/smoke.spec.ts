@@ -73,7 +73,7 @@ test.describe("shell", () => {
     await expect(compose).toHaveCSS("background-color", LIGHT_ACCENT);
   });
 
-  test("the not-yet-wired affordances are enabled and inert", async ({ page }) => {
+  test("the search bar is wired and the compose button is still inert", async ({ page }) => {
     const uncaught: string[] = [];
     page.on("pageerror", (error) => uncaught.push(error.message));
     await page.goto("/");
@@ -82,8 +82,17 @@ test.describe("shell", () => {
       const button = page.locator(selector);
       await expect(button).toBeEnabled();
       expect(await button.getAttribute("aria-disabled")).toBeNull();
-      await button.click();
     }
+
+    // UI-009 wired the search bar: it opens the overlay.
+    await page.locator(".searchbar").click();
+    await expect(page.locator(".overlay.open")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
+
+    // The composer is UI-010's; clicking it still does nothing, on purpose.
+    await page.locator(".btn-compose").click();
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
 
     await expect(page.locator(".topbar")).toBeVisible();
     expect(uncaught).toEqual([]);

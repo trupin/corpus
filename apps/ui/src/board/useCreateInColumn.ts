@@ -1,3 +1,4 @@
+import type { Doc } from "@corpus/contract";
 import { useCreateDoc, type CreateDocInput } from "@corpus/kit";
 import { useCallback } from "react";
 import type { PluginColumnRef } from "./viewDoc";
@@ -46,6 +47,15 @@ export function creationRequest(target: CreateTarget, title: string): CreateDocI
 export interface CreateInColumn {
   /** Resolves with the new document's id, so the caller can open it. */
   readonly create: (target: CreateTarget, title?: string) => Promise<string>;
+  /**
+   * The same act, resolving with the created document.
+   *
+   * The omnibox needs more than the id: it opens the new document in *its home
+   * column*, and which column that is depends on where the server filed it —
+   * which only the response says. Column `＋` already knows the folder it
+   * created into, so it keeps the narrower return.
+   */
+  readonly createDocument: (target: CreateTarget, title?: string) => Promise<Doc>;
   readonly isPending: boolean;
   readonly error: Error | null;
 }
@@ -54,13 +64,19 @@ export function useCreateInColumn(): CreateInColumn {
   const createDoc = useCreateDoc();
   const { mutateAsync } = createDoc;
 
-  const create = useCallback(
+  const createDocument = useCallback(
     async (target: CreateTarget, title: string = UNTITLED_DOCUMENT_TITLE) => {
       const response = await mutateAsync(creationRequest(target, title));
-      return response.doc.frontmatter.id;
+      return response.doc;
     },
     [mutateAsync],
   );
 
-  return { create, isPending: createDoc.isPending, error: createDoc.error };
+  const create = useCallback(
+    async (target: CreateTarget, title?: string) =>
+      (await createDocument(target, title)).frontmatter.id,
+    [createDocument],
+  );
+
+  return { create, createDocument, isPending: createDoc.isPending, error: createDoc.error };
 }
