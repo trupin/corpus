@@ -253,7 +253,7 @@
 
 /*
  * The prototype's `.ref` treatment, scoped to the detail header. The global
- * `.ref` rule arrives with the reader's `[[ref]]` rendering (UI-005); declaring
+ * `.ref` rule ships with the reader's `[[ref]]` rendering (UI-005); declaring
  * it here unscoped would be two owners for one class.
  */
 .job-detail-head .ref {

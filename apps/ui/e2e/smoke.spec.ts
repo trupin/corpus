@@ -73,7 +73,7 @@ test.describe("shell", () => {
     await expect(compose).toHaveCSS("background-color", LIGHT_ACCENT);
   });
 
-  test("the search bar is wired and the compose button is still inert", async ({ page }) => {
+  test("the search bar and the compose button are both wired", async ({ page }) => {
     const uncaught: string[] = [];
     page.on("pageerror", (error) => uncaught.push(error.message));
     await page.goto("/");
@@ -90,8 +90,11 @@ test.describe("shell", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator(".overlay.open")).toHaveCount(0);
 
-    // The composer is UI-010's; clicking it still does nothing, on purpose.
+    // UI-010 wired the composer: it opens the Ask/Capture panel, and Escape
+    // closes it through the same layer the search overlay uses.
     await page.locator(".btn-compose").click();
+    await expect(page.locator(".overlay.open")).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(page.locator(".overlay.open")).toHaveCount(0);
 
     await expect(page.locator(".topbar")).toBeVisible();
