@@ -18,12 +18,14 @@
     },
     "./tokens.css": "./src/tokens.css",
     "./row.css": "./src/row/row.css",
+    "./markdown.css": "./src/markdown/markdown.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "src/tokens.css",
-    "src/row/row.css"
+    "src/row/row.css",
+    "src/markdown/markdown.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -31,7 +33,9 @@
   },
   "dependencies": {
     "@corpus/contract": "*",
-    "@tanstack/react-query": "^5.101.4"
+    "@tanstack/react-query": "^5.101.4",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0"
   },
   "peerDependencies": {
     "react": "^18.3.1"

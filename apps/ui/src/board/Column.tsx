@@ -1,10 +1,10 @@
 import type { DocRow } from "@corpus/contract";
 import { useDocs, type RowNotice } from "@corpus/kit";
 import { useState, type DragEvent, type ReactElement } from "react";
+import { Reader } from "../reader/Reader";
 import { ColumnHead } from "./ColumnHead";
 import { ColumnList } from "./ColumnList";
-import { ColumnReaderScaffold } from "./ColumnReaderScaffold";
-import type { ColumnLocalState } from "./useBoardLocalState";
+import { openDocId, type ColumnLocalState, type NavEntry } from "./useBoardLocalState";
 import type { BoardColumn } from "./viewDoc";
 
 /**
@@ -29,7 +29,11 @@ export interface ColumnProps {
   readonly selectTitle: boolean;
   readonly onActivate: () => void;
   readonly onScroll: (scrollTop: number) => void;
-  readonly onOpen: (docId: string | null) => void;
+  /** Opens a document in this column's reader — a push onto its navigation stack. */
+  readonly onOpen: (docId: string) => void;
+  /** Replaces the reader's navigation stack; `[]` returns to the list. */
+  readonly onNav: (nav: readonly NavEntry[]) => void;
+  readonly onFocusMode: (docId: string) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -44,7 +48,7 @@ interface ColumnBodyProps {
   readonly local: ColumnLocalState;
   readonly onHandle: (armed: boolean) => void;
   readonly onScroll: (scrollTop: number) => void;
-  readonly onOpen: (docId: string | null) => void;
+  readonly onOpen: (docId: string) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -108,13 +112,14 @@ function ColumnBody({
 export function Column(props: ColumnProps): ReactElement {
   const { column, isActive, isDragging, isFlashing, local, onActivate, onOpen } = props;
   const [draggable, setDraggable] = useState(false);
+  const open = openDocId(local);
 
   const className = [
     "col",
     isDragging ? "dragging" : "",
     isActive ? "kactive" : "",
     isFlashing ? "flash" : "",
-    local.open === null ? "" : "reading",
+    open === null ? "" : "reading",
   ]
     .filter((part) => part !== "")
     .join(" ");
@@ -182,14 +187,15 @@ export function Column(props: ColumnProps): ReactElement {
         </>
       )}
 
-      {local.open === null ? null : (
-        <ColumnReaderScaffold
-          docId={local.open}
+      {open === null ? null : (
+        <Reader
+          columnId={column.id}
           columnTitle={column.title}
+          nav={local.nav}
+          setNav={props.onNav}
           selectTitle={props.selectTitle}
-          onClose={() => {
-            onOpen(null);
-          }}
+          isActive={isActive}
+          onFocusMode={props.onFocusMode}
           onNotify={props.onNotify}
         />
       )}

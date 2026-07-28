@@ -3,6 +3,7 @@ import type {
   CreateDocRequest,
   CreateThreadRequest,
   CreateThreadResponse,
+  DeleteDocResult,
   Doc,
   DocList,
   DocMutationResponse,
@@ -10,7 +11,10 @@ import type {
   Health,
   JobList,
   LockList,
+  MarkSeenResult,
+  ReleaseLockResult,
   Thread,
+  ThreadMutationResponse,
   UpdateDocRequest,
   UpdateDocResponse,
 } from "@corpus/contract";
@@ -96,8 +100,37 @@ export interface CorpusClient {
    * settable field. See {@link UpdateDocChanges}.
    */
   updateDoc(id: string, changes: UpdateDocChanges): Promise<UpdateDocResponse>;
+  /**
+   * `DELETE /api/docs/{id}` — **user-only** (SPEC.md §7, §9.2).
+   *
+   * The agent archives and never deletes, so this method exists for exactly one
+   * caller: the reader's ⋯ menu, behind an explicit two-click confirmation.
+   * Nothing is lost from history — git keeps the file and every version of it —
+   * but the document's threads become orphaned records, which is why the result
+   * names them.
+   */
+  deleteDoc(id: string): Promise<DeleteDocResult>;
   /** `POST /api/threads` — a thread on a selection, a whole document, or standalone (SPEC.md §6). */
   createThread(input: CreateThreadInput): Promise<CreateThreadResponse>;
+  /** `POST /api/threads/{id}/resolve` — closes a conversation without deleting it (SPEC.md §6). */
+  resolveThread(id: string): Promise<ThreadMutationResponse>;
+  /** `POST /api/threads/{id}/reopen` — the inverse; an engaged thread re-triggers the agent again. */
+  reopenThread(id: string): Promise<ThreadMutationResponse>;
+  /**
+   * `POST /api/threads/{id}/seen` — marks a thread read up to its last turn.
+   *
+   * Deliberately without the partial-read body: the kit's callers are surfaces
+   * that *displayed* a thread, and SPEC.md §7's rule is displayed content only.
+   */
+  markThreadSeen(id: string): Promise<MarkSeenResult>;
+  /**
+   * `POST /api/locks/{docId}/break` — the Force unlock escape hatch (SPEC.md §7).
+   *
+   * **User-only**, and honest about it: the server records the break in the
+   * audit-trail commit and re-queues the agent's deferred edit, so a caller may
+   * report both — but only after this resolves, never optimistically.
+   */
+  breakLock(docId: string): Promise<ReleaseLockResult>;
   /**
    * Opens the SSE invalidation stream. Kept off `api` upstream because
    * EventSource is not fetch; kept here because the bridge needs it and nothing
@@ -336,9 +369,44 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       );
     },
 
+    async deleteDoc(id) {
+      return unwrap(
+        "DELETE /api/docs/{id}",
+        await api.DELETE("/api/docs/{id}", { params: { path: { id } } }),
+      );
+    },
+
     async createThread(input) {
       const body = input as PostThreadBody;
       return unwrap("POST /api/threads", await api.POST("/api/threads", { body }));
+    },
+
+    async resolveThread(id) {
+      return unwrap(
+        "POST /api/threads/{id}/resolve",
+        await api.POST("/api/threads/{id}/resolve", { params: { path: { id } } }),
+      );
+    },
+
+    async reopenThread(id) {
+      return unwrap(
+        "POST /api/threads/{id}/reopen",
+        await api.POST("/api/threads/{id}/reopen", { params: { path: { id } } }),
+      );
+    },
+
+    async markThreadSeen(id) {
+      return unwrap(
+        "POST /api/threads/{id}/seen",
+        await api.POST("/api/threads/{id}/seen", { params: { path: { id } } }),
+      );
+    },
+
+    async breakLock(docId) {
+      return unwrap(
+        "POST /api/locks/{docId}/break",
+        await api.POST("/api/locks/{docId}/break", { params: { path: { docId } } }),
+      );
     },
 
     connectEvents(options) {

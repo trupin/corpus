@@ -6,22 +6,38 @@ import { useCallback, useMemo, useRef, useState } from "react";
  * The dividing line is a correctness rule, not a preference: which columns
  * exist, what they query, what they are called and what order they sit in is
  * **corpus** state — it lives in view documents, is auto-committed, and is
- * identical in a second browser. Where you had scrolled and which document each
- * column had open is **local** — it is about this browser's session and belongs
- * to nobody else. Anything that ends up in the blob below and is not one of
- * those two things is a bug.
+ * identical in a second browser. Where you had scrolled, which document each
+ * column had open, and how you got there is **local** — it is about this
+ * browser's session and belongs to nobody else. Anything that ends up in the
+ * blob below and is not one of those things is a bug.
  */
 
 export const BOARD_STORAGE_KEY = "corpus.board";
 
-/** Bumped when the shape below changes; an older blob degrades to defaults. */
-export const BOARD_STATE_VERSION = 1;
+/**
+ * Bumped when the shape below changes; an older blob degrades to defaults.
+ *
+ * **2** — UI-005 replaced `open: string | null` with the navigation stack
+ * SPEC.md §11 requires ("each reader keeps its own navigation stack … Back pops
+ * with scroll position restored"). A single open id cannot express a stack, and
+ * every v1 blob is discarded on first load: the cost is one lost scroll position
+ * per column, which is the right trade against migrating a shape whose whole
+ * purpose is to be disposable.
+ */
+export const BOARD_STATE_VERSION = 2;
+
+/** One step of a reader's history: what was open, and where it was scrolled to. */
+export interface NavEntry {
+  readonly docId: string;
+  /** `scrollTop` of the reader when navigation moved away from this entry. */
+  readonly scrollY: number;
+}
 
 export interface ColumnLocalState {
   /** `scrollTop` of the column's list. */
   readonly scroll: number;
-  /** The document id this column has open, or `null`. */
-  readonly open: string | null;
+  /** The reader's navigation stack, deepest last. Empty means the list is showing. */
+  readonly nav: readonly NavEntry[];
 }
 
 export interface BoardLocalState {
@@ -30,6 +46,11 @@ export interface BoardLocalState {
 }
 
 export const EMPTY_BOARD_STATE: BoardLocalState = { version: BOARD_STATE_VERSION, columns: {} };
+
+/** The document a column is showing, or `null` when it is showing its list. */
+export function openDocId(state: ColumnLocalState): string | null {
+  return state.nav.at(-1)?.docId ?? null;
+}
 
 function storageOrNull(): Storage | null {
   try {
@@ -40,14 +61,33 @@ function storageOrNull(): Storage | null {
   }
 }
 
+function readNavEntry(value: unknown): NavEntry | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const docId = record["docId"];
+  if (typeof docId !== "string" || docId === "") return null;
+  const scrollY = record["scrollY"];
+  return {
+    docId,
+    scrollY: typeof scrollY === "number" && Number.isFinite(scrollY) ? scrollY : 0,
+  };
+}
+
 function readColumnState(value: unknown): ColumnLocalState | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
   const scroll = record["scroll"];
-  const open = record["open"];
+  const stored = record["nav"];
+  const nav: NavEntry[] = [];
+  if (Array.isArray(stored)) {
+    for (const entry of stored) {
+      const parsed = readNavEntry(entry);
+      if (parsed !== null) nav.push(parsed);
+    }
+  }
   return {
     scroll: typeof scroll === "number" && Number.isFinite(scroll) ? scroll : 0,
-    open: typeof open === "string" ? open : null,
+    nav,
   };
 }
 
@@ -114,12 +154,22 @@ export interface BoardLocalStateApi {
   readonly state: BoardLocalState;
   readonly forColumn: (columnId: string) => ColumnLocalState;
   readonly setScroll: (columnId: string, scroll: number) => void;
-  readonly setOpen: (columnId: string, open: string | null) => void;
+  /** Replaces a column's navigation stack; `[]` closes the reader. */
+  readonly setNav: (columnId: string, nav: readonly NavEntry[]) => void;
   /** Called with the live column ids whenever the column set changes. */
   readonly prune: (liveIds: readonly string[]) => void;
 }
 
-const DEFAULT_COLUMN_STATE: ColumnLocalState = { scroll: 0, open: null };
+const DEFAULT_COLUMN_STATE: ColumnLocalState = { scroll: 0, nav: [] };
+
+function sameNav(left: readonly NavEntry[], right: readonly NavEntry[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((entry, index) => {
+    const other = right[index];
+    return other !== undefined && entry.docId === other.docId && entry.scrollY === other.scrollY;
+  });
+}
 
 export function useBoardLocalState(): BoardLocalStateApi {
   const [state, setState] = useState<BoardLocalState>(() => readBoardLocalState());
@@ -138,7 +188,7 @@ export function useBoardLocalState(): BoardLocalStateApi {
     (columnId: string, change: Partial<ColumnLocalState>) => {
       const current = latest.current.columns[columnId] ?? DEFAULT_COLUMN_STATE;
       const next = { ...current, ...change };
-      if (next.scroll === current.scroll && next.open === current.open) return;
+      if (next.scroll === current.scroll && sameNav(next.nav, current.nav)) return;
       commit({
         version: BOARD_STATE_VERSION,
         columns: { ...latest.current.columns, [columnId]: next },
@@ -154,9 +204,9 @@ export function useBoardLocalState(): BoardLocalStateApi {
     [patch],
   );
 
-  const setOpen = useCallback(
-    (columnId: string, open: string | null) => {
-      patch(columnId, { open });
+  const setNav = useCallback(
+    (columnId: string, nav: readonly NavEntry[]) => {
+      patch(columnId, { nav });
     },
     [patch],
   );
@@ -175,7 +225,7 @@ export function useBoardLocalState(): BoardLocalStateApi {
   );
 
   return useMemo(
-    () => ({ state, forColumn, setScroll, setOpen, prune }),
-    [forColumn, prune, setOpen, setScroll, state],
+    () => ({ state, forColumn, setScroll, setNav, prune }),
+    [forColumn, prune, setNav, setScroll, state],
   );
 }

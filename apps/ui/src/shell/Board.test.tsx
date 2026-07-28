@@ -490,8 +490,8 @@ describe("Board", () => {
 
     const blob = globalThis.localStorage.getItem(BOARD_STORAGE_KEY) ?? "";
     expect(JSON.parse(blob)).toEqual({
-      version: 1,
-      columns: { doc_one: { scroll: 0, open: "doc_r1" } },
+      version: 2,
+      columns: { doc_one: { scroll: 0, nav: [{ docId: "doc_r1", scrollY: 0 }] } },
     });
     expect(blob).not.toContain("folder");
     expect(blob).not.toContain("order");
@@ -502,8 +502,11 @@ describe("Board", () => {
       "localStorage",
       memoryStorage({
         [BOARD_STORAGE_KEY]: JSON.stringify({
-          version: 1,
-          columns: { doc_gone: { scroll: 40, open: "doc_x" }, doc_one: { scroll: 0, open: null } },
+          version: 2,
+          columns: {
+            doc_gone: { scroll: 40, nav: [{ docId: "doc_x", scrollY: 0 }] },
+            doc_one: { scroll: 0, nav: [] },
+          },
         }),
       }),
     );

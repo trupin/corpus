@@ -59,6 +59,13 @@ export { useAppendTurn, type AppendTurnVariables } from "./query/useAppendTurn.j
 export { useUpdateDoc, useUpdateDocById, type UpdateDocVariables } from "./query/useUpdateDoc.js";
 export { useCreateDoc } from "./query/useCreateDoc.js";
 export { useCreateThread } from "./query/useCreateThread.js";
+export { useDeleteDoc } from "./query/useDeleteDoc.js";
+export {
+  useMarkThreadSeen,
+  useSetThreadStatus,
+  type ThreadStatusVariables,
+} from "./query/useThreadStatus.js";
+export { useBreakLock } from "./query/useBreakLock.js";
 export {
   isPendingTurn,
   mergePendingTurns,
@@ -134,9 +141,26 @@ export {
   useRowActions,
   type RowActions,
   type RowActionsOptions,
+  type RowActionSubject,
   type RowNotice,
 } from "./row/useRowActions.js";
 export { useAgentActivity, useDocLock, type AgentActivity } from "./row/useRowSignals.js";
+
+// Rendered markdown (SPEC.md §10 names `MarkdownView` in the kit contract), and
+// the `[[ref]]` grammar of SPEC.md §5 that only it knows how to render. The
+// stylesheet is a subpath, like the tokens: `import "@corpus/kit/markdown.css"`.
+export { MarkdownView, type MarkdownViewProps } from "./markdown/MarkdownView.js";
+export {
+  parseRefs,
+  refIds,
+  remarkCorpusRefs,
+  splitTextNode,
+  REF_ALIAS_ATTRIBUTE,
+  REF_ID_ATTRIBUTE,
+  REF_NODE_TYPE,
+  REF_PATTERN,
+  type DocRef,
+} from "./markdown/refs.js";
 
 // The live-update connection.
 export { useConnectionState } from "./events/useConnectionState.js";

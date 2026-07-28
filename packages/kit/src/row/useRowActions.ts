@@ -7,7 +7,16 @@ import { useUpdateDoc } from "../query/useUpdateDoc.js";
  * The three quick actions a stale row grows (SPEC.md §5, §11). Each one is a
  * real, committed mutation through the kit's hooks — the ramp is actionable, not
  * decorative, and none of these is a local UI flag.
+ *
+ * The subject is `Pick<DocRow, "id" | "title">` rather than a whole row because
+ * these are **document** acts, not row acts: the reader's ⋯ menu offers the same
+ * Archive and the same "Still current" from a `Doc`, and it must be the same
+ * unit. Two implementations of "Still current" is how `updated` eventually gets
+ * clobbered in one of them, silently and permanently (SPEC.md §5).
  */
+
+/** The subject of a quick action: any document, however the caller learned of it. */
+export type RowActionSubject = Pick<DocRow, "id" | "title">;
 
 /** What the caller is told when an action lands or fails. Wired to a toast by the host. */
 export type RowNotice = { readonly tone: "info" | "error"; readonly message: string };
@@ -41,7 +50,7 @@ export function triagePrompt(title: string): string {
   );
 }
 
-export function useRowActions(row: DocRow, options: RowActionsOptions = {}): RowActions {
+export function useRowActions(row: RowActionSubject, options: RowActionsOptions = {}): RowActions {
   const { onNotify } = options;
   const clock = options.now ?? (() => new Date());
   const update = useUpdateDoc(row.id);

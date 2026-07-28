@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -38,25 +38,25 @@ Make columns readable. Clicking a row opens the document **in that column** — 
 
 ## Acceptance Criteria
 
-- [ ] Clicking a row opens that document in **its own column**: the column gets the `.reading` state (width `560px` with the `0.25s` width transition), the list and the header chip row hide, and the reader shows.
-- [ ] Multiple columns can have different documents open simultaneously and independently (the wide-screen workflow in SPEC.md §11).
-- [ ] Reader head matches the prototype: `.back` accent button, `.reader-id` mono `<docId> · git ✓` pushed right, a `.save-chip` slot (empty here; wired by UI-006), a `.comments-btn` (`💬 n`, hidden when the doc has no threads), a `⋯` document-menu button, and a `⤢` focus button.
-- [ ] The back button is labeled with the **previous document's title** when the nav stack has depth (`‹ Mortgage options`) and with the **column's title** when it does not (`‹ Finance`); its `title` attribute documents the shift-click behavior.
-- [ ] Shift-clicking Back (and the documented keyboard shortcut) clears the stack and returns straight to the list.
-- [ ] The 💬 popover lists the document's threads as a serif-italic quote line plus a mono meta line (`n turns · <last author/time> · <status>`); selecting one expands that thread's slot in the body, smooth-scrolls to it, and flashes a `--signal` border on it for ~1.2 s.
-- [ ] The ⋯ menu renders, in order: **Still current** (sets `reviewed: now`), **Resolve/Reopen** (thread documents only, label reflecting current status), **Archive**, **Copy for Google Docs** (rendered but explicitly marked out of scope for v1 — inert with an explanatory sub-label), **Delete** (rendered in `--signal`, labeled user-only, requiring two clicks: the item re-labels to "Really delete? Click again" before firing `DELETE /api/docs/:id`).
-- [ ] Frontmatter renders as the `.fm-chips` strip (type · folder · `#tags` · status · `updated` and author) **and** is editable through a small form covering title, tags, status, and due, persisting via `PUT /api/docs/:id`.
-- [ ] The body renders with `react-markdown` + `remark-gfm` in the prototype's serif `.doc-body` treatment (15px/1.62, max 62ch) — read-only in this issue; UI-006 replaces this path with TipTap.
-- [ ] `[[doc_id]]` refs render as `.ref` links showing the target's **current title**; the alias form `[[doc_id|as text]]` renders the alias; an unresolved ref renders visibly broken (distinct, non-clickable treatment) rather than as raw text or a dead link.
-- [ ] A "Referenced by" backlinks panel renders below the body from the `references:` query, each entry showing the referrer's type glyph and title and being clickable.
-- [ ] Each column keeps its own navigation stack of `{ docId, scrollY }`: following a `[[ref]]`, a backlink, or a thread-context link **pushes**; Back **pops** and restores the previous scroll position exactly; popping the last entry exits to the list.
-- [ ] Nav stacks and open readers persist in browser-local state (the localStorage owned by UI-003) and are restored on reload — including scroll positions.
-- [ ] Focus mode (`⤢`) opens a full-viewport overlay with its own head (back/close, an "esc closes" mono hint, doc id, save chip, 💬, ⋯), a 66–76ch measure (`.focus-inner` max 76ch, `.focus .doc-body` max 66ch at 16.5px/1.7), and **its own navigation stack** independent of the column's.
-- [ ] Escape precedence is explicit and correct: an open popover/menu closes first, then focus mode, then the column reader — matching SPEC.md §11's keyboard scheme.
-- [ ] Thread-type documents render their conversation as the document body (turns with author/timestamp), so a thread opened from a column is readable; the full thread UI (composer, forms, attachments, per-turn actions) is UI-008's.
-- [ ] A locked document renders the sepia `.lock-banner` — pulsing sepia dot, "**agent is editing** — `<note>` · document is read-only", and a **Force unlock** button — and its editable surfaces (title, frontmatter form) are disabled while locked.
-- [ ] Force unlock calls the server's lock-break endpoint; on success the banner clears, the document becomes editable, and a toast states the break was recorded in the audit trail and the agent's deferred edit was re-queued.
-- [ ] Lock banners appear and clear **live** via the SSE-driven lock projection, in every column showing that document, with no reload.
+- [x] Clicking a row opens that document in **its own column**: the column gets the `.reading` state (width `560px` with the `0.25s` width transition), the list and the header chip row hide, and the reader shows.
+- [x] Multiple columns can have different documents open simultaneously and independently (the wide-screen workflow in SPEC.md §11).
+- [x] Reader head matches the prototype: `.back` accent button, `.reader-id` mono `<docId> · git ✓` pushed right, a `.save-chip` slot (empty here; wired by UI-006), a `.comments-btn` (`💬 n`, hidden when the doc has no threads), a `⋯` document-menu button, and a `⤢` focus button.
+- [x] The back button is labeled with the **previous document's title** when the nav stack has depth (`‹ Mortgage options`) and with the **column's title** when it does not (`‹ Finance`); its `title` attribute documents the shift-click behavior.
+- [x] Shift-clicking Back (and the documented keyboard shortcut) clears the stack and returns straight to the list.
+- [x] The 💬 popover lists the document's threads as a serif-italic quote line plus a mono meta line (`n turns · <last author/time> · <status>`); selecting one expands that thread's slot in the body, smooth-scrolls to it, and flashes a `--signal` border on it for ~1.2 s.
+- [x] The ⋯ menu renders, in order: **Still current** (sets `reviewed: now`), **Resolve/Reopen** (thread documents only, label reflecting current status), **Archive**, **Copy for Google Docs** (rendered but explicitly marked out of scope for v1 — inert with an explanatory sub-label), **Delete** (rendered in `--signal`, labeled user-only, requiring two clicks: the item re-labels to "Really delete? Click again" before firing `DELETE /api/docs/:id`).
+- [x] Frontmatter renders as the `.fm-chips` strip (type · folder · `#tags` · status · `updated` and author) **and** is editable through a small form covering title, tags, status, and due, persisting via `PUT /api/docs/:id`.
+- [x] The body renders with `react-markdown` + `remark-gfm` in the prototype's serif `.doc-body` treatment (15px/1.62, max 62ch) — read-only in this issue; UI-006 replaces this path with TipTap.
+- [x] `[[doc_id]]` refs render as `.ref` links showing the target's **current title**; the alias form `[[doc_id|as text]]` renders the alias; an unresolved ref renders visibly broken (distinct, non-clickable treatment) rather than as raw text or a dead link.
+- [x] A "Referenced by" backlinks panel renders below the body from the `references:` query, each entry showing the referrer's type glyph and title and being clickable.
+- [x] Each column keeps its own navigation stack of `{ docId, scrollY }`: following a `[[ref]]`, a backlink, or a thread-context link **pushes**; Back **pops** and restores the previous scroll position exactly; popping the last entry exits to the list.
+- [x] Nav stacks and open readers persist in browser-local state (the localStorage owned by UI-003) and are restored on reload — including scroll positions.
+- [x] Focus mode (`⤢`) opens a full-viewport overlay with its own head (back/close, an "esc closes" mono hint, doc id, save chip, 💬, ⋯), a 66–76ch measure (`.focus-inner` max 76ch, `.focus .doc-body` max 66ch at 16.5px/1.7), and **its own navigation stack** independent of the column's.
+- [x] Escape precedence is explicit and correct: an open popover/menu closes first, then focus mode, then the column reader — matching SPEC.md §11's keyboard scheme.
+- [x] Thread-type documents render their conversation as the document body (turns with author/timestamp), so a thread opened from a column is readable; the full thread UI (composer, forms, attachments, per-turn actions) is UI-008's.
+- [x] A locked document renders the sepia `.lock-banner` — pulsing sepia dot, "**agent is editing** — `<note>` · document is read-only", and a **Force unlock** button — and its editable surfaces (title, frontmatter form) are disabled while locked.
+- [x] Force unlock calls the server's lock-break endpoint; on success the banner clears, the document becomes editable, and a toast states the break was recorded in the audit trail and the agent's deferred edit was re-queued.
+- [x] Lock banners appear and clear **live** via the SSE-driven lock projection, in every column showing that document, with no reload.
 
 ## Technical Design
 
@@ -157,28 +157,350 @@ Against the **real running application** — this covers several of SPEC.md §15
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. Must be from real E2E
-testing — no mocks, no test clients. Real application, real requests, real
-interfaces. Include specific commands run, actual outputs observed, and pass/fail
-conclusions. State which model the implementing agent ran on ("implemented on:
-opus | fable") — the audit trail for recalibrating Model recommendations. The
-evaluator will reject issues without credible proof._
+**Implemented on: opus.** Model recommendation confirmed correct — the open
+questions were all answered by SPEC.md §11, `design/index.html` and sprint-010's
+Orchestrator Adjudications; the two judgement calls that came up (a `Lock.note`
+field that does not exist on the wire, and the reader's own ⇧esc binding) are
+recorded below as escalations rather than guessed at.
 
 ### Reproduction (bugs only)
 
-_[Agent fills: exact commands, observed output, confirmation bug exists]_
+Not applicable — UI-005 is a feature, not a bug. Three defects **found during
+verification** are recorded in place below (unstable `MarkdownView` callback
+identity, a clamped scroll restore on a cold reload, an unimplemented `⇧esc`),
+each with its pre-fix observation.
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation fix/feature works]_
+#### The real application
+
+- Workspace: `corpus init /tmp/corpus-s010-ui005-XOkIoL --port 8962` — a real
+  workspace, real git repository, 29 commits by the end of the session.
+- Server: `corpus server start` → `corpus 0.0.0 listening on http://127.0.0.1:8962 (pid 42257)`;
+  `corpus health` → `ok — corpus 0.0.0, up 1s, workspace /tmp/corpus-s010-ui005-XOkIoL`.
+- UI: `CORPUS_SERVER_ORIGIN=http://127.0.0.1:8962 VITE_CORPUS_TOKEN=<workspace token> npm run dev -w apps/ui -- --port 5274 --strictPort`.
+- Browser: real Chromium via Playwright's `chromium.launch()`, 1500×900 (and
+  900×800 for the popover-clamping case). Scripts under
+  `/tmp/corpus-s010-ui005-drive/`; every mutation is checked on disk **and** in
+  `git log`.
+- Seed: `Mortgage options` (`doc_53v3ng24`) with `[[doc_g6cpr76g]]`,
+  `[[doc_4dgjyyqk|amortization schedule]]`, `[[doc_notyet]]` (unresolved),
+  `[[doc_53v3ng24]]` (self-referential), a GFM table, a task list, literal
+  `<script>alert(1)</script>` / `<img src=x onerror=alert(1)>`, 60 filler
+  paragraphs and a trailing `[[doc_g6cpr76g]]`; `Rates`/`Weekly rates`
+  (`doc_g6cpr76g`), `Payoff table` (`doc_4dgjyyqk`), `Doomed note`
+  (`doc_6mpqme7t`); an anchored thread `th_2nt7e3fd`, a whole-document thread
+  `th_un46ii3u`, a standalone thread `th_hk72x4v6`; two pinned view documents
+  (`Finance`, `All notes`) so two columns can read the same document at once.
+- `8765` verified UNBOUND before, during and after; `5273` never held.
+
+#### The reader in its column
+
+- **TEST-1** — clicking a row: `col width 336 -> 560`, the sibling column
+  unchanged at `336`; `transition: width 0.25s, border-color 0.3s`;
+  `list hidden: true | chips hidden: true | reader visible: true`. The scaffold's
+  `.reader-note` copy is gone from the tree (`ColumnReaderScaffold.tsx` deleted;
+  `expect(await page.content()).not.toContain("arrives with the reader")` in
+  `apps/ui/e2e/reader.spec.ts`).
+- **TEST-2** — `finance reader: doc_53v3ng24 | all-notes reader: doc_4dgjyyqk`;
+  scrolling one to `400` left the other at `0`; their stacks are separate keys in
+  `corpus.board`.
+- **TEST-3** — `.reader-head` children, in order:
+  `["back","reader-id","save-chip","comments-btn","expand|data-doc-menu","expand|data-expand"]`;
+  `reader-id` = `doc_53v3ng24 · git ✓`; `save-chip` text `""` (present, empty —
+  UI-006's slot); `comments-btn` = `💬 2`, and absent entirely for a document
+  with no threads; `aria-label`s `Document actions` / `Read full screen`; both ⋯
+  and ⤢ carry class `expand`.
+- **TEST-4** — empty stack: `‹ Finance`, `title="Back to list"`. With depth:
+  `‹ Mortgage options` (the PREVIOUS document), `title="Back (shift-click, or ⇧esc: straight to list)"`.
+- **TEST-5** — shift-click Back from a 3-deep stack: `reader count = 0 | list visible: true`,
+  and the persisted stack went `["doc_53v3ng24","doc_g6cpr76g","doc_53v3ng24"] → []`
+  in **one** state change (unit test `Reader.test.tsx` asserts `stacks` is exactly
+  `[[]]`, so no intermediate document rendered).
+  **DEFECT FOUND AND FIXED**: `⇧esc` was documented on the button but not
+  implemented — pressing it popped one entry (`after ⇧esc — reader: 1`). The
+  escape registry now passes the `KeyboardEvent` to the layer and `Reader` maps
+  `shiftKey → toList()`. Re-verified: `after ⇧esc — reader: 0 | list: true`.
+- **TEST-6** — `.reader-scroll overflowY: auto`, `.board overflowY: hidden`,
+  `document.body.scrollHeight === clientHeight → true`.
+
+#### The body, refs and backlinks
+
+- **TEST-7** — `.doc-body` computes to `"Iowan Old Style" / 15px / 24.3px / 517.22px`
+  (15 × 1.62 = 24.3; 517px = 62ch at that font — asserted as `62` exactly by
+  `reader.spec.ts`'s `measureCh`). Focus mode: `16.5px / 28.05px`, `.focus-inner`
+  76ch and `.focus .doc-body` 66ch. GFM: `tables= 2 th, tasklist= 2 checkboxes`.
+  `react-markdown` + `remark-gfm` are dependencies of **`packages/kit`**, not of
+  `apps/ui`.
+- **TEST-8** — `script= 0 img= 0`, the markup visible as literal text
+  (`textContent` contains `alert(1)`), `PAGE ERRORS: []`. `rehype-raw` is
+  deliberately absent, so there is no sanitizer to misconfigure; `grep -rn
+  dangerouslySetInnerHTML apps/ui/src packages/kit/src` → **(none)**.
+- **TEST-9** — `ref text before rename: Rates`; then
+  `corpus doc edit doc_g6cpr76g --title "Weekly rates" --from agent` out of band
+  →`ref text after, no reload: Weekly rates`. No stored copy anywhere.
+- **TEST-10** — `[[doc_4dgjyyqk|amortization schedule]]` renders
+  `amortization schedule` and navigates to `doc_4dgjyyqk`.
+- **TEST-11** — `[[doc_notyet]]` renders `<span class="ref-broken">`, `tag: SPAN`,
+  not a link, `title="doc_notyet does not exist yet — this reference is unresolved."`.
+  Nothing is logged by the app and no toast fires. (The browser itself logs
+  `Failed to load resource: 404` for the probe request — a network-layer message,
+  not an application log; `pageerror` stayed `[]` throughout.)
+- **TEST-12 — the strategy, stated for UI-006/UI-007.** `GET /api/docs` has no
+  `ids=` filter (Open Conflict 6), so ref titles resolve through **one
+  cache-deduped `useDoc(id)` per distinct id**, exactly as adjudicated. Measured:
+  a body with 5 ref occurrences over 4 distinct ids issued
+  `GET /api/docs/doc_53v3ng24`, `/doc_g6cpr76g`, `/doc_4dgjyyqk`, `/doc_notyet`
+  — 4 requests, and the second occurrence of `doc_g6cpr76g` cost nothing. A
+  document already open in another reader costs nothing at all.
+  **DEFECT FOUND AND FIXED**: the unresolved id was fetched **twice** (the kit's
+  `retry: 1`). `createCorpusQueryClient` now never retries a `4xx` — a `404` is a
+  normal answer for a legitimate unresolved ref (SPEC.md §5), not a transient
+  failure. Re-measured: one request per distinct id.
+- **TEST-13** — `.backlinks h3` = `Referenced by`, entry `note` + `Mortgage options`
+  with `data-backlink="doc_53v3ng24"`, `max-width: 527px` (62ch). Sourced from
+  **one** request: `GET /api/docs?references=doc_g6cpr76g`. Clicking it pushed
+  (`back label: ‹ Weekly rates`).
+
+#### The ⋯ menu, and the two-click delete
+
+- **TEST-14 — the unit, named.** `DocMenu.tsx:82` calls the kit's
+  `useRowActions({ id, title }, { onNotify })` for both Archive and Still
+  current. `useRowActions`' subject was widened from `DocRow` to
+  `Pick<DocRow,"id"|"title">` (`RowActionSubject`) so a `Doc` can be its subject;
+  nothing was reimplemented.
+- **TEST-15 — the invisible-failure criterion, isolated.**
+  before `{"updated":"2026-07-28T06:38:54Z","reviewed":"2026-07-28T06:38:55.275Z"}`;
+  after  `{"updated":"2026-07-28T06:38:54Z","reviewed":"2026-07-28T06:39:45.988Z"}`;
+  `updated byte-identical: true | reviewed changed: true`. Wire:
+  `PUT /api/docs/doc_53v3ng24 {"reviewed":"2026-07-28T06:39:45.988Z"}` — that key
+  and no other. `git log -1` → `user|doc edit: Mortgage options v3 (doc_53v3ng24) by user`.
+- **TEST-16** — note: `["Still current","Archive","Delete…"]`. Thread document:
+  `["Still current","Resolve","Archive","Delete…"]`; Resolve issued
+  `POST /api/threads/th_2nt7e3fd/resolve` (**no** `PUT`), disk
+  `status: resolved`, `git log -1` → `user|thread resolve: Rate assumption (th_2nt7e3fd) by user`,
+  and the menu relabelled to `Reopen` live.
+  **Adjudication 8 applied**: the publish-plugin items are absent — the menu text
+  contains no "Google".
+- **TEST-17** — first click: `Really delete? Click again` /
+  `permanent · git keeps history · its threads become orphaned records`, and
+  `DELETE requests so far: 0` (network log).
+- **TEST-18** — unarmed sub-label `user-only · click twice to confirm`, rendered
+  in `--signal` (`rgb(196, 85, 46)`). Server half verified independently:
+  `curl -X DELETE /api/docs/doc_g6cpr76g -H "x-corpus-author: agent"` → **403**
+  `{"code":"forbidden","message":"deletion is user-only; the agent archives, never deletes"}`,
+  file untouched.
+- **TEST-19** — second click: `DELETE /api/docs/doc_6mpqme7t`; file gone from
+  `data/docs/finance/`; `git log -1` → `user|doc delete: Doomed note (doc_6mpqme7t) by user`;
+  `git log -- data/docs/finance/doomed-note.md` still lists **3 commits**; the
+  reader left the document; toast: *"Deleted "Doomed note" — user-only act; git
+  retains its history. 1 thread became an orphaned record."*
+- **TEST-20** — 900px viewport, board scrolled so the reading column's head sat
+  at `x: -261`: both popovers measured `x: 8, width: 300`, `inside viewport: true`,
+  `transform: matrix(1,0,0,1,23,0)`. `popoverShift` now clamps **both** edges
+  (it originally handled only right overflow — found here, fixed, unit-tested).
+  Both reuse `.comments-pop`/`.cp-item` with the bold `.cp-quote` + mono
+  `.cp-meta` anatomy.
+
+#### The 💬 popover
+
+- **TEST-21** — `💬 2`; items
+  `["“a 30-year fixed at 6.1%” || 2 turns · last: agent · open",
+    "whole-document thread || 1 turn · last: user · open"]`;
+  `.cp-quote` computes `font-style: italic` (serif), `.cp-meta` `ui-monospace`.
+  Zero threads → the button is absent entirely and the popover's empty copy is
+  the prototype's (unit-tested in `CommentsPopover.test.tsx`).
+- **TEST-22** — selecting an item: `expanded: 1 | flashing: 1`,
+  `border-left-color: rgb(196, 85, 46)` (`--signal`), and after 1.5 s
+  `flash: 0`. The reduced-motion guard was **extended in
+  `apps/ui/src/app/global.css`'s existing block** — `reader.spec.ts` asserts
+  `.thread-card.flash` appears in exactly **one** `prefers-reduced-motion` rule
+  in the shipped stylesheet.
+
+#### Frontmatter
+
+- **TEST-23** — `.fm-chips` = `["note","finance/","#finance","open","updated 2026-07-02","edit"]`
+  (type · folder · #tags · status · updated), read from the document's own
+  frontmatter. **Divergence, recorded**: the AC also asks for an *author* chip;
+  `DocFrontmatter` carries no author field — git is the audit trail — so no
+  author chip is rendered rather than an invented one.
+- **TEST-24** — title, a tag, status and due edited, then Save: **one** request,
+  `PUT /api/docs/doc_53v3ng24 {"tags":["finance","mortgage","rates"],"status":"resolved","due":"2026-11-15"}`.
+  On disk those three changed; `id`, `type`, `created`, `evergreen` and
+  `reviewed` byte-identical. `git log -1` → `user|doc edit: … by user`. Toast:
+  *"Saved — tags, status, due updated and committed."*
+- **TEST-25** — with an agent lock held: `title read-only in both columns: true / true`;
+  every `.fm-form` control `disabled: [true, true, true]`. Lock landing
+  mid-edit: the draft is **kept**, Save is disabled, and the banner reads
+  *"unsaved — the document was locked while you were editing; your changes are
+  kept here"* (unit-tested in `FrontmatterForm.test.tsx`).
+
+#### Navigation stack and persistence
+
+- **TEST-26** — scrolled to `844` (the bottom), followed a tail `[[ref]]`
+  (`scroll now: 0`), pressed Back → `restored: 844 | exact: true`. After the
+  backlinks and thread chips resolved 1.2 s later: `still at 844`.
+- **TEST-27** — refs, backlinks (`data-backlink`) and the thread-context link all
+  call the one `onNavigate` seam in `DocView`; popping the last entry closed the
+  reader and revealed the list.
+- **TEST-28** — the self-referential `[[doc_53v3ng24]]`: back label became
+  `‹ Mortgage options` (an entry was pushed), Back returned to the same document,
+  a second Back exited.
+- **TEST-29** — `[[th_2nt7e3fd]]` in `Weekly rates`' body opened the thread:
+  `reader: th_2nt7e3fd | conversation turns: 2 | authors: ["user","agent"]`, and
+  its ⋯ menu showed `["Still current","Resolve","Archive","Delete…"]`.
+- **TEST-30** — stored blob, verbatim:
+  `{"version":2,"columns":{"doc_6miwp53k":{"scroll":0,"nav":[{"docId":"doc_53v3ng24","scrollY":844},{"docId":"doc_g6cpr76g","scrollY":0}]},"doc_bsd3refz":{"scroll":0,"nav":[{"docId":"doc_4dgjyyqk","scrollY":0}]}}}`
+  — `BOARD_STATE_VERSION` 1 → 2 (Open Conflict 8's accepted discard), and **no**
+  query, order, column identity, title or document content. After reload both
+  readers, both stacks and, on popping, the scroll offset `844` were restored.
+  **DEFECT FOUND AND FIXED**: on a cold reload the restore clamped to `694`,
+  because the backlinks panel and thread chips arrive after the body and the
+  container was ~150px shorter than when the offset was recorded. Restoration now
+  **converges** — it re-applies while the target is still out of reach and stops
+  the instant the reader moves on its own, which is what "do not re-restore and
+  yank the user" actually requires. Re-verified: `popped to: doc_53v3ng24 scroll: 844`.
+- **TEST-31** — a restored stack `[doc_53v3ng24, doc_deletedmeanwhile, doc_g6cpr76g]`:
+  Back from the top went straight to `doc_53v3ng24`, `gone-card: 0`, and the
+  stored stack afterwards was `doc_53v3ng24`. No error card, no throw,
+  `PAGE ERRORS: []`.
+
+#### Focus mode and escape precedence
+
+- **TEST-32** — `.focus` computes `position: fixed | inset 0px | z-index 35 |
+  background rgb(247,246,243)` (`--bg`); `.focus-inner` 646px = **76ch**,
+  `.focus .doc-body` 606px = **66ch** at `16.5px / 28.05px`. Head:
+  `["back:✕ Close","back:‹ Finance","focus-hint:esc closes","reader-id:doc_53v3ng24 · git ✓","save-chip:","comments-btn:💬 2","expand:⋯"]`,
+  `role="dialog"`. **Open Conflict 11 applied**: the hint is `esc closes` alone —
+  the prototype's "· click anywhere to edit" arrives with UI-006.
+- **TEST-33 — one DocView, two hosts.** `grep -rn "<DocView" apps/ui/src` →
+  `Reader.tsx:115` and `FocusMode.tsx:100`, nothing else.
+  `grep -rn MarkdownView apps/ui/src` → **one** document-body call site,
+  `DocView.tsx:102`, plus `Turns.tsx:47` for turn bodies. UI-006 replaces the
+  document body in exactly one place.
+- **TEST-34** — column stack before focus `doc_53v3ng24`; entered focus, followed
+  a ref inside it (`focus now shows: Weekly rates`, focus back `‹ Mortgage options v3`);
+  column stack after: **`doc_53v3ng24`, unchanged**, and the column reader still
+  showed `doc_53v3ng24`. Back past the bottom of the focus stack closes focus
+  (unit-tested) rather than stranding an empty overlay.
+- **TEST-35 — a registry, not a chain of ifs.** With a column reader, focus mode
+  over it and a ⋯ menu open inside focus:
+  esc#1 → `menu: 0, focus: 1, reader: 1`;
+  esc#2 → `focus: 0, reader: 1` (column reader unchanged, still `doc_53v3ng24`);
+  esc#3 → `reader: 0, list visible: true`.
+  `useEscapeStack.ts` is a module-level registry keyed on
+  `EscapeLayerPriority` (Reader 0 · Focus 10 · Overlay 20 · Popover 30) then
+  mount order; UI-009's overlay and UI-010's composer join by calling
+  `useEscapeLayer` — no conditional to edit. The listener is on the **capture**
+  phase and skips editable targets, so a field's own Escape (revert draft) still
+  wins and `⌫` never eats a character.
+
+#### Locks
+
+- **TEST-36** — the same document open in two columns, then
+  `corpus lock acquire doc_53v3ng24 --from agent` out of band: **2 banners**
+  appeared live with no reload, text *"agent is editing — holding the edit lock,
+  started just now · document is read-only"*, dot `rgb(169,131,75)` (`--sepia`),
+  banner `rgba(169,131,75,0.08)` (`--sepia-wash`). An out-of-band `lock break`
+  cleared both live (`banners: 0`); a re-acquire brought both back.
+  **ESCALATION (contract gap)**: the prototype's banner names *what the agent is
+  doing*, but `Lock` on the wire is `{docId, holder, acquired, ttl}` — **there is
+  no `note` field**. Rather than invent a sentence, the banner states the two
+  facts it has (who, and since when). A `Lock.note` rider — same shape as
+  CONTRACT-012's `Job.type` — would make the prototype's copy true.
+- **TEST-37 — both of the toast's claims, verified independently.**
+  Response: `200 {"docId":"doc_53v3ng24","released":true,"holder":"agent"}`.
+  `.corpus/locks/doc_53v3ng24.json` gone. Banners cleared in **both** columns
+  live. Title editable again. Toast: *"Lock broken — agent's lock on
+  doc_53v3ng24 was force-released. The break is recorded in the audit trail and
+  the agent's deferred edit was re-queued."*
+  Claim 1 — `git log -1` → `user|lock: force-break on doc_53v3ng24 (was agent) by user`.
+  Claim 2 — with a deferred edit registered on the lock:
+  `queue before Force unlock: {"pending":[],"inProgress":["evt_3tr246onzkc4.json"]}`;
+  `queue after  Force unlock: {"pending":["evt_3tr246onzkc4.json"],"inProgress":[]}`.
+- **TEST-38** — lock released behind the UI's back and the break answered `404`:
+  toast *"Force unlock failed — POST /api/locks/{docId}/break failed (HTTP 404):
+  no lock on that document. The lock state has been refreshed."*, tone `error`,
+  and the UI never claimed a break.
+
+#### Read state, live changes, and thread bodies
+
+- **TEST-39 — SPEC.md §7's asymmetry, both halves.** Parent document open, both
+  its threads unread: `seen calls with the parent open: 0`, and the wire still
+  said `[["th_2nt7e3fd",true],["th_un46ii3u",true]]`. Expanding one chip:
+  `POST /api/threads/th_2nt7e3fd/seen`, and the wire became
+  `[["th_2nt7e3fd",false],["th_un46ii3u",true]]` — that thread only. Opening a
+  thread *document* in the reader also posts `seen` once
+  (`["POST /api/threads/th_2nt7e3fd/seen"]`).
+- **TEST-40** — a thread opened from a column renders its conversation as the
+  body: `2 turns`, authors `["user","agent"]` with timestamps. No composer, no
+  per-turn delete, no attachment controls — UI-008's, absent rather than
+  half-built.
+- **TEST-41** — `corpus doc archive` on the open document → `.archived-banner`
+  appeared live: *"This document is archived — it is hidden from default lists.
+  Archiving is reversible…"*. Then `corpus doc delete` → `.reader-gone`:
+  *"This document no longer exists — doc_4dgjyyqk was deleted. Its history is
+  still in git…"*, with Back still offered. `PAGE ERRORS: []` throughout.
+- **TEST-42** — `corpus doc edit --title "Mortgage options (agent-edited)" --from agent`
+  out of band while the reader was open at scroll `300`:
+  `title now: Mortgage options (agent-edited) | scroll kept: 300`, no reload.
+
+#### Defects found by this verification (all fixed, all covered by new tests)
+
+1. **`MarkdownView` re-rendered its whole tree on every host re-render.** An
+   inline `onOpenRef` (every host passes one) changed `components`' identity, so
+   `react-markdown` replaced every `<a>` in the body — and a click already in
+   flight landed on a detached node. Observed as a ref click that simply did
+   nothing whenever a second column was also open. The callback now lives in a
+   ref and `components`/`remarkPlugins` are built once; regression test
+   *"keeps the rendered body's DOM nodes across a host re-render with a new callback"*.
+2. **Scroll restoration clamped on a cold reload** (TEST-30 above).
+3. **`⇧esc` was documented and not implemented** (TEST-5 above).
+4. **A pending debounced scroll capture could stamp the previous document's
+   offset onto the new one** after a navigation; the restore now cancels it.
+5. **`popoverShift` handled only right overflow** (TEST-20 above).
+6. **A `404` cost two requests** (TEST-12 above).
+
+#### Checks
+
+- `npm run lint` — clean (ESLint, 0 errors, 0 warnings).
+- `npm run format` — clean.
+- `npm run typecheck` — clean in every workspace.
+- `VITEST_MAX_THREADS=4 node node_modules/.bin/vitest run apps/ui packages/kit` —
+  **56 files / 697 tests, all passing** (baseline for these two workspaces at the
+  branch tip: 42 files / 562 tests → **+14 files, +135 tests**).
+- `CORPUS_UI_PORT=5274 npm run e2e` — **25 passed** (baseline 20; `reader.spec.ts`
+  adds 5), with `8765` unbound throughout so `smoke.spec.ts`'s
+  `"server unreachable"` assertion holds unmodified.
+- Cleanup: `corpus server stop` (pid 42257); dev server killed by pid;
+  `8765, 8960–8964, 5273, 5274` all verified `free`; no orphaned vitest,
+  Playwright or Vite children.
+
+#### What UI-006 / UI-007 / UI-008 / UI-009 inherit
+
+- **Kit surface added** (`packages/kit/src/index.ts`): `MarkdownView` (+
+  `@corpus/kit/markdown.css`), `parseRefs`, `refIds`, `remarkCorpusRefs`,
+  `splitTextNode`, `REF_PATTERN`/`REF_ID_ATTRIBUTE`/`REF_ALIAS_ATTRIBUTE`/`REF_NODE_TYPE`,
+  `useDeleteDoc`, `useSetThreadStatus`, `useMarkThreadSeen`, `useBreakLock`,
+  and the `RowActionSubject` widening of `useRowActions`. `CorpusClient` gained
+  `deleteDoc`, `resolveThread`, `reopenThread`, `markThreadSeen`, `breakLock`.
+- **The body-render seam**: `apps/ui/src/reader/DocView.tsx:102` — the single
+  `MarkdownView` call site for a document body, rendered by both hosts.
+- **The escape registry**: `apps/ui/src/reader/useEscapeStack.ts` —
+  `useEscapeLayer({ active, priority, onEscape })` with `EscapeLayerPriority`;
+  UI-009's overlay registers at `Overlay` (20) and needs no conditional.
+- **Board local state**: `ColumnLocalState` is now `{ scroll, nav: NavEntry[] }`
+  with `openDocId(state)`; `BOARD_STATE_VERSION = 2`.
+- **Ref-resolution strategy** (for UI-006/UI-007): one cache-deduped `useDoc`
+  per distinct id, no retry on `4xx`.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

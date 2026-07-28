@@ -17,11 +17,13 @@ import {
   useRegisterBoardNavigation,
   type BoardNavigation,
 } from "../board/openInColumn";
-import { useBoardLocalState } from "../board/useBoardLocalState";
+import { openDocId, useBoardLocalState } from "../board/useBoardLocalState";
 import { useColumns } from "../board/useColumns";
 import { useColumnOrder } from "../board/useColumnOrder";
 import { useCreateInColumn } from "../board/useCreateInColumn";
 import type { BoardColumn } from "../board/viewDoc";
+import { FocusMode } from "../reader/FocusMode";
+import { pushEntry } from "../reader/useNavStack";
 import { useToast } from "./Toasts";
 import "./Board.css";
 import "../board/Column.css";
@@ -58,6 +60,13 @@ export function Board(): ReactElement {
   const [selectTitleFor, setSelectTitleFor] = useState<string | null>(null);
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   const [flashing, setFlashing] = useState<string | null>(null);
+  /**
+   * Focus mode is board-level and **not** persisted: the column readers behind
+   * it are the sticky state (SPEC.md §11's "open readers"), and restoring a
+   * full-viewport overlay on load would hide the board a reload was meant to
+   * show. Its own navigation stack lives inside the overlay.
+   */
+  const [focusDoc, setFocusDoc] = useState<{ columnTitle: string; docId: string } | null>(null);
 
   const board = useRef<HTMLElement>(null);
   /** Set by the board's own `drop`; a drag that ends anywhere else persists nothing. */
@@ -66,7 +75,15 @@ export function Board(): ReactElement {
   const dragSource = useRef<readonly BoardColumn[]>([]);
   const moving = useRef(false);
 
-  const { prune, setOpen, setScroll, forColumn } = local;
+  const { prune, setNav, setScroll, forColumn } = local;
+
+  /** Following a row, a ref or a backlink: a push onto that column's stack. */
+  const openInColumn = useCallback(
+    (columnId: string, docId: string) => {
+      setNav(columnId, pushEntry(forColumn(columnId).nav, docId, 0));
+    },
+    [forColumn, setNav],
+  );
 
   /**
    * What is rendered: the fetched-and-sorted set, or — while a drag or a
@@ -153,7 +170,7 @@ export function Board(): ReactElement {
       open: (target) => {
         const columnId = resolveColumn(orderedRef.current, target.subject ?? null);
         if (columnId === null) return;
-        setOpen(columnId, target.docId);
+        openInColumn(columnId, target.docId);
         setSelectTitleFor(target.selectTitle === true ? target.docId : null);
         setScrollTo(columnId);
         setFlashing(columnId);
@@ -163,7 +180,7 @@ export function Board(): ReactElement {
         setFlashing(columnId);
       },
     }),
-    [setOpen],
+    [openInColumn],
   );
 
   useRegisterBoardNavigation(navigation);
@@ -285,7 +302,7 @@ export function Board(): ReactElement {
           folder: column.folder,
           plugin: column.plugin,
         });
-        setOpen(column.id, docId);
+        openInColumn(column.id, docId);
         setSelectTitleFor(docId);
         toast({
           tone: "info",
@@ -295,7 +312,7 @@ export function Board(): ReactElement {
         toast({ tone: "error", message: `Create failed — ${(cause as Error).message}` });
       }
     },
-    [createInColumn, setOpen, toast],
+    [createInColumn, openInColumn, toast],
   );
 
   const editColumn = useCallback(
@@ -371,7 +388,7 @@ export function Board(): ReactElement {
           isDragging={column.id === dragId}
           isFlashing={column.id === flashing}
           local={forColumn(column.id)}
-          selectTitle={forColumn(column.id).open === selectTitleFor}
+          selectTitle={openDocId(forColumn(column.id)) === selectTitleFor}
           onActivate={() => {
             setActiveId(column.id);
           }}
@@ -379,8 +396,14 @@ export function Board(): ReactElement {
             setScroll(column.id, scrollTop);
           }}
           onOpen={(docId) => {
-            setOpen(column.id, docId);
-            if (docId === null) setSelectTitleFor(null);
+            openInColumn(column.id, docId);
+          }}
+          onNav={(nav) => {
+            setNav(column.id, nav);
+            if (nav.length === 0) setSelectTitleFor(null);
+          }}
+          onFocusMode={(docId) => {
+            setFocusDoc({ columnTitle: column.title, docId });
           }}
           onAdd={() => {
             void addToColumn(column);
@@ -430,6 +453,17 @@ export function Board(): ReactElement {
           );
         }}
       />
+
+      {focusDoc === null ? null : (
+        <FocusMode
+          docId={focusDoc.docId}
+          listTitle={focusDoc.columnTitle}
+          onClose={() => {
+            setFocusDoc(null);
+          }}
+          onNotify={notify}
+        />
+      )}
 
       {picker === null ? null : (
         <NewListPicker

@@ -4,6 +4,7 @@ import { App } from "./app/App";
 // Tokens first: every rule below resolves `var(--…)` declared here.
 import "@corpus/kit/tokens.css";
 import "@corpus/kit/row.css";
+import "@corpus/kit/markdown.css";
 import "./app/global.css";
 
 const container = document.getElementById("root");

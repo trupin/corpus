@@ -61,7 +61,8 @@ input:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .agent-pill .dot.busy,
   .working-dot,
-  .row.flash {
+  .row.flash,
+  .thread-card.flash {
     animation: none !important;
   }
 

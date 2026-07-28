@@ -1,0 +1,97 @@
+/*
+ * Focus mode, ported from `design/index.html`: `.focus`, `.focus-head`,
+ * `.focus-hint`, `.focus-scroll`, `.focus-inner` and the wider reading measure.
+ *
+ * The overlay sits at `z-index: 35` — below the search overlay's 40 (UI-009)
+ * and above everything on the board, which is the same order the escape-layer
+ * registry uses.
+ */
+
+.focus {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: var(--bg);
+  display: none;
+  flex-direction: column;
+}
+
+.focus.open {
+  display: flex;
+}
+
+/* The shared reader head, at focus mode's measure. */
+.focus .reader-head {
+  gap: 14px;
+  padding: 12px 26px;
+  background: var(--surface);
+  flex: none;
+}
+
+.focus-hint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.focus-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 36px 48px 80px;
+}
+
+.focus-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.focus-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 99px;
+}
+
+.focus-inner {
+  max-width: 76ch;
+  margin: 0 auto;
+}
+
+/*
+ * The seam for UI-008's Docs-style margin threads: `.focus-inner.with-margin`
+ * becomes a two-column grid with the cards in `.focus-margin`. Declared here so
+ * the layout exists to switch into; the collapsed/inline path is what ships now.
+ */
+.focus-inner.with-margin {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 30px;
+  max-width: calc(76ch + 330px);
+  align-items: start;
+}
+
+.focus-inner.with-margin .t-chip {
+  display: none;
+}
+
+.focus .doc-title {
+  font-size: 30px;
+  max-width: 66ch;
+}
+
+.focus .doc-body {
+  font-size: 16.5px;
+  line-height: 1.7;
+  max-width: 66ch;
+}
+
+.focus .turn-markdown {
+  font-size: 13.5px;
+}
+
+.focus .thread-card,
+.focus .backlinks,
+.focus .thread-slots,
+.focus .lock-banner,
+.focus .archived-banner,
+.focus .fm-form,
+.focus .fm-actions {
+  max-width: 66ch;
+}
