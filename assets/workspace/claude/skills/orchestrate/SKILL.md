@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-28T00:00:00Z
+updated: 2026-07-29T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -154,6 +154,7 @@ You're editing [[doc_a1b2c3]] right now, so I haven't touched it. I'll apply
 this change once the document is free — retry the job from the console when
 you're done editing.
 EOF
+# nothing changed, so that reply carries no trace line
 corpus job log evt_7c1d9a "deferred: doc_a1b2c3 is locked by user"
 corpus queue fail evt_7c1d9a --reason "deferred: doc_a1b2c3 locked by user — retry when the lock clears"
 ```
@@ -246,6 +247,13 @@ only when asked. The charter:
   `[[ref]]`, trim the original.
 - **Every change is stated in the reply that occasioned it** — one line per change, naming
   the document. Nothing you do is silent.
+- **Every turn that wrote closes with a trace line.** When a turn's work changed the corpus,
+  its **final line — and only its final line —** is the arrow `↳ `, a space, then a one-line,
+  past-tense report of what the work did, as in
+  `↳ archived [[doc_f4e9d2]] and moved [[doc_a1b2c3]] into finance/`. It is an action report,
+  not conversation. This binds every agent turn, including the ones you post yourself; a turn
+  whose work changed nothing — an answer, a deferral, an apology for a failure — carries no
+  trace. The comment skill states the same rule for the replies it writes.
 - **Every change is traceable.** Your CLI mutations auto-commit with you as git author, so
   the git log answers "what did the agent change, and when" completely.
 
@@ -320,6 +328,7 @@ corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — updated the rate assumption
 corpus thread reply th_4b8e2c --from agent <<'EOF'
 Updated the rate assumption in [[doc_a1b2c3]] to 6.4% and reworded the
 projection note to match. Changed: [[doc_a1b2c3]] (edited).
+↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
 EOF
 corpus job log evt_7c1d9a "completed — replied on th_4b8e2c"
 corpus queue complete evt_7c1d9a
