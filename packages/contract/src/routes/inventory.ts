@@ -1,7 +1,12 @@
 /**
  * The pinned method+path inventory of the Corpus HTTP API — every endpoint
- * SPEC.md §9.2 lists, plus the queue, lock and job verbs §7 requires and the
- * projection-maintenance pair behind §2.2's `corpus db rebuild` / `db doctor`.
+ * SPEC.md §9.2 lists, plus the queue, lock and job verbs §7 requires, the
+ * projection-maintenance pair behind §2.2's `corpus db rebuild` / `db doctor`,
+ * and the two §9.2 does not yet name but the behavioural sections require:
+ * `POST /api/check` (§14's "`corpus doc check` exposes the same validator on
+ * demand") and `POST /api/skills/{name}/rollback` (§7's "`corpus skill rollback
+ * <name>` — a targeted git revert, performed by the server"). A §9.2 amendment
+ * adding both bullets is drafted and awaiting sign-off (CONTRACT-008).
  *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
@@ -64,6 +69,9 @@ export const ENDPOINT_INVENTORY = [
 
   "POST /api/db/rebuild",
   "GET /api/db/doctor",
+
+  "POST /api/check",
+  "POST /api/skills/{name}/rollback",
 
   "GET /events",
   "GET /attachments/{path}",

@@ -2780,6 +2780,165 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate documents against the §14 rules
+         * @description Runs the corpus validator and reports what it found, separated into failures and warnings (SPEC.md §14). This is the same validator every server mutation runs before writing — hooks and API share one implementation, which is the whole point of exposing it.
+         *
+         *     **Two request forms, exactly one per call.** `{ids}` names documents to read from the workspace. `{documents: [{path, content}]}` supplies content that is not on disk — `corpus doc check --staged`, whose bytes come from `git diff --cached`. Sending both keys, or neither, is a `400`: the two forms answer different questions and a request that mixed them would leave the caller guessing which one was honoured. There is deliberately no implicit everything form, so an empty request can never be mistaken for a whole-workspace check; an empty `ids` or `documents` array is legal and returns an empty, `ok` report.
+         *
+         *     **Cross-document rules see the whole corpus, not just the request.** Duplicate ids, thread parents, anchor claims and `[[refs]]` are judged against the workspace, so checking one file does not report every reference in it as unresolved merely because its target was not submitted.
+         *
+         *     **Severity is fixed by §14, not by the caller.** Warnings are exactly `anchor-unresolved` (a well-formed anchor whose quote no longer resolves — an orphaned thread, a normal outcome of editing) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet — how a corpus grows). The other eleven codes are errors, `anchor-unused` among them: §14 requires every anchor to belong to an existing thread, so a highlight pointing at no conversation is structural drift. `ok` is `errors.length === 0` and is what `corpus doc check` turns into exit 0 or exit 6.
+         *
+         *     A drifted corpus is a `200` carrying the findings, never an error status — the check succeeded; the corpus is what has the problem.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description Either the document ids to check, or the unsaved `(path, content)` pairs. */
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Documents to read from the workspace and check. An empty array checks nothing and returns an empty report. Ids naming no document contribute no findings — the report describes what was read; use `GET /api/docs/{id}` to ask whether a document exists. */
+                        ids: string[];
+                    } | {
+                        /** @description Content to check without saving it — `corpus doc check --staged`, whose bytes come from `git diff --cached`. An empty array checks nothing and returns an empty report. */
+                        documents: components["schemas"]["CheckDocumentInput"][];
+                    };
+                };
+            };
+            responses: {
+                /** @description The report. `ok` is the verdict; `errors` fails the check and `warnings` does not. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CheckReport"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/{name}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a skill's last-known-good version
+         * @description Restores `.claude/skills/{name}/SKILL.md` from git and commits the restoration — the targeted revert SPEC.md §7 names as the loop-safety escape hatch. Skills are ordinary documents and are edited like ordinary documents, so a bad edit to a core-loop skill (`orchestrate`, `comment`) can break the very loop that would otherwise fix it; this is the operator's way back, and the orchestrate skill documents it.
+         *
+         *     **The body is optional in full.** A bare `POST` restores the last-known-good version — the newest committed revision of the file that validates. `to` overrides that with any revision git resolves, for stepping further back.
+         *
+         *     **The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway and the rejection comes back in `warnings` (§14).
+         *
+         *     `404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens. */
+                    name: string;
+                };
+                cookie?: never;
+            };
+            /** @description Optional revision override; omit the body entirely to restore the last-known-good version. */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SkillRollbackRequest"];
+                };
+            };
+            responses: {
+                /** @description The skill is restored; `commit` is the auto-commit that restored it. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SkillRollbackResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -3832,6 +3991,61 @@ export interface components {
             parsed: number;
             /** @description Wall-clock time the check took. */
             durationMs: number;
+        };
+        CheckReport: {
+            /** @description True exactly when `errors` is empty — the verdict `corpus doc check` turns into its exit code (0, or 6 for a check-style failure). Warnings never affect it. */
+            ok: boolean;
+            /** @description Findings that fail the check. Empty when `ok`. */
+            errors: components["schemas"]["CheckFinding"][];
+            /** @description Findings that do not fail the check: orphaned anchors and unresolved `[[refs]]` (§14). Unrelated to the `Warning` shape mutation responses carry for a rejected auto-commit — this route writes nothing and can produce none. */
+            warnings: components["schemas"]["CheckFinding"][];
+        };
+        CheckFinding: {
+            /**
+             * @description Which §14 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other eleven are errors, `anchor-unused` among them.
+             * @example ref-unresolved
+             * @enum {string}
+             */
+            code: "frontmatter-unparseable" | "frontmatter-invalid" | "id-prefix-mismatch" | "duplicate-id" | "anchor-malformed" | "duplicate-anchor-id" | "thread-parent-missing" | "thread-anchor-missing" | "anchor-claimed-twice" | "anchor-unused" | "duplicate-turn-timestamp" | "anchor-unresolved" | "ref-unresolved";
+            /**
+             * @description `error` fails the check (the CLI's exit 6); `warning` is reported and does not. Derivable from `code`, and sent anyway so a consumer never has to hold the partition itself.
+             * @enum {string}
+             */
+            severity: "error" | "warning";
+            /** @description Id of the offending document as written in its frontmatter, or null when the file could not be read. Reported verbatim and deliberately unvalidated — a malformed id is one of the things a finding reports. */
+            docId: string | null;
+            /** @description Workspace-relative path of the offending file. */
+            path: string;
+            /** @description Human-readable specifics, rendered verbatim by `corpus doc check`; never parsed. */
+            detail: string;
+        };
+        CheckDocumentInput: {
+            /** @description Workspace-relative path the content would be saved at. Used for path-derived rules and echoed on every finding, so it must be the real destination path even when the bytes come from the index. */
+            path: string;
+            /** @description The whole file, frontmatter and body, exactly as it would be written. Empty is legal and reports as unparseable frontmatter, which is what saving it would do. */
+            content: string;
+        };
+        SkillRollbackResult: {
+            /**
+             * @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens.
+             * @example orchestrate
+             */
+            name: string;
+            /**
+             * @description Id of the restored skill document. Unchanged by the rollback — ids are immutable (§5), so this is the id the board, the projection and every thread anchored to the skill already use.
+             * @example doc_a1b2c3
+             */
+            docId: string;
+            /** @description Sha of the commit the server made to restore the file — the new HEAD, not the ref the content came from. `git show <commit>` is the audit trail entry for this rollback. */
+            commit: string;
+            /** @description Workspace-relative path of the restored file, e.g. `.claude/skills/orchestrate/SKILL.md`. */
+            path: string;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        SkillRollbackRequest: {
+            /** @description Git ref to restore the skill from — a commit sha, tag or any revision git resolves. Omit it (or send null) to restore the last-known-good version, which is the newest committed revision of the file that validates (SPEC.md §7). */
+            to?: string | null;
         };
     };
     responses: never;

@@ -413,6 +413,46 @@ function createStubApp() {
   app.openapi(contractRoutes.rebuildDb, (c) => c.json(rebuildResult, 200));
   app.openapi(contractRoutes.doctorDb, (c) => c.json(doctorReport, 200));
 
+  // The report echoes which branch of the XOR the validator actually saw: `ids`
+  // reports nothing, `documents` reports one finding per submitted pair, so a
+  // request that reached the wrong branch is visible rather than plausible.
+  app.openapi(contractRoutes.checkDocuments, (c) => {
+    const body = c.req.valid("json");
+    if ("ids" in body) return c.json({ ok: true, errors: [], warnings: [] }, 200);
+    return c.json(
+      {
+        ok: false,
+        errors: body.documents.map((entry) => ({
+          code: "frontmatter-unparseable" as const,
+          severity: "error" as const,
+          docId: null,
+          path: entry.path,
+          detail: `${String(entry.content.length)} bytes staged`,
+        })),
+        warnings: [],
+      },
+      200,
+    );
+  });
+  app.openapi(contractRoutes.rollbackSkill, (c) => {
+    const { name } = c.req.valid("param");
+    return c.json(
+      {
+        name,
+        docId: "doc_a1b2c3",
+        commit: "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456",
+        path: `.claude/skills/${name}/SKILL.md`,
+        // The revert is an auto-commit like any other, so the hook-rejection
+        // channel has to be expressible here (SPEC.md §14).
+        warnings:
+          c.req.valid("json")?.to === undefined
+            ? []
+            : [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+      },
+      200,
+    );
+  });
+
   app.openapi(contractRoutes.streamEvents, (c) =>
     c.newResponse("event: invalidate\ndata: {}\n\n", 200, {
       "content-type": "text/event-stream",
