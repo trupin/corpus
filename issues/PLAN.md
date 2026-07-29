@@ -133,6 +133,8 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P2 | UI-014, PLUGINS-002 |
 | UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
+| CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002, CLI-005 |
+| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | in_progress | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | in_progress | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
