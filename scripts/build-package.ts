@@ -43,7 +43,7 @@ import {
   UI_DIR,
   type DeclaredDependencies,
 } from "./package-manifest.js";
-import { stagePlugins, stageTree } from "./package-staging.js";
+import { externalizeThirdParty, stagePlugins, stageTree } from "./package-staging.js";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const stageRoot = join(repoRoot, STAGE_DIR_NAME);
@@ -68,22 +68,6 @@ const DEPENDENCY_SOURCES: readonly string[] = [
   "packages/contract/package.json",
   "packages/kit/package.json",
 ];
-
-/**
- * Bare specifiers stay external, `@corpus/*` gets inlined. `packages: "external"`
- * cannot express this — it externalises everything with a bare specifier,
- * `@corpus/*` included, which is the opposite of what one published package
- * means.
- */
-const externalizeThirdParty: esbuild.Plugin = {
-  name: "externalize-third-party",
-  setup(build) {
-    build.onResolve({ filter: /^[^./]/ }, (args) => {
-      if (args.path.startsWith("@corpus/")) return null;
-      return { path: args.path, external: true };
-    });
-  },
-};
 
 interface BundleResult {
   readonly externals: readonly string[];
@@ -164,7 +148,12 @@ async function main(): Promise<void> {
     requireDirectory("apps/ui/dist", "npm run build"),
     join(stageRoot, UI_DIR),
   );
-  const plugins = stagePlugins(join(repoRoot, "plugins"), join(stageRoot, PLUGINS_DIR));
+  // A plugin is bundled from its own directory, so esbuild is told where the
+  // workspace's hoisted `node_modules` is — that is how `@corpus/contract`
+  // resolves for inlining and how `hono` resolves before being externalised.
+  const plugins = await stagePlugins(join(repoRoot, "plugins"), join(stageRoot, PLUGINS_DIR), {
+    nodePaths: [join(repoRoot, "node_modules")],
+  });
 
   for (const fileName of ["README.md", "LICENSE"]) {
     const from = join(repoRoot, fileName);

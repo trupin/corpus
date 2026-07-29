@@ -138,18 +138,303 @@ interfaces. Include specific commands run, actual outputs observed, and pass/fai
 conclusions. State which model the implementing agent ran on ("implemented on:
 opus | fable")._
 
+**implemented on: opus.**
+
+Environment (sprint-014): scratch `/tmp/corpus-s014-plugins002-tpYTyN`, real workspace
+`ws/` on `9142`, real server from source, real Vite dev UI on `5285`
+(`CORPUS_SERVER_ORIGIN=http://127.0.0.1:9142`, `VITE_CORPUS_TOKEN` from the workspace
+config), real `corpus` from source (`node_modules/.bin/tsx apps/cli/src/bin/corpus.ts`),
+and a **real packed tarball** installed into `prefix/` for the two INFRA riders
+(workspace `ws-installed/` on `9146`). Browser steps ran a **driven** Chromium
+(`playwright-core` directly against the dev server) — not the Playwright runner, and
+`npm run e2e` was never invoked. `8765` stayed unbound throughout.
+
 ### Reproduction (bugs only)
-_[Agent fills: N/A — feature issue]_
+
+The feature half needs none. The **two INFRA-008 riders are bug fixes** and were
+reproduced first, against the real installed layout.
+
+**Rider (a) — a dist-only packaged plugin exposed zero CLI verbs** (TEST-284).
+`discoverPluginTopics` listed `<plugin>/cli/commands/*.ts` and only *remapped* each
+name it had already found into `dist/`; a tarball ships built output only, so the
+source directory does not exist and the filter yields nothing. Run against the real
+`prefix/node_modules/corpus/plugins`:
+
+```
+packaged plugin tree: [ 'todos' ]
+BEFORE the fix (source-only enumeration): {}
+AFTER  the fix (dist-first enumeration):  {"todos":["add.js","check.js","list.js"]}
+```
+
+**Rider (b) — a packaged plugin's `dist` could not resolve `@corpus/contract`**
+(TEST-287). `stagePlugins` copied `dist/` verbatim, and `@corpus/*` is *inlined* into
+the tool's bundles rather than installed. Staging the plugin the old way (a verbatim
+copy of its `tsc` output) beside the new one, inside the installed prefix:
+
+```
+BEFORE the fix (verbatim tsc copy): FAILED — ERR_MODULE_NOT_FOUND: Cannot find package
+  '@corpus/contract' imported from …/plugins/todos-legacy/dist/server/routes.js
+AFTER  the fix (staged bundle)    : mounted — default export is a function
+```
+
+Discovery contains that failure as a warning, so before the fix the routes silently
+never mounted and every `corpus todos` verb (a thin client over them) failed at
+request time.
 
 ### Post-Implementation Verification
-_[Agent fills: application restarted, exact commands, observed output, confirmation feature works]_
+
+#### A. Discovery, boot and mount (TEST-234–TEST-239)
+
+`corpus init /tmp/…/ws --port 9142` then `corpus server start --workspace …/ws`:
+
+```
+{"level":"info","msg":"plugin discovered","plugin":"todos","routes":true,"types":["todo"]}
+{"level":"info","msg":"plugin routes mounted","plugin":"todos","prefix":"/api/x/todos"}
+```
+
+Unauthenticated `GET /api/x/todos/lists` → `401`, like any `/api/*` route. `corpus todos
+--help` lists `add`, `check`, `list`; the topic appears at all three help levels. No core
+file names `todos`: the UI picks it up through `import.meta.glob` alone, and `npm run
+build` emits its own chunk pair (`manifest-CkHa1Jti.js` + `manifest-CZQJ7cq-.css`).
+
+**TEST-239 — dist-first, drilled.** With `dist/` built, the error string in
+`server/routes.ts` was edited and the server restarted **twice**: both times the route
+still answered the *old* message (`item index “two” is not a number`). Only after
+`npm run build -w plugins/todos` did it answer the edited one. Source reverted, rebuilt,
+old message back. The server loads `dist/server/routes.js`, proven rather than assumed.
+
+#### B. Routes, all through the core write path (TEST-241–TEST-248)
+
+Three items added by CLI, one with `--from agent`. On disk:
+
+```yaml
+items:
+  - text: Renew passport
+    done: false
+    ts: 2026-07-29T11:08:09.060Z
+  - text: Call plumber about garage leak
+    done: false
+    ts: 2026-07-29T11:08:09.446Z
+    due: 2026-07-25
+```
+
+`git log` in the workspace attributes each write to its actor — `agent <agent@corpus.local>`
+for the `--from agent` one, `user` for the rest. Toggling never moves `ts` (asserted on
+disk and in `server/routes.test.ts`). Live refusals, all with the contract's `ApiError`
+body and **no write**:
+
+```
+PUT …/items/0 {"expectedText":"something else"} → 409 {"code":"conflict","message":"item 0
+  is now “Renew passport”, not “something else” — it changed under you; nothing was written"}
+PUT …/items/99                                  → 400 {"code":"bad_request","message":"item
+  index 99 is out of range — this list has 3 items"}
+POST /api/x/todos/doc_nope/items                → 404 {"code":"not_found",…}
+POST …/items on an agent-locked document        → 423 {"code":"locked",…}
+```
+
+`DELETE …/items/1` removed exactly one item, the others verbatim. There is no `node:fs`
+anywhere under `plugins/todos/server/` (asserted by test); every write went through
+`PluginServerContext`.
+
+**TEST-247 — SSE, captured live** while one `corpus todos check` ran:
+
+```
+event: invalidate
+data: {"keys":[["docs"],["docs","doc_jcurwn37"]]}
+
+event: invalidate
+data: {"keys":[["x","todos","lists"],["x","todos","lists","doc_jcurwn37"]]}
+```
+
+The core write path broadcast `["docs"]` itself; the plugin broadcast only its own
+namespace. The refusal half (a plugin naming a core root) is the server context's own
+behaviour, mirrored in `server/routes.test.ts`'s fake and asserted there — the plugin
+never attempts it.
+
+#### C. The UI, in a real browser (TEST-249–TEST-264)
+
+Board on `5285`, **zero page errors** in every run.
+
+- **ListItem**: 2 `.row.todo-row` rows; preview `["milk","Renew passport","Call plumber
+  about garage leak","Send lease renewal notice"]`; due badge `1 due`.
+- **DocPanel**: `1 | OPEN | 0 | DONE | plugin: todos`, and after clicking a checkbox the
+  open count went `1 → 0` **without a reload**, the row picking up `class="check done"`.
+- **View**: checkbox rows, an add affordance; typing "Book dentist (from the browser)"
+  and pressing Add produced `["milk","Book dentist (from the browser)"]` live.
+- **Column**: groups `["Shopping","Week of Jul 20"]`, open items only — the item checked
+  a moment earlier had already left it.
+- **TEST-264**: the picker offered `plugin:todos/todos :: ☑ Todos`; choosing it wrote
+  `data/docs/views/todos.md` with `pinned: true`, `query: type: todo`, `column: todos/todos`.
+- **TEST-258 open**: clicking an aggregated row put that column into `col kactive reading`
+  and opened the source document, whose body is the plugin View (2 checkbox rows).
+- **TEST-263 error boundary**: `TodosColumn` made to throw → `Plugin error — todos` /
+  "Its column crashed: … The rest of the board is unaffected." in **that** column, while
+  the other columns kept rendering rows and opening readers. Reverted; recovered.
+- **TEST-262 kit-only rule**: a direct `../../../apps/ui/src/plugins/slots.js` import
+  made `eslint` fail with *"Plugins may import only @corpus/kit and @corpus/contract
+  (SPEC.md §10) — never a workspace's internals by path"*. **No config edit was needed.**
+  Reverted; `eslint plugins/todos` clean.
+
+#### D. CLI (TEST-265–TEST-273)
+
+```
+corpus todos list "week"
+  Week of Jul 20 [doc_jcurwn37] — 2 open · 1 done
+     1 ☐ Renew passport
+     2 ☐ Call plumber about garage leak  (due 2026-07-25)
+     3 ☑ Send lease renewal notice
+corpus todos list --json | jq -e '.lists[0].items | length'   → 3   (exactly one JSON value)
+corpus todos check "Shopping" "milk"
+  corpus: “milk” matches 2 items (1, 2) — pass the number instead     (exit 1, nothing written)
+```
+
+Documents resolve by id, by exact title (case-insensitively) and by an unambiguous
+fragment; `--from agent` attribution reaches git. **TEST-273**: `npm run docs:cli -w
+apps/cli` adds `corpus todos add|check|list` with their examples and does **not**
+document `_fixture`. The artifact-drift check is red inside the worktree, as expected
+and per the accepted pattern — it diffs against HEAD, which only the orchestrator can
+move:
+
+```
+✗ CLI reference is stale: docs/cli.md
+  Fix: npm run docs:cli -w apps/cli && git add docs/cli.md
+ docs/cli.md | 120 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+```
+
+#### E. Skill, template, threads (TEST-274–TEST-280)
+
+`corpus init` installed `<ws>/.claude/skills/todos/SKILL.md`, recorded as
+`{"path":".claude/skills/todos/SKILL.md","source":"plugin:todos"}` in
+`.corpus/template-manifest.json`. **TEST-277**: `grep -c todos` is `0` in *both* core
+skills — routing is the `<plugin>.<action>` convention alone, and neither core skill was
+touched (Adjudication 6). The comment skill's plugin-boundary rule is already there
+(*"Route into a plugin … Invoke the skill installed at `.claude/skills/<plugin>/`"*).
+**TEST-276**'s collision half is the shipped
+`apps/cli/src/commands/init/scaffold-plugins.test.ts` (*"skips a skill colliding with a
+core template skill, naming the collision"*); this run proves the non-colliding half.
+
+**TEST-280**: `corpus doc create --type todo` lands a document with **no `items` key**,
+which `corpus todos list` reports as `0 open · 0 done` and the View renders as an empty
+list — Adjudication 17 working as ruled.
+
+**Commenting (Adjudication 16 substitute).** A whole-document thread on a todo document
+renders under the plugin View as `💬 1 · user | new` with the View still the body, and
+behaves like any other thread: `corpus thread reply --from agent`, engagement flipped by
+the server (`agent engaged`), `corpus thread resolve`. `corpus doc check` → *no findings*.
+
+#### F. §15 M6 — the subtractive check (TEST-281–TEST-283)
+
+`rm`'d `plugins/todos` (moved to the scratch dir), restarted server **and** dev UI:
+
+| Claim | Observed |
+| --- | --- |
+| app boots | 5 columns render, **0 page errors** |
+| todo documents render as plain markdown | body reads *"What this list is for \| The week's errands. Items live in frontmatter, this prose is the body."*; 0 checkbox rows, 0 DocPanels |
+| data intact | `sha256` of `week-of-jul-20.md` byte-identical before and after |
+| Todos column | `Plugin missing` card; `[data-todos-column]` count 0 |
+| other columns | all render; a reader still opens |
+| `/api/x/todos/*` | `404 {"code":"not_found","message":"no route matches GET /api/x/todos/lists"}` |
+| `corpus todos` | gone: *`unknown command "todos"`*; absent from `--help` |
+
+Restored and restarted: `plugin routes mounted … /api/x/todos`, 2 plugin ListItem rows,
+`[data-todos-column]` back, DocPanel `2 | OPEN | 1 | DONE | 1 due | plugin: todos`, the
+same three items and the resolved thread. `corpus db rebuild && corpus db doctor` →
+*"projection is clean — 13 documents from 13 files"*.
+
+#### G. The packaged tool (TEST-284–TEST-290)
+
+`npm run package:build` → `plugins/ todos`; `npm pack`; installed into a scratch prefix.
+Tarball contents:
+
+```
+package/plugins/todos/dist/{server/routes.js,cli/commands/{add,check,list}.js}
+package/plugins/todos/{README.md,types.yaml,seeds/todo-template.md,skills/todos/SKILL.md}
+_fixture entries: 0
+```
+
+No staged file carries a bare `@corpus/*` import specifier. Through the **installed**
+binary: `corpus todos --help` lists all three verbs; `corpus init`/`server start` logs
+`plugin routes mounted … /api/x/todos`; `GET /api/x/todos/lists` → `{"lists":[]}`;
+`corpus todos add … --from agent` landed on disk with `a469f61 agent doc edit: Packaged
+list`. Only the `todos` skill installed (`_fixture` is excluded from the tarball).
+
+### Deferred / struck, with reasons
+
+- **Item-level anchored commenting — STRUCK → sprint-014 Adjudication 16.** Unreachable
+  under either format choice (anchors resolve against the body; a plugin `View` replaces
+  the selection affordance). PLUGINS-003 is filed. Substitute evidence: §E above —
+  document-level commenting on a todo document, end to end.
+- **Seeding `items: []` — STRUCK → Adjudication 17.** Template pre-fill is body-only, so
+  the seed ships no `items` key and every reader treats absence as empty. **No
+  scoped-template-key mechanism was built**, and the question (sprint-012 Adjudication 3)
+  is re-filed here verbatim: *whether a plugin may declare frontmatter-carrying template
+  keys remains open.*
+- **`docs/cli.md` drift check — DEFERRED → the orchestrator's harvest.** Red output
+  recorded verbatim in §D with its reason.
+- **Plugin seed templates are never installed into a workspace — escalation (see below).**
+
+### Escalations
+
+1. **`corpus init` initialises the current directory when given `--workspace`.** `init`
+   takes a *positional* path; the global `--workspace` flag is silently ignored by it.
+   Invoked through a wrapper that `cd`s into the repository, `corpus init --workspace
+   /tmp/…` therefore scaffolded **this repository's worktree**: it overwrote `.gitignore`
+   and `README.md` with the workspace template's, ran `git init`/`git add --all`/`git
+   commit` there (the commit was blocked by the pre-commit hook), emptied the worktree's
+   index, and set `core.bare = true` in the **main** repository's config. Files on disk
+   were never lost. I restored `.gitignore` and `README.md` from `HEAD` and rebuilt the
+   index with `git reset` — the one state-changing git command I ran, to repair damage I
+   had caused; the orchestrator found and fixed `core.bare`. **Product-side this is a
+   real hazard** (a global flag a command ignores, plus "refuses a directory that already
+   holds a workspace" not firing on a directory that merely *looks* like a repo), and it
+   belongs to cli-dev as its own issue. Every later invocation in this log passes an
+   explicit `--workspace`/positional path.
+2. **`ColumnComponentProps` had no way to open a document** — so an aggregate plugin
+   column could not link a row to its source, and the AC was unreachable. SPEC.md §10 says
+   a column `Component` renders its body *"with the kit's reader/focus affordances"*, so I
+   added the smallest generic seam: an optional `onOpen?: (docId: string) => void` on
+   `ColumnComponentProps` (`packages/kit`), passed from `PluginColumnBody`
+   (`apps/ui/src/board/Column.tsx`, ~6 lines, plus a test). It is **cross-domain (ui-dev)
+   and needs adjudication.** Nothing about it names todos.
+3. **Plugin seed templates are declared but never installed.** `types.yaml`'s
+   `seedTemplate` is honoured by nothing: `corpus init` copies `plugins/<dir>/skills/*`
+   into the workspace and no seed. So `corpus doc create --type todo` starts from an empty
+   body rather than the shipped template. The plugin ships the template and packaging now
+   stages `seeds/`, so the missing half is one install rule — cli-dev, next wave.
+4. **`plugins/*/dist/**` and `**/*.d.ts` were inside the coverage gate.** `COVERAGE_INCLUDE`
+   is `plugins/*/**` (SPEC.md §10 puts a plugin's layout at its root), and naming
+   `coverage.exclude` at all replaces Vitest's defaults — so the first *built*
+   non-underscore plugin dragged its own compiled output and declaration files into the
+   ≥90% gate at 0%. Added both to `COVERAGE_EXCLUDE` with a test. This is **build output,
+   not a surface**: every line of `plugins/todos`'s source stays measured, so
+   Adjudication 18 is respected rather than sidestepped.
+5. **A packaged plugin's third-party dependencies stay external** and resolve from the
+   published package's own `dependencies`. A plugin needing something the tool does not
+   already depend on would install broken. Nothing in the repo does today; recorded in
+   `stagePlugins`'s docblock and `docs/PLUGINS.md`.
+
+### Coverage posture
+
+`plugins/todos/**` scoped run — **99.59% lines · 95.64% branches · 96.51% functions ·
+99.59% statements**, every metric clear of the 90% gate, with `dist/` and `.d.ts` out of
+scope per escalation 4. 195 tests across 10 colocated files, plus the riders' tests in
+`apps/cli/src/registry/plugins.test.ts`, `scripts/package-staging.test.ts` and
+`scripts/coverage-gate.test.ts`. `npm run lint`, `npm run typecheck` and
+`npm run format:check` all pass.
+
+### Cleanup
+
+Every process started here was stopped by pid; `lsof` reports nothing on `9140`–`9149`,
+`5285` or `8765`, and no orphaned vitest workers. Scratch kept at
+`/tmp/corpus-s014-plugins002-tpYTyN` (workspaces, tarball, install prefix, screenshots,
+driver scripts).
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified (two struck per Adjudications 16/17; see the log)
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (cross-domain: UI, server, CLI, agent-runtime; and the M5 milestone check)

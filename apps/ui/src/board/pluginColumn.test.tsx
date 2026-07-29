@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { createCorpusTestHarness } from "@corpus/kit/testing";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
@@ -44,6 +44,11 @@ const pluginView = viewRow({
   query: {},
 });
 
+interface FxColumnProps {
+  readonly title: string;
+  readonly onOpen?: ((docId: string) => void) | undefined;
+}
+
 function installFx(): void {
   setPluginRegistry(
     buildRegistry([
@@ -59,8 +64,18 @@ function installFx(): void {
                 {
                   type: "board",
                   label: "FX board",
-                  Component: ({ title }: { readonly title: string }) => (
-                    <p data-fx-column="">plugin body for {title}</p>
+                  Component: ({ title, onOpen }: FxColumnProps) => (
+                    <p data-fx-column="">
+                      plugin body for {title}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpen?.("doc_target");
+                        }}
+                      >
+                        open a document
+                      </button>
+                    </p>
                   ),
                 },
               ],
@@ -119,6 +134,31 @@ describe("a plugin column on the board", () => {
     );
     expect(docsCalls).toHaveLength(1);
     expect(docsCalls[0]?.search).toContain("pinned");
+  });
+
+  /**
+   * The `onOpen` seam (PLUGINS-002). A plugin column's body is the one board
+   * surface that could not link a row to its source document: `apps/ui`
+   * internals are lint-forbidden to plugins, so the board's own "push onto this
+   * column's navigation stack" has to be handed *in*. Without it an aggregate
+   * column — the todos column is the shipped case — renders rows nobody can
+   * follow.
+   */
+  it("hands the plugin body the board's open-in-this-column callback", async () => {
+    installFx();
+    renderBoard(boardTransport({ views: [pluginView] }));
+    await waitFor(() => {
+      expect(screen.getByText(/plugin body/)).toBeTruthy();
+    });
+    // The column is on its list; opening a document pushes its reader.
+    expect(document.querySelector(".col[data-col='doc_pluginview'].reading")).toBeNull();
+    await act(async () => {
+      screen.getByRole("button", { name: "open a document" }).click();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(document.querySelector(".col[data-col='doc_pluginview'].reading")).toBeTruthy();
+    });
   });
 
   it("shows the plugin-missing card while keeping the column when unregistered", async () => {

@@ -60,6 +60,22 @@ export interface ColumnComponentProps {
    * column type's `defaultQuery` keys merged at creation time.
    */
   readonly query: Readonly<Record<string, string>>;
+  /**
+   * Opens a document **in this column's reader** — the same act a row click
+   * performs in a core column, and the "kit's reader affordances" SPEC.md §10
+   * promises a plugin `Component` renders its body with.
+   *
+   * It is a prop rather than a hook because the capability belongs to the board
+   * (it owns the column's navigation stack, its scroll and its flash), and a
+   * plugin cannot reach the board: `apps/ui` internals are lint-forbidden to
+   * plugins, which is precisely why aggregate columns had no way to link a row
+   * to its source document before PLUGINS-002.
+   *
+   * Optional so a host that renders a plugin column outside a board (a test, a
+   * future preview surface) is not forced to invent a navigation it does not
+   * have; a column that cannot open anything simply does not.
+   */
+  readonly onOpen?: ((docId: string) => void) | undefined;
 }
 
 /**

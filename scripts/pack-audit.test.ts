@@ -118,10 +118,12 @@ describe("the negative half", () => {
 
 /**
  * sprint-013 Adjudication 15 / TEST-64: the rule has to be proven in **both**
- * directions. `plugins/_fixture` is the repository's only plugin today, so a
- * rule that excluded every plugin would pass the exclusion test while being
- * completely broken. The live proof against a real shipped plugin is
- * DEFERRED → PLUGINS-002.
+ * directions. A rule that excluded every plugin would pass the exclusion test
+ * while being completely broken, so the admission half is asserted too.
+ *
+ * `plugins/todos` (PLUGINS-002) is the first real subject: sprint-014
+ * TEST-290 drives the same two directions against an actual packed tarball,
+ * and the listings below stay as the unit-level guard on the rule itself.
  */
 describe("the plugin rule", () => {
   it("admits a built non-underscore plugin", () => {

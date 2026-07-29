@@ -78,6 +78,25 @@ describe("coverageScope", () => {
     expect(inScope("packages/contract/src/client/schema.generated.ts")).toBe(false);
   });
 
+  /**
+   * PLUGINS-002: a plugin's layout is its root (SPEC.md §10), so `plugins/*⁠/**`
+   * swept in the compiled copy of source it had just measured the moment a
+   * plugin was built. The **source** stays in scope — that is the gate
+   * sprint-014 Adjudication 18 insists on — and only `dist/` and declaration
+   * files, which have no runtime statements at all, drop out.
+   */
+  it("measures a plugin's source and not its build output", () => {
+    expect(inScope("plugins/todos/items.ts")).toBe(true);
+    expect(inScope("plugins/todos/ui/TodoView.tsx")).toBe(true);
+    expect(inScope("plugins/todos/server/routes.ts")).toBe(true);
+    expect(inScope("plugins/todos/cli/commands/add.ts")).toBe(true);
+
+    expect(inScope("plugins/todos/dist/server/routes.js")).toBe(false);
+    expect(inScope("plugins/todos/dist/items.d.ts")).toBe(false);
+    expect(inScope("packages/kit/src/plugin/types.d.ts")).toBe(false);
+    expect(inScope("plugins/_fixture/manifest.ts")).toBe(false);
+  });
+
   it("rejects everything that is not a workspace source", () => {
     expect(inScope("scripts/merge-coverage.ts")).toBe(false);
     expect(inScope("apps/ui/dist/index.js")).toBe(false);

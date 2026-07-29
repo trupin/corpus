@@ -59,6 +59,10 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus thread reply`](#corpus-thread-reply)
   - [`corpus thread resolve`](#corpus-thread-resolve)
   - [`corpus thread show`](#corpus-thread-show)
+- [`corpus todos`](#corpus-todos)
+  - [`corpus todos add`](#corpus-todos-add)
+  - [`corpus todos check`](#corpus-todos-check)
+  - [`corpus todos list`](#corpus-todos-list)
 - [`corpus workspace`](#corpus-workspace)
   - [`corpus workspace upgrade`](#corpus-workspace-upgrade)
 - [Exit codes](#exit-codes)
@@ -1346,6 +1350,122 @@ One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-2
 
 ```
 corpus thread show th_a1b2c3 --json
+```
+
+## `corpus todos`
+
+Commands contributed by the todos plugin.
+
+Discovered from `plugins/todos/cli/commands/` (SPEC.md §10) — the plugin's verbs behave, document and validate exactly like core verbs.
+
+### `corpus todos add`
+
+Add an item to a todo list.
+
+Appends one open item to a `type: todo` document. The list may be named by id, by its exact title, or by an unambiguous fragment of it; an ambiguous name is refused with the candidates listed rather than guessed at. The item's `ts` is its creation time, set by the server.
+
+```
+corpus todos add <list> <text> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                |
+| -------- | -------- | -------------------------------------------------------------------------- |
+| `list`   | yes      | Todo document: its id, its title, or an unambiguous fragment of the title. |
+| `text`   | yes      | What the item says.                                                        |
+
+**Flags**
+
+| Flag           | Type   | Default | Description                                               |
+| -------------- | ------ | ------- | --------------------------------------------------------- |
+| `--due <date>` | string | —       | Optional deadline as an ISO calendar date (`2026-08-01`). |
+
+**Examples**
+
+Append an item to the list titled “Week of Jul 20”.
+
+```
+corpus todos add "Week of Jul 20" "Renew passport"
+```
+
+One JSON value: `{"docId":"doc_a1b2c3","index":3,"item":{"text":"Book dentist","done":false,"ts":"…","due":"2026-08-01"}}`. `--from agent` makes the commit the agent's.
+
+```
+corpus todos add "Week of Jul 20" "Book dentist" --due 2026-08-01 --from agent --json
+```
+
+### `corpus todos check`
+
+Check an item off a todo list.
+
+Sets `done: true` on one item of a `type: todo` document — or `false` with `--uncheck`. The item is named by its 1-based number (as `corpus todos list` prints it) or by its text, matched case-insensitively; ambiguous text is refused with the candidate numbers listed. The item's `ts` is its creation time and is never changed by checking it.
+
+```
+corpus todos check <list> <item> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                |
+| -------- | -------- | -------------------------------------------------------------------------- |
+| `list`   | yes      | Todo document: its id, its title, or an unambiguous fragment of the title. |
+| `item`   | yes      | The item's 1-based number, or its text (case-insensitive).                 |
+
+**Flags**
+
+| Flag        | Type    | Default | Description                                                        |
+| ----------- | ------- | ------- | ------------------------------------------------------------------ |
+| `--uncheck` | boolean | `false` | Set `done: false` instead — put a completed item back on the list. |
+
+**Examples**
+
+Check the item off by its text.
+
+```
+corpus todos check "Week of Jul 20" "Renew passport"
+```
+
+One JSON value: `{"docId":"doc_a1b2c3","index":1,"item":{"text":"Call plumber","done":true,"ts":"…"}}`.
+
+```
+corpus todos check "Week of Jul 20" 2 --json
+```
+
+### `corpus todos list`
+
+Show todo lists and their items.
+
+With no argument, one line per `type: todo` document with its open and done counts. With a list named — by id, exact title, or an unambiguous fragment — that list's items, numbered as `corpus todos check` accepts them. Archived todo documents are excluded, exactly as every other default list excludes them.
+
+```
+corpus todos list [list] [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                   |
+| -------- | -------- | ----------------------------------------------------------------------------- |
+| `list`   | no       | Todo document to show in full: its id, its title, or a fragment of the title. |
+
+**Flags**
+
+| Flag     | Type    | Default | Description                          |
+| -------- | ------- | ------- | ------------------------------------ |
+| `--open` | boolean | `false` | Show only items that are still open. |
+
+**Examples**
+
+Every todo list with its open and done counts.
+
+```
+corpus todos list
+```
+
+One JSON value: `{"lists":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","path":"data/docs/todos/week.md","status":"open","open":2,"done":1,"items":[{"text":"Renew passport","done":false,"ts":"…"}]}]}`.
+
+```
+corpus todos list "Week of Jul 20" --json
 ```
 
 ## `corpus workspace`

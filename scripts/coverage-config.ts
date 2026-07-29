@@ -26,12 +26,27 @@ export const COVERAGE_INCLUDE = ["apps/*/src/**", "packages/*/src/**", "plugins/
  * plugin directories (`plugins/_fixture`) are test fixtures — excluded from
  * production surfaces by the leading-underscore convention (SPEC.md §10,
  * sprint-012 Adjudication 9) and from coverage exactly like test files.
+ *
+ * The last two entries are **build output, not source** (PLUGINS-002).
+ * `COVERAGE_INCLUDE`'s plugin glob is `plugins/*⁠/**` rather than
+ * `plugins/*⁠/src/**`, because SPEC.md §10 pins a plugin's layout at its root —
+ * which also swept in `plugins/<name>/dist/`, the compiled copy of source that
+ * is already being measured, once a plugin was actually built. And because
+ * naming `coverage.exclude` at all *replaces* Vitest's defaults, the
+ * declaration-file exclusion those defaults carried had to come back with it;
+ * a `.d.ts` has no runtime statements to execute.
+ *
+ * Neither is a per-plugin exemption (sprint-014 Adjudication 18 forbids those):
+ * every line of `plugins/todos`'s **source** is inside the gate, and an
+ * unreachable surface stays an escalation.
  */
 export const COVERAGE_EXCLUDE = [
   "**/*.test.{ts,tsx}",
   "apps/*/src/bin/**",
   "**/*.generated.ts",
   "plugins/_*/**",
+  "plugins/*/dist/**",
+  "**/*.d.ts",
 ];
 
 export const COVERAGE_METRICS = ["lines", "statements", "functions", "branches"] as const;

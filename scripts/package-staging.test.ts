@@ -1,20 +1,22 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   isPackagedArtifact,
   isPackagedPluginDir,
   listFiles,
+  pluginEntryPoints,
   stagePlugins,
   stageTree,
   stripSourceMapComment,
 } from "./package-staging.js";
 
+const REPO_ROOT = resolve(import.meta.dirname, "..");
 const created: string[] = [];
 
 function scratch(): string {
-  const dir = mkdtempSync(join(tmpdir(), "corpus-s013-infra008-"));
+  const dir = mkdtempSync(join(tmpdir(), "corpus-s014-plugins002-staging-"));
   created.push(dir);
   return dir;
 }
@@ -110,23 +112,38 @@ describe("isPackagedPluginDir", () => {
 });
 
 /**
- * sprint-013 Adjudication 15: `plugins/_fixture` is the repository's only
- * plugin, so the non-underscore half of the rule is proven against a **synthetic
- * plugin fabricated in a temp directory**. Asserting only the exclusion would
- * let a rule that excludes everything pass. The live proof against a shipped
- * plugin is DEFERRED → PLUGINS-002.
+ * sprint-013 Adjudication 15: the non-underscore half of the rule is proven
+ * against a **synthetic plugin fabricated in a temp directory**, because
+ * asserting only the exclusion would let a rule that excludes everything pass.
+ * The live proof against the shipped `plugins/todos` is sprint-014 TEST-290,
+ * driven against a real packed tarball.
+ *
+ * sprint-014 TEST-288 adds the second half: a staged plugin's entry points are
+ * **bundled**, not copied, so nothing in the tarball carries a bare
+ * `@corpus/*` specifier — a package the installed tool inlines rather than
+ * installs, and therefore cannot resolve at a dynamic import.
  */
 describe("stagePlugins", () => {
   function fabricatePluginsRoot(): string {
     const root = scratch();
     // A built, non-underscore plugin: the case Adjudication 12 requires to ship.
-    write(root, "todos/dist/server/routes.js", "export default () => ({});\n");
+    // Its routes import `@corpus/contract`, exactly as a tsc-built plugin does.
+    write(
+      root,
+      "todos/dist/server/routes.js",
+      'import { ACTOR_HEADER } from "@corpus/contract";\nexport default () => ({ ACTOR_HEADER });\n',
+    );
     write(root, "todos/dist/server/routes.d.ts", "declare const _: unknown;\n");
-    write(root, "todos/dist/cli/commands/add.js", "export default {};\n");
+    write(
+      root,
+      "todos/dist/cli/commands/add.js",
+      'import { ACTOR_HEADER } from "@corpus/contract";\nexport default { ACTOR_HEADER };\n',
+    );
     write(root, "todos/dist/tsconfig.tsbuildinfo", "{}");
     write(root, "todos/server/routes.ts", "export default () => ({});\n");
     write(root, "todos/types.yaml", "types:\n  - type: todo\n    label: Todo\n");
     write(root, "todos/skills/todos/SKILL.md", "# todos\n");
+    write(root, "todos/seeds/todo-template.md", "---\ntype: template\nfor: todo\n---\n");
     write(root, "todos/package.json", '{"name":"corpus-plugin-todos"}');
     // A dev fixture: the case Adjudication 9 requires to stay out.
     write(root, "_fixture/dist/server/routes.js", "export default () => ({});\n");
@@ -137,33 +154,67 @@ describe("stagePlugins", () => {
     return root;
   }
 
-  it("stages a built non-underscore plugin's dist, types and skills", () => {
+  /** esbuild resolves `@corpus/*` for inlining from the repository's own tree. */
+  const nodePaths = [join(REPO_ROOT, "node_modules")];
+
+  it("stages a built non-underscore plugin's dist, types, skills and seeds", async () => {
     const destination = join(scratch(), "plugins");
-    const staged = stagePlugins(fabricatePluginsRoot(), destination);
+    const staged = await stagePlugins(fabricatePluginsRoot(), destination, { nodePaths });
 
     expect(staged.map((plugin) => plugin.dir)).toEqual(["todos"]);
     expect(listFiles(destination)).toEqual([
       "todos/dist/cli/commands/add.js",
       "todos/dist/server/routes.js",
+      "todos/seeds/todo-template.md",
       "todos/skills/todos/SKILL.md",
       "todos/types.yaml",
     ]);
   });
 
-  it("never stages an underscore-prefixed dev fixture", () => {
+  /**
+   * INFRA-008 escalation 3(b): before this, `dist/server/routes.js` reached the
+   * tarball with `from "@corpus/contract"` intact, and the installed server
+   * failed its dynamic import with `ERR_MODULE_NOT_FOUND` — contained as a
+   * warning, so the plugin's routes silently never mounted.
+   */
+  it("bundles each entry point so no bare @corpus specifier ships", async () => {
     const destination = join(scratch(), "plugins");
-    stagePlugins(fabricatePluginsRoot(), destination);
+    await stagePlugins(fabricatePluginsRoot(), destination, { nodePaths });
+
+    for (const entry of ["todos/dist/server/routes.js", "todos/dist/cli/commands/add.js"]) {
+      const bundled = readFileSync(join(destination, entry), "utf8");
+      expect(bundled, `${entry} still imports @corpus/* as a bare specifier`).not.toMatch(
+        /from\s*["']@corpus\//,
+      );
+      // Inlined, not merely dropped: the contract's value is in the bundle.
+      expect(bundled).toContain("x-corpus-author");
+    }
+  });
+
+  it("names each plugin's entry points from its dist layout", () => {
+    const root = fabricatePluginsRoot();
+    expect(pluginEntryPoints(join(root, "todos", "dist"))).toEqual([
+      "server/routes.js",
+      "cli/commands/add.js",
+    ]);
+    expect(pluginEntryPoints(join(root, "_fixture", "dist"))).toEqual(["server/routes.js"]);
+    expect(pluginEntryPoints(join(root, "unbuilt"))).toEqual([]);
+  });
+
+  it("never stages an underscore-prefixed dev fixture", async () => {
+    const destination = join(scratch(), "plugins");
+    await stagePlugins(fabricatePluginsRoot(), destination, { nodePaths });
     expect(listFiles(destination).join("\n")).not.toContain("_fixture");
   });
 
-  it("skips a plugin that was never built rather than shipping its sources", () => {
+  it("skips a plugin that was never built rather than shipping its sources", async () => {
     const destination = join(scratch(), "plugins");
-    const staged = stagePlugins(fabricatePluginsRoot(), destination);
+    const staged = await stagePlugins(fabricatePluginsRoot(), destination, { nodePaths });
     expect(staged.map((plugin) => plugin.dir)).not.toContain("unbuilt");
     expect(listFiles(destination).join("\n")).not.toContain(".ts");
   });
 
-  it("returns nothing when there is no plugins root at all", () => {
-    expect(stagePlugins(join(scratch(), "absent"), join(scratch(), "out"))).toEqual([]);
+  it("returns nothing when there is no plugins root at all", async () => {
+    expect(await stagePlugins(join(scratch(), "absent"), join(scratch(), "out"))).toEqual([]);
   });
 });

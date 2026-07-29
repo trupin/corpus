@@ -66,6 +66,11 @@ export default definePlugin({
   creates a pinned `type: view` document with `column: "<name>/<type>"` (plus
   your `defaultQuery`) in its frontmatter — ordering, persistence, reordering
   and agent stewardship all come from that document, never from your code.
+- Your column `Component` is handed `{ viewDocId, title, query, onOpen }`.
+  `onOpen(docId)` is the board's own "open this document in **this** column's
+  reader" — the same act a core row's click performs. Use it for any row that
+  stands for a document; a host with no board (a test) passes nothing and your
+  column simply does not navigate.
 - Every plugin component renders inside its own error boundary: a crash shows
   an error card in place and the rest of the board keeps working. A manifest
   that fails to load or validate is skipped with a console-strip warning.
@@ -92,6 +97,20 @@ Ship a parity test asserting the two agree in both directions (copy
 `manifest.ts` exists with no `types.yaml`. Store plugin document data in
 frontmatter under your own keys — they travel on the wire in `extra`
 (`@corpus/contract`), which the server stores verbatim and never interprets.
+
+**`seedTemplate` supplies a BODY and nothing else.** Template pre-fill is
+body-only (SPEC.md §11): a template's frontmatter is the _template document's_
+housekeeping and never bleeds onto instances. So a plugin key cannot be seeded
+— design your reader so an **absent key means its empty value**. That is also
+what makes a hand-written document, and one whose key someone deleted, render
+instead of erroring. `plugins/todos` does exactly this: no `items` key is a
+list with no items.
+
+**Give the format one owner.** Put the parse, the serialize, the mutations and
+the error messages in a single module and route the routes, the manifest's
+`validate` and every component through it (`plugins/todos/items.ts`). A second
+reader written "just for the UI" is how the two halves of a plugin start
+disagreeing about their own data.
 
 ## server/routes.ts
 
@@ -143,6 +162,11 @@ A command module with a syntax error is skipped with a stderr warning; a
 command that fails validation (e.g. no example) fails the whole registry loudly
 — exactly like a core verb.
 
+Discovery is **dist-first**, like the server's: the CLI enumerates
+`dist/cli/commands/*.js` when your plugin has been built and falls back to
+`cli/commands/*.ts` in the monorepo. Anything else under `cli/` (a shared HTTP
+helper, say) is not enumerated — only the `commands/` directory is.
+
 ## skills/
 
 `corpus init` copies `plugins/<name>/skills/*` into the workspace's
@@ -152,6 +176,20 @@ command that fails validation (e.g. no example) fails the whole registry loudly
 mechanism: run `corpus init` from the repo. The orchestrate skill routes
 `<name>.<action>` events to the skill named `<name>` by convention — you wire
 nothing.
+
+## Packaging
+
+`npm run package:build` stages every non-underscore plugin that has a `dist/`:
+its **entry points bundled** (`dist/server/routes.js` and each
+`dist/cli/commands/*.js`, with `@corpus/*` inlined the way the tool's own
+bundles inline it), plus `skills/`, `seeds/`, `types.yaml` and `README.md`.
+Sources never ship. Two consequences worth knowing:
+
+- everything else in your `dist/` is reachable from an entry point and is
+  inlined into it, so keep your runtime code reachable from those entries;
+- your **third-party** dependencies stay external and are resolved from the
+  published package's own `dependencies`. In v1 that means a plugin may rely on
+  what the tool already depends on (`hono`, `zod`, …) and not on more.
 
 ## Testing and coverage
 

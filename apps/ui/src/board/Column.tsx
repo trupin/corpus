@@ -122,6 +122,8 @@ interface PluginColumnBodyProps {
   /** The parsed `column:` reference — non-null by the dispatch branch. */
   readonly pluginRef: PluginColumnRef;
   readonly onHandle: (armed: boolean) => void;
+  /** Opens a document in this column's reader — handed to the plugin body. */
+  readonly onOpen: (docId: string) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -141,6 +143,7 @@ function PluginColumnBody({
   column,
   pluginRef,
   onHandle,
+  onOpen,
   onAdd,
   onRename,
   onEditQuery,
@@ -165,7 +168,14 @@ function PluginColumnBody({
         <PluginMissingCard plugin={pluginRef} />
       ) : (
         <div className="col-list">
-          <Body viewDocId={column.id} title={column.title} query={column.filter} />
+          {/*
+           * `onOpen` is the board's own "push onto this column's navigation
+           * stack" — the same callback a core row gets. Handing it to the
+           * plugin is what lets an aggregate column link a row back to the
+           * document it came from without reaching into `apps/ui` (SPEC.md §10:
+           * the Component renders its body "with the kit's reader affordances").
+           */}
+          <Body viewDocId={column.id} title={column.title} query={column.filter} onOpen={onOpen} />
         </div>
       )}
     </>
@@ -211,6 +221,7 @@ export function Column(props: ColumnProps): ReactElement {
           column={column}
           pluginRef={column.plugin}
           onHandle={setDraggable}
+          onOpen={onOpen}
           onAdd={props.onAdd}
           onRename={props.onRename}
           onEditQuery={props.onEditQuery}

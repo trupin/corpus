@@ -23,6 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
+import * as esbuild from "esbuild";
 
 /** Build output that has no job in a tarball: types, maps, incremental state. */
 const EXCLUDED_SUFFIXES: readonly string[] = [
@@ -115,12 +116,13 @@ export function isPackagedPluginDir(name: string): boolean {
 }
 
 /**
- * What of a plugin directory ships: its **built** output (sprint-012
- * Adjudication 12), the doc types the server reads, the skills `corpus init`
- * installs into the workspace, and its own metadata. Sources do not ship — the
- * tool runs compiled JS.
+ * What of a plugin directory ships **verbatim**: the skills `corpus init`
+ * installs into the workspace, and the body-only seed templates a doc type may
+ * declare in `types.yaml`. Its `dist/` ships too, but bundled rather than
+ * copied — see {@link stagePlugins}. Sources do not ship: the tool runs
+ * compiled JS (sprint-012 Adjudication 12).
  */
-export const PLUGIN_PACKAGED_SUBTREES: readonly string[] = ["dist", "skills"];
+export const PLUGIN_PACKAGED_SUBTREES: readonly string[] = ["skills", "seeds"];
 export const PLUGIN_PACKAGED_FILES: readonly string[] = ["types.yaml", "README.md"];
 
 export interface StagedPlugin {
@@ -128,23 +130,79 @@ export interface StagedPlugin {
   readonly files: readonly string[];
 }
 
+export interface StagePluginsOptions {
+  /**
+   * Directories esbuild resolves bare specifiers from — the repository's
+   * `node_modules`. Needed because a plugin is bundled from its **own**
+   * directory, which in a test is a temp tree with no `node_modules` of its
+   * own, and in the repo is a workspace whose dependencies are hoisted.
+   */
+  readonly nodePaths?: readonly string[];
+}
+
+/**
+ * The bundle boundary, shared with the tool's own bundles: every `@corpus/*`
+ * import is inlined, every other bare specifier stays external and is expected
+ * to be a real dependency of the published package. `packages: "external"`
+ * cannot express this — it externalises `@corpus/*` too, which is the opposite
+ * of what one published package means.
+ */
+export const externalizeThirdParty: esbuild.Plugin = {
+  name: "externalize-third-party",
+  setup(build) {
+    build.onResolve({ filter: /^[^./]/ }, (args) => {
+      if (args.path.startsWith("@corpus/")) return null;
+      return { path: args.path, external: true };
+    });
+  },
+};
+
+/** A plugin's runtime entry points inside its `dist/`, relative and POSIX. */
+export function pluginEntryPoints(distRoot: string): readonly string[] {
+  const entries: string[] = [];
+  if (existsSync(join(distRoot, "server", "routes.js"))) entries.push("server/routes.js");
+  const commands = join(distRoot, "cli", "commands");
+  if (existsSync(commands)) {
+    entries.push(
+      ...readdirSync(commands)
+        .filter((name) => name.endsWith(".js") && !name.endsWith(".test.js"))
+        .sort()
+        .map((name) => `cli/commands/${name}`),
+    );
+  }
+  return entries;
+}
+
 /**
  * Stages every non-underscore plugin that has been built. A plugin with no
- * `dist/` is skipped loudly by the caller: shipping its sources would ship
- * something the packaged tool cannot run.
+ * `dist/` is skipped: shipping its sources would ship something the packaged
+ * tool cannot run.
  *
- * KNOWN GAP, recorded for PLUGINS-002 (there is no non-underscore plugin to
- * prove it against yet): a packaged plugin's `dist/server/routes.js` still
- * imports `@corpus/contract` as a bare specifier, and that package is inlined
- * into the tool's bundles rather than installed, so the server will contain the
- * failure as a warning. Bundling each plugin's entry points here — with the same
- * first-party-inlined boundary the tool's own bundles use — is the natural fix
- * and belongs in this function.
+ * **Its entry points are bundled, not copied** (INFRA-008 escalation 3(b),
+ * sprint-014 TEST-287/TEST-288). `tsc` leaves `@corpus/contract` in a plugin's
+ * `dist/server/routes.js` as a bare specifier, and `@corpus/*` is *inlined*
+ * into the tool's bundles rather than installed — so in an installed tarball
+ * that import threw `ERR_MODULE_NOT_FOUND` at discovery's dynamic import,
+ * discovery contained it as a warning, the routes never mounted, and the
+ * plugin's CLI verbs (thin clients over those routes) failed at request time.
+ * Bundling here with the same first-party-inlined boundary the tool's own
+ * bundles use is what makes a packaged plugin actually run.
+ *
+ * Only the entry points are staged: everything else in `dist/` is reachable
+ * from one of them and is inlined into it, so copying the rest would ship
+ * unreferenced modules that still carried bare `@corpus/*` specifiers.
+ *
+ * Known limitation, recorded rather than papered over: a plugin's *third-party*
+ * dependencies stay external and are resolved from the published package's own
+ * `dependencies`. A plugin needing a package the tool does not already depend
+ * on would install broken; nothing in the repository does today, and giving
+ * plugins their own dependency contribution is a packaging issue of its own.
  */
-export function stagePlugins(
+export async function stagePlugins(
   pluginsRoot: string,
   destinationRoot: string,
-): readonly StagedPlugin[] {
+  options: StagePluginsOptions = {},
+): Promise<readonly StagedPlugin[]> {
   if (!existsSync(pluginsRoot)) return [];
   const dirs = readdirSync(pluginsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && isPackagedPluginDir(entry.name))
@@ -154,9 +212,28 @@ export function stagePlugins(
   const staged: StagedPlugin[] = [];
   for (const dir of dirs) {
     const source = join(pluginsRoot, dir);
-    if (!existsSync(join(source, "dist"))) continue;
+    const distRoot = join(source, "dist");
+    if (!existsSync(distRoot)) continue;
 
     const files: string[] = [];
+    for (const entry of pluginEntryPoints(distRoot)) {
+      const outfile = join(destinationRoot, dir, "dist", ...entry.split("/"));
+      mkdirSync(dirname(outfile), { recursive: true });
+      await esbuild.build({
+        entryPoints: [join(distRoot, ...entry.split("/"))],
+        outfile,
+        bundle: true,
+        platform: "node",
+        format: "esm",
+        target: "node22",
+        sourcemap: false,
+        logLevel: "warning",
+        ...(options.nodePaths === undefined ? {} : { nodePaths: [...options.nodePaths] }),
+        plugins: [externalizeThirdParty],
+      });
+      files.push(`dist/${entry}`);
+    }
+
     for (const subtree of PLUGIN_PACKAGED_SUBTREES) {
       files.push(
         ...stageTree(join(source, subtree), join(destinationRoot, dir, subtree)).map(

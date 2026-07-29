@@ -7,8 +7,10 @@ import type { CommandSpec, TopicSpec } from "./types.js";
 
 /**
  * Plugin CLI discovery — the CLI's single entry point into `plugins/`
- * (SPEC.md §10, PLUGINS-001). Each `plugins/<dir>/cli/commands/*.ts` module
- * default-exports the same declarative `CommandSpec` shape core verbs use;
+ * (SPEC.md §10, PLUGINS-001). Each plugin's command modules — compiled
+ * `dist/cli/commands/*.js` when the plugin was built, else `cli/commands/*.ts`
+ * in the monorepo — default-export the same declarative `CommandSpec` shape
+ * core verbs use;
  * the scan wraps a plugin's commands into a `TopicSpec` named after its
  * **directory** and hands the topics to `registry/index.ts`, which merges
  * them *before* `validateRegistry` runs — so a plugin verb with no example
@@ -60,11 +62,44 @@ export interface DiscoverPluginTopicsOptions {
   readonly env?: NodeJS.ProcessEnv;
 }
 
-/** `add.ts` → its compiled `dist/cli/commands/add.js` when built, else itself. */
-function commandModulePath(pluginRoot: string, fileName: string): string {
-  const compiled = join(pluginRoot, "dist", "cli", "commands", fileName.replace(/\.ts$/, ".js"));
-  if (existsSync(compiled)) return compiled;
-  return join(pluginRoot, "cli", "commands", fileName);
+/** Where one plugin's command modules live, and which extension they carry. */
+interface CommandsLayout {
+  readonly dir: string;
+  readonly extension: ".js" | ".ts";
+}
+
+/**
+ * The command directory to enumerate: compiled `dist/cli/commands/` when the
+ * plugin was built, else `cli/commands/` for the dev layout under a TS-capable
+ * loader. Deliberately the same dist-first shape
+ * `apps/server/src/plugins/discover.ts`'s `resolveRoutesModule` uses, because
+ * the two resolvers describe the same fact about the same directory.
+ *
+ * **The enumeration itself is dist-first, not just the import** (INFRA-008
+ * escalation 3(a), sprint-014 TEST-284/TEST-285). Listing `*.ts` and remapping
+ * each name into `dist/` reads the same in the monorepo and is wrong in a
+ * packaged install: a tarball ships built output only (sprint-012
+ * Adjudication 12), so a plugin whose sources were never packed exposed
+ * **zero** CLI verbs — `corpus <plugin> --help` simply did not exist, while its
+ * server routes mounted fine from the very same `dist/`.
+ */
+function resolveCommandsLayout(pluginRoot: string): CommandsLayout | null {
+  const compiled = join(pluginRoot, "dist", "cli", "commands");
+  if (existsSync(compiled)) return { dir: compiled, extension: ".js" };
+  const source = join(pluginRoot, "cli", "commands");
+  return existsSync(source) ? { dir: source, extension: ".ts" } : null;
+}
+
+/** Command modules in one layout: sorted, tests and type declarations excluded. */
+function commandFiles(layout: CommandsLayout): readonly string[] {
+  return readdirSync(layout.dir)
+    .filter(
+      (name) =>
+        name.endsWith(layout.extension) &&
+        !name.endsWith(`.test${layout.extension}`) &&
+        !name.endsWith(".d.ts"),
+    )
+    .sort();
 }
 
 export async function discoverPluginTopics(
@@ -86,16 +121,12 @@ export async function discoverPluginTopics(
     .sort();
 
   for (const dir of dirs) {
-    const commandsDir = join(pluginsRoot, dir, "cli", "commands");
-    if (!existsSync(commandsDir)) continue;
-
-    const files = readdirSync(commandsDir)
-      .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
-      .sort();
+    const layout = resolveCommandsLayout(join(pluginsRoot, dir));
+    if (layout === null) continue;
 
     const commands: CommandSpec[] = [];
-    for (const file of files) {
-      const modulePath = commandModulePath(join(pluginsRoot, dir), file);
+    for (const file of commandFiles(layout)) {
+      const modulePath = join(layout.dir, file);
       try {
         const module: unknown = await import(pathToFileURL(modulePath).href);
         const exported =

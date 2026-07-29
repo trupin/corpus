@@ -1,0 +1,344 @@
+/*
+ * The todos plugin's stylesheet — `design/index.html`'s `.doc-panel`,
+ * `.check-list` and `.todo-items` treatments, brought over verbatim in
+ * spacing and type scale.
+ *
+ * **Every colour is a kit design token.** There is not one literal colour in
+ * this file: `@corpus/kit/tokens.css` defines the light and dark values, so a
+ * plugin that only ever names tokens follows the theme toggle for free and
+ * cannot be the one surface that stays light when everything else goes dark.
+ * The same goes for the type stacks (`--sans`, `--mono`) and the surface,
+ * line and ink ramps.
+ *
+ * Class names that already exist in core CSS (`.chip`, `.col-empty`,
+ * `.col-card`, `.row` and its parts) are deliberately reused rather than
+ * redefined: a plugin's row must look like a row.
+ */
+
+/* ── The document view ───────────────────────────────────────────── */
+
+.todo-view {
+  font-family: var(--sans);
+  max-width: 62ch;
+}
+
+.todo-notice {
+  border: 1px solid var(--signal);
+  border-radius: 10px;
+  background: var(--signal-wash);
+  color: var(--ink);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+}
+
+.todo-notice ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.todo-notice code {
+  font-family: var(--mono);
+}
+
+.todo-error {
+  border: 1px solid var(--signal);
+  border-radius: 8px;
+  background: var(--signal-wash);
+  color: var(--signal);
+  padding: 7px 11px;
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.todo-empty {
+  color: var(--ink-3);
+  font-size: 13px;
+  padding: 8px 10px;
+  margin: 0;
+}
+
+.check-list {
+  font-family: var(--sans);
+  max-width: 62ch;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+}
+
+.check:hover {
+  background: var(--surface-2);
+}
+
+.check .box {
+  font-family: var(--mono);
+  color: var(--accent-ink);
+  flex: none;
+}
+
+.check.done {
+  color: var(--ink-3);
+}
+
+.check.done .box {
+  color: var(--good);
+}
+
+.check.done .check-text,
+.check.done .todo-item-text {
+  text-decoration: line-through;
+}
+
+.check .check-text {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+}
+
+.check .check-text:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.check .todo-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check .due {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  flex: none;
+}
+
+/* Overdue is the design's `--signal`; a completed item drops back to `--ink-3`. */
+.check .due[data-overdue="true"] {
+  color: var(--signal);
+}
+
+.check.done .due,
+.check.done .due[data-overdue="true"] {
+  color: var(--ink-3);
+}
+
+.check .check-remove {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-3);
+  opacity: 0;
+  padding: 0 4px;
+}
+
+.check:hover .check-remove,
+.check .check-remove:focus-visible {
+  opacity: 1;
+}
+
+.check .check-remove:hover {
+  color: var(--signal);
+}
+
+.todo-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 0 10px;
+}
+
+.todo-add-text {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.todo-add button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.todo-add button:disabled {
+  color: var(--ink-3);
+}
+
+/* ── The DocPanel ────────────────────────────────────────────────── */
+
+.doc-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  font-family: var(--sans);
+}
+
+.doc-panel .stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-panel .stat b {
+  font-size: 17px;
+  font-family: var(--mono);
+}
+
+.doc-panel .stat span {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.doc-panel .todo-progress {
+  flex: 1;
+  min-width: 40px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.doc-panel .todo-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--good);
+}
+
+.doc-panel .todo-due-chip {
+  background: var(--signal-wash);
+  border-color: transparent;
+  color: var(--signal);
+}
+
+.doc-panel .plugin-tag {
+  margin-left: auto;
+}
+
+/* ── The list-item preview ───────────────────────────────────────── */
+
+.todo-items {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.todo-items .t {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.todo-items .box {
+  font-family: var(--mono);
+  color: var(--ink-3);
+  flex: none;
+}
+
+.todo-items .t.done {
+  text-decoration: line-through;
+  color: var(--ink-3);
+}
+
+.todo-items .t.overdue .box {
+  color: var(--signal);
+}
+
+.todo-items .todo-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-items .todo-more {
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+
+/* ── The aggregate column ────────────────────────────────────────── */
+
+.todos-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0;
+}
+
+.todos-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 2px 10px 4px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.todos-group-head:hover .todos-group-title {
+  color: var(--accent-ink);
+}
+
+.todos-group-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todos-group-count {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
+.todos-column .check {
+  font-size: 12.5px;
+  padding: 5px 10px;
+}
+
+.todos-column .todo-more {
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
