@@ -63,16 +63,31 @@ export async function runStop(
     // Our pid is alive, but the port answers as another workspace's server, so
     // this pid is not the process that owns it. Signalling on the strength of a
     // health check we did not earn would stop somebody else's server.
-    removePidfile(pidfilePath);
+    //
+    // The pidfile is kept (CLI-009). A live pid is most often this workspace's
+    // own daemon, still listening on the port it was started with, after `port`
+    // was re-pointed in the config — exactly the case `status` reports here.
+    // Deleting the file would discard the only handle the CLI has on that
+    // daemon: `stop` would then answer "not running" while the server keeps
+    // serving, and nothing short of `lsof` could find it again. Only a dead
+    // pid's file is cleanup.
+    const { pid, port } = state.record;
     out.emit({
       stopped: false,
       running: false,
-      reason: "stale pidfile removed",
-      unrelatedPid: state.record.pid,
+      reason: "port held by another workspace",
+      pidfileKept: true,
+      pid,
+      pidfilePort: port,
       foreignWorkspace: state.health.workspace,
     });
     out.line(
-      `not running (stale pidfile removed) — ${foreignServerDetail(workspace.port, state.health)}, and pid ${String(state.record.pid)} was left alone`,
+      `not stopped — ${foreignServerDetail(workspace.port, state.health)}, and pid ${String(pid)} was left alone`,
+    );
+    out.line(
+      `  Its pidfile was kept: pid ${String(pid)} was started on :${String(port)}, so it may be this ` +
+        `workspace's own server. Point \`port\` in .corpus/config.json back at ${String(port)} and stop ` +
+        `again, or stop pid ${String(pid)} directly.`,
     );
     return;
   }
@@ -118,7 +133,10 @@ export const stopCommand: WorkspaceCommandSpec = {
     "Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, " +
     "and removes the pidfile. Stopping a server that is not running is not an error: it says " +
     "so and exits 0, so scripts can stop unconditionally. A pidfile naming a dead or reused " +
-    "pid is cleaned rather than acted on — an unrelated process is never signalled.",
+    "pid is cleaned rather than acted on — an unrelated process is never signalled. When the " +
+    "configured port is held by **another workspace's** server, the recorded pid is left alone " +
+    "**and its pidfile kept**: that pid is usually this workspace's own daemon on the port it " +
+    "was started with, and deleting the file would leave a running server nothing can stop.",
   args: [],
   flags: [],
   examples: [

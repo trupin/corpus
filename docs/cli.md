@@ -1137,7 +1137,7 @@ corpus server status || corpus server start
 
 Stop this workspace's server.
 
-Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, and removes the pidfile. Stopping a server that is not running is not an error: it says so and exits 0, so scripts can stop unconditionally. A pidfile naming a dead or reused pid is cleaned rather than acted on — an unrelated process is never signalled.
+Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, and removes the pidfile. Stopping a server that is not running is not an error: it says so and exits 0, so scripts can stop unconditionally. A pidfile naming a dead or reused pid is cleaned rather than acted on — an unrelated process is never signalled. When the configured port is held by **another workspace's** server, the recorded pid is left alone **and its pidfile kept**: that pid is usually this workspace's own daemon on the port it was started with, and deleting the file would leave a running server nothing can stop.
 
 ```
 corpus server stop [flags]
