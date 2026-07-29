@@ -3,6 +3,7 @@ import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/r
 import { useCorpusClient } from "../client/context.js";
 import type { CreateThreadInput } from "../client/createCorpusClient.js";
 import { DOCS_KEY, docKey, QUEUE_KEY, threadKey } from "./keys.js";
+import type { SettledCallbacks } from "./settledCallbacks.js";
 
 /**
  * `POST /api/threads` (SPEC.md §6, §8) — an anchored comment, a whole-document
@@ -34,13 +35,17 @@ export interface CreateThreadVariables extends CreateThreadInput {
   readonly files?: readonly File[] | undefined;
 }
 
-export function useCreateThread(): UseMutationResult<
-  CreateThreadResponse,
-  Error,
-  CreateThreadVariables
-> {
+/**
+ * `callbacks` are teardown-safe (see {@link SettledCallbacks}) — the same
+ * contract `useUpdateDoc` states, kept here so `useRowActions` can report all
+ * three of its acts the same way (UI-012).
+ */
+export function useCreateThread(
+  callbacks: SettledCallbacks<CreateThreadResponse, CreateThreadVariables> = {},
+): UseMutationResult<CreateThreadResponse, Error, CreateThreadVariables> {
   const client = useCorpusClient();
   const queryClient = useQueryClient();
+  const { onSuccess, onError } = callbacks;
 
   return useMutation<CreateThreadResponse, Error, CreateThreadVariables>({
     mutationFn: (input) => {
@@ -74,6 +79,10 @@ export function useCreateThread(): UseMutationResult<
       }
       void queryClient.invalidateQueries({ queryKey: DOCS_KEY });
       if (data.eventId !== null) void queryClient.invalidateQueries({ queryKey: QUEUE_KEY });
+      onSuccess?.(data, variables);
+    },
+    onError(error, variables) {
+      onError?.(error, variables);
     },
   });
 }

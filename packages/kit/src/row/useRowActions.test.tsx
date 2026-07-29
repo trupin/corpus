@@ -32,7 +32,12 @@ interface Wired {
 
 /** Renders the stale row and records every request its buttons issue. */
 function renderStaleRow(
-  options: { readonly failWith?: number; readonly row?: DocRow } = {},
+  options: {
+    readonly failWith?: number;
+    readonly row?: DocRow;
+    /** Parks every write until it resolves, so a test can unmount mid-flight. */
+    readonly holdWrites?: Promise<void>;
+  } = {},
 ): Wired {
   const calls: Capture[] = [];
   const notices: RowNotice[] = [];
@@ -42,6 +47,8 @@ function renderStaleRow(
     const raw = await request.text();
     const body = raw === "" ? undefined : (JSON.parse(raw) as Record<string, unknown>);
     calls.push({ method: request.method, path: pathname, body });
+
+    if (options.holdWrites !== undefined && request.method !== "GET") await options.holdWrites;
 
     if (options.failWith !== undefined && request.method !== "GET") {
       return new Response(
@@ -228,6 +235,73 @@ describe("@agent triage", () => {
     await waitFor(() => {
       expect(notices.at(-1)?.message).toContain("@agent triage failed");
     });
+  });
+});
+
+/**
+ * The teardown path (UI-012).
+ *
+ * The reader's ⋯ menu closes itself the moment an item is clicked, so the
+ * component that started the write is gone long before the server answers.
+ * TanStack Query v5 skips a `mutate(…, { onSuccess })` callback once its
+ * observer has no listeners left, which is exactly what unmounting does — so
+ * every notice these actions produce lives on the hook's own callbacks
+ * instead. A write that commits with nothing said about it is the outcome
+ * `shell/Toasts.tsx` exists to prevent.
+ */
+describe("a result that outlives the surface", () => {
+  function gate(): { readonly held: Promise<void>; readonly release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = () => {
+        resolve();
+      };
+    });
+    return {
+      held,
+      release: () => {
+        release();
+      },
+    };
+  }
+
+  it.each([
+    ["Archive", "Archived"],
+    ["Still current", "still current"],
+    ["@agent triage", "Queued"],
+  ])("%s still reports success after the surface has gone", async (label, fragment) => {
+    const { held, release } = gate();
+    const { calls, notices } = renderStaleRow({ holdWrites: held });
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    await waitFor(() => {
+      expect(writes(calls)).toHaveLength(1);
+    });
+
+    cleanup();
+    release();
+
+    await waitFor(() => {
+      expect(notices.at(-1)?.message).toContain(fragment);
+    });
+    expect(notices.at(-1)?.tone).toBe("info");
+  });
+
+  it.each([
+    ["Archive", "Archive failed"],
+    ["Still current", "Still current failed"],
+    ["@agent triage", "@agent triage failed"],
+  ])("%s still reports a refusal after the surface has gone", async (label, fragment) => {
+    const { held, release } = gate();
+    const { notices } = renderStaleRow({ failWith: 423, holdWrites: held });
+    fireEvent.click(screen.getByRole("button", { name: label }));
+
+    cleanup();
+    release();
+
+    await waitFor(() => {
+      expect(notices.at(-1)?.message).toContain(fragment);
+    });
+    expect(notices.at(-1)?.tone).toBe("error");
   });
 });
 

@@ -70,6 +70,7 @@ export { useLocks } from "./query/useLocks.js";
 export { useHealth } from "./query/useHealth.js";
 
 // The write path the board needs today.
+export type { SettledCallbacks } from "./query/settledCallbacks.js";
 export { provisionalBody, useAppendTurn, type AppendTurnVariables } from "./query/useAppendTurn.js";
 export { useDeleteTurn } from "./query/useDeleteTurn.js";
 export { useRespondToForm, type FormAnswerVariables } from "./query/useRespondToForm.js";
