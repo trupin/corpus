@@ -239,6 +239,22 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
    * Declining while a `PUT` is in flight is not a drop: the completion handler
    * picks the buffer up and sends it, so a flush that lands mid-request still
    * ends with the text on disk.
+   *
+   * **Declining under a foreign lock is different, and it is deliberate**
+   * (UI-013 rider). The server refuses a write to a locked document (SPEC.md
+   * §7), so there is no version of this that saves the text: sending it would
+   * produce a `423` and an error chip claiming a failure the user cannot act
+   * on. The buffer therefore waits for the lock to clear — the effect below
+   * sends it the moment it does — and while it waits the chip says, in words,
+   * that the edit is not saved yet.
+   *
+   * What that costs: if the *surface* goes before the lock clears, the buffer
+   * goes with it. Within the app that is a navigation the user made knowing
+   * the chip's state; leaving the page is not, so it is the one case worth
+   * intercepting, and {@link useAutosave} does (`beforeunload`, below).
+   * Reproducing the text elsewhere — a draft store outliving the reader —
+   * would be a second source of truth for a document body, which is the thing
+   * SPEC.md §5 is most careful about.
    */
   const flush = useCallback((): void => {
     clearTimer(debounce);
@@ -313,11 +329,31 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
     const onHide = (): void => {
       if (document.visibilityState === "hidden") flush();
     };
+    /**
+     * The one parked buffer that can still be rescued (UI-013 rider).
+     *
+     * A buffer waiting behind a foreign lock cannot be sent — the server would
+     * refuse it — so the only thing that keeps the text alive is the tab that
+     * holds it. Closing or reloading destroys the only copy, silently, and the
+     * chip that was saying so goes with it. This is the browser's own "leave
+     * without saving?" and it fires for exactly that state: an unsent buffer
+     * under a lock this session does not hold.
+     *
+     * An ordinary pending save needs nothing here: `pagehide` flushes it, and
+     * a prompt on every unloaded page with an unsettled debounce would be the
+     * kind of dialog people learn to dismiss without reading.
+     */
+    const onLeave = (event: BeforeUnloadEvent): void => {
+      if (pending.current === null || !isLocked.current) return;
+      event.preventDefault();
+    };
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", onLeave);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", onLeave);
     };
   }, [flush]);
 

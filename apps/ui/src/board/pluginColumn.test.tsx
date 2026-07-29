@@ -99,6 +99,28 @@ describe("a plugin column on the board", () => {
     expect(docsCalls[0]?.search).toContain("pinned");
   });
 
+  /**
+   * PR #10 finding 19, stated literally: a plugin column whose view document
+   * carries **no `query` at all** compiles to an empty filter, and an empty
+   * filter is `GET /api/docs` with nothing on it — the whole corpus, fetched
+   * for a body that renders none of it.
+   */
+  it("issues no GET /api/docs when the view document has no query at all", async () => {
+    installFx();
+    const wire = boardTransport({
+      views: [viewRow({ id: "doc_noquery", title: "No query", column: "fx/board", query: null })],
+    });
+    renderBoard(wire);
+    await waitFor(() => {
+      expect(screen.getByText("plugin body for No query")).toBeTruthy();
+    });
+    const docsCalls = wire.calls.filter(
+      (call) => call.method === "GET" && call.path === "/api/docs",
+    );
+    expect(docsCalls).toHaveLength(1);
+    expect(docsCalls[0]?.search).toContain("pinned");
+  });
+
   it("shows the plugin-missing card while keeping the column when unregistered", async () => {
     setPluginRegistry(EMPTY_REGISTRY);
     renderBoard(boardTransport({ views: [pluginView] }));

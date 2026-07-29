@@ -2,10 +2,10 @@
 import type { Lock } from "@corpus/contract";
 import type { RowNotice } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readerTransport } from "../testing/readerFixture";
-import { LockBanner, lockNote } from "./LockBanner";
+import { LOCK_TICK_MS, LockBanner, lockNote } from "./LockBanner";
 
 afterEach(cleanup);
 
@@ -91,6 +91,56 @@ describe("LockBanner", () => {
     expect(message).not.toContain("re-queued");
     expect(message).not.toContain("deferred");
     expect(message).not.toContain("queue");
+  });
+
+  /**
+   * PR #10 finding 14. The duration was computed once at mount and never again,
+   * so a banner left open said "started just now" for as long as the reader was
+   * on screen. Nothing else re-renders it: the `Lock` object does not change
+   * while it is held.
+   */
+  it("keeps the held duration current as the lock goes on being held", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-07-02T09:00:20.000Z"));
+      const wire = readerTransport();
+      const harness = createCorpusTestHarness({ fetch: wire.fetch });
+      const { container } = render(<LockBanner lock={LOCK} onNotify={() => undefined} />, {
+        wrapper: harness.Wrapper,
+      });
+      expect(container.textContent).toContain("started just now");
+
+      // `advanceTimersByTime` moves the mocked clock as well as the timers, so
+      // the banner is reading a `new Date()` that really has moved on.
+      act(() => {
+        vi.advanceTimersByTime(7 * LOCK_TICK_MS);
+      });
+      expect(container.textContent).toContain("holding the edit lock for 7 min");
+
+      act(() => {
+        vi.advanceTimersByTime(113 * LOCK_TICK_MS);
+      });
+      expect(container.textContent).toContain("holding the edit lock for 2 h");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops ticking once the banner is gone", () => {
+    vi.useFakeTimers();
+    try {
+      const clear = vi.spyOn(globalThis, "clearInterval");
+      const wire = readerTransport();
+      const harness = createCorpusTestHarness({ fetch: wire.fetch });
+      const { unmount } = render(<LockBanner lock={LOCK} onNotify={() => undefined} />, {
+        wrapper: harness.Wrapper,
+      });
+      unmount();
+      expect(clear).toHaveBeenCalled();
+      clear.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("never claims a break that did not happen", async () => {

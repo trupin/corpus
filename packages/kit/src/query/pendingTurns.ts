@@ -36,14 +36,30 @@ export function isPendingTurn(turn: ThreadTurn): turn is PendingTurn {
  * confirmed turn by the same author at or after the provisional's timestamp
  * *is* the provisional one — which is what stops the append from appearing
  * twice in the window between the server writing it and the mutation settling.
+ *
+ * **One confirmed turn cancels exactly one provisional** (PR #10 finding 19).
+ * The provisional's timestamp is the client's, the confirmed one's is the
+ * server's, and the server's is later — so with two appends in flight the
+ * confirmation of the *first* can carry a timestamp past the second
+ * provisional's and satisfy a plain "any confirmed turn at or after" test for
+ * both. The second turn would then blink out of the conversation until its own
+ * response landed. Pairing in order — earliest provisional to the earliest
+ * unclaimed confirmation that could be it — cannot do that: two provisionals
+ * need two confirmations.
  */
 export function mergePendingTurns(thread: Thread, pending: readonly PendingTurn[]): ThreadView {
-  const survivors = pending.filter(
-    (provisional) =>
-      !thread.turns.some(
-        (confirmed) => confirmed.author === provisional.author && confirmed.ts >= provisional.ts,
-      ),
-  );
+  const claimed = new Set<string>();
+  const survivors = pending.filter((provisional) => {
+    const match = thread.turns.find(
+      (confirmed) =>
+        !claimed.has(confirmed.ts) &&
+        confirmed.author === provisional.author &&
+        confirmed.ts >= provisional.ts,
+    );
+    if (match === undefined) return true;
+    claimed.add(match.ts);
+    return false;
+  });
   return survivors.length === 0 ? thread : { ...thread, turns: [...thread.turns, ...survivors] };
 }
 

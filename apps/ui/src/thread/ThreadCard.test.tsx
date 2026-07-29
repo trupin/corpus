@@ -385,3 +385,68 @@ describe("child threads", () => {
     });
   });
 });
+
+/**
+ * PR #10 finding 12, end to end through the card.
+ *
+ * Two open forms offering the same option string. The answer turn the server
+ * writes names the option and not the form it answers, so the replay alone put
+ * the answer on the *first* form — observed in a browser marking the wrong form
+ * answered and leaving the one the user had just clicked live.
+ */
+describe("two forms offering the same option", () => {
+  const FIRST_TS = "2026-07-01T10:10:00.000Z";
+  const SECOND_TS = "2026-07-01T10:11:00.000Z";
+
+  function formTurn(ts: string, prompt: string, options: readonly string[]) {
+    return {
+      author: "agent" as const,
+      ts,
+      body: [
+        "```form",
+        `prompt: ${prompt}`,
+        "options:",
+        ...options.map((option) => `  - ${option}`),
+        "```",
+      ].join("\n"),
+    };
+  }
+
+  function twoForms(): ReaderTransport {
+    return wire({
+      turns: [
+        { author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" },
+        formTurn(FIRST_TS, "File the first quote?", ["Yes", "No"]),
+        formTurn(SECOND_TS, "File the second quote?", ["Yes", "Later"]),
+      ],
+    });
+  }
+
+  const formCard = (container: HTMLElement, ts: string): HTMLElement =>
+    container.querySelector(`.form-comment[data-form="${ts}"]`) as HTMLElement;
+
+  it("marks the form the user answered, and leaves the other live", async () => {
+    const transport = twoForms();
+    const { container } = render(<Host transport={transport} />);
+    await waitFor(() => {
+      expect(container.querySelectorAll(".form-comment")).toHaveLength(2);
+    });
+
+    const second = formCard(container, SECOND_TS);
+    fireEvent.click(second.querySelectorAll(".form-opt")[0] as HTMLElement);
+    fireEvent.click(second.querySelector(".form-submit") as HTMLElement);
+
+    await waitFor(() => {
+      expect(
+        transport.of("POST", `/api/threads/th_a/turns/${encodeURIComponent(SECOND_TS)}/form`),
+      ).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(formCard(container, SECOND_TS).querySelector(".form-answered")?.textContent).toContain(
+        "Yes",
+      );
+    });
+    expect(formCard(container, FIRST_TS).querySelector(".form-answered")).toBeNull();
+    expect(formCard(container, FIRST_TS).querySelector(".form-submit")).not.toBeNull();
+  });
+});

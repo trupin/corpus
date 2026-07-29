@@ -253,6 +253,25 @@ export function formatQueryString(filter: Readonly<Record<string, string>>): str
 }
 
 /**
+ * Whether two wire-form queries say the same thing.
+ *
+ * Key order is not meaning, and neither is the spelling of the field the user
+ * typed into: `type=note&status=open` and `status=open&type=note` are one
+ * query. The Edit-query field compares with this before writing, because a
+ * committed `PUT` that changes nothing still rewrites the view document,
+ * bumps `updated` and lands a commit in the log for a field somebody merely
+ * clicked out of (PR #10 finding 19).
+ */
+export function sameQuery(
+  left: Readonly<Record<string, string>>,
+  right: Readonly<Record<string, string>>,
+): boolean {
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((key) => left[key] === right[key]);
+}
+
+/**
  * Parses that field back. Values are kept as strings — the file stores what the
  * user typed, and the server owns which values are legal.
  */

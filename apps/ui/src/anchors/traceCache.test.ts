@@ -6,7 +6,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { parseMarkdown } from "../editor/markdown/parse.js";
 import { corpusSchema } from "../editor/markdown/schema.js";
 import { mdRangeToPm } from "./offsetMap.js";
-import { resetTraceCache, traceOfBody, traceOfDoc, traceStats } from "./traceCache.js";
+import {
+  resetTraceCache,
+  TRACE_CACHE_ENTRIES,
+  traceOfBody,
+  traceOfDoc,
+  traceStats,
+} from "./traceCache.js";
 
 /**
  * One trace per document version — the measurable half of sprint-011 TEST-88.
@@ -71,5 +77,59 @@ describe("the live trace", () => {
     traceOfBody(BODY);
     traceOfDoc(doc);
     expect(traceStats().computations).toBe(2);
+  });
+});
+
+/**
+ * PR #10 finding 18. One slot per question meant two open readers evicted each
+ * other on every render — the board is several columns of readers side by side,
+ * so that is ordinary use, not a corner case.
+ */
+describe("several documents open at once", () => {
+  const OTHER = "A different document entirely.\n";
+
+  it("keeps both bodies, however often the reader alternates between them", () => {
+    traceOfBody(BODY);
+    traceOfBody(OTHER);
+    for (let index = 0; index < 10; index += 1) {
+      traceOfBody(BODY);
+      traceOfBody(OTHER);
+    }
+    expect(traceStats().computations).toBe(2);
+    expect(traceStats().bodies).toBe(2);
+  });
+
+  it("keeps a live trace per open editor", () => {
+    const docs = [document(BODY), document(OTHER)];
+    for (const doc of docs) traceOfDoc(doc);
+    for (let index = 0; index < 10; index += 1) for (const doc of docs) traceOfDoc(doc);
+    expect(traceStats().computations).toBe(2);
+    expect(traceStats().live).toBe(2);
+  });
+
+  it("holds a whole board's worth before it evicts anything", () => {
+    const bodies = Array.from(
+      { length: TRACE_CACHE_ENTRIES },
+      (_unused, index) => `Body number ${String(index)}.\n`,
+    );
+    for (const body of bodies) traceOfBody(body);
+    for (const body of bodies) traceOfBody(body);
+    expect(traceStats().computations).toBe(TRACE_CACHE_ENTRIES);
+    expect(traceStats().bodies).toBe(TRACE_CACHE_ENTRIES);
+  });
+
+  it("stays bounded — the oldest goes, the most recent stay", () => {
+    const bodies = Array.from(
+      { length: TRACE_CACHE_ENTRIES + 1 },
+      (_unused, index) => `Body number ${String(index)}.\n`,
+    );
+    for (const body of bodies) traceOfBody(body);
+    expect(traceStats().bodies).toBe(TRACE_CACHE_ENTRIES);
+
+    // The newest is still cached; the one pushed out is recomputed.
+    traceOfBody(bodies.at(-1) ?? "");
+    expect(traceStats().computations).toBe(TRACE_CACHE_ENTRIES + 1);
+    traceOfBody(bodies[0] ?? "");
+    expect(traceStats().computations).toBe(TRACE_CACHE_ENTRIES + 2);
   });
 });

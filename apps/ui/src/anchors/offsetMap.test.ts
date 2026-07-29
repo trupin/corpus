@@ -198,6 +198,52 @@ describe("the trace over an edited document", () => {
     expect(shownFor(source, "gamma")).toBe("gamma");
     expect(shownFor(source, "alpha beta")).toBe("alpha beta");
   });
+
+  /**
+   * A link's destination is syntax that can spell anything (PR #10 finding 18).
+   *
+   * It is emitted *after* the link's text, so the cursor the text run leaves
+   * behind still has the whole URL in front of it. A word that occurs both in
+   * the destination and in the document after the link would otherwise be
+   * located in the destination — four words early, with the highlight drawn
+   * over a URL nobody selected.
+   */
+  describe("a run whose text also occurs in a neighbouring link's destination", () => {
+    const linked = (href: string, label: string): PmNode => ({
+      type: "text",
+      text: label,
+      marks: [{ type: "link", attrs: { href } }],
+    });
+
+    const source = build(
+      paragraph(linked("https://x.test/bold", "a"), text("bold", "bold"), text(" tail")),
+    );
+
+    it("prints the link form the trace has to align against", () => {
+      expect(source.markdown).toBe("[a](https://x.test/bold)**bold** tail\n");
+    });
+
+    it("maps the visible word to the visible word", () => {
+      expect(shownFor(source, "bold", 1)).toBe("bold");
+    });
+
+    it("gives the same letters inside the destination no address at all", () => {
+      expect(mdRangeToPm(source.trace, quoteRange(source.markdown, "bold", 0))).toEqual([]);
+    });
+
+    it("keeps every run inside the content it claims", () => {
+      for (const run of source.trace) {
+        if (run.atomic) continue;
+        expect(source.markdown.slice(run.mdStart, run.mdEnd)).toBe(
+          pmTextBetween(source.doc, run.pmFrom, run.pmTo),
+        );
+      }
+      // The link's own text is located inside the brackets, before the URL.
+      expect(source.trace[0]).toMatchObject({ mdStart: 1, mdEnd: 2 });
+      // …and the next run starts after the destination's closing parenthesis.
+      expect(source.trace[1]?.mdStart).toBeGreaterThanOrEqual(source.markdown.indexOf(")") + 1);
+    });
+  });
 });
 
 /* ── TEST-90: markdown range → ProseMirror range, table-driven ──────── */

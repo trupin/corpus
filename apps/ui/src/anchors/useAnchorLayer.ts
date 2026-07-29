@@ -232,12 +232,15 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    *
    * Two of them matter and neither is the user typing. A **deferred**
    * application lands the moment the editor's text comes back into agreement
-   * with the body the offsets describe. And a **replaced document** — which is
-   * what `DocEditor` does when the server's copy moves on, including after this
-   * document's own save settles — throws every decoration away, because a
-   * wholesale replacement maps every range to nothing. Without this the
-   * highlights survive the save and then vanish two seconds later, which is
-   * exactly the failure the browser found.
+   * with the body the offsets describe. And a **replaced document** — what
+   * `DocEditor` does when the server's copy moves on — throws every decoration
+   * away, because a wholesale replacement maps every range to nothing.
+   *
+   * That used to include the echo of this document's *own* save, and the wipe
+   * was repaired here rather than avoided; `DocEditor` now declines to adopt a
+   * body the editor is already showing (PR #10 finding 18), so what reaches
+   * this handler is a genuine external change — somebody else's write, or the
+   * agent's. The repair stays, because that case still replaces the document.
    *
    * Debounced to a trailing tick so a burst of typing costs one check, and
    * `applyAnchors` is a no-op whenever the two texts disagree — so the local

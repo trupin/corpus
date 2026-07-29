@@ -1,6 +1,6 @@
 import type { Lock } from "@corpus/contract";
 import { useBreakLock, type RowNotice } from "@corpus/kit";
-import type { ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 
 /**
  * The sepia lock banner and its Force unlock (SPEC.md §7).
@@ -48,14 +48,42 @@ export function lockNote(lock: Lock, now: Date = new Date()): string {
   return `holding the edit lock for ${String(hours)} h`;
 }
 
+/** How often the held-duration line is recomputed; its coarsest unit is a minute. */
+export const LOCK_TICK_MS = 60_000;
+
+/**
+ * A clock that advances once a minute (PR #10 finding 14).
+ *
+ * `lockNote` reads a duration, and a duration frozen at mount is a claim that
+ * stops being true a minute later: a lock the reader has been watching for a
+ * quarter of an hour kept saying "started just now". Nothing else re-renders
+ * this banner — the lock object itself does not change while it is held — so
+ * the tick has to come from here. One interval per mounted banner, at the
+ * resolution the sentence is written in; anything faster would re-render for a
+ * string that cannot have changed.
+ */
+function useMinuteClock(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, LOCK_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
+  return now;
+}
+
 export function LockBanner({ lock, onNotify }: LockBannerProps): ReactElement {
   const breakLock = useBreakLock();
+  const now = useMinuteClock();
 
   return (
     <div className="lock-banner" role="status" data-lock-holder={lock.holder}>
       <span className="working-dot" aria-hidden="true" />
       <span>
-        <b>{lock.holder} is editing</b> — {lockNote(lock)} · document is read-only
+        <b>{lock.holder} is editing</b> — {lockNote(lock, now)} · document is read-only
       </span>
       <button
         type="button"

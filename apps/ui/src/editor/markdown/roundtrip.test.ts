@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { CHARACTER_REFERENCE } from "./escape.js";
 import { parseMarkdown } from "./parse.js";
 import { canonicalizeMarkdown, serializeDoc } from "./serialize.js";
 
@@ -94,6 +95,10 @@ const NON_CANONICAL: readonly (readonly [string, string])[] = [
   // The body an older serializer wrote when a bold selection carried its
   // trailing space: it has to heal on the next save, not survive.
   ["character references in a body", "**alpha beta&#x20;**&#x67;amma delta\n"],
+  // The same corruption in its other two spellings (PR #10 finding 18): a
+  // check that only knew `&#x` would let a printer writing `&#32;` through.
+  ["decimal character references in a body", "**alpha beta&#32;**&#103;amma delta\n"],
+  ["a named character reference in a body", "**alpha&nbsp;**beta\n"],
   ["a space against an emphasis marker", "**alpha beta ** gamma\n"],
   ["a ref straight after a bold run", "**link:&#x20;**[[doc_mbc52nvo]]**6.4%** week\n"],
 ];
@@ -125,15 +130,29 @@ describe("non-canonical input", () => {
 describe("character references", () => {
   it.each(fixtureNames())("%s is written back without one", (name) => {
     const markdown = readFileSync(join(FIXTURES, name), "utf8");
-    expect(canonicalizeMarkdown(markdown)).not.toMatch(/&#x/i);
+    expect(canonicalizeMarkdown(markdown)).not.toMatch(CHARACTER_REFERENCE);
   });
 
   it.each(NON_CANONICAL)("%s normalises without one", (_name, input) => {
-    expect(canonicalizeMarkdown(input)).not.toMatch(/&#x/i);
+    expect(canonicalizeMarkdown(input)).not.toMatch(CHARACTER_REFERENCE);
+  });
+
+  /** All three spellings, so "no entity" means no entity (PR #10 finding 18). */
+  it.each([
+    ["hexadecimal", "&#x20;"],
+    ["decimal", "&#32;"],
+    ["named", "&nbsp;"],
+  ])("recognises the %s form", (_name, reference) => {
+    expect(`a${reference}b`).toMatch(CHARACTER_REFERENCE);
+    // An escaped ampersand is a literal one, and is what the escaper writes.
+    expect(`a\\${reference}b`).not.toMatch(CHARACTER_REFERENCE);
   });
 
   it("heals a body that already carries them", () => {
     expect(canonicalizeMarkdown("**alpha beta&#x20;**&#x67;amma delta\n")).toBe(
+      "**alpha beta** gamma delta\n",
+    );
+    expect(canonicalizeMarkdown("**alpha beta&#32;**&#103;amma delta\n")).toBe(
       "**alpha beta** gamma delta\n",
     );
     expect(canonicalizeMarkdown("**link:&#x20;**[[doc_a]]**6.4%** week\n")).toBe(

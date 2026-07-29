@@ -21,18 +21,33 @@ import type { DocumentTrace } from "./traceCache";
  * disk. Those are the same string for every document the editor has ever
  * saved, and for every file already written in canonical form.
  *
- * They can also differ harmlessly: `*` bullets for `-`, `_x_` for `*x*`, `**`
- * for `__` — substitutions of equal length, which move no offset at all. Length
- * equality is therefore a sound licence, not a guess.
+ * They can also differ harmlessly: `*` bullets for `-`, `_x_` for `*x*`, `__`
+ * for `**` — substitutions of equal length, which move no offset at all.
  *
- * When the two differ in length (a setext heading, indented code, CRLF), the
- * offsets genuinely do not line up, and this answers false: the threads stay
- * listed and fully usable, they simply carry no highlight until the first save
- * writes the body back in canonical form. A highlight over the wrong sentence
- * would be worse than no highlight.
+ * **Total length equality is not the licence, though** (PR #10 finding 18).
+ * Normalisation both shortens and lengthens: a setext heading loses characters
+ * (`Title\n=====` → `# Title`), indented code gains them (`    code` →
+ * ```` ```\ncode\n``` ````). One of each in the same document cancels out in
+ * the total while every offset between them is shifted, and equal-length would
+ * have called that comparable — which is a highlight over the wrong sentence,
+ * the one failure mode worse than no highlight.
+ *
+ * What the licensed substitutions actually preserve is the **shape of the
+ * file**: same number of lines, each the same length. Every compensating pair
+ * changes that, because a construct cannot lengthen or shorten without moving
+ * a line boundary or a line's length. So that is what is checked.
+ *
+ * When the two do not line up, this answers false: the threads stay listed and
+ * fully usable, they simply carry no highlight until the first save writes the
+ * body back in canonical form.
  */
 export function offsetsComparable(body: string, canonical: string): boolean {
-  return body === canonical || body.length === canonical.length;
+  if (body === canonical) return true;
+  if (body.length !== canonical.length) return false;
+  const left = body.split("\n");
+  const right = canonical.split("\n");
+  if (left.length !== right.length) return false;
+  return left.every((line, index) => line.length === right[index]?.length);
 }
 
 export interface AnchoredThread {

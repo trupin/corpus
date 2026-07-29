@@ -21,6 +21,24 @@
 const WHITESPACE = /\s/;
 const WORD = /[A-Za-z0-9]/;
 
+/**
+ * An **unescaped** HTML character reference, in all three spellings markdown
+ * reads back as one: hexadecimal (`&#x20;`), decimal (`&#32;`) and named
+ * (`&nbsp;`).
+ *
+ * A character reference is the printer's escape hatch for whitespace markdown
+ * cannot spell, and once written it is permanent: it survives every later round
+ * trip and shows up in every later diff (SPEC.md §6 — the body is markdown, and
+ * only markdown). Nothing this serializer emits may contain one, and the
+ * corpus-wide assertions that check so import this rather than each writing
+ * their own — a check that only knew the hexadecimal form would pass a printer
+ * that had started writing `&#32;` (PR #10 finding 18).
+ *
+ * The lookbehind is what keeps a *literal* ampersand out of it: `\&amp;` is the
+ * text `&amp;`, correctly escaped, and is exactly what `needsEscape` produces.
+ */
+export const CHARACTER_REFERENCE = /(?<!\\)&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);/i;
+
 function isSpaceOrEdge(character: string): boolean {
   return character === "" || WHITESPACE.test(character);
 }

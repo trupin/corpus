@@ -944,6 +944,40 @@ function appendRuns(
   return at;
 }
 
+/**
+ * Past a link's `](destination)`, from the cursor sitting on its `]`.
+ *
+ * A link's text is content and its destination is syntax, but the destination
+ * is *arbitrary text* — and it comes after the text run, so the cursor left
+ * behind by the link's children sits **before** it. Every later search then has
+ * the whole URL in front of it: `[a](https://x.test/bold)**bold**` located the
+ * bold run inside the URL, four words early, and drew its highlight there.
+ *
+ * Scanning is exact rather than heuristic. The cursor is only advanced when the
+ * markdown really does read `](` at that position, and parentheses are balanced
+ * with backslash escapes honoured — which is precisely what the printer wrote,
+ * because an unbalanced parenthesis in a destination is escaped or the whole
+ * destination is angle-bracketed. Anything else leaves the cursor exactly where
+ * it was.
+ */
+function pastLinkDestination(markdown: string, cursor: number): number {
+  if (!markdown.startsWith("](", cursor)) return cursor;
+  let depth = 1;
+  for (let at = cursor + 2; at < markdown.length; at += 1) {
+    const character = markdown[at];
+    if (character === "\\") {
+      at += 1;
+      continue;
+    }
+    if (character === "(") depth += 1;
+    else if (character === ")") {
+      depth -= 1;
+      if (depth === 0) return at + 1;
+    }
+  }
+  return cursor;
+}
+
 /** Walks the printed tree in emission order and pairs every run with its output. */
 function alignTrace(tree: MdRoot, written: Map<MdNode, string>, markdown: string): TraceRun[] {
   const runs: TraceRun[] = [];
@@ -957,6 +991,7 @@ function alignTrace(tree: MdRoot, written: Map<MdNode, string>, markdown: string
       return;
     }
     for (const child of node.children ?? []) visit(child);
+    if (node.type === "link") cursor = pastLinkDestination(markdown, cursor);
   };
 
   for (const child of tree.children) visit(child);
