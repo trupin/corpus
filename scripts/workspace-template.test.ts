@@ -8,17 +8,22 @@ import { describe, expect, it } from "vitest";
 // away from the implementation it documents.
 import { WORKSPACE_DIRECTORIES } from "../apps/cli/src/commands/init/scaffold.js";
 import {
+  CLI_COMMANDS_PENDING_CLI_006,
   CONTRACT_DOC_PATH,
   INIT_GENERATED,
   INSTALL_FILTERS,
   INSTALL_RENAMES,
   TEMPLATE_ROOT,
   TemplateError,
+  extractCorpusInvocations,
   installedPath,
   listTemplateFiles,
   loadTemplateDocuments,
+  normalizeInvocation,
+  parseCliDoc,
   parseContractDoc,
   parseFrontmatter,
+  readCliDoc,
   readContractDoc,
 } from "./workspace-template.js";
 
@@ -133,12 +138,18 @@ describe("seed documents", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("uses one fixed authoring timestamp across the tree", () => {
-    const stamps = documents.flatMap(({ frontmatter }) => [
-      frontmatter.created,
-      frontmatter.updated,
-    ]);
-    expect(new Set(stamps).size).toBe(1);
+  it("uses one fixed authoring timestamp, advanced only where a skill body was rewritten", () => {
+    // The tree shares one `created` stamp. `updated` matches it everywhere
+    // except the orchestrate skill, whose AGENT-002 body advanced it — the
+    // template's own "updated tracks content" rule, applied to itself.
+    expect(new Set(documents.map(({ frontmatter }) => frontmatter.created)).size).toBe(1);
+    for (const { relPath, frontmatter } of documents) {
+      if (relPath === "claude/skills/orchestrate/SKILL.md") {
+        expect(String(frontmatter.updated) > String(frontmatter.created), relPath).toBe(true);
+      } else {
+        expect(frontmatter.updated, relPath).toEqual(frontmatter.created);
+      }
+    }
   });
 });
 
@@ -200,7 +211,7 @@ describe("templates", () => {
   });
 });
 
-describe("skill skeletons", () => {
+describe("skills", () => {
   const skills = [
     { name: "orchestrate", relPath: "claude/skills/orchestrate/SKILL.md" },
     { name: "comment", relPath: "claude/skills/comment/SKILL.md" },
@@ -229,7 +240,22 @@ describe("skill skeletons", () => {
       .map((line) => line.slice(3).toLowerCase());
     const required =
       name === "orchestrate"
-        ? ["invariants", "loop", "routing", "job logs", "halt", "stewardship", "worked example"]
+        ? [
+            "purpose",
+            "invariants",
+            "the loop",
+            "claiming",
+            "routing",
+            "concurrency",
+            "locks",
+            "job logs",
+            "completing",
+            "halt",
+            "stewardship",
+            "skills",
+            "loop breaks",
+            "worked example",
+          ]
         : ["gather context", "inbox filing", "reply", "forms", "skill genesis", "worked example"];
     for (const keyword of required) {
       expect(
@@ -243,6 +269,102 @@ describe("skill skeletons", () => {
     expect(documentAt("claude/skills/comment/SKILL.md").body).not.toMatch(
       /corpus queue (?:complete|fail)/,
     );
+  });
+});
+
+describe("orchestrate skill body", () => {
+  const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
+
+  it("carries no skeleton remnants and no dev-harness references", () => {
+    for (const marker of ["arrives with agent", "skeleton", "tbd", "<fill", "placeholder"]) {
+      expect(body.toLowerCase(), `contains "${marker}"`).not.toContain(marker);
+    }
+    // The skill is the product's voice: it must not name this repository's
+    // spec, guides, issue tracker, or dev-harness skills.
+    for (const marker of ["SPEC.md", "CLAUDE.md", "issues/", "/implement", "/decompose"]) {
+      expect(body, `contains "${marker}"`).not.toContain(marker);
+    }
+  });
+
+  it("gives every section a substantive body, not a bare heading", () => {
+    const sections = new Map<string, string[]>();
+    let current: string | null = null;
+    for (const line of body.split("\n")) {
+      if (line.startsWith("## ")) {
+        current = line.slice(3);
+        sections.set(current, []);
+      } else if (current !== null) {
+        sections.get(current)?.push(line);
+      }
+    }
+    expect(sections.size).toBe(14);
+    for (const [heading, lines] of sections) {
+      expect(
+        lines.join("\n").trim().length,
+        `"${heading}" is a heading with no substance`,
+      ).toBeGreaterThan(400);
+    }
+  });
+
+  it("states the non-negotiable commands and rules verbatim", () => {
+    const rules = [
+      "corpus queue claim-all",
+      "corpus queue idle",
+      "corpus queue complete",
+      "corpus queue fail",
+      "corpus queue reap-stale",
+      "corpus queue halt",
+      "corpus queue resume",
+      'corpus job log <eventId> "<line>"',
+      "corpus job retry",
+      "corpus skill rollback",
+      "corpus lock break",
+      "corpus lock reap",
+      "corpus doc archive",
+      "export CORPUS_FROM=agent",
+      "--from agent",
+      "--reason",
+      ".corpus/HALT",
+      '{"idle":true,"reason":"timeout"}',
+      '{"idle":true,"reason":"halted"}',
+      "deferred:",
+      "<plugin>.<action>",
+      "terminal state",
+    ];
+    for (const rule of rules) expect(body, `missing "${rule}"`).toContain(rule);
+    expect(body).toMatch(/never delete/i);
+    expect(body).toMatch(/never guess/i);
+    expect(body).toMatch(/never silently completed/i);
+  });
+
+  it("forbids every wait besides idle, and practices the prohibition", () => {
+    expect(body).toMatch(/`corpus queue idle` is the only wait/i);
+    // The prohibition sentence is the single legal mention of sleeping; no
+    // other waiting construct may appear anywhere in the body.
+    expect(body.match(/\bsleep\b/gi)).toHaveLength(1);
+    expect(body).not.toContain("while true");
+    expect(body).not.toMatch(/\bset(?:Timeout|Interval)\b/);
+  });
+
+  it("hardwires no plugin name and hedges nothing", () => {
+    // The `<plugin>.<action>` routing row is a convention, never an example
+    // naming a shipped plugin (sprint-012 adjudication 1).
+    expect(body).not.toMatch(/todos|_fixture/i);
+    for (const hedge of [
+      "use your judgment",
+      "consider whether",
+      "you may want",
+      "if appropriate",
+    ]) {
+      expect(body.toLowerCase(), `hedges with "${hedge}"`).not.toContain(hedge);
+    }
+  });
+
+  it("passes every multi-line text argument through a quoted heredoc", () => {
+    const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
+    expect(heredocs.length).toBeGreaterThan(0);
+    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
+    expect(body).not.toMatch(/-m "\$\(/);
   });
 });
 
@@ -517,5 +639,123 @@ describe("template parsing failures", () => {
       filters: [".gitkeep"],
       generated: ["x.json"],
     });
+  });
+});
+
+describe("corpus invocation extraction", () => {
+  const surface = parseCliDoc(
+    [
+      "## `corpus init`",
+      "## `corpus queue`",
+      "### `corpus queue idle`",
+      "## `corpus thread`",
+      "### `corpus thread reply`",
+    ].join("\n"),
+  );
+
+  it("classifies topics and commands from the reference's headings", () => {
+    expect([...surface.commands].sort()).toEqual(["init", "queue idle", "thread reply"]);
+    expect([...surface.topics].sort()).toEqual(["queue", "thread"]);
+  });
+
+  it("rejects a reference with no command headings", () => {
+    expect(() => parseCliDoc("# nothing\n")).toThrow(TemplateError);
+  });
+
+  it("extracts a fenced multi-line heredoc invocation without its body", () => {
+    const markdown = [
+      "```bash",
+      "corpus thread reply th_4b8e2c --from agent <<'EOF'",
+      "corpus queue resume restores it — this line is reply content, not a command.",
+      "EOF",
+      "corpus queue idle",
+      "```",
+    ].join("\n");
+    expect(extractCorpusInvocations(markdown)).toEqual([
+      ["thread", "reply", "th_4b8e2c", "agent"],
+      ["queue", "idle"],
+    ]);
+  });
+
+  it("extracts an inline-code invocation", () => {
+    expect(extractCorpusInvocations("Park with `corpus queue idle` between events.")).toEqual([
+      ["queue", "idle"],
+    ]);
+  });
+
+  it("never extracts a prose sentence mentioning corpus", () => {
+    expect(extractCorpusInvocations("The corpus CLI is the only interface.\n")).toEqual([]);
+    expect(extractCorpusInvocations("corpus init is described elsewhere.\n")).toEqual([]);
+  });
+
+  it("extracts a top-level command with no topic", () => {
+    const invocations = extractCorpusInvocations("```bash\ncorpus init ~/notes --port 9062\n```");
+    // Flags are dropped; bare values (arguments and flag values) survive, and
+    // normalization ignores everything after a documented bare command.
+    expect(invocations).toEqual([["init", "~/notes", "9062"]]);
+    expect(normalizeInvocation(invocations[0] ?? [], surface)).toBe("init");
+  });
+
+  it("splits compound shell lines into separate invocations", () => {
+    const invocations = extractCorpusInvocations(
+      "```bash\ncorpus queue idle && corpus queue claim-all | jq -r '.events[].id'\n```",
+    );
+    expect(invocations).toEqual([
+      ["queue", "idle"],
+      ["queue", "claim-all"],
+    ]);
+  });
+
+  it("normalizes flag-only and undocumented invocations honestly", () => {
+    expect(normalizeInvocation([], surface)).toBeNull();
+    expect(normalizeInvocation(["queue"], surface)).toBe("queue");
+    expect(normalizeInvocation(["frobnicate"], surface)).toBe("frobnicate");
+    expect(normalizeInvocation(["doc", "frobnicate"], surface)).toBe("doc frobnicate");
+  });
+});
+
+describe("cli command references", () => {
+  const surface = readCliDoc();
+
+  /** Every referenced command a surface does not document, allowlist applied. */
+  const unresolvedIn = (source: string): string[] =>
+    extractCorpusInvocations(source)
+      .map((tokens) => normalizeInvocation(tokens, surface))
+      .filter((command): command is string => command !== null)
+      .filter(
+        (command) =>
+          !surface.commands.has(command) &&
+          !surface.topics.has(command) &&
+          !CLI_COMMANDS_PENDING_CLI_006.includes(command),
+      );
+
+  it("resolves every `corpus …` invocation in the whole template tree against docs/cli.md", () => {
+    for (const relPath of templateFiles.filter((file) => file.endsWith(".md"))) {
+      expect(unresolvedIn(readTemplateFile(relPath)), relPath).toEqual([]);
+    }
+  });
+
+  it("fails on a command docs/cli.md does not document", () => {
+    const skill = readTemplateFile("claude/skills/orchestrate/SKILL.md");
+    expect(unresolvedIn(`${skill}\nRun \`corpus doc frobnicate doc_a1b2c3\` twice.\n`)).toEqual([
+      "doc frobnicate",
+    ]);
+  });
+
+  it("allowlists exactly Adjudication 5's two CLI-006 verbs", () => {
+    expect([...CLI_COMMANDS_PENDING_CLI_006]).toEqual(["doc check", "skill rollback"]);
+  });
+
+  it("expires the allowlist the moment CLI-006 lands in docs/cli.md", () => {
+    // Self-invalidation (sprint-012 adjudication 5): each allowlisted verb must
+    // still be UNdocumented. When CLI-006 ships `corpus doc check` and
+    // `corpus skill rollback`, this test fails and the allowlist must be
+    // emptied — the hole closes itself.
+    for (const command of CLI_COMMANDS_PENDING_CLI_006) {
+      expect(
+        surface.commands.has(command) || surface.topics.has(command),
+        `\`corpus ${command}\` is now documented — empty CLI_COMMANDS_PENDING_CLI_006`,
+      ).toBe(false);
+    }
   });
 });

@@ -159,3 +159,20 @@ them, which is why `corpus workspace upgrade` three-way compares rather than ove
 When adding a file here, add it to the tree above and to the test's expected-tree list; when
 adding a rename or a filter, change `scripts/workspace-template.ts` and this document in the
 same commit — the test compares them.
+
+## Verified against the CLI reference
+
+The skill bodies are executable documentation, so
+`scripts/workspace-template.test.ts` extracts every `corpus …` invocation in the template
+tree — fenced code blocks and inline code alike, across all of its markdown files — and
+resolves each one against the generated `docs/cli.md`. A CLI surface change (a renamed verb,
+a removed command) therefore **breaks the AGENT skills' test suite**, on purpose: regenerate
+the reference with `npm run docs:cli -w apps/cli`, then fix the skill text to match the CLI
+— never the reference to match the skill.
+
+Two commands are temporarily allowlisted in `scripts/workspace-template.ts`
+(`CLI_COMMANDS_PENDING_CLI_006`: `corpus doc check` and `corpus skill rollback`) because the
+README's and the orchestrate skill's recovery documentation must name them before CLI-006
+ships them. The allowlist is self-invalidating: a companion test asserts each entry is still
+absent from `docs/cli.md`, so the suite fails the moment CLI-006 lands and the list must be
+emptied.
