@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-todo
+in_progress
 
 ## Priority
 P1
@@ -60,9 +60,9 @@ Build the plugin substrate: four independent discovery mechanisms (UI manifests,
 - `apps/server/src/app.ts` (modify) — call plugin discovery after core routes are mounted
 - `apps/cli/src/registry/plugins.ts` — scan `plugins/*/cli/commands/`, build `TopicSpec`s, merge into the root registry
 - `apps/cli/src/registry/index.ts` (modify) — include discovered plugin topics
-- `apps/cli/src/commands/init.ts` (modify, or the equivalent from CLI-002) — copy/link `plugins/*/skills/` into the workspace `.claude/skills/`
-- `assets/workspace/.claude/skills/orchestrate/SKILL.md` (modify) — document the `<plugin>.*` event-routing convention
-- `eslint.config.js` / `packages/eslint-config` (modify) — the two boundary rules (`no-restricted-imports` overrides scoped to `plugins/**`, and the core→plugin ban)
+- `apps/cli/src/commands/init/` (modify — a directory: `index.ts`, `scaffold.ts`, `template.ts`, …) — copy/link `plugins/*/skills/` into the workspace `.claude/skills/`; record plugin-sourced skills in `.corpus/template-manifest.json` with `source: "plugin:<name>"` (sprint-012 Adjudication 11)
+- ~~`assets/workspace/.claude/skills/orchestrate/SKILL.md`~~ — STRUCK (sprint-012 Adjudication 1: AGENT-002 owns the orchestrate skill exclusively; the `<plugin>.*` routing convention is part of its required routing table — do not touch that file)
+- `eslint.config.js` (root — `packages/eslint-config` does not exist) — the two boundary rules (`no-restricted-imports` overrides scoped to `plugins/**`, and the core→plugin ban)
 - `plugins/_fixture/` — a test-only fixture plugin (manifest with one doc type + one column, one server route, one CLI verb, one skill) used by the E2E and unit tests; explicitly excluded from packaging
 - `docs/PLUGINS.md` — the plugin author guide: directory layout, manifest contract, the kit-only rule, the `types.yaml` requirement
 

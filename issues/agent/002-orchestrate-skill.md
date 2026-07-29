@@ -6,7 +6,7 @@ agent
 
 ## Status
 
-todo
+in_progress
 
 ## Priority
 
@@ -18,7 +18,7 @@ fable — the skill text IS the product agent's judgment; prompt design quality 
 
 ## Dependencies
 
-- Depends on: CLI-004, AGENT-001
+- Depends on: CLI-004, CLI-007, AGENT-001
 - Blocks: AGENT-003
 
 ## Spec References
@@ -132,7 +132,7 @@ _N/A — feature issue._
 Real workspace, real server, real `claude` session — no simulation of the loop itself.
 
 1. `corpus init` a scratch workspace outside the repo; `corpus server start`; confirm `corpus doc check` passes and the board loads.
-2. Create an agent-requested thread on a real document through the real interface (UI comment with `@agent`, or `corpus thread create` with the agent flag) → confirm a `comment.created` event lands in `.corpus/queue/pending/` and the UI shows the pending indicator.
+2. Create an agent-requested thread on a real document through the real interface (UI comment with `@agent`, or `POST /api/threads` with `requestsAgent: true` and the bearer token — there is no `corpus thread create` verb and no `--agent` flag; sprint-012 Adjudication 7) → confirm a `comment.created` event lands in `.corpus/queue/pending/` and the UI shows the pending indicator.
 3. Start `claude` in the workspace, invoke `/orchestrate`. Observe, and capture: `claim-all` output, the event moving `pending → in-progress`, job log lines appearing in the console drawer for that job, an agent turn appearing in the thread (via SSE in the UI **and** in `GET /api/threads/:id`), the event ending in `processed`, and the loop parking on `idle`.
 4. Post a second comment in the same thread → the parked loop wakes and handles it without operator intervention. Capture the timestamp gap to show `idle` returned promptly rather than after a rearm.
 5. **Two events, same document**: post agent-requested comments on two threads of the same parent document in quick succession → confirm they are handled serially and the second reflects the first's changes.
