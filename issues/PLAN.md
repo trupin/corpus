@@ -123,15 +123,17 @@ The board, editor, threads, console. design/index.html is authoritative for look
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| AGENT-002 | Orchestrate skill: the agent's main loop | in_progress | P0 | CLI-004, CLI-007, AGENT-001 |
-| CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | in_progress | P1 | CONTRACT-002 |
+| AGENT-002 | Orchestrate skill: the agent's main loop | done | P0 | CLI-004, CLI-007, AGENT-001 |
+| CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | done | P1 | CONTRACT-002 |
 | SERVER-019 | Mount validation + skill-rollback handlers | todo | P1 | CONTRACT-008 |
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | todo | P1 | CLI-003, SERVER-019 |
 | AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | todo | P1 | CLI-003 |
 | AGENT-004 | Emit trace lines in agent turns | todo | P2 | AGENT-002 |
-| PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | in_progress | P1 | UI-003, CLI-001, SERVER-003 |
-| PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003 |
+| PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
+| PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
+| CONTRACT-015 | Graduate plugin-facing types into @corpus/contract | todo | P1 | CONTRACT-002 |
+| UI-014 | Editor ownership of non-core document bodies | todo | P2 | UI-006, PLUGINS-001 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | todo | P1 | CLI-002, UI-010 |
 | CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | todo | P1 | CLI-002, AGENT-001 |
 | SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | SERVER-008, SERVER-009, AGENT-002 |

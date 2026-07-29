@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-in_progress
+done
 
 ## Priority
 P1
