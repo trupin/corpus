@@ -1,14 +1,5 @@
-import {
-  ACTOR_HEADER,
-  DocsQuerySchema,
-  type Actor,
-  type CreateDocRequest,
-  type Doc,
-  type DocList,
-  type DocsQuery,
-  type QueryKeySegment,
-  type UpdateDocRequest,
-} from "@corpus/contract";
+import { ACTOR_HEADER, DocsQuerySchema, type Actor } from "@corpus/contract";
+import type { PluginServerContext } from "@corpus/contract/plugin";
 import { Hono } from "hono";
 import { z } from "zod";
 import { FIXTURE_DOC_TYPE } from "../shared.js";
@@ -16,26 +7,17 @@ import { FIXTURE_DOC_TYPE } from "../shared.js";
 /**
  * The fixture's server half (SPEC.md §10): mounted by discovery at
  * `/api/x/_fixture` — the prefix comes from the directory name, this module
- * never states it. The factory receives the server's plugin context and
- * builds an ordinary Hono router; every write below goes through the context,
- * which is the core write path (git auto-commit, projection, anchor
- * reconciliation), because a plugin route never touches the filesystem.
+ * never states it. The factory receives the plugin context and builds an
+ * ordinary Hono router; every write below goes through the context, which is
+ * the core write path (git auto-commit, projection, anchor reconciliation),
+ * because a plugin route never touches the filesystem.
  *
- * The context is typed *structurally*: a plugin may import only
- * `@corpus/kit` and `@corpus/contract`, and the server's own
- * `PluginServerContext` type lives in neither. Every member below is a
- * contract type, so the shape stays checkable end to end; whether the context
- * type should graduate into `@corpus/contract` is an open PLUGINS design
- * question filed with PLUGINS-001.
+ * The context type comes from `@corpus/contract/plugin` (CONTRACT-015) — the
+ * types-only subpath a plugin is allowed to import. The server implements the
+ * same interface (`apps/server/src/plugins/context.ts`), so this factory's
+ * parameter and the object it is handed at mount are checked against one
+ * declaration rather than against a hand-maintained local copy.
  */
-export interface FixtureServerContext {
-  readonly plugin: string;
-  listDocs(query: DocsQuery): DocList;
-  getDoc(id: string): Doc;
-  createDoc(actor: Actor, input: CreateDocRequest): Promise<Doc>;
-  updateDoc(actor: Actor, id: string, patch: UpdateDocRequest): Promise<Doc>;
-  broadcastInvalidate(keys: readonly (readonly QueryKeySegment[])[]): void;
-}
 
 const CreateNoteSchema = z.object({ title: z.string().min(1) });
 
@@ -44,7 +26,7 @@ function actorOf(header: string | undefined): Actor {
   return header?.trim().toLowerCase() === "agent" ? "agent" : "user";
 }
 
-export default function routes(context: FixtureServerContext): Hono {
+export default function routes(context: PluginServerContext): Hono {
   const app = new Hono();
 
   app.get("/notes", (c) => {

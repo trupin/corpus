@@ -1,15 +1,12 @@
 import {
   CreateDocRequestSchema,
   UpdateDocRequestSchema,
-  type Actor,
   type CreateDocRequest,
-  type Doc,
-  type DocList,
-  type DocsQuery,
   type QueryKey,
   type QueryKeySegment,
   type UpdateDocRequest,
 } from "@corpus/contract";
+import type { PluginServerContext } from "@corpus/contract/plugin";
 import type { z } from "zod";
 import {
   createDocument,
@@ -24,18 +21,23 @@ import { badRequest, toValidationIssues } from "../errors.js";
 import type { Logger } from "../logger.js";
 
 /**
- * What a plugin's server routes are handed (SPEC.md §10, PLUGINS-001): typed
- * document services and a namespaced broadcast — never the filesystem, never
- * the database, never git. Every write below funnels through the same pipeline
- * core routes use (`validate → write atomically → auto-commit → re-project →
- * broadcast`), so Architecture Decision 2 — the server is the sole writer —
- * holds for plugin routes by construction, not by review.
+ * The server's implementation of the plugin context (SPEC.md §10,
+ * PLUGINS-001): typed document services and a namespaced broadcast — never the
+ * filesystem, never the database, never git. Every write below funnels through
+ * the same pipeline core routes use (`validate → write atomically →
+ * auto-commit → re-project → broadcast`), so Architecture Decision 2 — the
+ * server is the sole writer — holds for plugin routes by construction, not by
+ * review.
  *
- * The surface is deliberately the smallest honest one for v1: list, read one,
- * create, update (the verb that reconciles anchors), and the invalidation
- * broadcast. A plugin needing move/archive/delete grows this file, not a
- * side channel.
+ * The **interface** is `@corpus/contract/plugin`'s `PluginServerContext`
+ * (CONTRACT-015): a plugin may import only `@corpus/kit` and `@corpus/contract`,
+ * so the type a plugin's `server/routes.ts` annotates its parameter with has to
+ * be reachable from there. It is re-exported below because this module is where
+ * the server's own code has always found it; `createPluginContext`'s annotated
+ * return type is what makes a drift between the two a compile error **here**,
+ * where the implementation lives.
  */
+export type { PluginServerContext } from "@corpus/contract/plugin";
 
 /**
  * First segment of every plugin invalidation key — the `x/<plugin>/…`
@@ -62,29 +64,6 @@ const CORE_KEY_ROOTS: ReadonlySet<string> = new Set([
   "locks",
   "health",
 ]);
-
-export interface PluginServerContext {
-  /** The plugin's directory name — its one identity, assigned, never declared. */
-  readonly plugin: string;
-  readonly logger: Logger;
-  readonly now: () => number;
-  /** The collection query behind every list — `GET /api/docs`'s engine. */
-  listDocs(query: DocsQuery): DocList;
-  /** One document, with body and resolved anchors — `GET /api/docs/{id}`'s shape. */
-  getDoc(id: string): Doc;
-  /** Creates through the core write path: git auto-commit, projection, broadcast. */
-  createDoc(actor: Actor, input: CreateDocRequest): Promise<Doc>;
-  /** Updates through the core write path — including §6 anchor reconciliation. */
-  updateDoc(actor: Actor, id: string, patch: UpdateDocRequest): Promise<Doc>;
-  /**
-   * Broadcasts `invalidate` over the core SSE stream. Each entry is the key's
-   * segments *after* the namespace: `[["notes"], ["notes", id]]` reaches the
-   * wire as `["x", "<plugin>", "notes"]` and `["x", "<plugin>", "notes", id]`
-   * — exactly what the kit's `pluginKey` builds, so plugin columns refetch
-   * with no extra machinery. A key naming a core root is rejected.
-   */
-  broadcastInvalidate(keys: readonly (readonly QueryKeySegment[])[]): void;
-}
 
 export interface PluginContextDeps {
   readonly plugin: string;

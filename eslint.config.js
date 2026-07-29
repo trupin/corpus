@@ -63,6 +63,12 @@ export default tseslint.config(
   // relative path that walks out of `plugins/`. `@corpus/contract/client` is
   // also off-limits: a plugin that constructs its own transport bypasses the
   // kit's cache and invalidation (see packages/kit/src/index.ts).
+  //
+  // Hence the asymmetry below: `@corpus/kit/**` is allowed wholesale, while
+  // the contract's subpaths are admitted one at a time — `@corpus/contract/plugin`
+  // (the types-only plugin surface, CONTRACT-015) and nothing else. A blanket
+  // `!@corpus/contract/**` would re-open the `/client` hole this rule exists
+  // to close; `scripts/eslint-boundaries.test.ts` proves both directions.
   {
     files: ["plugins/**/*.{ts,tsx}"],
     rules: {
@@ -77,6 +83,7 @@ export default tseslint.config(
                 "!@corpus/kit",
                 "!@corpus/kit/**",
                 "!@corpus/contract",
+                "!@corpus/contract/plugin",
               ],
               message:
                 "Plugins may import only @corpus/kit and @corpus/contract (SPEC.md §10 — the kit is the UI contract).",

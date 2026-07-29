@@ -69,6 +69,41 @@ describe("the kit-only rule for plugins/**", () => {
     );
     expect(messages).toEqual([]);
   }, 120_000);
+
+  it("admits @corpus/contract/plugin — the types-only plugin surface", async () => {
+    const messages = restrictedImportMessages(
+      await lintFile(
+        PLUGIN_PROBE,
+        'import type { PluginCommandSpec, PluginServerContext } from "@corpus/contract/plugin";\n' +
+          "export const probe = (context: PluginServerContext): string => context.plugin;\n" +
+          "export const spec = (value: PluginCommandSpec): string => value.name;\n",
+      ),
+    );
+    expect(messages).toEqual([]);
+  }, 120_000);
+
+  it("still rejects the CLI's registry internals by path", async () => {
+    const messages = restrictedImportMessages(
+      await lintFile(
+        PLUGIN_PROBE,
+        'import type { CommandSpec } from "../../apps/cli/src/registry/types.js";\n' +
+          "export const probe = (spec: CommandSpec): string => spec.name;\n",
+      ),
+    );
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages[0]).toContain("internals by path");
+  }, 120_000);
+
+  it("still rejects @corpus/contract/client — the transport a plugin may not build", async () => {
+    const messages = restrictedImportMessages(
+      await lintFile(
+        PLUGIN_PROBE,
+        'import { createCorpusClient } from "@corpus/contract/client";\nexport const probe = createCorpusClient;\n',
+      ),
+    );
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages[0]).toContain("@corpus/kit");
+  }, 120_000);
 });
 
 describe("the core→plugin ban for apps/** and packages/**", () => {

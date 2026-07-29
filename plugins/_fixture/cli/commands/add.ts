@@ -1,25 +1,20 @@
 import { ACTOR_HEADER } from "@corpus/contract";
+import type { PluginCommandContext, PluginCommandSpec } from "@corpus/contract/plugin";
 import { z } from "zod";
 
 /**
  * `corpus _fixture add <title>` — the fixture's one CLI verb (SPEC.md §10).
  *
  * Discovered by the CLI's registry scanner and wrapped into a `_fixture`
- * topic; the shape below is the same declarative `CommandSpec` core verbs use
- * (description, args, flags, ≥1 example, handler), typed *structurally*
- * because a plugin may import only `@corpus/kit` and `@corpus/contract` and
- * the CLI's spec types live in neither — the registry's own validation is
- * what enforces the shape at load. The handler is a thin HTTP client like
- * every other verb: one POST to the plugin's own server route, no filesystem,
- * no git.
+ * topic; the shape below is the same declarative command shape core verbs use
+ * (description, args, flags, ≥1 example, handler), typed from
+ * `@corpus/contract/plugin` (CONTRACT-015) — the types-only subpath a plugin
+ * is allowed to import, which `apps/cli`'s registry aliases so plugin verbs
+ * and core verbs are validated by one set of rules. `satisfies` is what makes
+ * a malformed spec a compile error here rather than a load-time warning that
+ * silently drops the verb. The handler is a thin HTTP client like every other
+ * verb: one POST to the plugin's own server route, no filesystem, no git.
  */
-
-interface FixtureCommandContext {
-  readonly args: { get(name: string): string };
-  readonly actor: string;
-  readonly workspace: { readonly baseUrl: string; readonly token: string };
-  readonly out: { emit(value: unknown): void; line(text: string): void };
-}
 
 const CreatedSchema = z.object({ id: z.string(), title: z.string() });
 
@@ -37,7 +32,7 @@ export default {
       description: "Create a fixture note titled “Try the fixture”.",
     },
   ],
-  handler: async (context: FixtureCommandContext): Promise<void> => {
+  handler: async (context: PluginCommandContext): Promise<void> => {
     const response = await fetch(`${context.workspace.baseUrl}/api/x/_fixture/notes`, {
       method: "POST",
       headers: {
@@ -55,4 +50,4 @@ export default {
     context.out.emit(created);
     context.out.line(`created fixture note ${created.id} — ${created.title}`);
   },
-};
+} satisfies PluginCommandSpec;
