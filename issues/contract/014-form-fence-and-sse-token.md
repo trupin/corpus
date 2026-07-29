@@ -39,6 +39,12 @@ fable — one grammar decision with cross-component blast radius, one security p
   that `FORM_FENCE_PATTERN` does not recognize — a docs/grammar divergence to settle with (9);
   and nothing validates a form's shape at post time (the comment skill is the v1 enforcement
   point) — decide whether post-time validation joins the settled grammar.
+- _(added 2026-07-29, UI-013 finding-12 residual)_ an answer turn on disk names an option but not
+  the form it answers, so after a reload the UI's form↔answer pairing falls back to an order rule
+  (multi-form threads can mis-attribute). Closing it fully needs a field on the answer turn
+  (`formTs` or equivalent) — a contract+server rider to decide alongside the grammar. Note:
+  SERVER-029 removed the SQL fence translation (projected `has_form` column reads the one TS
+  grammar), so a grammar change now costs only a projection rebuild.
 
 ## Acceptance Criteria
 

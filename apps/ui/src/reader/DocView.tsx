@@ -26,9 +26,19 @@ import type { ReaderDoc } from "./useReaderDoc";
  * The body branch is where UI-006 landed: a markdown-bodied document renders
  * through `DocEditor` — always, including when it is locked, which is the same
  * surface at `editable: false` rather than a second read-only renderer
- * (sprint-011 Adjudication 7). `MarkdownView` keeps the two bodies the editor
- * is not for: a thread's conversation is `TurnList`, and a `view` or a
- * plugin-typed document is prose the board does not own.
+ * (sprint-011 Adjudication 7).
+ *
+ * **Three outcomes, decided in this order** (UI-014):
+ *
+ * 1. a thread is its conversation (`ThreadCard`) — SPEC.md §6;
+ * 2. a plugin `View` registered for the document's type replaces the standard
+ *    document view wholesale — SPEC.md §10;
+ * 3. everything else is a markdown body, and a markdown body is editable —
+ *    SPEC.md §11. Core type or plugin type, known or unknown, plugin present
+ *    or long deleted.
+ *
+ * `MarkdownView` is left with exactly one document: a `view`, whose content is
+ * its stored query rather than its prose.
  */
 
 /**
@@ -172,9 +182,13 @@ export function DocView({
          * conversation (SPEC.md §6: "the conversation is the document"), which is
          * why a thread opened from a column reads as turns rather than as the
          * markdown file behind them. A plugin `View` replaces the standard
-         * document view wholesale for its registered type (SPEC.md §10); with
-         * no plugin, a non-core type falls through to plain markdown — which is
-         * exactly the deleted-plugin degradation §15 M6 checks.
+         * document view wholesale for its registered type (SPEC.md §10).
+         *
+         * With no plugin, a non-core type falls through to the **editor**, not
+         * to a static render (UI-014): §10's deleted-plugin degradation is the
+         * loss of the plugin's chrome, and §15 M6's "renders as plain markdown"
+         * is satisfied by the plain-markdown body the editor shows — which the
+         * user can still fix, as they can on every other document.
          */}
         {reader.isThread ? (
           <div className="doc-body thread-conversation">

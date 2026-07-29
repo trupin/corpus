@@ -180,12 +180,29 @@ describe("which documents get an editor", () => {
     expect(editorHandlesType("agent-def")).toBe(true);
   });
 
-  it("leaves a thread, a view and a plugin type alone", () => {
-    // A thread's body is its conversation; a view's content is its query; a
-    // plugin type gets the plugin's own `View` (SPEC.md §10).
+  it("leaves a thread and a view alone", () => {
+    // A thread's body is its conversation; a view's content is its query.
     expect(editorHandlesType("thread")).toBe(false);
     expect(editorHandlesType("view")).toBe(false);
-    expect(editorHandlesType("todo")).toBe(false);
+  });
+
+  /**
+   * UI-014. The gate used to be `CORE_DOC_TYPES`, so a plugin-typed document —
+   * and every document of a plugin that had since been deleted — rendered
+   * through the static `MarkdownView`. §11 has no read-only markdown body; §10's
+   * "renders as plain markdown" is about losing the plugin's chrome.
+   */
+  it("takes every other markdown body, core or not", () => {
+    expect(editorHandlesType("todo")).toBe(true);
+    expect(editorHandlesType("_fixture-note")).toBe(true);
+    expect(editorHandlesType("a-type-nothing-has-ever-heard-of")).toBe(true);
+  });
+
+  it("says nothing about plugin precedence, which the registry decides", () => {
+    // The answer is about the *type*, and does not change when a plugin claims
+    // it — `DocView` asks `resolveDocView` first, so there is one gate, not two.
+    // `DocView`'s own suite is where that precedence is pinned.
+    expect(editorHandlesType("fixture-note")).toBe(true);
   });
 });
 
@@ -644,6 +661,81 @@ describe("an external change while the user is typing", () => {
       await Promise.resolve();
     });
     expect(prose().querySelector("li")).toBe(before);
+  });
+
+  /**
+   * PR #10 finding 18. A save invalidates the document; the refetch returns the
+   * body the user just typed, so `savedBody` changes to text the editor is
+   * already showing. Replacing the document with an identical one costs the
+   * caret, the selection and every anchor decoration drawn on it — and used to
+   * be noticed and repaired downstream in `useAnchorLayer` rather than not
+   * happening.
+   */
+  describe("the echo of this document's own save", () => {
+    async function typeAndSave(transport: Wire): Promise<{
+      readonly view: ReturnType<typeof render>;
+      readonly editorOf: () => Editor | null;
+      readonly saved: string;
+    }> {
+      let editor: Editor | null = null;
+      const onEditor = (instance: Editor | null): void => {
+        editor = instance;
+      };
+      const view = render(
+        <Host transport={transport} body={"Original text.\n"} onEditor={onEditor} />,
+      );
+      await waitFor(() => {
+        expect(editor).not.toBeNull();
+      });
+      await act(async () => {
+        editor?.commands.insertContentAt(1, "Typed. ");
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+        await Promise.resolve();
+      });
+      await waitFor(() => {
+        expect(transport.of("PUT")).toHaveLength(1);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(EDIT_SETTLE_MS + 100);
+        await Promise.resolve();
+      });
+      return { view, editorOf: () => editor, saved: "Typed. Original text.\n" };
+    }
+
+    it("leaves the ProseMirror document untouched", async () => {
+      const transport = wire();
+      const { view, editorOf, saved } = await typeAndSave(transport);
+      const before = editorOf()?.state.doc;
+      expect(before).toBeDefined();
+
+      // The refetch the `PUT`'s invalidation triggered hands the body back.
+      view.rerender(<Host transport={transport} body={saved} onEditor={() => undefined} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // Identity, not equality: `setContent` always builds a new document, so a
+      // matching object is the only proof that no replacement happened.
+      expect(editorOf()?.state.doc).toBe(before);
+      expect(prose().textContent).toContain("Typed. Original text.");
+    });
+
+    it("still adopts a body that really did change underneath it", async () => {
+      const transport = wire();
+      const { view, editorOf } = await typeAndSave(transport);
+      const before = editorOf()?.state.doc;
+
+      view.rerender(
+        <Host transport={transport} body={"Agent rewrote this.\n"} onEditor={() => undefined} />,
+      );
+      await waitFor(() => {
+        expect(prose().textContent).toContain("Agent rewrote this.");
+      });
+      expect(editorOf()?.state.doc).not.toBe(before);
+    });
   });
 });
 
