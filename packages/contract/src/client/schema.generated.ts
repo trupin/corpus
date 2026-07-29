@@ -2871,7 +2871,7 @@ export interface paths {
          *
          *     **The body is optional in full.** A bare `POST` restores the last-known-good version — the newest committed revision of the file that validates. `to` overrides that with any revision git resolves, for stepping further back.
          *
-         *     **The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway and the rejection comes back in `warnings` (§14).
+         *     **The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway, `commit` is `null` and the rejection comes back in `warnings` (§14).
          *
          *     `404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.
          */
@@ -2895,7 +2895,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description The skill is restored; `commit` is the auto-commit that restored it. */
+                /** @description The skill is restored; `commit` is the auto-commit that restored it, or `null` when that commit failed or was skipped and the restoration stands uncommitted. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -4036,8 +4036,8 @@ export interface components {
              * @example doc_a1b2c3
              */
             docId: string;
-            /** @description Sha of the commit the server made to restore the file — the new HEAD, not the ref the content came from. `git show <commit>` is the audit trail entry for this rollback. */
-            commit: string;
+            /** @description Sha of the commit the server made to restore the file — the new HEAD, not the ref the content came from. `git show <commit>` is the audit trail entry for this rollback. `null` means the file was restored but not committed: the auto-commit failed or was skipped, the file write stands regardless (SPEC.md §14), and the reason — the workspace's own hook output for `commit_failed`, or `commit_skipped` for a workspace with no git — is in `warnings`. A rollback that reports `null` has still changed the file on disk. */
+            commit: string | null;
             /** @description Workspace-relative path of the restored file, e.g. `.claude/skills/orchestrate/SKILL.md`. */
             path: string;
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */

@@ -62,12 +62,27 @@ export const SkillRollbackResultSchema = z
         "this is the id the board, the projection and every thread anchored to the skill already " +
         "use.",
     ),
+    // Nullable because §14 forbids the only alternative outcomes. When the
+    // workspace's git hooks reject the auto-commit — or the workspace has no git
+    // at all — the server neither rolls the restoration back nor fails the
+    // request: the write stands and the reason becomes a warning. There is then
+    // no sha for this rollback. Reporting the pre-existing HEAD instead would
+    // satisfy the regex by putting a commit that is not this restoration into a
+    // field whose whole purpose is the audit trail, so `null` is the only honest
+    // value. Inline (never a registered component), so `.nullable()` cannot
+    // rewrite a shared schema.
     commit: z
       .string()
       .regex(/^[0-9a-f]{7,64}$/)
+      .nullable()
       .describe(
         "Sha of the commit the server made to restore the file — the new HEAD, not the ref the " +
-          "content came from. `git show <commit>` is the audit trail entry for this rollback.",
+          "content came from. `git show <commit>` is the audit trail entry for this rollback. " +
+          "`null` means the file was restored but not committed: the auto-commit failed or was " +
+          "skipped, the file write stands regardless (SPEC.md §14), and the reason — the " +
+          "workspace's own hook output for `commit_failed`, or `commit_skipped` for a workspace " +
+          "with no git — is in `warnings`. A rollback that reports `null` has still changed the " +
+          "file on disk.",
       ),
     path: z
       .string()

@@ -951,6 +951,34 @@ describe("the validation and skill-rollback surface", () => {
       }
     });
 
+    /**
+     * CONTRACT-016. §14 keeps the file write when the auto-commit is rejected,
+     * so the response has to be able to say "restored, uncommitted". A
+     * non-nullable `commit` made that outcome undescribable on the wire, and the
+     * available shortcut — echoing the pre-existing HEAD — would have written a
+     * commit that is not this restoration into the field the audit trail reads.
+     */
+    it("lets `commit` be null, since §14 keeps the write when the commit fails", () => {
+      const commit = componentSchemas?.["SkillRollbackResult"]?.properties?.["commit"];
+      expect(commit).toMatchObject({ type: ["string", "null"], pattern: "^[0-9a-f]{7,64}$" });
+      expect(commit?.description).toContain("`null` means the file was restored but not committed");
+      expect(commit?.description).toContain("the file write stands regardless (SPEC.md §14)");
+      expect(commit?.description).toContain("is in `warnings`");
+    });
+
+    it("keeps `commit` required — nullable is not optional", () => {
+      expect(componentSchemas?.["SkillRollbackResult"]?.required).toContain("commit");
+    });
+
+    it("states the null outcome in the route's own prose, not only in the schema", () => {
+      expect(operation(ROLLBACK_PATH, "post").description).toContain(
+        "the file is restored anyway, `commit` is `null`",
+      );
+      expect(
+        JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["200"]?.description),
+      ).toContain("or `null` when that commit failed or was skipped");
+    });
+
     it("uses the shipped 404 envelope and states the condition", () => {
       expect(JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["404"])).toContain(
         "NotFoundError",

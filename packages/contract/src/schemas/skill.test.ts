@@ -78,6 +78,32 @@ describe("SkillRollbackResult round-trips", () => {
     expect(SkillRollbackResultSchema.parse(JSON.parse(JSON.stringify(warned)))).toEqual(warned);
   });
 
+  /**
+   * CONTRACT-016. §14's "the file write stands, the commit failure is a warning"
+   * outcome has no sha to report, and reporting the pre-existing HEAD would put
+   * a foreign commit in an audit field.
+   */
+  it("accepts a null commit, meaning the restoration is uncommitted", () => {
+    const uncommitted = {
+      ...result,
+      commit: null,
+      warnings: [{ code: "commit_failed" as const, detail: "pre-commit hook exited 1" }],
+    };
+    expect(SkillRollbackResultSchema.parse(JSON.parse(JSON.stringify(uncommitted)))).toEqual(
+      uncommitted,
+    );
+  });
+
+  it("accepts a null commit for the git-less workspace too", () => {
+    const skipped = {
+      ...result,
+      commit: null,
+      warnings: [{ code: "commit_skipped" as const, detail: "not a git repository" }],
+    };
+    expect(SkillRollbackResultSchema.parse(skipped).commit).toBeNull();
+  });
+
+  /** Nullable, not optional: the field is still always on the wire. */
   it.each(["name", "docId", "commit", "path", "warnings"] as const)("demands %s", (field) => {
     const { [field]: _omitted, ...rest } = result;
     expect(SkillRollbackResultSchema.safeParse(rest).success).toBe(false);

@@ -49,8 +49,8 @@ export const rollbackSkill = createRoute({
     "SSE stream follow as they do for any write. `commit` in the response is that new commit, not " +
     "the revision the content came from; `path` is the file it rewrote; `docId` is the skill " +
     "document's id, which a rollback never changes (ids are immutable, §5). If the workspace's " +
-    "git hooks reject the commit, the file is restored anyway and the rejection comes back in " +
-    "`warnings` (§14).\n\n" +
+    "git hooks reject the commit, the file is restored anyway, `commit` is `null` and the " +
+    "rejection comes back in `warnings` (§14).\n\n" +
     "`404` means no skill of that name is installed — there is no `.claude/skills/{name}/` " +
     "directory. A skill that was archived (`corpus doc archive` moves it to " +
     "`.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: " +
@@ -68,7 +68,8 @@ export const rollbackSkill = createRoute({
   responses: {
     200: jsonContent(
       SkillRollbackResultSchema,
-      "The skill is restored; `commit` is the auto-commit that restored it.",
+      "The skill is restored; `commit` is the auto-commit that restored it, or `null` when that " +
+        "commit failed or was skipped and the restoration stands uncommitted.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
