@@ -101,7 +101,7 @@ function commandProblems(command: CommandSpec, label: string): readonly string[]
 
   let optionalSeen = false;
   const argNames = new Set<string>();
-  for (const arg of command.args) {
+  command.args.forEach((arg, index) => {
     if (argNames.has(arg.name)) problems.push(`${label} declares argument "${arg.name}" twice`);
     argNames.add(arg.name);
     if (!NAME_PATTERN.test(arg.name)) {
@@ -112,8 +112,13 @@ function commandProblems(command: CommandSpec, label: string): readonly string[]
     if (arg.required && optionalSeen) {
       problems.push(`${label} declares required argument "${arg.name}" after an optional one`);
     }
+    // A variadic argument absorbs every remaining token, so anything declared
+    // after it could never be bound — a spec the parser cannot honour.
+    if (arg.variadic === true && index !== command.args.length - 1) {
+      problems.push(`${label} declares variadic argument "${arg.name}" before another argument`);
+    }
     if (!arg.required) optionalSeen = true;
-  }
+  });
 
   const flagNames = new Set<string>();
   const flagAliases = new Set<string>();

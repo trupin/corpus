@@ -40,24 +40,39 @@ export class ParsedFlags {
   }
 }
 
-export class ParsedArgs {
-  readonly #values: ReadonlyMap<string, string>;
+/** A positional's bound value: one token, or every token a variadic argument absorbed. */
+export type ArgValue = string | readonly string[];
 
-  constructor(values: ReadonlyMap<string, string>) {
+export class ParsedArgs {
+  readonly #values: ReadonlyMap<string, ArgValue>;
+
+  constructor(values: ReadonlyMap<string, ArgValue>) {
     this.#values = values;
   }
 
   /** A required positional; absence is a registry bug, not user input. */
   get(name: string): string {
     const value = this.#values.get(name);
-    if (value === undefined) {
+    if (typeof value !== "string") {
       throw new Error(`No positional argument named "${name}" was parsed for this command.`);
     }
     return value;
   }
 
   optional(name: string): string | undefined {
-    return this.#values.get(name);
+    const value = this.#values.get(name);
+    return typeof value === "string" ? value : undefined;
+  }
+
+  /**
+   * Every token bound to an argument, in order. A scalar reads as a one-element
+   * list and an absent argument as an empty one, so a handler never has to know
+   * which of the two shapes its registry entry declared.
+   */
+  list(name: string): readonly string[] {
+    const value = this.#values.get(name);
+    if (value === undefined) return [];
+    return typeof value === "string" ? [value] : value;
   }
 }
 
@@ -215,22 +230,28 @@ function applyDefaults(values: Map<string, FlagValue>, specs: readonly FlagSpec[
 }
 
 export function bindPositionals(target: ParseTarget, positionals: readonly string[]): ParsedArgs {
-  const values = new Map<string, string>();
-  target.args.forEach((spec, index) => {
+  const values = new Map<string, ArgValue>();
+
+  for (const [index, spec] of target.args.entries()) {
+    // A variadic argument is the last one (registry validation enforces it) and
+    // absorbs everything from its own position onward, so the "unexpected
+    // argument" check below is unreachable once one is declared.
+    if (spec.variadic === true) {
+      const rest = positionals.slice(index);
+      if (rest.length === 0 && spec.required) throw missingArgument(target, spec);
+      values.set(spec.name, rest);
+      return new ParsedArgs(values);
+    }
+
     const value = positionals[index];
     if (value === undefined) {
-      if (spec.required) {
-        throw new UsageError(`missing required argument <${spec.name}> for "${target.name}".`, {
-          hint: `Usage: ${synopsis(target)}`,
-        });
-      }
-      return;
+      if (spec.required) throw missingArgument(target, spec);
+      continue;
     }
     values.set(spec.name, value);
-  });
+  }
 
-  const extra = positionals.slice(target.args.length);
-  const unexpected = extra[0];
+  const unexpected = positionals[target.args.length];
   if (unexpected !== undefined) {
     throw new UsageError(`unexpected argument "${unexpected}" for "${target.name}".`, {
       hint: `Usage: ${synopsis(target)}`,
@@ -239,7 +260,22 @@ export function bindPositionals(target: ParseTarget, positionals: readonly strin
   return new ParsedArgs(values);
 }
 
+function missingArgument(target: ParseTarget, spec: ArgSpec): UsageError {
+  return new UsageError(`missing required argument ${argUsage(spec)} for "${target.name}".`, {
+    hint: `Usage: ${synopsis(target)}`,
+  });
+}
+
+/**
+ * How one positional is written in help, in the synopsis and in `docs/cli.md` —
+ * `<id>` required, `[id]` optional, `<id>…` when it absorbs the rest. One
+ * function so the three renderings cannot disagree about a command's shape.
+ */
+export function argUsage(arg: ArgSpec): string {
+  const name = arg.variadic === true ? `${arg.name}…` : arg.name;
+  return arg.required ? `<${name}>` : `[${name}]`;
+}
+
 function synopsis(target: ParseTarget): string {
-  const args = target.args.map((arg) => (arg.required ? `<${arg.name}>` : `[${arg.name}]`));
-  return [target.name, ...args, "[flags]"].join(" ");
+  return [target.name, ...target.args.map(argUsage), "[flags]"].join(" ");
 }

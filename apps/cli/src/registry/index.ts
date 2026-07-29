@@ -6,7 +6,9 @@ import { jobTopic } from "../commands/job/index.js";
 import { lockTopic } from "../commands/lock/index.js";
 import { queueTopic } from "../commands/queue/index.js";
 import { serverTopic } from "../commands/server/index.js";
+import { skillTopic } from "../commands/skill/index.js";
 import { threadTopic } from "../commands/thread/index.js";
+import { workspaceTopic } from "../commands/workspace/index.js";
 import { discoverPluginTopics } from "./plugins.js";
 import type { Registry } from "./types.js";
 import { validateRegistry } from "./validate.js";
@@ -38,9 +40,11 @@ export const registry: Registry = validateRegistry({
   summary: "conversations around documents, driven by an agent.",
   commands: [healthCommand, initCommand],
   topics: [
+    workspaceTopic,
     serverTopic,
     docTopic,
     threadTopic,
+    skillTopic,
     queueTopic,
     lockTopic,
     jobTopic,

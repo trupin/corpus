@@ -222,17 +222,21 @@ export const CLI_DOC_PATH = path.join(REPO_ROOT, "docs", "cli.md");
 /**
  * Commands the template may name that `docs/cli.md` does not document **yet**.
  *
- * Sprint-012 Adjudication 5 (Open Conflict 1): `corpus doc check` and
- * `corpus skill rollback` land with CLI-006 later in Phase 4, but the template
- * must name them today — the workspace README and the orchestrate skill's
- * loop-safety section are the operator's documentation of the recovery path,
- * and leaving that section vague until the verb ships would leave an operator
- * with a broken loop and no instructions. This allowlist is
- * **self-invalidating**: a companion test asserts every entry is still absent
- * from `docs/cli.md`, so the moment CLI-006 lands the suite fails and this
- * list must be emptied. Add nothing else here.
+ * **Empty, as designed.** Sprint-012 Adjudication 5 (Open Conflict 1) opened
+ * this hole for exactly two verbs — `corpus doc check` and
+ * `corpus skill rollback` — because the workspace README and the orchestrate
+ * skill's loop-safety section had to document the recovery path before CLI-006
+ * shipped it. The allowlist was **self-invalidating**: a companion test asserted
+ * every entry was still absent from `docs/cli.md`, so the moment the verbs
+ * landed the suite went red and the list had to be emptied. CLI-006 landed and
+ * it was (sprint-013 Adjudication 17); the template's invocations now resolve
+ * against the generated reference with no exemption at all.
+ *
+ * It stays here, empty, as the mechanism rather than as a leftover: a future
+ * skill that has to name a verb before it exists gets one entry and the same
+ * self-expiring test. Add nothing that is not in that position.
  */
-export const CLI_COMMANDS_PENDING_CLI_006: readonly string[] = ["doc check", "skill rollback"];
+export const CLI_COMMANDS_PENDING_CLI_006: readonly string[] = [];
 
 export interface CliDocSurface {
   /** Invocable commands: bare (`init`) or `topic verb` (`queue idle`). */

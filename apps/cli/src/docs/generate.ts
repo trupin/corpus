@@ -133,7 +133,13 @@ function commandSection(command: CommandSpec, topic: string | undefined): readon
 function argTable(args: readonly ArgSpec[]): readonly string[] {
   return table(
     ["Argument", "Required", "Description"],
-    args.map((arg) => [`\`${arg.name}\``, arg.required ? "yes" : "no", arg.description]),
+    args.map((arg) => [
+      // The trailing ellipsis is the synopsis's, so a reader who skips the fence
+      // still sees that the argument repeats.
+      `\`${arg.name}${arg.variadic === true ? "…" : ""}\``,
+      arg.required ? "yes" : "no",
+      arg.description,
+    ]),
   );
 }
 

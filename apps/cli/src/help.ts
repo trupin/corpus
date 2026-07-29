@@ -1,3 +1,4 @@
+import { argUsage } from "./parse-args.js";
 import { GLOBAL_FLAGS } from "./registry/globals.js";
 import type { CommandSpec, FlagSpec, Registry, TopicSpec } from "./registry/types.js";
 
@@ -32,8 +33,7 @@ export function flagDescription(flag: FlagSpec): string {
 
 export function commandSynopsis(command: CommandSpec, topic?: string): string {
   const path = topic === undefined ? command.name : `${topic} ${command.name}`;
-  const args = command.args.map((arg) => (arg.required ? `<${arg.name}>` : `[${arg.name}]`));
-  return ["corpus", path, ...args, "[flags]"].join(" ");
+  return ["corpus", path, ...command.args.map(argUsage), "[flags]"].join(" ");
 }
 
 export function renderRootHelp(registry: Registry, options: HelpOptions): string {
@@ -88,13 +88,7 @@ export function renderCommandHelp(
 
   if (command.args.length > 0) {
     sections.push("", bold("Arguments:"));
-    sections.push(
-      ...list(
-        command.args.map(
-          (arg) => [arg.required ? `<${arg.name}>` : `[${arg.name}]`, arg.description] as const,
-        ),
-      ),
-    );
+    sections.push(...list(command.args.map((arg) => [argUsage(arg), arg.description] as const)));
   }
   if (command.flags.length > 0) {
     sections.push("", bold("Flags:"));

@@ -30,8 +30,21 @@ import type { Workspace } from "../workspace.js";
 
 export type FlagType = PluginFlagType;
 export type FlagSpec = PluginFlagSpec;
-export type ArgSpec = PluginArgSpec;
 export type Example = PluginExample;
+
+/**
+ * The published positional shape plus one core-only refinement: the **last**
+ * argument may be variadic and absorb every remaining token, which is what
+ * `corpus doc check <id>…` needs (SPEC.md §14). It is deliberately not in
+ * `@corpus/contract/plugin`: a plugin declares fixed positionals, and widening
+ * the published shape for one core verb would put a field on the plugin surface
+ * that nothing there uses. The widening is safe in the direction that matters —
+ * a `PluginArgSpec` already satisfies this interface, so a plugin's spec still
+ * enters the registry unchanged.
+ */
+export interface ArgSpec extends PluginArgSpec {
+  readonly variadic?: true;
+}
 
 /**
  * Everything a handler is allowed to know about the process it runs in. Ambient
@@ -65,7 +78,9 @@ export interface WorkspaceCommandContext extends CommandContext {
  * Everything a command declares about itself, handler aside — the published
  * plugin shape minus the one member whose context differs per command kind.
  */
-type CommandSpecBase = Omit<PluginCommandSpec, "handler">;
+interface CommandSpecBase extends Omit<PluginCommandSpec, "handler" | "args"> {
+  readonly args: readonly ArgSpec[];
+}
 
 /** The normal case: the dispatcher resolves the workspace and builds the client first. */
 export interface WorkspaceCommandSpec extends CommandSpecBase {

@@ -1,5 +1,5 @@
 import { createOutput } from "../output.js";
-import { ParsedArgs, ParsedFlags, type FlagValue } from "../parse-args.js";
+import { ParsedArgs, ParsedFlags, type ArgValue, type FlagValue } from "../parse-args.js";
 import type {
   CommandContext,
   CommandSpec,
@@ -78,7 +78,7 @@ export const fixtureRegistry: Registry = {
 };
 
 export interface TestContextOptions {
-  readonly args?: Readonly<Record<string, string>>;
+  readonly args?: Readonly<Record<string, ArgValue>>;
   readonly flags?: Readonly<Record<string, FlagValue>>;
   readonly json?: boolean;
   readonly cwd?: string;

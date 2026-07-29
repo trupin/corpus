@@ -742,8 +742,17 @@ describe("cli command references", () => {
     ]);
   });
 
-  it("allowlists exactly Adjudication 5's two CLI-006 verbs", () => {
-    expect([...CLI_COMMANDS_PENDING_CLI_006]).toEqual(["doc check", "skill rollback"]);
+  it("allowlists nothing, now that CLI-006 has landed", () => {
+    // Adjudication 5's hole closed itself: the test below went red when
+    // `docs/cli.md` gained the two verbs, and sprint-013 Adjudication 17 emptied
+    // both the array and this assertion in the same change.
+    expect([...CLI_COMMANDS_PENDING_CLI_006]).toEqual([]);
+  });
+
+  it("resolves the two formerly-allowlisted verbs against docs/cli.md itself", () => {
+    for (const command of ["doc check", "skill rollback"]) {
+      expect(surface.commands.has(command), `\`corpus ${command}\` is documented`).toBe(true);
+    }
   });
 
   it("expires the allowlist the moment CLI-006 lands in docs/cli.md", () => {
