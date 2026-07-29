@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
@@ -13,8 +13,20 @@ import {
 } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { templateManifestPath } from "../../paths.js";
+import {
+  planPluginSkillInstall,
+  planTemplateInstall,
+  templateSkillNames,
+  type PlannedTemplateFile,
+} from "../../template/install.js";
+import {
+  pluginSourceMarker,
+  serializeManifest,
+  sha256,
+  type ManifestEntry,
+  type TemplateManifest,
+} from "../../template/manifest.js";
 import { CONFIG_DIR, CONFIG_FILE, DEFAULT_DATA_DIR } from "../../workspace.js";
-import { planTemplateInstall, type PlannedTemplateFile } from "./template.js";
 
 /**
  * Materializing a workspace on disk (SPEC.md §4). Everything here is synchronous
@@ -159,37 +171,6 @@ export function buildConfig(port: number, token: string): WorkspaceConfigFile {
   return { version: 1, port, token, dataDir: DEFAULT_DATA_DIR };
 }
 
-export interface ManifestEntry {
-  /** Workspace-relative, POSIX-separated, post-rename. */
-  readonly path: string;
-  readonly sha256: string;
-  /**
-   * Where the file came from when not the workspace template:
-   * `"plugin:<dir>"` for a plugin-installed skill (sprint-012 Adjudication
-   * 11), so `corpus workspace upgrade` (CLI-005) can refresh it from the
-   * plugin rather than the template. Absent ⇒ template — the original entry
-   * shape is unchanged.
-   */
-  readonly source?: string;
-}
-
-/**
- * What `corpus init` installed, so `corpus workspace upgrade` (CLI-005) can
- * three-way compare against the *original* bytes later. It is worthless if
- * written later — nothing can retroactively learn what the first install
- * contained (SPEC.md §2.1, sprint-003 Open Conflict 10).
- */
-export interface TemplateManifest {
-  readonly version: 1;
-  readonly tool: string;
-  readonly installedAt: string;
-  readonly files: readonly ManifestEntry[];
-}
-
-export function sha256(contents: Buffer): string {
-  return createHash("sha256").update(contents).digest("hex");
-}
-
 export interface ScaffoldOptions {
   readonly root: string;
   readonly templateRoot: string;
@@ -215,105 +196,6 @@ export interface ScaffoldResult {
   readonly pluginWarnings: readonly string[];
   readonly manifest: TemplateManifest;
   readonly configPath: string;
-}
-
-/** One plugin skill file to install, both paths `/`-separated. */
-export interface PlannedPluginSkillFile {
-  /** The contributing plugin's directory name. */
-  readonly plugin: string;
-  /** Relative to the plugins root. */
-  readonly from: string;
-  /** Workspace-relative destination under `.claude/skills/`. */
-  readonly to: string;
-}
-
-export interface PluginSkillPlan {
-  readonly files: readonly PlannedPluginSkillFile[];
-  readonly warnings: readonly string[];
-}
-
-function walkFiles(dir: string, prefix: string): string[] {
-  return readdirSync(dir, { withFileTypes: true })
-    .flatMap((entry) => {
-      const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-      return entry.isDirectory() ? walkFiles(join(dir, entry.name), rel) : [rel];
-    })
-    .sort();
-}
-
-/**
- * The plugin-skills copy step, as data (SPEC.md §10: plugin skills are
- * "installed into the workspace's `.claude/skills/`"). Rules, in order:
- *
- * - A skill whose directory name collides with a **template** skill
- *   (`orchestrate`, `comment`, …) is skipped with a warning naming the
- *   collision — core wins, always: a plugin can never replace the loop
- *   (sprint-012 Adjudication 11).
- * - Two plugins shipping the same skill name: the first in directory order
- *   wins; the loser is a warning, never a silent overwrite.
- * - Underscore-prefixed plugins install like any other: `corpus init` from a
- *   dev checkout is the dev flow, and the packaged tool ships no fixtures.
- */
-export function planPluginSkillInstall(
-  pluginsRoot: string | undefined,
-  reservedSkills: ReadonlySet<string>,
-): PluginSkillPlan {
-  if (pluginsRoot === undefined || !existsSync(pluginsRoot)) return { files: [], warnings: [] };
-
-  const files: PlannedPluginSkillFile[] = [];
-  const warnings: string[] = [];
-  const claimed = new Map<string, string>();
-
-  const dirs = readdirSync(pluginsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-    .map((entry) => entry.name)
-    .sort();
-
-  for (const dir of dirs) {
-    const skillsRoot = join(pluginsRoot, dir, "skills");
-    if (!existsSync(skillsRoot)) continue;
-    const skillNames = readdirSync(skillsRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-    for (const skill of skillNames) {
-      if (reservedSkills.has(skill)) {
-        warnings.push(
-          `plugin ${dir} ships a skill named "${skill}", which collides with a workspace ` +
-            `template skill — skipped; a plugin can never replace a core skill`,
-        );
-        continue;
-      }
-      const holder = claimed.get(skill);
-      if (holder !== undefined) {
-        warnings.push(
-          `plugin ${dir} ships a skill named "${skill}", already installed by plugin ` +
-            `${holder} — skipped`,
-        );
-        continue;
-      }
-      claimed.set(skill, dir);
-      for (const rel of walkFiles(join(skillsRoot, skill), "")) {
-        files.push({
-          plugin: dir,
-          from: `${dir}/skills/${skill}/${rel}`,
-          to: `.claude/skills/${skill}/${rel}`,
-        });
-      }
-    }
-  }
-
-  return { files, warnings };
-}
-
-/** The skill directory names the template itself installs — the reserved set. */
-export function templateSkillNames(installed: readonly PlannedTemplateFile[]): ReadonlySet<string> {
-  const names = new Set<string>();
-  for (const file of installed) {
-    const match = /^\.claude\/skills\/([^/]+)\//.exec(file.to);
-    if (match?.[1] !== undefined) names.add(match[1]);
-  }
-  return names;
 }
 
 /**
@@ -349,7 +231,7 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
     files.push({
       path: file.to,
       sha256: sha256(readFileSync(source)),
-      source: `plugin:${file.plugin}`,
+      source: pluginSourceMarker(file.plugin),
     });
   }
 
@@ -374,7 +256,7 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
     installedAt: (options.now ?? new Date()).toISOString(),
     files,
   };
-  created.writeFile(templateManifestPath(root), `${JSON.stringify(manifest, null, 2)}\n`);
+  created.writeFile(templateManifestPath(root), serializeManifest(manifest));
 
   return {
     created,

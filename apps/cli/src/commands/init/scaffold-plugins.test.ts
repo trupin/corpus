@@ -3,13 +3,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { resolvePluginsRoot, resolveTemplateRoot } from "../../paths.js";
-import { planTemplateInstall } from "./template.js";
 import {
-  generateToken,
   planPluginSkillInstall,
-  scaffoldWorkspace,
+  planTemplateInstall,
   templateSkillNames,
-} from "./scaffold.js";
+} from "../../template/install.js";
+import { generateToken, scaffoldWorkspace } from "./scaffold.js";
 
 /**
  * The plugin-skills half of `corpus init` (SPEC.md §10, sprint-012

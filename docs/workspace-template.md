@@ -171,6 +171,50 @@ plugin files, and a tool with no plugins installs exactly the template.
 Steps 1–3 are exactly what `installedPath()` in `scripts/workspace-template.ts` computes for
 a single path — `null` means the file is dropped.
 
+## Upgrading an installed workspace
+
+`corpus workspace upgrade` carries a newer tool's copy of these files into a workspace that
+already has them. It is the other half of the install contract, and it exists because the
+installed files stop being the tool's the moment they land: the skills are the agent's
+memory and it evolves them (SPEC.md §2.1).
+
+For every path known to the manifest **or** to the tool's current sources, three hashes are
+compared — the **baseline** the manifest recorded, the **workspace** copy now, and the
+**incoming** copy the installed tool carries:
+
+| baseline vs. workspace  | baseline vs. incoming | verdict                                                            |
+| ----------------------- | --------------------- | ------------------------------------------------------------------ |
+| same (never touched)    | changed               | **update** — overwritten. The only writing cell.                   |
+| same                    | same                  | current — nothing to do, nothing said.                             |
+| differs (modified here) | changed               | **keep** — left alone, reported with a line-count summary.         |
+| differs                 | same                  | keep — silently: there is nothing to upgrade.                      |
+| file deleted here       | any                   | **restore candidate** — reported; reinstalled only `--restore`.    |
+| not in the manifest     | present upstream      | **install** when absent here; **keep** when present and different. |
+| in the manifest         | gone upstream         | **retired** — reported, copy left in place, entry dropped.         |
+
+Pairing happens **after** the rename table, so `claude/skills/comment/SKILL.md` compares
+against `.claude/skills/comment/SKILL.md`; filtered names (`.gitkeep`) are never installed
+and never compared. A `source: "plugin:<dir>"` entry is refreshed from **that plugin's**
+`skills/` directory, a template entry from `assets/workspace/`.
+
+Flags: `--dry-run` prints the plan and writes nothing at all; `--restore` also reinstalls
+deleted files; `--adopt` is for a workspace older than the manifest — without a baseline an
+untouched copy cannot be told from an edited one, so such a run overwrites **nothing** and
+`--adopt` records a baseline from the files that already match the tool's copies (files that
+differ stay untracked and keep being reported).
+
+Everything the run writes lands in **one** commit attributed to `--from`, with a subject
+naming the old and new tool versions. The manifest itself is rewritten every time; it joins
+that commit only if the workspace's own `.gitignore` tracks it, which the shipped template's
+does not (`.corpus/*`) — the same state `corpus init` leaves it in. A run with nothing to do
+prints `already up to date.` and makes no commit. Writes happen before the commit on
+purpose: if the commit fails, correct files stand on disk and in `git status`, which is
+recoverable.
+
+Like `corpus init`, upgrade is bootstrap-class (SPEC.md §2.2 rule 4): it writes files
+directly and must work with the server stopped. With the server running its writes are
+ordinary out-of-band edits, and the watcher re-projects them.
+
 ## Changing the template
 
 The seed views, the note template, and the README are **ordinary documents** in the
@@ -192,9 +236,10 @@ a removed command) therefore **breaks the AGENT skills' test suite**, on purpose
 the reference with `npm run docs:cli -w apps/cli`, then fix the skill text to match the CLI
 — never the reference to match the skill.
 
-Two commands are temporarily allowlisted in `scripts/workspace-template.ts`
-(`CLI_COMMANDS_PENDING_CLI_006`: `corpus doc check` and `corpus skill rollback`) because the
-README's and the orchestrate skill's recovery documentation must name them before CLI-006
-ships them. The allowlist is self-invalidating: a companion test asserts each entry is still
-absent from `docs/cli.md`, so the suite fails the moment CLI-006 lands and the list must be
-emptied.
+`CLI_COMMANDS_PENDING_CLI_006` in `scripts/workspace-template.ts` is the escape hatch for a
+skill that must name a verb before it ships. It is **empty**: it once held
+`corpus doc check` and `corpus skill rollback`, because the README's and the orchestrate
+skill's recovery documentation had to name them before CLI-006 shipped them, and it was
+self-invalidating — a companion test asserted each entry was still absent from
+`docs/cli.md`, so the suite went red the moment those verbs landed. It stays as the
+mechanism, not as a leftover.

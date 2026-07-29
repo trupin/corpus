@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resolveTemplateRoot } from "../../paths.js";
 import { makeTempDir, removeTempDirs } from "../../testing/temp.js";
 import { WorkspaceConfigSchema } from "../../workspace.js";
-import { listTemplateFiles, planTemplateInstall } from "./template.js";
+import { listTemplateFiles, planTemplateInstall } from "../../template/install.js";
+import { sha256 } from "../../template/manifest.js";
 import {
   CONFIG_MODE,
   CreatedPaths,
@@ -15,7 +16,6 @@ import {
   existingWorkspaceReason,
   generateToken,
   scaffoldWorkspace,
-  sha256,
 } from "./scaffold.js";
 
 afterEach(removeTempDirs);

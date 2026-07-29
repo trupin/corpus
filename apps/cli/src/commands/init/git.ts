@@ -2,14 +2,18 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import type { Actor } from "@corpus/contract";
 import { InternalError, UsageError } from "../../errors.js";
 import { sanitizeGitEnv } from "../../git-env.js";
 
 /**
- * The workspace's own git repository (SPEC.md §4). `corpus init` is one of the
- * two bootstrap-class operations allowed to write files directly (§2.2 rule 4),
- * and creating the repository is part of that — every later mutation commits on
- * top of the commit made here.
+ * The workspace's own git repository (SPEC.md §4), and the CLI's **only**
+ * write-side git. Both bootstrap-class operations use it — `corpus init` creates
+ * the repository and makes the first commit, `corpus workspace upgrade` commits
+ * the files it refreshed (§2.2 rule 4) — and neither has its own copy: two
+ * implementations of "commit as the acting party" is two ways for the audit
+ * trail to be wrong. (Read-only plumbing is the other module, `src/staged.ts`,
+ * which may not commit at all.)
  *
  * Git is driven through `execFile`, never a shell: workspace paths come from the
  * operator and a shell would make them injectable.
@@ -22,6 +26,15 @@ import { sanitizeGitEnv } from "../../git-env.js";
  * this machine — a workspace cloned to a second machine must read the same.
  */
 export const USER_IDENTITY = { name: "user", email: "user@corpus.local" } as const;
+
+/**
+ * The acting party as a git identity, matching what the server writes for the
+ * same actor — a workspace's history must not tell `user` apart from `user`
+ * depending on which process happened to commit.
+ */
+export function identityFor(actor: Actor): GitIdentity {
+  return { name: actor, email: `${actor}@corpus.local` };
+}
 
 export const DEFAULT_BRANCH = "main";
 
@@ -106,22 +119,91 @@ export interface CommitOptions {
  */
 export async function commitAll(options: CommitOptions): Promise<void> {
   const git = options.git ?? runGit;
-  const identity = options.identity ?? USER_IDENTITY;
-  const asIdentity = [
+
+  // Hooks are deliberately not skipped: SPEC.md §14 has the workspace's own
+  // hooks validate every commit, and the first one is no exception.
+  await git(["add", "--all", "--", "."], options.dir);
+  await git(
+    [...identityArgs(options.identity ?? USER_IDENTITY), "commit", "-m", options.message],
+    options.dir,
+  );
+}
+
+export interface CommitPathsOptions extends CommitOptions {
+  /** Workspace-relative, `/`-separated paths — nothing else is committed. */
+  readonly paths: readonly string[];
+}
+
+/**
+ * Commits exactly the named paths and returns the new HEAD, or `null` when
+ * those paths turned out to hold nothing new — restoring a file that was deleted
+ * from the working tree but never committed puts the tree back exactly as HEAD
+ * has it, and `git commit` refuses an empty commit for good reason.
+ *
+ * The pathspec is the point: `corpus workspace upgrade` runs in a workspace the
+ * operator may have half-edited, and an `add --all` would sweep their in-progress
+ * work into a commit that claims to be a tool upgrade. Passing the paths to
+ * `commit` as well as to `add` means the operator's *index* is left alone too —
+ * a partial commit reads the working tree for those paths and nothing else.
+ */
+export async function commitPaths(options: CommitPathsOptions): Promise<string | null> {
+  const git = options.git ?? runGit;
+  const pathspec = ["--", ...options.paths];
+
+  await git(["add", ...pathspec], options.dir);
+  if (!(await hasStagedChanges(git, options.dir, pathspec))) return null;
+
+  await git(
+    [
+      ...identityArgs(options.identity ?? USER_IDENTITY),
+      "commit",
+      "-m",
+      options.message,
+      ...pathspec,
+    ],
+    options.dir,
+  );
+  const { stdout } = await git(["rev-parse", "HEAD"], options.dir);
+  return stdout.trim();
+}
+
+/** `git diff --cached --quiet` exits `1` when the index differs from HEAD; `0` when it does not. */
+async function hasStagedChanges(
+  git: GitRunner,
+  dir: string,
+  pathspec: readonly string[],
+): Promise<boolean> {
+  try {
+    await git(["diff", "--cached", "--quiet", ...pathspec], dir);
+    return false;
+  } catch (cause) {
+    if (gitExitCode(cause) === 1) return true;
+    throw cause;
+  }
+}
+
+/**
+ * The exit status behind a rejected {@link GitRunner} call. Several git commands
+ * answer a yes/no question with their exit code — `diff --quiet`,
+ * `check-ignore` — and reading it is how a caller tells an answer from a failure.
+ */
+export function gitExitCode(cause: unknown): number | undefined {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) return undefined;
+  return typeof cause.code === "number" ? cause.code : undefined;
+}
+
+function identityArgs(identity: GitIdentity): readonly string[] {
+  return [
     "-c",
     `user.name=${identity.name}`,
     "-c",
     `user.email=${identity.email}`,
     // A workspace commit must not be signed with the operator's key: the author
-    // is `user`, not them, and a signing prompt would hang a detached init.
+    // is the acting party, not them, and a signing prompt would hang a detached
+    // `corpus init` or a scripted upgrade.
     "-c",
     "commit.gpgsign=false",
   ];
-
-  // Hooks are deliberately not skipped: SPEC.md §14 has the workspace's own
-  // hooks validate every commit, and the first one is no exception.
-  await git(["add", "--all", "--", "."], options.dir);
-  await git([...asIdentity, "commit", "-m", options.message], options.dir);
 }
 
 /** `git`'s own stderr is the actionable part; surface it rather than a stack. */
