@@ -59,32 +59,8 @@ export const AWAITING_AGENT_SQL =
   "(t.id IS NOT NULL AND t.agent <> 'none' AND t.status = 'open' AND t.last_author = 'user')";
 
 /**
- * The opening line of a fenced ```form block, as a predicate over one turn's
- * body (SPEC.md §6).
- *
- * A fence *opens a block*: the info string is the whole rest of its line and the
- * line begins the fence. Read as the bare substring ` ```form ` — which is how
- * it was read before SERVER-022 finding 3 — a turn discussing ```` ```formula ````
- * blocks, or quoting a form fence inside a `>` block or an indented example,
- * pinned its thread to Attention with a form nobody could answer.
- *
- * `instr` rather than `LIKE`: SQLite's `LIKE` is ASCII-case-insensitive by
- * default (so ` ```FORM ` would match) and the pattern would need every literal
- * `%`/`_` escaped. The body is prefixed with a newline so "the fence opens the
- * body" needs no second pattern, and both line endings are accepted because the
- * body is whatever bytes the file held.
- */
-const opensFormFence = (column: string): string => {
-  const body = `(char(10) || ${column})`;
-  const fence = `(char(10) || '\`\`\`form')`;
-  return [`instr(${body}, ${fence} || char(10)) > 0`, `instr(${body}, ${fence} || char(13)) > 0`]
-    .map((term) => `(${term})`)
-    .join(" OR ");
-};
-
-/**
- * An unanswered form is an agent turn carrying a fenced ```form block that is
- * still the thread's last turn of an **open** thread (SPEC.md §6, §11) —
+ * An unanswered form is an agent turn carrying an answerable ```form block that
+ * is still the thread's last turn of an **open** thread (SPEC.md §6, §11) —
  * `last_author = 'agent'` is what says no user turn followed it, so no "is there
  * a later turn" subquery is needed.
  *
@@ -92,11 +68,21 @@ const opensFormFence = (column: string): string => {
  * conversation is not waiting for an answer, and without the status guard it sat
  * in Attention with no remaining action that could clear it (SERVER-022
  * finding 3).
+ *
+ * **"Carries a form" is `tu.has_form`, not a pattern written here** (SERVER-029).
+ * §6's grammar is an anchored regex over the info string plus a YAML parse plus
+ * `FormSchema`, and SQLite can express none of the three. The substring search
+ * that stood in for it disagreed with the answer route in both directions at
+ * once: an unterminated fence sat in Attention forever while `POST …/form`
+ * `404`ed it, and a fence with a trailing space in its info string was
+ * answerable but never surfaced, so nobody was told to answer it. The column
+ * carries what `core/form.ts` decided about those bytes at projection time, so
+ * this fragment and the route cannot hold different opinions about one turn.
  */
 const UNANSWERED_FORM_SQL = `(t.id IS NOT NULL AND t.status = 'open' AND t.last_author = 'agent' AND EXISTS (
   SELECT 1 FROM turns tu
    WHERE tu.thread_id = t.id AND tu.ts = t.last_ts AND tu.author = 'agent'
-     AND (${opensFormFence("tu.body_md")})
+     AND tu.has_form = 1
 ))`;
 
 /**

@@ -14,6 +14,7 @@ export * from "./anchor-entries.js";
 export * from "./check.js";
 export * from "./code.js";
 export * from "./document.js";
+export * from "./form.js";
 export * from "./frontmatter.js";
 export * from "./ids.js";
 export * from "./paths.js";

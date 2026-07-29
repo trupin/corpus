@@ -13,6 +13,7 @@ import type { QueryKey } from "@corpus/contract";
 import { FORM_RESPOND_EVENT_TYPE, FormRespondPayloadSchema } from "@corpus/contract";
 import { FORM_ANSWER_LABEL, formAnswerBody, formCommitSubject } from "./forms.js";
 import {
+  AUTH,
   appendTurn,
   createDoc,
   createThread,
@@ -497,6 +498,63 @@ describe("the answer is a mutation like any other", () => {
 
     expect(await idsFor("form")).not.toContain(thread.id);
     expect(await idsFor("me")).not.toContain(thread.id);
+  });
+});
+
+describe("the projection and the route agree about what carries a form (SERVER-029)", () => {
+  // PR #10 finding 8. `needs=form` and this route are the two halves of one
+  // promise — Attention says "awaiting your answer", the route is where the
+  // answer goes — and they used to be two separate readings of the bytes: a SQL
+  // substring search against the contract's regex. Every row below is a shape
+  // they disagreed about. The assertion is not "each is listed" or "each is
+  // answerable" but that the two answers are *the same*, which is the property
+  // that has to survive whatever CONTRACT-014 does to the grammar next.
+  const OPTION = "a";
+  const FORM_YAML = `prompt: Pick one\noptions:\n  - ${OPTION}\n  - b`;
+
+  const listedByNeedsForm = async (): Promise<Set<string>> => {
+    const response = await ws.request("/api/docs?needs=form&limit=200", {
+      headers: { ...AUTH, accept: "application/json" },
+    });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { items: { id: string }[] };
+    return new Set(payload.items.map((item) => item.id));
+  };
+
+  it.each([
+    ["a well-formed fence", `Here:\n\n\`\`\`form\n${FORM_YAML}\n\`\`\`\n`, true],
+    // Answerable, and never surfaced: the SQL required a line ending straight
+    // after `form`, while the contract's info string allows trailing blanks.
+    ["a trailing space in the info string", `Here:\n\n\`\`\`form  \n${FORM_YAML}\n\`\`\`\n`, true],
+    ["a trailing tab in the info string", `Here:\n\n\`\`\`form\t\n${FORM_YAML}\n\`\`\`\n`, true],
+    // Surfaced forever, and unanswerable: the SQL saw only the opening line.
+    ["an unterminated fence", `Here:\n\n\`\`\`form\n${FORM_YAML}\n`, false],
+    ["a fence whose YAML does not parse", "Here:\n\n```form\nprompt: [unclosed\n```\n", false],
+    ["a fence whose YAML is not a form", "Here:\n\n```form\ntitle: nope\n```\n", false],
+    // Already agreed before SERVER-029, and asserted here so the new mechanism
+    // is held to the old answers too.
+    ["a ```formula fence", "Here:\n\n```formula\nx = y\n```\n", false],
+    ["a quoted fence", "The skill writes:\n\n> ```form\n> prompt: Pick one\n> ```\n", false],
+    ["no fence at all", "No question from me.\n", false],
+  ])("%s: listed and answerable, or neither", async (_label, turnBody, expected) => {
+    const thread = await threadWithForm(turnBody);
+
+    const listed = (await listedByNeedsForm()).has(thread.id);
+    const response = await answerForm(thread, { option: OPTION });
+    const answerable = response.status === 201;
+
+    expect([listed, answerable]).toEqual([expected, expected]);
+  });
+
+  it("drops out of needs=form once the form is answered", async () => {
+    // The reason has to be clearable: answering moves `last_author` to `user`,
+    // which is the whole of the mechanism (SERVER-016).
+    const thread = await threadWithForm();
+    expect((await listedByNeedsForm()).has(thread.id)).toBe(true);
+
+    expect((await answerForm(thread, { option: OPTIONS[0] })).status).toBe(201);
+
+    expect((await listedByNeedsForm()).has(thread.id)).toBe(false);
   });
 });
 

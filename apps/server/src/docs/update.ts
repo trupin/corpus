@@ -13,8 +13,16 @@
 //   leave a window in which a crash detaches every thread on the document.
 
 import type { Actor, AnchorReconciliation, Doc, UpdateDocRequest } from "@corpus/contract";
+import { EXTRA_MAX_BYTES } from "@corpus/contract";
 import { reconcileAnchors } from "../anchors/index.js";
-import { formatInstant, serializeDocument, setBody, setFrontmatterFields } from "../core/index.js";
+import {
+  formatInstant,
+  readExtraFrontmatter,
+  serializeDocument,
+  setBody,
+  setFrontmatterFields,
+} from "../core/index.js";
+import { badRequest } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { loadDocument, readAnchorsMap, toWireDoc } from "./read.js";
 import {
@@ -158,6 +166,45 @@ function applyPatchEntry(
   changed[key] = value;
 }
 
+/** A document's `extra` object as the contract measures it: JSON, in UTF-8 bytes. */
+const extraBytes = (data: Readonly<Record<string, unknown>>): number =>
+  new TextEncoder().encode(JSON.stringify(readExtraFrontmatter(data))).length;
+
+/**
+ * `EXTRA_MAX_BYTES` over the **merged result**, which is the only place it means
+ * anything (PR #10 finding 15).
+ *
+ * `ExtraFrontmatterSchema` bounds one request's `extra`; `extra` on update is a
+ * shallow merge patch, so twenty requests of 20 KiB under twenty different keys
+ * each passed that check and left a 400 KiB object on disk — past a bound the
+ * contract advertises to every reader, and past the point where the document's
+ * own row is a sane thing to carry in a collection response. The bound belongs
+ * to the document, so it is checked against what the file will hold.
+ *
+ * **Only growth is refused.** A file can exceed the bound only by being edited
+ * out of band, and a document in that state must stay editable — otherwise every
+ * autosave on it would 400, and the one patch that could fix it (dropping keys)
+ * would be refused along with the rest. So a write that leaves `extra` no larger
+ * than it found it is allowed through whatever its size, and it is specifically
+ * *growing past* the bound that is rejected.
+ */
+function assertExtraWithinBound(
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): void {
+  const bytes = extraBytes(after);
+  if (bytes <= EXTRA_MAX_BYTES || bytes <= extraBytes(before)) return;
+  throw badRequest("request failed validation", [
+    {
+      path: "body.extra",
+      message:
+        `this patch would leave \`extra\` at ${String(bytes)} bytes on disk; the bound is ` +
+        `${String(EXTRA_MAX_BYTES)} bytes per document. \`extra\` is a merge patch, so the bound ` +
+        "is on the merged result, not on one request.",
+    },
+  ]);
+}
+
 export async function updateDocument(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -204,6 +251,10 @@ export async function updateDocument(
       ...(reconciled === null ? {} : { anchors: reconciled.anchors }),
       ...(stampUpdated ? { updated: formatInstant(workspace.now()) } : {}),
     });
+    // Before anything is written, and only when the patch can move `extra` at
+    // all — the autosave path carries no `extra` and must not pay for the walk.
+    if (patch.extra !== undefined) assertExtraWithinBound(parsed.data, nextParsed.data);
+
     const text = serializeDocument(nextParsed);
 
     // Autosave fires on a timer, so most saves change nothing. A no-op that

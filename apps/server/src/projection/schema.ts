@@ -11,7 +11,7 @@
  * rows a reader would see. A database stamped with a different value is dropped
  * and rebuilt from files, so there is deliberately no migration path.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -76,6 +76,16 @@ export const REPOPULATED_TABLES = [
  * Every one of them is still *derived*: `db rebuild` reconstructs all five from
  * frontmatter, and nothing durable lives here. `sort_order` is spelled apart
  * from the frontmatter key because `order` is SQL.
+ *
+ * **`turns.has_form` is §6's form grammar, evaluated once at projection time**
+ * (SERVER-029). `needs=form` has to ask "does this turn carry a form somebody
+ * can answer", and that question is a regex over the info string plus a YAML
+ * parse plus `FormSchema` — none of which SQLite can express. Answering it in
+ * SQL meant approximating it with a substring search, and the approximation
+ * disagreed with the answer route in both directions. So the projection stores
+ * what `core/form.ts` — the same reader the route uses — decided about the
+ * bytes, and the SQL fragment reads a column instead of re-deciding. Derived
+ * like everything else here: a rebuild recomputes it from the file.
  */
 export const PROJECTION_DDL = `
 CREATE TABLE documents (
@@ -128,6 +138,7 @@ CREATE TABLE turns (
   author TEXT NOT NULL,
   ts TEXT NOT NULL,
   body_md TEXT NOT NULL,
+  has_form INTEGER NOT NULL,
   PRIMARY KEY (thread_id, ts)
 );
 
