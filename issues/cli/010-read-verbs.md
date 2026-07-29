@@ -40,7 +40,9 @@ faithfully — thread state lives in the projection, not only in the markdown.
 Ship two read verbs as thin clients over the existing GET endpoints:
 
 - `corpus doc show <id>` → `GET /api/docs/{id}` (frontmatter + body, `--json` for the raw payload)
-- `corpus thread show <id>` → `GET /api/threads/{id}` (turns, events, status, anchor, `--json`)
+- `corpus thread show <id>` → `GET /api/threads/{id}` rendered **as the wire returns it** (turns,
+  status, anchor incl. orphan state; sprint-013 Adjudication 14 — no `events`, no read-state, and
+  never the mutating unread endpoint)
 
 Human-readable default rendering, `--json` for the agent path. Registry validation (description +
 examples) as for every verb; `docs/cli.md` regenerated. AGENT-003's skill then cites these verbs;
@@ -51,7 +53,7 @@ CLI).
 ## Acceptance Criteria
 
 - [ ] `corpus doc show <id>` and `corpus thread show <id>` exist, with `--json`; errors follow the
-      CLI's standard exit-code mapping (404 → exit 4, etc.).
+      CLI's standard exit-code mapping (sprint-013 Adjudication 13 — server 404 maps to exit 5).
 - [ ] Both appear in `corpus --help`, topic help, and regenerated `docs/cli.md` with ≥1 example.
 - [ ] Unit tests per registry conventions; E2E against a real server in the log.
 

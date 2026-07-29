@@ -113,7 +113,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | todo | P2 | CONTRACT-007, CONTRACT-013 |
 | CLI-009 | `server stop` must not delete a live foreign pidfile | todo | P2 | CLI-002 |
 | INFRA-009 | Coverage gate: empty in-scope set must fail | todo | P2 | INFRA-004 |
-| CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | todo | P1 | CONTRACT-007, CONTRACT-009 |
+| CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | done | P1 | CONTRACT-007, CONTRACT-009 |
 | UI-012 | DocMenu actions never toast (callback teardown) | todo | P2 | UI-005 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
