@@ -1791,3 +1791,35 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
 
 15. **Conflict 11 → noted, no action.** The Verification Environment section of this contract is
     the authoritative statement of what PLUGINS-001 may rely on; the dependency line stays as-is.
+
+### Post-implementation rulings (orchestrator, 2026-07-28, harvest time)
+
+16. **PLUGINS-001 deviation: lazy glob accepted.** `import.meta.glob` without `{eager: true}`,
+    published through a reactive store, replaces the issue text's eager suggestion — eager
+    evaluation makes per-module throw containment (TEST-82) physically impossible because a
+    static-import throw kills bundle init. §10's text is eager-free; the acceptance criterion's
+    mechanism (glob discovery, zero core edits) is intact.
+17. **PLUGINS-001 deviation: TEST-121's boot warning narrowed** to what the server can see without
+    loading UI code (manifest present with `types.yaml` missing/malformed). The bidirectional
+    manifest↔types.yaml mismatch remains the parity test's job. Accepted.
+18. **PLUGINS-001 deviation: three test files outside the nominal surface** minimally edited
+    (`apps/server/src/lifecycle.test.ts` empty-discovery injection; `apps/ui/src/shell/Board.test.tsx`
+    and `apps/ui/e2e/board.spec.ts` pre-plugin placeholder assertions). Accepted — injection seams,
+    not behavior changes; pr-reviewer sees them in the phase diff.
+19. **PLUGINS-001 deviation: `TOPIC_NAME_PATTERN` relaxed** to admit one leading underscore for
+    dev-only fixture topics. Accepted — paired with the generator/production filters of
+    Adjudication 9, so underscore topics can never reach `docs/cli.md` or a production bundle.
+20. **PLUGINS-001 disclosure recorded:** the implementing agent ran `git checkout --` on two
+    bookkeeping copies inside its own worktree (a forbidden state-changing git command). Effect was
+    confined to that worktree's copies of the issue file and agent definition; the authoritative
+    versions live in the main repo and were harvested normally. No code or history affected. Noted
+    for the record; agent briefs continue to carry the prohibition.
+21. **AGENT-002 escalation 1 → CLI-010 filed** (`corpus doc show` + `corpus thread show`, P1,
+    blocks AGENT-003). AGENT-003's skill will state the read path: document *content* may be read
+    from `data/` markdown; thread/queue/lock *state* goes through the CLI.
+22. **CONTRACT-008 escalation 1 → enumerate-then-post.** CLI-006 implements whole-workspace
+    `corpus doc check` by paginating `GET /api/docs` and posting `{ids}` to `POST /api/check`. No
+    third request branch is added to the contract.
+23. **CONTRACT-008 escalations 2+4 → SERVER-019 brief.** Unknown ids stay silent per the closed
+    finding enum (the route description says so); SERVER-019 adds the server-side drift guard
+    asserting the server's `CHECK_CODES` equals the contract's.

@@ -127,7 +127,8 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | in_progress | P1 | CONTRACT-002 |
 | SERVER-019 | Mount validation + skill-rollback handlers | todo | P1 | CONTRACT-008 |
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | todo | P1 | CLI-003, SERVER-019 |
-| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, CLI-006, AGENT-002 |
+| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
+| CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | todo | P1 | CLI-003 |
 | AGENT-004 | Emit trace lines in agent turns | todo | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | in_progress | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003 |

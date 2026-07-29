@@ -18,7 +18,7 @@ opus — behavioral rules enumerated in §7/§8; judgment encoded in AGENT-002's
 
 ## Dependencies
 
-- Depends on: CLI-003, AGENT-002
+- Depends on: CLI-003, CLI-006, CLI-010, AGENT-002
 - Blocks: PLUGINS-002
 
 ## Spec References
