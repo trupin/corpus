@@ -14,6 +14,7 @@ import {
 import {
   attributionOf,
   coverageScope,
+  emptyScopeFailure,
   formatMetricsTable,
   projectExecutedLines,
   rewriteEntrySources,
@@ -144,6 +145,15 @@ async function main(): Promise<void> {
   const projected = projectExecutedLines(unit, lines);
 
   const summary = summarize(projected.data, repoRoot);
+
+  // Before anything is written or reported: a report of no files would pass the
+  // gate at 100% and be indistinguishable from a covered repo (INFRA-009).
+  const scopeFailure = emptyScopeFailure(summary);
+  if (scopeFailure !== null) {
+    log(`ERROR: ${scopeFailure}`);
+    process.exitCode = 1;
+    return;
+  }
 
   const outputDirectory = resolve(repoRoot, MERGED_COVERAGE_DIR);
   rmSync(resolve(outputDirectory, "v8-cache"), { recursive: true, force: true });

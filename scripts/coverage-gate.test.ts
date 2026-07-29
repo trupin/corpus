@@ -12,6 +12,7 @@ import {
 import {
   attributionOf,
   coverageScope,
+  emptyScopeFailure,
   formatMetricsTable,
   projectExecutedLines,
   resolveServedSource,
@@ -335,6 +336,38 @@ describe("summarize", () => {
     expect(summary.workspaces.get("apps/server")?.statements.total).toBe(1);
     expect(summary.total.statements).toEqual({ covered: 0, total: 3, pct: 0 });
   });
+
+  it("counts the files it measured, which is what an empty scope has none of", () => {
+    expect(summarize(unitData(), REPO_ROOT).files).toBe(2);
+    expect(summarize({}, REPO_ROOT).files).toBe(0);
+  });
+});
+
+describe("emptyScopeFailure", () => {
+  it("fails a report of no files, which every threshold would otherwise clear", () => {
+    const summary = summarize({}, REPO_ROOT);
+
+    // The state this guards: nothing measured, and four vacuous 100%s.
+    expect(summary.total.lines).toEqual({ covered: 0, total: 0, pct: 100 });
+    expect(thresholdFailures(summary.total)).toEqual([]);
+
+    const failure = emptyScopeFailure(summary);
+    expect(failure).toContain("0 source files");
+    for (const glob of COVERAGE_INCLUDE) expect(failure).toContain(glob);
+    for (const glob of COVERAGE_EXCLUDE) expect(failure).toContain(glob);
+    expect(failure).toContain("scripts/coverage-config.ts");
+  });
+
+  it("names the globs it was given rather than the configured ones", () => {
+    const failure = emptyScopeFailure(summarize({}, REPO_ROOT), ["apps/*/srcc/**"], ["nothing/**"]);
+
+    expect(failure).toContain("apps/*/srcc/**");
+    expect(failure).toContain("nothing/**");
+  });
+
+  it("says nothing about a report that describes at least one file", () => {
+    expect(emptyScopeFailure(summarize(unitData(), REPO_ROOT))).toBeNull();
+  });
 });
 
 describe("thresholdFailures", () => {
@@ -392,6 +425,7 @@ describe("formatMetricsTable", () => {
     const table = formatMetricsTable({
       total: row,
       workspaces: new Map([["apps/ui", row]]),
+      files: 1,
     });
 
     expect(table).toContain("apps/ui");

@@ -110,9 +110,9 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | done | P1 | SERVER-007, SERVER-011 |
 | UI-013 | UI hardening batch: PR #10 MINOR findings | in_progress | P2 | UI-006, UI-007, UI-008 |
 | SERVER-029 | Server hardening batch: PR #10 MINOR findings | in_progress | P2 | SERVER-016, SERVER-026 |
-| CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | todo | P2 | CONTRACT-007, CONTRACT-013 |
-| CLI-009 | `server stop` must not delete a live foreign pidfile | todo | P2 | CLI-002 |
-| INFRA-009 | Coverage gate: empty in-scope set must fail | todo | P2 | INFRA-004 |
+| CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | in_progress | P2 | CONTRACT-007, CONTRACT-013 |
+| CLI-009 | `server stop` must not delete a live foreign pidfile | in_progress | P2 | CLI-002 |
+| INFRA-009 | Coverage gate: empty in-scope set must fail | in_progress | P2 | INFRA-004 |
 | CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | done | P1 | CONTRACT-007, CONTRACT-009 |
 | UI-012 | DocMenu actions never toast (callback teardown) | in_progress | P2 | UI-005 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
@@ -135,14 +135,14 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
 | AGENT-004 | Emit trace lines in agent turns | in_progress | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
-| PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
+| PLUGINS-002 | Todos reference plugin | in_progress | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
 | CONTRACT-015 | Graduate plugin-facing types into @corpus/contract | done | P1 | CONTRACT-002 |
 | UI-014 | Editor ownership of non-core document bodies | in_progress | P2 | UI-006, PLUGINS-001 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | done | P1 | CLI-002, UI-010 |
 | CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | done | P1 | CLI-002, AGENT-001 |
 | SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | SERVER-008, SERVER-009, AGENT-002 |
 | SERVER-031 | Empty JSON body returns 500 instead of 400 | in_progress | P2 | SERVER-003 |
-| CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | todo | P2 | CONTRACT-009 |
+| CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | in_progress | P2 | CONTRACT-009 |
 
 ---
 
