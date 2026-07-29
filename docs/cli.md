@@ -24,6 +24,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus doc delete`](#corpus-doc-delete)
   - [`corpus doc edit`](#corpus-doc-edit)
   - [`corpus doc move`](#corpus-doc-move)
+  - [`corpus doc show`](#corpus-doc-show)
 - [`corpus job`](#corpus-job)
   - [`corpus job abandon`](#corpus-job-abandon)
   - [`corpus job list`](#corpus-job-list)
@@ -54,6 +55,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus thread reopen`](#corpus-thread-reopen)
   - [`corpus thread reply`](#corpus-thread-reply)
   - [`corpus thread resolve`](#corpus-thread-resolve)
+  - [`corpus thread show`](#corpus-thread-show)
 - [Exit codes](#exit-codes)
 
 ## Usage
@@ -228,9 +230,9 @@ corpus db rebuild --json
 
 ## `corpus doc`
 
-Create, edit, move, archive and delete documents.
+Read, create, edit, move, archive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent creates, edits, moves and archives documents on its own initiative, and **archives where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what.
+The stewardship surface (SPEC.md §7): the agent reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what.
 
 ### `corpus doc archive`
 
@@ -434,6 +436,36 @@ One JSON value — `{"doc":{…},"warnings":[]}` — carrying the document at it
 
 ```
 corpus doc move doc_a1b2c3 --folder archive-notes --json
+```
+
+### `corpus doc show`
+
+Read a document: its frontmatter, its anchored threads, and its body.
+
+Reads `GET /api/docs/{id}` and prints what the server returned — the CLI never opens the file. That matters for anchors: they are resolved against the _current_ body at read time, so each one is listed with the thread it belongs to, that thread's status, and either the character range it landed on or the fact that it is orphaned (SPEC.md §6). A timestamp the file does not carry renders as “—” rather than as an invented date. The human rendering is a summary: the whole payload — including the §11 view keys and any plugin `extra` — is what `--json` emits, unchanged. An id that names no document is the server's `404`, which is exit 5.
+
+```
+corpus doc show <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Examples**
+
+Read a document before editing or commenting on it: header, anchored threads, then the body.
+
+```
+corpus doc show doc_a1b2c3
+```
+
+One JSON value: `{"frontmatter":{"id":"doc_a1b2c3","type":"note","title":"Mortgage options","created":"2026-07-28T10:00:00.000Z","updated":null,…},"body":"30-year fixed at 6.1%.\n","path":"data/docs/finance/mortgage-options.md","anchors":[{"anchorId":"anc_1","threadId":"th_x9y8","threadStatus":"open","range":{"start":12,"end":45},"orphaned":false,…}]}`.
+
+```
+corpus doc show doc_a1b2c3 --json
 ```
 
 ## `corpus job`
@@ -1070,9 +1102,9 @@ corpus server stop --json
 
 ## `corpus thread`
 
-Reply to conversations and open or close them.
+Read conversations, reply to them, and open or close them.
 
-A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `reply` is the agent's half of the conversation — the exact command §7's comment skill is written in — and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `show` is the read §7's comment skill starts from — status, anchoring and every turn — `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
 
 ### `corpus thread reopen`
 
@@ -1177,6 +1209,36 @@ One JSON value — `{"thread":{…},"warnings":[]}` — the summary carrying `st
 
 ```
 corpus thread resolve th_a1b2c3 --from agent --json
+```
+
+### `corpus thread show`
+
+Read a conversation: its status, its anchoring, and every turn.
+
+Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
+
+```
+corpus thread show <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description      |
+| -------- | -------- | ---------------- |
+| `id`     | yes      | The thread's id. |
+
+**Examples**
+
+Read a conversation before replying to it.
+
+```
+corpus thread show th_a1b2c3
+```
+
+One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open","tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","turns":[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.
+
+```
+corpus thread show th_a1b2c3 --json
 ```
 
 ## Exit codes

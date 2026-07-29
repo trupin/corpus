@@ -141,8 +141,10 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "doc/edit.ts",
       "doc/index.ts",
       "doc/move.ts",
+      "doc/show.ts",
       "thread/index.ts",
       "thread/reply.ts",
+      "thread/show.ts",
       "thread/status.ts",
     ]);
   });
@@ -206,6 +208,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "doc/edit.ts",
       "doc/index.ts",
       "doc/move.ts",
+      "doc/show.ts",
       "health.ts",
       "init/git.ts",
       "init/index.ts",
@@ -233,6 +236,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "server/stop.ts",
       "thread/index.ts",
       "thread/reply.ts",
+      "thread/show.ts",
       "thread/status.ts",
     ]);
   });
