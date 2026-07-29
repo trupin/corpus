@@ -19,6 +19,7 @@ export {
 export type { DeleteOutcome } from "./delete.js";
 export { moveDocument } from "./move.js";
 export {
+  anchorClaimantIds,
   findDocumentRow,
   findDocumentRowByPath,
   isIdTaken,

@@ -60,7 +60,7 @@ import type { Logger } from "../logger.js";
 import { classifyPath, projectDocument, removeDocument } from "../projection/index.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { SelfWriteRegistry } from "../watcher/index.js";
-import { isIdTaken } from "./read.js";
+import { anchorClaimantIds, isIdTaken } from "./read.js";
 import { folderTreeSignature } from "./tree.js";
 
 /**
@@ -96,23 +96,27 @@ const WARNING_CODE_BY_CHECK: Partial<Record<CheckCode, WarningCode>> = {
 };
 
 /**
- * The two seams §14's validator is given on this server, in one expression
- * because there are two call sites for it and they must not drift: this file's
+ * The seams §14's validator is given on this server, in one expression because
+ * there are two call sites for it and they must not drift: this file's
  * {@link checkSave}, which validates the bytes a mutation is about to write, and
  * `POST /api/check`, which validates whatever a caller submits. §14's promise is
  * that they are "the same validator", and a seam supplied by one and forgotten by
  * the other is precisely how that stops being true — without the resolver no
- * orphaned anchor is ever reported, and without the projection every `[[ref]]` to
- * an unsubmitted document warns.
+ * orphaned anchor is ever reported, without `documentExists` every `[[ref]]` to
+ * an unsubmitted document warns, and without `anchorClaimants` every *anchored*
+ * document fails a subset check with a dangling-highlight error the write path
+ * would never raise (sprint-013 Adjudication 6).
  *
- * `documentExists` is a *superset* answer by construction: `checkCorpus` asks it
- * only about ids the submitted set does not already contain, so supplying it is
- * correct for a whole-corpus check, for a single save, and for the handful of
- * unsaved `(path, content)` pairs `corpus doc check --staged` sends.
+ * Both projection seams answer about the **live corpus** and are unioned with the
+ * submitted set by `checkCorpus`, which asks them only about what the set cannot
+ * settle on its own. That makes one expression correct for a whole-corpus check,
+ * for a single save, and for the handful of unsaved `(path, content)` pairs
+ * `corpus doc check --staged` sends.
  */
 export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
   resolveAnchor: resolveAnchorExact,
   documentExists: (id) => isIdTaken(projection, id),
+  anchorClaimants: (docId, anchorId) => anchorClaimantIds(projection, docId, anchorId),
 });
 
 /**

@@ -243,6 +243,76 @@ Ports: `9092` and `8765` both verified free with `lsof -nP -iTCP:<port> -sTCP:LI
 4. **Nested skills stay unaddressable** by `POST /api/skills/{name}/rollback` (`SkillNameSchema` forbids `/`). Named as a limitation, per Out of Scope.
 5. This log was written into the **worktree's** copy of the issue file — the harness blocks a worktree-isolated agent from editing the shared checkout. Harvest it with the code.
 
+### Fix round 1 — sprint-013 evaluation FAIL-1 (`anchor-unused` on subsets)
+
+**Implemented on: opus** (server-dev, directly in the main repo, branch `phase-4-agent-loop` at `1125981`), 2026-07-28. Real workspace `/tmp/corpus-s013-fix019-R55iQi` (`mktemp -d`), real server on `9092` (pid `67751`), from-source CLI (`node --import tsx apps/cli/src/bin/corpus.ts`), real `curl`.
+
+**Defect.** `anchor-unused` is a cross-document rule and was answered from the submitted set alone. `documentExists` unioned `[[ref]]` targets with the live corpus; nothing did the same for anchor→thread claims, so every subset request — `corpus doc check <id>` and **every** `--staged` run, which is a subset by construction — reported an *error* for any document that has been commented on. Adjudication 6 (write-path acceptance ⇒ check acceptance) makes that a bug by definition.
+
+**Fix — the third seam, in the same one expression.** `CheckOptions` grows `anchorClaimants(docId, anchorId): readonly string[]`; `checkSeams(projection)` supplies it as `anchorClaimantIds(projection, …)` (`docs/read.ts`, `SELECT id FROM threads WHERE parent_id = ? AND anchor_id = ?`, beside `isIdTaken`). `checkCorpus` reports `anchor-unused` only when *neither* a submitted thread declares the claim *nor* a live claimant **outside the submitted set** exists.
+
+It returns ids rather than a boolean deliberately: the submitted set is authoritative for what it contains, so a live claimant that is itself in the request contributes nothing — that is what keeps `--staged` able to catch an anchor the staged edit genuinely orphaned, and what makes whole-workspace behaviour *identical* to before (every thread is submitted, so every row is ignored). The seam is consulted only for anchors about to be reported, so clean documents pay one query per would-be error and none otherwise.
+
+#### Reproduction, re-run verbatim (post-fix)
+
+```
+$ corpus doc create --type note --title "Anchored subject" -m "The quick brown fox jumps over the lazy dog."
+created doc_xxjl3bel — data/docs/inbox/anchored-subject.md
+$ curl -X POST http://127.0.0.1:9092/api/threads … -d '{"parent":"doc_xxjl3bel",…,"selector":{"exact":"quick brown fox"}}'
+  → th_senisdvj / anc_33714313  (and th_na3myasx / anc_c7639160 — two real anchored threads)
+$ curl http://127.0.0.1:9092/api/threads/th_senisdvj → parent doc_xxjl3bel anchor anc_33714313 status open
+$ curl -X PUT http://127.0.0.1:9092/api/docs/doc_xxjl3bel …            → 200, warnings []
+$ curl -X POST http://127.0.0.1:9092/api/check -d '{"ids":["doc_xxjl3bel"]}'
+{"ok":true,"errors":[],"warnings":[]}                                   ← was ok:false + anchor-unused
+$ corpus doc check doc_xxjl3bel   → checked 1 document — no findings.    exit=0   ← was exit 6
+$ corpus doc check                → checked 10 documents — no findings.  exit=0   (unchanged)
+$ git add -- data/docs/inbox/anchored-subject.md && corpus doc check --staged
+                                   checked 1 document — no findings.     exit=0   ← was exit 6
+$ corpus doc check --json doc_xxjl3bel → {"ok":true,"errors":[],"warnings":[]}
+```
+
+#### The rule still fires — three modes, one genuinely unused anchor
+
+Added `anc_deadbee1: {exact: lazy dog}` to the same document's frontmatter out of band (no thread anywhere claims it), leaving the two thread-backed anchors in place:
+
+```
+$ corpus doc check doc_xxjl3bel
+error anchor-unused data/docs/inbox/anchored-subject.md: anchor `anc_deadbee1` has no thread referencing it
+corpus: 1 error in 1 document.                                            exit=6
+$ corpus doc check
+error anchor-unused … anchor `anc_deadbee1` has no thread referencing it
+corpus: 1 error in 10 documents.                                          exit=6
+$ git add -- data/docs/inbox/anchored-subject.md && corpus doc check --staged
+error anchor-unused … anchor `anc_deadbee1` has no thread referencing it  exit=6
+```
+
+Exactly one finding in each mode — `anc_33714313` and `anc_c7639160` stay silent. Removing the entry returned all three modes to `exit=0`.
+
+#### The union's other direction, live
+
+`POST /api/check` with two `{documents}` pairs: the parent as it is on disk, and `th_senisdvj`'s content **with its `anchor:` line stripped** (the shape of a staged edit that orphans a highlight):
+
+```json
+{"ok":false,"errors":[{"code":"anchor-unused","severity":"error","docId":"doc_xxjl3bel",
+  "path":"data/docs/inbox/anchored-subject.md",
+  "detail":"anchor `anc_33714313` has no thread referencing it"}],"warnings":[]}
+```
+
+Only the anchor whose *submitted* thread dropped the claim is reported; `anc_c7639160`, whose thread was never submitted, is still vouched for by the projection. A stale row cannot overrule submitted bytes.
+
+`corpus db doctor` → `projection is clean — 10 documents from 10 files (1ms)`, exit 0. `git log` shows the five expected workspace commits and nothing the check wrote.
+
+#### Tests
+
+- `apps/server/src/core/check.test.ts` — new `describe("the anchorClaimants seam")`: claimant outside the set accepts; no claimant still errors; a claimant **inside** the set is ignored (staged orphaning); the seam is never consulted for an anchor a submitted thread claims; absent seam changes nothing. 40 tests green.
+- `apps/server/src/check/routes.test.ts` — new `describe("anchor-unused is answered against the live corpus, unioned with the request")`: the evaluator's exact reproduction through the real app (real `POST /api/threads`, `PUT` accepted, then `{ids:[doc]}` clean and `{ids:[doc,thread]}` clean); the same document through the `{documents}` pair form; a genuinely unused anchor reported in **both** subset and whole-workspace requests (whole-workspace errors: exactly one, and it is the dangling document's); init-time staged pairs whose thread exists only in the request; a staged edit that orphans an anchor still caught. 26 tests green.
+- **Negative control**: with the `claimedOutsideCorpus` conjunct removed, exactly the three fix-dependent tests fail (`3 failed | 63 passed`); restored → all green. The two "still fires" tests pass in both states by design — they pin the absence of a regression, not the fix.
+- Scoped run `VITEST_MAX_THREADS=4 vitest run apps/server/src/check apps/server/src/core apps/server/src/docs` → **34 files, 648 tests, all green**. `eslint` + `prettier` + `tsc --noEmit` clean on every touched file.
+
+Files touched: `apps/server/src/core/check.ts`, `apps/server/src/docs/read.ts`, `apps/server/src/docs/write.ts`, `apps/server/src/docs/index.ts`, `apps/server/src/check/routes.ts` (comment), plus the two test files. No contract change — the wire shape, the thirteen codes and the severity split are untouched, so **CLI-006 needs no change** (its eval's FAIL-1 was this same defect).
+
+Ports `9092` and `8765` verified free after `corpus server stop` (pid `67751`, pid-targeted). Scratch tree created by `mktemp -d` and referenced by its captured path only. No git state-changing command was run in the Corpus repository.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

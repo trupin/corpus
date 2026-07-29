@@ -96,6 +96,32 @@ export type CheckOptions = {
    * projection.
    */
   readonly documentExists?: (id: string) => boolean;
+  /**
+   * The ids of threads in the **live corpus** that claim `<docId>#<anchorId>`.
+   *
+   * `anchor-unused` is a cross-document rule — "is any thread pointing at this
+   * anchor?" — and the passed set is only the whole answer when the whole
+   * workspace was passed. Handed a subset (`corpus doc check <id>`, and every
+   * `--staged` run, which is a subset by construction), the checker would
+   * otherwise accuse the most ordinary document in the product — one that has
+   * been commented on — of a dangling highlight, at *error* severity. This seam
+   * is the `documentExists` of anchor claims: the same union, for the same
+   * reason.
+   *
+   * It returns **ids** rather than a boolean so the union stays honest in the
+   * other direction. The submitted set is authoritative for the documents it
+   * contains: if a thread was passed to this checker, its submitted bytes say
+   * whether it still claims the anchor, and a stale row in the caller's index
+   * must not overrule them. So a live claimant that is itself in the set
+   * contributes nothing, and only a claimant *outside* the set — a thread the
+   * caller never mentioned — proves the anchor used. That is what lets a
+   * `--staged` check still catch an anchor the staged edit genuinely orphaned
+   * while accepting one whose thread simply was not staged.
+   *
+   * Consulted only for anchors that are about to be reported — an anchor claimed
+   * by a submitted thread never reaches it.
+   */
+  readonly anchorClaimants?: (docId: string, anchorId: string) => readonly string[];
 };
 
 export type CheckReport = {
@@ -273,6 +299,15 @@ export const checkCorpus = (
   const existsInCorpus = (id: string): boolean =>
     knownIds.has(id) || (options.documentExists?.(id) ?? false);
 
+  /**
+   * Whether a thread the submitted set does not contain claims this anchor. A
+   * claimant that *is* in the set has already spoken through `declaredClaims`
+   * (or has deliberately stopped claiming the anchor, which is exactly the drift
+   * a staged check exists to catch), so its row is ignored.
+   */
+  const claimedOutsideCorpus = (docId: string, anchorId: string): boolean =>
+    (options.anchorClaimants?.(docId, anchorId) ?? []).some((threadId) => !knownIds.has(threadId));
+
   const byId = new Map<string, LoadedDocument>();
   for (const document of loaded) {
     const existing = byId.get(document.frontmatter.id);
@@ -342,7 +377,10 @@ export const checkCorpus = (
 
   for (const document of loaded) {
     for (const [anchorId, selector] of Object.entries(document.frontmatter.anchors)) {
-      if (!declaredClaims.has(`${document.frontmatter.id}#${anchorId}`)) {
+      if (
+        !declaredClaims.has(`${document.frontmatter.id}#${anchorId}`) &&
+        !claimedOutsideCorpus(document.frontmatter.id, anchorId)
+      ) {
         report.error(
           CHECK_CODES.anchorUnused,
           document.frontmatter.id,

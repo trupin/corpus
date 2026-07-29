@@ -5,7 +5,7 @@
 // "the same validator behind `corpus doc check` runs on every save". This handler
 // is what makes that literally true rather than a claim about two
 // implementations that agree today. It calls `checkCorpus` — the same function
-// `docs/write.ts`'s `checkSave` calls, with the same two seams from the same
+// `docs/write.ts`'s `checkSave` calls, with the same seams from the same
 // `checkSeams` factory — and translates nothing: the server's `CheckFinding` and
 // the wire's are the same five fields under the same names, and the thirteen
 // codes are pinned to the contract's enum by `codes.test.ts`.
@@ -16,6 +16,10 @@
 // - **No `LOCAL_CHECK_CODES` filter.** A save is handed one file and may block
 //   only on what one file can decide; a check is handed a set and reports every
 //   rule the set can answer, duplicate ids and dangling anchor claims included.
+//   "The set" is the submitted documents **unioned with the live corpus**: the
+//   `documentExists` and `anchorClaimants` seams answer the two cross-document
+//   questions the submitted set cannot settle alone, so a subset request judges
+//   a document the same way a whole-workspace one does.
 // - **A drifted corpus is a `200`.** The check succeeded; the corpus is what has
 //   the problem. `400` is reserved for a malformed *request*, and the schema's
 //   own XOR produces it before this handler ever runs.

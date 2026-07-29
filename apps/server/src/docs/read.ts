@@ -82,6 +82,26 @@ export function isIdTaken(projection: ProjectionDb, id: string): boolean {
 }
 
 /**
+ * The ids of threads the projection records as claiming `<docId>#<anchorId>` —
+ * §14's `anchor-unused` seam, the anchor-claim counterpart of {@link isIdTaken}.
+ *
+ * Every thread counts, resolved ones included: resolving a thread keeps both its
+ * `anchor` field and the parent's anchor entry (§6 removes the entry on
+ * *delete*), so a resolved thread is still a conversation the highlight points
+ * at.
+ */
+export function anchorClaimantIds(
+  projection: ProjectionDb,
+  docId: string,
+  anchorId: string,
+): readonly string[] {
+  return projection
+    .prepare("SELECT id FROM threads WHERE parent_id = ? AND anchor_id = ?")
+    .all(docId, anchorId)
+    .map((row) => (row as { id: string }).id);
+}
+
+/**
  * Read the document `id` names, or throw the contract's 404. A row whose file
  * vanished under it is a 404 as well: the projection is derived state and racing
  * an external `rm` is normal, not a server fault.

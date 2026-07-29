@@ -16,6 +16,7 @@ import {
   AUTH,
   type WriteWorkspace,
 } from "../docs/write-fixture.js";
+import { createThread } from "../threads/thread-fixture.js";
 
 let ws: WriteWorkspace;
 
@@ -195,6 +196,8 @@ describe("the whole-corpus rules are not filtered to what a save may block on", 
   });
 
   it("reports an anchor no thread claims, which a single-file save cannot judge", async () => {
+    // No thread exists anywhere — not in the request and not in the projection —
+    // so the live-corpus seam has nothing to say and the error stands.
     const created = await createDoc(ws, {
       type: "note",
       title: "Anchored",
@@ -206,6 +209,132 @@ describe("the whole-corpus rules are not filtered to what a save may block on", 
     );
     const { report } = await check({ ids: [created.id] });
     expect(codes(report.errors)).toEqual(["anchor-unused"]);
+  });
+});
+
+/**
+ * SERVER-019 FAIL-1 (sprint-013 evaluation): `anchor-unused` is a cross-document
+ * rule and was answered from the submitted set alone, so every subset request —
+ * `corpus doc check <id>` and *every* `--staged` run, which is a subset by
+ * construction — reported an error for the most ordinary document in the
+ * product: one that has been commented on. Adjudication 6 makes that a bug by
+ * definition ("a document the system would accept on write must not fail
+ * `doc check`").
+ */
+describe("anchor-unused is answered against the live corpus, unioned with the request", () => {
+  /** The evaluator's fixture: a real document with a real anchored thread. */
+  async function anchoredDocument(): Promise<{
+    id: string;
+    path: string;
+    threadId: string;
+    anchorId: string;
+  }> {
+    const created = await createDoc(ws, {
+      type: "note",
+      title: "Anchored subject",
+      body: "The quick brown fox jumps over the lazy dog.",
+    });
+    const thread = await createThread(ws, {
+      parent: created.id,
+      title: "About the fox",
+      body: "why brown?",
+      selector: { exact: "quick brown fox" },
+    });
+    expect(thread.anchorId).not.toBeNull();
+    return {
+      id: created.id,
+      path: created.path,
+      threadId: thread.id,
+      anchorId: thread.anchorId ?? "",
+    };
+  }
+
+  it("accepts a document by id whose thread the request never names", async () => {
+    const subject = await anchoredDocument();
+
+    // The write path accepts this document…
+    const saved = await ws.put(`/api/docs/${subject.id}`, {
+      body: "The quick brown fox jumps over the lazy dog. Accepted by the write path.\n",
+    });
+    expect(saved.status).toBe(200);
+
+    // …so the check must too, whether or not the thread is in the request.
+    const alone = await check({ ids: [subject.id] });
+    expect(alone.report).toEqual({ ok: true, errors: [], warnings: [] });
+
+    const together = await check({ ids: [subject.id, subject.threadId] });
+    expect(together.report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
+  it("accepts the same document through the `--staged` pair form", async () => {
+    const subject = await anchoredDocument();
+    const { report } = await check({
+      documents: [{ path: subject.path, content: ws.read(subject.path) }],
+    });
+    expect(report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
+  it("reports a genuinely unused anchor in a subset and in a whole-workspace request", async () => {
+    const subject = await anchoredDocument();
+    const dangling = await createDoc(ws, { type: "note", title: "Dangling", body: "Lazy dog." });
+    ws.write(
+      dangling.path,
+      `---\nid: ${dangling.id}\ntype: note\ntitle: Dangling\n${STAMPS}\nanchors:\n  anc_ffffff:\n    exact: Lazy dog\n---\n\nLazy dog.\n`,
+    );
+    ws.reproject();
+
+    const subset = await check({ ids: [dangling.id] });
+    expect(codes(subset.report.errors)).toEqual(["anchor-unused"]);
+    expect(subset.report.errors[0]?.detail).toContain("anc_ffffff");
+    expect(subset.report.ok).toBe(false);
+
+    // The same drift in the whole-workspace run, and the anchored document
+    // beside it still contributes nothing: the union changed neither answer.
+    const allIds = (ws.db.prepare("SELECT id FROM documents").all() as { id: string }[]).map(
+      (row) => row.id,
+    );
+    expect(allIds).toContain(subject.id);
+    expect(allIds).toContain(subject.threadId);
+    const whole = await check({ ids: allIds });
+    expect(codes(whole.report.errors)).toEqual(["anchor-unused"]);
+    expect(whole.report.errors).toHaveLength(1);
+    expect(whole.report.errors[0]?.docId).toBe(dangling.id);
+  });
+
+  it("accepts staged pairs whose thread exists only in the request", async () => {
+    // The init-time staged check: neither file is on disk and neither is in the
+    // projection, so the submitted set is the whole corpus there is.
+    const parent = `---\nid: doc_staged1\ntype: note\ntitle: Staged\n${STAMPS}\nanchors:\n  anc_bbbbbb:\n    exact: quick brown\n---\n\nThe quick brown fox.\n`;
+    const thread = `---\nid: th_staged1\ntype: thread\ntitle: Thread\nparent: doc_staged1\nanchor: anc_bbbbbb\nstatus: open\n${STAMPS}\n---\n\n**user** · 2026-01-01T00:00:00Z\n\nHi.\n`;
+    const { report } = await check({
+      documents: [
+        { path: "data/docs/staged.md", content: parent },
+        { path: "data/threads/th_staged1.md", content: thread },
+      ],
+    });
+    expect(report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+
+  it("catches an anchor the staged edit itself orphaned", async () => {
+    // The thread is in the request and its staged bytes no longer claim the
+    // anchor: the submitted set is authoritative for what it contains, so the
+    // projection's row must not vouch for the anchor.
+    const subject = await anchoredDocument();
+    const threadPath = `data/threads/${subject.threadId}.md`;
+    const { report } = await check({
+      documents: [
+        { path: subject.path, content: ws.read(subject.path) },
+        {
+          path: threadPath,
+          content: ws
+            .read(threadPath)
+            .replace(new RegExp(`^anchor: ${subject.anchorId}\n`, "m"), ""),
+        },
+      ],
+    });
+    expect(codes(report.errors)).toEqual(["anchor-unused"]);
+    expect(report.errors[0]?.detail).toContain(subject.anchorId);
+    expect(report.ok).toBe(false);
   });
 });
 
