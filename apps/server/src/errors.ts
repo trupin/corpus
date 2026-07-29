@@ -8,6 +8,7 @@
 // CLI renders `<status> <code>: <message>` from those two fields.
 
 import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import type { ApiError, Lock, ValidationIssue } from "@corpus/contract";
@@ -144,6 +145,45 @@ export function errorResponse(c: Context, error: HttpError): Response {
 }
 
 /**
+ * Hono's own way of refusing a request, re-expressed in the contract's envelope
+ * (SERVER-031).
+ *
+ * The framework throws `HTTPException` from places no route handler can reach:
+ * the body validator throws `400 Malformed JSON in request body` when a request
+ * declares `content-type: application/json` and its body is empty or not JSON,
+ * and `400 Malformed FormData request.` for the multipart equivalent. Both
+ * happen **before** `defaultHook` — the validation function never runs on a body
+ * that could not be read — so the only shared seam that can see them is this
+ * one. Left unrecognised they fell through to {@link internalError}, and an
+ * empty `POST` body answered `500 internal_error` on every JSON route in the
+ * API: the caller's mistake reported as the server's crash.
+ *
+ * The status is the framework's; the body is always ours. A custom `res` on the
+ * exception is deliberately not honoured — sprint-002 Adjudication 2 pins every
+ * error body to `ApiError`, and the CLI renders `<status> <code>: <message>`
+ * from it. `5xx` collapses to the generic internal error for the usual reason:
+ * a message written for an operator must not travel to a client.
+ */
+function fromHttpException(error: HTTPException): HttpError {
+  if (error.status >= 500) return internalError();
+  const message = error.message === "" ? "request refused" : error.message;
+  switch (error.status) {
+    case 401:
+      return unauthorized(message);
+    case 403:
+      return forbidden(message);
+    case 404:
+      return notFound(message);
+    case 409:
+      return conflict(message);
+    case 413:
+      return payloadTooLarge(message);
+    default:
+      return new HttpError(error.status, { code: "bad_request", message, issues: [] });
+  }
+}
+
+/**
  * Maps anything thrown inside a handler or middleware to a response. Unexpected
  * errors never leak their message or stack to the client — the full error,
  * including `cause`, goes to the log instead.
@@ -153,6 +193,7 @@ export function toHttpError(error: unknown): HttpError {
   if (error instanceof z.ZodError) {
     return badRequest("request failed validation", toValidationIssues(error));
   }
+  if (error instanceof HTTPException) return fromHttpException(error);
   return internalError();
 }
 
