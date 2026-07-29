@@ -1247,7 +1247,7 @@ corpus thread reopen th_a1b2c3 --json
 
 Append a turn to a thread.
 
-Reads the turn's body from `-m`, `--file` or stdin — the heredoc form the comment skill uses — and appends it to the thread, committed with `--from` as the git author. An empty body is a usage error (exit 2), never a request. Whether the turn wakes the agent is the server's call (SPEC.md §8): a turn in an `engaged` thread, or one mentioning `@agent`, enqueues a `comment.created` event and the printed line names it; a resolved thread enqueues nothing. The body is passed through unchanged — fenced blocks, `~~~form` blocks and interior newlines all survive verbatim.
+Reads the turn's body from `-m`, `--file` or stdin — the heredoc form the comment skill uses — and appends it to the thread, committed with `--from` as the git author. An empty body is a usage error (exit 2), never a request. Whether the turn wakes the agent is the server's call (SPEC.md §8): a turn in an `engaged` thread, or one mentioning `@agent`, enqueues a `comment.created` event and the printed line names it. Resolving a thread stops only the automatic re-trigger — an explicit `@agent` mention (or `/skill` invocation) in a resolved thread still enqueues, because resolved is not a mute button on someone deliberately asking. The body is passed through unchanged — fenced code blocks (a ` ```form ` fence among them) and interior newlines all survive verbatim.
 
 ```
 corpus thread reply <id> [flags]

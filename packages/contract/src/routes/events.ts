@@ -7,8 +7,27 @@ import { VALIDATION_RESPONSE } from "./responses.js";
  * describes the whole HTTP surface, but deliberately *not* part of the generated
  * fetch client: `EventSource` cannot set headers, so the client exposes it
  * through `createEventStream` from `@corpus/contract/client` instead, which is
- * why the bearer token travels as a query parameter (acceptable under the
- * localhost-bind model, SPEC.md §2.1).
+ * why the bearer token travels as a query parameter.
+ *
+ * **The token-in-query transport is a decided posture, not an oversight
+ * (CONTRACT-014).** Accepted for v1, on the localhost-bind model's terms
+ * (SPEC.md §2.1, Architecture Decision 5): the server binds `127.0.0.1` in a
+ * single-user system, the only parties who can observe the URL are processes of
+ * the same user on the same machine — which could equally read the token from
+ * `.corpus/` on disk — and the classic query-string leak vectors do not apply
+ * here (no `Referer` leaves the page for a third party over an SSE request, no
+ * shared proxy sits on loopback, browser history does not record `EventSource`
+ * URLs). The one leak channel the *client* itself creates — its own error
+ * messages, which callers are expected to log — redacts the token
+ * (`createEventStream`).
+ *
+ * The boundary is as explicit as the acceptance: this transport is
+ * **localhost-only**. A remote-server deployment must not reuse it — query
+ * strings transit proxies and access logs in clear — and the committed
+ * migration is a short-lived, single-use ticket minted over an authenticated
+ * `POST`, or cookie transport, swapped in behind `createEventStream` without
+ * changing its signature. Deciding that *before* remote setups arrive is this
+ * note's whole purpose.
  */
 export const streamEvents = createRoute({
   method: "get",
@@ -32,7 +51,9 @@ export const streamEvents = createRoute({
         .openapi({
           param: { name: "token", in: "query", required: true },
           description:
-            "Workspace bearer token; a query parameter because EventSource cannot set headers.",
+            "Workspace bearer token; a query parameter because EventSource cannot set headers. " +
+            "Accepted for v1 under the localhost bind (SPEC.md §2.1) — a remote-server deployment " +
+            "must replace this transport (see the route's contract docblock) before leaving loopback.",
         }),
     }),
   },

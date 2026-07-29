@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   containsFormFence,
   extractFormSource,
+  findFormFence,
   FORM_ANSWER_LABEL,
   FORM_FENCE_INFO_STRING,
   FORM_RESPOND_EVENT_TYPE,
@@ -75,6 +76,90 @@ describe("the form fence", () => {
   it("reports no form in a body that has none", () => {
     expect(containsFormFence("Just a reply, with `code` and a ```ts fence.")).toBe(false);
     expect(extractFormSource("")).toBeUndefined();
+  });
+});
+
+/** The CONTRACT-014 settlement: CommonMark's fence rules, minus three documented restrictions. */
+describe("the fence grammar at its edges", () => {
+  it("hands a renderer the offsets to split the body around the fence", () => {
+    const body = `Before.\n\n${fenced("form", FORM_YAML)}\n\nAfter.`;
+    const match = findFormFence(body);
+    expect(match).toBeDefined();
+    expect(body.slice(0, match?.start)).toBe("Before.\n\n");
+    expect(body.slice(match?.end)).toBe("\n\nAfter.");
+    expect(match?.source).toBe(FORM_YAML);
+  });
+
+  // Restriction 3: the server always closes the fences it writes, so an
+  // unterminated one is a mangled file, not a question — even though CommonMark
+  // would close it at end of input.
+  it("does not treat an unterminated fence as a form", () => {
+    expect(containsFormFence(`Q:\n\n\`\`\`form\n${FORM_YAML}\n`)).toBe(false);
+    expect(containsFormFence("```form")).toBe(false);
+  });
+
+  // CommonMark: a closing fence is a whole line. The old regex accepted this
+  // and read a YAML source no renderer would show.
+  it("does not accept a mid-line closer, leaving the fence unterminated", () => {
+    expect(containsFormFence("```form\nprompt: x```\n")).toBe(false);
+  });
+
+  // CommonMark: fences do not nest — content of an open block is content. The
+  // old regex claimed the quoted example as a live form.
+  it("leaves a form quoted inside an outer example block alone", () => {
+    const body = `An example:\n\n\`\`\`\`markdown\n${fenced("form", FORM_YAML)}\n\`\`\`\``;
+    expect(containsFormFence(body)).toBe(false);
+  });
+
+  it("leaves a form quoted inside a tilde block alone", () => {
+    expect(containsFormFence(`~~~\n${fenced("form", FORM_YAML)}\n~~~`)).toBe(false);
+  });
+
+  // The inner "```form" line cannot close the ```js block (a closer carries no
+  // info string), so the js block swallows everything to the last "```" —
+  // exactly CommonMark's reading.
+  it("lets an unclosed plain fence shadow a form fence that follows", () => {
+    expect(containsFormFence(`\`\`\`js\ncode\n\`\`\`form\n${FORM_YAML}\n\`\`\``)).toBe(false);
+  });
+
+  it("finds a form after a closed plain fence", () => {
+    const body = `\`\`\`js\ncode()\n\`\`\`\n\n${fenced("form", FORM_YAML)}`;
+    expect(extractFormSource(body)).toBe(FORM_YAML);
+  });
+
+  // CommonMark: the closer needs at least as many backticks as the opener.
+  it.each([
+    ["a longer closer on a three-backtick opener", `\`\`\`form\n${FORM_YAML}\n\`\`\`\`\``],
+    ["a four-backtick opener with a matching closer", `\`\`\`\`form\n${FORM_YAML}\n\`\`\`\`\``],
+  ])("accepts %s", (_name, body) => {
+    expect(extractFormSource(body)).toBe(FORM_YAML);
+  });
+
+  it("keeps a three-backtick line as content inside a four-backtick form fence", () => {
+    expect(extractFormSource(`\`\`\`\`form\n${FORM_YAML}\n\`\`\`\n\`\`\`\``)).toBe(
+      `${FORM_YAML}\n\`\`\``,
+    );
+  });
+
+  // Restriction 2: §6 spells the fence with backticks; a tilde fence opens an
+  // ordinary code block. Restriction 1: column 0 only.
+  it.each([
+    ["a tilde form fence", `~~~form\n${FORM_YAML}\n~~~`],
+    ["an indented fence", `  \`\`\`form\n${FORM_YAML}\n  \`\`\``],
+    ["a backtick in the info string", `\`\`\`form\`\n${FORM_YAML}\n\`\`\``],
+  ])("declines %s, degrading it to an ordinary block", (_name, body) => {
+    expect(containsFormFence(body)).toBe(false);
+  });
+
+  // CommonMark trims the info string, so leading whitespace before `form` is
+  // the same fence — new with the scanner; the old regex declined it.
+  it("accepts leading whitespace in the info string, as CommonMark does", () => {
+    expect(extractFormSource(`\`\`\` form\n${FORM_YAML}\n\`\`\``)).toBe(FORM_YAML);
+  });
+
+  it("reads a CRLF body, normalising the source's line terminators", () => {
+    const body = "```form\r\nprompt: Ready?\r\noptions:\r\n  - Yes\r\n```\r\n";
+    expect(extractFormSource(body)).toBe("prompt: Ready?\noptions:\n  - Yes");
   });
 });
 

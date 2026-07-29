@@ -15,18 +15,18 @@
 //
 // Their common cause was having two definitions of "carries a form", so the fix
 // is to have one. The grammar itself stays the contract's — `extractFormSource`
-// / `FORM_FENCE_PATTERN` for the fence, `FormSchema` for the fields — because
+// / `findFormFence` for the fence, `FormSchema` for the fields — because
 // the UI depends on it too and cannot import this module (CONTRACT-013). What
 // lives here is only the *composition* of the contract's parser with a YAML
 // parse, which the contract cannot do (it carries no YAML dependency).
 //
 // The projection consumes this through a `turns.has_form` column rather than
-// through SQL of its own: SQLite can express neither the regex nor the YAML, and
-// a second translation of the grammar is exactly what went wrong. Should
-// CONTRACT-014 adjust the fence grammar — it is under discussion, and the
-// current pattern is stricter than CommonMark about the closing fence — every
-// consumer here follows it with no change beyond a projection rebuild, which a
-// `SCHEMA_VERSION` bump already performs.
+// through SQL of its own: SQLite can express neither the fence scan nor the
+// YAML, and a second translation of the grammar is exactly what went wrong.
+// CONTRACT-014 settled the grammar (a CommonMark subset — the settlement and
+// its three restrictions are documented in the contract's `schemas/form.ts`);
+// the change reached every consumer here with no code change beyond the
+// `SCHEMA_VERSION` bump that recomputed `has_form` under the settled rules.
 
 import type { Form } from "@corpus/contract";
 import { FormSchema, extractFormSource } from "@corpus/contract";

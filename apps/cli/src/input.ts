@@ -156,9 +156,9 @@ export async function readAll(stream: AsyncIterable<string | Uint8Array>): Promi
  * request body is built from a single read.
  *
  * Bytes are passed through **verbatim**: no trailing-newline trimming, no
- * markdown processing, no CRLF rewriting. A `~~~form` block, a fenced code
- * block and a heredoc's final newline all reach the server as typed, and
- * normalization stays the server's single implementation.
+ * markdown processing, no CRLF rewriting. A ```` ```form ```` fence, any other
+ * fenced code block and a heredoc's final newline all reach the server as
+ * typed, and normalization stays the server's single implementation.
  *
  * A stdin that is a TTY is never read — a verb whose body is optional must not
  * hang waiting for a human who was not asked for one.

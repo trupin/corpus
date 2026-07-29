@@ -10,7 +10,7 @@
 //
 // **The grammar is the contract's, and there is exactly one copy of it.** §6
 // gives three words of form syntax; `@corpus/contract`'s `schemas/form.ts` pins
-// the rest — `FORM_FENCE_PATTERN` / `extractFormSource` for the fence,
+// the rest — `findFormFence` / `extractFormSource` for the fence,
 // `FormSchema` for the fields, `validateFormAnswer` for the answer,
 // `FormRespondPayloadSchema` for the event. A server that decided for itself
 // what `` ```form `` means would disagree with the UI that renders the controls

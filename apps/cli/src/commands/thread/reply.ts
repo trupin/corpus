@@ -6,9 +6,11 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * comment skill is written in, and the reason the body-source helper exists: the
  * agent's replies are prose, and prose arrives as a heredoc.
  *
- * The body is sent byte-for-byte. A `~~~form` block, a fenced code block or a
- * trailing newline reach the thread file exactly as they were typed — there is
- * no markdown post-processing anywhere in the CLI.
+ * The body is sent byte-for-byte. A ```` ```form ```` fence, any other fenced
+ * code block or a trailing newline reach the thread file exactly as they were
+ * typed — there is no markdown post-processing anywhere in the CLI. (Backtick
+ * fences, deliberately: `~~~form` is not a form fence — the contract's settled
+ * grammar, CONTRACT-014.)
  *
  * Participation is not the CLI's decision either (SPEC.md §8): whether the turn
  * enqueues a `comment.created` event depends on the thread's state and on
@@ -44,9 +46,11 @@ export const replyCommand: WorkspaceCommandSpec = {
     "uses — and appends it to the thread, committed with `--from` as the git author. An empty " +
     "body is a usage error (exit 2), never a request. Whether the turn wakes the agent is the " +
     "server's call (SPEC.md §8): a turn in an `engaged` thread, or one mentioning `@agent`, " +
-    "enqueues a `comment.created` event and the printed line names it; a resolved thread " +
-    "enqueues nothing. The body is passed through unchanged — fenced blocks, `~~~form` blocks " +
-    "and interior newlines all survive verbatim.",
+    "enqueues a `comment.created` event and the printed line names it. Resolving a thread stops " +
+    "only the automatic re-trigger — an explicit `@agent` mention (or `/skill` invocation) in " +
+    "a resolved thread still enqueues, because resolved is not a mute button on someone " +
+    "deliberately asking. The body is passed through unchanged — fenced code blocks (a " +
+    "` ```form ` fence among them) and interior newlines all survive verbatim.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
   flags: [...bodyFlags("The turn body")],
   examples: [

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { InvalidatePayload } from "../schemas/sse.js";
-import { createEventStream, eventStreamUrl, type EventSourceLike } from "./events.js";
+import { createEventStream, eventStreamUrl, redactedUrl, type EventSourceLike } from "./events.js";
 
 class FakeEventSource implements EventSourceLike {
   readonly listeners = new Map<string, (event: { readonly data: string }) => void>();
@@ -54,6 +54,18 @@ describe("eventStreamUrl", () => {
   });
 });
 
+describe("redactedUrl", () => {
+  it("masks the token value and only the token value", () => {
+    expect(redactedUrl("http://127.0.0.1:8765/events?token=s3cret")).toBe(
+      "http://127.0.0.1:8765/events?token=REDACTED",
+    );
+  });
+
+  it("leaves a URL without a token untouched", () => {
+    expect(redactedUrl("http://127.0.0.1:8765/events")).toBe("http://127.0.0.1:8765/events");
+  });
+});
+
 describe("createEventStream", () => {
   it("hands a parsed invalidate frame to the caller", () => {
     const { source, received } = connect();
@@ -89,11 +101,14 @@ describe("createEventStream", () => {
     expect(onError).toHaveBeenCalledOnce();
   });
 
-  it("reports transport errors", () => {
+  it("reports transport errors with the token redacted, since errors get logged", () => {
     const onError = vi.fn();
     const { source } = connect(onError);
     source.emit("error", "");
-    expect(String(onError.mock.calls[0]?.[0])).toContain("Event stream error");
+    const message = String(onError.mock.calls[0]?.[0]);
+    expect(message).toContain("Event stream error");
+    expect(message).toContain("token=REDACTED");
+    expect(message).not.toContain("tok+en");
   });
 
   it("throws when no error handler was supplied, rather than swallowing the failure", () => {

@@ -10,8 +10,15 @@
  * Bumped whenever {@link PROJECTION_DDL} changes in any way that alters the
  * rows a reader would see. A database stamped with a different value is dropped
  * and rebuilt from files, so there is deliberately no migration path.
+ *
+ * 4 → 5 (CONTRACT-014): the DDL is unchanged, but the *derivation* of
+ * `turns.has_form` is — the contract settled the fence grammar (a CommonMark
+ * subset; see `@corpus/contract`'s `schemas/form.ts`), so values computed under
+ * the old regex can be stale (a form quoted inside an outer example block was
+ * counted; a mid-line closer was accepted). "Alters the rows a reader would
+ * see" includes how a stored value is computed, not only its column.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";

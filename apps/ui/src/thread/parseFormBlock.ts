@@ -1,18 +1,20 @@
-import { FORM_ANSWER_LABEL, FORM_FENCE_PATTERN, FormSchema, type Form } from "@corpus/contract";
+import { FORM_ANSWER_LABEL, findFormFence, FormSchema, type Form } from "@corpus/contract";
 import * as YAML from "yaml";
 
 /**
  * The ```` ```form ```` fence in a turn body (SPEC.md §6), split out so the
  * controls can be rendered in its place.
  *
- * **The grammar is the contract's, matched whole.** `FORM_FENCE_PATTERN` is
- * imported rather than approximated: ```` ```formula ```` and
- * ```` ```form-builder ```` open ordinary code blocks, and a looser match here
- * would make the UI offer controls on a turn the *server* would refuse to accept
- * an answer for (`POST …/form` 404s on a turn that carries no form). The YAML is
- * parsed by the `yaml` library — SPEC.md §5 says never hand-roll one — and
- * validated with the contract's own `FormSchema`, so "what is a form" has one
- * definition across the server, the projection and this menu.
+ * **The grammar is the contract's, matched whole.** `findFormFence` is imported
+ * rather than approximated: ```` ```formula ```` and ```` ```form-builder ````
+ * open ordinary code blocks — as do a tilde fence, an unterminated fence, and a
+ * form quoted inside an outer example block (the CONTRACT-014 settlement, whose
+ * edges live in the contract's docblock) — and a looser match here would make
+ * the UI offer controls on a turn the *server* would refuse to accept an answer
+ * for (`POST …/form` 404s on a turn that carries no form). The YAML is parsed
+ * by the `yaml` library — SPEC.md §5 says never hand-roll one — and validated
+ * with the contract's own `FormSchema`, so "what is a form" has one definition
+ * across the server, the projection and this menu.
  *
  * A malformed fence is not an error state: the bytes came off a file a person or
  * an agent wrote. It degrades to a code block plus a small warning, exactly as
@@ -40,12 +42,12 @@ export interface FormFenceSplit {
 }
 
 export function splitFormFence(body: string): FormFenceSplit {
-  const match = FORM_FENCE_PATTERN.exec(body);
-  if (match === null) return { before: body, after: "", source: undefined };
+  const match = findFormFence(body);
+  if (match === undefined) return { before: body, after: "", source: undefined };
   return {
-    before: body.slice(0, match.index).trimEnd(),
-    after: body.slice(match.index + match[0].length).trimStart(),
-    source: match[1] ?? "",
+    before: body.slice(0, match.start).trimEnd(),
+    after: body.slice(match.end).trimStart(),
+    source: match.source,
   };
 }
 
