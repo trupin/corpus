@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -55,13 +55,18 @@ implements it rather than gating on it.
 
 **Ownership (Adjudication 10 / Open Conflict 3).** AGENT-003 wrote the comment skill's Reply
 section complete **except** the trace rule; this issue adds the rule to **both** skills, owns the
-grammar statement, the worked-example traces and the template tests. Files in the `[AGENT-004]`
-commit: `assets/workspace/claude/skills/comment/SKILL.md` (trace bullet in Reply, four
+grammar statement, the worked-example traces and the template tests. Files carrying this issue's
+edits: `assets/workspace/claude/skills/comment/SKILL.md` (trace bullet in Reply, four
 worked-example traces + the Reply example's, the "that reply changed nothing, so it carries no
 trace line" sentence in the deferral, `updated` → `2026-07-29`),
 `assets/workspace/claude/skills/orchestrate/SKILL.md` (trace bullet in Stewardship, the worked
 example's trace, the deferral's explicit no-trace comment, `updated` → `2026-07-29`), and
-`scripts/workspace-template.test.ts` (`describe("trace lines")`). **TEST-228: nothing outside
+`scripts/workspace-template.test.ts` (`describe("trace lines")`). _Orchestrator correction
+(2026-07-29, evaluator H-1): file-level staging put the comment-skill trace edits and the trace
+test block into `ac3cf30 [AGENT-003]`; the `[AGENT-004]` commit (`c48a4c6`) carries only the
+orchestrate skill + this issue file. Content is correct in the tree; the attribution deviation
+from sprint-014 Adjudication 10 was disclosed in the `[AGENT-003]` commit message and is
+accepted._ **TEST-228: nothing outside
 `assets/workspace/**` and that one test file** — no `trace` field on `Turn`, no UI or contract
 change.
 
@@ -85,7 +90,7 @@ Read 2, Skill 1`, zero `Write`/`Edit`, zero raw HTTP, zero git state changes).
 | TEST-224 | PASS | Follow-up in the already-titled `th_uinzdi6p` ("is APR the same as APY?") — a pure answer, no writes: no `↳` line on disk and `hasTrace=false` in the live DOM. (The *first* turn in that thread **did** write — it titled the standalone thread — and correctly carried `↳ titled this thread`, which is the rule discriminating rather than the agent guessing.) |
 | TEST-225 | PASS | A **user** turn whose last line is `↳ this line is mine, not a trace` renders with **no** `.turn-trace`; the arrow appears as ordinary text in the turn body (`splitTrace` short-circuits on `author !== "agent"`). Read-only observation. |
 | TEST-226 | PASS | A harness-posted agent turn with a `↳` line **not** last: no `.turn-trace`, the arrow line stays inside the body — which is why the skill's "final line only" rule matters. |
-| TEST-227 | RECORDED | `apps/ui/src/thread/Turn.tsx`'s `splitTrace` `.trim()`s the candidate and checks `startsWith("↳")` **without** requiring the trailing space, and runs on attachment-stripped `prose` rather than the raw final line. The skills specify the **strict** grammar (`↳ ` with the space, true final line); the reader's leniency is **not** relied on and **not** fixed here — it is `issues/ui/013-pr10-minor-findings.md` finding (11), status `todo`, ui domain. Related nit for the same issue: `thread.css:64`'s comment ("The arrow is CSS content, never a character in the document's bytes") is true of the DOM but reads as contradicting SPEC §6, where the arrow **is** in the bytes. |
+| TEST-227 | RECORDED | `apps/ui/src/thread/Turn.tsx`'s `splitTrace` `.trim()`s the candidate and checks `startsWith("↳")` **without** requiring the trailing space, and runs on attachment-stripped `prose` rather than the raw final line. The skills specify the **strict** grammar (`↳ ` with the space, true final line); the reader's leniency is **not** relied on and **not** fixed here — it was `issues/ui/013-pr10-minor-findings.md` finding (11), which UI-013 fixed in `287fd63` (`TRACE_PREFIX` is now `"↳ "` with the space, read from the raw final line) — _stale cross-reference corrected by the orchestrator, 2026-07-29 (evaluator F-2)_. Related nit for the same issue: `thread.css:64`'s comment ("The arrow is CSS content, never a character in the document's bytes") is true of the DOM but reads as contradicting SPEC §6, where the arrow **is** in the bytes. |
 | TEST-228 | PASS | `git status --porcelain` for this half: the two `assets/workspace/claude/skills/*/SKILL.md` files and `scripts/workspace-template.test.ts`. |
 
 Live loop evidence for the trace rule (job log, `.corpus/jobs/evt_hewgfwwwg2xh.jsonl`):

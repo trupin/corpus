@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done
 
 ## Priority
 

@@ -108,13 +108,13 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | done | P1 | CONTRACT-011 |
 | SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | done | P1 | CONTRACT-012, SERVER-011 |
 | SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | done | P1 | SERVER-007, SERVER-011 |
-| UI-013 | UI hardening batch: PR #10 MINOR findings | in_progress | P2 | UI-006, UI-007, UI-008 |
-| SERVER-029 | Server hardening batch: PR #10 MINOR findings | in_progress | P2 | SERVER-016, SERVER-026 |
-| CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | in_progress | P2 | CONTRACT-007, CONTRACT-013 |
-| CLI-009 | `server stop` must not delete a live foreign pidfile | in_progress | P2 | CLI-002 |
-| INFRA-009 | Coverage gate: empty in-scope set must fail | in_progress | P2 | INFRA-004 |
+| UI-013 | UI hardening batch: PR #10 MINOR findings | done | P2 | UI-006, UI-007, UI-008 |
+| SERVER-029 | Server hardening batch: PR #10 MINOR findings | done | P2 | SERVER-016, SERVER-026 |
+| CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | done | P2 | CONTRACT-007, CONTRACT-013 |
+| CLI-009 | `server stop` must not delete a live foreign pidfile | done | P2 | CLI-002 |
+| INFRA-009 | Coverage gate: empty in-scope set must fail | done | P2 | INFRA-004 |
 | CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | done | P1 | CONTRACT-007, CONTRACT-009 |
-| UI-012 | DocMenu actions never toast (callback teardown) | in_progress | P2 | UI-005 |
+| UI-012 | DocMenu actions never toast (callback teardown) | done | P2 | UI-005 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
 ---
@@ -128,23 +128,24 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-016 | Rider: nullable rollback commit | done | P1 | CONTRACT-008 |
 | SERVER-019 | Mount validation + skill-rollback handlers | done | P1 | CONTRACT-008, CONTRACT-016 |
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | done | P1 | CLI-003, SERVER-019 |
-| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | in_progress | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
+| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | done | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
 | CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P2 | UI-014, PLUGINS-002 |
 | UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
 | CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002, CLI-005 |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
-| AGENT-004 | Emit trace lines in agent turns | in_progress | P2 | AGENT-002 |
+| AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
-| PLUGINS-002 | Todos reference plugin | in_progress | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
+| PLUGINS-002 | Todos reference plugin | done | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
 | CONTRACT-015 | Graduate plugin-facing types into @corpus/contract | done | P1 | CONTRACT-002 |
-| UI-014 | Editor ownership of non-core document bodies | in_progress | P2 | UI-006, PLUGINS-001 |
+| UI-014 | Editor ownership of non-core document bodies | done | P2 | UI-006, PLUGINS-001 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | done | P1 | CLI-002, UI-010 |
 | CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | done | P1 | CLI-002, AGENT-001 |
 | SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | SERVER-008, SERVER-009, AGENT-002 |
-| SERVER-031 | Empty JSON body returns 500 instead of 400 | in_progress | P2 | SERVER-003 |
-| CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | in_progress | P2 | CONTRACT-009 |
+| SERVER-031 | Empty JSON body returns 500 instead of 400 | done | P2 | SERVER-003 |
+| SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
+| CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | done | P2 | CONTRACT-009 |
 
 ---
 

@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -132,11 +132,10 @@ Real running application only — real server, real UI build, real `corpus` bina
 13. Capture commands, outputs, SSE frames, `git log` excerpts, and screenshots for the log.
 
 ## E2E Verification Log
-_Filled in by the implementing agent as proof-of-work. Must be from real E2E
-testing — no mocks, no test clients. Real application, real requests, real
-interfaces. Include specific commands run, actual outputs observed, and pass/fail
-conclusions. State which model the implementing agent ran on ("implemented on:
-opus | fable")._
+
+Implemented on: **opus** _(recorded by the orchestrator from the spawn parameters, 2026-07-29 —
+the implementing session omitted the line; its report and this log are the sources. Evaluator
+FAIL-1 resolved by this note.)_
 
 **implemented on: opus.**
 
