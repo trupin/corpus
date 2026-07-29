@@ -1,5 +1,15 @@
 # Handoff: Phase 4 final evaluation restart (2026-07-29)
 
+> **UPDATE (same day, later):** the stuck evaluator recovered via single-step resumes and
+> finished — ALL 12 verdicts PASS (evals banked), statuses flipped, SERVER-032 filed,
+> **PR #11 created and CI is GREEN** (https://github.com/trupin/corpus/pull/11). Steps 1–3 below
+> are DONE. The fresh session's remaining work: (a) spawn the fresh fable **pr-reviewer** on PR
+> #11 (number only, no implementation context), fix/waive findings; (b) spawn **spec-writer** to
+> formalize the four held SPEC amendment drafts (listed below) as a commit on the branch for the
+> user's sign-off; (c) surface the npm-name + retitle decisions; (d) HOLD the merge for the
+> user's explicit "land", then squash-merge and do the post-land bookkeeping (statuses already
+> done; sign-off record + memory update). Machine-load and gotcha rules below still apply.
+
 ## Why this handoff
 
 The sprint-014 evaluator lost six sessions to API instability (connection drops + watchdog
