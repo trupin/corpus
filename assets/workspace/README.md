@@ -15,7 +15,8 @@ evergreen: true
 Everything here is a markdown file with YAML frontmatter, kept in git. `data/docs/` holds
 your documents, `data/threads/` holds the conversations attached to them, and `.claude/`
 holds the skills that define how the agent behaves, plus `agents/` for subagent personas you
-can address by name. `.corpus/` is runtime state — generated, gitignored, and rebuildable.
+can address by name. `.corpus/` is runtime state — generated, gitignored, and rebuildable,
+apart from the queue skeleton and the install manifest, which git tracks.
 
 ## The loop
 

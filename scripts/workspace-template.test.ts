@@ -140,11 +140,12 @@ describe("seed documents", () => {
 
   it("uses one fixed authoring timestamp, advanced only where a skill body was rewritten", () => {
     // The tree shares one `created` stamp. `updated` matches it everywhere
-    // except the orchestrate skill, whose AGENT-002 body advanced it — the
+    // except the two skills, whose AGENT-002/AGENT-003 bodies advanced it — the
     // template's own "updated tracks content" rule, applied to itself.
     expect(new Set(documents.map(({ frontmatter }) => frontmatter.created)).size).toBe(1);
+    const rewritten = ["claude/skills/orchestrate/SKILL.md", "claude/skills/comment/SKILL.md"];
     for (const { relPath, frontmatter } of documents) {
-      if (relPath === "claude/skills/orchestrate/SKILL.md") {
+      if (rewritten.includes(relPath)) {
         expect(String(frontmatter.updated) > String(frontmatter.created), relPath).toBe(true);
       } else {
         expect(frontmatter.updated, relPath).toEqual(frontmatter.created);
@@ -265,6 +266,58 @@ describe("skills", () => {
     }
   });
 
+  /**
+   * The `↳` trace convention (SPEC.md §6): an agent turn that performed writes
+   * closes with `↳ <past-tense action report>` as its **final** line. Both
+   * skills state it, and both practice it in their worked examples — a reply
+   * that changed nothing carries none.
+   */
+  describe("trace lines", () => {
+    it.each(skills)("$name states the trace grammar", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      expect(body).toContain("↳ ");
+      expect(body).toMatch(/past-tense/i);
+      expect(body).toMatch(/final line — and only its final line —/);
+      expect(body).toMatch(/changed nothing/i);
+    });
+
+    it.each(skills)("$name puts a trace last, or not at all", ({ relPath }) => {
+      const lines = documentAt(relPath).body.split("\n");
+      const traceLines = lines.filter((line) => line.trimStart().startsWith("↳"));
+      expect(traceLines.length, `${relPath}: no worked-example trace`).toBeGreaterThan(0);
+      for (const [index, line] of lines.entries()) {
+        if (!line.trimStart().startsWith("↳")) continue;
+        // Every trace written into an example turn is that turn's last line:
+        // the heredoc terminator is what comes next.
+        expect(lines[index + 1]?.trim(), `${relPath}: trace not last in its turn`).toBe("EOF");
+      }
+    });
+
+    it.each(skills)("$name neither hides the arrow nor dresses it up", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      // The arrow is written into the turn's bytes. The reader's `::before` is
+      // an implementation detail the skill must not depend on or contradict.
+      expect(body).not.toMatch(/omit the arrow/i);
+      expect(body).not.toMatch(/::before/);
+      expect(body).not.toMatch(/<span[^>]*>\s*↳/);
+    });
+
+    it("keeps traces out of user-authored turns", () => {
+      // A user turn never carries one (the composer produces none, and the
+      // renderer short-circuits on the author), so no example may show one.
+      for (const { relPath } of skills) {
+        const body = documentAt(relPath).body;
+        const userTurns = body
+          .split("\n")
+          .filter((line) => /^(?:user|##\s*user)\b/i.test(line.trimStart()));
+        for (const line of userTurns) expect(line, relPath).not.toContain("↳");
+      }
+      // Both skills' traces live inside `--from agent` reply heredocs only.
+      const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      expect(orchestrate).toMatch(/nothing changed, so that reply carries no trace line/);
+    });
+  });
+
   it("leaves queue terminal-state handling to the orchestrate skill", () => {
     expect(documentAt("claude/skills/comment/SKILL.md").body).not.toMatch(
       /corpus queue (?:complete|fail)/,
@@ -368,6 +421,243 @@ describe("orchestrate skill body", () => {
   });
 });
 
+describe("comment skill body", () => {
+  const body = documentAt("claude/skills/comment/SKILL.md").body;
+
+  it("carries no skeleton remnants and no dev-harness references", () => {
+    for (const marker of ["arrives with agent", "skeleton", "tbd", "<fill", "placeholder"]) {
+      expect(body.toLowerCase(), `contains "${marker}"`).not.toContain(marker);
+    }
+    for (const marker of ["SPEC.md", "CLAUDE.md", "issues/", "npm run", "/implement"]) {
+      expect(body, `contains "${marker}"`).not.toContain(marker);
+    }
+  });
+
+  it("covers the twelve required concerns in its headings", () => {
+    // The six pinned keywords are asserted for both skills above; these are the
+    // remaining concerns of the issue's section list, so a later edit cannot
+    // silently drop routing, engagement or the entry contract.
+    const headings = body
+      .split("\n")
+      .filter((line) => line.startsWith("## "))
+      .map((line) => line.slice(3).toLowerCase());
+    for (const keyword of [
+      "when this runs",
+      "inherited invariants",
+      "routing",
+      "doing the work",
+      "engagement",
+      "stewardship",
+    ]) {
+      expect(
+        headings.some((heading) => heading.includes(keyword)),
+        `no section for "${keyword}"`,
+      ).toBe(true);
+    }
+  });
+
+  it("gives every section a substantive body, not a bare heading", () => {
+    const sections = new Map<string, string[]>();
+    let current: string | null = null;
+    // Fence-aware: the worked examples pass document bodies through heredocs,
+    // and a `## ` line inside one is content, not a section of this skill.
+    let inFence = false;
+    for (const line of body.split("\n")) {
+      if (line.trimStart().startsWith("```")) inFence = !inFence;
+      if (!inFence && line.startsWith("## ")) {
+        current = line.slice(3);
+        sections.set(current, []);
+      } else if (current !== null) {
+        sections.get(current)?.push(line);
+      }
+    }
+    expect(sections.size).toBe(13);
+    for (const [heading, lines] of sections) {
+      expect(
+        lines.join("\n").trim().length,
+        `"${heading}" is a heading with no substance`,
+      ).toBeGreaterThan(400);
+    }
+  });
+
+  it("states the non-negotiable commands verbatim", () => {
+    const rules = [
+      "corpus thread show",
+      "corpus doc show",
+      "corpus doc edit",
+      "corpus doc create",
+      "corpus doc move",
+      "corpus doc archive",
+      "corpus thread reply",
+      "corpus thread resolve",
+      "corpus job log",
+      "corpus job retry",
+      "corpus skill rollback",
+      "--from agent",
+      "export CORPUS_FROM=agent",
+    ];
+    for (const rule of rules) expect(body, `missing "${rule}"`).toContain(rule);
+  });
+
+  it("draws the read path: content from the tree, state through the CLI", () => {
+    expect(body).toMatch(/corpus thread show <id>/);
+    expect(body).toMatch(/corpus doc show <id>/);
+    expect(body).toMatch(/anchor resolution/i);
+    expect(body).toMatch(/data\/docs\//);
+    // `.corpus/` is runtime state, never a source the skill parses.
+    expect(body).toMatch(/never parse anything under `\.corpus\/`/i);
+  });
+
+  it("gives all three thread shapes a read order and a stopping rule", () => {
+    for (const shape of ["Anchored", "Whole-document", "Standalone"]) {
+      expect(body, `no ${shape} shape`).toContain(`**${shape}**`);
+    }
+    expect(body).toContain("`parent: null`");
+    expect(body).toMatch(/orphaned/);
+    expect(body.match(/\bstop\b/gi)?.length ?? 0).toBeGreaterThanOrEqual(3);
+  });
+
+  it("makes the standalone title an obligation, set through a document edit", () => {
+    expect(body).toMatch(/corpus doc edit th_\w+ --title "[^"]+" --from agent/);
+    expect(body).toMatch(/a thread is a document/i);
+    expect(body).toMatch(/obligation, not an option/i);
+  });
+
+  it("routes from the payload's fields, never from the turn text", () => {
+    for (const field of ["threadId", "parentId", "turnTs", "mentions", "skills", "unresolved"]) {
+      expect(body, `payload field ${field} unnamed`).toContain(field);
+    }
+    expect(body).toMatch(/never re-parse the turn text/i);
+    expect(body).toMatch(/@<subagent>/);
+    expect(body).toMatch(/\/<skill>/);
+    expect(body).toMatch(/@agent/);
+  });
+
+  it("distinguishes a missing target from an archived one and handles both", () => {
+    expect(body).toMatch(/\*\*missing\*\*\s+target shows up here/);
+    expect(body).toContain('`status: "archived"`');
+    expect(body).toMatch(/name the\s+deviation explicitly in the reply/i);
+  });
+
+  it("states engagement as the server's doing, with its consequence", () => {
+    expect(body).toMatch(/`requested` to `engaged`/);
+    expect(body).toMatch(/There is no CLI verb that sets it/i);
+    expect(body).toMatch(/\*\*every later user turn\s+re-triggers you\*\*/i);
+    expect(body).toMatch(/note only/i);
+    expect(body).toMatch(/Do not resolve on the person's behalf/i);
+  });
+
+  it("defers on a user lock without naming a queue verb", () => {
+    expect(body).toContain("423");
+    expect(body).toMatch(/Do not retry, and do not break the lock/i);
+    expect(body).toContain('corpus job log evt_7c1d9a "deferred: doc_a1b2c3 is locked by user"');
+    expect(body).toMatch(/hand the event back to the\s+orchestrate skill/i);
+    expect(body).toContain("corpus job retry");
+  });
+
+  it("makes reply mechanics exact", () => {
+    expect(body).toMatch(/corpus thread reply th_\w+ --from agent <<'EOF'/);
+    expect(body).toMatch(/Never post a reply by editing the thread file/i);
+    expect(body).toMatch(/Always reply/i);
+    expect(body).toMatch(/pending indicator/i);
+    expect(body).toContain("[[id]]");
+    expect(body).toMatch(/Length follows the work/i);
+  });
+
+  it("files the inbox concretely and names its convention", () => {
+    expect(body).toContain("data/docs/inbox/");
+    expect(body).toContain("corpus doc move <id> --folder finance --from agent");
+    expect(body).toContain("--add-tag");
+    expect(body).toMatch(/prefer\s+one that already holds similar documents/i);
+    expect(body).toMatch(/leave it in `inbox\/` and ask/i);
+    expect(body).toMatch(/Expansion adds structure, never content/i);
+  });
+
+  it("specifies the form grammar with backticks and the answer path", () => {
+    expect(body).toContain("```form\nprompt: ");
+    expect(body).toContain("options:");
+    expect(body).not.toContain("~~~");
+    expect(body).toMatch(/nothing validates the block when it is posted/i);
+    expect(body).toMatch(/at most one form per turn/i);
+    expect(body).toMatch(/single-select/i);
+    for (const field of ["formTs", "option", "note"]) {
+      expect(body, `form.respond field ${field} unnamed`).toContain(field);
+    }
+    expect(body).toMatch(/no `parentId`/i);
+    expect(body).toMatch(/continuation, not a new request/i);
+  });
+
+  it("states skill genesis: threshold, destination, mechanism, announcement, conflicts", () => {
+    expect(body).toMatch(/stated more than once/i);
+    expect(body).toMatch(/Extend an existing skill when one fits/i);
+    expect(body).toMatch(/Propose a genuinely new skill/i);
+    // Extend-plus-propose: creation outside `data/docs/` is impossible, and the
+    // skill says so rather than naming a verb that cannot do it.
+    expect(body).toMatch(/cannot write into `\.claude\/`/i);
+    expect(body).toMatch(/an \*\*edit to that\s+skill\*\*, never a second skill/i);
+    expect(body).toMatch(/Announce it in the reply/i);
+  });
+
+  it("bounds stewardship and forbids deletion", () => {
+    expect(body).toMatch(/leave it better than you\s+found it/i);
+    expect(body).toMatch(/Archive, never delete/i);
+    expect(body).toMatch(/deletion is the user's alone/i);
+  });
+
+  it("routes plugin-domain work to the plugin's skill, naming no plugin", () => {
+    expect(body).toContain(".claude/skills/<plugin>/");
+    expect(body).toMatch(/never edit a\s+plugin's documents field by field/i);
+    expect(body).not.toMatch(/todos|_fixture/i);
+  });
+
+  it("covers the named edge cases", () => {
+    for (const rule of [
+      /anchor is orphaned/i,
+      /never try to repair the `anchors` map by hand/i,
+      /parent document was deleted/i,
+      /Never recreate it/i,
+      /attachment-only/i,
+      /note-only/i,
+      /standalone thread stays trivial/i,
+      /thread is about a skill document/i,
+      /corpus skill rollback <name>/,
+      /Acknowledge immediately/i,
+    ]) {
+      expect(body, `no edge case matching ${String(rule)}`).toMatch(rule);
+    }
+  });
+
+  it("carries four worked examples, each with runnable commands", () => {
+    const examples = body.split("\n").filter((line) => /^\*\*\d+ — /.test(line));
+    expect(examples).toHaveLength(4);
+    expect(body).toMatch(/\*\*1 — Anchored comment/);
+    expect(body).toMatch(/\*\*2 — Standalone Ask/);
+    expect(body).toMatch(/\*\*3 — Inbox capture/);
+    expect(body).toMatch(/\*\*4 — A `form\.respond` continuation/);
+  });
+
+  it("does not restate the orchestrate skill's loop", () => {
+    expect(body).not.toMatch(/corpus queue (?:claim-all|idle|halt|resume|reap-stale)/);
+    expect(body).not.toContain(".corpus/HALT");
+    expect(body).toContain("orchestrate skill");
+  });
+
+  it("hedges nothing and quotes every multi-line argument", () => {
+    for (const hedge of [
+      "use your judgment",
+      "consider whether",
+      "you may want",
+      "if appropriate",
+    ]) {
+      expect(body.toLowerCase(), `hedges with "${hedge}"`).not.toContain(hedge);
+    }
+    const heredocs = body.match(/<<-?\s*\S+/g) ?? [];
+    expect(heredocs.length).toBeGreaterThan(0);
+    for (const heredoc of heredocs) expect(heredoc).toMatch(/^<<'EOF'$/);
+    expect(body).not.toMatch(/-m "\$\(/);
+  });
+});
+
 describe("gitignore", () => {
   const rules = readTemplateFile("gitignore");
 
@@ -375,6 +665,16 @@ describe("gitignore", () => {
     expect(rules).toContain(".corpus/*");
     expect(rules).toContain("!.corpus/queue/");
     expect(rules).toContain(".corpus/queue/*/*.json");
+  });
+
+  it("tracks the install manifest, which is provenance rather than runtime state", () => {
+    // The blanket rule's own comment enumerates secret, derived and transient;
+    // `.corpus/template-manifest.json` is none of the three, and tracking it is
+    // what gives a clone its own `corpus workspace upgrade` baseline.
+    expect(rules).toContain("!.corpus/template-manifest.json");
+    expect(rules.indexOf("!.corpus/template-manifest.json")).toBeGreaterThan(
+      rules.indexOf(".corpus/*"),
+    );
   });
 });
 

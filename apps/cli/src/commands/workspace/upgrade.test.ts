@@ -57,13 +57,18 @@ function read(root: string, relative: string): string {
   return readFileSync(join(root, ...relative.split("/")), "utf8");
 }
 
-/** A template tree in the tool's own shape (dotless `claude/`, `gitignore`). */
+/**
+ * A template tree in the tool's own shape (dotless `claude/`, `gitignore`). Its
+ * ignore rules mirror the shipped template's: all of `.corpus/` is runtime state
+ * except the install manifest, which is provenance and is tracked. A test that
+ * needs the other branch of `isIgnored` overrides this file itself.
+ */
 function makeTemplate(): string {
   const root = tempDir("template");
   write(root, "claude/skills/orchestrate/SKILL.md", "orchestrate v1\n");
   write(root, "claude/skills/comment/SKILL.md", "comment v1\n");
   write(root, "claude/agents/.gitkeep", "");
-  write(root, "gitignore", ".corpus/*\n");
+  write(root, "gitignore", ".corpus/*\n!.corpus/template-manifest.json\n");
   write(root, "README.md", "readme v1\n");
   return root;
 }
@@ -183,6 +188,10 @@ describe("corpus workspace upgrade", () => {
   it("lands one attributed commit naming old → new version, touching only template paths", async () => {
     const template = makeTemplate();
     const plugins = makePlugins();
+    // A workspace whose `.gitignore` excludes the manifest — the other branch of
+    // `isIgnored`, and what a workspace installed before the manifest became
+    // provenance still looks like. The verb asks git rather than assuming.
+    write(template, "gitignore", ".corpus/*\n");
     const root = await makeWorkspace(template, plugins);
     write(root, "data/docs/inbox/mine.md", "a real document\n");
     await commitAll({ dir: root, message: "a document of my own" });
@@ -204,8 +213,8 @@ describe("corpus workspace upgrade", () => {
       .filter((line) => line !== "")
       .sort();
     // Only template-provenance paths — nothing under `data/`. The manifest is
-    // updated but stays out of the commit: the workspace's own `.gitignore`
-    // excludes all of `.corpus/`, exactly as `corpus init` leaves it.
+    // updated but stays out of the commit, because this workspace's own
+    // `.gitignore` excludes all of `.corpus/` without exception.
     expect(touched).toEqual([".claude/skills/orchestrate/SKILL.md", "README.md"]);
     expect(await git(root, "check-ignore", "--", ".corpus/template-manifest.json")).toContain(
       ".corpus/template-manifest.json",
@@ -215,9 +224,9 @@ describe("corpus workspace upgrade", () => {
   it("commits the manifest when the workspace does track it", async () => {
     const template = makeTemplate();
     const plugins = makePlugins();
-    // A workspace whose `.gitignore` keeps the manifest: the verb asks git
-    // rather than assuming, so this needs no code change to work.
-    write(template, "gitignore", ".corpus/*\n!.corpus/template-manifest.json\n");
+    // The shipped template's own rules: `.corpus/` ignored, the manifest
+    // un-ignored. The verb asks git rather than assuming, so the manifest lands
+    // in the same commit as the files it describes with no code change.
     const root = await makeWorkspace(template, plugins);
     write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
 

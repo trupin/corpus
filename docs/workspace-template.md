@@ -109,10 +109,12 @@ their parents) arrive with the copy and are not listed here.
 - `.corpus/attachments/` — attachment bytes, under `<thread-id>/<turn-ts>/` (SPEC.md §4).
 - `.corpus/config.json` — version, the port chosen for this workspace, a freshly generated
   bearer token, and `dataDir`. Secret; never committed (the installed `.gitignore` covers
-  all of `.corpus/` except the queue skeleton).
+  all of `.corpus/` except the queue skeleton and the manifest below).
 - `.corpus/template-manifest.json` — a record of what this install wrote, for
   `corpus workspace upgrade` to three-way compare against later (SPEC.md §2.1, CLI-005). Its
-  shape is pinned below.
+  shape is pinned below. Unlike the rest of `.corpus/` it is **tracked**: it is install
+  provenance rather than secret, derived or transient state, so a clone arrives with its own
+  upgrade baseline.
 - `git init` — the workspace's git repository plus the initial commit containing the
   installed tree. Every later mutation auto-commits on top of it with the acting party as
   git author (SPEC.md §4).
