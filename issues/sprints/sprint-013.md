@@ -1974,6 +1974,32 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
     enumerates with `includeArchived=true` (and pagination) so archived docs — including
     `.claude/skills-archived/` — are checked. §14's "whole workspace" means the whole workspace.
 
-### Post-implementation rulings
+### Post-implementation rulings (orchestrator, 2026-07-28, harvest time)
 
-_[Orchestrator appends at harvest, numbered from 20.]_
+20. **Open Conflict 7's premise was wrong — recorded, no fix invented.** INFRA-008 proved with
+    `git show` that `.githooks/pre-push` has carried the blocking epilogue since INFRA-001; the
+    contract's claim that it "never blocked" is corrected here. The hook's only change is the new
+    `version:check` first step. TEST items premised on "add the missing epilogue" are scored
+    against the proof-of-blocking runs instead.
+21. **CONTRACT-015 deviation accepted: `TopicSpec`/`Registry` stay in `apps/cli`.** A plugin
+    declares neither (the topic is derived from the directory name); publishing them would
+    recreate the duplicate the issue deletes. TEST-142's literal list yields to Adjudication 16's
+    principle. The `client` capability is intentionally `{baseUrl}`-thin; a richer pre-authed
+    helper is a future CLI issue, not a contract change.
+22. **SERVER-019 additions accepted:** (i) `MutationPlan.commit.squash` (optional, default off) so
+    a rollback commit never amends away the edit it undoes — proven load-bearing; (ii)
+    nothing-to-restore is a 404 (`WARNING_CODES` is closed and has no fitting code); (iii) `{ids}`
+    cannot report `duplicate-id` — documented in CLI-006's verb text, `db doctor` remains that
+    surface.
+23. **CLI-005 manifest-in-commit is conditional by design.** `.corpus/template-manifest.json` is
+    gitignored by the shipped template, so the verb includes it exactly when the workspace tracks
+    it (`git check-ignore`), never `git add -f`. Whether the template should un-ignore it is
+    routed to agent-runtime (one line in `assets/workspace/gitignore`) — folded into AGENT-003's
+    session.
+24. **Stage-B disclosure recorded:** the cli-dev agent ran one `git mv` in the repo by mistake and
+    immediately reverted it with `git reset` (tree preserved, no commits). Noted; the prohibition
+    stands.
+25. **CLI-006's variadic-positional registry extension accepted** (`ArgSpec.variadic`,
+    `ParsedArgs.list()`, validate rule) — local to `apps/cli`, no contract surface change; the
+    hygiene guard's carve-out is the named `STAGED_HELPER_IMPORTERS = ["doc/check.ts"]` per
+    Adjudication 12.
