@@ -22,6 +22,14 @@ export class RegistryValidationError extends Error {
 
 const NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
 
+/**
+ * Topics additionally admit one leading underscore: a plugin topic is named
+ * after its directory, and `_`-prefixed plugin directories are the SPEC.md §10
+ * test-fixture convention (`plugins/_fixture` → `corpus _fixture …` in dev).
+ * Commands never take the prefix — only a directory name can carry it.
+ */
+const TOPIC_NAME_PATTERN = /^_?[a-z][a-z0-9-]*$/;
+
 export function collectRegistryProblems(registry: Registry): readonly string[] {
   const problems: string[] = [];
 
@@ -56,7 +64,9 @@ function topicProblems(topic: TopicSpec): readonly string[] {
   const problems: string[] = [];
   const label = `corpus ${topic.name}`;
 
-  if (!NAME_PATTERN.test(topic.name)) problems.push(`topic name "${topic.name}" is not kebab-case`);
+  if (!TOPIC_NAME_PATTERN.test(topic.name)) {
+    problems.push(`topic name "${topic.name}" is not kebab-case`);
+  }
   if (topic.summary.trim() === "") problems.push(`${label} has no summary`);
   if (topic.commands.length === 0) problems.push(`${label} declares no verbs`);
 

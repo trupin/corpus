@@ -56,6 +56,83 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-return": "warn",
     },
   },
+  // ---- Plugin boundaries (SPEC.md §10, PLUGINS-001) ----------------------
+  // The kit-only rule: plugin code imports @corpus/kit and @corpus/contract,
+  // nothing else — not `apps/ui/src` internals, not another workspace, not a
+  // relative path that walks out of `plugins/`. `@corpus/contract/client` is
+  // also off-limits: a plugin that constructs its own transport bypasses the
+  // kit's cache and invalidation (see packages/kit/src/index.ts).
+  {
+    files: ["plugins/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@corpus/*",
+                "@corpus/*/**",
+                "!@corpus/kit",
+                "!@corpus/kit/**",
+                "!@corpus/contract",
+              ],
+              message:
+                "Plugins may import only @corpus/kit and @corpus/contract (SPEC.md §10 — the kit is the UI contract).",
+            },
+            {
+              group: ["**/apps/**", "**/packages/**"],
+              message:
+                "Plugins may import only @corpus/kit and @corpus/contract (SPEC.md §10) — never a workspace's internals by path.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // The core→plugin ban: core never imports plugin code. Discovery is the only
+  // coupling, through exactly three entry points (SPEC.md §10), allowlisted by
+  // path in the block below.
+  {
+    files: ["apps/**/*.{ts,tsx}", "packages/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              // The repo-root `plugins/` tree, reached by walking out of the
+              // workspace (any depth) or by a plugin package name. Deliberately
+              // NOT `**/plugins/**`, which would also match core-internal
+              // directories like `apps/ui/src/plugins/`.
+              group: [
+                "../../../plugins/**",
+                "../../../../plugins/**",
+                "../../../../../plugins/**",
+                "corpus-plugin-*",
+              ],
+              message:
+                "Core never imports from plugins/ — plugins are discovered, not imported (SPEC.md §10). " +
+                "The only entry points are the UI registry, the server discoverer, and the CLI scanner.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // The three discovery entry points (SPEC.md §10): the UI manifest registry,
+  // the server route discoverer, and the CLI command scanner. These are the
+  // whole coupling surface between core and plugins/, enumerated by path.
+  {
+    files: [
+      "apps/ui/src/plugins/registry.ts",
+      "apps/server/src/plugins/discover.ts",
+      "apps/cli/src/registry/plugins.ts",
+    ],
+    rules: {
+      "no-restricted-imports": "off",
+    },
+  },
   // Type-aware rules need a tsconfig project; JS config files have none.
   {
     files: ["**/*.js", "**/*.cjs", "**/*.mjs"],

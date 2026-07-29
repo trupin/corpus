@@ -38,6 +38,7 @@ export {
   type DocsFilter,
   type FormAnswerInput,
   type JobsParams,
+  type PluginRequestInit,
   type RequestOptions,
   type UpdateDocChanges,
 } from "./client/createCorpusClient.js";
@@ -63,6 +64,7 @@ export {
   type JobLogView,
   type UseJobLogOptions,
 } from "./query/useJobLog.js";
+export { usePluginQuery } from "./query/usePluginQuery.js";
 export { useQueueStatus } from "./query/useQueueStatus.js";
 export { useLocks } from "./query/useLocks.js";
 export { useHealth } from "./query/useHealth.js";

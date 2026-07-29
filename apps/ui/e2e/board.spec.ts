@@ -70,7 +70,9 @@ test.describe("the board", () => {
     // Presets are the library; folders come from `GET /api/tree`, which has no
     // server to answer it here, so the menu correctly offers none.
     await expect(menu.getByRole("menuitem", { name: /Due this week/ })).toBeVisible();
-    await expect(menu).toContainText("plugin column types appear here too");
+    // Plugin column types come from the registry (PLUGINS-001): the dev tree
+    // carries plugins/_fixture, so its column type is a real picker entry.
+    await expect(menu.locator("[data-newlist='plugin:_fixture/sample']")).toBeVisible();
     // "From current search" needs a search query, and UI-009 owns that.
     await expect(menu.locator("[data-newlist='search:current']")).toHaveCount(0);
 

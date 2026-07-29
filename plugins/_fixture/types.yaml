@@ -1,0 +1,6 @@
+# The non-TS mirror of manifest.ts's docTypes (SPEC.md §10): the server and
+# CLI read this file so they never load UI code. parity.test.ts asserts the
+# two declarations agree in both directions.
+types:
+  - type: fixture-note
+    label: Fixture note

@@ -1,0 +1,283 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import type { QueryKey } from "@corpus/contract";
+import { afterAll, describe, expect, it } from "vitest";
+import { createWriteWorkspace, AUTH, JSON_HEADERS } from "../docs/write-fixture.js";
+import type { DocsWorkspace } from "../docs/index.js";
+import { createDocumentMutex } from "../docs/index.js";
+import { createAutoCommitter, createGit } from "../git/index.js";
+import { silentLogger } from "../logger.js";
+import {
+  discoverPlugins,
+  excludedInProduction,
+  mountPluginRoutes,
+  pluginsRootCandidates,
+  resolvePluginsRoot,
+  resolveRoutesModule,
+} from "./discover.js";
+
+/** The sprint's scratch prefix (sprint-012): pid-safe, removed at suite end. */
+const SCRATCH_PREFIX = join(tmpdir(), "corpus-s012-plugins001-");
+const scratch: string[] = [];
+
+function tempDir(): string {
+  const dir = mkdtempSync(SCRATCH_PREFIX);
+  scratch.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+});
+
+const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
+const FIXTURES_ROOT = join(import.meta.dirname, "fixtures");
+
+describe("resolvePluginsRoot", () => {
+  it("resolves the monorepo dev layout from the server package root", () => {
+    const root = resolvePluginsRoot({}, join(REPO_ROOT, "apps", "server"));
+    expect(root).toBe(join(REPO_ROOT, "plugins"));
+  });
+
+  it("prefers the packaged layout when it exists", () => {
+    const packageRoot = tempDir();
+    mkdirSync(join(packageRoot, "plugins"));
+    expect(resolvePluginsRoot({}, packageRoot)).toBe(join(packageRoot, "plugins"));
+    expect(pluginsRootCandidates(packageRoot)).toHaveLength(2);
+  });
+
+  it("honours CORPUS_PLUGINS_DIR over both layouts", () => {
+    const explicit = tempDir();
+    expect(resolvePluginsRoot({ CORPUS_PLUGINS_DIR: explicit }, tempDir())).toBe(explicit);
+  });
+
+  it("returns undefined when no layout exists — no plugins is a normal state", () => {
+    const packageRoot = join(tempDir(), "nowhere", "pkg");
+    expect(resolvePluginsRoot({}, packageRoot)).toBeUndefined();
+  });
+
+  it("agrees with the UI's build-time glob on the dev plugins root", () => {
+    // The parity check of sprint-012 Adjudication 12(iv): the UI discovers
+    // via a glob relative to its registry module; the server resolves from
+    // its package root. Both must land on the same repo-root `plugins/`.
+    const registryPath = join(REPO_ROOT, "apps", "ui", "src", "plugins", "registry.ts");
+    const source = readFileSync(registryPath, "utf8");
+    const globMatch = /import\.meta\.glob\(\[\s*"([^"]+)"/.exec(source);
+    expect(globMatch?.[1]).toBeDefined();
+    const globTarget = resolve(dirname(registryPath), dirname(dirname(globMatch?.[1] ?? "")));
+    expect(globTarget).toBe(resolvePluginsRoot({}, join(REPO_ROOT, "apps", "server")));
+  });
+});
+
+describe("excludedInProduction", () => {
+  it("skips underscore plugins only in production", () => {
+    expect(excludedInProduction("_fixture", { NODE_ENV: "production" })).toBe(true);
+    expect(excludedInProduction("_fixture", {})).toBe(false);
+    expect(excludedInProduction("todos", { NODE_ENV: "production" })).toBe(false);
+  });
+});
+
+describe("resolveRoutesModule", () => {
+  it("prefers compiled dist/server/routes.js, falls back to server/routes.ts", () => {
+    const plugin = tempDir();
+    expect(resolveRoutesModule(plugin)).toBeNull();
+    mkdirSync(join(plugin, "server"), { recursive: true });
+    writeFileSync(join(plugin, "server", "routes.ts"), "export default () => null;\n");
+    expect(resolveRoutesModule(plugin)).toBe(join(plugin, "server", "routes.ts"));
+    mkdirSync(join(plugin, "dist", "server"), { recursive: true });
+    writeFileSync(join(plugin, "dist", "server", "routes.js"), "export default () => null;\n");
+    expect(resolveRoutesModule(plugin)).toBe(join(plugin, "dist", "server", "routes.js"));
+  });
+});
+
+describe("discoverPlugins", () => {
+  it("returns empty for a missing or empty root", async () => {
+    expect(
+      await discoverPlugins({ pluginsRoot: undefined, env: {}, logger: silentLogger }),
+    ).toEqual([]);
+    expect(
+      await discoverPlugins({
+        pluginsRoot: join(tempDir(), "gone"),
+        env: {},
+        logger: silentLogger,
+      }),
+    ).toEqual([]);
+    expect(
+      await discoverPlugins({ pluginsRoot: tempDir(), env: {}, logger: silentLogger }),
+    ).toEqual([]);
+  });
+
+  it("a plugin with no server/ directory is silent — routes null, zero warnings", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "quiet", "skills"), { recursive: true });
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.dir).toBe("quiet");
+    expect(plugin?.routes).toBeNull();
+    expect(plugin?.warnings).toEqual([]);
+  });
+
+  it("loads a compiled dist/server/routes.js module", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "compiled", "dist", "server"), { recursive: true });
+    writeFileSync(
+      join(root, "compiled", "dist", "server", "routes.js"),
+      "export default function routes() { return { fetch() {} }; }\n",
+    );
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(typeof plugin?.routes).toBe("function");
+  });
+
+  it("skips a throwing routes module with a warning and keeps discovering", async () => {
+    const plugins = await discoverPlugins({
+      pluginsRoot: FIXTURES_ROOT,
+      env: {},
+      logger: silentLogger,
+    });
+    const broken = plugins.find((plugin) => plugin.dir === "broken");
+    const shadow = plugins.find((plugin) => plugin.dir === "shadow");
+    expect(broken?.routes).toBeNull();
+    expect(broken?.warnings.some((warning) => warning.includes("failed to load"))).toBe(true);
+    expect(typeof shadow?.routes).toBe("function");
+  });
+
+  it("warns when a manifest.ts exists with no types.yaml", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "halfdeclared"));
+    writeFileSync(join(root, "halfdeclared", "manifest.ts"), "export default {};\n");
+    const [plugin] = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugin?.warnings.some((warning) => warning.includes("no types.yaml"))).toBe(true);
+  });
+
+  it("reads types.yaml and warns on a malformed one", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "typed"));
+    writeFileSync(join(root, "typed", "types.yaml"), "types:\n  - type: todo\n    label: Todo\n");
+    mkdirSync(join(root, "mistyped"));
+    writeFileSync(join(root, "mistyped", "types.yaml"), "types: nope\n");
+    const plugins = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(plugins.find((plugin) => plugin.dir === "typed")?.types).toEqual([
+      { type: "todo", label: "Todo" },
+    ]);
+    expect(
+      plugins
+        .find((plugin) => plugin.dir === "mistyped")
+        ?.warnings.some((warning) => warning.includes("types.yaml")),
+    ).toBe(true);
+  });
+
+  it("excludes underscore plugins in production, includes them otherwise", async () => {
+    const root = tempDir();
+    mkdirSync(join(root, "_fix"));
+    mkdirSync(join(root, "real"));
+    const dev = await discoverPlugins({ pluginsRoot: root, env: {}, logger: silentLogger });
+    expect(dev.map((plugin) => plugin.dir)).toEqual(["_fix", "real"]);
+    const prod = await discoverPlugins({
+      pluginsRoot: root,
+      env: { NODE_ENV: "production" },
+      logger: silentLogger,
+    });
+    expect(prod.map((plugin) => plugin.dir)).toEqual(["real"]);
+  });
+});
+
+describe("mounted plugin routes, end to end", () => {
+  const ws = createWriteWorkspace("plugins", { sprint: "s012" });
+  const keys: QueryKey[] = [];
+  ws.server.bus.subscribe((emitted) => {
+    keys.push(...emitted);
+  });
+
+  const workspaceRoot = ws.server.config.workspaceRoot;
+  const docsWorkspace: DocsWorkspace = {
+    workspaceRoot,
+    projection: ws.db,
+    git: createAutoCommitter({
+      git: createGit(workspaceRoot),
+      logger: silentLogger,
+      now: () => ws.clock,
+    }),
+    selfWrites: ws.server.selfWrites,
+    bus: ws.server.bus,
+    logger: silentLogger,
+    now: () => ws.clock,
+  };
+
+  afterAll(() => {
+    ws.close();
+  });
+
+  it("mounts the repo fixture and the test fixtures at /api/x/<dir>", async () => {
+    const [repoPlugins, testPlugins] = await Promise.all([
+      discoverPlugins({
+        pluginsRoot: join(REPO_ROOT, "plugins"),
+        env: {},
+        logger: silentLogger,
+      }),
+      discoverPlugins({ pluginsRoot: FIXTURES_ROOT, env: {}, logger: silentLogger }),
+    ]);
+    mountPluginRoutes(ws.server.app, [...repoPlugins, ...testPlugins], {
+      workspace: docsWorkspace,
+      mutex: createDocumentMutex(),
+      logger: silentLogger,
+      now: () => ws.clock,
+    });
+
+    const ping = await ws.request("/api/x/shadow/ping", { headers: AUTH });
+    expect(ping.status).toBe(200);
+    expect(await ping.json()).toEqual({ pong: true });
+  });
+
+  it("requires the workspace bearer token like any /api route", async () => {
+    // Explicit empty headers: the fixture's `request` injects AUTH by default.
+    const response = await ws.request("/api/x/shadow/ping", { headers: {} });
+    expect(response.status).toBe(401);
+  });
+
+  it("cannot shadow a core route — /api/docs stays core", async () => {
+    const response = await ws.request("/api/docs", { headers: AUTH });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { items?: unknown; shadowed?: unknown };
+    expect(payload.shadowed).toBeUndefined();
+    expect(Array.isArray(payload.items)).toBe(true);
+    // The would-be shadow landed harmlessly inside the plugin's own prefix.
+    const nested = await ws.request("/api/x/shadow/api/docs", { headers: AUTH });
+    expect(await nested.json()).toEqual({ shadowed: true });
+  });
+
+  it("a plugin write goes through the core write path — commit, projection, SSE", async () => {
+    keys.length = 0;
+    const response = await ws.request("/api/x/_fixture/notes", {
+      method: "POST",
+      headers: { ...JSON_HEADERS, "x-corpus-author": "agent" },
+      body: JSON.stringify({ title: "Plugin-made note" }),
+    });
+    expect(response.status).toBe(201);
+    const created = (await response.json()) as { id: string; title: string };
+    expect(created.title).toBe("Plugin-made note");
+
+    // File on disk, committed with agent authorship.
+    const authors = ws.log("%an %s");
+    expect(authors[0]).toContain("agent");
+    expect(authors[0]).toContain("doc create: Plugin-made note");
+
+    // Projection row: the core collection query sees it immediately.
+    const listed = await ws.request("/api/docs?type=fixture-note", { headers: AUTH });
+    const list = (await listed.json()) as { items: { id: string }[] };
+    expect(list.items.map((row) => row.id)).toContain(created.id);
+
+    // The plugin's own key rode the same bus as the core keys, namespaced.
+    expect(keys).toContainEqual(["x", "_fixture", "notes"]);
+    expect(keys).toContainEqual(["docs"]);
+
+    // And the plugin's own list route serves it.
+    const notes = await ws.request("/api/x/_fixture/notes", { headers: AUTH });
+    const payload = (await notes.json()) as { notes: { id: string }[] };
+    expect(payload.notes.map((note) => note.id)).toContain(created.id);
+  });
+
+  it("an unmounted plugin path 404s like any unknown route", async () => {
+    const response = await ws.request("/api/x/nonexistent/anything", { headers: AUTH });
+    expect(response.status).toBe(404);
+  });
+});

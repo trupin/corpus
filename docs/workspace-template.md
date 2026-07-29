@@ -132,11 +132,33 @@ The manifest, as `corpus init` writes it:
 }
 ```
 
-`files` lists the copied template files only — post-rename paths, `/`-separated, in install
-order — not the generated entries above and not anything the user later creates. The manifest
-is init's own artifact rather than part of this template, and is gitignored under
-`.corpus/*`. It is worthless if written later: nothing can retroactively learn what the first
-install contained.
+`files` lists what `corpus init` copied — post-rename paths, `/`-separated, in install order
+— not the generated entries above and not anything the user later creates. The manifest is
+init's own artifact rather than part of this template, and is gitignored under `.corpus/*`.
+It is worthless if written later: nothing can retroactively learn what the first install
+contained.
+
+## Installed from plugins
+
+After the template copy, `corpus init` also installs every bundled plugin's skills
+(SPEC.md §10, PLUGINS-001): each `plugins/<dir>/skills/<name>/` copies to
+`.claude/skills/<name>/`, beside the template's own skills. Rules:
+
+- A plugin skill whose name collides with a **template** skill (`orchestrate`, `comment`, …)
+  is skipped with a warning naming the collision — core wins, always; a plugin can never
+  replace the loop.
+- Two plugins shipping the same skill name: the first in plugin-directory order wins; the
+  loser is a warning.
+- Plugin-installed files are recorded in the same manifest with a provenance marker —
+  `{ "path": …, "sha256": …, "source": "plugin:<dir>" }` — so `corpus workspace upgrade`
+  can refresh them from the plugin rather than the template. Template entries keep the
+  two-key shape above; an absent `source` means template.
+- The plugins root is the **tool's install directory** (`resolvePluginsRoot()` in
+  `apps/cli/src/paths.ts`), never the workspace: a `plugins/` directory inside a workspace
+  is not discovered.
+
+This step is `corpus init`'s, not the template's: the template tree above never contains
+plugin files, and a tool with no plugins installs exactly the template.
 
 ## The install procedure
 

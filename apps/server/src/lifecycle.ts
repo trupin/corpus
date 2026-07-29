@@ -7,6 +7,7 @@ import { createServer, type CorpusServer, type CreateServerDeps } from "./app.js
 import { loadServerConfig, type ServerConfig } from "./config.js";
 import { CorpusError, describeThrown } from "./errors.js";
 import { createLogger, type Logger } from "./logger.js";
+import { discoverPlugins, resolvePluginsRoot, type DiscoveredPlugin } from "./plugins/index.js";
 import {
   attachProjection,
   openWorkspaceProjection,
@@ -83,6 +84,14 @@ function logBootFailure(logger: Logger, error: unknown, fallbackMessage: string)
   logger.error(fallbackMessage, describeThrown(error));
 }
 
+/** The production discovery: resolve the bundled `plugins/` root, scan it. */
+function defaultDiscoverPlugins(
+  logger: Logger,
+  env: NodeJS.ProcessEnv,
+): Promise<readonly DiscoveredPlugin[]> {
+  return discoverPlugins({ pluginsRoot: resolvePluginsRoot(env), env, logger });
+}
+
 export interface RunServerOptions {
   readonly argv: readonly string[];
   readonly env: NodeJS.ProcessEnv;
@@ -96,6 +105,16 @@ export interface RunServerOptions {
    * stand-in server does not need a real workspace on disk.
    */
   readonly openProjectionFn?: (config: ServerConfig, logger: Logger) => ProjectionDb | undefined;
+  /**
+   * Discovers `plugins/*` (PLUGINS-001). Runs before `createServer` — dynamic
+   * `import()` is async and route mounting is not — and never throws: a broken
+   * plugin is a logged skip, not a boot failure. Injected so lifecycle tests
+   * need no plugins on disk.
+   */
+  readonly discoverPluginsFn?: (
+    logger: Logger,
+    env: NodeJS.ProcessEnv,
+  ) => Promise<readonly DiscoveredPlugin[]>;
   /** Registers the projection's disposer and binds the queue's `events` mirror. */
   readonly attachProjectionFn?: (server: CorpusServer) => void;
   /** Starts the chokidar watcher and registers its disposer (SERVER-007). */
@@ -132,7 +151,11 @@ export async function runServerProcess(
     // initial projection, and `createServer` takes the open handle as a dep
     // rather than opening one itself.
     projection = (options.openProjectionFn ?? openWorkspaceProjection)(config, logger);
-    server = (options.createServerFn ?? createServer)(config, { projection });
+    // Plugins resolve against the tool's install directory, never the
+    // workspace (SPEC.md §10, sprint-012 Adjudication 12); routes must be
+    // mounted before the socket opens, so discovery happens here.
+    const plugins = await (options.discoverPluginsFn ?? defaultDiscoverPlugins)(logger, env);
+    server = (options.createServerFn ?? createServer)(config, { projection, plugins });
     (options.attachProjectionFn ?? attachProjection)(server);
     // The watcher is filesystem-bound and lifecycle-scoped, so it attaches here
     // alongside the projection; its disposer runs before the database closes.

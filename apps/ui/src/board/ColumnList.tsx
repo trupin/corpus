@@ -1,6 +1,8 @@
 import type { DocRow } from "@corpus/contract";
 import { Row, type RowNotice } from "@corpus/kit";
 import { useEffect, useRef, type ReactElement } from "react";
+import { usePluginRegistry } from "../plugins/registry";
+import { resolveListItem } from "../plugins/slots";
 import type { BoardColumn } from "./viewDoc";
 
 /**
@@ -37,7 +39,6 @@ export interface ColumnListProps {
 }
 
 export function ColumnList({
-  column,
   items,
   isPending,
   error,
@@ -50,6 +51,9 @@ export function ColumnList({
   const list = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Subscribe to plugin discovery, which settles after first render: a row
+  // whose type gains a plugin `ListItem` must swap renderers live.
+  usePluginRegistry();
 
   useEffect(() => {
     // Once, and only after the first results have laid out — restoring against
@@ -66,23 +70,9 @@ export function ColumnList({
     [],
   );
 
-  if (column.plugin !== null) {
-    // No plugin registry exists yet (PLUGINS-001 ships discovery), so every
-    // `column:` reference is by definition uninstalled today. The column keeps
-    // its board position either way — SPEC.md §15 M5.
-    return (
-      <div className="col-list">
-        <div className="col-card" role="note">
-          <p className="col-card-title">Plugin not installed</p>
-          <p className="col-card-body">
-            This column renders <code>{column.plugin.plugin}</code>&rsquo;s{" "}
-            <code>{column.plugin.type}</code> view. Install the plugin, or edit this list&rsquo;s
-            query.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // A `column:` reference never reaches this component: `Column` dispatches
+  // plugin columns to `PluginColumnBody` (registered → the plugin `Component`,
+  // unregistered → the "plugin missing" card) before any query is issued.
 
   if (error !== null) {
     return (
@@ -118,6 +108,9 @@ export function ColumnList({
             cursor={row.id === cursorDocId}
             onOpen={onOpen}
             onNotify={onNotify}
+            // The PLUGINS-001 seam: a plugin `ListItem` replaces the default
+            // row for its doc type in every column list, boundary-wrapped.
+            ListItem={resolveListItem(row.type) ?? undefined}
           />
         ))
       )}

@@ -163,6 +163,14 @@ export interface ManifestEntry {
   /** Workspace-relative, POSIX-separated, post-rename. */
   readonly path: string;
   readonly sha256: string;
+  /**
+   * Where the file came from when not the workspace template:
+   * `"plugin:<dir>"` for a plugin-installed skill (sprint-012 Adjudication
+   * 11), so `corpus workspace upgrade` (CLI-005) can refresh it from the
+   * plugin rather than the template. Absent ⇒ template — the original entry
+   * shape is unchanged.
+   */
+  readonly source?: string;
 }
 
 /**
@@ -185,6 +193,12 @@ export function sha256(contents: Buffer): string {
 export interface ScaffoldOptions {
   readonly root: string;
   readonly templateRoot: string;
+  /**
+   * The tool's bundled `plugins/` directory, or `undefined` for none. Plugin
+   * skills (`plugins/<dir>/skills/*`) install into `.claude/skills/` beside
+   * the template's own (SPEC.md §10); a missing root installs nothing.
+   */
+  readonly pluginsRoot?: string | undefined;
   readonly port: number;
   readonly token: string;
   readonly toolVersion: string;
@@ -195,8 +209,111 @@ export interface ScaffoldOptions {
 export interface ScaffoldResult {
   readonly created: CreatedPaths;
   readonly installed: readonly PlannedTemplateFile[];
+  /** Plugin skill files installed, workspace-relative. */
+  readonly installedPluginSkills: readonly string[];
+  /** Skipped plugin skills (name collisions) — surfaced by `corpus init`. */
+  readonly pluginWarnings: readonly string[];
   readonly manifest: TemplateManifest;
   readonly configPath: string;
+}
+
+/** One plugin skill file to install, both paths `/`-separated. */
+export interface PlannedPluginSkillFile {
+  /** The contributing plugin's directory name. */
+  readonly plugin: string;
+  /** Relative to the plugins root. */
+  readonly from: string;
+  /** Workspace-relative destination under `.claude/skills/`. */
+  readonly to: string;
+}
+
+export interface PluginSkillPlan {
+  readonly files: readonly PlannedPluginSkillFile[];
+  readonly warnings: readonly string[];
+}
+
+function walkFiles(dir: string, prefix: string): string[] {
+  return readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) => {
+      const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      return entry.isDirectory() ? walkFiles(join(dir, entry.name), rel) : [rel];
+    })
+    .sort();
+}
+
+/**
+ * The plugin-skills copy step, as data (SPEC.md §10: plugin skills are
+ * "installed into the workspace's `.claude/skills/`"). Rules, in order:
+ *
+ * - A skill whose directory name collides with a **template** skill
+ *   (`orchestrate`, `comment`, …) is skipped with a warning naming the
+ *   collision — core wins, always: a plugin can never replace the loop
+ *   (sprint-012 Adjudication 11).
+ * - Two plugins shipping the same skill name: the first in directory order
+ *   wins; the loser is a warning, never a silent overwrite.
+ * - Underscore-prefixed plugins install like any other: `corpus init` from a
+ *   dev checkout is the dev flow, and the packaged tool ships no fixtures.
+ */
+export function planPluginSkillInstall(
+  pluginsRoot: string | undefined,
+  reservedSkills: ReadonlySet<string>,
+): PluginSkillPlan {
+  if (pluginsRoot === undefined || !existsSync(pluginsRoot)) return { files: [], warnings: [] };
+
+  const files: PlannedPluginSkillFile[] = [];
+  const warnings: string[] = [];
+  const claimed = new Map<string, string>();
+
+  const dirs = readdirSync(pluginsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => entry.name)
+    .sort();
+
+  for (const dir of dirs) {
+    const skillsRoot = join(pluginsRoot, dir, "skills");
+    if (!existsSync(skillsRoot)) continue;
+    const skillNames = readdirSync(skillsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    for (const skill of skillNames) {
+      if (reservedSkills.has(skill)) {
+        warnings.push(
+          `plugin ${dir} ships a skill named "${skill}", which collides with a workspace ` +
+            `template skill — skipped; a plugin can never replace a core skill`,
+        );
+        continue;
+      }
+      const holder = claimed.get(skill);
+      if (holder !== undefined) {
+        warnings.push(
+          `plugin ${dir} ships a skill named "${skill}", already installed by plugin ` +
+            `${holder} — skipped`,
+        );
+        continue;
+      }
+      claimed.set(skill, dir);
+      for (const rel of walkFiles(join(skillsRoot, skill), "")) {
+        files.push({
+          plugin: dir,
+          from: `${dir}/skills/${skill}/${rel}`,
+          to: `.claude/skills/${skill}/${rel}`,
+        });
+      }
+    }
+  }
+
+  return { files, warnings };
+}
+
+/** The skill directory names the template itself installs — the reserved set. */
+export function templateSkillNames(installed: readonly PlannedTemplateFile[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const file of installed) {
+    const match = /^\.claude\/skills\/([^/]+)\//.exec(file.to);
+    if (match?.[1] !== undefined) names.add(match[1]);
+  }
+  return names;
 }
 
 /**
@@ -219,6 +336,21 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
     const source = join(templateRoot, ...file.from.split("/"));
     created.copyFile(source, join(root, ...file.to.split("/")));
     files.push({ path: file.to, sha256: sha256(readFileSync(source)) });
+  }
+
+  // Plugin skills, after the template so the reserved-name rule is computed
+  // from what was actually installed. Entries land in the same manifest with a
+  // `source: "plugin:<dir>"` marker (sprint-012 Adjudication 11) so
+  // `corpus workspace upgrade` can tell the two provenances apart.
+  const pluginSkills = planPluginSkillInstall(options.pluginsRoot, templateSkillNames(installed));
+  for (const file of pluginSkills.files) {
+    const source = join(options.pluginsRoot ?? "", ...file.from.split("/"));
+    created.copyFile(source, join(root, ...file.to.split("/")));
+    files.push({
+      path: file.to,
+      sha256: sha256(readFileSync(source)),
+      source: `plugin:${file.plugin}`,
+    });
   }
 
   const configPath = join(root, CONFIG_DIR, CONFIG_FILE);
@@ -244,7 +376,14 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
   };
   created.writeFile(templateManifestPath(root), `${JSON.stringify(manifest, null, 2)}\n`);
 
-  return { created, installed, manifest, configPath };
+  return {
+    created,
+    installed,
+    installedPluginSkills: pluginSkills.files.map((file) => file.to),
+    pluginWarnings: pluginSkills.warnings,
+    manifest,
+    configPath,
+  };
 }
 
 /**

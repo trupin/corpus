@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "setup-hooks": "git config core.hooksPath .githooks",
-    "build": "npm run build -w packages/contract && npm run build -w packages/kit && npm run build -w apps/cli && npm run build -w apps/server -w apps/ui --if-present",
+    "build": "npm run build -w packages/contract && npm run build -w packages/kit && node --import tsx scripts/build-plugins.ts && npm run build -w apps/cli && npm run build -w apps/server -w apps/ui --if-present",
     "clean": "rm -rf packages/*/dist apps/*/dist plugins/*/dist coverage coverage-raw",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

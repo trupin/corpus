@@ -34,6 +34,7 @@ const RUNTIME_SURFACE = [
   "capLogLines",
   "EMPTY_JOB_LOG",
   "MAX_BUFFERED_LOG_LINES",
+  "usePluginQuery",
   "useQueueStatus",
   "useLocks",
   "useHealth",

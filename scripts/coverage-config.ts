@@ -8,16 +8,31 @@
  * A second enforcement site would be a gate that can disagree with itself.
  */
 
-/** Repo-relative, POSIX. Matched against paths relative to the repository root. */
-export const COVERAGE_INCLUDE = ["apps/*/src/**", "packages/*/src/**", "plugins/*/src/**"];
+/**
+ * Repo-relative, POSIX. Matched against paths relative to the repository root.
+ *
+ * `plugins/*⁠/**` rather than `plugins/*⁠/src/**` because SPEC.md §10 pins the
+ * plugin layout with `manifest.ts`, `server/routes.ts` and `cli/commands/*.ts`
+ * at the plugin **root** (sprint-012 Adjudication 10) — the layout plugin
+ * authors read wins over a tidier glob.
+ */
+export const COVERAGE_INCLUDE = ["apps/*/src/**", "packages/*/src/**", "plugins/*/**"];
 
 /**
  * Bin shims are thin process glue (argv in, stdout out) with no logic of their
  * own — the logic they delegate to is covered directly. Generated
  * `*.generated.ts` modules are type-only declarations with no runtime
- * statements to cover; their generator is tested instead.
+ * statements to cover; their generator is tested instead. Underscore-prefixed
+ * plugin directories (`plugins/_fixture`) are test fixtures — excluded from
+ * production surfaces by the leading-underscore convention (SPEC.md §10,
+ * sprint-012 Adjudication 9) and from coverage exactly like test files.
  */
-export const COVERAGE_EXCLUDE = ["**/*.test.{ts,tsx}", "apps/*/src/bin/**", "**/*.generated.ts"];
+export const COVERAGE_EXCLUDE = [
+  "**/*.test.{ts,tsx}",
+  "apps/*/src/bin/**",
+  "**/*.generated.ts",
+  "plugins/_*/**",
+];
 
 export const COVERAGE_METRICS = ["lines", "statements", "functions", "branches"] as const;
 

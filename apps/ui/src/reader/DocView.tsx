@@ -6,6 +6,8 @@ import { CommentPopover } from "../anchors/CommentPopover";
 import { useAnchorLayer } from "../anchors/useAnchorLayer";
 import { useMarginLayout } from "../anchors/useMarginLayout";
 import { DocEditor, editorHandlesType } from "../editor/DocEditor";
+import { usePluginRegistry } from "../plugins/registry";
+import { resolveDocPanel, resolveDocView } from "../plugins/slots";
 import { ThreadCard } from "../thread/ThreadCard";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
@@ -65,8 +67,23 @@ export function DocView({
 }: DocViewProps): ReactElement {
   const { doc } = reader;
   const lock = foreignLock(reader.lock);
+  // Subscribe to plugin discovery so an open reader swaps to a plugin `View`
+  // (or back) when the registry settles after first render.
+  usePluginRegistry();
+  // The PLUGINS-001 slots, resolved once per render. A registered plugin
+  // `View` replaces the standard document view — including the editor, were a
+  // plugin ever to claim a core editable type (SPEC.md §10: "a doc whose
+  // `type` has a registered `View` renders with it") — so the anchor layer is
+  // not hosted either: the plugin owns its whole body surface.
+  const PluginView =
+    doc === undefined || reader.isThread ? null : resolveDocView(doc.frontmatter.type);
+  const DocPanel =
+    doc === undefined || reader.isThread ? null : resolveDocPanel(doc.frontmatter.type);
   const anchorsHost =
-    doc !== undefined && !reader.isThread && editorHandlesType(doc.frontmatter.type);
+    doc !== undefined &&
+    !reader.isThread &&
+    PluginView === null &&
+    editorHandlesType(doc.frontmatter.type);
 
   /*
    * Hooks run before the early returns below, so the layer is asked about a
@@ -141,10 +158,23 @@ export function DocView({
         />
 
         {/*
+         * The DocPanel slot — the one core injection slot in v1 (SPEC.md §10):
+         * for a doc type a plugin owns, its panel renders in this fixed spot
+         * above the document body. Both hosts get it for free, because the
+         * column reader and focus mode both render this component. The
+         * resolver returns the panel already wrapped in its own boundary, or
+         * `null` — no plugin, no panel, no placeholder.
+         */}
+        {DocPanel !== null ? <DocPanel doc={doc} /> : null}
+
+        {/*
          * The one body-rendering call site. A thread document's body IS its
          * conversation (SPEC.md §6: "the conversation is the document"), which is
          * why a thread opened from a column reads as turns rather than as the
-         * markdown file behind them.
+         * markdown file behind them. A plugin `View` replaces the standard
+         * document view wholesale for its registered type (SPEC.md §10); with
+         * no plugin, a non-core type falls through to plain markdown — which is
+         * exactly the deleted-plugin degradation §15 M6 checks.
          */}
         {reader.isThread ? (
           <div className="doc-body thread-conversation">
@@ -172,6 +202,8 @@ export function DocView({
             onAnchors={anchors.onAnchors}
             onEditor={anchors.onEditor}
           />
+        ) : PluginView !== null ? (
+          <PluginView doc={doc} />
         ) : (
           <MarkdownView markdown={doc.body} className="doc-body" onOpenRef={onNavigate} />
         )}

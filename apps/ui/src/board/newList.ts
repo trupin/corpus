@@ -26,6 +26,8 @@ export interface NewListChoice {
   readonly query: Readonly<Record<string, string>>;
   /** A `"<plugin>/<type>"` reference for a plugin column (SPEC.md §10). */
   readonly column?: string;
+  /** A glyph the menu renders instead of the source's default. */
+  readonly icon?: string;
   /** Secondary text — a folder's document count, a preset's filter. */
   readonly detail: string;
 }
@@ -107,6 +109,33 @@ export function folderChoices(tree: FolderTree | undefined): readonly NewListCho
   const choices: NewListChoice[] = [];
   walkFolders(tree.folders, choices);
   return choices;
+}
+
+/** What one registered plugin column type offers the picker (SPEC.md §10). */
+export interface PluginColumnOffer {
+  /** The `"<plugin>/<type>"` column reference — plugin directory, not manifest id. */
+  readonly key: string;
+  readonly label: string;
+  readonly icon?: string;
+  readonly defaultQuery?: Readonly<Record<string, string>>;
+}
+
+/**
+ * Plugin column types as picker choices. Choosing one creates the same pinned
+ * view document every other choice creates, with `column: "<plugin>/<type>"`
+ * merged in — which is the whole §10 contract: reorder, persistence, deletion
+ * and stewardship come from the view document, never from the plugin.
+ */
+export function pluginChoices(offers: readonly PluginColumnOffer[]): readonly NewListChoice[] {
+  return offers.map((offer) => ({
+    key: `plugin:${offer.key}`,
+    source: "plugin",
+    title: offer.label,
+    query: offer.defaultQuery ?? {},
+    column: offer.key,
+    detail: offer.key,
+    ...(offer.icon === undefined ? {} : { icon: offer.icon }),
+  }));
 }
 
 /** "From current search", offered only while a search query actually exists. */

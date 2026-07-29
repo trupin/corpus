@@ -1,11 +1,14 @@
 import { useTree } from "@corpus/kit";
 import { useEffect, useRef, type ReactElement } from "react";
+import { usePluginRegistry } from "../plugins/registry";
 import {
   folderChoices,
+  pluginChoices,
   PRESET_CHOICES,
   searchChoice,
   type MenuPosition,
   type NewListChoice,
+  type PluginColumnOffer,
 } from "./newList";
 
 /**
@@ -33,7 +36,15 @@ function ChoiceItem({
   readonly choice: NewListChoice;
   readonly onChoose: (choice: NewListChoice) => void;
 }): ReactElement {
-  const glyph = choice.source === "folder" ? "📁" : choice.source === "search" ? "🔎" : "🧵";
+  const glyph =
+    choice.icon ??
+    (choice.source === "folder"
+      ? "📁"
+      : choice.source === "search"
+        ? "🔎"
+        : choice.source === "plugin"
+          ? "🧩"
+          : "🧵");
   return (
     <button
       type="button"
@@ -77,6 +88,19 @@ export function NewListPicker({
 
   const folders = folderChoices(tree.data);
   const search = searchChoice(searchQuery);
+  // Registered plugin column types (SPEC.md §10) — nothing here names one:
+  // whatever discovery found is what the picker offers, live.
+  const offers: readonly PluginColumnOffer[] = [...usePluginRegistry().columns.values()].map(
+    (entry) => ({
+      key: entry.key,
+      label: entry.column.label,
+      ...(entry.column.icon === undefined ? {} : { icon: entry.column.icon }),
+      ...(entry.column.defaultQuery === undefined
+        ? {}
+        : { defaultQuery: entry.column.defaultQuery }),
+    }),
+  );
+  const plugins = pluginChoices(offers);
 
   return (
     <div
@@ -93,11 +117,9 @@ export function NewListPicker({
         <ChoiceItem key={choice.key} choice={choice} onChoose={onChoose} />
       ))}
       {search === null ? null : <ChoiceItem choice={search} onChoose={onChoose} />}
-      {/* The registry is PLUGINS-001's; the affordance is the prototype's, and
-          it stays inert until there is something real to list. */}
-      <div className="ac-item ac-item-note">
-        <span className="d">plugin column types appear here too (e.g. a todos board)</span>
-      </div>
+      {plugins.map((choice) => (
+        <ChoiceItem key={choice.key} choice={choice} onChoose={onChoose} />
+      ))}
     </div>
   );
 }

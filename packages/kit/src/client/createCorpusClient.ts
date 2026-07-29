@@ -71,6 +71,15 @@ export interface RequestOptions {
   readonly signal?: AbortSignal;
 }
 
+/** One plugin-route call (SPEC.md §10): JSON in, JSON out, nothing else. */
+export interface PluginRequestInit {
+  /** Defaults to `GET`. */
+  readonly method?: "GET" | "POST" | "PUT" | "DELETE";
+  /** JSON-encoded when present. */
+  readonly body?: unknown;
+  readonly signal?: AbortSignal;
+}
+
 export interface AppendTurnInput {
   readonly body: string;
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
@@ -207,6 +216,21 @@ export interface CorpusClient {
    * a `Blob` and owns the object URL it makes from it.
    */
   fetchAttachment(target: string, options?: RequestOptions): Promise<Blob>;
+  /**
+   * `<method> /api/x/<plugin>/<path>` — a plugin's own server routes
+   * (SPEC.md §10, PLUGINS-001).
+   *
+   * Plugin routes live outside the generated contract (a new plugin is zero
+   * contract changes), so this is the one deliberately untyped door in the
+   * client: the caller hands a plugin-relative path, gets `unknown` back, and
+   * validates the payload with its own schema — Zod at the boundary, exactly
+   * as the server does on the way in. Going through the client rather than a
+   * private `fetch` keeps the bearer token, the base URL and the error shape
+   * (`CorpusRequestError`) in one place, and keeps the kit's cache the only
+   * cache — see {@link usePluginQuery} for the read path with SSE
+   * invalidation included.
+   */
+  pluginRequest(plugin: string, path: string, init?: PluginRequestInit): Promise<unknown>;
   /**
    * `POST /api/docs` — zero-form creation (SPEC.md §11).
    *
@@ -626,6 +650,28 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         throw new CorpusRequestError("GET /attachments", response.status, payload);
       }
       return response.blob();
+    },
+
+    async pluginRequest(plugin, path, init) {
+      const send = config.fetch ?? globalThis.fetch;
+      const method = init?.method ?? "GET";
+      // Leading slashes normalised away rather than trusted, exactly as for
+      // attachment targets: a path may address the plugin's own routes only.
+      const url = `${config.baseUrl}/api/x/${plugin}/${path.replace(/^\/+/, "")}`;
+      const operation = `${method} /api/x/${plugin}/${path.replace(/^\/+/, "")}`;
+      const response = await send(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+        ...(init?.signal && canForwardAbortSignal() ? { signal: init.signal } : {}),
+      });
+      const payload: unknown =
+        response.status === 204 ? null : await response.json().catch(() => null);
+      if (!response.ok) throw new CorpusRequestError(operation, response.status, payload);
+      return payload;
     },
 
     async createDoc(input) {
