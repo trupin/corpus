@@ -19,9 +19,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # One version number describes the tool (INFRA-008). Cheap, needs no
+      # build, and the same script is the release workflow's tag/version guard.
+      - name: version singularity
+        run: npm run version:check
       # Build first: cross-workspace imports resolve through each package's
       # exports map into dist/, so lint/typecheck/tests need the emit to exist.
       - run: npm run build
+      # Assemble the publishable package and audit the tarball npm pack would
+      # produce, in both directions: every artifact the installed tool resolves
+      # must be present, and no development state may leak. A packaging bug is
+      # otherwise invisible until someone installs on a machine with no repo.
+      - name: package build + tarball audit
+        run: |
+          npm run package:build
+          npm run pack:check
       # Regenerates every committed generated artifact (openapi.json,
       # schema.generated.ts, docs/cli.md) and fails when the result differs from
       # what was committed. Shares one inventory with .githooks/pre-push.

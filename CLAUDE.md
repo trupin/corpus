@@ -214,7 +214,7 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 - `npm install` — install all workspaces
 - `npm run setup-hooks` — one-time per clone: wires `.githooks/` (`git config core.hooksPath`)
 - `npm run build` — tsc emit for the built workspaces, in dependency order (contract → kit → apps); fails fast. `@corpus/*` imports resolve through each package's `exports` map into `dist/`, so **build before lint/typecheck/test** — the hooks and CI do this automatically
-- `npm run clean` — removes all `dist/` output and `coverage/`
+- `npm run clean` — removes all `dist/` output, the staged `dist-package/`, and `coverage/`
 - `npm run lint` / `npm run lint:fix` — ESLint across the repo
 - `npm run format:check` / `npm run format` — Prettier
 - `npm run typecheck` — `tsc --noEmit` in every workspace
@@ -222,6 +222,10 @@ Domain agents must never run `git commit`, `git push`, `git checkout`, `git rese
 - `npm run e2e` — Playwright against the real Vite dev server (`apps/ui/e2e/`, 13 specs). It also collects browser-side V8 coverage for the merged gate. The dev server's port is `5173` by default; override with `CORPUS_UI_PORT` when something else holds it (`.githooks/pre-push` defaults it to `5273` so a push never fights a running dev server)
 - `npm run coverage` — the combined gate: unit → e2e → merge → **≥ 90%** on all four metrics. This is what CI enforces. `npm run test:coverage` alone emits raw coverage and enforces nothing; `npm run coverage:merge` re-runs just the merge and the gate over existing output. Thresholds and globs live in `scripts/coverage-config.ts`
 - `npm run dev -w apps/cli` — runs the `corpus` bin from source via tsx. Dev servers (`npm run watch`: server + UI concurrently) arrive with the server/UI scaffolding issues.
+- `npm run version:check` — **version singularity** (INFRA-008): the root `package.json`'s `version` is the single source and every workspace must equal it. Runs in pre-push and CI; in the release workflow it also reads `GITHUB_REF`, so a `v1.2.3` tag against a differently-versioned manifest fails there instead of half-publishing. Bump with `npm version <x.y.z> --workspaces --include-workspace-root`
+- `npm run package:build` — assembles the single publishable package into `dist-package/` (gitignored): esbuild bundles the CLI and the server with every `@corpus/*` import **inlined** and every third-party import left external, then stages `apps/ui/dist` → `ui/`, `assets/workspace/`, and any built non-underscore plugin. Run `npm run build` first — it bundles from built output. The published manifest is generated, so no workspace manifest is ever mutated by a pack
+- `npm run pack:check` — audits the tarball `npm pack` would produce from `dist-package/`, in **both** directions: every artifact the installed tool resolves must be present, and no development state may leak. Rules live in `scripts/pack-audit.ts`. Wired into CI; deliberately not in pre-push (it builds and packs, too slow for a push)
+- `npm run publish:dry-run` — `npm publish --dry-run` over the staged package. Nothing has been published: the package name is **provisional** (`corpus` and `corpus-cli` are taken on npm — sprint-013 Adjudication 9) and there is no `NPM_TOKEN`. A real release is a user decision, made by pushing a `v*` tag once both are settled
 
 ## Testing Conventions
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pre-push gate — everything pre-commit runs (build first, so cross-workspace
-# imports resolve through each package's dist/), plus the generated-artifact
-# drift check and Playwright e2e.
+# imports resolve through each package's dist/), plus version singularity, the
+# generated-artifact drift check and Playwright e2e.
 # Escape hatch (documented, use sparingly): git push --no-verify
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -24,6 +24,12 @@ step() {
   fi
 }
 
+# First because it is the cheapest and needs no build: one version number
+# describes the whole tool (INFRA-008), and drift is far easier to fix here than
+# after a `v*` tag has been pushed, where the same check is the publish guard.
+# The tarball audit (`pack:check`) deliberately stays CI-only — it bundles and
+# packs, which is too slow for a push.
+step "version singularity"         npm run --silent version:check
 step "build"                       npm run --silent build
 # One inventory, two consumers: this and the `generated artifacts drift` step in
 # CI both run scripts/check-generated-artifacts.ts (openapi.json,
