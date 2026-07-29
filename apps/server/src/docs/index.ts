@@ -20,6 +20,7 @@ export type { DeleteOutcome } from "./delete.js";
 export { moveDocument } from "./move.js";
 export {
   findDocumentRow,
+  findDocumentRowByPath,
   isIdTaken,
   loadDocument,
   readAnchorsMap,
@@ -38,7 +39,10 @@ export {
   WARNING_DETAIL_LENGTH,
   WARNING_DETAIL_LINES,
   allowAllWrites,
+  checkSave,
+  checkSeams,
   createDocumentMutex,
+  isSkillFrontmatterException,
   runInLanes,
   runMutation,
   validateBeforeWrite,
@@ -52,6 +56,7 @@ export type {
   FileOperation,
   MutationPlan,
   MutationResult,
+  SaveCheck,
   WriteGuard,
 } from "./write.js";
 export {

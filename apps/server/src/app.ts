@@ -27,6 +27,8 @@ import {
   mountAttachmentRoutes,
 } from "./attachments/index.js";
 import { mountCaptureRoutes } from "./capture/index.js";
+import { mountCheckRoutes } from "./check/index.js";
+import { mountSkillRoutes } from "./skills/index.js";
 import { createDocumentMutex, mountDocsRoutes, type DocsWorkspace } from "./docs/index.js";
 import { mountThreadRoutes, type ThreadsWorkspace } from "./threads/index.js";
 import {
@@ -300,8 +302,13 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // dep `lifecycle.ts` opened, and the git module is a pure function of the
     // root — constructing a command builder opens no handle and touches no
     // filesystem, so it does not compromise `createServer`'s purity.
-    const git =
-      deps.git ?? createAutoCommitter({ git: createGit(config.workspaceRoot), logger, now });
+    // The command builder is kept beside the committer, not swallowed by it: the
+    // skill rollback needs the same repository for *reads* (`rev-parse`, `log`,
+    // `show`) that the committer owns for writes, and `AutoCommitter` exposes
+    // only its lock. A test that injects `deps.git` replaces the writer; the
+    // reader still addresses the workspace the config names.
+    const gitCommands = createGit(config.workspaceRoot);
+    const git = deps.git ?? createAutoCommitter({ git: gitCommands, logger, now });
 
     // Locks are built *before* the document routes, because the write pipeline
     // takes the guard as a constructor argument: `assertWritable` is the seam
@@ -377,6 +384,17 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       logger,
       invalidate: deps.invalidate ?? invalidate,
     });
+
+    // §14's validator over HTTP, and §7's skill rollback. Both need the
+    // projection — the check resolves ids and answers "does this `[[ref]]`
+    // target exist", the rollback resolves a skill's path to its document id —
+    // so both live in this block, and both are mounted before the plugin
+    // routers like every other core route.
+    mountCheckRoutes(app, {
+      workspaceRoot: config.workspaceRoot,
+      projection: deps.projection,
+    });
+    mountSkillRoutes(app, { ...docsWorkspace, gitCommands }, mutex);
 
     // Plugin routers, last of the API surface (SPEC.md §10): every core mount
     // above wins any path dispute by construction, the `/api/*` bearer guard

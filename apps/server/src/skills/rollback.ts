@@ -1,0 +1,242 @@
+// `POST /api/skills/{name}/rollback` — §7's loop-safety escape hatch.
+//
+// Skills are ordinary documents, editable in the board's editor like any other.
+// That is the point, and it is also the hazard: a bad edit to a core-loop skill
+// (`orchestrate`, `comment`) can break the very loop that would otherwise fix it.
+// §7's answer is a targeted git revert **performed by the server**, because the
+// server is the sole writer — a CLI running `git checkout` on a skill file would
+// bypass validation, the projection and the watcher at once.
+//
+// The whole verb is: pick a revision, read the file's content at it, and save
+// those bytes through the ordinary mutation pipeline. Nothing about the write is
+// special, and that is the design: `MutationPlan` → `runMutation` means the
+// restoration validates, writes atomically, auto-commits with the acting party as
+// author, re-projects synchronously and invalidates — in the same order, with the
+// same self-write registration, as every other mutation. A hand-rolled
+// `writeFileSync` + `git commit` would be a second write path with its own bugs.
+//
+// Two structural notes on git:
+//
+// - **The reads take the git lock; the commit takes it again.** `.git/index` is
+//   one shared file, so ref resolution and blob reads must not race a concurrent
+//   auto-commit. They therefore run inside `AutoCommitter.withGitLock`. The
+//   commit that follows takes the lock for itself, from inside `runMutation` —
+//   nesting the two would deadlock, because the lock is a promise chain and the
+//   outer holder would be waiting on a link queued behind its own completion.
+//   Correctness does not depend on holding one lock across both: the revision is
+//   resolved to an immutable sha before anything is read from it.
+// - **The rollback never folds into a previous auto-commit** (`squash: false`).
+//   It is the answer to the edit that made it necessary, not a continuation of
+//   it, and folding would amend that edit's commit away — deleting the history
+//   the restoration is reading from.
+
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Actor, SkillRollbackResult, Warning } from "@corpus/contract";
+import { badRequest, notFound } from "../errors.js";
+import { DOCS_KEY, docKey } from "../events/index.js";
+import { listFileRevisions, readVersionAt, resolveRevision, type Git } from "../git/index.js";
+import {
+  SKILLS_ROOT,
+  checkSave,
+  findDocumentRowByPath,
+  reportWarnings,
+  runMutation,
+  serializeWarnings,
+  validateBeforeWrite,
+  type DocsWorkspace,
+  type DocumentMutex,
+} from "../docs/index.js";
+import { SKILL_FILENAME, classifyPath, readDocumentIdentity } from "../projection/index.js";
+
+/**
+ * The document workspace plus the raw git command builder. `DocsWorkspace.git` is
+ * the auto-committer — the sole *writer*, and the owner of the index lock; this
+ * is the same underlying repository addressed for **reads only** (`rev-parse`,
+ * `log`, `show`), which the committer's interface deliberately does not expose.
+ */
+export interface SkillsWorkspace extends DocsWorkspace {
+  readonly gitCommands: Git;
+}
+
+/** Where a named skill's document lives. §7: archived skills are elsewhere and are not installed. */
+export const skillDocumentPath = (name: string): string =>
+  `${SKILLS_ROOT}/${name}/${SKILL_FILENAME}`;
+
+/**
+ * A revision that would restore something, with the bytes it holds.
+ *
+ * "Last-known-good" is defined as the contract states it — *the newest committed
+ * revision of the file that validates* — with one qualification the definition
+ * implies but does not spell out: a revision holding exactly what is on disk
+ * restores nothing, so the walk steps over it. That single rule is what makes the
+ * common case right in both directions. When the bad edit was saved through the
+ * API it is committed, so `HEAD`'s blob is the current file and the answer is the
+ * revision before it. When it was made by an outside editor and never committed,
+ * `HEAD`'s blob is already the good version and the answer is `HEAD`.
+ */
+type Candidate = { readonly sha: string; readonly content: string };
+
+async function findLastKnownGood(
+  workspace: SkillsWorkspace,
+  path: string,
+  current: string,
+): Promise<Candidate | null> {
+  for (const sha of await listFileRevisions(workspace.gitCommands, path)) {
+    const content = await readVersionAt(workspace.gitCommands, sha, path);
+    if (content === null) continue;
+    if (content === current) continue;
+    if (checkSave(workspace.projection, path, content).blocking.length > 0) continue;
+    return { sha, content };
+  }
+  return null;
+}
+
+/**
+ * The id the restored document will carry.
+ *
+ * The projection's row is preferred: it is the id the board, every thread and
+ * every `[[ref]]` already use, and §5 makes ids immutable, so a rollback must not
+ * change it. But a skill so badly edited that it no longer parses has **no row** —
+ * the projection skipped it — and that is precisely the case §7's escape hatch
+ * exists for. So the fallback asks the projection's own identity function what id
+ * the *restored* bytes project under, which for a skill root is derived from the
+ * path and is therefore the same id the row held.
+ */
+function documentIdFor(workspace: SkillsWorkspace, path: string, restored: string): string {
+  const row = findDocumentRowByPath(workspace.projection, path);
+  if (row !== null) return row.id;
+  const root = classifyPath(path);
+  /* c8 ignore next */
+  if (root === null) throw notFound(`${path} is not a document`);
+  const identity = readDocumentIdentity(root, path, restored);
+  if (identity.kind !== "id") {
+    // Unreachable through the route: `validateBeforeWrite` has already refused
+    // bytes that do not parse, and a skill root synthesizes an id for everything
+    // that does.
+    /* c8 ignore next 2 */
+    throw badRequest(`the restored content has no usable document id: ${identity.reason}`, [
+      { path: "to", message: identity.reason },
+    ]);
+  }
+  return identity.id;
+}
+
+/**
+ * §14's promise is that a `null` commit always explains itself: the restoration
+ * stands on disk and the reason is in `warnings`. `runMutation` produces no
+ * warning for the one outcome it considers unremarkable — "nothing to commit" —
+ * because for an ordinary save that means the save changed nothing. A rollback
+ * reaches it two ways that are both real and neither unremarkable: restoring
+ * bytes the file already held, and restoring bytes that differ from the file but
+ * match what git already records for the path (recovering an *uncommitted* bad
+ * edit — §7's headline case). The file changed in the second; there is simply
+ * nothing for a commit to record. The gap is closed here rather than in the
+ * pipeline, because for a save that silence is correct.
+ */
+function explainMissingCommit(warnings: readonly Warning[]): Warning[] {
+  if (warnings.some((warning) => warning.code.startsWith("commit_"))) return [...warnings];
+  return [
+    ...warnings,
+    {
+      code: "commit_skipped",
+      detail:
+        "the restored content is already what git records for this path, so there was nothing " +
+        "to commit; the file on disk holds it either way",
+    },
+  ];
+}
+
+export async function rollbackSkill(
+  workspace: SkillsWorkspace,
+  mutex: DocumentMutex,
+  actor: Actor,
+  name: string,
+  to: string | null,
+): Promise<SkillRollbackResult> {
+  const path = skillDocumentPath(name);
+  const absPath = resolve(workspace.workspaceRoot, path);
+  if (!existsSync(absPath)) {
+    // One uniform refusal for "no such skill" and "archived" alike: archiving a
+    // skill moves its folder to `.claude/skills-archived/` precisely to disable
+    // it (§7), so an archived skill is not installed and rolling it back is a
+    // 404. Unarchive it first.
+    throw notFound(`no skill named \`${name}\` is installed (${path} does not exist)`);
+  }
+
+  // What the file holds right now, which is what "restores nothing" is measured
+  // against. Read here rather than inferred from `HEAD`: the case §7 cares most
+  // about is an uncommitted edit by an outside editor.
+  const current = readFileSync(absPath, "utf8");
+
+  const candidate = await workspace.git.withGitLock(async () => {
+    if (to === null) return findLastKnownGood(workspace, path, current);
+    const sha = await resolveRevision(workspace.gitCommands, to);
+    if (sha === null) {
+      throw badRequest(`git does not resolve the revision \`${to}\``, [
+        { path: "to", message: `\`${to}\` is not a revision in this workspace` },
+      ]);
+    }
+    const content = await readVersionAt(workspace.gitCommands, sha, path);
+    if (content === null) {
+      throw badRequest(`${path} does not exist at \`${to}\``, [
+        { path: "to", message: `${path} is not present in revision ${sha}` },
+      ]);
+    }
+    return { sha, content };
+  });
+
+  if (candidate === null) {
+    // TEST-24's honest outcome, and the only one the wire can express: there is
+    // no `warnings` code for "nothing to restore", and inventing a 200 that
+    // rewrote nothing would report a rollback that did not happen.
+    throw notFound(
+      `no earlier committed version of ${path} to restore — ` +
+        `its history holds nothing that differs from the file on disk and validates`,
+    );
+  }
+
+  // The restoration is a save like any other and validates like any other (§14).
+  // It also cannot be skipped: `--to` accepts any revision git resolves, and an
+  // old revision predating a format rule is exactly the kind of bytes that must
+  // not be written back unchecked.
+  const validation = validateBeforeWrite(workspace, path, candidate.content);
+  const docId = documentIdFor(workspace, path, candidate.content);
+
+  const result = await mutex.run(docId, () =>
+    runMutation(workspace, {
+      docId,
+      actor,
+      warnings: validation,
+      plan: {
+        operations: [{ kind: "write", path, content: candidate.content }],
+        stage: [path],
+        project: [path],
+        unproject: [],
+        commit: {
+          subject: `skill rollback: ${name} (${docId}) to ${candidate.sha.slice(0, 7)} by ${actor}`,
+          squash: false,
+        },
+        keys: [DOCS_KEY, docKey(docId)],
+        // Skills live outside `data/docs/`, which is the only tree
+        // `GET /api/tree` describes — no folder badge can move (SERVER-018).
+      },
+    }),
+  );
+
+  const outcome = result.commit;
+  const sha =
+    outcome !== null && (outcome.kind === "committed" || outcome.kind === "amended")
+      ? outcome.sha
+      : null;
+  // `null` is the only honest value when no commit landed: the regex would accept
+  // the pre-existing `HEAD`, and putting a commit that is not this restoration
+  // into the field the audit trail reads is what CONTRACT-016 exists to prevent.
+  const warnings = sha === null ? explainMissingCommit(result.warnings) : serializeWarnings(result);
+
+  // §14 asks a warning to surface three ways — response, server log, console.
+  // This is the log half, and it names the document, which a `Warning` does not.
+  reportWarnings(workspace, docId, { ...result, warnings });
+
+  return { name, docId, commit: sha, path, warnings };
+}

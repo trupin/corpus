@@ -48,6 +48,8 @@ import {
   normalizeDocFolder,
   toCheckDocument,
   type CheckCode,
+  type CheckFinding,
+  type CheckOptions,
 } from "../core/index.js";
 import { resolveAnchorExact } from "../anchors/index.js";
 import { badRequest } from "../errors.js";
@@ -93,6 +95,49 @@ const WARNING_CODE_BY_CHECK: Partial<Record<CheckCode, WarningCode>> = {
   [CHECK_CODES.refUnresolved]: "unresolved_ref",
 };
 
+/**
+ * The two seams §14's validator is given on this server, in one expression
+ * because there are two call sites for it and they must not drift: this file's
+ * {@link checkSave}, which validates the bytes a mutation is about to write, and
+ * `POST /api/check`, which validates whatever a caller submits. §14's promise is
+ * that they are "the same validator", and a seam supplied by one and forgotten by
+ * the other is precisely how that stops being true — without the resolver no
+ * orphaned anchor is ever reported, and without the projection every `[[ref]]` to
+ * an unsubmitted document warns.
+ *
+ * `documentExists` is a *superset* answer by construction: `checkCorpus` asks it
+ * only about ids the submitted set does not already contain, so supplying it is
+ * correct for a whole-corpus check, for a single save, and for the handful of
+ * unsaved `(path, content)` pairs `corpus doc check --staged` sends.
+ */
+export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
+  resolveAnchor: resolveAnchorExact,
+  documentExists: (id) => isIdTaken(projection, id),
+});
+
+/**
+ * True for the one finding this system deliberately does not hold against a
+ * document: §5's canonical frontmatter block, demanded of a file under §7's skill
+ * or agent-definition roots.
+ *
+ * Those roots legitimately hold files with no Corpus frontmatter at all — a
+ * hand-written `SKILL.md` carries Claude Code's `name`/`description` and nothing
+ * else, which is why the projection synthesizes an id for them. Every *structural*
+ * rule still applies; only this one is waived.
+ *
+ * It is a predicate over a finding rather than a flag computed at a call site so
+ * that the save path and `POST /api/check` cannot disagree: **a document the
+ * system accepts on write must not fail a check** (sprint-013 Adjudication 6).
+ * Waived, never re-graded — moving it to `warnings` would put a code outside
+ * §14's closed two-member warning set on the wire.
+ */
+export function isSkillFrontmatterException(finding: Pick<CheckFinding, "code" | "path">): boolean {
+  return (
+    finding.code === CHECK_CODES.frontmatterInvalid &&
+    classifyPath(finding.path)?.synthesizeId === true
+  );
+}
+
 /** How much hook output a warning carries; the full text is always in the log. */
 export const WARNING_DETAIL_LINES = 5;
 export const WARNING_DETAIL_LENGTH = 600;
@@ -127,7 +172,22 @@ export type MutationPlan = {
   readonly project: readonly string[];
   /** Document files whose rows must be dropped after the write. */
   readonly unproject: readonly string[];
-  readonly commit: { readonly subject: string; readonly anchors?: AnchorChange | undefined } | null;
+  readonly commit: {
+    readonly subject: string;
+    readonly anchors?: AnchorChange | undefined;
+    /**
+     * `false` opts this plan out of §4's per-session folding. Left unset — the
+     * default — by every edit verb, because folding repeated saves of one
+     * document by one author into one commit is exactly what §4 asks for.
+     *
+     * The skill rollback sets it, and the reason generalises: a rollback is not
+     * a continuation of the edit that made it necessary, it is the answer to it.
+     * Folding one into the other would amend the bad edit's commit out of
+     * existence — destroying the very history the restoration is reading, and
+     * leaving `git log` with no record that a rollback happened at all.
+     */
+    readonly squash?: boolean | undefined;
+  } | null;
   readonly keys: readonly QueryKey[];
   /**
    * Set by any plan whose write *could* change the `data/docs/` folder tree —
@@ -219,44 +279,56 @@ export function validationError(message: string, issues: readonly ValidationIssu
  * the corpus the projection already indexes, every cross-document reference in
  * the saved file would warn.
  */
+export type SaveCheck = {
+  /** Empty exactly when {@link validateBeforeWrite} would let these bytes through. */
+  readonly blocking: readonly CheckFinding[];
+  /** The validator's own findings, verbatim — what a §14 report would carry. */
+  readonly findings: readonly CheckFinding[];
+  /** Those findings translated into the §14 response warnings a mutation carries. */
+  readonly warnings: readonly Warning[];
+};
+
+/**
+ * The §14 validator, run over the bytes a save would write, without throwing.
+ *
+ * Split out of {@link validateBeforeWrite} because the skill rollback (§7) has to
+ * ask the same question about a *candidate* revision — "would saving these bytes
+ * be accepted?" — while walking history for the last-known-good one, and a
+ * predicate spelled with a `try`/`catch` around a throwing validator would be a
+ * second definition of "valid".
+ */
+export function checkSave(projection: ProjectionDb, path: string, text: string): SaveCheck {
+  const report = checkCorpus([toCheckDocument(path, text)], checkSeams(projection));
+  const blocking = report.errors.filter(
+    (finding) => LOCAL_CHECK_CODES.has(finding.code) && !isSkillFrontmatterException(finding),
+  );
+  const warnings: Warning[] = [];
+  for (const finding of report.warnings) {
+    const code = WARNING_CODE_BY_CHECK[finding.code];
+    if (code !== undefined) warnings.push({ code, detail: finding.detail });
+  }
+  return { blocking, findings: report.warnings, warnings };
+}
+
 export function validateBeforeWrite(
   workspace: Pick<DocsWorkspace, "logger" | "projection">,
   path: string,
   text: string,
 ): Warning[] {
-  const report = checkCorpus([toCheckDocument(path, text)], {
-    resolveAnchor: resolveAnchorExact,
-    documentExists: (id) => isIdTaken(workspace.projection, id),
-  });
-  // §7's skill and agent-definition roots legitimately hold files with no
-  // Corpus frontmatter at all — a hand-written `SKILL.md` carries Claude Code's
-  // `name`/`description` and nothing else, which is why the projection
-  // synthesizes an id for them. Demanding §5's canonical block there would make
-  // archiving one impossible; every *structural* rule still applies.
-  const lenientFrontmatter = classifyPath(path)?.synthesizeId === true;
-  const blocking = report.errors.filter(
-    (finding) =>
-      LOCAL_CHECK_CODES.has(finding.code) &&
-      !(lenientFrontmatter && finding.code === CHECK_CODES.frontmatterInvalid),
-  );
+  const { blocking, findings, warnings } = checkSave(workspace.projection, path, text);
   if (blocking.length > 0) {
     validationError(
       `the document would not pass validation: ${blocking[0]?.detail ?? "invalid document"}`,
       blocking.map((finding) => ({ path: finding.code, message: finding.detail })),
     );
   }
-  if (report.warnings.length > 0) {
+  if (findings.length > 0) {
     workspace.logger.info("document saved with validation warnings", {
       path,
-      warnings: report.warnings.map((finding) => `${finding.code}: ${finding.detail}`),
+      warnings: findings.map((finding) => `${finding.code}: ${finding.detail}`),
     });
   }
-  const warnings: Warning[] = [];
-  for (const finding of report.warnings) {
-    const code = WARNING_CODE_BY_CHECK[finding.code];
-    if (code !== undefined) warnings.push({ code, detail: finding.detail });
-  }
-  return warnings;
+  return [...warnings];
 }
 
 /**
@@ -620,6 +692,7 @@ export async function runMutation(
           subject: plan.commit.subject,
           paths: plan.stage,
           ...(plan.commit.anchors === undefined ? {} : { anchors: plan.commit.anchors }),
+          ...(plan.commit.squash === undefined ? {} : { squash: plan.commit.squash }),
         });
 
   // After the commit and before the response — a hook failure must not cost the

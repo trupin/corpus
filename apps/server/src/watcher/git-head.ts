@@ -7,6 +7,12 @@
 // path (§4, Architecture Decision 2), and a watcher that committed on its own
 // would be the duplication the sole-writer rule forbids. Committing the
 // reconciled frontmatter is SERVER-005's (sprint-004 Adjudication 3).
+//
+// **HEAD-pinned and synchronous on purpose.** The ref-parameterised form lives in
+// `git/show.ts` and goes through the async `Git` command builder; this one cannot,
+// because the watcher's `flush()` is synchronous and its time budget
+// (`WATCH_FLUSH_BUDGET_MS`) is measured against exactly this call. Two spellings
+// of one question because they answer it for two schedulers — not a copy.
 
 import { execFileSync } from "node:child_process";
 import { sanitizeGitEnv } from "../git/env.js";
