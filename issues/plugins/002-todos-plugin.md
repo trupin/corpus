@@ -19,11 +19,11 @@ opus — reference implementation over a finished extension surface; PLUGINS-001
 ## Spec References
 - SPEC.md §12 — "Reference plugin: todos (part of v1)"
 - SPEC.md §10 — "Plugin system" (the extension points this plugin exercises; kit-only UI contract)
-- SPEC.md §15 M5 — "plugin system + todos plugin" (the executable check; this issue's E2E plan runs it verbatim)
+- SPEC.md §15 M6 — "plugin system + todos plugin" (the executable check; this issue's E2E plan runs it verbatim; renumbered per sprint-014 Adjudication 15)
 - SPEC.md §6 — "Threads and anchors" (item-level commenting uses the core anchor mechanism, unchanged)
 
 ## Summary
-Ship `plugins/todos` — the v1 reference plugin that proves every extension point PLUGINS-001 built, with enough real utility that it earns its place in the default workspace rather than reading as a demo. It owns the `todo` doc type, renders it as a togglable checkbox list whose writes go through its own server route, injects an open/done stats `DocPanel`, contributes `corpus todos add|check|list`, ships a `SKILL.md` so the agent can manage todos when asked in a thread, and registers a "Todos" board column type that aggregates open items across every `todo` document — built **exclusively** on `@corpus/kit`. It is also the subject of the M5 executable check: deleting the directory must leave the core fully functional.
+Ship `plugins/todos` — the v1 reference plugin that proves every extension point PLUGINS-001 built, with enough real utility that it earns its place in the default workspace rather than reading as a demo. It owns the `todo` doc type, renders it as a togglable checkbox list whose writes go through its own server route, injects an open/done stats `DocPanel`, contributes `corpus todos add|check|list`, ships a `SKILL.md` so the agent can manage todos when asked in a thread, and registers a "Todos" board column type that aggregates open items across every `todo` document — built **exclusively** on `@corpus/kit`. It is also the subject of the M6 executable check: deleting the directory must leave the core fully functional.
 
 ## Format decision (pinned)
 SPEC.md §12 leaves the items format to the builder ("frontmatter `items` … or markdown checkboxes in the body — builder's choice, but the CLI must own the format"). **Decision: frontmatter `items: [{ text, done, ts }]`.**
@@ -47,7 +47,7 @@ Field semantics: `text` (string, required, non-empty), `done` (boolean, required
 - [ ] **Column**: a "Todos" column type aggregating **open** items across all `todo` documents, grouped by source document, each row linking to its document (opening it in the column reader). Implemented **exclusively** on `@corpus/kit` — `useDocs` for the query, kit components for rows/layout/tokens; zero imports from `apps/ui/src` (lint-enforced) and zero hard-coded colors.
 - [ ] **Seed template**: a `type: template` document with `for: todo` ships as a seed document (per SPEC.md §11, templates are documents) so creating a todo from the picker or a column's ＋ starts with valid empty `items: []` frontmatter.
 - [ ] **`validate`**: the manifest's `validate?` rejects malformed `items` (non-array, missing `text`/`done`/`ts`, wrong types) with a readable message, and the View degrades gracefully rather than crashing on a document that fails it.
-- [ ] **§15 M5 passes**: deleting `plugins/todos` leaves the app booting, todo documents rendering as plain markdown, and the Todos column showing a "plugin missing" card; restoring returns the renderer, DocPanel, and column.
+- [ ] **§15 M6 passes**: deleting `plugins/todos` leaves the app booting, todo documents rendering as plain markdown, and the Todos column showing a "plugin missing" card; restoring returns the renderer, DocPanel, and column.
 
 ## Technical Design
 
@@ -96,7 +96,7 @@ Field semantics: `text` (string, required, non-empty), `done` (boolean, required
 - **A todo document that is locked** (§7) — the View renders read-only with the core lock banner; toggles are disabled; the plugin does not attempt to bypass the lock.
 - **`due` in the past** — the due count on rows and the column highlight it per the design's overdue treatment; no separate notification machinery.
 - **Archived todo documents** — excluded from the Todos column by default (matching core's default exclusion of `status: archived`).
-- **Plugin deleted while todo documents remain** — documents render as plain markdown showing their frontmatter; no data is lost. This is the M5 contract and must be verified, not assumed.
+- **Plugin deleted while todo documents remain** — documents render as plain markdown showing their frontmatter; no data is lost. This is the M6 contract and must be verified, not assumed.
 - **Many todo documents** — the column query is a single `useDocs` call; flattening happens client-side. If item counts grow large, truncate per document with a "+N more" affordance rather than adding a bespoke endpoint.
 
 ## Testing Strategy

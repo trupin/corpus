@@ -128,9 +128,11 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-016 | Rider: nullable rollback commit | done | P1 | CONTRACT-008 |
 | SERVER-019 | Mount validation + skill-rollback handlers | done | P1 | CONTRACT-008, CONTRACT-016 |
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | done | P1 | CLI-003, SERVER-019 |
-| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
+| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | in_progress | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
-| AGENT-004 | Emit trace lines in agent turns | todo | P2 | AGENT-002 |
+| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-006, SERVER-019 |
+| PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P2 | UI-014, PLUGINS-002 |
+| AGENT-004 | Emit trace lines in agent turns | in_progress | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
 | CONTRACT-015 | Graduate plugin-facing types into @corpus/contract | done | P1 | CONTRACT-002 |

@@ -35,6 +35,10 @@ fable — one grammar decision with cross-component blast radius, one security p
   limitation): request logs + `currentUrl()` exposure. Localhost-bound today; make the
   documented decision (accept with rationale, or move to cookie/header transport) BEFORE
   remote-server setups arrive.
+- _(added 2026-07-28, sprint-014 Adjudications 12/13)_ `docs/cli.md` documents a `~~~form` fence
+  that `FORM_FENCE_PATTERN` does not recognize — a docs/grammar divergence to settle with (9);
+  and nothing validates a form's shape at post time (the comment skill is the v1 enforcement
+  point) — decide whether post-time validation joins the settled grammar.
 
 ## Acceptance Criteria
 
