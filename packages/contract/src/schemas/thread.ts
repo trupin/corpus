@@ -131,8 +131,14 @@ export const THREAD_CREATE_OMITTED_BEHAVIOUR =
   "the server enqueues only when the body carries an explicit `@agent` mention, a targeted " +
   "`@<subagent>` mention or a `/<skill>` invocation.";
 
+/**
+ * Strict, like every request body (CONTRACT-017; the policy note is in
+ * `./index.ts`). The eval that filed the issue sent `anchor: {quote: …}` where
+ * `selector: {exact: …}` was meant and got a `200` with a silently unanchored
+ * thread — the typo class strictness turns into a `400` naming the key.
+ */
 export const CreateThreadRequestSchema = z
-  .object({
+  .strictObject({
     parent: DocumentIdSchema.nullable()
       .optional()
       .describe("Document being commented on. Omitted or null creates a standalone thread."),
@@ -191,7 +197,7 @@ const MultipartSelectorSchema = z
  * first turn, which is nothing at all, and is rejected.
  */
 export const MultipartCreateThreadRequestSchema = z
-  .object({
+  .strictObject({
     parent: DocumentIdSchema.optional().describe(
       "Document being commented on. Omitted creates a standalone thread.",
     ),
@@ -239,7 +245,7 @@ export const CreateThreadResponseSchema = z
   .openapi("CreateThreadResponse");
 
 export const AppendTurnRequestSchema = z
-  .object({
+  .strictObject({
     body: z.string().min(1),
     requestsAgent: requestsAgentField(TURN_APPEND_OMITTED_BEHAVIOUR),
   })
@@ -251,7 +257,7 @@ export const AppendTurnRequestSchema = z
  * nor files is nothing at all and is rejected as a validation error.
  */
 export const MultipartAppendTurnRequestSchema = z
-  .object({
+  .strictObject({
     text: z
       .string()
       .min(1)
@@ -285,7 +291,7 @@ export const AppendTurnResponseSchema = z
  * in the tab that did the reading.
  */
 export const MarkSeenRequestSchema = z
-  .object({
+  .strictObject({
     lastSeenTs: IsoDateTimeSchema.optional().describe(
       "Turn timestamp to mark seen up to. Defaults to the thread's last turn, which is what " +
         "opening a thread means; pass it explicitly only to record a partial read.",

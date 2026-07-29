@@ -138,7 +138,7 @@ export const ReapStaleResultSchema = z
  * `.corpus/HALT` sentinel, so whoever finds the queue stopped can see why.
  */
 export const HaltQueueRequestSchema = z
-  .object({
+  .strictObject({
     reason: z
       .string()
       .min(1)
@@ -148,7 +148,7 @@ export const HaltQueueRequestSchema = z
   .openapi("HaltQueueRequest");
 
 export const FailEventRequestSchema = z
-  .object({
+  .strictObject({
     reason: z
       .string()
       .min(1)

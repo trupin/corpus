@@ -68,6 +68,7 @@ interface SchemaNode {
   readonly allOf?: SchemaNode[];
   readonly anyOf?: SchemaNode[];
   readonly oneOf?: SchemaNode[];
+  readonly additionalProperties?: boolean | SchemaNode;
   readonly description?: string;
 }
 
@@ -1562,5 +1563,43 @@ describe("request bodies declare whether they are mandatory", () => {
     // The halt sentinel is rewritten wholesale, so a bare re-halt does not
     // merely leave a previously recorded reason alone — it clears it.
     expect(operation("/api/queue/halt", "post").description).toContain("replace, add, or clear");
+  });
+});
+
+/**
+ * CONTRACT-017: strict bodies, tolerant reads. Every request body — JSON and
+ * multipart alike — rejects unknown top-level keys with a `400` naming the key,
+ * so a typoed key (`anchor` for `selector`, the eval that filed the issue) can
+ * never validate as a silently different mutation. The policy and its
+ * boundaries — open *values* like `extra` stay open, queries and headers stay
+ * tolerant — are stated in `./schemas/index.ts`.
+ */
+describe("request bodies are strict (CONTRACT-017)", () => {
+  function deref(node: SchemaNode | undefined): SchemaNode | undefined {
+    if (node?.$ref === undefined) return node;
+    return componentSchemas?.[node.$ref.split("/").pop() ?? ""];
+  }
+
+  it("declares additionalProperties: false on every request body in the document", () => {
+    const seen: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of MUTATING_METHODS) {
+        if (!item || !(method in (item as object))) continue;
+        const content = operation(path, method).requestBody?.content ?? {};
+        for (const [mediaType, mediaObject] of Object.entries(content)) {
+          const where = `${method.toUpperCase()} ${path} (${mediaType})`;
+          seen.push(where);
+          const schema = deref((mediaObject as { schema?: SchemaNode }).schema);
+          // A branching body (the /api/check XOR) is strict when every branch is.
+          const branches = schema?.anyOf ?? schema?.oneOf ?? [schema];
+          for (const branch of branches) {
+            expect(deref(branch)?.additionalProperties, where).toBe(false);
+          }
+        }
+      }
+    }
+    // The sweep must not pass by matching nothing: the surface carries at least
+    // the fifteen bodies it had when the rule landed.
+    expect(seen.length).toBeGreaterThanOrEqual(15);
   });
 });

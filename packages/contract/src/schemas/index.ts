@@ -19,6 +19,23 @@
  * server-side parse wrapper, never in the shared request schema.
  *
  * `src/openapi.test.ts` enforces the rule across the whole request surface.
+ *
+ * **Strict bodies, tolerant reads (CONTRACT-017).** Every request *body* schema
+ * — JSON and multipart alike — is `z.strictObject`: an unknown top-level key is
+ * a `400` naming the key, never a silent no-op. A body is an instruction, and
+ * an unknown key in one is either a typo of a declared key (`anchor` for
+ * `selector` earned this issue: a `200` with a silently unanchored thread) or a
+ * semantic the server would silently drop — accepting it means performing a
+ * *different* mutation than the caller asked for, without telling them.
+ * Openness stays where openness is the contract, one level down: `extra`,
+ * `ViewQuery` and the queue event `payload` are open *values* of closed keys.
+ * Query, path and header schemas stay tolerant: headers are an open set by
+ * nature, and an unknown query parameter on a read yields a visible, recoverable
+ * result rather than a wrong write. Responses are unchanged — clients do not
+ * runtime-validate them, and the server builds them from these types anyway.
+ *
+ * `src/openapi.test.ts` enforces this too: every request body in the published
+ * document must carry `additionalProperties: false`.
  */
 
 export * from "./actor.js";

@@ -37,7 +37,7 @@ export const SkillNameSchema = z
   });
 
 export const SkillRollbackRequestSchema = z
-  .object({
+  .strictObject({
     // Optional-in: omitted means last-known-good, which is the server's job to
     // determine. `null` says the same thing explicitly, so a client holding a
     // nullable ref never has to strip the key before sending.

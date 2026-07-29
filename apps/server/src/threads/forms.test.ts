@@ -135,13 +135,33 @@ describe("answering a form", () => {
 
     const response = await answerForm(
       thread,
-      { option: OPTIONS[1], author: "user", actor: "user", from: "user" },
+      { option: OPTIONS[1] },
       { "x-corpus-author": "agent" },
     );
 
     expect(response.status).toBe(201);
     expect(ws.log("%an <%ae>")[0]).toBe("agent <agent@corpus.local>");
     expect(turnsOf(ws, thread.id).at(-1)?.author).toBe("agent");
+  });
+
+  /**
+   * Before CONTRACT-017 these keys validated and were silently dropped — which
+   * is what the test above used to prove attribution ignores them. Bodies are
+   * strict now, so a body that even *tries* to smuggle attribution is refused
+   * outright, and nothing is written.
+   */
+  it("rejects a body carrying attribution-shaped keys, writing nothing", async () => {
+    const thread = await threadWithForm();
+    const turnsBefore = turnsOf(ws, thread.id).length;
+
+    const response = await answerForm(
+      thread,
+      { option: OPTIONS[1], author: "user", actor: "user", from: "user" },
+      { "x-corpus-author": "agent" },
+    );
+
+    expect(response.status).toBe(400);
+    expect(turnsOf(ws, thread.id)).toHaveLength(turnsBefore);
   });
 
   it("writes the answer turn with no note when none was given", async () => {

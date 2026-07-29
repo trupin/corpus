@@ -970,7 +970,8 @@
         "required": [
           "type",
           "title"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NotFoundError": {
         "type": "object",
@@ -1204,7 +1205,8 @@
             "additionalProperties": {},
             "description": "Extra frontmatter: every YAML key of the document's frontmatter that is not a core key, flat and verbatim (SPEC.md §5 — plugins add fields under their own keys; §12 — e.g. a `todo` document's `items`). The server stores and returns these keys and **never interprets them**; meaning belongs to the key's owner (a plugin's own schema), never to this contract. Keys must not name a core frontmatter key (id, type, title, created, updated, tags, status, anchors, due, reviewed, evergreen, parent, anchor, agent, pinned, order, query, column) — such a request is rejected with `400`, exact and case-sensitive, so a core field can never be shadowed. Values are plain JSON (`null`, strings, finite numbers, booleans, arrays, objects) nested at most 8 containers deep, at most 65536 UTF-8 bytes serialized per document; the bounds are enforced at the write boundary. **On update the object is a shallow merge patch** (RFC 7386, applied at the top level): each named key replaces the file's key wholesale, `null` removes it, unnamed keys are untouched byte-for-byte — omit the field to leave every extra key alone, and never read-modify-write the whole object, which would race concurrent writers of other keys. On create, keys are written into the new file's frontmatter and a `null` value is a no-op. **Responses always carry the object**, `{}` when the file has no extra keys; a hand-edited `key: null` on disk is returned as `null` and is therefore removed if echoed back through an update."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "DeleteDocResult": {
         "type": "object",
@@ -1267,7 +1269,8 @@
         },
         "required": [
           "folder"
-        ]
+        ],
+        "additionalProperties": false
       },
       "FolderTree": {
         "type": "object",
@@ -1381,7 +1384,8 @@
         },
         "required": [
           "text"
-        ]
+        ],
+        "additionalProperties": false
       },
       "CreateThreadResponse": {
         "type": "object",
@@ -1586,7 +1590,8 @@
         },
         "required": [
           "body"
-        ]
+        ],
+        "additionalProperties": false
       },
       "MultipartCreateThreadRequest": {
         "type": "object",
@@ -1623,7 +1628,8 @@
             },
             "description": "Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6)."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "AppendTurnResponse": {
         "type": "object",
@@ -1761,7 +1767,8 @@
         },
         "required": [
           "body"
-        ]
+        ],
+        "additionalProperties": false
       },
       "MultipartAppendTurnRequest": {
         "type": "object",
@@ -1783,7 +1790,8 @@
             },
             "description": "Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6)."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "DeleteTurnResult": {
         "type": "object",
@@ -1888,7 +1896,8 @@
         },
         "required": [
           "option"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ThreadMutationResponse": {
         "type": "object",
@@ -1944,7 +1953,8 @@
             "example": "2026-07-19T10:05:00Z",
             "description": "Turn timestamp to mark seen up to. Defaults to the thread's last turn, which is what opening a thread means; pass it explicitly only to record a partial read."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "QueueStatus": {
         "type": "object",
@@ -2088,7 +2098,8 @@
             "minLength": 1,
             "description": "Human-readable halt reason, recorded in the `.corpus/HALT` sentinel."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "FailEventRequest": {
         "type": "object",
@@ -2098,7 +2109,8 @@
             "minLength": 1,
             "description": "Human-readable failure reason, shown in the console."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "LockList": {
         "type": "object",
@@ -2170,7 +2182,8 @@
             "minimum": 1,
             "description": "Lease in seconds; defaults to 300. A TTL is what keeps a crashed editor from wedging a document — `POST /api/locks/reap` clears expired leases."
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ReleaseLockResult": {
         "type": "object",
@@ -2357,7 +2370,8 @@
         },
         "required": [
           "line"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ConflictError": {
         "type": "object",
@@ -2733,7 +2747,8 @@
             "minLength": 1,
             "description": "Git ref to restore the skill from — a commit sha, tag or any revision git resolves. Omit it (or send null) to restore the last-known-good version, which is the newest committed revision of the file that validates (SPEC.md §7)."
           }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -4173,7 +4188,7 @@
           "threads"
         ],
         "summary": "Answer the form in an agent turn",
-        "description": "Submits an answer to the ```` ```form ```` block in the turn at `{ts}`: the server appends a structured answer turn carrying the chosen option and any note, and enqueues a `form.respond` event that re-triggers the agent like any engaged-thread reply (SPEC.md §6). The thread then leaves `needs=form`.\n\n**The fence grammar**, which this route validates the answer against: an opening fence whose info string is exactly `form` (so ```` ```formula ```` is not one), then YAML with `prompt` (non-empty) and `options` (at least one, each non-empty, all distinct), then a closing fence. Selection is single: the answer names exactly one option, verbatim. A `note` is free text and always optional. Nothing else is part of the grammar — no form id, no per-option types, no required markers, no multi-select.\n\n`400` when `option` is not one of the offered options, naming `body.option` in `issues`; `404` when the thread has no such turn, or that turn carries no form.",
+        "description": "Submits an answer to the ```` ```form ```` block in the turn at `{ts}`: the server appends a structured answer turn carrying the chosen option and any note, and enqueues a `form.respond` event that re-triggers the agent like any engaged-thread reply (SPEC.md §6). The thread then leaves `needs=form`.\n\n**The fence grammar**, which this route validates the answer against — settled by CONTRACT-014 as a CommonMark subset: an opening backtick fence at column 0 whose info string is exactly `form` (so ```` ```formula ```` is not one, a tilde fence is not one, and a fence quoted inside an outer fenced block is not one), then YAML with `prompt` (non-empty) and `options` (at least one, each non-empty, all distinct), then a required closing fence — a whole line of at least as many backticks; an unterminated fence is not a form. Selection is single: the answer names exactly one option, verbatim. A `note` is free text and always optional. Nothing else is part of the grammar — no form id, no per-option types, no required markers, no multi-select.\n\n`400` when `option` is not one of the offered options, naming `body.option` in `issues`; `404` when the thread has no such turn, or that turn carries no form.",
         "parameters": [
           {
             "schema": {
@@ -6144,10 +6159,10 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "description": "Workspace bearer token; a query parameter because EventSource cannot set headers."
+              "description": "Workspace bearer token; a query parameter because EventSource cannot set headers. Accepted for v1 under the localhost bind (SPEC.md §2.1) — a remote-server deployment must replace this transport (see the route's contract docblock) before leaving loopback."
             },
             "required": true,
-            "description": "Workspace bearer token; a query parameter because EventSource cannot set headers.",
+            "description": "Workspace bearer token; a query parameter because EventSource cannot set headers. Accepted for v1 under the localhost bind (SPEC.md §2.1) — a remote-server deployment must replace this transport (see the route's contract docblock) before leaving loopback.",
             "name": "token",
             "in": "query"
           }

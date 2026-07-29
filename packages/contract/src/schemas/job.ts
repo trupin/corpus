@@ -109,7 +109,7 @@ export const JobLogSchema = z
   .openapi("JobLog");
 
 export const AppendLogRequestSchema = z
-  .object({
+  .strictObject({
     line: z
       .string()
       .min(1)
