@@ -1,21 +1,26 @@
 import {
   ACTOR_HEADER,
+  UpdateDocRequestSchema,
   type Actor,
   type Doc,
   type DocList,
   type QueryKeySegment,
+  type UpdateDocRequest,
 } from "@corpus/contract";
 import type { PluginServerContext } from "@corpus/contract/plugin";
 import { docRowFixture } from "@corpus/kit/testing";
 import { beforeEach, describe, expect, it } from "vitest";
+import { itemsOrEmpty } from "../items.js";
 import { TODO_DOC_TYPE } from "../shared.js";
 import routes from "./routes.js";
 
 /**
  * The routes, exercised through a real Hono router over a **fake plugin
  * context** that behaves the way `apps/server`'s real one does: `getDoc`
- * throws the server's HTTP-shaped `not_found`, `updateDoc` applies `extra` as a
- * shallow merge patch, and `broadcastInvalidate` refuses a core key.
+ * throws the server's HTTP-shaped `not_found`, writes apply `extra` as a
+ * shallow merge patch after validating it, `mutateDoc` runs read → recompute →
+ * write inside a per-document lane, and `broadcastInvalidate` refuses a core
+ * key.
  *
  * A fake rather than a real workspace because the contract under test is *this
  * module's*: that every write goes through the context (never the filesystem),
@@ -24,6 +29,11 @@ import routes from "./routes.js";
  * `apps/server`'s own tested guarantee, and re-proving it here would be
  * asserting someone else's code through a slower harness. The live proof that
  * the two compose is the E2E run in the issue's log.
+ *
+ * The two behaviours the fake models *deliberately* rather than incidentally
+ * are the lane and the write window (PLUGINS-004): without them a fake
+ * serializes everything by accident and the lost update PR #11's finding 2
+ * describes could not be reproduced here at all.
  */
 
 const TS = "2026-07-20T09:00:00.000Z";
@@ -32,6 +42,36 @@ const NOW = Date.parse("2026-07-21T10:00:00.000Z");
 interface Recorded {
   readonly keys: (readonly QueryKeySegment[])[];
   readonly updates: { id: string; actor: Actor; extra: unknown }[];
+}
+
+/**
+ * A per-document write lane, as the real context has one. Tasks for the same
+ * document run one after another; different documents never wait on each other.
+ */
+function lanes(): <T>(id: string, task: () => Promise<T>) => Promise<T> {
+  const tails = new Map<string, Promise<unknown>>();
+  return <T>(id: string, task: () => Promise<T>): Promise<T> => {
+    const running = (tails.get(id) ?? Promise.resolve()).then(task);
+    // The tail must never reject, or a refused write would poison the lane for
+    // every request behind it.
+    tails.set(
+      id,
+      running.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return running;
+  };
+}
+
+/**
+ * How long a real write is open for — validate, git auto-commit, re-project.
+ * A macrotask, so anything already in flight gets to run its whole handler
+ * while this write is mid-flight: that window is where the lost update lives.
+ */
+function writeWindow(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /** `apps/server`'s `HttpError`, as the plugin recognises it: `{status, body}`. */
@@ -71,9 +111,55 @@ interface Harness {
   readonly docs: Map<string, Doc>;
 }
 
-function harness(seed: readonly Doc[] = []): Harness {
+interface HarnessOptions {
+  /**
+   * Fails the write. Invoked inside the lane, *after* any mutation callback
+   * has run — where the real context's edit-lock refusal happens, which is why
+   * the seam requires the callback to be a pure recompute.
+   */
+  readonly onWrite?: () => void;
+}
+
+function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harness {
   const docs = new Map(seed.map((doc) => [doc.frontmatter.id, doc]));
   const recorded: Recorded = { keys: [], updates: [] };
+  const lane = lanes();
+
+  const read = (id: string): Doc => {
+    const doc = docs.get(id);
+    if (doc === undefined) throw httpish(404, "not_found", `no document with id ${id}`);
+    return doc;
+  };
+
+  /** The write half of both write verbs — the lane is the caller's business. */
+  const write = async (actor: Actor, id: string, patch: UpdateDocRequest): Promise<Doc> => {
+    const doc = read(id);
+    options.onWrite?.();
+    await writeWindow();
+    recorded.updates.push({ id, actor, extra: patch.extra });
+    const next: Doc = {
+      ...doc,
+      frontmatter: {
+        ...doc.frontmatter,
+        extra: { ...doc.frontmatter.extra, ...(patch.extra ?? {}) },
+      },
+    };
+    docs.set(id, next);
+    return next;
+  };
+
+  /** As the real context does: a patch is parsed, whoever produced it. */
+  const parsePatch = (patch: UpdateDocRequest): UpdateDocRequest => {
+    const parsed = UpdateDocRequestSchema.safeParse(patch);
+    if (!parsed.success) {
+      throw httpish(
+        400,
+        "bad_request",
+        `plugin doc update failed validation: ${parsed.error.message}`,
+      );
+    }
+    return parsed.data;
+  };
 
   const context: PluginServerContext = {
     plugin: "todos",
@@ -93,26 +179,17 @@ function harness(seed: readonly Doc[] = []): Harness {
         ),
       page: { total: docs.size, limit: 50, offset: 0 },
     }),
-    getDoc: (id): Doc => {
-      const doc = docs.get(id);
-      if (doc === undefined) throw httpish(404, "not_found", `no document with id ${id}`);
-      return doc;
-    },
+    getDoc: read,
     createDoc: () => Promise.reject(new Error("createDoc is not used by these routes")),
-    updateDoc: (actor, id, patch) => {
-      const doc = docs.get(id);
-      if (doc === undefined) throw httpish(404, "not_found", `no document with id ${id}`);
-      recorded.updates.push({ id, actor, extra: patch.extra });
-      const next: Doc = {
-        ...doc,
-        frontmatter: {
-          ...doc.frontmatter,
-          extra: { ...doc.frontmatter.extra, ...(patch.extra ?? {}) },
-        },
-      };
-      docs.set(id, next);
-      return Promise.resolve(next);
-    },
+    updateDoc: (actor, id, patch) => lane(id, () => write(actor, id, parsePatch(patch))),
+    mutateDoc: (actor, id, mutate) =>
+      lane(id, async () => {
+        // Read inside the lane, and hand the callback that document — the whole
+        // reason this verb exists. A throw from the callback propagates
+        // unwrapped and writes nothing.
+        const patch = parsePatch(mutate(read(id)));
+        return await write(actor, id, patch);
+      }),
     broadcastInvalidate: (keys) => {
       for (const key of keys) {
         // The real context refuses a core root outright; mirroring that here is
@@ -346,43 +423,122 @@ describe("malformed items", () => {
 
 describe("failures the plugin does not own", () => {
   it("passes a locked document's 423 through with its body intact", async () => {
-    const locked = harness([docFixture("doc_week", [])]);
-    const context: PluginServerContext = {
-      ...locked.context,
-      updateDoc: () => {
+    // The refusal lands after the mutation callback ran, exactly where the real
+    // context's lock guard is — and nothing must be written or broadcast.
+    const locked = harness([docFixture("doc_week", [])], {
+      onWrite: () => {
         throw httpish(423, "locked", "doc_week is locked by user");
       },
-    };
-    const response = await routes(context).request("/doc_week/items", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "a" }),
     });
+    const response = await call(locked, "POST", "/doc_week/items", { text: "a" });
     expect(response.status).toBe(423);
     expect(await response.json()).toEqual({
       code: "locked",
       message: "doc_week is locked by user",
     });
+    expect(locked.recorded.keys).toEqual([]);
   });
 
   it("never invents a friendly body for a failure it does not own", async () => {
-    const boom = harness([docFixture("doc_week", [])]);
-    const context: PluginServerContext = {
-      ...boom.context,
-      updateDoc: () => {
+    const boom = harness([docFixture("doc_week", [])], {
+      onWrite: () => {
         throw new Error("the disk caught fire");
       },
+    });
+    const response = await call(boom, "POST", "/doc_week/items", { text: "a" });
+    // Re-thrown: the router's own last-resort handler answered, not the
+    // plugin's translator. Mounted for real, this is where the server's
+    // `onError` logs the genuine 500 it is.
+    expect(response.status).toBe(500);
+    expect(response.headers.get("content-type")).not.toContain("application/json");
+  });
+
+  it("refuses to answer 200 for a context that resolved without mutating", async () => {
+    const inert = harness([docFixture("doc_week", [])]);
+    const context: PluginServerContext = {
+      ...inert.context,
+      // A context that never runs the callback breaks the seam's contract. The
+      // plugin has no item to report, and inventing one would be worse than
+      // failing: this is the 500 it is.
+      mutateDoc: (_actor, id) => Promise.resolve(docFixture(id, [])),
     };
     const response = await routes(context).request("/doc_week/items", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: "a" }),
     });
-    // Re-thrown: the router's own last-resort handler answered, not the
-    // plugin's translator. Mounted for real, this is where the server's
-    // `onError` logs the genuine 500 it is.
     expect(response.status).toBe(500);
-    expect(response.headers.get("content-type")).not.toContain("application/json");
+    expect(inert.recorded.keys).toEqual([]);
+  });
+});
+
+/**
+ * PR #11 review, finding 2 — the lost update this issue closes.
+ *
+ * Every mutation here writes the *whole* recomputed `items` array, so a read
+ * taken before the lane is a stale basis for the write that follows. The fake
+ * context models the two things that make that reachable in production: writes
+ * to one document serialize, and a write stays open across a macrotask (the
+ * git-commit window). Both requests below are dispatched before either write
+ * lands, which is precisely two quick browser clicks, or an agent CLI call
+ * arriving while the board is mid-write.
+ *
+ * Against the pre-fix `getDoc` → `updateDoc` pair every one of these fails: the
+ * second request reads the pre-change list, passes its per-item `expectedText`
+ * guard — it never touched the index the first one changed — and reverts the
+ * first after it already answered 200.
+ */
+describe("interleaved mutations of one list", () => {
+  const doneFlags = (h: Harness, id: string): readonly boolean[] =>
+    itemsOrEmpty(h.docs.get(id)?.frontmatter).map((item) => item.done);
+
+  const texts = (h: Harness, id: string): readonly string[] =>
+    itemsOrEmpty(h.docs.get(id)?.frontmatter).map((item) => item.text);
+
+  it("keeps both toggles when a second dispatches inside the first's write window", async () => {
+    const [first, second] = await Promise.all([
+      call(h, "PUT", "/doc_week/items/0", { done: true, expectedText: "Renew passport" }),
+      call(h, "PUT", "/doc_week/items/1", { done: true, expectedText: "Call plumber" }),
+    ]);
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect(doneFlags(h, "doc_week")).toEqual([true, true, true]);
+  });
+
+  it("lands every one of four concurrent appends, each at its own index", async () => {
+    const responses = await Promise.all(
+      ["a1", "a2", "a3", "a4"].map((text) => call(h, "POST", "/doc_empty/items", { text })),
+    );
+    expect(responses.map((response) => response.status)).toEqual([201, 201, 201, 201]);
+    const reported = await Promise.all(
+      responses.map(async (response) => ((await response.json()) as { index: number }).index),
+    );
+    // Two responses claiming the same index is the lost update's signature.
+    expect([...reported].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+    expect(texts(h, "doc_empty")).toHaveLength(4);
+  });
+
+  it("never resurrects a deleted item through a toggle that raced the delete", async () => {
+    const [removed, toggled] = await Promise.all([
+      call(h, "DELETE", "/doc_week/items/0", { expectedText: "Renew passport" }),
+      call(h, "PUT", "/doc_week/items/1", { done: true, expectedText: "Call plumber" }),
+    ]);
+    // The guard fires only because the toggle read *post-delete* state: index 1
+    // now holds a different item than the caller was looking at. Reading before
+    // the lane, it would have passed the guard and written back a three-item
+    // list — bringing “Renew passport” back from the dead.
+    expect([removed.status, toggled.status]).toEqual([200, 409]);
+    expect(texts(h, "doc_week")).toEqual(["Call plumber", "Send lease notice"]);
+    expect(doneFlags(h, "doc_week")).toEqual([false, true]);
+  });
+
+  it("keeps concurrent mutations of two different lists independent", async () => {
+    const [week, empty] = await Promise.all([
+      call(h, "POST", "/doc_week/items", { text: "later" }),
+      call(h, "POST", "/doc_empty/items", { text: "elsewhere" }),
+    ]);
+    expect([week.status, empty.status]).toEqual([201, 201]);
+    expect(texts(h, "doc_week")).toHaveLength(4);
+    expect(texts(h, "doc_empty")).toEqual(["elsewhere"]);
   });
 });
 

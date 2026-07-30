@@ -31,7 +31,9 @@ import { answering } from "./errors.js";
  * and would be refused if it named a core root.
  *
  * The item format lives in exactly one place (`../items.ts`); these handlers
- * read, apply a pure mutation, and write the result back as an `extra` patch.
+ * read, apply a pure mutation, and write the result back as an `extra` patch —
+ * read and write together, inside the document's write lane, because every
+ * patch here carries the whole recomputed list (see {@link mutateItems}).
  */
 
 const AppendBodySchema = z.object({
@@ -82,7 +84,22 @@ function listView(doc: Doc): Record<string, unknown> {
 
 /**
  * Reads the document, refuses anything that is not a readable todo list, and
- * writes the mutation's result back through the core write path.
+ * writes the mutation's result back through the core write path — **all of it
+ * inside the document's write lane**, via `mutateDoc`.
+ *
+ * The lane is the whole point (PR #11 review, finding 2). Every patch here
+ * carries the entire recomputed `items` array, so a read taken outside the lane
+ * is a lost update waiting to happen: two toggles dispatched inside the first
+ * write's git-commit window both read the pre-change list, both pass their
+ * per-item `expectedText` guard — the guard compares the item at the index,
+ * which neither of them moved — and the second silently reverts the first after
+ * it already answered `200`. Browser-vs-browser and agent-CLI-vs-browser reach
+ * the same interleaving. `getDoc` then `updateDoc` cannot fix that from out
+ * here; only reading where the write happens can.
+ *
+ * `apply` therefore runs inside the callback, which the seam requires to be a
+ * pure recompute: it may be reached and still write nothing (a lock refusal is
+ * part of the write, after the callback), and it must not touch the context.
  */
 async function mutateItems(
   context: PluginServerContext,
@@ -90,27 +107,39 @@ async function mutateItems(
   docId: string,
   apply: (items: readonly TodoItem[]) => readonly TodoItem[],
 ): Promise<readonly TodoItem[]> {
-  const doc = context.getDoc(docId);
-  if (doc.frontmatter.type !== TODO_DOC_TYPE) {
-    throw new TodoItemError(
-      400,
-      `${docId} is a ${doc.frontmatter.type} document, not a ${TODO_DOC_TYPE} list`,
-    );
+  let next: readonly TodoItem[] | undefined;
+  await context.mutateDoc(actor, docId, (doc) => {
+    if (doc.frontmatter.type !== TODO_DOC_TYPE) {
+      throw new TodoItemError(
+        400,
+        `${docId} is a ${doc.frontmatter.type} document, not a ${TODO_DOC_TYPE} list`,
+      );
+    }
+    const read = readItems(doc.frontmatter);
+    if (!read.ok) {
+      // Refusing here is the point: writing a well-formed array over frontmatter
+      // we could not parse would silently discard whatever the user hand-edited.
+      throw new TodoItemError(
+        400,
+        `${docId} has malformed items and was not written — ${read.problems.join("; ")}`,
+      );
+    }
+    // Every throw above aborts the mutation unwrapped, so a `TodoItemError` —
+    // including the one `apply` raises for an out-of-range index or a failed
+    // `expectedText` guard — still reaches this plugin's own status mapping.
+    next = apply(read.items);
+    return { extra: { items: serializeItems(next) } };
+  });
+  if (next === undefined) {
+    // Unreachable against a context that honours the seam: `mutateDoc` resolves
+    // only once the callback has returned a patch. Stated rather than asserted
+    // away, so a context that resolved without mutating fails loudly instead of
+    // answering 200 with an invented item.
+    throw new Error(`mutateDoc resolved without mutating ${docId}`);
   }
-  const read = readItems(doc.frontmatter);
-  if (!read.ok) {
-    // Refusing here is the point: writing a well-formed array over frontmatter
-    // we could not parse would silently discard whatever the user hand-edited.
-    throw new TodoItemError(
-      400,
-      `${docId} has malformed items and was not written — ${read.problems.join("; ")}`,
-    );
-  }
-
-  const next = apply(read.items);
-  await context.updateDoc(actor, docId, { extra: { items: serializeItems(next) } });
-  // The plugin's own read keys. `["docs"]` is deliberately absent — the core
-  // write path above already broadcast it, and naming it here is refused.
+  // The plugin's own read keys, broadcast only after the write succeeded.
+  // `["docs"]` is deliberately absent — the core write path above already
+  // broadcast it, and naming it here is refused.
   context.broadcastInvalidate([["lists"], ["lists", docId]]);
   return next;
 }
