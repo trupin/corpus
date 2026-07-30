@@ -193,6 +193,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | PLUGINS-007 | Todos column re-sourced off the body aggregate | todo | P1 | PLUGINS-005 |
 | CLI-016 | `corpus doc edit --extra`: agent-writable extra frontmatter (UI-019 escalation) | todo | P1 | CLI-003 |
 | CLI-017 | `corpus doc unarchive` + `--status open` half-state fix (evaluator MAJOR) | todo | P1 | CLI-003 |
+| SERVER-038 | Recovery path for already-committed invisible documents (SERVER-037 TEST-564) | todo | P2 | SERVER-037 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 

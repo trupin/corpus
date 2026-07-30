@@ -100,9 +100,9 @@ their parents) arrive with the copy and are not listed here.
   no counterpart at all, and it is one of the projection's document roots (SPEC.md §4, §7).
 - `.claude/agents/` — the subagent-persona directory, installed empty. Another
   filtered-`.gitkeep` directory, and another projection document root (SPEC.md §4, §7).
-- `.corpus/queue/` — the `pending/`, `in-progress/`, `processed/`, `failed/` and
-  `abandoned/` directories, each holding a `.gitkeep` so the skeleton survives a clone. The
-  event files inside them are runtime state and stay ignored.
+- `.corpus/queue/` — the `pending/`, `in-progress/`, `deferred/`, `processed/`, `failed/`
+  and `abandoned/` directories, each holding a `.gitkeep` so the skeleton survives a clone.
+  The event files inside them are runtime state and stay ignored.
 - `.corpus/locks/` — per-document edit locks, one `<docId>.json` each (SPEC.md §4, §7).
 - `.corpus/jobs/` — per-job log streams for the console, one `<eventId>.jsonl` each
   (SPEC.md §4, §7).
