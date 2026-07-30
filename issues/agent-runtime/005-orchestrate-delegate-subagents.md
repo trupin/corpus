@@ -17,7 +17,9 @@ fable
 - Blocks: —
 
 ## Spec References
-- SPEC.md §7 — agent loop (needs a spec-writer pass before implementation: current §7 does not describe delegation)
+- SPEC.md §7 — "Orchestrator skill" paragraph, amended and signed off 2026-07-30 (SHARED-004): **delegate everything** (no inline path), bound **10** concurrent subagents, parallelism gated on non-overlapping touched-sets (overlapping work serial, dispatch order), subagent **model scales with task weight** — the concrete tier table (including **Opus 5**) lives in the skill, not the spec. Outcomes recorded only from subagent reports (`agent.done` wake-back, `reap-stale` recovery); all invariants (CLI-only, locks, job-log lines, trace lines) bind subagents.
+
+**Scope note (user clarification 2026-07-30): this is the PRODUCT orchestrator** — the orchestrate skill `corpus init` installs into a user's workspace. It does not change this repo's dev harness, whose ~3-agent machine-load cap stands. Keep the distinction explicit in the skill text.
 
 ## Summary
 User request (2026-07-29, follow-up phase after PR #11): the product's orchestrator

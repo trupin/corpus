@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §11 — documents/editor (needs a spec-writer pass: define the create/abandon behavior before implementation)
+- SPEC.md §11 — "Creating documents" bullet, amended and signed off 2026-07-30 (SHARED-004), user's rule verbatim-in-substance: **any document with no title and no content is auto-deleted on exit, whatever the exit route — including typed-then-erased**. The mechanism (defer-creation vs create-then-delete) is deliberately out of spec; the observable guarantee (board/search/disk/threads/locks clean) is what tests assert.
 
 ## Summary
 User request (2026-07-29, follow-up phase after PR #11): creating a document in the UI

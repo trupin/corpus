@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §10/§11 — board and document interactions (needs a spec-writer pass: context-menu behavior is currently unspecified)
+- SPEC.md §11 — new "Right-click context menu" bullet (before the keyboard scheme), amended and signed off 2026-07-30 (SHARED-004): rows, column headers, readers, and console job rows get a menu with exactly that item's existing actions (nothing invented), targeting the item under the cursor; native menu preserved on text selections, editable fields, and off-item; ⇧F10/menu-key opens it on the keyboard highlight; plugin-rendered surfaces excluded in v1.
 
 ## Summary
 User request (2026-07-29, follow-up phase after PR #11): override the browser's

@@ -33,6 +33,7 @@ const IDLE_QUEUE: QueueStatus = {
   halted: false,
   pending: 0,
   inProgress: 0,
+  deferred: 0,
   processed: 0,
   failed: 0,
   abandoned: 0,
@@ -48,6 +49,10 @@ function job(overrides: Partial<Job> = {}): Job {
     lastLine: "drafting…",
     originId: "th_carrier",
     originTitle: "Insurance carrier choice",
+    // Required-and-nullable on the wire (CONTRACT-021); null is the shape of a
+    // job that is not deferred, which is every fixture here unless it says so.
+    blockedOn: null,
+    blockedOnTitle: null,
     ...overrides,
   };
 }
@@ -417,6 +422,28 @@ describe("the master-detail body", () => {
     ]);
     expect(container.querySelectorAll(".job.sel")).toHaveLength(1);
     expect(rows[0]?.className).toBe("job sel");
+  });
+
+  // CONTRACT-021: the state exists on the wire, so it renders — as waiting,
+  // under its own selector, never wearing the failed dot.
+  it("renders a deferred job with its own dot", async () => {
+    const { container } = renderConsole(
+      transport({
+        jobs: [
+          job({
+            eventId: "evt_5yy",
+            status: "deferred",
+            blockedOn: "doc_401k",
+            blockedOnTitle: "401k rollover",
+          }),
+        ],
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".job")).toHaveLength(1);
+    });
+    expect(container.querySelector(".job-dot")?.className).toBe("job-dot deferred");
   });
 
   it("keeps an explicit selection when a newer job arrives", async () => {

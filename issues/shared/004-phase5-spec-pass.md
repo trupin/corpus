@@ -4,7 +4,7 @@
 shared
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -154,10 +154,35 @@ PLUGINS-003 **is** in Phase 5 scope, so the promise itself stays. But the shippe
 
 None — this records shipped, orchestrator-adjudicated behavior (CLI-014, mirroring CLI-009's `foreign`-branch precedent); sign-off is confirmation. The known `status` blemish (it names the pidfile's port where the probe used the configured one) is a SHARED-003 ledger finding against the *implementation*, not the spec — the spec text above states the correct behavior (`status` reports both ports), which that fix will meet.
 
+## Sign-off record
+
+**Date: 2026-07-30** — user sign-off received via the orchestrator (survey round); all amendments applied to SPEC.md on branch `phase-5-followups` the same day. Item numbering below follows the sign-off message (it differs from the draft section's: sign-off item 3 = draft 4 view width, item 4 = draft 3 context menu; item 7 is new).
+
+**Per-item verdicts:**
+
+1. **§7 delegation — MODIFIED, applied.** User modifications, verbatim in substance: (a) **delegate everything** — no inline-handling path at all; (b) concurrency bound **N = 10**; (c) **only non-overlapping tasks parallelize** — overlapping tasks run serially, with "overlap" generalized from same-document to same document(s) **or otherwise conflicting touched-sets**; (d) the skill picks the subagent **model by task size** — small/mechanical tasks to a smaller/faster model, larger judgment work to a stronger one, **with Opus 5 added to the available mix**. Applied to §7 as behavioral text: the spec states that model selection scales with task weight and that the skill carries the concrete tier guidance — exact model names (including Opus 5) belong in the skill, per the sign-off, so they do not appear in SPEC.md; AGENT-005's implementation adds Opus 5 to the skill's tier table.
+2. **§11 empty documents — MODIFIED, applied.** User's behavioral rule, verbatim: "if any doc is left empty, it is automatically deleted on exiting the doc. empty means: no title and no content. This means it works if I start typing but then change my mind, remove what I was typing and leave." Applied to §11 exactly so — auto-delete on exit whenever title and content are both empty, regardless of history, for **any** document; the defer-creation vs create-then-delete mechanism question is dropped from the spec (implementation's choice), while the no-orphans / no-leak-by-any-exit-route language is kept.
+3. **§11 view width — APPROVED as drafted, applied** (per-view edge drag, width in the view document's frontmatter, no settings panel).
+4. **§11 context menu — APPROVED as drafted, applied** (accept-all bundle, including the draft's recommendations: plugin-rendered surfaces out of v1 scope; menu key / ⇧F10 opens the menu on the keyboard highlight).
+5. **§12 transitional note — APPROVED as drafted, applied** (`[TBD: PLUGINS-003]`, mechanism claim dropped).
+6. **§2.1 stale pidfiles — APPROVED as drafted, applied** (CLI-014's conservative shipped semantics).
+7. **§7 spent transitional clauses — APPROVED; APPLIED 2026-07-30 by the orchestrator** in the same commit round that lands CLI-011 and SERVER-030 (both implemented, tree-green). Original pending texts, now in SPEC.md verbatim:
+   - **When CLI-011 lands** — §7 skill-genesis clause, replace "Concretely: it **extends an existing skill** through the CLI when the pattern fits one; for a genuinely new skill it **proposes** it — a reply naming the recurring pattern plus an inbox write-up the operator can act on — until `corpus skill create` ships (CLI-011), at which point the agent creates the skill directly." with: "Concretely: it **extends an existing skill** through the CLI when the pattern fits one, and **creates a genuinely new skill directly** (`corpus skill create`), announcing what it codified — and why — in its reply."
+   - **When SERVER-030 lands** — §7 locks bullet, replace "A dedicated defer/requeue queue state that re-enters automatically on lock release is planned (SERVER-030); until then the deferral is visible as an actionable failed job, never silently dropped." with: "A deferred edit re-enters the queue automatically when the lock clears; until it does, the deferral stays visible in the console — never silently dropped."
+
+**Wording judgments made within the sign-off's bounds:**
+
+- **Item 1**: kept the draft's "Outcomes are never assumed" / console-honesty / invariant bullets unchanged; rewrote the loop sentence to "the orchestrator never works a job inline" and folded the overlap generalization into the ordering bullet ("touch the same document(s) or otherwise conflict in what they touch"). "(§7 locks)" became "(below)" since the text sits inside §7.
+- **Item 2**: dropped the draft's "no commits in git history" claim — whether an abandoned blank leaves a create/delete commit pair depends on the mechanism, which the sign-off explicitly keeps out of the spec; the observable guarantee (board, search, disk, threads, locks all clean) is what the spec now states.
+- **Item 4**: "accept all" was read as accepting the draft's two recommendations, so the applied bullet includes the ⇧F10/menu-key clause and an explicit "plugin surfaces out of scope in v1" sentence (both were recommendation-level in the draft, not in its quoted text).
+- **Item 7**: chose the "pending texts in SHARED-004" branch (both trigger issues unlanded; current spec wording still true), as invited by the sign-off.
+
+**Not applied / out of my lane:** the fourth acceptance criterion (updating AGENT-005 / UI-017 / UI-018 / UI-019 with the signed-off spec references) — the sign-off constrains me to SPEC.md and this file; the orchestrator unblocks those issues. Committing is the orchestrator's.
+
 ## Acceptance Criteria
-- [ ] Draft amendments for all six items as behavioral spec text (WHAT, not HOW), each traceable to its SPEC section
-- [ ] Ambiguities surfaced as explicit questions rather than guessed
-- [ ] The full set presented to the user for sign-off in one round; applied to SPEC.md only after sign-off
+- [x] Draft amendments for all six items as behavioral spec text (WHAT, not HOW), each traceable to its SPEC section
+- [x] Ambiguities surfaced as explicit questions rather than guessed
+- [x] The full set presented to the user for sign-off in one round; applied to SPEC.md only after sign-off
 - [ ] AGENT-005 / UI-017 / UI-018 / UI-019 unblocked (their issues updated with the signed-off spec references)
 
 ## Technical Design
@@ -173,6 +198,7 @@ n/a.
 _Filled by the spec-writer / orchestrator: drafts produced, sign-off record, application commit._
 
 - 2026-07-29 — spec-writer (fable): all six drafts produced under "Drafts for sign-off" above; SPEC.md untouched. Awaiting user sign-off in one round.
+- 2026-07-30 — spec-writer (fable): sign-off received; amendments applied to SPEC.md (§2.1, §7, §11 ×3, §12) on branch `phase-5-followups`; item 7's rewords held as pending texts (CLI-011/SERVER-030 unlanded). Full record in "Sign-off record" above. Commit pending (orchestrator).
 
 ## Completion Checklist (orchestrator)
 - [ ] User sign-off recorded

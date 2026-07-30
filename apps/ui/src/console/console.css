@@ -190,6 +190,17 @@
   background: var(--sepia);
 }
 
+/*
+ * Deferred — waiting on a lock, not broken (CONTRACT-021). The prototype drew
+ * no parked affordance, so this borrows pending's colour, which is already the
+ * "hasn't run yet" hue and therefore says nothing untrue. It keeps its own
+ * selector so SERVER-030's polish can restyle the state without touching the
+ * pending rule or the status→class mapping in `consoleModel.ts`.
+ */
+.job-dot.deferred {
+  background: var(--sepia);
+}
+
 .job-dot.done {
   background: var(--good);
 }

@@ -17,7 +17,7 @@ opus
 - Blocks: —
 
 ## Spec References
-- SPEC.md §10 — board (needs a spec-writer pass: no width/layout preference is currently specified, and no settings panel exists)
+- SPEC.md §11 — "Columns are pinned view documents" bullet, amended and signed off 2026-07-30 (SHARED-004): per-view edge-drag resize (console-height pattern), width stored in the view doc's frontmatter like `order` (synced, idle-squashed auto-commit, agent-stewardable, server stays sole writer), snap scrolling unchanged, **no settings panel introduced**.
 
 ## Summary
 User request (2026-07-29, follow-up phase after PR #11): views are too narrow, and the

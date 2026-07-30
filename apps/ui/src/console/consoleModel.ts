@@ -9,22 +9,32 @@ import type { Job, QueueEventStatus, QueueStatus } from "@corpus/contract";
  * and a decision embedded in JSX is one nobody can test or find again.
  */
 
-/** The prototype's four dot treatments, plus the neutral base for the fifth. */
-export type JobDotClass = "running" | "pending" | "done" | "failed" | "";
+/**
+ * The prototype's four dot treatments, the neutral base for `abandoned`, and
+ * `deferred`'s own class (styled as pending until SERVER-030 restyles it).
+ */
+export type JobDotClass = "running" | "pending" | "deferred" | "done" | "failed" | "";
 
 /**
  * Wire status → prototype dot, the whole mapping in one table.
  *
- * `QueueEventStatus` has five members and `design/index.html` drew four dots, so
- * this is a five-to-four mapping and the odd one out is named rather than
- * defaulted: **`abandoned` gets the neutral dot** (sprint-010 adjudication 8).
- * The prototype has no colour for it, and the three it does have are each
- * already a meaning — `--signal` is "needs you", `--accent` is agent activity,
- * `--good` is done — so borrowing one would say something untrue.
+ * `QueueEventStatus` has six members and `design/index.html` drew four dots, so
+ * two are named rather than defaulted:
+ *
+ * - **`abandoned` gets the neutral dot** (sprint-010 adjudication 8). The
+ *   prototype has no colour for it, and the three it does have are each already
+ *   a meaning — `--signal` is "needs you", `--accent` is agent activity,
+ *   `--good` is done — so borrowing one would say something untrue.
+ * - **`deferred` gets a class of its own** (CONTRACT-021). The prototype has no
+ *   parked/waiting affordance either, but the state *is* waiting-to-run, so it
+ *   takes pending's `--sepia` treatment under a distinct name — the honest
+ *   reading today, and one selector for SERVER-030's polish to restyle without
+ *   touching this mapping. Never `failed`: a deferred job is not broken.
  */
 export const JOB_DOT_CLASSES: Readonly<Record<QueueEventStatus, JobDotClass>> = {
   pending: "pending",
   "in-progress": "running",
+  deferred: "deferred",
   processed: "done",
   failed: "failed",
   abandoned: "",
@@ -80,8 +90,15 @@ export function agentPillText(status: QueueStatus): string {
 /**
  * The strip's counts, split so the failed one can carry its own span.
  *
- * `N running[· N queued] · N done · N failed` — the queued segment is omitted
- * when zero, exactly as the prototype's template omits it.
+ * `N running[· N queued][· N deferred] · N done · N failed` — the queued and
+ * deferred segments are omitted when zero, exactly as the prototype's template
+ * omits the queued one.
+ *
+ * `deferred` sits beside `queued` rather than being folded into it or into
+ * `failed`: it is work that has not run and is not broken, and hiding it in
+ * either neighbour would be the strip telling the user something untrue
+ * (CONTRACT-021). It stays inside `lead` — one plain segment — because nothing
+ * about it is red; SERVER-030 owns whatever affordance it eventually earns.
  */
 export interface ConsoleCounts {
   /** Everything before the failed count, already joined with ` · `. */
@@ -92,6 +109,7 @@ export interface ConsoleCounts {
 export function consoleCounts(status: QueueStatus): ConsoleCounts {
   const segments = [`${String(status.inProgress)} running`];
   if (status.pending > 0) segments.push(`${String(status.pending)} queued`);
+  if (status.deferred > 0) segments.push(`${String(status.deferred)} deferred`);
   segments.push(`${String(status.processed)} done`);
   return { lead: segments.join(" · "), failed: status.failed };
 }
@@ -105,6 +123,7 @@ export const UNKNOWN_QUEUE_STATUS: QueueStatus = {
   halted: false,
   pending: 0,
   inProgress: 0,
+  deferred: 0,
   processed: 0,
   failed: 0,
   abandoned: 0,
