@@ -68,10 +68,12 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
     "last_ts",
   ],
   anchors: ["doc_id", "anchor_id", "exact_text", "prefix", "suffix", "resolved_offset"],
-  // `has_form` is past §9.1's list, retyped from SERVER-029: §6's form grammar
-  // is a regex plus a YAML parse, so `needs=form` cannot ask the question in SQL
-  // and reads a column the projector filled instead.
-  turns: ["thread_id", "idx", "author", "ts", "body_md", "has_form"],
+  // `has_form` and `form_answered` are past §9.1's list, retyped from
+  // SERVER-029 and SERVER-032: §6's form grammar is a regex plus a YAML parse
+  // and an answer is paired with its form by the options that parse yields, so
+  // `needs=form` cannot ask either question in SQL and reads columns the
+  // projector filled instead.
+  turns: ["thread_id", "idx", "author", "ts", "body_md", "has_form", "form_answered"],
   events: ["id", "type", "status", "created", "payload_json", "blocked_on"],
   seen: ["thread_id", "last_seen_ts"],
   jobs: ["event_id", "status", "started", "updated", "last_line"],

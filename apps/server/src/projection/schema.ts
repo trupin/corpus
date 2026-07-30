@@ -22,8 +22,13 @@
  * `deferred` event is waiting for (SPEC.md §7, CONTRACT-021). It is read
  * straight off the event file, so an existing projection needs nothing but the
  * rebuild this bump triggers.
+ *
+ * 6 → 7 (SERVER-032): `turns.form_answered` — whether the form an agent turn
+ * carries has been answered yet. Derived from the thread file like everything
+ * else here (`core/form.ts`'s `readThreadForms` replays the turns), so an
+ * existing projection needs nothing but the rebuild this bump triggers.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -98,6 +103,17 @@ export const REPOPULATED_TABLES = [
  * what `core/form.ts` — the same reader the route uses — decided about the
  * bytes, and the SQL fragment reads a column instead of re-deciding. Derived
  * like everything else here: a rebuild recomputes it from the file.
+ *
+ * **`turns.form_answered` is the same argument one step further** (SERVER-032).
+ * §6 identifies a form by the turn carrying it, so "is anything still waiting
+ * for an answer" is a question about *forms*, not about who spoke last — and
+ * pairing an answer turn with the form it answers means matching the chosen
+ * option against that form's options, which is the same YAML parse SQLite cannot
+ * do. `NULL` for every turn that is not an agent turn carrying a form; `0`/`1`
+ * for the ones that are. Two columns rather than one because `has_form` answers
+ * "can this turn be answered at all" — the question the answer route asks — and
+ * `form_answered` answers "has it been"; both are written in one pass from one
+ * reading of the thread, so they cannot disagree.
  */
 export const PROJECTION_DDL = `
 CREATE TABLE documents (
@@ -151,6 +167,7 @@ CREATE TABLE turns (
   ts TEXT NOT NULL,
   body_md TEXT NOT NULL,
   has_form INTEGER NOT NULL,
+  form_answered INTEGER,
   PRIMARY KEY (thread_id, ts)
 );
 

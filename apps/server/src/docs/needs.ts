@@ -59,30 +59,48 @@ export const AWAITING_AGENT_SQL =
   "(t.id IS NOT NULL AND t.agent <> 'none' AND t.status = 'open' AND t.last_author = 'user')";
 
 /**
- * An unanswered form is an agent turn carrying an answerable ```form block that
- * is still the thread's last turn of an **open** thread (SPEC.md §6, §11) —
- * `last_author = 'agent'` is what says no user turn followed it, so no "is there
- * a later turn" subquery is needed.
+ * An unanswered form is an agent turn of an **open** thread carrying an
+ * answerable ```form block that nobody has answered yet (SPEC.md §6, §11).
+ *
+ * **The reason is form-scoped, not thread-scoped** (SERVER-032). §6: a form "is
+ * identified by the timestamp of the turn carrying it, so a turn carries at most
+ * one form, and answering a form addresses the turn that carries it." A thread
+ * can therefore hold several independently answerable forms — which is what the
+ * answer route's `:ts` already encodes and what the renderer already draws. This
+ * fragment used to ask a thread-level question instead: *is the last turn an
+ * agent turn carrying a form?* (`t.last_author = 'agent' AND tu.ts = t.last_ts`).
+ * Answering any one form appends a user turn, so `last_author` moved and the
+ * whole predicate went false while other forms sat unanswered above it — the
+ * board stopped mentioning a question the app was still waiting on, and the
+ * renderer, correctly, kept offering it. The count of unanswered forms is the
+ * question; who spoke last was only ever a proxy for it in the one-form case.
  *
  * Resolving the thread is one of §11's ways of handling the reason: a resolved
  * conversation is not waiting for an answer, and without the status guard it sat
  * in Attention with no remaining action that could clear it (SERVER-022
  * finding 3).
  *
- * **"Carries a form" is `tu.has_form`, not a pattern written here** (SERVER-029).
- * §6's grammar is an anchored regex over the info string plus a YAML parse plus
- * `FormSchema`, and SQLite can express none of the three. The substring search
- * that stood in for it disagreed with the answer route in both directions at
- * once: an unterminated fence sat in Attention forever while `POST …/form`
- * `404`ed it, and a fence with a trailing space in its info string was
- * answerable but never surfaced, so nobody was told to answer it. The column
- * carries what `core/form.ts` decided about those bytes at projection time, so
- * this fragment and the route cannot hold different opinions about one turn.
+ * **Both halves are columns, not patterns written here** (SERVER-029,
+ * SERVER-032). §6's fence grammar is an anchored regex over the info string plus
+ * a YAML parse plus `FormSchema`, and pairing an answer with the form it answers
+ * needs that same parse to know which options a form offered; SQLite can express
+ * none of it. The substring search that once stood in for the first half
+ * disagreed with the answer route in both directions at once: an unterminated
+ * fence sat in Attention forever while `POST …/form` `404`ed it, and a fence with
+ * a trailing space in its info string was answerable but never surfaced, so
+ * nobody was told to answer it. `tu.has_form` and `tu.form_answered` carry what
+ * `core/form.ts` decided about those bytes at projection time, so this fragment,
+ * the route and the renderer cannot hold different opinions about one turn.
+ *
+ * `form_answered = 0` already implies `has_form = 1` and an agent author — it is
+ * `NULL` for every other turn — but both conjuncts are spelled out because the
+ * reason is exactly "an open thread has an agent form nobody answered", and a
+ * predicate that reads as its own definition is one nobody has to reconstruct.
  */
-const UNANSWERED_FORM_SQL = `(t.id IS NOT NULL AND t.status = 'open' AND t.last_author = 'agent' AND EXISTS (
+const UNANSWERED_FORM_SQL = `(t.id IS NOT NULL AND t.status = 'open' AND EXISTS (
   SELECT 1 FROM turns tu
-   WHERE tu.thread_id = t.id AND tu.ts = t.last_ts AND tu.author = 'agent'
-     AND tu.has_form = 1
+   WHERE tu.thread_id = t.id AND tu.author = 'agent'
+     AND tu.has_form = 1 AND tu.form_answered = 0
 ))`;
 
 /**

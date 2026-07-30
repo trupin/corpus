@@ -1,6 +1,7 @@
 import {
   DocListSchema,
   DocsQuerySchema,
+  FORM_ANSWER_LABEL,
   STALE_TIERS,
   type DocList,
   type DocRow,
@@ -655,6 +656,135 @@ describe("needs=form — what counts as an unanswered form", () => {
   it("lets a resolved thread out of Attention — handling the reason clears the row", () => {
     expect(flagged("form")).not.toContain("th_resolved");
     expect(flagged("me")).not.toContain("th_resolved");
+  });
+});
+
+// SERVER-032, the Phase 4 evaluator's F-1 reproduced as a test: a thread with
+// two unanswered forms left `needs=form` as soon as *either* was answered,
+// because the detector asked "is the last turn an agent turn carrying a form?"
+// and the answer turn moved `last_author` to `user`. SPEC.md §6 is form-scoped
+// — a form "is identified by the timestamp of the turn carrying it… and
+// answering a form addresses the turn that carries it" — so the reason holds
+// while any agent form is unanswered, and clears when the last one is answered.
+describe("needs=form — a thread may carry several independently answerable forms", () => {
+  let multi: Workspace;
+
+  const formFence = (label: string): string =>
+    `Question ${label}\n\n\`\`\`form\nprompt: Pick ${label}\noptions:\n  - "${label}-yes"\n  - "${label}-no"\n\`\`\`\n`;
+
+  /** Turn timestamps are a turn's identity (§6): one per index, in order. */
+  const at = (index: number): string => daysAgo(20 - index);
+
+  type Step = { readonly author: "user" | "agent"; readonly body: string };
+
+  const seed = (id: string, steps: readonly Step[]): void => {
+    multi.thread({
+      id,
+      parent: "doc_host",
+      agent: "requested",
+      status: "open",
+      updated: at(steps.length - 1),
+      turns: steps.map((step, index) => ({ author: step.author, ts: at(index), body: step.body })),
+    });
+    // Read, so `form` is the only reason these rows can carry.
+    multi.seen({ [id]: at(steps.length - 1) });
+    multi.reproject();
+  };
+
+  const asks = (id: string): boolean =>
+    queryDocs(multi.db, DocsQuerySchema.parse({ needs: "form", limit: "200" }), NOW).items.some(
+      (item) => item.id === id,
+    );
+
+  const ASK = { author: "user", body: "Which option?" } as const;
+  const F1 = { author: "agent", body: formFence("F1") } as const;
+  const F2 = { author: "agent", body: formFence("F2") } as const;
+  const F3 = { author: "agent", body: formFence("F3") } as const;
+  const answering = (option: string): Step => ({
+    author: "user",
+    body: `${FORM_ANSWER_LABEL} ${option}`,
+  });
+
+  beforeAll(() => {
+    multi = createWorkspace("multiform");
+    multi.doc({ id: "doc_host", updated: daysAgo(3) });
+  });
+
+  afterAll(() => {
+    multi.close();
+  });
+
+  it("keeps the reason while a second form is still unanswered", () => {
+    seed("th_two", [ASK, F1, F2]);
+    expect(asks("th_two")).toBe(true);
+    seed("th_two", [ASK, F1, F2, answering("F1-yes")]);
+    expect(asks("th_two")).toBe(true);
+  });
+
+  it("clears the reason once the last form is answered", () => {
+    seed("th_both", [ASK, F1, F2, answering("F1-yes"), answering("F2-no")]);
+    expect(asks("th_both")).toBe(false);
+  });
+
+  it("does not care which form is answered first", () => {
+    seed("th_reverse", [ASK, F1, F2, answering("F2-no")]);
+    expect(asks("th_reverse")).toBe(true);
+    seed("th_reverse", [ASK, F1, F2, answering("F2-no"), answering("F1-yes")]);
+    expect(asks("th_reverse")).toBe(false);
+  });
+
+  it("holds until every one of three forms is answered", () => {
+    const base = [ASK, F1, F2, F3] as const;
+    seed("th_three", base);
+    expect(asks("th_three")).toBe(true);
+    seed("th_three", [...base, answering("F2-no")]);
+    expect(asks("th_three")).toBe(true);
+    seed("th_three", [...base, answering("F2-no"), answering("F3-yes")]);
+    expect(asks("th_three")).toBe(true);
+    seed("th_three", [...base, answering("F2-no"), answering("F3-yes"), answering("F1-yes")]);
+    expect(asks("th_three")).toBe(false);
+  });
+
+  // §6 defines no once-only rule, so answering the same form twice is an
+  // ordinary pair of turns — and the second answer must not be allowed to close
+  // a form nobody answered. A detector that counted answers against forms would
+  // pass every test above and fail this one.
+  it("does not let a repeated answer close a different form", () => {
+    seed("th_repeat", [ASK, F1, F2, answering("F1-yes"), answering("F1-yes")]);
+    expect(asks("th_repeat")).toBe(true);
+  });
+
+  it("still clears a single-form thread when its one form is answered", () => {
+    seed("th_one", [ASK, F1]);
+    expect(asks("th_one")).toBe(true);
+    seed("th_one", [ASK, F1, answering("F1-no")]);
+    expect(asks("th_one")).toBe(false);
+  });
+
+  it("still says nothing about a resolved thread, however many forms it holds", () => {
+    multi.thread({
+      id: "th_multiresolved",
+      parent: "doc_host",
+      agent: "requested",
+      status: "resolved",
+      updated: at(2),
+      turns: [ASK, F1, F2].map((step, index) => ({
+        author: step.author,
+        ts: at(index),
+        body: step.body,
+      })),
+    });
+    multi.seen({ th_multiresolved: at(2) });
+    multi.reproject();
+    expect(asks("th_multiresolved")).toBe(false);
+  });
+
+  // A user turn that quotes a form fence is not an agent's question: §6 makes a
+  // form something an agent turn carries, and the answer route refuses one on a
+  // user turn, so the reason must not appear for it either.
+  it("ignores a form fence a user turn quotes", () => {
+    seed("th_userfence", [ASK, { author: "user", body: formFence("F9") }]);
+    expect(asks("th_userfence")).toBe(false);
   });
 });
 

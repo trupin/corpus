@@ -21,7 +21,7 @@ import {
 import { z } from "zod";
 import { resolveAnchorExact } from "../anchors/index.js";
 import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/document.js";
-import { carriesForm } from "../core/form.js";
+import { readThreadForms } from "../core/form.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
@@ -311,20 +311,28 @@ function projectThread(
   // failure that `doc check` reports; the projection keeps the first and does
   // not abort the document over it.
   const insertTurn = db.prepare(
-    "INSERT OR IGNORE INTO turns (thread_id, idx, author, ts, body_md, has_form) VALUES (?, ?, ?, ?, ?, ?)",
+    `INSERT OR IGNORE INTO turns (thread_id, idx, author, ts, body_md, has_form, form_answered)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
+  // §6's form grammar, decided here rather than in the `needs=form` SQL: the
+  // fence is a regex over the info string and its contents must parse as a form,
+  // and a SQL approximation of that is what SERVER-029 fixed. Which of those
+  // forms is still *unanswered* is the same kind of question — pairing an answer
+  // turn with a form means matching the option it names against that form's
+  // options — so it is decided here too, in one pass over the thread
+  // (SERVER-032). One reader, `core/form.ts`, answers here and on the answer
+  // route.
+  const forms = readThreadForms(turns);
   turns.forEach((turn, index) => {
-    // §6's form grammar, decided here rather than in the `needs=form` SQL: the
-    // fence is a regex over the info string and its contents must parse as a
-    // form, and a SQL approximation of that is what SERVER-029 fixed. One
-    // reader, `core/form.ts`, answers here and on the answer route.
+    const state = forms[index];
     insertTurn.run(
       fields.id,
       index,
       turn.author,
       turn.ts,
       turn.body,
-      carriesForm(turn.body) ? 1 : 0,
+      state?.hasForm === true ? 1 : 0,
+      state?.answered === null || state === undefined ? null : state.answered ? 1 : 0,
     );
   });
 

@@ -29,7 +29,7 @@
 // `SCHEMA_VERSION` bump that recomputed `has_form` under the settled rules.
 
 import type { Form } from "@corpus/contract";
-import { FormSchema, extractFormSource } from "@corpus/contract";
+import { FORM_ANSWER_LABEL, FormSchema, extractFormSource } from "@corpus/contract";
 import * as YAML from "yaml";
 
 /**
@@ -95,3 +95,93 @@ export function readForm(body: string): FormReading {
  * exactly as it is excluded by the route's own author check.
  */
 export const carriesForm = (body: string): boolean => readForm(body).ok;
+
+/**
+ * The option an answer turn recorded, or `undefined` when the turn is not an
+ * answer.
+ *
+ * The label is the contract's (`FORM_ANSWER_LABEL`), not a spelling chosen here:
+ * an answer travels as prose so it reads as prose in `git log`, which means the
+ * lead-in *is* the wire format for "this turn answers a form", and the UI reads
+ * it the same way to decide whether to draw live controls.
+ */
+export function answeredOption(body: string): string | undefined {
+  const first = body.split("\n", 1)[0]?.trim() ?? "";
+  if (!first.startsWith(FORM_ANSWER_LABEL)) return undefined;
+  const option = first.slice(FORM_ANSWER_LABEL.length).trim();
+  return option === "" ? undefined : option;
+}
+
+/** What {@link readThreadForms} needs of a turn; the parsed thread's turns satisfy it. */
+export interface FormTurn {
+  readonly author: string;
+  readonly ts: string;
+  readonly body: string;
+}
+
+export type TurnFormState = {
+  /** Whether the turn carries an answerable form, whoever wrote it. */
+  readonly hasForm: boolean;
+  /**
+   * For an **agent** turn carrying a form: whether a later turn answered it.
+   * `null` for every other turn — a form is something an agent turn carries
+   * (SPEC.md §6), so nothing else has an answered state at all.
+   */
+  readonly answered: boolean | null;
+};
+
+/**
+ * Which of a thread's forms have been answered, one state per turn, in turn
+ * order (SPEC.md §6; SERVER-032).
+ *
+ * **Why per form and not per thread.** §6: "A form has no identity of its own:
+ * it is identified by the timestamp of the turn carrying it, so a turn carries
+ * at most one form, and answering a form addresses the turn that carries it."
+ * A thread may therefore hold several forms, each independently answerable —
+ * which is what `POST /api/threads/{id}/turns/{ts}/form` already encodes and
+ * what the renderer already draws. `needs=form` used to ask a thread-level
+ * question instead ("is the *last* turn an agent turn carrying a form?"), so
+ * answering any one form moved `last_author` to `user` and dropped the whole
+ * thread out of Attention while its other forms were still live.
+ *
+ * **Attribution is by order, because the prose carries no back-reference.** The
+ * answer turn the server writes is `FORM_ANSWER_LABEL` plus the chosen option
+ * and nothing else, so a thread read off disk can only pair answers with forms
+ * the way the conversation itself implies: an answer closes the **earliest still
+ * open form that offers that option**. An answer naming an option no open form
+ * offers belongs to none of them and is left alone — it is an ordinary turn that
+ * happens to start with the label. That is deliberately the same rule the UI's
+ * `mapFormAnswers` applies when it has no session pairing to go on (its extra
+ * rung knows which form *this* browser tab just answered, which no server
+ * reading a file can know), so the badge and the controls agree on every thread
+ * either of them can be shown.
+ *
+ * A turn that both answers a form and carries one counts only as the answer —
+ * again matching the renderer. The server never writes such a turn; only a
+ * hand-edited file produces one.
+ */
+export function readThreadForms(turns: readonly FormTurn[]): readonly TurnFormState[] {
+  const states: TurnFormState[] = [];
+  const open: { readonly index: number; readonly options: readonly string[] }[] = [];
+
+  turns.forEach((turn, index) => {
+    const reading = readForm(turn.body);
+    states.push({ hasForm: reading.ok, answered: null });
+
+    const answer = answeredOption(turn.body);
+    if (answer !== undefined) {
+      const at = open.findIndex((form) => form.options.includes(answer));
+      if (at !== -1) {
+        const [closed] = open.splice(at, 1);
+        if (closed !== undefined) states[closed.index] = { hasForm: true, answered: true };
+        return;
+      }
+    }
+
+    if (turn.author !== "agent" || !reading.ok) return;
+    states[index] = { hasForm: true, answered: false };
+    open.push({ index, options: reading.form.options });
+  });
+
+  return states;
+}
