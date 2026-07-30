@@ -14,6 +14,15 @@ cd "$(git rev-parse --show-toplevel)"
 # explicit value always wins: `CORPUS_UI_PORT=5999 git push`.
 export CORPUS_UI_PORT="${CORPUS_UI_PORT:-5273}"
 
+# The e2e suite's hermetic premise is a *dead* API origin: `vite.config.ts`
+# proxies to 8765 by default, which is exactly where a personally-installed
+# `corpus` server listens on a maintainer's machine — and with a live server
+# there, the two "server unreachable" specs fail (the health notice never
+# renders) while the rest of the suite quietly talks to a real workspace. Pin
+# the proxy at a port nothing binds so the suite tests the app, not whatever
+# 8765 happens to hold. An explicit value always wins.
+export CORPUS_SERVER_ORIGIN="${CORPUS_SERVER_ORIGIN:-http://127.0.0.1:8790}"
+
 fail=0
 step() {
   local name="$1"; shift
