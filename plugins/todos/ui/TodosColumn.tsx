@@ -1,9 +1,7 @@
-import type { DocRow } from "@corpus/contract";
-import { useDocs } from "@corpus/kit";
 import type { ColumnComponentProps } from "@corpus/kit/plugin";
 import type { ReactElement } from "react";
-import { isOverdue, itemsOrEmpty, openItems, type TodoItem } from "../items.js";
-import { TODO_DOC_TYPE } from "../shared.js";
+import { isOverdue, openItems, type TodoItem } from "../items.js";
+import { useTodoLists, type TodoListView } from "./queries.js";
 import "./todos.css";
 
 /**
@@ -16,14 +14,15 @@ import "./todos.css";
  * because everything it needs is published: the collection query, the design
  * tokens, and the board's own open-a-document capability.
  *
- * **One query, no N+1.** `extra` rides every list row (`docRowBaseShape` in
- * `@corpus/contract`), so a single `useDocs` returns each document's `items`
- * with the list and the flattening happens client-side. There is no aggregate
- * endpoint and there should not be one: a column that needed a bespoke route
- * for a filter over data it already has would be a column core cannot reason
- * about. SSE invalidation is included transparently — checking an item
- * anywhere invalidates `["docs"]` through the core write path and this column
- * repaints without a reload.
+ * **One query, no N+1** — still, though it is no longer free. Items live in the
+ * document body since PLUGINS-005 and bodies do not ride list rows, so the
+ * aggregate comes from the plugin's own `GET /lists` route through
+ * {@link useTodoLists}: one request for the whole board, shared with every
+ * `TodoListItem` on screen because they read the same query key. The
+ * `(id, updated)` fingerprint in that key is what keeps it live after a **core**
+ * body edit — the ordinary way to check a box now — while the plugin's own
+ * broadcast keeps working for its own writes. `ui/queries.ts` has the full
+ * argument.
  *
  * **Archived documents are excluded** because the default result set excludes
  * them (SPEC.md §11); the column states no `status` and therefore inherits
@@ -40,12 +39,12 @@ interface TodoGroup {
 }
 
 /** Open items, grouped by their source document, empty lists dropped. */
-export function groupOpenItems(rows: readonly DocRow[]): readonly TodoGroup[] {
+export function groupOpenItems(lists: readonly TodoListView[]): readonly TodoGroup[] {
   const groups: TodoGroup[] = [];
-  for (const row of rows) {
-    const open = openItems(itemsOrEmpty(row));
+  for (const list of lists) {
+    const open = openItems(list.items);
     if (open.length === 0) continue;
-    groups.push({ docId: row.id, title: row.title, items: open });
+    groups.push({ docId: list.docId, title: list.title, items: open });
   }
   return groups;
 }
@@ -56,20 +55,22 @@ export interface TodosColumnProps extends ColumnComponentProps {
 }
 
 export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): ReactElement {
-  // Deliberately the column type's own query rather than the view document's:
-  // this column *is* "open todo items", and a stored filter that excluded
-  // `type: todo` would leave the component rendering nothing it can explain.
-  const docs = useDocs({ type: TODO_DOC_TYPE });
+  // Deliberately the plugin's own aggregate rather than the view document's
+  // query: this column *is* "open todo items", and a stored filter that
+  // excluded `type: todo` would leave the component rendering nothing it can
+  // explain. The `type: todo` collection query is still in there — it is what
+  // the fingerprint is taken from (`ui/queries.ts`).
+  const lists = useTodoLists();
   const today = now ?? new Date();
 
-  if (docs.error !== null) {
+  if (lists.error !== null) {
     return (
       <div className="col-card col-card-error" role="alert" data-todos-column={viewDocId}>
-        Todos could not be loaded: {docs.error.message}
+        Todos could not be loaded: {lists.error.message}
       </div>
     );
   }
-  if (docs.data === undefined) {
+  if (lists.loading) {
     return (
       <p className="col-empty" data-todos-column={viewDocId}>
         Loading…
@@ -77,7 +78,7 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
     );
   }
 
-  const groups = groupOpenItems(docs.data.items);
+  const groups = groupOpenItems(lists.all);
   if (groups.length === 0) {
     return (
       <p className="col-empty" data-todos-column={viewDocId}>
@@ -98,7 +99,7 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
             {group.items.slice(0, MAX_ITEMS_PER_LIST).map((item, index) => (
               <button
                 type="button"
-                key={`${item.ts}:${String(index)}`}
+                key={`${String(index)}:${item.text}`}
                 className={`check${isOverdue(item, today) ? " overdue" : ""}`}
                 onClick={() => onOpen?.(group.docId)}
               >

@@ -18,8 +18,30 @@ import type { ReactElement, ReactNode } from "react";
 
 export const TS = "2026-07-20T09:00:00.000Z";
 
-/** A `Doc` with the frontmatter a `todo` document carries; `extra` verbatim. */
-export function todoDoc(id: string, extra: Readonly<Record<string, unknown>>): Doc {
+/**
+ * A body of task-list lines — where a todo document's items live since
+ * PLUGINS-005. `[text, done, due?]` per item, in the order they appear.
+ */
+export function todoBody(items: readonly (readonly [string, boolean, string?])[]): string {
+  const lines = items.map(
+    ([text, done, due]) =>
+      `- [${done ? "x" : " "}] ${text}${due === undefined ? "" : ` (due: ${due})`}`,
+  );
+  return `## Notes\n\n${lines.join("\n")}\n`;
+}
+
+/**
+ * A `Doc` with the frontmatter a `todo` document carries.
+ *
+ * `extra` is passed verbatim so a test can still build a **pre-migration**
+ * document (its items in the legacy `items` key); `body` is where a migrated
+ * document's items are, and is what production documents look like.
+ */
+export function todoDoc(
+  id: string,
+  extra: Readonly<Record<string, unknown>>,
+  body = "## Notes\n\nThe raw body, shown when the items cannot be read.\n",
+): Doc {
   return {
     frontmatter: {
       id,
@@ -39,7 +61,7 @@ export function todoDoc(id: string, extra: Readonly<Record<string, unknown>>): D
       column: null,
       extra,
     },
-    body: "## Notes\n\nThe raw body, shown when the items cannot be read.\n",
+    body,
     path: `data/docs/todos/${id}.md`,
     anchors: [],
   };
@@ -52,16 +74,41 @@ export interface TransportOptions {
   readonly doc: Doc;
   /** Locks `GET /api/locks` answers with. */
   readonly locks: readonly Lock[];
-  /** What every `/api/x/todos/*` request answers with. */
+  /**
+   * What the plugin's aggregate (`GET /api/x/todos/lists…`) answers with — the
+   * one read both row surfaces share since PLUGINS-007. `null` falls through to
+   * {@link TransportOptions.write}, which is how a test drives a failure.
+   */
+  readonly lists: readonly Record<string, unknown>[] | null;
+  /** What every other `/api/x/todos/*` request answers with. */
   readonly write: { readonly status: number; readonly body: unknown };
 }
 
 const DEFAULTS: TransportOptions = {
   docs: [],
-  doc: todoDoc("doc_default", { items: [] }),
+  doc: todoDoc("doc_default", {}),
   locks: [],
+  lists: [],
   write: { status: 200, body: { ok: true } },
 };
+
+/** One entry of the aggregate's payload, as `server/routes.ts` reports it. */
+export function listPayload(
+  docId: string,
+  title: string,
+  items: readonly { readonly text: string; readonly done: boolean; readonly due?: string }[],
+): Record<string, unknown> {
+  const done = items.filter((item) => item.done).length;
+  return {
+    docId,
+    title,
+    path: `data/docs/todos/${docId}.md`,
+    status: "open",
+    open: items.length - done,
+    done,
+    items,
+  };
+}
 
 export interface RecordedCall {
   readonly url: string;
@@ -93,6 +140,9 @@ export function transport(overrides: Partial<TransportOptions>): Transport {
     calls.push({ url, init });
     const path = new URL(url).pathname;
 
+    if (path.startsWith("/api/x/todos/lists") && options.lists !== null) {
+      return Promise.resolve(json({ lists: options.lists }, 200));
+    }
     if (path.startsWith("/api/x/todos")) {
       return Promise.resolve(json(options.write.body, options.write.status));
     }

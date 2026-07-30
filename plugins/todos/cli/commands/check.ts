@@ -23,7 +23,8 @@ export default {
     "Sets `done: true` on one item of a `type: todo` document — or `false` with `--uncheck`. The " +
     "item is named by its 1-based number (as `corpus todos list` prints it) or by its text, " +
     "matched case-insensitively; ambiguous text is refused with the candidate numbers listed. " +
-    "The item's `ts` is its creation time and is never changed by checking it.",
+    "Checking edits one character of one line — `- [ ]` becomes `- [x]` — so the item keeps its " +
+    "text, its place in the list, and any comment anchored to it.",
   args: [
     {
       name: "list",
@@ -51,7 +52,7 @@ export default {
     {
       command: 'corpus todos check "Week of Jul 20" 2 --json',
       description:
-        'One JSON value: `{"docId":"doc_a1b2c3","index":1,"item":{"text":"Call plumber","done":true,"ts":"…"}}`.',
+        'One JSON value: `{"docId":"doc_a1b2c3","index":1,"item":{"text":"Call plumber","done":true}}`.',
     },
   ],
   handler: async (context: PluginCommandContext): Promise<void> => {

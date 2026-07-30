@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as YAML from "yaml";
 import { z } from "zod";
+import { parseBodyItems } from "./items.js";
 import manifest from "./manifest.js";
 import { TODO_DOC_TYPE, TODOS_COLUMN_TYPE } from "./shared.js";
 
@@ -67,10 +68,22 @@ describe("the manifest", () => {
     expect(manifest.order).toBeUndefined();
   });
 
-  it("registers the todo doc type with all three renderers and validate", () => {
+  /**
+   * PLUGINS-006 and `SPEC.md:404` — "the plugin registers no custom document
+   * renderer". A manifest that omits a renderer is a *supported* degradation
+   * (the core default takes over), which is why this is an assertion about the
+   * registration rather than a hole in it: dropping the `View` is what gives a
+   * todo document the core editor and, with it, the anchor layer that makes
+   * item-level commenting an ordinary §6 text-quote anchor.
+   *
+   * The `docTypes` seam is still proved by the other three slots (SHARED-005
+   * answer 3), and the `View` slot itself stays contracted and covered by the
+   * underscore fixture plugin.
+   */
+  it("registers the todo doc type with no View, and with ListItem, DocPanel and validate", () => {
     const docType = manifest.docTypes.find((entry) => entry.type === TODO_DOC_TYPE);
     expect(docType).toBeDefined();
-    expect(typeof docType?.View).toBe("function");
+    expect(docType?.View).toBeUndefined();
     expect(typeof docType?.ListItem).toBe("function");
     expect(typeof docType?.DocPanel).toBe("function");
     expect(typeof docType?.validate).toBe("function");
@@ -85,20 +98,25 @@ describe("the manifest", () => {
     expect(column?.defaultQuery).toEqual({ type: TODO_DOC_TYPE });
   });
 
-  it("validates a document's items, reporting problems and nothing when valid", () => {
+  it("validates a document, reporting problems and nothing when valid", () => {
     const validate = manifest.docTypes[0]?.validate;
-    // `validate` reads one frontmatter key; the rest of a `Doc` is irrelevant
-    // to it, so the fixture states only what is under test.
-    const doc = (items: unknown): Parameters<NonNullable<typeof validate>>[0] =>
-      ({ frontmatter: { extra: { items } } }) as unknown as Parameters<
-        NonNullable<typeof validate>
-      >[0];
+    // `validate` takes a whole `Doc` (`@corpus/kit`'s `types.ts:100`) and since
+    // PLUGINS-005 it reads the **body**; the fixture states only what is under
+    // test. The kit's signature is unchanged — nothing here needs it to be.
+    const doc = (body: string, extra?: unknown): Parameters<NonNullable<typeof validate>>[0] =>
+      ({
+        body,
+        frontmatter: { extra: extra === undefined ? {} : { items: extra } },
+      }) as unknown as Parameters<NonNullable<typeof validate>>[0];
 
-    expect(validate?.(doc([{ text: "a", done: false, ts: "2026-07-20T09:00:00.000Z" }]))).toEqual(
-      [],
-    );
-    expect(validate?.(doc("nope"))).toEqual(["items: must be a list of items; found string"]);
-    expect(validate?.(doc([{ text: "a" }]))?.join("; ")).toContain("items[0].done");
+    // A body is either task lines or prose — there is nothing left to malform.
+    expect(validate?.(doc("- [ ] a\n- [x] b\n"))).toEqual([]);
+    expect(validate?.(doc("## Notes\n"))).toEqual([]);
+    // A pre-migration key that was hand-edited is the one remaining problem.
+    expect(validate?.(doc("## Notes\n", "nope"))).toEqual([
+      "items: must be a list of items; found string",
+    ]);
+    expect(validate?.(doc("## Notes\n", [{ text: "a" }]))?.join("; ")).toContain("items[0].done");
   });
 });
 
@@ -118,15 +136,33 @@ describe("the seed template", () => {
   });
 
   /**
-   * sprint-014 Adjudication 17. Template pre-fill is **body-only** (SPEC.md
-   * §11 — "a template's own housekeeping fields do not bleed into documents
-   * created from it"), so a seeded `items: []` could never reach an instance.
-   * Every reader here treats an absent key as an empty list instead, which
-   * also covers a hand-written document and one whose key was deleted.
+   * sprint-014 Adjudication 17, still true and now for a second reason.
+   * Template pre-fill is **body-only** (SPEC.md §11 — "a template's own
+   * housekeeping fields do not bleed into documents created from it"), so a
+   * seeded `items:` key could never reach an instance — and since PLUGINS-005
+   * there is nothing it could seed, because items are body text.
    */
   it("ships no `items` key, because no template frontmatter ever reaches an instance", () => {
     const raw = readFileSync(join(import.meta.dirname, "seeds", "todo-template.md"), "utf8");
     const frontmatter = YAML.parse(String(raw.split("---")[1])) as Record<string, unknown>;
     expect(frontmatter["items"]).toBeUndefined();
+  });
+
+  /**
+   * TEST-490 and `SPEC.md:403`'s "its type's template can ship starter items in
+   * its body like any template pre-fill" — the consequence the design predicted:
+   * templates start working for todos the moment items become body text.
+   */
+  it("ships starter task-list items in its body, parsed by the format owner", () => {
+    const raw = readFileSync(join(import.meta.dirname, "seeds", "todo-template.md"), "utf8");
+    const body = raw.slice(raw.indexOf("---", 3) + 3);
+    const items = parseBodyItems(body);
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((entry) => !entry.done)).toBe(true);
+    // The seeded due date is an ordinary inline marker, not a second syntax.
+    expect(items.some((entry) => entry.due !== undefined)).toBe(true);
+    for (const line of body.split("\n").filter((entry) => entry.startsWith("- ["))) {
+      expect(line).toMatch(/^- \[ \] \S/);
+    }
   });
 });

@@ -1,6 +1,6 @@
 import type { DocPanelProps } from "@corpus/kit/plugin";
 import type { ReactElement } from "react";
-import { dueCount, openItems, readItems } from "../items.js";
+import { docSource, dueCount, openItems, readItems } from "../items.js";
 import "./todos.css";
 
 /**
@@ -8,17 +8,18 @@ import "./todos.css";
  * §10): a fixed region above the document body, in both the column reader and
  * focus mode, for doc types this plugin owns.
  *
- * **It derives and never stores.** Both counts come from the same parsed
- * frontmatter the `View` renders, so they update on exactly the invalidation
- * that updates the list and can never disagree with it. There is no state here
- * to go stale, and nothing to keep in sync.
+ * **It derives and never stores.** Both counts are parsed from the same
+ * document body the editor renders, so they update on exactly the invalidation
+ * that updates the document and can never disagree with it. There is no state
+ * here to go stale, and nothing to keep in sync.
  *
- * A document whose `items` cannot be read renders no panel at all: the `View`
- * is already showing the reason, and a stats panel over an unreadable list
- * would be a second, quieter claim about the same broken state.
+ * A document whose items cannot be read — a pre-PLUGINS-005 `extra.items` key
+ * that was hand-edited into something unparseable — renders no panel at all:
+ * a stats panel over an unreadable list would be a quiet claim about a broken
+ * state the user cannot see from here.
  */
 export function TodoDocPanel({ doc }: DocPanelProps): ReactElement | null {
-  const read = readItems(doc.frontmatter);
+  const read = readItems(docSource(doc));
   if (!read.ok) return null;
 
   const open = openItems(read.items).length;

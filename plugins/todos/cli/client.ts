@@ -151,6 +151,19 @@ export async function addItem(
   return { docId: parsed.docId, index: parsed.index, item: parsed.item };
 }
 
+export const MigrationSchema = z.object({
+  migrated: z.array(z.object({ docId: z.string(), title: z.string(), items: z.number() })),
+  conflicts: z.array(z.object({ docId: z.string(), title: z.string(), reason: z.string() })),
+  unchanged: z.number(),
+});
+
+export type Migration = z.infer<typeof MigrationSchema>;
+
+/** `POST /api/x/todos/migrate` — move pre-PLUGINS-005 lists into their bodies. */
+export async function migrateLists(context: PluginCommandContext): Promise<Migration> {
+  return MigrationSchema.parse(await request(context, "migrate", { method: "POST" }));
+}
+
 /** `PUT /api/x/todos/<docId>/items/<index>` — set `done` on one item. */
 export async function setDone(
   context: PluginCommandContext,

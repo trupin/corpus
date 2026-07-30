@@ -1,16 +1,19 @@
 import { ACTOR_HEADER, DocsQuerySchema, type Actor, type Doc } from "@corpus/contract";
 import type { PluginServerContext } from "@corpus/contract/plugin";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import {
-  appendItem,
+  appendItemToBody,
+  docSource,
+  hasLegacyItems,
   itemsOrEmpty,
+  LEGACY_ITEMS_KEY,
   openItems,
-  readItems,
-  removeItem,
-  serializeItems,
+  parseBodyItems,
+  planWrite,
+  removeItemFromBody,
   TodoItemError,
-  updateItem,
+  updateItemInBody,
   type TodoItem,
 } from "../items.js";
 import { TODO_DOC_TYPE } from "../shared.js";
@@ -31,9 +34,15 @@ import { answering } from "./errors.js";
  * and would be refused if it named a core root.
  *
  * The item format lives in exactly one place (`../items.ts`); these handlers
- * read, apply a pure mutation, and write the result back as an `extra` patch —
+ * read, apply a pure mutation, and write the result back as a **body** patch —
  * read and write together, inside the document's write lane, because every
- * patch here carries the whole recomputed list (see {@link mutateItems}).
+ * patch here rewrites the document's body (see {@link mutateItems}).
+ *
+ * Since PLUGINS-005 items are task-list lines in the body (SPEC.md §12), so
+ * these routes are no longer the only way an item can change: the core editor
+ * writes the same lines through `PUT /api/docs/{id}`. That is the point — these
+ * routes are the **CLI and agent** item-level write path and the format owner
+ * behind it, not a private store.
  */
 
 const AppendBodySchema = z.object({
@@ -70,7 +79,7 @@ function parseIndex(raw: string): number {
 
 /** One todo document as this plugin reports it — items included, always an array. */
 function listView(doc: Doc): Record<string, unknown> {
-  const items = itemsOrEmpty(doc.frontmatter);
+  const items = itemsOrEmpty(docSource(doc));
   return {
     docId: doc.frontmatter.id,
     title: doc.frontmatter.title,
@@ -88,24 +97,28 @@ function listView(doc: Doc): Record<string, unknown> {
  * inside the document's write lane**, via `mutateDoc`.
  *
  * The lane is the whole point (PR #11 review, finding 2). Every patch here
- * carries the entire recomputed `items` array, so a read taken outside the lane
- * is a lost update waiting to happen: two toggles dispatched inside the first
- * write's git-commit window both read the pre-change list, both pass their
- * per-item `expectedText` guard — the guard compares the item at the index,
- * which neither of them moved — and the second silently reverts the first after
- * it already answered `200`. Browser-vs-browser and agent-CLI-vs-browser reach
- * the same interleaving. `getDoc` then `updateDoc` cannot fix that from out
- * here; only reading where the write happens can.
+ * rewrites the whole body, so a read taken outside the lane is a lost update
+ * waiting to happen: two toggles dispatched inside the first write's git-commit
+ * window both read the pre-change body, both pass their per-item `expectedText`
+ * guard — the guard compares the item at the index, which neither of them moved
+ * — and the second silently reverts the first after it already answered `200`.
+ * Browser-vs-browser and agent-CLI-vs-browser reach the same interleaving.
+ * `getDoc` then `updateDoc` cannot fix that from out here; only reading where
+ * the write happens can.
  *
  * `apply` therefore runs inside the callback, which the seam requires to be a
  * pure recompute: it may be reached and still write nothing (a lock refusal is
  * part of the write, after the callback), and it must not touch the context.
+ *
+ * It is also where a not-yet-migrated document converges: `planWrite` folds any
+ * surviving `extra.items` into the body first, and the same patch clears the
+ * key — one commit, never a document with its items in two places.
  */
 async function mutateItems(
   context: PluginServerContext,
   actor: Actor,
   docId: string,
-  apply: (items: readonly TodoItem[]) => readonly TodoItem[],
+  apply: (body: string) => string,
 ): Promise<readonly TodoItem[]> {
   let next: readonly TodoItem[] | undefined;
   await context.mutateDoc(actor, docId, (doc) => {
@@ -115,20 +128,15 @@ async function mutateItems(
         `${docId} is a ${doc.frontmatter.type} document, not a ${TODO_DOC_TYPE} list`,
       );
     }
-    const read = readItems(doc.frontmatter);
-    if (!read.ok) {
-      // Refusing here is the point: writing a well-formed array over frontmatter
-      // we could not parse would silently discard whatever the user hand-edited.
-      throw new TodoItemError(
-        400,
-        `${docId} has malformed items and was not written — ${read.problems.join("; ")}`,
-      );
-    }
+    // Refuses a legacy key it could not parse rather than writing over it, and
+    // refuses a document whose items are in two places rather than picking one.
+    const plan = planWrite(docSource(doc), docId);
     // Every throw above aborts the mutation unwrapped, so a `TodoItemError` —
     // including the one `apply` raises for an out-of-range index or a failed
     // `expectedText` guard — still reaches this plugin's own status mapping.
-    next = apply(read.items);
-    return { extra: { items: serializeItems(next) } };
+    const body = apply(plan.body);
+    next = parseBodyItems(body);
+    return { body, ...(plan.clearLegacy ? { extra: { [LEGACY_ITEMS_KEY]: null } } : {}) };
   });
   if (next === undefined) {
     // Unreachable against a context that honours the seam: `mutateDoc` resolves
@@ -144,18 +152,108 @@ async function mutateItems(
   return next;
 }
 
+/** The contract's page bound; migration must see every list, not the first page. */
+const PAGE = 200;
+
+/**
+ * Every todo document in the workspace, archived ones included, paged through.
+ *
+ * `GET /lists` deliberately inherits core's default result set (SPEC.md §11 —
+ * archived documents are excluded); migration deliberately does not. A document
+ * left unmigrated because it happened to be archived is a document that breaks
+ * the day someone unarchives it.
+ */
+function everyTodoDoc(context: PluginServerContext): readonly { id: string; title: string }[] {
+  const found: { id: string; title: string }[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const page = context.listDocs(
+      DocsQuerySchema.parse({
+        type: TODO_DOC_TYPE,
+        includeArchived: "true",
+        limit: String(PAGE),
+        offset: String(offset),
+      }),
+    );
+    found.push(...page.items.map((row) => ({ id: row.id, title: row.title })));
+    // A short page is the last page — asked rather than inferred from `total`,
+    // which counts rows this query may not have been given.
+    if (page.items.length < PAGE) return found;
+  }
+}
+
 export default function routes(context: PluginServerContext): Hono {
   const app = new Hono();
 
+  /**
+   * `POST /migrate` — converge every pre-PLUGINS-005 document onto body storage.
+   *
+   * Idempotent by construction: a document with no `extra.items` key is
+   * untouched and counted as `unchanged`, so a second run reports nothing to do.
+   * A document nothing can migrate safely — a malformed key, or items in both
+   * places — is reported as a conflict with its reason and left exactly as it
+   * was, because the alternative is guessing which list the user meant.
+   */
+  app.post("/migrate", (c) =>
+    answering(async () => {
+      const actor = actorOf(c.req.header(ACTOR_HEADER));
+      const migrated: { docId: string; title: string; items: number }[] = [];
+      const conflicts: { docId: string; title: string; reason: string }[] = [];
+      let unchanged = 0;
+
+      for (const row of everyTodoDoc(context)) {
+        if (!hasLegacyItems(context.getDoc(row.id).frontmatter.extra)) {
+          unchanged += 1;
+          continue;
+        }
+        let count = 0;
+        try {
+          await context.mutateDoc(actor, row.id, (doc) => {
+            const plan = planWrite(docSource(doc), row.id);
+            count = parseBodyItems(plan.body).length;
+            return { body: plan.body, extra: { [LEGACY_ITEMS_KEY]: null } };
+          });
+        } catch (error) {
+          if (!(error instanceof TodoItemError)) throw error;
+          conflicts.push({ docId: row.id, title: row.title, reason: error.message });
+          continue;
+        }
+        migrated.push({ docId: row.id, title: row.title, items: count });
+      }
+
+      if (migrated.length > 0) {
+        context.broadcastInvalidate([
+          ["lists"],
+          ...migrated.map((entry) => ["lists", entry.docId] as const),
+        ]);
+      }
+      return c.json({ migrated, conflicts, unchanged });
+    }),
+  );
+
   /** Every todo list with its items — one read for the CLI's `list` verb. */
-  app.get("/lists", (c) =>
+  const everyList = (c: Context): Promise<Response> =>
     answering(() => {
       const list = context.listDocs(DocsQuerySchema.parse({ type: TODO_DOC_TYPE }));
       return Promise.resolve(
         c.json({ lists: list.items.map((row) => listView(context.getDoc(row.id))) }),
       );
-    }),
-  );
+    });
+
+  app.get("/lists", everyList);
+
+  /**
+   * The same aggregate, addressed by a **cache generation** the board computes.
+   *
+   * The segment is deliberately unread. Its whole job is to be *different* when
+   * any todo document has been written: the kit derives a query key from this
+   * path, so a changed segment is a changed key and therefore a refetch — which
+   * is what keeps the column honest after a **core** body edit, the ordinary
+   * way to check a box since PLUGINS-006 (core broadcasts `["docs"]` and never
+   * `["x","todos",…]`). The key stays prefixed by `["x","todos","lists"]`, so
+   * the plugin's own broadcast still invalidates it exactly as it always did.
+   * See `ui/queries.ts` for the other half.
+   */
+  app.get("/lists/at/:fingerprint", everyList);
 
   /** One todo list, resolved by document id. */
   app.get("/lists/:docId", (c) =>
@@ -178,16 +276,8 @@ export default function routes(context: PluginServerContext): Hono {
         throw new TodoItemError(400, "an item needs a non-empty `text`");
       }
       const docId = c.req.param("docId");
-      const items = await mutateItems(
-        context,
-        actorOf(c.req.header(ACTOR_HEADER)),
-        docId,
-        (current) =>
-          appendItem(current, {
-            text: parsed.data.text,
-            ts: new Date(context.now()).toISOString(),
-            due: parsed.data.due,
-          }),
+      const items = await mutateItems(context, actorOf(c.req.header(ACTOR_HEADER)), docId, (body) =>
+        appendItemToBody(body, { text: parsed.data.text, due: parsed.data.due }),
       );
       const index = items.length - 1;
       return c.json({ docId, index, item: items[index] }, 201);
@@ -202,11 +292,8 @@ export default function routes(context: PluginServerContext): Hono {
       }
       const docId = c.req.param("docId");
       const index = parseIndex(c.req.param("index"));
-      const items = await mutateItems(
-        context,
-        actorOf(c.req.header(ACTOR_HEADER)),
-        docId,
-        (current) => updateItem(current, index, parsed.data),
+      const items = await mutateItems(context, actorOf(c.req.header(ACTOR_HEADER)), docId, (body) =>
+        updateItemInBody(body, index, parsed.data),
       );
       return c.json({ docId, index, item: items[index] });
     }),
@@ -221,9 +308,9 @@ export default function routes(context: PluginServerContext): Hono {
       const docId = c.req.param("docId");
       const index = parseIndex(c.req.param("index"));
       let removed: TodoItem | undefined;
-      await mutateItems(context, actorOf(c.req.header(ACTOR_HEADER)), docId, (current) => {
-        removed = current[index];
-        return removeItem(current, index, parsed.data.expectedText);
+      await mutateItems(context, actorOf(c.req.header(ACTOR_HEADER)), docId, (body) => {
+        removed = parseBodyItems(body)[index];
+        return removeItemFromBody(body, index, parsed.data.expectedText);
       });
       return c.json({ docId, index, removed });
     }),

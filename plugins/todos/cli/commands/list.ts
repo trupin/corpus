@@ -30,8 +30,8 @@ export default {
   description:
     "With no argument, one line per `type: todo` document with its open and done counts. With a " +
     "list named — by id, exact title, or an unambiguous fragment — that list's items, numbered as " +
-    "`corpus todos check` accepts them. Archived todo documents are excluded, exactly as every " +
-    "other default list excludes them.",
+    "`corpus todos check` accepts them and in the order they appear in the document body. " +
+    "Archived todo documents are excluded, exactly as every other default list excludes them.",
   args: [
     {
       name: "list",
@@ -54,7 +54,7 @@ export default {
     {
       command: 'corpus todos list "Week of Jul 20" --json',
       description:
-        'One JSON value: `{"lists":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","path":"data/docs/todos/week.md","status":"open","open":2,"done":1,"items":[{"text":"Renew passport","done":false,"ts":"…"}]}]}`.',
+        'One JSON value: `{"lists":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","path":"data/docs/todos/week.md","status":"open","open":2,"done":1,"items":[{"text":"Renew passport","done":false}]}]}`.',
     },
   ],
   handler: async (context: PluginCommandContext): Promise<void> => {

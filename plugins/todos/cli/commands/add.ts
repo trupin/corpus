@@ -17,9 +17,10 @@ export default {
   name: "add",
   summary: "Add an item to a todo list.",
   description:
-    "Appends one open item to a `type: todo` document. The list may be named by id, by its exact " +
-    "title, or by an unambiguous fragment of it; an ambiguous name is refused with the candidates " +
-    "listed rather than guessed at. The item's `ts` is its creation time, set by the server.",
+    "Appends one open item to a `type: todo` document — a `- [ ] …` task-list line at the end of " +
+    "the document's list. The list may be named by id, by its exact title, or by an unambiguous " +
+    "fragment of it; an ambiguous name is refused with the candidates listed rather than guessed " +
+    "at. Items have no timestamps: the order they appear in the body is their order.",
   args: [
     {
       name: "list",
@@ -33,7 +34,9 @@ export default {
       name: "due",
       type: "string",
       valueName: "date",
-      description: "Optional deadline as an ISO calendar date (`2026-08-01`).",
+      description:
+        "Optional deadline as an ISO calendar date (`2026-08-01`), written inline at the end of " +
+        "the item's line as `(due: 2026-08-01)`.",
     },
   ],
   examples: [
@@ -45,7 +48,7 @@ export default {
       command:
         'corpus todos add "Week of Jul 20" "Book dentist" --due 2026-08-01 --from agent --json',
       description:
-        'One JSON value: `{"docId":"doc_a1b2c3","index":3,"item":{"text":"Book dentist","done":false,"ts":"…","due":"2026-08-01"}}`. `--from agent` makes the commit the agent\'s.',
+        'One JSON value: `{"docId":"doc_a1b2c3","index":3,"item":{"text":"Book dentist","done":false,"due":"2026-08-01"}}`. `--from agent` makes the commit the agent\'s.',
     },
   ],
   handler: async (context: PluginCommandContext): Promise<void> => {

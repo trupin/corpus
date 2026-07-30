@@ -17,7 +17,8 @@ import {
 } from "@corpus/kit";
 import type { ListItemProps } from "@corpus/kit/plugin";
 import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
-import { dueCount, isOverdue, itemsOrEmpty } from "../items.js";
+import { dueCount, isOverdue } from "../items.js";
+import { useTodoItems } from "./queries.js";
 import "./todos.css";
 
 /**
@@ -31,11 +32,16 @@ import "./todos.css";
  * count. Dropping the row's own signals to save code is how a whole document
  * type quietly stops showing that the agent is working on it.
  *
- * Everything here is derived from what the server already computed on the row,
- * plus the two live signals the kit publishes as hooks (`useDocLock`,
+ * Everything the *row* needs is derived from what the server already computed
+ * on it, plus the two live signals the kit publishes as hooks (`useDocLock`,
  * `useAgentActivity`), each backed by one shared query for the whole board.
- * The plugin re-derives nothing and issues no request of its own — which is
- * exactly why a row like this can render anywhere.
+ *
+ * The **items** are the one thing a row cannot carry: they are body text since
+ * PLUGINS-005 and bodies do not ride list rows. They come from
+ * {@link useTodoItems}, which is the *same* shared aggregate the Todos column
+ * reads — one query key, so ten todo rows on the board are still one request,
+ * not ten. That is the property this preview had for free when items rode
+ * `extra`, and it is the one worth paying to keep.
  */
 
 /** The design's three-item preview: enough to recognise the list, never the list. */
@@ -59,7 +65,7 @@ export function TodoListItem(props: TodoListItemProps): ReactElement {
   const activity = useAgentActivity(row);
 
   const today = now ?? new Date();
-  const items = itemsOrEmpty(row);
+  const items = useTodoItems(row.id);
   const due = dueCount(items);
   const preview = items.slice(0, PREVIEW_ITEMS);
   const unread = unreadBadgeProps(row, unreadCount);
@@ -119,7 +125,7 @@ export function TodoListItem(props: TodoListItemProps): ReactElement {
         <div className="todo-items">
           {preview.map((item, index) => (
             <div
-              key={`${item.ts}:${String(index)}`}
+              key={`${String(index)}:${item.text}`}
               className={["t", item.done ? "done" : "", isOverdue(item, today) ? "overdue" : ""]
                 .filter((part) => part !== "")
                 .join(" ")}

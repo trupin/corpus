@@ -1,21 +1,30 @@
 import { definePlugin } from "@corpus/kit/plugin";
-import { itemProblems } from "./items.js";
+import { docSource, itemProblems } from "./items.js";
 import { TODO_DOC_TYPE, TODOS_COLUMN_TYPE } from "./shared.js";
 import { TodoDocPanel } from "./ui/TodoDocPanel.js";
 import { TodoListItem } from "./ui/TodoListItem.js";
-import { TodoView } from "./ui/TodoView.js";
 import { TodosColumn } from "./ui/TodosColumn.js";
 
 /**
  * The v1 reference plugin (SPEC.md §12), and the subject of §15 M6's
  * subtractive check: delete `plugins/todos/` and the core must still boot, with
- * todo documents rendering as plain markdown and this column showing a "plugin
- * missing" card.
+ * todo documents rendering as ordinary markdown **with working checkboxes** and
+ * this column showing a "plugin missing" card.
  *
  * It exercises all four extension points — this manifest (the `todo` document
- * type with all three renderers plus `validate`, and one board column type),
- * `server/routes.ts`, `cli/commands/`, and `skills/todos/SKILL.md` — with
- * enough real utility that it earns its place in a default workspace.
+ * type with a `ListItem`, a `DocPanel` and `validate`, plus one board column
+ * type), `server/routes.ts`, `cli/commands/`, and `skills/todos/SKILL.md` —
+ * with enough real utility that it earns its place in a default workspace.
+ *
+ * **No `View`, deliberately** (PLUGINS-006; SPEC.md §12 as amended 2026-07-30:
+ * "the plugin registers no custom document renderer"). Items are GFM task-list
+ * lines in the body, and the core editor already renders, toggles and
+ * serializes those — so registering a `View` here would replace the standard
+ * document surface with a worse one *and* suppress the anchor layer
+ * (`DocView.tsx`'s `anchorsHost` is false wherever a plugin View wins), which
+ * is precisely what made item-level commenting unreachable. Claiming the slot
+ * costs the document its comments; not claiming it costs nothing. The slot
+ * itself stays contracted and covered by the underscore fixture plugin.
  *
  * Nothing here declares the plugin's identity. `id` is documentation; the
  * **directory name** is what namespaces the column reference
@@ -29,10 +38,12 @@ export default definePlugin({
   docTypes: [
     {
       type: TODO_DOC_TYPE,
-      View: TodoView,
       ListItem: TodoListItem,
       DocPanel: TodoDocPanel,
-      validate: (doc) => itemProblems(doc.frontmatter),
+      // Reads the whole document, body included: items are body task-list lines
+      // since PLUGINS-005, and the only thing left that can be malformed is a
+      // pre-migration `extra.items` key.
+      validate: (doc) => itemProblems(docSource(doc)),
     },
   ],
   columns: [

@@ -4,19 +4,31 @@ import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TodoListItem } from "./TodoListItem.js";
-import { TS, transport, wrapperFor } from "./testing.js";
+import { listPayload, transport, wrapperFor } from "./testing.js";
 
 afterEach(cleanup);
 
 const NOW = new Date("2026-07-20T12:00:00.000Z");
 
-const item = (text: string, done: boolean, due?: string): Record<string, unknown> => ({
+type Item = { readonly text: string; readonly done: boolean; readonly due?: string };
+
+const item = (text: string, done: boolean, due?: string): Item => ({
   text,
   done,
-  ts: TS,
   ...(due === undefined ? {} : { due }),
 });
 
+const DEFAULT_ITEMS: readonly Item[] = [
+  item("Renew passport", false),
+  item("Send lease notice", true),
+];
+
+/**
+ * A todo document's **row**. Since PLUGINS-005 it carries no items at all —
+ * items are body text, and bodies do not ride list rows — so every fixture here
+ * pairs the row with the aggregate entry the plugin's own route answers with,
+ * which is exactly the pair production has.
+ */
 const todoRow = (overrides: Partial<DocRow> = {}): DocRow =>
   docRowFixture({
     id: "doc_week",
@@ -24,18 +36,27 @@ const todoRow = (overrides: Partial<DocRow> = {}): DocRow =>
     title: "Week of Jul 20",
     path: "data/docs/todos/week.md",
     updated: "2026-07-19T09:00:00.000Z",
-    extra: { items: [item("Renew passport", false), item("Send lease notice", true)] },
+    excerpt: "a todo document",
     ...overrides,
   });
 
-function mountRow(
-  row: DocRow,
-  props: { onOpen?: (row: DocRow) => void; locks?: readonly Lock[] } = {},
-): void {
-  const wire = transport({ locks: props.locks ?? [] });
-  render(<TodoListItem row={row} now={NOW} onOpen={props.onOpen} />, {
+interface MountOptions {
+  readonly items?: readonly Item[];
+  readonly lists?: readonly Record<string, unknown>[] | null;
+  readonly onOpen?: (row: DocRow) => void;
+  readonly locks?: readonly Lock[];
+}
+
+function mountRow(row: DocRow, options: MountOptions = {}): ReturnType<typeof transport> {
+  const wire = transport({
+    docs: [row],
+    locks: options.locks ?? [],
+    lists: options.lists ?? [listPayload(row.id, row.title, options.items ?? DEFAULT_ITEMS)],
+  });
+  render(<TodoListItem row={row} now={NOW} onOpen={options.onOpen} />, {
     wrapper: wrapperFor(wire).Wrapper,
   });
+  return wire;
 }
 
 const previews = (): string[] =>
@@ -51,15 +72,13 @@ describe("TodoListItem", () => {
     expect(document.querySelector(".type-glyph")?.textContent).toBe("todo");
   });
 
-  it("previews the first three items with their checkboxes", () => {
-    mountRow(
-      todoRow({
-        extra: {
-          items: [item("one", false), item("two", true), item("three", false), item("four", false)],
-        },
-      }),
-    );
-    expect(previews()).toEqual(["one", "two", "three"]);
+  it("previews the first three items with their checkboxes", async () => {
+    mountRow(todoRow(), {
+      items: [item("one", false), item("two", true), item("three", false), item("four", false)],
+    });
+    await waitFor(() => {
+      expect(previews()).toEqual(["one", "two", "three"]);
+    });
     expect([...document.querySelectorAll(".todo-items .box")].map((n) => n.textContent)).toEqual([
       "☐",
       "☑",
@@ -69,38 +88,62 @@ describe("TodoListItem", () => {
     expect(screen.getByText("+1 more")).toBeTruthy();
   });
 
-  it("shows no preview and no more-affordance for an empty list", () => {
-    mountRow(todoRow({ extra: { items: [] } }));
+  /**
+   * TEST-512, from the row's side: ten todo rows on a board are one request,
+   * because every row reads the same shared aggregate key.
+   */
+  it("issues one aggregate request, shared with every other todo row", async () => {
+    const wire = mountRow(todoRow(), { items: [item("one", false)] });
+    await waitFor(() => {
+      expect(previews()).toEqual(["one"]);
+    });
+    expect(wire.pluginCalls()).toHaveLength(1);
+    expect(new URL(wire.pluginCalls()[0]?.url ?? "http://x/").pathname).toMatch(
+      /^\/api\/x\/todos\/lists\/at\/[a-z0-9]+$/,
+    );
+  });
+
+  it("shows no preview and no more-affordance for an empty list", async () => {
+    mountRow(todoRow(), { items: [] });
+    await waitFor(() => {
+      expect(document.querySelector(".row")).toBeTruthy();
+    });
     expect(previews()).toEqual([]);
     expect(screen.queryByText(/more/)).toBeNull();
   });
 
-  it("degrades a malformed document to no preview rather than crashing", () => {
+  it("degrades to no preview rather than crashing when the aggregate cannot be read", async () => {
     expect(() => {
-      mountRow(todoRow({ extra: { items: "nope" } }));
+      mountRow(todoRow(), { lists: null });
     }).not.toThrow();
+    await waitFor(() => {
+      expect(document.querySelector(".row")).toBeTruthy();
+    });
     expect(previews()).toEqual([]);
   });
 
-  it("badges the number of open items carrying a deadline", () => {
-    mountRow(
-      todoRow({
-        extra: {
-          items: [item("a", false, "2026-08-01"), item("b", false), item("c", true, "2026-08-02")],
-        },
-      }),
-    );
-    expect(screen.getByText("1 due")).toBeTruthy();
+  it("badges the number of open items carrying a deadline", async () => {
+    mountRow(todoRow(), {
+      items: [item("a", false, "2026-08-01"), item("b", false), item("c", true, "2026-08-02")],
+    });
+    await waitFor(() => {
+      expect(screen.getByText("1 due")).toBeTruthy();
+    });
   });
 
-  it("shows no due badge when nothing open has a deadline", () => {
+  it("shows no due badge when nothing open has a deadline", async () => {
     mountRow(todoRow());
+    await waitFor(() => {
+      expect(previews()).toHaveLength(2);
+    });
     expect(screen.queryByText(/due/)).toBeNull();
   });
 
-  it("applies the overdue treatment to a past deadline", () => {
-    mountRow(todoRow({ extra: { items: [item("late", false, "2026-07-10")] } }));
-    expect(document.querySelector(".todo-items .t")?.className).toContain("overdue");
+  it("applies the overdue treatment to a past deadline", async () => {
+    mountRow(todoRow(), { items: [item("late", false, "2026-07-10")] });
+    await waitFor(() => {
+      expect(document.querySelector(".todo-items .t")?.className).toContain("overdue");
+    });
   });
 
   it("opens the document on click and on Enter or Space", () => {
@@ -126,7 +169,7 @@ describe("TodoListItem", () => {
 
   it("keeps the row's own signals: the lock chip", async () => {
     mountRow(todoRow(), {
-      locks: [{ docId: "doc_week", holder: "agent", acquired: TS, ttl: 300 }],
+      locks: [{ docId: "doc_week", holder: "agent", acquired: NOW.toISOString(), ttl: 300 }],
     });
     await waitFor(() => {
       expect(document.querySelector(".row-lock")).toBeTruthy();
@@ -208,12 +251,14 @@ describe("TodoListItem", () => {
     expect(document.querySelector(".row")?.className).toContain("kbd");
   });
 
-  it("truncates long item text with CSS rather than by cutting the string", () => {
+  it("truncates long item text with CSS rather than by cutting the string", async () => {
     const long = "x".repeat(200);
-    mountRow(todoRow({ extra: { items: [item(long, false)] } }));
+    mountRow(todoRow(), { items: [item(long, false)] });
     // The full text stays in the DOM — truncation is presentational, so a
     // future anchor or a copy-paste gets the real words.
-    expect(previews()).toEqual([long]);
+    await waitFor(() => {
+      expect(previews()).toEqual([long]);
+    });
     expect(document.querySelector(".todo-items .todo-item-text")).toBeTruthy();
   });
 });

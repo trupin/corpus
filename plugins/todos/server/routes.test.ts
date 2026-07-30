@@ -10,7 +10,7 @@ import {
 import type { PluginServerContext } from "@corpus/contract/plugin";
 import { docRowFixture } from "@corpus/kit/testing";
 import { beforeEach, describe, expect, it } from "vitest";
-import { itemsOrEmpty } from "../items.js";
+import { docSource, itemsOrEmpty, type TodoItem } from "../items.js";
 import { TODO_DOC_TYPE } from "../shared.js";
 import routes from "./routes.js";
 
@@ -41,7 +41,7 @@ const NOW = Date.parse("2026-07-21T10:00:00.000Z");
 
 interface Recorded {
   readonly keys: (readonly QueryKeySegment[])[];
-  readonly updates: { id: string; actor: Actor; extra: unknown }[];
+  readonly updates: { id: string; actor: Actor; extra: unknown; body: string | undefined }[];
 }
 
 /**
@@ -79,11 +79,20 @@ function httpish(status: number, code: string, message: string): unknown {
   return Object.assign(new Error(message), { status, body: { code, message } });
 }
 
-function docFixture(id: string, items: unknown, type = TODO_DOC_TYPE): Doc {
+/**
+ * A todo document, body-backed since PLUGINS-005. `extra` is only ever the
+ * *legacy* `items` key — a document that has not been migrated yet — which is
+ * why it is a separate, explicit argument rather than the default.
+ */
+function docFixture(
+  id: string,
+  body: string,
+  options: { readonly type?: string; readonly legacy?: unknown } = {},
+): Doc {
   return {
     frontmatter: {
       id,
-      type,
+      type: options.type ?? TODO_DOC_TYPE,
       title: `List ${id}`,
       created: TS,
       updated: TS,
@@ -97,12 +106,36 @@ function docFixture(id: string, items: unknown, type = TODO_DOC_TYPE): Doc {
       order: null,
       query: null,
       column: null,
-      extra: items === undefined ? {} : { items },
+      extra: "legacy" in options ? { items: options.legacy } : {},
     },
-    body: "## Notes\n",
+    body,
     path: `data/docs/todos/${id}.md`,
     anchors: [],
   };
+}
+
+/** The three-item list every mutation test starts from. */
+const WEEK_BODY = [
+  "## This week",
+  "",
+  "- [ ] Renew passport",
+  "- [ ] Call plumber (due: 2026-07-01)",
+  "- [x] Send lease notice",
+  "",
+].join("\n");
+
+/** `apps/server`'s RFC 7386 `extra` merge (`docs/update.ts:142-155`), as a fake. */
+function mergeExtra(
+  current: Readonly<Record<string, unknown>>,
+  patch: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(patch ?? {})) {
+    if (value === undefined) continue;
+    if (value === null) delete next[key];
+    else next[key] = value;
+  }
+  return next;
 }
 
 interface Harness {
@@ -136,12 +169,13 @@ function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harne
     const doc = read(id);
     options.onWrite?.();
     await writeWindow();
-    recorded.updates.push({ id, actor, extra: patch.extra });
+    recorded.updates.push({ id, actor, extra: patch.extra, body: patch.body });
     const next: Doc = {
       ...doc,
+      body: patch.body ?? doc.body,
       frontmatter: {
         ...doc.frontmatter,
-        extra: { ...doc.frontmatter.extra, ...(patch.extra ?? {}) },
+        extra: mergeExtra(doc.frontmatter.extra, patch.extra),
       },
     };
     docs.set(id, next);
@@ -165,10 +199,14 @@ function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harne
     plugin: "todos",
     logger: { info: () => undefined, debug: () => undefined, error: () => undefined },
     now: () => NOW,
-    listDocs: (query): DocList => ({
-      items: [...docs.values()]
-        .filter((doc) => query.type === undefined || doc.frontmatter.type === query.type)
-        .map((doc) =>
+    listDocs: (query): DocList => {
+      // Paged for real: `POST /migrate` walks every page, and a fake that
+      // ignored `offset` would hand it the first page forever.
+      const matched = [...docs.values()].filter(
+        (doc) => query.type === undefined || doc.frontmatter.type === query.type,
+      );
+      return {
+        items: matched.slice(query.offset, query.offset + query.limit).map((doc) =>
           docRowFixture({
             id: doc.frontmatter.id,
             type: doc.frontmatter.type,
@@ -177,8 +215,9 @@ function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harne
             extra: doc.frontmatter.extra,
           }),
         ),
-      page: { total: docs.size, limit: 50, offset: 0 },
-    }),
+        page: { total: matched.length, limit: query.limit, offset: query.offset },
+      };
+    },
     getDoc: read,
     createDoc: () => Promise.reject(new Error("createDoc is not used by these routes")),
     updateDoc: (actor, id, patch) => lane(id, () => write(actor, id, parsePatch(patch))),
@@ -226,13 +265,9 @@ let h: Harness;
 
 beforeEach(() => {
   h = harness([
-    docFixture("doc_week", [
-      { text: "Renew passport", done: false, ts: TS },
-      { text: "Call plumber", done: false, ts: TS, due: "2026-07-01" },
-      { text: "Send lease notice", done: true, ts: TS },
-    ]),
-    docFixture("doc_empty", undefined),
-    docFixture("doc_note", undefined, "note"),
+    docFixture("doc_week", WEEK_BODY),
+    docFixture("doc_empty", "## Notes\n"),
+    docFixture("doc_note", "## Notes\n", { type: "note" }),
   ]);
 });
 
@@ -243,8 +278,48 @@ describe("GET /lists", () => {
     const payload = (await response.json()) as { lists: { docId: string; open: number }[] };
     expect(payload.lists.map((list) => list.docId)).toEqual(["doc_week", "doc_empty"]);
     expect(payload.lists[0]).toMatchObject({ open: 2, done: 1, title: "List doc_week" });
-    // Absent `items` is an empty list, not a missing one.
+    // A body with no task lines is an empty list, not a missing one.
     expect(payload.lists[1]).toMatchObject({ open: 0, done: 0, items: [] });
+  });
+
+  /**
+   * PLUGINS-007: the board addresses the same aggregate through a cache
+   * generation it computes from `(id, updated)`, so a **core** body edit —
+   * which broadcasts `["docs"]` and nothing under `x/todos` — still changes the
+   * query key and refetches. The segment is deliberately unread here.
+   */
+  it("answers the same aggregate under any fingerprint segment", async () => {
+    const plain = (await (await call(h, "GET", "/lists")).json()) as unknown;
+    for (const fingerprint of ["abc123", "0", "zzzzzzzz"]) {
+      const response = await call(h, "GET", `/lists/at/${fingerprint}`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(plain);
+    }
+  });
+
+  it("does not mistake a fingerprint for a document id", async () => {
+    // `/lists/:docId` is a different route with a different arity; a workspace
+    // whose document is literally called `at` would still resolve.
+    expect((await call(h, "GET", "/lists/at")).status).toBe(404);
+  });
+
+  it("reads a migrated and a not-yet-migrated document side by side", async () => {
+    // TEST-488: the mixed state a real workspace is in for as long as the
+    // chosen policy takes to converge. Both appear, neither duplicated.
+    const mixed = harness([
+      docFixture("doc_body", "- [ ] from the body\n"),
+      docFixture("doc_legacy", "## Notes\n", {
+        legacy: [{ text: "from frontmatter", done: false, ts: TS }],
+      }),
+    ]);
+    const payload = (await (await call(mixed, "GET", "/lists")).json()) as {
+      lists: { docId: string; open: number; items: { text: string }[] }[];
+    };
+    expect(payload.lists.map((list) => list.items.map((entry) => entry.text))).toEqual([
+      ["from the body"],
+      ["from frontmatter"],
+    ]);
+    expect(payload.lists.every((list) => list.open === 1)).toBe(true);
   });
 });
 
@@ -271,14 +346,20 @@ describe("GET /lists/:docId", () => {
 });
 
 describe("POST /:docId/items", () => {
-  it("appends an open item stamped with the context's clock", async () => {
+  it("appends an open item at the end of the body's list", async () => {
     const response = await call(h, "POST", "/doc_week/items", { text: "Book dentist" });
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({
       docId: "doc_week",
       index: 3,
-      item: { text: "Book dentist", done: false, ts: new Date(NOW).toISOString() },
+      item: { text: "Book dentist", done: false },
     });
+    expect(h.docs.get("doc_week")?.body).toBe(
+      WEEK_BODY.replace(
+        "- [x] Send lease notice\n",
+        "- [x] Send lease notice\n- [ ] Book dentist\n",
+      ),
+    );
   });
 
   it("writes through the context, never the filesystem, and attributes the actor", async () => {
@@ -286,7 +367,9 @@ describe("POST /:docId/items", () => {
     expect(h.recorded.updates).toHaveLength(1);
     expect(h.recorded.updates[0]?.actor).toBe("agent");
     expect(h.recorded.updates[0]?.id).toBe("doc_week");
-    expect((h.recorded.updates[0]?.extra as { items: unknown[] }).items).toHaveLength(4);
+    // A body patch, and no `extra` at all: the document has no legacy key.
+    expect(h.recorded.updates[0]?.body).toContain("- [ ] Book dentist");
+    expect(h.recorded.updates[0]?.extra).toBeUndefined();
   });
 
   it("broadcasts only the plugin's own namespaced keys", async () => {
@@ -296,10 +379,35 @@ describe("POST /:docId/items", () => {
     expect(h.recorded.keys).toEqual([["lists"], ["lists", "doc_week"]]);
   });
 
-  it("appends to a document with no `items` key at all", async () => {
+  it("appends to a document with no list in its body at all", async () => {
     const response = await call(h, "POST", "/doc_empty/items", { text: "first" });
     expect(response.status).toBe(201);
     expect((await response.json()) as { index: number }).toMatchObject({ index: 0 });
+    expect(h.docs.get("doc_empty")?.body).toBe("## Notes\n\n- [ ] first\n");
+  });
+
+  it("leaves prose, headings and a fenced lookalike byte-identical", async () => {
+    // TEST-476, at the route: the plugin shares the body with the user now.
+    const rich = [
+      "Some prose.",
+      "",
+      "- [ ] Book the passport appointment",
+      "",
+      "## Later",
+      "",
+      "```sh",
+      "- [ ] not an item",
+      "```",
+      "",
+      "Trailing prose.",
+      "",
+    ].join("\n");
+    const shared = harness([docFixture("doc_rich", rich)]);
+    await call(shared, "PUT", "/doc_rich/items/0", { done: true });
+    const after = String(shared.docs.get("doc_rich")?.body);
+    expect(after).toBe(rich.replace("- [ ] Book", "- [x] Book"));
+    const changed = after.split("\n").filter((line, at) => line !== rich.split("\n")[at]);
+    expect(changed).toEqual(["- [x] Book the passport appointment"]);
   });
 
   it("carries an optional due date", async () => {
@@ -325,16 +433,19 @@ describe("POST /:docId/items", () => {
 });
 
 describe("PUT /:docId/items/:index", () => {
-  it("flips `done` and leaves `ts` byte-identical", async () => {
+  it("flips `done` and leaves the body otherwise byte-identical", async () => {
     const response = await call(h, "PUT", "/doc_week/items/0", { done: true });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       docId: "doc_week",
       index: 0,
-      item: { text: "Renew passport", done: true, ts: TS },
+      item: { text: "Renew passport", done: true },
     });
+    // TEST-481: a check/uncheck cycle restores the document exactly, so the
+    // list's order cannot drift across any number of them.
     const back = await call(h, "PUT", "/doc_week/items/0", { done: false });
-    expect(((await back.json()) as { item: { ts: string } }).item.ts).toBe(TS);
+    expect(back.status).toBe(200);
+    expect(h.docs.get("doc_week")?.body).toBe(WEEK_BODY);
   });
 
   it("renames an item", async () => {
@@ -377,10 +488,11 @@ describe("DELETE /:docId/items/:index", () => {
     expect(await response.json()).toMatchObject({
       docId: "doc_week",
       index: 1,
-      removed: { text: "Call plumber" },
+      removed: { text: "Call plumber", due: "2026-07-01" },
     });
-    const remaining = (h.recorded.updates[0]?.extra as { items: { text: string }[] }).items;
-    expect(remaining.map((entry) => entry.text)).toEqual(["Renew passport", "Send lease notice"]);
+    expect(h.docs.get("doc_week")?.body).toBe(
+      WEEK_BODY.replace("- [ ] Call plumber (due: 2026-07-01)\n", ""),
+    );
   });
 
   it("honours the concurrency guard", async () => {
@@ -397,9 +509,9 @@ describe("DELETE /:docId/items/:index", () => {
   });
 });
 
-describe("malformed items", () => {
-  it("refuses every mutation rather than overwriting what it could not read", async () => {
-    const broken = harness([docFixture("doc_bad", "not a list")]);
+describe("a document nothing can write safely", () => {
+  it("refuses every mutation rather than overwriting a legacy key it could not read", async () => {
+    const broken = harness([docFixture("doc_bad", "## Notes\n", { legacy: "not a list" })]);
     for (const [method, path, body] of [
       ["POST", "/doc_bad/items", { text: "a" }],
       ["PUT", "/doc_bad/items/0", { done: true }],
@@ -412,8 +524,22 @@ describe("malformed items", () => {
     expect(broken.recorded.updates).toEqual([]);
   });
 
+  it("refuses a document carrying items in both places, naming the fix", async () => {
+    const both = harness([
+      docFixture("doc_both", "- [ ] in the body\n", {
+        legacy: [{ text: "in frontmatter", done: false, ts: TS }],
+      }),
+    ]);
+    const response = await call(both, "PUT", "/doc_both/items/0", { done: true });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { message: string }).message).toContain(
+      "remove whichever list is stale",
+    );
+    expect(both.recorded.updates).toEqual([]);
+  });
+
   it("still lists a malformed document, degraded to no items", async () => {
-    const broken = harness([docFixture("doc_bad", "not a list")]);
+    const broken = harness([docFixture("doc_bad", "## Notes\n", { legacy: "not a list" })]);
     const payload = (await (await call(broken, "GET", "/lists")).json()) as {
       lists: { items: unknown[] }[];
     };
@@ -421,11 +547,86 @@ describe("malformed items", () => {
   });
 });
 
+/**
+ * The migration, both halves (PLUGINS-005's chosen policy):
+ *
+ * - **on first write**, so no document is ever left in a state where the two
+ *   representations can disagree — the fold and the write are one patch, hence
+ *   one commit;
+ * - **`POST /migrate`**, so a list nobody writes to again still converges, which
+ *   matters because the document view renders the body and would otherwise show
+ *   an empty list for a document full of items.
+ */
+describe("migration", () => {
+  const legacyDocs = (): Harness =>
+    harness([
+      docFixture("doc_legacy", "## Notes\n", {
+        legacy: [
+          { text: "a", done: false, ts: TS, due: "2026-08-01" },
+          { text: "b", done: true, ts: TS },
+        ],
+      }),
+      docFixture("doc_body", "- [ ] already migrated\n"),
+      docFixture("doc_bad", "## Notes\n", { legacy: 7 }),
+    ]);
+
+  it("folds the legacy key into the body on the first write, and clears it", async () => {
+    const m = legacyDocs();
+    const response = await call(m, "POST", "/doc_legacy/items", { text: "c" });
+    expect(response.status).toBe(201);
+    expect((await response.json()) as { index: number }).toMatchObject({ index: 2 });
+    const doc = m.docs.get("doc_legacy");
+    expect(doc?.body).toBe("## Notes\n\n- [ ] a (due: 2026-08-01)\n- [x] b\n- [ ] c\n");
+    // TEST-489: a migrated document does not carry both representations.
+    expect(doc?.frontmatter.extra).toEqual({});
+    expect(m.recorded.updates[0]?.extra).toEqual({ items: null });
+  });
+
+  it("converts every remaining document, reports what it changed, and is idempotent", async () => {
+    const m = legacyDocs();
+    const first = (await (await call(m, "POST", "/migrate")).json()) as {
+      migrated: { docId: string; items: number }[];
+      conflicts: { docId: string; reason: string }[];
+      unchanged: number;
+    };
+    expect(first.migrated).toEqual([{ docId: "doc_legacy", title: "List doc_legacy", items: 2 }]);
+    expect(first.conflicts[0]?.docId).toBe("doc_bad");
+    expect(first.conflicts[0]?.reason).toContain("malformed items");
+    expect(first.unchanged).toBe(1);
+    expect(m.docs.get("doc_legacy")?.body).toBe("## Notes\n\n- [ ] a (due: 2026-08-01)\n- [x] b\n");
+    expect(m.docs.get("doc_body")?.body).toBe("- [ ] already migrated\n");
+
+    const second = (await (await call(m, "POST", "/migrate")).json()) as {
+      migrated: unknown[];
+      unchanged: number;
+    };
+    expect(second.migrated).toEqual([]);
+    expect(second.unchanged).toBe(2);
+    // The unconvertible document is reported every time, never written.
+    expect(m.recorded.updates.filter((entry) => entry.id === "doc_bad")).toEqual([]);
+  });
+
+  it("broadcasts only what it changed, and nothing when it changed nothing", async () => {
+    const m = legacyDocs();
+    await call(m, "POST", "/migrate");
+    expect(m.recorded.keys).toEqual([["lists"], ["lists", "doc_legacy"]]);
+    m.recorded.keys.length = 0;
+    await call(m, "POST", "/migrate");
+    expect(m.recorded.keys).toEqual([]);
+  });
+
+  it("attributes the migration to the actor that asked for it", async () => {
+    const m = legacyDocs();
+    await call(m, "POST", "/migrate", undefined, "agent");
+    expect(m.recorded.updates[0]).toMatchObject({ id: "doc_legacy", actor: "agent" });
+  });
+});
+
 describe("failures the plugin does not own", () => {
   it("passes a locked document's 423 through with its body intact", async () => {
     // The refusal lands after the mutation callback ran, exactly where the real
     // context's lock guard is — and nothing must be written or broadcast.
-    const locked = harness([docFixture("doc_week", [])], {
+    const locked = harness([docFixture("doc_week", "## Notes\n")], {
       onWrite: () => {
         throw httpish(423, "locked", "doc_week is locked by user");
       },
@@ -440,7 +641,7 @@ describe("failures the plugin does not own", () => {
   });
 
   it("never invents a friendly body for a failure it does not own", async () => {
-    const boom = harness([docFixture("doc_week", [])], {
+    const boom = harness([docFixture("doc_week", "## Notes\n")], {
       onWrite: () => {
         throw new Error("the disk caught fire");
       },
@@ -454,13 +655,13 @@ describe("failures the plugin does not own", () => {
   });
 
   it("refuses to answer 200 for a context that resolved without mutating", async () => {
-    const inert = harness([docFixture("doc_week", [])]);
+    const inert = harness([docFixture("doc_week", "## Notes\n")]);
     const context: PluginServerContext = {
       ...inert.context,
       // A context that never runs the callback breaks the seam's contract. The
       // plugin has no item to report, and inventing one would be worse than
       // failing: this is the 500 it is.
-      mutateDoc: (_actor, id) => Promise.resolve(docFixture(id, [])),
+      mutateDoc: (_actor, id) => Promise.resolve(docFixture(id, "## Notes\n")),
     };
     const response = await routes(context).request("/doc_week/items", {
       method: "POST",
@@ -489,11 +690,16 @@ describe("failures the plugin does not own", () => {
  * first after it already answered 200.
  */
 describe("interleaved mutations of one list", () => {
+  const items = (h: Harness, id: string): readonly TodoItem[] => {
+    const doc = h.docs.get(id);
+    return doc === undefined ? [] : itemsOrEmpty(docSource(doc));
+  };
+
   const doneFlags = (h: Harness, id: string): readonly boolean[] =>
-    itemsOrEmpty(h.docs.get(id)?.frontmatter).map((item) => item.done);
+    items(h, id).map((item) => item.done);
 
   const texts = (h: Harness, id: string): readonly string[] =>
-    itemsOrEmpty(h.docs.get(id)?.frontmatter).map((item) => item.text);
+    items(h, id).map((item) => item.text);
 
   it("keeps both toggles when a second dispatches inside the first's write window", async () => {
     const [first, second] = await Promise.all([
