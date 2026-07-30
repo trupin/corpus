@@ -131,7 +131,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | done | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
 | CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | done | P1 | CLI-006, SERVER-019 |
-| PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P2 | UI-014, PLUGINS-002 |
+| PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs (design closed; impl = PLUGINS-005/006/007) | done | P1 | UI-014 |
 | UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
 | SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | todo | P1 | SERVER-003 |
@@ -173,26 +173,26 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | CONTRACT-020 | Route: POST /api/skills (skill create) | done | P1 | CONTRACT-008 |
 | SERVER-036 | Skill-create write path (documents outside data/docs) | done | P1 | CONTRACT-020 |
 | CLI-011 | `corpus skill create` + `corpus doc list` (doc list unblocked; skill create after SERVER-036) | done | P1 | CLI-006, SERVER-019, SERVER-036 |
-| AGENT-006 | Comment skill: upgrade skill genesis from propose to create | todo | P1 | CLI-011, AGENT-003 |
+| AGENT-006 | Comment skill: upgrade skill genesis from propose to create | done | P1 | CLI-011, AGENT-003 |
 | CONTRACT-021 | Rider: queue deferred-status surface | done | P2 | CONTRACT-002 |
 | SERVER-030 | Queue defer/requeue transition for lock-deferred work | done | P2 | CONTRACT-021, SERVER-008, SERVER-009, AGENT-002 |
-| AGENT-007 | Orchestrate skill: replace the `deferred:`-prefixed failure with the defer transition | todo | P2 | SERVER-030, AGENT-002 |
-| PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P1 | UI-014 |
-| AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | SHARED-004, AGENT-002 |
-| UI-017 | Never leave an empty untitled document behind | todo | P1 | SHARED-004, UI-005, UI-006 |
-| UI-018 | Right-click context menu for actions on the selected item | todo | P2 | SHARED-004, UI-004, UI-012 |
-| UI-019 | Wider views: user-adjustable view/column width | todo | P2 | SHARED-004, UI-003 |
+| AGENT-007 | Orchestrate skill: replace the `deferred:`-prefixed failure with the defer transition | done | P2 | SERVER-030, AGENT-002 |
+| AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | done | P1 | SHARED-004, AGENT-002 |
+| UI-017 | Never leave an empty untitled document behind | done | P1 | SHARED-004, UI-005, UI-006 |
+| UI-018 | Right-click context menu for actions on the selected item | done | P2 | SHARED-004, UI-004, UI-012 |
+| UI-019 | Wider views: user-adjustable view/column width | done | P2 | SHARED-004, UI-003 |
 | CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002 |
 | UI-015 | Remaining teardown callbacks | todo | P2 | UI-012 |
 | SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
 | SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | todo | P2 | SERVER-005 |
 | CLI-015 | `corpus queue defer` verb | done | P1 | CLI-004, CONTRACT-021, SERVER-030 |
-| SHARED-005 | Wave-3 spec pass: §12 body-checkbox todos + residual §7 deferral sentences | todo | P0 | SHARED-004 |
+| SHARED-005 | Wave-3 spec pass: §12 body-checkbox todos + residual §7 deferral sentences | done | P0 | SHARED-004 |
 | PLUGINS-005 | Todos items move into the body as GFM task-lists | todo | P1 | SHARED-005 |
 | PLUGINS-006 | Todos drops its View: core editor renders items, anchors apply | todo | P1 | PLUGINS-005 |
 | PLUGINS-007 | Todos column re-sourced off the body aggregate | todo | P1 | PLUGINS-005 |
 | CLI-016 | `corpus doc edit --extra`: agent-writable extra frontmatter (UI-019 escalation) | todo | P1 | CLI-003 |
+| CLI-017 | `corpus doc unarchive` + `--status open` half-state fix (evaluator MAJOR) | todo | P1 | CLI-003 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
