@@ -54,4 +54,9 @@ export type {
   PluginFlagType,
 } from "./cli.js";
 
-export type { PluginLogFields, PluginLogger, PluginServerContext } from "./server.js";
+export type {
+  PluginDocMutation,
+  PluginLogFields,
+  PluginLogger,
+  PluginServerContext,
+} from "./server.js";

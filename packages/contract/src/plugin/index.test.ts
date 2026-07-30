@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
+import type { Actor } from "../actor.js";
 import { contractPackageRoot } from "../generation/artifacts.js";
-import type { Doc, DocList } from "../schemas/index.js";
+import type { Doc, DocList, UpdateDocRequest } from "../schemas/index.js";
 import * as pluginSurface from "./index.js";
 import type {
   PluginCommandContext,
   PluginCommandSpec,
+  PluginDocMutation,
   PluginLogger,
   PluginServerContext,
 } from "./index.js";
@@ -102,6 +104,37 @@ describe("PluginServerContext", () => {
     expectTypeOf<PluginServerContext["getDoc"]>().toExtend<(id: string) => Doc>();
     expectTypeOf<PluginServerContext["listDocs"]>().returns.toEqualTypeOf<DocList>();
     expectTypeOf<PluginServerContext["plugin"]>().toEqualTypeOf<string>();
+  });
+
+  /**
+   * The atomic seam (CONTRACT-019). What is pinned is that it composes out of
+   * the types already crossing the plugin boundary — the callback takes what
+   * `getDoc` returns and produces what `updateDoc` accepts — so a plugin needs
+   * no new import to use it, and `mutateItems` ports by moving its body inside
+   * the callback.
+   */
+  it("derives the atomic mutate from the existing doc and patch types", () => {
+    expectTypeOf<PluginDocMutation>().parameter(0).toEqualTypeOf<Doc>();
+    expectTypeOf<PluginDocMutation>().returns.toEqualTypeOf<UpdateDocRequest>();
+    expectTypeOf<PluginServerContext["mutateDoc"]>().returns.toEqualTypeOf<Promise<Doc>>();
+  });
+
+  it("takes the acting party on mutate, exactly as the other write verbs do", () => {
+    expectTypeOf<PluginServerContext["mutateDoc"]>().parameters.toEqualTypeOf<
+      [Actor, string, PluginDocMutation]
+    >();
+  });
+
+  /** An `async` recompute would hold the lane on an awaited call; the type refuses it. */
+  it("refuses an asynchronous recompute", () => {
+    // @ts-expect-error — `Promise<UpdateDocRequest>` is not an `UpdateDocRequest`
+    const asynchronous: PluginDocMutation = (doc: Doc) => Promise.resolve({ title: doc.path });
+    expect(asynchronous).toBeTypeOf("function");
+  });
+
+  it("leaves the existing read and write verbs untouched", () => {
+    expectTypeOf<PluginServerContext["updateDoc"]>().returns.toEqualTypeOf<Promise<Doc>>();
+    expectTypeOf<PluginServerContext["getDoc"]>().toExtend<(id: string) => Doc>();
   });
 
   it("publishes a logger narrowed to the three methods a plugin may call", () => {
