@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import type { Job, QueueStatus } from "@corpus/contract";
-import { docsListKey } from "@corpus/kit";
+import { JOBS_KEY, QUEUE_KEY, docsListKey } from "@corpus/kit";
 import { createCorpusTestHarness, type CorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -446,6 +446,129 @@ describe("the master-detail body", () => {
     expect(container.querySelector(".job-dot")?.className).toBe("job-dot deferred");
   });
 
+  // Sprint-015 TEST-355: the two must not read the same. A deferral that looks
+  // like a failure is the exact thing SERVER-030 exists to stop.
+  it("tells a deferred job apart from a failed one", async () => {
+    const { container } = renderConsole(
+      transport({
+        jobs: [
+          job({
+            eventId: "evt_5yy",
+            status: "deferred",
+            blockedOn: "doc_401k",
+            blockedOnTitle: "401k rollover",
+          }),
+          job({ eventId: "evt_7aa", status: "failed" }),
+        ],
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".job")).toHaveLength(2);
+    });
+    const rows = [...container.querySelectorAll(".job")];
+    expect(rows.map((row) => row.querySelector(".job-dot")?.className)).toEqual([
+      "job-dot deferred",
+      "job-dot failed",
+    ]);
+    expect(rows[0]?.querySelector(".job-meta")?.textContent).toBe("deferred");
+    expect(rows[1]?.querySelector(".job-meta")?.textContent).toBe("failed");
+    // Only the waiting one says what it is waiting for; the failed one has
+    // nothing true to say and says nothing.
+    expect(rows[0]?.querySelector(".job-blocked")?.textContent).toBe("🔒 401k rollover");
+    expect(rows[1]?.querySelector(".job-blocked")).toBeNull();
+  });
+
+  /*
+   * Sprint-015 TEST-356, first half — the evaluator's exact probe (SERVER-030
+   * eval FAIL-1): the blocking document is deliberately **not** the job's
+   * origin, which is the case where a row that merely echoes its origin looks
+   * plausible and still tells the user nothing.
+   */
+  it("names a blocking document that is not the job's own origin", async () => {
+    const { container } = renderConsole(
+      transport({
+        jobs: [
+          job({
+            eventId: "evt_3ia",
+            status: "deferred",
+            originId: "th_mortgage",
+            originTitle: "Re: Mortgage options",
+            blockedOn: "doc_tziz3yof",
+            blockedOnTitle: "Unrelated",
+          }),
+        ],
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".job")).toHaveLength(1);
+    });
+    const drawer = container.querySelector(".console");
+    expect(drawer?.textContent).toContain("Unrelated");
+    expect(container.querySelector(".job-list .job-blocked")?.textContent).toBe("🔒 Unrelated");
+    // The pane has the room the row does not, so it spells the whole thing out;
+    // the row carries the same sentence on the hover.
+    expect(container.querySelector(".job-detail-head .job-blocked")?.textContent).toBe(
+      "blocked on Unrelated · doc_tziz3yof",
+    );
+    expect(container.querySelector(".job-list .job-blocked")?.getAttribute("title")).toBe(
+      "blocked on Unrelated · doc_tziz3yof",
+    );
+  });
+
+  /*
+   * Sprint-015 TEST-356, second half — through the real SSE seam.
+   *
+   * The server emits `invalidate` with the queue and jobs keys when a released
+   * lock re-enters the event; the console must follow that to the refetch and
+   * repaint, with no reload and no remount. Asserting the row element is the
+   * *same* node is what separates "updated live" from "the test re-rendered
+   * everything".
+   */
+  it("clears the deferral live when the lock releases, with no reload", async () => {
+    let jobs: readonly Job[] = [
+      job({
+        eventId: "evt_3ia",
+        status: "deferred",
+        blockedOn: "doc_tziz3yof",
+        blockedOnTitle: "Unrelated",
+      }),
+    ];
+    let queue: QueueStatus = { ...IDLE_QUEUE, pending: 2, deferred: 1 };
+    const { container } = renderConsole((input: RequestInfo | URL): Promise<Response> => {
+      const { pathname } = new URL(new Request(input).url);
+      if (pathname === "/api/health") return json(HEALTH_BODY);
+      if (pathname === "/api/queue/status") return json(queue);
+      if (pathname.endsWith("/log")) return json({ lines: [], nextCursor: 0 });
+      return json({ jobs });
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".job-list .job-blocked")?.textContent).toBe("🔒 Unrelated");
+    });
+    expect(container.querySelector(".c-counts")?.textContent).toContain(
+      "0 running · 2 queued · 1 deferred · 0 done",
+    );
+    const rowBefore = container.querySelector(".job");
+
+    // The lock releases out of band; the server re-enters the event and says so.
+    jobs = [job({ eventId: "evt_3ia", status: "pending", blockedOn: null, blockedOnTitle: null })];
+    queue = { ...IDLE_QUEUE, pending: 3 };
+    harness?.eventSource.latest().invalidate([...QUEUE_KEY]);
+    harness?.eventSource.latest().invalidate([...JOBS_KEY]);
+
+    await waitFor(() => {
+      expect(container.querySelector(".job-dot")?.className).toBe("job-dot pending");
+    });
+    expect(container.querySelector(".job-blocked")).toBeNull();
+    expect(container.querySelector(".console")?.textContent).not.toContain("Unrelated");
+    expect(container.querySelector(".c-counts")?.textContent).toContain(
+      "0 running · 3 queued · 0 done",
+    );
+    expect(container.querySelector(".job")).toBe(rowBefore);
+  });
+
   it("keeps an explicit selection when a newer job arrives", async () => {
     const user = userEvent.setup();
     let jobs: readonly Job[] = [
@@ -539,7 +662,7 @@ describe("the master-detail body", () => {
     expect(lines[1]?.className).toBe("err");
   });
 
-  it("offers Retry and Abandon only for failed jobs", async () => {
+  it("offers Retry and Abandon only for a job that is going nowhere on its own", async () => {
     const { container } = renderConsole(transport({ jobs: [job()] }).fetch);
 
     await waitFor(() => {
@@ -547,6 +670,34 @@ describe("the master-detail body", () => {
     });
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Abandon" })).toBeNull();
+  });
+
+  /*
+   * §7 keeps `corpus job retry` as the *manual* override for a deferral that
+   * automatic re-entry did not reach, and CONTRACT-021 widened the route to
+   * accept `deferred` for exactly that — so the console offers it, and says in
+   * the tooltip that it is an override rather than the normal path.
+   */
+  it("offers the manual override on a deferred job too", async () => {
+    const { container } = renderConsole(
+      transport({
+        jobs: [
+          job({
+            status: "deferred",
+            blockedOn: "doc_401k",
+            blockedOnTitle: "401k rollover",
+          }),
+        ],
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".job-detail-head")).not.toBeNull();
+    });
+    expect(screen.getByRole("button", { name: "Retry" }).getAttribute("title")).toContain(
+      "it re-enters on its own when the lock clears",
+    );
+    expect(screen.getByRole("button", { name: "Abandon" })).toBeDefined();
   });
 
   // TEST-97: it goes through UI-009's seam rather than reaching into the board,

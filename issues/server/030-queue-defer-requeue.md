@@ -50,8 +50,13 @@ the §7 amendment goes through spec-writer + user sign-off.
 
 - [x] A claimed event blocked on a user-held lock can be moved to a non-terminal deferred state (or
       re-enqueued) through the CLI, without counting as failed.
-      _Server half done: `POST /api/queue/{id}/defer` is live. The **CLI verb is not filed yet** —
-      see Follow-ups._
+      _Server half done: `POST /api/queue/{id}/defer` is live. **CLI reachability landed via
+      CLI-015, evaluator FAIL-2** — this box was ticked here while `corpus queue defer` did not
+      exist, which is exactly what sprint-015's evaluator caught (`issues/evals/SERVER-030-eval.md`,
+      FAIL-2): "through the CLI" is half of the criterion and the server half cannot satisfy it
+      alone. `corpus queue defer <id> --blocked-on <docId> [--reason <text>]` now reaches the route
+      (`apps/cli/src/commands/queue/defer.ts`); Follow-up 1 below is closed by it. Re-ticked
+      deliberately with this annotation rather than silently._
 - [x] Release, force-break, or reap of the blocking lock re-enters the deferred event into
       `pending`, and the SSE invalidation keys cover the transition.
 - [x] Console/jobs surface distinguishes deferred from failed.
@@ -252,6 +257,94 @@ TEST-353 (**restart**) — covered by TEST-348 above: the deferral was created b
 and the release that re-entered it came **after**. The deferral lives in the file-backed queue, not
 in process memory.
 
+### C. SSE and the console (TEST-355, TEST-356) — added by ui-dev
+
+**implemented on: opus** (2026-07-30, ui-dev, closing eval FAIL-1). This section was missing from the
+original log; the evaluator was right that its absence is itself a contract violation, and right about
+what it was hiding — `GET /api/jobs` served `blockedOn`/`blockedOnTitle` correctly and the drawer
+rendered neither. Fixed in `apps/ui` only (`consoleModel.ts`, `JobList.tsx`, `JobDetail.tsx`,
+`console.css`); no server, contract or CLI file touched.
+
+**Drill.** Real app, real files, no fixtures: `corpus init --port 9187` in `/tmp/corpus-ui-drill-…`
+(nothing written under the repo), `corpus server start` (pid 67234), then over HTTP — created two
+documents (`doc_t7tfgunq` "Mortgage options", `doc_oz4tut26` "Unrelated"), a thread on the first with
+`requestsAgent: true` (`evt_noils5igsfmw`), `claim-all`, a `user` lock on **`Unrelated`**, then
+`POST /api/queue/evt_noils5igsfmw/defer {"blockedOn":"doc_oz4tut26"}`. A second event
+(`evt_64sbr77ndrhy`) was genuinely `fail`ed so a failure and a deferral sit in the drawer together.
+Wire state before reading the DOM:
+
+```
+GET /api/jobs   -> [{"eventId":"evt_noils5igsfmw","status":"deferred","originTitle":"Re: Mortgage options",
+                     "blockedOn":"doc_oz4tut26","blockedOnTitle":"Unrelated"},
+                    {"eventId":"evt_64sbr77ndrhy","status":"failed","blockedOn":null,"blockedOnTitle":null}]
+GET /api/queue/status -> {"halted":false,"pending":0,"inProgress":0,"deferred":1,"processed":0,"failed":1,"abandoned":0}
+```
+
+The blocking document is deliberately **not** the thread's parent — the evaluator's probe, and the
+case where a row that merely echoes its origin looks plausible and still says nothing.
+
+**TEST-355 — the two do not read the same.** Read from the live DOM in headless Chromium at
+`http://127.0.0.1:9187/`, drawer opened by clicking the strip:
+
+```
+row 1  dot="job-dot deferred"  title="comment.created · Re: Mortgage options"  blocked="🔒 Unrelated"  meta="deferred"
+row 2  dot="job-dot failed"    title="comment.created · Re: Mortgage options"  blocked=null            meta="failed"
+computed colours  deferred dot & hint rgb(169,131,75) [--sepia]   vs   failed dot rgb(196,85,46) [--signal]
+strip            "0 running · 1 deferred · 0 done · 1 failed"
+```
+
+Distinct dot class, distinct colour, distinct status word, distinct count in the strip, and only the
+waiting row carries a blocker. The deferred treatment is `--sepia` — pending's "hasn't run yet" hue —
+never `--signal`, so it reads as waiting rather than broken.
+
+**TEST-356, first half — the row says what it is waiting for.** The evaluator's exact probe now
+answers the other way:
+
+```
+document.querySelector('.console').innerText.includes('Unrelated')  ->  true      (was false)
+.job-list  .job-blocked  text="🔒 Unrelated"   title="blocked on Unrelated · doc_oz4tut26"
+.job-detail-head .job-blocked  text="blocked on Unrelated · doc_oz4tut26"
+detail meta                    "deferred · started 08:32 · evt_noils5igsfmw"
+detail buttons                 ["↗ open", "Retry", "Abandon"]
+Retry title                    "Re-queue this deferred job now — the manual override; it re-enters on its own when the lock clears"
+```
+
+The row shows the lock glyph the mockup already uses for a held document plus the title (the row has
+380 px; spending ten characters on "blocked on" is what pushed the name into an ellipsis), and the
+detail pane spells out the sentence with the id, which appears nowhere else. Retry/Abandon are
+offered on a deferred job because §7 keeps `corpus job retry` as the manual override and CONTRACT-021
+widened the route to accept `deferred`; the tooltip says it is an override, not the normal path, so
+the console does not imply the automatic re-entry needs a human.
+
+**TEST-356, second half — it clears itself, live.** With the drawer open and the deferred row on
+screen, the lock was released out of band (`DELETE /api/locks/doc_oz4tut26` → 200) from outside the
+browser:
+
+```
+rows after release  [{"dot":"job-dot pending","blocked":null,"meta":"pending"},
+                     {"dot":"job-dot failed","blocked":null,"meta":"failed"}]
+strip after         "0 running · 1 queued · 0 done · 1 failed"
+probe after         .console.innerText.includes('Unrelated') -> false
+performance.getEntriesByType("navigation").length -> 1 before and after   (no reload)
+page errors -> []
+```
+
+So the server's invalidation frames on the release do reach the console: dot, status word, blocker
+hint and the strip's counts all follow, in one page load. Screenshots at `/tmp/drill-console.png`
+(deferred) and `/tmp/drill-released.png` (after).
+
+**Unit cover for the same two criteria** (`vitest run apps/ui/src` → **88 files, 1312 tests, pass**;
+`tsc --noEmit` on `apps/ui` → exit 0; eslint + prettier clean): `consoleModel.test.ts` pins the
+blocker model — the title/id pair, the id standing in when the document is gone, and the
+contract-says-impossible null case rendering "blocked on an unnamed document" rather than
+"blocked on "; `Console.test.tsx` pins deferred-vs-failed rendering, the not-the-origin probe
+against `.console` text, the manual-override tooltip, and the live SSE transition driven through
+`invalidate` on the queue and jobs keys — asserting the row is the **same DOM node** afterwards, which
+is what separates a live update from a re-render of everything.
+
+**Not fixed here** (unchanged from the log's known gaps): FAIL-2, the missing `corpus queue defer`
+verb, is `apps/cli`'s and remains open.
+
 ### D. Retiring the interim protocol
 
 TEST-357 — the deferral path is now the transition. **Status of the old form, stated once:**
@@ -358,9 +451,9 @@ widening of the running dot. Recorded in `issues/shared/003-pr11-review-followup
 
 ### Follow-ups and known gaps
 
-1. **The CLI verb is not filed.** The route is live; `corpus queue defer` does not exist, so the
-   agent cannot reach it and AGENT-007 is blocked. Needs a CLI issue (and `docs/cli.md`
-   regeneration) before the skill can be rewritten. **Escalated to the orchestrator.**
+1. ~~**The CLI verb is not filed.**~~ **Closed by CLI-015** (2026-07-30): `corpus queue defer <id>
+   --blocked-on <docId> [--reason <text>]` is wired, `docs/cli.md` regenerated, and the full
+   defer → auto-re-enter cycle verified through CLI verbs only. AGENT-007 is unblocked.
 2. **An expired-but-unreaped lease does not re-enter on its own.** There is no TTL sweeper in the
    server — `POST /api/locks/reap` is explicit — so a deferral behind an expired lock waits until
    someone reaps. §7 names release, break and reap, and all three fire; this is the case `job retry`

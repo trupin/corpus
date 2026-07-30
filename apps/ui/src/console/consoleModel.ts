@@ -57,6 +57,59 @@ export function jobLabel(job: Pick<Job, "type" | "originTitle">): string {
 }
 
 /**
+ * What a deferred job is waiting for, or `null` when there is nothing true to
+ * say (SERVER-030 eval FAIL-1).
+ *
+ * The contract states the requirement on the field itself: *"a deferred job
+ * that names no document is indistinguishable from a stuck one"*. So the
+ * console names the blocking document, and the shape carries the id separately
+ * from the name because the two surfaces want different amounts of it — the row
+ * has 380 px, the detail pane can afford the id.
+ *
+ * Three honest readings, in the order the wire can produce them:
+ *
+ * - a title → that is the name, with the id alongside it;
+ * - a `blockedOn` with a null title → the document was deleted or is otherwise
+ *   unreadable (the contract's own rule for the denormalised copy), so the id
+ *   *is* the only true name and stands in as one;
+ * - no `blockedOn` at all → the contract says this cannot happen while
+ *   `status` is `deferred`, but a UI that renders `blocked on ` when it does is
+ *   worse than one that says so. It is never silently dropped.
+ */
+export interface BlockedOn {
+  /** The blocking document's title, or the id when the title is gone. */
+  readonly name: string;
+  /** Non-null only when it adds something the name does not already say. */
+  readonly id: string | null;
+}
+
+const UNNAMED_BLOCKER = "an unnamed document";
+
+export function blockedOn(
+  job: Pick<Job, "status" | "blockedOn" | "blockedOnTitle">,
+): BlockedOn | null {
+  if (job.status !== "deferred") return null;
+  if (job.blockedOn === null) return { name: UNNAMED_BLOCKER, id: null };
+  if (job.blockedOnTitle === null) return { name: job.blockedOn, id: null };
+  return { name: job.blockedOnTitle, id: job.blockedOn };
+}
+
+/** `blocked on 401k rollover` — the row's compact hint. */
+export function blockedOnLabel(blocker: BlockedOn): string {
+  return `blocked on ${blocker.name}`;
+}
+
+/**
+ * `blocked on 401k rollover · doc_401k` — the detail pane's line, which has the
+ * room the row does not and follows the meta line's `· `-joined convention.
+ */
+export function blockedOnDetailLabel(blocker: BlockedOn): string {
+  return blocker.id === null
+    ? blockedOnLabel(blocker)
+    : `${blockedOnLabel(blocker)} · ${blocker.id}`;
+}
+
+/**
  * The clock in the detail header's meta line. Local wall time, to the minute,
  * as `design/index.html` shows it (`started 09:12`) — a console is read in the
  * session it is describing, so the date would be noise.
