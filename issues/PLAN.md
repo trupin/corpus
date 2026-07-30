@@ -149,6 +149,12 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | SERVER-031 | Empty JSON body returns 500 instead of 400 | done | P2 | SERVER-003 |
 | SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | done | P2 | CONTRACT-009 |
+| CONTRACT-018 | Rider: `423` on skill-rollback route + inventory docblock (PR #11 review 1, 4) | todo | P1 | CONTRACT-008 |
+| CONTRACT-019 | Rider: atomic read-modify-write seam on PluginServerContext (PR #11 review 2) | todo | P1 | CONTRACT-015 |
+| SERVER-034 | Implement PluginServerContext atomic mutate under the document mutex | todo | P1 | CONTRACT-019 |
+| SERVER-035 | Skill rollback honors edit locks (+ lane TOCTOU, truncation wording) | todo | P1 | CONTRACT-018 |
+| PLUGINS-004 | Todos mutateItems uses the atomic seam (lost-update fix) | todo | P1 | SERVER-034 |
+| CLI-014 | `stop` unowned-pidfile deletion + `upgrade --adopt` manifest honesty (PR #11 review 12, 13) | todo | P1 | CLI-009, CLI-005 |
 
 ---
 
