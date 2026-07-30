@@ -816,7 +816,16 @@ TEST-372: The repo-wide gate passes at harvest
 
 ## Open Conflicts — orchestrator decision required
 
-### 1. `corpus skill create` has no server route, and cannot get one inside a CLI issue (**blocking half of CLI-011, P0 — ESCALATED**)
+### 1. `corpus skill create` has no server route, and cannot get one inside a CLI issue (**P0 — ESCALATED → RULED, see Adjudication 13**)
+
+> **Correction (2026-07-30, sprint-planner).** The claim below that "no route exists" was inherited
+> from sprint-014's Open Conflict 1 and is **wrong as of this branch**: `POST /api/skills` is already
+> defined in `packages/contract/src/routes/skills.ts:66-69` and listed in `inventory.ts:82`
+> (CONTRACT-020). What is genuinely missing is the **server handler** — hence SERVER-036. The
+> escalation was still correct in substance (a CLI issue cannot ship this alone; it needs a
+> root-aware server write path), and the orchestrator ruled it into a three-commit chain.
+> The rest of this section is preserved as the reasoning that produced that ruling.
+
 
 CLI-011 is filed in the `cli` domain and its own summary hedges: *"likely a contract rider for the
 route"*. It is not a hedge — it is the whole issue. Sprint-014's Open Conflict 1 established against
@@ -891,7 +900,7 @@ TEST-301's second branch governs and nothing else in the ladder changes.
 this is a shape preference, not an architectural fork, and blocking a destructive-bug fix on it would
 be the wrong trade.
 
-### 5. SERVER-030 cannot ship inside the `server` domain alone (**blocking, P0 — ESCALATED**)
+### 5. SERVER-030 cannot ship inside the `server` domain alone (**P0 — ESCALATED → RULED, see Adjudication 14**)
 
 The issue file already says it: *"Contract (route/schema) and CLI (verb) riders are expected — split
 them out as coupled issues when this is scheduled."* They were never split. SPEC §7 pins the status
@@ -966,8 +975,33 @@ Binding rulings. Implementing agents follow these; the evaluator evaluates with 
     with the reason and drive the regenerate-and-compare half against a pre-run snapshot; the
     orchestrator's post-commit run is authoritative. Accepted pattern since CONTRACT-008.
 
-_(Rulings 13+ are added by the orchestrator, resolving the Open Conflicts above — at minimum
-Conflicts 1, 4 and 5 must be ruled before the affected issue starts.)_
+### Ruled by the orchestrator (2026-07-30)
+
+13. **Conflict 1 → contract-first split, three commits.** `POST /api/skills` is defined by
+    **CONTRACT-020** (`packages/contract/src/routes/skills.ts`, alongside the existing
+    `POST /api/skills/{name}/rollback`), implemented by **SERVER-036** (a sanctioned root-aware seam
+    — *not* a `normalizeDocFolder` bypass, reusing the rollback handler's skills-root conventions:
+    path derivation, synthetic `doc_skill<hex>` ids, name-pattern traversal guard), and only then
+    consumed by CLI-011's verb. Sequence: **CONTRACT-020 → SERVER-036 → CLI-011**.
+    `corpus doc list` is unblocked and ships from CLI-011 regardless.
+    TEST-324's audit now has a decisive answer: the route **exists in the contract**; the CLI agent
+    verifies SERVER-036 has landed before writing the verb. TEST-326–TEST-332 are **live**, not
+    struck, once SERVER-036 is done.
+14. **Conflict 5 → contract rider filed.** **CONTRACT-021** defines the deferred status enum value
+    and its transition metadata, scoped strictly to what §7's amended deferral paragraph describes —
+    no speculative states — and enumerates consumer impact (server handlers, console rendering, CLI
+    verbs) so the downstream riders are filed with real scope. **SERVER-030 depends on CONTRACT-021**
+    and does not start before it lands. TEST-344's audit is answered by CONTRACT-021's log.
+15. **Conflict 7 → PLAN corrected.** CLI-011's dependency row now reads `CLI-006, SERVER-019,
+    SERVER-036`; the stale `CLI-003` is gone. TEST-325 is satisfied by that correction.
+
+**Consequence for the merge order below**: wave 1 is no longer three issues. It is
+CLI-013 (alone, first) · CONTRACT-020 → SERVER-036 → CLI-011 · CONTRACT-021 → SERVER-030.
+The two contract issues are `in_progress` as of 2026-07-30.
+
+_(Conflict 4 — `--workspace` honor vs. refuse — stands on its stated default: **honor**, precedence
+`positional ?? --workspace ?? CORPUS_WORKSPACE ?? cwd`. The implementing agent proceeds and records
+it; a later orchestrator preference for refusal only swaps TEST-301's branch.)_
 
 ---
 
@@ -997,3 +1031,12 @@ This sprint is complete when:
 - The repo-wide coverage gate passes at harvest with no new exemptions
 - `git status` is clean of scratch escape and `8765` is untouched
 - Every escalated Open Conflict is either ruled or explicitly carried to wave 2
+
+---
+
+**Orchestrator correction (2026-07-30):** TEST-328 predicted the skill-create id as the
+projection's synthetic `doc_skill<8 hex>`; it was written before CONTRACT-020 existed.
+The signed contract (CONTRACT-020 route text) and SERVER-036's shipped behavior mint a
+`doc_<base32>` id server-side (rationale in SERVER-036's log: a path-derived id would
+change on archive). TEST-328 is evaluated against the minted-id behavior; the synthetic
+id remains the fallback for hand-written SKILL.md files that declare none.

@@ -173,8 +173,10 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | CONTRACT-020 | Route: POST /api/skills (skill create) | todo | P1 | CONTRACT-008 |
 | SERVER-036 | Skill-create write path (documents outside data/docs) | todo | P1 | CONTRACT-020 |
 | CLI-011 | `corpus skill create` + `corpus doc list` (doc list unblocked; skill create after SERVER-036) | todo | P1 | CLI-006, SERVER-019, SERVER-036 |
+| AGENT-006 | Comment skill: upgrade skill genesis from propose to create | todo | P1 | CLI-011, AGENT-003 |
 | CONTRACT-021 | Rider: queue deferred-status surface | todo | P2 | CONTRACT-002 |
 | SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | CONTRACT-021, SERVER-008, SERVER-009, AGENT-002 |
+| AGENT-007 | Orchestrate skill: replace the `deferred:`-prefixed failure with the defer transition | todo | P2 | SERVER-030, AGENT-002 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P1 | UI-014 |
 | AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | SHARED-004, AGENT-002 |
 | UI-017 | Never leave an empty untitled document behind | todo | P1 | SHARED-004, UI-005, UI-006 |
@@ -184,6 +186,8 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | UI-015 | Remaining teardown callbacks | todo | P2 | UI-012 |
 | SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
+| SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | todo | P2 | SERVER-005 |
+| CLI-015 | `corpus queue defer` verb | todo | P1 | CLI-004, CONTRACT-021, SERVER-030 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
