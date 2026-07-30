@@ -1,7 +1,9 @@
 import type { RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, type ReactElement } from "react";
 import { createPortal } from "react-dom";
+import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import { SaveStatusProvider } from "../editor/SaveChip";
+import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
 import { useMemoryNavStack } from "./useNavStack";
@@ -51,6 +53,26 @@ export function FocusMode({ docId, listTitle, onClose, onNotify }: FocusModeProp
     onScroll: stack.captureScroll,
   });
 
+  /**
+   * The same rule in the other host (SPEC.md §11). `DocView` is one component
+   * with two hosts, and a rule implemented in only one of them is a bug — but
+   * the *count* in the registry is what makes closing focus mode over a
+   * document its column still has open a non-event.
+   */
+  useAbandonEmptyDoc({
+    docId: current,
+    doc: reader.doc,
+    threadCount: reader.threads.length,
+    onAbandoned: stack.drop,
+  });
+
+  const contextMenu = useReaderContextMenu({
+    doc: reader.doc,
+    threadStatus: reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null,
+    onGone: stack.back,
+    onNotify,
+  });
+
   const navigate = useCallback(
     (next: string) => {
       stack.push(next, surface.currentScroll());
@@ -68,7 +90,13 @@ export function FocusMode({ docId, listTitle, onClose, onNotify }: FocusModeProp
 
   return createPortal(
     <SaveStatusProvider>
-      <div className="focus open" role="dialog" aria-modal="true" aria-label="Full screen reader">
+      <div
+        className="focus open"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Full screen reader"
+        onContextMenu={contextMenu}
+      >
         <ReaderHead
           docId={current}
           doc={reader.doc}

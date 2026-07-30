@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+in_progress
 
 ## Priority
 P1
@@ -30,10 +30,10 @@ which threads/anchors may assume). Server participation (a delete or deferred-cr
 call) makes this potentially cross-domain — decompose after the spec amendment if so.
 
 ## Acceptance Criteria
-- [ ] spec-writer amends SPEC.md with the chosen behavior (user-signed-off)
-- [ ] Exiting a new document that has no title and no body content leaves no document behind (board, search, disk, git all clean per the chosen design)
-- [ ] A new document with any content (title or body) persists exactly as today
-- [ ] No orphaned locks/threads from the abandoned doc
+- [x] spec-writer amends SPEC.md with the chosen behavior (user-signed-off)
+- [x] Exiting a new document that has no title and no body content leaves no document behind (board, search, disk, git all clean per the chosen design)
+- [x] A new document with any content (title or body) persists exactly as today
+- [x] No orphaned locks/threads from the abandoned doc
 
 ## Technical Design
 
@@ -58,14 +58,145 @@ Vitest for flow logic; Playwright e2e for the abandon path.
 2. Create doc → type → exit → persists
 
 ## E2E Verification Log
-_Filled in by the implementing agent as proof-of-work._
+
+**implemented on: opus** (issue recommendation: opus).
+
+### Mechanism chosen: **create-then-delete**, not defer-creation (Adjudication 12)
+
+Defer-creation would not have removed the need to delete: TEST-418's typed-then-erased
+document *must* be created the moment content appears, and removed again when it is taken
+away. So deletion is required either way, and deferring creation on top of it would mean a
+second, phantom document state threaded through the reader, the frontmatter form, autosave,
+the user lock, the anchor layer and the thread queries — every one of which assumes a real
+document id and a real `GET /api/docs/:id`. The observable rule is identical, so the
+cheaper mechanism wins.
+
+**"Exiting the doc" = the document stops being displayed in a reader** (Adjudication 17),
+counted per document rather than per reader: `apps/ui/src/abandon/registry.ts` holds a
+*count* of the readers showing it, so closing focus mode over a document its column still
+has open is not an exit. Switching the active column is not an exit either.
+
+**TEST-428 resolution, stated as the test requires**: a push (following a `[[ref]]`, or a
+search/console link opening another document into the same reader) **is** an exit for the
+outgoing document, and its navigation-stack entry is dropped **with** it
+(`useNavStack.drop`, driven by the registry's `announceAbandoned`). Back therefore never
+lands on a tombstone — it reaches the entry below, or the list.
+
+### Two defects the real app found that no unit test could
+
+1. **Templates.** `corpus init` seeds a `note` template (SPEC.md §11 — "Templates are
+   documents"), so a `＋` document is born holding `## Context / ## Notes / ## Open
+   questions`. The first drill run therefore deleted nothing on the untouched path: the
+   body was not blank. Fixed by recording the body a document was *born* with
+   (`publishPristineBody`, published by `useCreateInColumn`) and treating an unchanged
+   prefill as no content, compared through the editor's own `canonicalizeMarkdown` so a
+   round trip is not mistaken for an edit.
+2. **React's development double-mount.** StrictMode releases a reader in the same commit it
+   takes it, which reached the exit path with the document still open and wiped the
+   create-time state. Fixed by deferring the removal one microtask and skipping it if the
+   document has been retained again (`scheduleAbandonEmptyDoc`).
+
+### Part 1 — the real app, real server, real files
+
+Workspace `/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s016-ui017-LAoOOW`, created from
+a cwd **outside** this repository, server on `9187`, Vite on `5290`.
+
+**Proxy target proved (Adjudication 2).** `export CORPUS_SERVER_ORIGIN="http://127.0.0.1:9187"`
+before `npm run dev`, then a request *through the dev port*:
+
+```
+$ curl -sS -i -H "Authorization: Bearer $TOKEN" http://localhost:5290/api/health
+HTTP/1.1 200 OK
+content-type: application/json
+
+{"status":"ok","version":"0.0.0","uptimeSeconds":38.34,
+ "workspace":"/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s016-ui017-LAoOOW"}
+
+$ lsof -nP -iTCP:8765 -sTCP:LISTEN
+(nothing bound on 8765)
+```
+
+The workspace path in the answer is the proof: the dev proxy reached **my** server, and
+`8765` was never bound, never killed and never proxied into.
+
+**The drill** (real Chromium against `http://localhost:5290`, script
+`drill-ui017.mjs` in the scratch workspace):
+
+```
+== A. create with ＋, leave untouched ==      created: doc_hgqqsk7q   rows after Back: []
+== B. type a title and a body, erase both ==  created: doc_ge5flwn5   rows after Back: []
+== C. title only — persists ==                KEPT_C=doc_xhh5a7wm     rows: ["doc_xhh5a7wm"]
+== D. body only — persists ==                 KEPT_D=doc_nqlrckt6     rows: ["doc_nqlrckt6","doc_xhh5a7wm"]
+== E. blank, then close the TAB (pagehide) == ABANDONED_E=doc_dvkcnk5w
+== F. focus mode over the column reader ==    ABANDONED_F=doc_aef3p5h5
+== G. another document takes over the reader  ABANDONED_G=doc_acuvezyz
+== H. a whole-document thread was opened ==   KEPT_H=doc_ujnomons
+```
+
+**The six checks TEST-417 demands, per abandoned id:**
+
+```
+  ABANDONED doc_hgqqsk7q -> 404      KEPT doc_xhh5a7wm -> 200
+  ABANDONED doc_ge5flwn5 -> 404      KEPT doc_nqlrckt6 -> 200
+  ABANDONED doc_dvkcnk5w -> 404      KEPT doc_ujnomons -> 200
+  ABANDONED doc_aef3p5h5 -> 404
+  ABANDONED doc_acuvezyz -> 404
+
+  grep -rl <id> data/ .corpus/  ->  only .corpus/server.log (a log, not the corpus)
+  ls data/docs/inbox/           ->  untitled.md  untitled-2.md  untitled-3.md   (the three KEPT)
+  corpus doc list --status archived,open  ->  none of the five ids present (12 docs)
+  corpus lock list              ->  "no locks held."
+  corpus db doctor              ->  "projection is clean — 12 documents from 12 files (1ms)"
+  data/threads/th_p6s3pr35.md   ->  parent: doc_ujnomons   (the KEPT one; no orphan)
+```
+
+`git log --format='%an %s'` in the scratch workspace pairs every abandonment with a
+user-authored deletion — note case B, where the title *was* committed and then erased, and
+history did not save it:
+
+```
+user doc delete: Untitled (doc_acuvezyz) by user
+user doc delete: Untitled (doc_aef3p5h5) by user
+user doc delete: Untitled (doc_dvkcnk5w) by user
+user doc delete: A thought (doc_ge5flwn5) by user
+user doc edit:   A thought (doc_ge5flwn5) by user
+user doc delete: Untitled (doc_hgqqsk7q) by user
+user doc create: Untitled (doc_hgqqsk7q) by user
+```
+
+No confirmation dialog appeared at any point (Adjudication 27) — asserted in the browser
+too (`abandon.spec.ts`, a `dialog` listener that never fires).
+
+### Part 2 — Playwright, scoped, once (Adjudication 19)
+
+`apps/ui/e2e/abandon.spec.ts` (4 tests) over `apps/ui/e2e/stubCorpus.ts`, a browser-side
+API stub so the spec stays green in the suite's backend-less configuration. Run once:
+
+```
+$ CORPUS_SERVER_ORIGIN=http://127.0.0.1:9187 CORPUS_UI_PORT=5290 \
+  playwright test abandon.spec.ts context-menu.spec.ts column-width.spec.ts --workers=1
+  20 passed (15.9s)
+```
+
+### Unit tests (TEST-429)
+
+`VITEST_MAX_THREADS=4 vitest run apps/ui/src` — **98 files, 1446 tests, all passing.** New:
+`apps/ui/src/abandon/{emptiness,registry,abandonEmptyDoc,useAbandonEmpty}.test.*` (the
+predicate's every branch, the registry, the act, and the exit path through the real
+`Reader`), plus two cases in `apps/ui/src/editor/useAutosave.test.tsx` for the in-flight
+race. No new exemption in `scripts/coverage-config.ts`.
+
+### Blast radius
+
+`apps/ui` only. `git diff SPEC.md` and `git diff packages/contract` are **empty** for this
+issue — neither was touched.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/evaluate` passes

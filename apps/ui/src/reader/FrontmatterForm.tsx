@@ -1,6 +1,7 @@
 import { DOC_STATUSES, type Doc, type DocStatus, type UpdateDocRequest } from "@corpus/contract";
 import { folderOf, useUpdateDoc, type RowNotice } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { publishTitleDraft } from "../abandon/registry";
 
 /**
  * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
@@ -100,6 +101,18 @@ export function FrontmatterForm({
   const value = draft ?? current;
   const changes = draft === null ? {} : changedFields(doc, draft);
   const isDirty = Object.keys(changes).length > 0;
+
+  /**
+   * A title the user has typed but not yet committed still counts as a title
+   * for the abandon rule (SPEC.md §11).
+   *
+   * The safe branch: a document nobody typed into is removed, and a document
+   * somebody typed a name into is kept, even when the name itself is lost to
+   * the existing "Enter or Save commits it" behaviour of this field.
+   */
+  useEffect(() => {
+    publishTitleDraft(docId, draft === null ? null : draft.title);
+  }, [docId, draft]);
 
   useEffect(() => {
     if (!selectTitle || selected.current) return;

@@ -1,6 +1,7 @@
 import type { UpdateDocResponse } from "@corpus/contract";
 import { useUpdateDocById } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isAbandoned, publishBodyDraft } from "../abandon/registry.js";
 import { beginEditing, endEditing } from "./editingRegistry.js";
 
 /**
@@ -260,11 +261,18 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
     clearTimer(debounce);
     const job = pending.current;
     if (job === null || inFlight.current || isLocked.current) return;
+    // The document is being removed for being empty (SPEC.md §11). Its buffer
+    // is by definition the emptiness that decided it, and sending it would be a
+    // `PUT` racing the `DELETE` that follows.
+    if (isAbandoned(job.docId)) return;
     send(job);
   }, [send]);
 
   const change = useCallback(
     (body: string): void => {
+      // The abandon rule is decided against the body the editor holds *now*,
+      // which for a fast typist is several keystrokes ahead of the corpus.
+      publishBodyDraft(docId, body);
       // The comparison is against the last SAVED body, never against "the
       // editor fired an update": typing a character and deleting it is not a
       // change, and must not cost a request (sprint-011 TEST-16).

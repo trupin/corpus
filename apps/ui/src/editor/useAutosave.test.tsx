@@ -3,6 +3,12 @@ import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  markAbandoned,
+  publishDoc,
+  resetAbandonRegistry,
+  snapshotOf,
+} from "../abandon/registry.js";
 import { docFixture } from "../testing/readerFixture";
 import { editingCount, isEditing, resetEditingRegistry } from "./editingRegistry.js";
 import { saveChipClass, saveChipText } from "./SaveChip.js";
@@ -141,6 +147,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetEditingRegistry();
+  resetAbandonRegistry();
   vi.useRealTimers();
 });
 
@@ -626,6 +633,46 @@ describe("flushing", () => {
 
     expect(transport.puts()).toHaveLength(1);
     expect(transport.puts()[0]?.body).toEqual({ body: "start typed\n" });
+  });
+
+  it("sends nothing for a document that is being abandoned", async () => {
+    const transport = wire();
+    const view = render(<Host transport={transport} />);
+
+    // The race the abandon rule has to survive (sprint-016 TEST-425): a
+    // character typed, erased, and the reader left inside the debounce window.
+    act(() => {
+      type("start typed\n");
+      type("\n");
+    });
+    markAbandoned("doc_a1b2c3");
+
+    view.unmount();
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS * 3);
+      await Promise.resolve();
+    });
+
+    expect(transport.puts()).toHaveLength(0);
+  });
+
+  it("publishes the live body so the abandon rule reads the buffer, not the corpus", () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+
+    act(() => {
+      type("start typed\n");
+    });
+    expect(snapshotOf("doc_a1b2c3")).toBeNull();
+
+    publishDoc("doc_a1b2c3", {
+      type: "note",
+      title: "Untitled",
+      body: "start\n",
+      threadCount: 0,
+      hasExtra: false,
+    });
+    expect(snapshotOf("doc_a1b2c3")?.body).toBe("start typed\n");
   });
 
   it("sends the OUTGOING document's buffer when the reader rebinds", async () => {

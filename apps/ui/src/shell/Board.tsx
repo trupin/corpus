@@ -10,6 +10,9 @@ import { Column } from "../board/Column";
 import { measureColumns, previewOrder } from "../board/columnDrag";
 import { nextOrder, reinsert } from "../board/columnOrder";
 import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
+import { useContextMenu } from "../menu/ContextMenuHost";
+import { RowMenuItems, subjectFromElement } from "../menu/RowMenuItems";
+import { resolveListItem } from "../plugins/slots";
 import { focusReplyComposer, replyRoot } from "../keyboard/focusReply";
 import { useActiveColumn } from "../keyboard/useActiveColumn";
 import { useRowCursor } from "../keyboard/useRowCursor";
@@ -62,6 +65,7 @@ export function Board(): ReactElement {
   const createInColumn = useCreateInColumn();
   const updateDoc = useUpdateDocById();
   const toast = useToast();
+  const contextMenu = useContextMenu();
 
   const [dragId, setDragId] = useState<string | null>(null);
   const [preview, setPreview] = useState<readonly string[] | null>(null);
@@ -333,6 +337,49 @@ export function Board(): ReactElement {
     })();
   }, [cursor, openDoc.data, openInActive, toast, updateDoc]);
 
+  /**
+   * The menu key / `⇧F10` (SPEC.md §11): the same menu the pointer opens, on the
+   * row the keyboard is highlighting, with its first item focused.
+   *
+   * The subject is read off the painted row rather than from a result set the
+   * board does not hold — the same source `archiveTarget` and `useRowCursor`
+   * already read.
+   */
+  const openRowMenu = useCallback(() => {
+    const element = cursor.element();
+    if (element === null) return;
+    const subject = subjectFromElement(element);
+    // A plugin `ListItem` owns its surface; v1 leaves it alone (sign-off item 4).
+    if (subject === null || resolveListItem(subject.type) !== null) return;
+    const rect = element.getBoundingClientRect();
+    contextMenu.open({
+      label: `Actions for ${subject.title}`,
+      clientX: rect.left + 16,
+      clientY: rect.bottom - 8,
+      autoFocus: true,
+      items: (close) => (
+        <RowMenuItems
+          subject={subject}
+          close={close}
+          onOpen={() => {
+            navigation.open({
+              docId: subject.id,
+              ...(activeColumnId === null ? {} : { columnId: activeColumnId }),
+            });
+          }}
+          onOpenFocus={() => {
+            navigation.open({
+              docId: subject.id,
+              ...(activeColumnId === null ? {} : { columnId: activeColumnId }),
+            });
+            setFocusDoc({ columnTitle: activeColumn?.title ?? "", docId: subject.id });
+          }}
+          onNotify={notify}
+        />
+      ),
+    });
+  }, [activeColumn, activeColumnId, contextMenu, cursor, navigation, notify]);
+
   /** The board's half of the keyboard seam: §11's bindings, phrased as acts. */
   const commands = useMemo<BoardCommands>(
     () => ({
@@ -357,6 +404,7 @@ export function Board(): ReactElement {
         });
       },
       archiveTarget,
+      openContextMenu: openRowMenu,
       focusReply: () => {
         if (focusReplyComposer(replyRoot(board.current, activeColumnId)) === "none") {
           toast({ tone: "info", message: "No thread to reply to on this document." });
@@ -372,6 +420,7 @@ export function Board(): ReactElement {
       moveActiveColumn,
       navigation,
       openInActive,
+      openRowMenu,
       toast,
     ],
   );

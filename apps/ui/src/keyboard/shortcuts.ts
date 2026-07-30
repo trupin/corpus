@@ -166,6 +166,23 @@ export const SHORTCUTS: readonly Shortcut[] = [
     },
   },
   {
+    id: "menu.open",
+    /**
+     * Both spellings of "open this item's menu": the dedicated menu key that
+     * most PC keyboards carry, and `⇧F10`, which every platform accepts.
+     */
+    chords: [
+      { keys: ["ContextMenu"], label: "menu" },
+      { keys: ["F10"], shift: true, label: "⇧F10" },
+    ],
+    scope: "board",
+    group: "rows",
+    description: "actions for the highlighted row",
+    run: (context) => {
+      context.board.openContextMenu();
+    },
+  },
+  {
     id: "layers.close",
     chords: [{ keys: ["Escape"], label: "esc" }, { keys: ["Backspace"] }],
     scope: "global",

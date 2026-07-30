@@ -1,0 +1,39 @@
+/*
+ * The context menu, over `@corpus/kit`'s `.ac-menu` / `.ac-item`.
+ *
+ * It deliberately adds almost nothing: every other menu in the app is that
+ * frame, and a right-click menu that looked like a different product would be
+ * the tell that it *is* a different implementation. What it does add is the
+ * room a two-line action needs (label plus what the act does) and the one state
+ * `.ac-item` has never had to carry — a destructive item.
+ */
+
+.ctx-menu {
+  min-width: 220px;
+  max-height: min(60vh, 420px);
+}
+
+/* The description sits under the label here, not beside it: these are acts, and
+   "archives it — never deletes" is the half a user reads before clicking. */
+.ctx-menu .ac-item {
+  text-align: left;
+  padding: 7px 9px;
+}
+
+.ctx-menu .ac-item .d {
+  display: block;
+  margin-left: 0;
+  margin-top: 1px;
+}
+
+/* `.cp-danger` is already dressed in `reader/Reader.css`, beside the sheet that
+   emits it; this is its `.ac-item` twin and nothing more. */
+.ac-item.ac-danger {
+  color: var(--signal);
+}
+
+.ac-item:focus-visible {
+  background: var(--surface-2);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

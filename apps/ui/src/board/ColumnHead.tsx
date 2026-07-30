@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
-import { ColumnMenu } from "./ColumnMenu";
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import { ColumnMenuItems } from "../menu/ColumnMenuItems";
+import { useContextMenu } from "../menu/ContextMenuHost";
+import { keepsNativeMenu, selectionText } from "../menu/nativeMenu";
 import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from "./viewDoc";
 
 /**
@@ -11,6 +13,11 @@ import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from
  * trick is kept exactly: `mousedown` arms `draggable` unless the press landed
  * on a button, and `mouseup` disarms it — which is what keeps `＋` and `⋯`
  * clickable inside a handle.
+ *
+ * `⋯` and right-click open the **same** menu, from the same declaration and
+ * through the same frame (SPEC.md §11's right-click bullet) — the header had
+ * its own capture-phase mousedown and Escape handling before UI-018, which was
+ * a third dismissal story racing the escape chain (sprint-016 TEST-442).
  */
 
 export interface ColumnHeadProps {
@@ -38,9 +45,9 @@ export function ColumnHead({
 }: ColumnHeadProps): ReactElement {
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState("");
-  const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const field = useRef<HTMLInputElement>(null);
+  const menu = useContextMenu();
 
   useEffect(() => {
     if (editing === null) return;
@@ -48,14 +55,30 @@ export function ColumnHead({
     field.current?.select();
   }, [editing]);
 
-  const closeMenu = useCallback(() => {
-    setMenuAt(null);
-  }, []);
-
   const startEditing = (mode: Exclude<Editing, null>): void => {
     setDraft(mode === "title" ? column.title : formatQueryString(column.filter));
     setEditing(mode);
-    closeMenu();
+  };
+
+  const openMenu = (clientX: number, clientY: number, autoFocus: boolean): void => {
+    menu.open({
+      label: `List options for ${column.title}`,
+      clientX,
+      clientY,
+      autoFocus,
+      items: (close) => (
+        <ColumnMenuItems
+          close={close}
+          onRename={() => {
+            startEditing("title");
+          }}
+          onEditQuery={() => {
+            startEditing("query");
+          }}
+          onUnpin={onUnpin}
+        />
+      ),
+    });
   };
 
   const commit = (): void => {
@@ -94,6 +117,13 @@ export function ColumnHead({
       onMouseUp={() => {
         onHandle(false);
       }}
+      onContextMenu={(event) => {
+        // The rename and edit-query fields are inputs: the browser's own menu is
+        // the useful one there, and inside a text selection anywhere.
+        if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+        event.preventDefault();
+        openMenu(event.clientX, event.clientY, false);
+      }}
     >
       <div className="col-title-row">
         {editing === "title" ? (
@@ -131,12 +161,12 @@ export function ColumnHead({
           aria-label={`List options for ${column.title}`}
           aria-haspopup="menu"
           onClick={() => {
-            if (menuAt !== null) {
-              closeMenu();
+            if (menu.isOpen) {
+              menu.close();
               return;
             }
             const rect = menuButton.current?.getBoundingClientRect();
-            setMenuAt({ left: rect?.left ?? 0, top: (rect?.bottom ?? 0) + 4 });
+            openMenu(rect?.left ?? 0, (rect?.bottom ?? 0) + 4, false);
           }}
         >
           ⋯
@@ -165,24 +195,6 @@ export function ColumnHead({
           ))}
           <span className="sort">{column.sortLabel}</span>
         </div>
-      )}
-
-      {menuAt === null ? null : (
-        <ColumnMenu
-          title={column.title}
-          position={menuAt}
-          onRename={() => {
-            startEditing("title");
-          }}
-          onEditQuery={() => {
-            startEditing("query");
-          }}
-          onUnpin={() => {
-            closeMenu();
-            onUnpin();
-          }}
-          onClose={closeMenu}
-        />
       )}
     </header>
   );

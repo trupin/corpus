@@ -1,6 +1,9 @@
 import type { DocRow } from "@corpus/contract";
 import { Row, type RowNotice } from "@corpus/kit";
 import { useEffect, useRef, type ReactElement } from "react";
+import { useContextMenu } from "../menu/ContextMenuHost";
+import { keepsNativeMenu, selectionText } from "../menu/nativeMenu";
+import { RowMenuItems, subjectFromRow } from "../menu/RowMenuItems";
 import { usePluginRegistry } from "../plugins/registry";
 import { resolveListItem } from "../plugins/slots";
 import type { BoardColumn } from "./viewDoc";
@@ -35,6 +38,8 @@ export interface ColumnListProps {
   readonly cursorDocId: string | null;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpen: (row: DocRow) => void;
+  /** SPEC.md §11's "open in focus" — the ⇧↵ act, offered by the row's menu. */
+  readonly onOpenFocus: (row: DocRow) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -46,9 +51,11 @@ export function ColumnList({
   cursorDocId,
   onScroll,
   onOpen,
+  onOpenFocus,
   onNotify,
 }: ColumnListProps): ReactElement {
   const list = useRef<HTMLDivElement>(null);
+  const menu = useContextMenu();
   const restored = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Subscribe to plugin discovery, which settles after first render: a row
@@ -89,6 +96,35 @@ export function ColumnList({
     <div
       ref={list}
       className="col-list"
+      onContextMenu={(event) => {
+        const element = (event.target as Element | null)?.closest?.<HTMLElement>("[data-row-doc]");
+        const row = items.find((item) => item.id === element?.dataset["rowDoc"]);
+        // Off any row, on a selection, or inside a field: the browser's menu.
+        if (row === undefined) return;
+        if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+        // A plugin `ListItem` owns its own surface; v1 leaves it the native menu
+        // rather than half-populating a core menu over it (sign-off item 4).
+        if (resolveListItem(row.type) !== null) return;
+        event.preventDefault();
+        menu.open({
+          label: `Actions for ${row.title}`,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          items: (close) => (
+            <RowMenuItems
+              subject={subjectFromRow(row)}
+              close={close}
+              onOpen={() => {
+                onOpen(row);
+              }}
+              onOpenFocus={() => {
+                onOpenFocus(row);
+              }}
+              onNotify={onNotify}
+            />
+          ),
+        });
+      }}
       onScroll={(event) => {
         const next = event.currentTarget.scrollTop;
         if (timer.current !== null) clearTimeout(timer.current);

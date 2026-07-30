@@ -1,4 +1,5 @@
 import type { DocRow } from "@corpus/contract";
+import { readStoredWidth } from "./columnWidth";
 
 /**
  * The view-document contract, read (SPEC.md §11 — "a column IS a `type: view`
@@ -56,6 +57,13 @@ export interface BoardColumn {
   /** The folder a `folder:` query scopes to — where this column's `＋` creates. */
   readonly folder: string | null;
   readonly plugin: PluginColumnRef | null;
+  /**
+   * The width the view document carries (SPEC.md §11), or `null` for the
+   * default. An unusable stored value reads as `null` rather than as an error:
+   * the server never interprets `extra`, so a hand-edited `width: wide` must
+   * degrade to the default and not to a broken column.
+   */
+  readonly width: number | null;
   /**
    * Why this column cannot be rendered from its own document, or `null`. Set
    * only for defects the *client* can see (a `query` that is not a map, a
@@ -218,6 +226,7 @@ export function toBoardColumn(row: DocRow): BoardColumn {
     sortLabel: SORT_LABELS[sort] ?? sort,
     folder,
     plugin,
+    width: readStoredWidth(row.extra),
     error: queryError ?? pluginError ?? compiled.error,
   };
 }

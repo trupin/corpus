@@ -1,5 +1,8 @@
 import type { Job } from "@corpus/contract";
 import type { ReactElement } from "react";
+import { useContextMenu } from "../menu/ContextMenuHost";
+import { JobMenuItems } from "../menu/JobMenuItems";
+import { keepsNativeMenu, selectionText } from "../menu/nativeMenu";
 import { blockedOn, blockedOnDetailLabel, jobDotClass, jobLabel } from "./consoleModel";
 
 /**
@@ -9,6 +12,11 @@ import { blockedOn, blockedOnDetailLabel, jobDotClass, jobLabel } from "./consol
  * A row is a real `<button>` inside a `role="listbox"`-free plain list: the
  * rows are navigable by Tab and activated by Enter or Space with no handler of
  * our own, and `aria-current` says which one the detail pane is showing.
+ *
+ * Right-clicking a row opens that row's own actions — `↗ open` plus, for a
+ * `failed` or `deferred` job, Retry and Abandon (SPEC.md §11). The set is the
+ * detail header's, from one declaration: a running job's menu must not offer
+ * Retry, because its header does not.
  *
  * A deferred row carries one extra span naming the document it is waiting for
  * (SERVER-030 eval FAIL-1). The dot and the status word say *deferred*; without
@@ -22,6 +30,7 @@ export interface JobListProps {
 }
 
 export function JobList({ jobs, selectedId, onSelect }: JobListProps): ReactElement {
+  const menu = useContextMenu();
   return (
     <div className="job-list" aria-label="Jobs">
       {jobs.map((job) => {
@@ -34,6 +43,18 @@ export function JobList({ jobs, selectedId, onSelect }: JobListProps): ReactElem
             aria-current={job.eventId === selectedId}
             onClick={() => {
               onSelect(job.eventId);
+            }}
+            onContextMenu={(event) => {
+              if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+              event.preventDefault();
+              // The menu acts on the row under the cursor, which is not
+              // necessarily the selected job (sprint-016 TEST-433).
+              menu.open({
+                label: `Actions for ${jobLabel(job)}`,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                items: (close) => <JobMenuItems job={job} close={close} />,
+              });
             }}
           >
             <span className={`job-dot ${jobDotClass(job.status)}`.trimEnd()} aria-hidden="true" />

@@ -1,0 +1,59 @@
+import type { Doc } from "@corpus/contract";
+import type { RowNotice } from "@corpus/kit";
+import { useCallback, type MouseEvent } from "react";
+import { DocMenuItems } from "./DocMenuItems";
+import { useContextMenu } from "./ContextMenuHost";
+import { keepsNativeMenu, selectionText } from "./nativeMenu";
+
+/**
+ * The open reader's right-click (SPEC.md §11): the same set its ⋯ menu offers.
+ *
+ * One hook, both hosts — the column reader and focus mode render one `DocView`
+ * and must not differ here either.
+ *
+ * **What it declines is as much of the contract as what it opens.** Inside the
+ * editor, inside the title field, on a text selection, and over a plugin
+ * `View`'s surface, the browser's own menu is the useful one and survives
+ * untouched: spellcheck and Copy are the concrete cases, and losing either is a
+ * regression a user notices immediately.
+ */
+
+export interface ReaderContextMenuOptions {
+  readonly doc: Doc | undefined;
+  readonly threadStatus: string | null;
+  /** The document left: the host pops it off its navigation stack. */
+  readonly onGone: () => void;
+  readonly onNotify: (notice: RowNotice) => void;
+}
+
+export function useReaderContextMenu({
+  doc,
+  threadStatus,
+  onGone,
+  onNotify,
+}: ReaderContextMenuOptions): (event: MouseEvent<HTMLElement>) => void {
+  const menu = useContextMenu();
+
+  return useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if (doc === undefined) return;
+      if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+      event.preventDefault();
+      menu.open({
+        label: `Actions for ${doc.frontmatter.title}`,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        items: (close) => (
+          <DocMenuItems
+            doc={doc}
+            threadStatus={threadStatus}
+            close={close}
+            onGone={onGone}
+            onNotify={onNotify}
+          />
+        ),
+      });
+    },
+    [doc, menu, onGone, onNotify, threadStatus],
+  );
+}

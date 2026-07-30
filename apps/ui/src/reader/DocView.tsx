@@ -148,7 +148,17 @@ export function DocView({
 
   return (
     <>
-      <div className="doc-main" ref={anchors.mainRef}>
+      <div
+        className="doc-main"
+        ref={anchors.mainRef}
+        /*
+         * A plugin `View` owns its whole body surface (SPEC.md §10), and
+         * plugin-rendered surfaces are out of the context menu's v1 scope
+         * (sign-off item 4). The marker is what `menu/nativeMenu.ts` reads, so
+         * the reader's own right-click handler never has to know about plugins.
+         */
+        {...(PluginView === null ? {} : { "data-plugin-surface": "" })}
+      >
         <FrontmatterForm
           doc={doc}
           selectTitle={selectTitle}
