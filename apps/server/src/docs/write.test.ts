@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../errors.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
 import { silentLogger } from "../logger.js";
+import { classifyPath } from "../projection/index.js";
 import { createSelfWriteRegistry, type SelfWriteRegistry } from "../watcher/index.js";
 import { setArchived } from "./archive.js";
 import { createDocument } from "./create.js";
@@ -474,6 +475,67 @@ describe("resolveFolder", () => {
       const body = (thrown as HttpError).body;
       expect(body.code, folder).toBe("bad_request");
       expect(body.code === "bad_request" && body.issues.length, folder).toBeGreaterThan(0);
+    }
+  });
+
+  // SERVER-037. Every one of these produced the same shipped bug through a
+  // different door: written, auto-committed, then `404` from the read-back,
+  // because `classifyPath` skips a path with a dot-prefixed segment *or* an
+  // ignored-directory segment. Both halves are refused, and both name `folder`.
+  it("refuses a folder the projection would skip, naming the field", () => {
+    for (const folder of [
+      ".claude/skills",
+      ".foo",
+      "notes/.hidden/x",
+      "data/docs/.claude",
+      "node_modules",
+      "notes/node_modules/x",
+    ]) {
+      let thrown: unknown;
+      try {
+        resolveFolder(folder);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, folder).toBeInstanceOf(HttpError);
+      const body = (thrown as HttpError).body;
+      expect(body.code, folder).toBe("bad_request");
+      expect(
+        body.code === "bad_request" && body.issues.map((issue) => issue.path),
+        folder,
+      ).toContain("folder");
+    }
+  });
+
+  it("accepts folders whose dots do not lead a segment", () => {
+    for (const folder of ["my.notes", "v1.2", "notes/2026.07", "a.b/c.d", "finance/2026"]) {
+      expect(resolveFolder(folder), folder).toBe(`data/docs/${folder}`);
+    }
+  });
+
+  // The rule is *derived* from `classifyPath`, never copied out of it: this
+  // asserts the equivalence rather than a list of names, so a name added to the
+  // projection's ignore set is refused here on the same day. A second,
+  // hand-maintained list is how SERVER-037 comes back.
+  it("refuses exactly the folders the projection declines to index", () => {
+    const segments = [
+      "finance",
+      "my.notes",
+      "2026.07",
+      ".claude",
+      ".hidden",
+      "node_modules",
+      "node_modules.md",
+    ];
+    for (const segment of segments) {
+      const indexed = classifyPath(`data/docs/notes/${segment}/anything.md`) !== null;
+      let accepted = true;
+      try {
+        resolveFolder(`notes/${segment}`);
+      } catch {
+        accepted = false;
+      }
+      expect(accepted, segment).toBe(indexed);
     }
   });
 });
