@@ -25,12 +25,20 @@ agent-facing verb; your documents stay on your disk, in a git repository you own
 
 ## Install
 
+Corpus is not published to npm — install it from the repository (user decision, 2026-07-29):
+
 ```sh
-npm install -g corpus        # PROVISIONAL package name — not yet published
+git clone https://github.com/trupin/corpus.git
+cd corpus
+npm install
+npm run build
+npm run package:build          # stages the self-contained tool into dist-package/
+npm pack ./dist-package        # produces corpus-<version>.tgz
+npm install -g ./corpus-*.tgz  # installs the `corpus` binary
 ```
 
-The tool is entirely self-contained: the CLI, the server and the pre-built board all ship inside the
-one package, and nothing is built on your machine.
+The packed tool is entirely self-contained: the CLI, the server and the pre-built board all ship
+inside the one tarball, and nothing is built on the machine that installs it.
 
 ## The operator loop
 

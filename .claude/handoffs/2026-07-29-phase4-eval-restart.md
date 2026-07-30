@@ -3,12 +3,22 @@
 > **UPDATE (same day, later):** the stuck evaluator recovered via single-step resumes and
 > finished — ALL 12 verdicts PASS (evals banked), statuses flipped, SERVER-032 filed,
 > **PR #11 created and CI is GREEN** (https://github.com/trupin/corpus/pull/11). Steps 1–3 below
-> are DONE. The fresh session's remaining work: (a) spawn the fresh fable **pr-reviewer** on PR
-> #11 (number only, no implementation context), fix/waive findings; (b) spawn **spec-writer** to
-> formalize the four held SPEC amendment drafts (listed below) as a commit on the branch for the
-> user's sign-off; (c) surface the npm-name + retitle decisions; (d) HOLD the merge for the
-> user's explicit "land", then squash-merge and do the post-land bookkeeping (statuses already
-> done; sign-off record + memory update). Machine-load and gotcha rules below still apply.
+> are DONE, and the user survey (2026-07-29) resolved everything else:
+>
+> - **All four SPEC amendments APPROVED and APPLIED** to SPEC.md on the branch (§9.2 routes +
+>   SSE token boundary, §7 deferral wording incl. the §9.2 locks bullet, §11 editor ownership,
+>   §7 genesis scope). Signed off via the survey — no further sign-off needed.
+> - **No npm publish, ever (user decision)**: distribution is clone + build + pack (README
+>   updated with the real commands). The npm-name question is moot; `publish:dry-run` and
+>   release.yml remain as CI hygiene only — never run a real publish.
+> - **Retitle never renames the file** — confirmed, matches shipped behavior.
+> - **Merge is PRE-AUTHORIZED**: squash-merge PR #11 as soon as the fresh fable pr-reviewer
+>   verdict is APPROVE (fix CRITICAL/MAJOR findings first if any) AND CI is green on the head.
+>   No further "land" prompt needed.
+>
+> The fresh session's ONLY remaining work: run the pr-reviewer on PR #11 (fresh, number only),
+> address findings, verify CI on the final head, squash-merge, then post-land bookkeeping
+> (sign-off record on main + memory update). Machine-load and gotcha rules below apply.
 
 ## Why this handoff
 
