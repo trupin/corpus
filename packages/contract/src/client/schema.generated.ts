@@ -2874,6 +2874,8 @@ export interface paths {
          *     **The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway, `commit` is `null` and the rejection comes back in `warnings` (§14).
          *
          *     `404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.
+         *
+         *     A skill is an ordinary document, and this is an ordinary document write path: refused with `423` when the other party holds the document's edit lock.
          */
         post: {
             parameters: {
@@ -2929,6 +2931,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockedError"];
                     };
                 };
             };

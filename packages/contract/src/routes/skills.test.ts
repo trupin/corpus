@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { createCorpusClient } from "../client/index.js";
 import type { paths } from "../client/schema.generated.js";
+import { buildOpenApiDocument } from "../openapi.js";
 import { contractRoutes } from "./index.js";
 
 /**
@@ -14,7 +15,15 @@ import { contractRoutes } from "./index.js";
 
 const BASE_URL = "http://127.0.0.1:8765";
 const INSTALLED = "orchestrate";
+/** Installed too, but standing in for a skill the *other* party is mid-edit on. */
+const LOCKED = "comment";
 const COMMIT = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456";
+const HELD_LOCK = {
+  docId: "doc_9z8y7x",
+  holder: "user",
+  acquired: "2026-07-29T09:15:00.000Z",
+  ttl: 300,
+} as const;
 
 interface Rejection {
   readonly code: string;
@@ -42,6 +51,16 @@ function createApp(): OpenAPIHono {
 
   app.openapi(contractRoutes.rollbackSkill, (c) => {
     const { name } = c.req.valid("param");
+    if (name === LOCKED) {
+      return c.json(
+        {
+          code: "locked" as const,
+          message: `\`${name}\` is held by the user's edit lock.`,
+          lock: HELD_LOCK,
+        },
+        423,
+      );
+    }
     if (name !== INSTALLED) {
       return c.json(
         { code: "not_found" as const, message: `No skill \`${name}\` under .claude/skills/.` },
@@ -124,6 +143,25 @@ describe("the skill-rollback route", () => {
     });
   });
 
+  /**
+   * A rollback rewrites `.claude/skills/{name}/SKILL.md`, so §9.2's "document
+   * write paths refuse edits to a document locked by the other party" covers it
+   * like any other write (CONTRACT-018). The `lock` in the envelope is what tells
+   * the operator whom to wait for — or whose lock to break.
+   */
+  it("answers 423 with the blocking lock when the other party holds the skill", async () => {
+    const { data, error } = await createTestClient().api.POST("/api/skills/{name}/rollback", {
+      params: { path: { name: LOCKED } },
+    });
+
+    expect(data).toBeUndefined();
+    expect(error).toEqual({
+      code: "locked",
+      message: "`comment` is held by the user's edit lock.",
+      lock: HELD_LOCK,
+    });
+  });
+
   it.each(["Orchestrate", "my_skill", "-lead"])(
     "rejects the unusable skill name %s before any handler runs",
     async (name) => {
@@ -168,6 +206,7 @@ describe("the generated client types describe the rollback surface", () => {
     NonNullable<paths["/api/skills/{name}/rollback"]["post"]["requestBody"]>
   >;
   type RollbackOk = JsonBody<paths["/api/skills/{name}/rollback"]["post"]["responses"][200]>;
+  type RollbackLocked = JsonBody<paths["/api/skills/{name}/rollback"]["post"]["responses"][423]>;
 
   const bare: RollbackBody = {};
   const pinned: RollbackBody = { to: "HEAD~2" };
@@ -186,6 +225,22 @@ describe("the generated client types describe the rollback surface", () => {
       warnings: [],
     };
     expect(Object.keys(result).sort()).toEqual(["commit", "docId", "name", "path", "warnings"]);
+  });
+
+  it("declares exactly the codes the rollback can answer with, 423 among them", () => {
+    const responses =
+      buildOpenApiDocument().paths?.["/api/skills/{name}/rollback"]?.post?.responses ?? {};
+    expect(Object.keys(responses).sort()).toEqual(["200", "400", "401", "404", "423"]);
+  });
+
+  /** The generated client narrows the refusal to `LockedError`, not a bare error. */
+  it("types the 423 body as the locked envelope carrying the holder", () => {
+    const locked: RollbackLocked = {
+      code: "locked",
+      message: "`comment` is held by the user's edit lock.",
+      lock: { ...HELD_LOCK },
+    };
+    expect(locked.lock.holder).toBe("user");
   });
 
   it("rejects a wrong-shaped body at compile time", () => {

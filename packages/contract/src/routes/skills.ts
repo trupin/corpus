@@ -7,6 +7,7 @@ import {
 } from "../schemas/skill.js";
 import {
   jsonContent,
+  LOCKED_RESPONSE,
   NOT_FOUND_RESPONSE,
   UNAUTHORIZED_RESPONSE,
   VALIDATION_RESPONSE,
@@ -24,6 +25,13 @@ import {
  * The revert itself is git's, performed by the server because the server is the
  * sole writer (SPEC.md §9.1): a CLI that ran `git checkout` on a skill file
  * would bypass validation, the projection and the watcher all at once.
+ *
+ * It carries `423` for the same reason: a rollback rewrites
+ * `.claude/skills/{name}/SKILL.md`, so it is a document write path, and §9.2's
+ * "document write paths refuse edits to a document locked by the other party"
+ * admits no carve-out for it. Rolling a skill back under the other party's edit
+ * lock would discard whatever that party is mid-way through writing — precisely
+ * the loss the lock exists to prevent (CONTRACT-018).
  */
 
 const SkillNameParamSchema = z.object({
@@ -54,7 +62,9 @@ export const rollbackSkill = createRoute({
     "`404` means no skill of that name is installed — there is no `.claude/skills/{name}/` " +
     "directory. A skill that was archived (`corpus doc archive` moves it to " +
     "`.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: " +
-    "unarchive it first.",
+    "unarchive it first.\n\n" +
+    "A skill is an ordinary document, and this is an ordinary document write path: refused with " +
+    "`423` when the other party holds the document's edit lock.",
   request: {
     params: SkillNameParamSchema,
     headers: ActorHeaderSchema,
@@ -74,5 +84,6 @@ export const rollbackSkill = createRoute({
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,
+    423: LOCKED_RESPONSE,
   },
 });

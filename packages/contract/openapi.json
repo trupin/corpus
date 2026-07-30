@@ -6061,7 +6061,7 @@
           "skills"
         ],
         "summary": "Restore a skill's last-known-good version",
-        "description": "Restores `.claude/skills/{name}/SKILL.md` from git and commits the restoration — the targeted revert SPEC.md §7 names as the loop-safety escape hatch. Skills are ordinary documents and are edited like ordinary documents, so a bad edit to a core-loop skill (`orchestrate`, `comment`) can break the very loop that would otherwise fix it; this is the operator's way back, and the orchestrate skill documents it.\n\n**The body is optional in full.** A bare `POST` restores the last-known-good version — the newest committed revision of the file that validates. `to` overrides that with any revision git resolves, for stepping further back.\n\n**The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway, `commit` is `null` and the rejection comes back in `warnings` (§14).\n\n`404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.",
+        "description": "Restores `.claude/skills/{name}/SKILL.md` from git and commits the restoration — the targeted revert SPEC.md §7 names as the loop-safety escape hatch. Skills are ordinary documents and are edited like ordinary documents, so a bad edit to a core-loop skill (`orchestrate`, `comment`) can break the very loop that would otherwise fix it; this is the operator's way back, and the orchestrate skill documents it.\n\n**The body is optional in full.** A bare `POST` restores the last-known-good version — the newest committed revision of the file that validates. `to` overrides that with any revision git resolves, for stepping further back.\n\n**The restoration lands as a normal auto-commit**, authored by `x-corpus-author` like every other mutation (§9.2), so `git log` remains the complete audit trail and the projection and SSE stream follow as they do for any write. `commit` in the response is that new commit, not the revision the content came from; `path` is the file it rewrote; `docId` is the skill document's id, which a rollback never changes (ids are immutable, §5). If the workspace's git hooks reject the commit, the file is restored anyway, `commit` is `null` and the rejection comes back in `warnings` (§14).\n\n`404` means no skill of that name is installed — there is no `.claude/skills/{name}/` directory. A skill that was archived (`corpus doc archive` moves it to `.claude/skills-archived/`) is likewise not installed, so rolling it back is a `404`: unarchive it first.\n\nA skill is an ordinary document, and this is an ordinary document write path: refused with `423` when the other party holds the document's edit lock.",
         "parameters": [
           {
             "schema": {
@@ -6139,6 +6139,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockedError"
                 }
               }
             }

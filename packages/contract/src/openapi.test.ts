@@ -745,6 +745,9 @@ describe("locks distinguish 409 from 423", () => {
     ["/api/docs/{id}/unarchive", "post"],
     ["/api/threads", "post"],
     ["/api/threads/{id}/turns/{ts}", "delete"],
+    // A skill is an ordinary document; its rollback rewrites the file
+    // (CONTRACT-018), so it refuses under the other party's lock like the rest.
+    ["/api/skills/{name}/rollback", "post"],
   ])("declares 423 carrying the blocking lock on %s %s", (path, method) => {
     expect(JSON.stringify(operation(path, method).responses?.["423"])).toContain("LockedError");
   });
@@ -814,6 +817,7 @@ describe("the validation and skill-rollback surface", () => {
       "400",
       "401",
       "404",
+      "423",
     ]);
   });
 
