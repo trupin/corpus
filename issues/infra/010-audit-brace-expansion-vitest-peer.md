@@ -54,7 +54,7 @@ apply a reviewed, gate-proven set:
 
 ## Acceptance Criteria
 
-- [x] `npm audit` clean except the documented react-router advisories (2 highs, all router; UI-016).
+- [x] `npm audit` clean except the documented react-router advisories (shipped outcome: 0 high, 3 moderate, all router; UI-016). _(AC originally said "2 highs" — corrected to the shipped outcome per PR #11 review finding 24.)_
 - [x] Codegen proven over the overridden chain: `check-generated-artifacts` green (both arms).
 - [x] Coverage gate green with coverage-v8 3.2.7 (repo-wide run before push).
 

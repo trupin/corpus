@@ -149,12 +149,26 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | SERVER-031 | Empty JSON body returns 500 instead of 400 | done | P2 | SERVER-003 |
 | SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | done | P2 | CONTRACT-009 |
-| CONTRACT-018 | Rider: `423` on skill-rollback route + inventory docblock (PR #11 review 1, 4) | todo | P1 | CONTRACT-008 |
-| CONTRACT-019 | Rider: atomic read-modify-write seam on PluginServerContext (PR #11 review 2) | todo | P1 | CONTRACT-015 |
-| SERVER-034 | Implement PluginServerContext atomic mutate under the document mutex | todo | P1 | CONTRACT-019 |
-| SERVER-035 | Skill rollback honors edit locks (+ lane TOCTOU, truncation wording) | todo | P1 | CONTRACT-018 |
-| PLUGINS-004 | Todos mutateItems uses the atomic seam (lost-update fix) | todo | P1 | SERVER-034 |
-| CLI-014 | `stop` unowned-pidfile deletion + `upgrade --adopt` manifest honesty (PR #11 review 12, 13) | todo | P1 | CLI-009, CLI-005 |
+| CONTRACT-018 | Rider: `423` on skill-rollback route + inventory docblock (PR #11 review 1, 4) | done | P1 | CONTRACT-008 |
+| CONTRACT-019 | Rider: atomic read-modify-write seam on PluginServerContext (PR #11 review 2) | done | P1 | CONTRACT-015 |
+| SERVER-034 | Implement PluginServerContext atomic mutate under the document mutex | done | P1 | CONTRACT-019 |
+| SERVER-035 | Skill rollback honors edit locks (+ lane TOCTOU, truncation wording) | done | P1 | CONTRACT-018 |
+| PLUGINS-004 | Todos mutateItems uses the atomic seam (lost-update fix) | done | P1 | SERVER-034 |
+| CLI-014 | `stop` unowned-pidfile deletion + `upgrade --adopt` manifest honesty (PR #11 review 12, 13) | done | P1 | CLI-009, CLI-005 |
+
+---
+
+## Phase 5 — Candidates (user follow-ups 2026-07-29, not yet sprint-planned)
+
+All four feature issues need a spec-writer pass (user-signed-off SPEC.md amendment) before implementation.
+
+| ID | Title | Status | Priority | Dependencies |
+| --- | --- | --- | --- | --- |
+| AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | AGENT-002 |
+| UI-017 | Never leave an empty untitled document behind | todo | P1 | UI-005, UI-006 |
+| UI-018 | Right-click context menu for actions on the selected item | todo | P2 | UI-004, UI-012 |
+| UI-019 | Wider views: user-adjustable view/column width | todo | P2 | UI-003 |
+| SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
 
 ---
 

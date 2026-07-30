@@ -41,6 +41,14 @@ with an error telling the user to pass the positional; silent divergence is the 
 refuses a non-empty directory that is not already a corpus workspace unless `--force` is given,
 with a message listing what it found (git repo, existing files).
 
+**Second live occurrence (2026-07-29, CLI-014 E2E drill):** the same silent-cwd fallback
+escaped into the development repo root itself — overwrote `README.md`/`.gitignore` and staged a
+genesis commit's worth of files (orchestrator repaired by index reset + restore from HEAD).
+Additional finding for the fix: **`CreatedPaths.unwind()` cannot repair the worst of it** —
+`writeFile`/`copyFile` record a path only when `!existed`, so overwritten pre-existing files
+survive the rollback. The guard fix should either snapshot-and-restore files it overwrites or
+(simpler) refuse before writing anything into a non-empty non-workspace directory.
+
 ## Acceptance Criteria
 
 - [ ] `corpus init --workspace <path>` targets `<path>` (or errors clearly); never silently
