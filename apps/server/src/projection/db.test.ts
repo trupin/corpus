@@ -72,7 +72,7 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
   // is a regex plus a YAML parse, so `needs=form` cannot ask the question in SQL
   // and reads a column the projector filled instead.
   turns: ["thread_id", "idx", "author", "ts", "body_md", "has_form"],
-  events: ["id", "type", "status", "created", "payload_json"],
+  events: ["id", "type", "status", "created", "payload_json", "blocked_on"],
   seen: ["thread_id", "last_seen_ts"],
   jobs: ["event_id", "status", "started", "updated", "last_line"],
   locks: ["doc_id", "holder", "acquired", "ttl"],

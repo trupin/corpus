@@ -372,6 +372,12 @@ describe("GET /api/jobs", () => {
     const body = JobListSchema.parse(await response.json());
     expect(body.jobs).toHaveLength(1);
     expect(Object.keys(body.jobs[0] ?? {}).sort()).toEqual([
+      // `blockedOn`/`blockedOnTitle` are on the wire from the day the contract
+      // declares them, null until SERVER-030 populates them (CONTRACT-021): a
+      // key the console can read as "not waiting" beats a key that appears
+      // halfway through a release.
+      "blockedOn",
+      "blockedOnTitle",
       "eventId",
       "lastLine",
       "originId",

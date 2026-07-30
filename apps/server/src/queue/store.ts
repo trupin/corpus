@@ -4,6 +4,7 @@ import { readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/prom
 import { join } from "node:path";
 import { z } from "@hono/zod-openapi";
 import {
+  DocumentIdSchema,
   IsoDateTimeSchema,
   QUEUE_EVENT_STATUSES,
   QueueEventSchema,
@@ -45,11 +46,48 @@ export const StoredEventSchema = QueueEventSchema.extend({
   updated: IsoDateTimeSchema.optional(),
   attempts: z.number().int().min(0).optional(),
   error: z.string().min(1).optional(),
+  blockedOn: DocumentIdSchema.optional(),
+  deferReason: z.string().min(1).optional(),
 });
 
 export type StoredEvent = z.infer<typeof StoredEventSchema> & {
   readonly status: QueueEventStatus;
 };
+
+/**
+ * The deferral bookkeeping, carried on the event because a deferral is a
+ * property of the *work*, not of the lock (CONTRACT-021, SPEC.md §7).
+ *
+ * `blockedOn` is what makes automatic re-entry implementable: releasing,
+ * breaking or reaping that document's lock is what returns the event to
+ * `pending`. It is supplied by the caller that just tried the edit rather than
+ * inferred from the payload, because the payload cannot always carry it —
+ * `comment.created` has `parentId`, `form.respond` names no document at all,
+ * and plugin event types own their own shapes.
+ *
+ * Named `deferReason` rather than `reason` so it can never be confused with
+ * `error`, which is what a *failure* records: the two live side by side in the
+ * same file shape and mean opposite things.
+ */
+export interface DeferralFields {
+  readonly blockedOn: string;
+  readonly deferReason?: string | undefined;
+}
+
+/**
+ * The same event with its deferral bookkeeping removed.
+ *
+ * `Job.blockedOn` is non-null **exactly when** the job is `deferred`
+ * (CONTRACT-021), so every transition out of `deferred/` — re-entry, a manual
+ * retry, a complete, a fail — has to drop the fields rather than carry them
+ * along into a state where they would be a lie.
+ */
+export function withoutDeferral(event: StoredEvent): StoredEvent {
+  const stripped = { ...event };
+  delete stripped.blockedOn;
+  delete stripped.deferReason;
+  return stripped;
+}
 
 /** The five contract fields, and nothing else: what every route responds with. */
 export function toWireEvent(event: StoredEvent): QueueEvent {
@@ -186,7 +224,12 @@ export class QueueStore {
     return join(this.dirFor(status), `${id}.json`);
   }
 
-  /** Called at boot, before the first request: the five directories must exist. */
+  /**
+   * Called at boot, before the first request: one directory per contract status
+   * must exist. Derived from the contract's list rather than enumerated here, so
+   * a workspace scaffolded before a status existed — `deferred/`, CONTRACT-021 —
+   * grows the directory on its next boot instead of needing an upgrade step.
+   */
   ensureLayoutSync(): void {
     for (const status of QUEUE_EVENT_STATUSES) {
       mkdirSync(this.dirFor(status), { recursive: true });

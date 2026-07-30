@@ -1,18 +1,24 @@
 // The lock files themselves: `.corpus/locks/<docId>.json` (SPEC.md §7).
 //
 // A lock is runtime state — gitignored, rebuildable, and *not* contract surface
-// beyond the four fields `LockSchema` declares. The file may therefore carry
-// more than the wire does: `deferredEventId` records the queue event whose edit
-// was deferred because this lock was held, so a force-break can put that work
-// back rather than losing it. Nothing in the API can set it today (sprint-005
-// Open Conflict 8) and nothing ever serializes it.
+// beyond the four fields `LockSchema` declares.
+//
+// The file used to carry a fifth, server-internal field — `deferredEventId`,
+// the one queue event whose edit had been deferred because this lock was held —
+// so a force-break could put that work back. Nothing in the API could ever set
+// it (sprint-005 Open Conflict 8), and SERVER-030 replaced it with the real
+// mechanism: the deferral is recorded on the **event** (`blockedOn`), which
+// scales to the several events that can queue behind one lock, covers release
+// and reap as well as break, and survives a restart in the file the queue
+// already owns. Two places recording "the deferred edit" would leave no answer
+// to which one is authoritative, so there is one.
 
 import { randomBytes } from "node:crypto";
 import { readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { DEFAULT_LOCK_TTL_SECONDS, EventIdSchema, LockSchema, type Lock } from "@corpus/contract";
+import { DEFAULT_LOCK_TTL_SECONDS, LockSchema, type Lock } from "@corpus/contract";
 
 export const LOCKS_DIR_NAME = "locks";
 
@@ -33,13 +39,11 @@ export { DEFAULT_LOCK_TTL_SECONDS };
 const LOCK_FILE = /^((?:doc|th)_[A-Za-z0-9]+)\.json$/;
 
 /**
- * The on-disk lock: the contract's four fields plus the server-internal deferred
- * event. Parsed non-strictly, and `LockSchema` strips unknown keys on the way
- * out, which is what keeps the extra field off every response.
+ * The on-disk lock. Parsed non-strictly, so a file left behind by an older
+ * build — one still carrying `deferredEventId` — is read rather than rejected;
+ * the key is simply dropped, and the lock keeps working.
  */
-export const StoredLockSchema = LockSchema.extend({
-  deferredEventId: EventIdSchema.optional(),
-});
+export const StoredLockSchema = LockSchema;
 
 export type StoredLock = z.infer<typeof StoredLockSchema>;
 

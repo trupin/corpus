@@ -89,18 +89,25 @@ export class JobService {
   }
 
   /**
-   * Failed → pending, with the attempt count reset. Retry is only defined for a
-   * failed job: asking for it on a job that is still running is a conflict, not
-   * a silent no-op that would look like it worked.
+   * Failed **or deferred** → pending, with the attempt count reset. Retry is
+   * defined for those two states only: asking for it on a job that is still
+   * running is a conflict, not a silent no-op that would look like it worked.
    *
-   * The "is it failed?" question is asked **by the queue, inside its own writer
-   * chain** (`onlyFrom`). Asked here it would be answered before the move, and a
-   * `complete` landing in between would leave `requeue` — which moves the event
-   * from wherever it happens to be — re-running a job that had just finished
-   * (SERVER-022 finding 2).
+   * Deferred is admitted since SERVER-030, and this is the **manual override**
+   * SPEC.md §7 names — automatic re-entry on lock release, break and reap
+   * supplements it, it does not delete it. The operator still needs a way to
+   * pull back a deferral that automatic re-entry did not reach: a lock cleared
+   * out of band, a deferral that named the wrong document, a lease nobody
+   * reaped.
+   *
+   * The "which status is it?" question is asked **by the queue, inside its own
+   * writer chain** (`onlyFrom`). Asked here it would be answered before the
+   * move, and a `complete` landing in between would leave `requeue` — which
+   * moves the event from wherever it happens to be — re-running a job that had
+   * just finished (SERVER-022 finding 2).
    */
   async retry(eventId: string): Promise<Job> {
-    await this.queue.requeue(eventId, { onlyFrom: "failed" });
+    await this.queue.requeue(eventId, { onlyFrom: ["failed", "deferred"] });
     // The log file is kept — it is the evidence of why the job failed — and gains
     // a line saying the run was asked for again.
     await this.appendLine(eventId, RETRY_LOG_LINE, "server");

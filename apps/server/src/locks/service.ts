@@ -49,8 +49,12 @@ export interface LockServiceOptions {
 
 export interface BreakResult {
   readonly holder: Actor;
-  /** The event put back on the queue, when the broken lock carried one. */
-  readonly requeuedEventId: string | undefined;
+  /**
+   * The events put back on the queue by the break — every event that was
+   * deferred on this document (SPEC.md §7: "the agent's deferred edit re-enters
+   * the queue rather than being lost"). Empty is the ordinary case.
+   */
+  readonly requeuedEventIds: readonly string[];
 }
 
 /** The subject line a force break records in the audit trail (SPEC.md §7). */
@@ -138,13 +142,6 @@ export class LockService {
         holder,
         acquired: formatInstant(at),
         ttl: clampTtl(ttl),
-        // A renewal keeps the deferred event the previous lease recorded; a
-        // takeover of an expired lease does not inherit one.
-        ...(existing !== undefined &&
-        existing.holder === holder &&
-        existing.deferredEventId !== undefined
-          ? { deferredEventId: existing.deferredEventId }
-          : {}),
       };
       await this.store.write(lock);
       this.project(docId);
@@ -169,6 +166,7 @@ export class LockService {
       await this.store.remove(docId);
       removeLock(this.projection, docId);
       this.announce(docId);
+      await this.requeueDeferred(docId);
       return existing.holder;
     });
   }
@@ -192,9 +190,9 @@ export class LockService {
       removeLock(this.projection, docId);
       this.announce(docId);
 
-      const requeuedEventId = await this.requeueDeferred(existing);
+      const requeuedEventIds = await this.requeueDeferred(docId);
       await this.recordBreak(docId, existing.holder);
-      return { holder: existing.holder, requeuedEventId };
+      return { holder: existing.holder, requeuedEventIds };
     });
   }
 
@@ -212,6 +210,11 @@ export class LockService {
       if (reaped.length > 0) {
         this.invalidate([LOCKS_KEY, ...reaped.flatMap((docId) => [lockKey(docId), docKey(docId)])]);
       }
+      // Reap is the crashed-editor path: the lease ran out and nobody released
+      // it, so without this a deferral would wait on a lock that no longer
+      // refuses anything. §7 asks for automatic re-entry on *all three* ways a
+      // lock can clear.
+      for (const docId of reaped) await this.requeueDeferred(docId);
       return reaped;
     });
   }
@@ -241,21 +244,30 @@ export class LockService {
     return row !== undefined;
   }
 
-  private async requeueDeferred(lock: StoredLock): Promise<string | undefined> {
-    const eventId = lock.deferredEventId;
-    if (eventId === undefined) return undefined;
+  /**
+   * The lock's half of §7's automatic re-entry: a cleared lock returns every
+   * event deferred on that document to `pending/` (SERVER-030).
+   *
+   * Keyed on the document, and asked of the queue, because the queue owns the
+   * answer — several events can be deferred behind one lock, and the deferral
+   * lives in the event file so it survives a restart. The predecessor recorded
+   * a single `deferredEventId` on the lock file, which no API could ever set
+   * (sprint-005 Open Conflict 8) and which this replaces.
+   *
+   * Never fatal. Clearing the lock is the operation the caller asked for and it
+   * has already happened; a queue that could not be read must not turn a
+   * successful release into a `500`, and the deferral stays visible, counted and
+   * retryable by hand (`POST /api/jobs/{id}/retry`) exactly as §7 promises.
+   */
+  private async requeueDeferred(docId: string): Promise<readonly string[]> {
     try {
-      await this.queue.requeue(eventId);
-      return eventId;
+      return await this.queue.requeueDeferredFor(docId);
     } catch (error) {
-      // The deferred event may have been completed or reaped while the lock sat
-      // there; a break must still clear the lock.
-      this.logger.info("deferred event could not be re-enqueued", {
-        docId: lock.docId,
-        eventId,
+      this.logger.error("deferred events could not be re-enqueued", {
+        docId,
         error: String(error),
       });
-      return undefined;
+      return [];
     }
   }
 

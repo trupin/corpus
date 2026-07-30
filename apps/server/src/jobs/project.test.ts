@@ -137,6 +137,10 @@ describe("listJobRows", () => {
       lastLine: "worked on it",
       originId: THREAD,
       originTitle: THREAD_TITLE,
+      // Null on a job that is not `deferred`, which `JobSchema` requires
+      // (CONTRACT-021); the deferred case is its own describe below.
+      blockedOn: null,
+      blockedOnTitle: null,
     });
     // A job that never logged is still a job: an empty last line, dated by the
     // event itself, and no origin when the payload names none — and then the
@@ -230,5 +234,61 @@ describe("readJobRow", () => {
 
     expect(row?.type).toBe(UNKNOWN_EVENT_TYPE);
     expect(JobSchema.parse(row)).toEqual(row);
+  });
+});
+
+describe("a deferred job (SERVER-030)", () => {
+  const deferOn = async (docId: string): Promise<string> => {
+    const id = await enqueue({ threadId: THREAD });
+    await queue.claimAll();
+    await queue.defer(id, { blockedOn: docId, deferReason: "the user is editing it" });
+    return id;
+  };
+
+  it("names the document it is waiting for, and that document's current title", async () => {
+    const id = await deferOn(DOC);
+
+    const row = readJobRow(ws.db, id);
+
+    expect(row).toMatchObject({
+      status: "deferred",
+      blockedOn: DOC,
+      blockedOnTitle: DOC_TITLE,
+      // The origin is still where the work came *from*; the blocking document
+      // is a different question and usually a different row.
+      originId: THREAD,
+      originTitle: THREAD_TITLE,
+    });
+    expect(JobSchema.parse(row)).toEqual(row);
+  });
+
+  it("follows a rename of the blocking document, read at response time", async () => {
+    const id = await deferOn(DOC);
+
+    ws.db.prepare("UPDATE documents SET title = ? WHERE id = ?").run("Refinancing", DOC);
+
+    expect(readJobRow(ws.db, id)?.blockedOnTitle).toBe("Refinancing");
+  });
+
+  it("reports a null title for a blocking document the corpus no longer holds", async () => {
+    const id = await deferOn(DOC);
+
+    ws.db.prepare("DELETE FROM documents WHERE id = ?").run(DOC);
+
+    // The same rule `originTitle` follows: the id is still what the deferral
+    // named, and a title nobody can read is null rather than invented.
+    expect(readJobRow(ws.db, id)).toMatchObject({ blockedOn: DOC, blockedOnTitle: null });
+  });
+
+  it("clears both fields the moment the event leaves deferred/", async () => {
+    const id = await deferOn(DOC);
+
+    await queue.requeueDeferredFor(DOC);
+
+    expect(readJobRow(ws.db, id)).toMatchObject({
+      status: "pending",
+      blockedOn: null,
+      blockedOnTitle: null,
+    });
   });
 });

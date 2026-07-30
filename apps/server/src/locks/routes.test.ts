@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -260,16 +260,18 @@ describe("POST /api/locks/{docId}/break", () => {
 });
 
 describe("GET /api/locks", () => {
-  it("hydrates banners with live locks only, and never leaks the deferred event", async () => {
+  it("hydrates banners with live locks only, and never leaks a runtime-only field", async () => {
     await acquire(DOC, "agent", { ttl: 1 });
     await acquire(OTHER, "user");
-    // A deferred event is a property of a gitignored runtime file, not contract
-    // surface: it must not appear on any response.
+    // A lock file is gitignored runtime state and may hold more than the four
+    // contract fields — `deferredEventId` did until SERVER-030 retired it.
+    // Whatever it holds must not appear on any response.
     const stored: unknown = JSON.parse(readFileSync(lockFile(OTHER), "utf8"));
-    await server.locks?.store.write({
-      ...(stored as { docId: string; holder: "user"; acquired: string; ttl: number }),
-      deferredEventId: "evt_deferred01",
-    });
+    writeFileSync(
+      lockFile(OTHER),
+      JSON.stringify({ ...(stored as Record<string, unknown>), deferredEventId: "evt_deferred01" }),
+      "utf8",
+    );
     clock += 2000;
 
     const response = await request("/api/locks");

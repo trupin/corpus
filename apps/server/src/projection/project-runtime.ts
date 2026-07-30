@@ -10,6 +10,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
+  DocumentIdSchema,
   LockSchema,
   QUEUE_EVENT_STATUSES,
   QueueEventSchema,
@@ -66,22 +67,50 @@ export function listQueueEventFiles(
   return files;
 }
 
-/** Upserts one event row. The status is the directory the file lives in, never a file field. */
-export function projectEvent(db: ProjectionDb, event: QueueEvent, status: QueueEventStatus): void {
+/**
+ * Upserts one event row. The status is the directory the file lives in, never a
+ * file field.
+ *
+ * `blockedOn` is the document a `deferred` event waits on (SERVER-030). It is
+ * always written, `null` included: an event that leaves `deferred/` has to
+ * *clear* the column, and an `ON CONFLICT` clause that only ever set it would
+ * leave a processed job still claiming to be waiting for a lock.
+ */
+export function projectEvent(
+  db: ProjectionDb,
+  event: QueueEvent,
+  status: QueueEventStatus,
+  blockedOn: string | null = null,
+): void {
   db.prepare(
-    `INSERT INTO events (id, type, status, created, payload_json)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO events (id, type, status, created, payload_json, blocked_on)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        type = excluded.type,
        status = excluded.status,
        created = excluded.created,
-       payload_json = excluded.payload_json`,
-  ).run(event.id, event.type, status, event.created, JSON.stringify(event.payload));
+       payload_json = excluded.payload_json,
+       blocked_on = excluded.blocked_on`,
+  ).run(event.id, event.type, status, event.created, JSON.stringify(event.payload), blockedOn);
 }
 
 export function removeEvent(db: ProjectionDb, id: string): void {
   db.prepare("DELETE FROM events WHERE id = ?").run(id);
 }
+
+/**
+ * The wire shape plus the one piece of transition bookkeeping the projection
+ * reads back: which document a deferred event is waiting for (SERVER-030). The
+ * rest of the on-disk superset — `attempts`, `error`, `deferReason` — stays in
+ * the file, which is where its readers are.
+ *
+ * A `blockedOn` that is not a document id is dropped rather than rejected: the
+ * file is still a perfectly good event, and refusing to project it over a field
+ * only a deferral uses would lose the event from the console entirely.
+ */
+const ProjectedEventFileSchema = QueueEventSchema.extend({
+  blockedOn: DocumentIdSchema.optional().catch(undefined),
+});
 
 /**
  * Projects one event file into the `events` table. The on-disk event file is a
@@ -104,16 +133,16 @@ export function projectEventFile(
     db.logger.info("skipping unreadable queue event", { path, error: String(error) });
     return false;
   }
-  const event = QueueEventSchema.safeParse(parsed);
+  const event = ProjectedEventFileSchema.safeParse(parsed);
   if (!event.success) {
     db.logger.info("skipping malformed queue event", { path });
     return false;
   }
-  projectEvent(db, event.data, status);
+  projectEvent(db, event.data, status, event.data.blockedOn ?? null);
   return true;
 }
 
-/** Rebuilds `events` from the five status directories. */
+/** Rebuilds `events` from every status directory. */
 export function projectQueueDir(db: ProjectionDb, corpusDir: string): number {
   db.sqlite.exec("DELETE FROM events");
   let projected = 0;

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { QueryKey } from "@corpus/contract";
+import { QUEUE_EVENT_STATUSES, type QueryKey, type QueueEventStatus } from "@corpus/contract";
 import { HttpError } from "../errors.js";
 import type { QueueMirror } from "./project.js";
 import { QUEUE_QUERY_KEYS } from "./project.js";
@@ -356,6 +356,232 @@ describe("complete, fail and abandon", () => {
   });
 });
 
+describe("defer", () => {
+  /** One claimed event, ready to be deferred. */
+  const claimed = async (service: QueueService): Promise<StoredEvent> => {
+    const event = await service.enqueue({
+      type: "comment.created",
+      source: "cli",
+      payload: { parentId: "th_abcd1234" },
+    });
+    await service.claimAll();
+    return event;
+  };
+
+  const onDisk = (service: QueueService, status: QueueEventStatus, id: string): unknown =>
+    JSON.parse(readFileSync(service.store.pathFor(status, id), "utf8"));
+
+  it("moves a claimed event to deferred/, recording the blocking document", async () => {
+    const service = makeService();
+    const event = await claimed(service);
+    invalidations.length = 0;
+
+    const deferred = await service.defer(event.id, {
+      blockedOn: "doc_locked01",
+      deferReason: "the user is editing it",
+    });
+
+    expect(deferred).toMatchObject({
+      status: "deferred",
+      blockedOn: "doc_locked01",
+      deferReason: "the user is editing it",
+      payload: { parentId: "th_abcd1234" },
+    });
+    expect(await service.store.listIds("deferred")).toEqual([event.id]);
+    expect(await service.store.listIds("in-progress")).toEqual([]);
+    // On disk, because §7's "never silently dropped" has to survive a restart —
+    // the deferral is a property of the file, not of this process.
+    expect(onDisk(service, "deferred", event.id)).toMatchObject({
+      status: "deferred",
+      blockedOn: "doc_locked01",
+      deferReason: "the user is editing it",
+    });
+    expect(mirror.upserts.at(-1)).toMatchObject({ status: "deferred", blockedOn: "doc_locked01" });
+    expect(invalidations).toEqual([QUEUE_QUERY_KEYS]);
+  });
+
+  it("is not a failure: the failed count stays put and the deferred count moves", async () => {
+    const service = makeService();
+    const event = await claimed(service);
+
+    await service.defer(event.id, { blockedOn: "doc_locked01" });
+
+    expect(await service.status()).toMatchObject({ deferred: 1, failed: 0, inProgress: 0 });
+  });
+
+  it("accepts a deferral with no reason", async () => {
+    const service = makeService();
+    const event = await claimed(service);
+
+    const deferred = await service.defer(event.id, { blockedOn: "doc_locked01" });
+
+    expect(deferred.deferReason).toBeUndefined();
+    expect(onDisk(service, "deferred", event.id)).not.toHaveProperty("deferReason");
+  });
+
+  it("409s anything that is not in-progress, including a second defer", async () => {
+    const service = makeService();
+    const pending = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
+
+    // Nothing has tried the edit yet.
+    await expect(service.defer(pending.id, { blockedOn: "doc_locked01" })).rejects.toMatchObject({
+      status: 409,
+      message: `queue event ${pending.id} is pending; only in-progress work can be deferred`,
+    });
+
+    const event = await claimed(service);
+    await service.defer(event.id, { blockedOn: "doc_locked01" });
+    // A repeat is a refusal, not a silent no-op that would look like it worked.
+    await expect(service.defer(event.id, { blockedOn: "doc_other001" })).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(onDisk(service, "deferred", event.id)).toMatchObject({ blockedOn: "doc_locked01" });
+
+    const done = await claimed(service);
+    await service.complete(done.id);
+    await expect(service.defer(done.id, { blockedOn: "doc_locked01" })).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+
+  it("404s an unknown id", async () => {
+    const service = makeService();
+    await expect(
+      service.defer("evt_missing00000", { blockedOn: "doc_locked01" }),
+    ).rejects.toBeInstanceOf(HttpError);
+    await expect(
+      service.defer("evt_missing00000", { blockedOn: "doc_locked01" }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("keeps a deferred event out of claim-all and out of idle", async () => {
+    const service = makeService();
+    const event = await claimed(service);
+    await service.defer(event.id, { blockedOn: "doc_locked01" });
+
+    // Handing it back would spin the agent against a lock it still cannot take.
+    expect(await service.claimAll()).toEqual([]);
+    expect(await service.idle({ timeoutMs: 20 })).toBeUndefined();
+    expect(await service.store.listIds("deferred")).toEqual([event.id]);
+  });
+
+  it("drops the deferral bookkeeping on the way out to a terminal state", async () => {
+    const service = makeService();
+    const event = await claimed(service);
+    await service.defer(event.id, { blockedOn: "doc_locked01", deferReason: "waiting" });
+
+    // Reachable through the manual override; `Job.blockedOn` is non-null
+    // exactly while the job is deferred, so a processed event may not carry it.
+    const requeued = await service.requeue(event.id, { onlyFrom: ["failed", "deferred"] });
+    expect(requeued.blockedOn).toBeUndefined();
+    const processed = await service.complete(event.id);
+    expect(processed.blockedOn).toBeUndefined();
+    expect(onDisk(service, "processed", event.id)).not.toHaveProperty("blockedOn");
+    expect(onDisk(service, "processed", event.id)).not.toHaveProperty("deferReason");
+  });
+
+  it("survives a restart, still deferred and still counted", async () => {
+    const service = makeService();
+    const event = await claimed(service);
+    await service.defer(event.id, { blockedOn: "doc_locked01", deferReason: "waiting" });
+
+    const restarted = makeService();
+
+    expect(await restarted.status()).toMatchObject({ deferred: 1 });
+    expect(mirror.replacements.at(-1)).toEqual([
+      expect.objectContaining({ id: event.id, status: "deferred", blockedOn: "doc_locked01" }),
+    ]);
+  });
+});
+
+describe("requeueDeferredFor", () => {
+  const deferOn = async (service: QueueService, docId: string): Promise<StoredEvent> => {
+    const event = await service.enqueue({ type: "comment.created", source: "cli", payload: {} });
+    await service.claimAll();
+    return service.defer(event.id, { blockedOn: docId });
+  };
+
+  it("returns every event deferred on the document to pending, and wakes a parked poll", async () => {
+    const service = makeService();
+    const first = await deferOn(service, "doc_locked01");
+    const second = await deferOn(service, "doc_locked01");
+    const elsewhere = await deferOn(service, "doc_other001");
+    invalidations.length = 0;
+    const parked = service.idle({ timeoutMs: 2000 });
+
+    const requeued = await service.requeueDeferredFor("doc_locked01");
+
+    expect(requeued.sort()).toEqual([first.id, second.id].sort());
+    expect((await service.store.listIds("pending")).sort()).toEqual([first.id, second.id].sort());
+    expect(await service.store.listIds("deferred")).toEqual([elsewhere.id]);
+    expect(invalidations).toEqual([QUEUE_QUERY_KEYS]);
+    expect((await parked)?.map((event) => event.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
+  it("clears the deferral bookkeeping as the event re-enters", async () => {
+    const service = makeService();
+    const event = await deferOn(service, "doc_locked01");
+
+    await service.requeueDeferredFor("doc_locked01");
+
+    const pending: unknown = JSON.parse(
+      readFileSync(service.store.pathFor("pending", event.id), "utf8"),
+    );
+    expect(pending).toMatchObject({ status: "pending" });
+    expect(pending).not.toHaveProperty("blockedOn");
+    expect(pending).not.toHaveProperty("deferReason");
+    expect(mirror.upserts.at(-1)?.blockedOn).toBeUndefined();
+  });
+
+  it("re-enters each event exactly once, and a second trigger is a no-op", async () => {
+    const service = makeService();
+    const event = await deferOn(service, "doc_locked01");
+
+    expect(await service.requeueDeferredFor("doc_locked01")).toEqual([event.id]);
+    invalidations.length = 0;
+    // A break following a release, or a reap of a lock nobody re-took.
+    expect(await service.requeueDeferredFor("doc_locked01")).toEqual([]);
+    expect(await service.store.listIds("pending")).toEqual([event.id]);
+    expect(invalidations).toEqual([]);
+  });
+
+  it("is a silent no-op for a document nothing was deferred on", async () => {
+    const service = makeService();
+
+    expect(await service.requeueDeferredFor("doc_nothing1")).toEqual([]);
+    expect(invalidations).toEqual([]);
+  });
+
+  it("keeps the attempt count, which waiting for a lock did not spend", async () => {
+    const service = makeService({ staleAfterMs: 1_000 });
+    const event = await service.enqueue({ type: "comment.created", source: "cli", payload: {} });
+    await service.claimAll();
+    clock += 60_000;
+    await service.reapStale();
+    await service.claimAll();
+    await service.defer(event.id, { blockedOn: "doc_locked01" });
+
+    await service.requeueDeferredFor("doc_locked01");
+
+    // Only a manual `job retry` asserts a clean slate; a deferral is not an
+    // attempt, and resetting here would let a repeatedly-stale event outlive
+    // the cap by being deferred once.
+    const pending: unknown = JSON.parse(
+      readFileSync(service.store.pathFor("pending", event.id), "utf8"),
+    );
+    expect(pending).toMatchObject({ attempts: 1 });
+  });
+
+  it("quarantines a corrupt file in deferred/ rather than skipping it forever", async () => {
+    const service = makeService();
+    writeFileSync(service.store.pathFor("deferred", "evt_bad000000000"), "not json");
+
+    expect(await service.requeueDeferredFor("doc_locked01")).toEqual([]);
+    expect(await service.store.listIds("failed")).toEqual(["evt_bad000000000"]);
+    expect(await service.store.listIds("deferred")).toEqual([]);
+  });
+});
+
 describe("requeue", () => {
   it("returns an event to pending with a clean slate and wakes a parked poll", async () => {
     const service = makeService();
@@ -539,7 +765,7 @@ describe("status", () => {
     await service.claimAll();
     await service.complete(first.id);
     await service.fail(second.id, "boom");
-    for (const status of ["pending", "in-progress", "processed", "failed", "abandoned"] as const) {
+    for (const status of QUEUE_EVENT_STATUSES) {
       writeFileSync(join(service.store.dirFor(status), ".gitkeep"), "");
     }
 
@@ -547,9 +773,47 @@ describe("status", () => {
       halted: false,
       pending: 0,
       inProgress: 2,
+      deferred: 0,
       processed: 1,
       failed: 1,
       abandoned: 0,
+    });
+  });
+
+  // Regression, CONTRACT-021: `status()` used to map over the contract's status
+  // list and destructure the counts positionally, so inserting `deferred` at
+  // index 2 shifted every later count by one — `corpus queue status` reported
+  // deferrals as processed, processed as failed, and dropped `abandoned`
+  // entirely, with nothing failing to compile. A fixture with the same count in
+  // every directory cannot see an offset, so every directory gets a distinct
+  // one and each is asserted by name.
+  it("reports each status directory's own count, not its neighbour's", async () => {
+    const service = makeService();
+    const counts: Record<QueueEventStatus, number> = {
+      pending: 1,
+      "in-progress": 2,
+      deferred: 3,
+      processed: 4,
+      failed: 5,
+      abandoned: 6,
+    };
+    for (const [status, count] of Object.entries(counts) as [QueueEventStatus, number][]) {
+      for (let index = 0; index < count; index += 1) {
+        writeFileSync(
+          join(service.store.dirFor(status), `evt_${status.replace("-", "")}${String(index)}.json`),
+          "{}",
+        );
+      }
+    }
+
+    expect(await service.status()).toEqual({
+      halted: false,
+      pending: 1,
+      inProgress: 2,
+      deferred: 3,
+      processed: 4,
+      failed: 5,
+      abandoned: 6,
     });
   });
 });

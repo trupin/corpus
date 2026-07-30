@@ -17,8 +17,13 @@
  * the old regex can be stale (a form quoted inside an outer example block was
  * counted; a mid-line closer was accepted). "Alters the rows a reader would
  * see" includes how a stored value is computed, not only its column.
+ *
+ * 5 → 6 (SERVER-030): `events.blocked_on` — the document whose edit lock a
+ * `deferred` event is waiting for (SPEC.md §7, CONTRACT-021). It is read
+ * straight off the event file, so an existing projection needs nothing but the
+ * rebuild this bump triggers.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -154,7 +159,8 @@ CREATE TABLE events (
   type TEXT NOT NULL,
   status TEXT NOT NULL,
   created TEXT,
-  payload_json TEXT NOT NULL
+  payload_json TEXT NOT NULL,
+  blocked_on TEXT
 );
 
 CREATE TABLE seen (

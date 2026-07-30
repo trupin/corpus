@@ -1,5 +1,4 @@
 import type { QueueEventStatus, QueueStatus } from "@corpus/contract";
-import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { ID_PREFIXES, newId } from "../core/ids.js";
 import { formatInstant } from "../core/time.js";
 import { conflict, notFound } from "../errors.js";
@@ -16,6 +15,8 @@ import {
 import {
   QueueStore,
   salvageEvent,
+  withoutDeferral,
+  type DeferralFields,
   type HaltSentinel,
   type QueueWriteObserver,
   type ReadEventResult,
@@ -70,8 +71,9 @@ export interface ReapResult {
 
 export interface RequeueOptions {
   /**
-   * Refuse with a `409` unless the event is in this status *at the moment the
-   * move happens*, rather than at whatever earlier moment the caller looked.
+   * Refuse with a `409` unless the event is in one of these statuses *at the
+   * moment the move happens*, rather than at whatever earlier moment the caller
+   * looked.
    *
    * The console's retry is defined for a failed job only, and it used to check
    * that in `jobs/service.ts` before calling in here — outside this method's
@@ -79,12 +81,42 @@ export interface RequeueOptions {
    * `processed/` and the requeue, which moves from wherever the event *is*,
    * then re-ran a job that had finished (SERVER-022 finding 2). The check has
    * to be in the same serialized step as the move to mean anything.
+   *
+   * A *list* rather than a single status since SERVER-030: `job retry` is
+   * defined for a failed **or** deferred job (§7 names it as the manual
+   * override automatic re-entry supplements), and both have to be admitted by
+   * the same in-chain check.
    */
-  readonly onlyFrom?: QueueEventStatus | undefined;
+  readonly onlyFrom?: readonly QueueEventStatus[] | undefined;
+}
+
+/** Bookkeeping a transition writes onto the event as it moves. */
+interface TransitionFields {
+  readonly error?: string | undefined;
+  readonly blockedOn?: string | undefined;
+  readonly deferReason?: string | undefined;
+}
+
+interface TransitionOptions {
+  readonly fields?: TransitionFields | undefined;
+  /**
+   * Refuse with a `409` unless the event is in one of `statuses` at the moment
+   * the move happens — the same in-chain rule, for the same reason, as
+   * {@link RequeueOptions.onlyFrom}. `verb` completes the message: "only
+   * in-progress work can be deferred".
+   */
+  readonly onlyFrom?:
+    { readonly statuses: readonly QueueEventStatus[]; readonly verb: string } | undefined;
+}
+
+/** English for a `409` that names the statuses a verb accepts. */
+function joinStatuses(statuses: readonly QueueEventStatus[]): string {
+  if (statuses.length <= 1) return statuses[0] ?? "";
+  return `${statuses.slice(0, -1).join(", ")} or ${statuses[statuses.length - 1] ?? ""}`;
 }
 
 /**
- * The event queue: five directories, one sentinel, and the transitions between
+ * The event queue: one directory per status, one sentinel, and the transitions between
  * them (SPEC.md §7). The server is the sole writer; the CLI and the UI reach
  * this only over HTTP.
  */
@@ -139,7 +171,7 @@ export class QueueService {
   }
 
   /**
-   * Replaces the mirror's contents with what the five directories currently
+   * Replaces the mirror's contents with what every status directory currently
    * hold, so a restart — or a crash halfway through a transition, or a file
    * moved by hand while the server was down — can neither lose nor duplicate an
    * event (sprint-003 TEST-56).
@@ -245,12 +277,92 @@ export class QueueService {
   async fail(id: string, reason?: string): Promise<StoredEvent> {
     // The request field is `reason`, the on-disk field is `error` — one concept,
     // named for its reader on each side (sprint-003 adjudication 7).
-    return this.transition(id, "failed", reason === undefined ? {} : { error: reason });
+    return this.transition(id, "failed", reason === undefined ? {} : { fields: { error: reason } });
   }
 
   /** Abandon is a move to `abandoned/`, never a delete: the file is evidence. */
   async abandon(id: string): Promise<StoredEvent> {
     return this.transition(id, "abandoned");
+  }
+
+  /**
+   * In-progress → `deferred/`: the claimed work needs a document whose edit
+   * lock somebody else holds, so it waits instead of failing (SPEC.md §7,
+   * CONTRACT-021).
+   *
+   * **Only a claimed event can be deferred.** Nothing else has tried the edit
+   * yet and terminal events are done, so anything but `in-progress` is a `409` —
+   * which is also what makes a second defer of the same event a refusal rather
+   * than a silent no-op that would look like it worked. The check rides
+   * `transition`'s `onlyFrom`, inside the writer chain, for the same reason
+   * retry's does (see {@link RequeueOptions}).
+   *
+   * The blocking document is recorded on the event, not on the lock: a lock is
+   * one file per document and several events can queue behind the same one, and
+   * the event file is what survives a restart (SPEC.md §7 — "never silently
+   * dropped"). No live lock on `blockedOn` is required. The contract declares
+   * exactly two refusals for this route and this is not one of them; a deferral
+   * whose lock was released in the meantime is left visible, countable and
+   * retryable by hand rather than rejected on a race the caller cannot win.
+   */
+  async defer(id: string, deferral: DeferralFields): Promise<StoredEvent> {
+    return this.transition(id, "deferred", {
+      onlyFrom: { statuses: ["in-progress"], verb: "deferred" },
+      fields: {
+        blockedOn: deferral.blockedOn,
+        ...(deferral.deferReason === undefined ? {} : { deferReason: deferral.deferReason }),
+      },
+    });
+  }
+
+  /**
+   * Returns every event deferred on `docId` to `pending/`. The queue's half of
+   * §7's promise that a deferred edit "re-enters the queue rather than being
+   * lost": `locks/service.ts` calls it on release, force-break and reap, so the
+   * work comes back **on its own**, with no CLI call and no operator.
+   *
+   * Deliberately keyed on the document rather than on a single recorded event
+   * id: several events can be deferred on the same lock, and each has to come
+   * back exactly once. Already-pending events are unreachable here (only
+   * `deferred/` is scanned), which is what makes a second trigger — a break
+   * following a release, a reap of a lock nobody re-took — a no-op rather than
+   * a duplicate.
+   *
+   * A release with nothing deferred behind it touches no file, invalidates
+   * nothing and logs nothing: it is the overwhelmingly common case.
+   */
+  async requeueDeferredFor(docId: string): Promise<string[]> {
+    return this.serialize(async () => {
+      const requeued: string[] = [];
+      for (const id of await this.store.listIds("deferred")) {
+        const read = await this.store.readEvent("deferred", id);
+        if (read === undefined) continue;
+        if (!read.ok) {
+          await this.quarantine(id, "deferred", read);
+          continue;
+        }
+        if (read.event.blockedOn !== docId) continue;
+        if (!(await this.store.move("deferred", "pending", id))) continue;
+
+        // The deferral bookkeeping goes with the state that owned it; the
+        // attempt count does **not** reset, because waiting for a lock is not an
+        // attempt and a manual `job retry` is the verb that asserts a clean
+        // slate (see `requeue`).
+        const event = this.stamp(withoutDeferral(read.event), "pending");
+        await this.store.writeEvent("pending", event);
+        this.mirror.upsertEvent(event);
+        requeued.push(id);
+      }
+      if (requeued.length > 0) {
+        this.invalidate(QUEUE_QUERY_KEYS);
+        this.waiters.notify();
+        this.logger.info("deferred events re-entered the queue", {
+          docId,
+          ids: requeued.join(","),
+        });
+      }
+      return requeued;
+    });
   }
 
   /**
@@ -269,9 +381,9 @@ export class QueueService {
     return this.serialize(async () => {
       const from = await this.store.locate(id);
       if (from === undefined) throw notFound(`no queue event ${id}`);
-      if (options.onlyFrom !== undefined && from !== options.onlyFrom) {
+      if (options.onlyFrom !== undefined && !options.onlyFrom.includes(from)) {
         throw conflict(
-          `queue event ${id} is ${from}; only a ${options.onlyFrom} job can be retried`,
+          `queue event ${id} is ${from}; only a ${joinStatuses(options.onlyFrom)} job can be retried`,
         );
       }
 
@@ -283,8 +395,8 @@ export class QueueService {
       if (!(await this.store.move(from, "pending", id))) {
         throw notFound(`no queue event ${id}`);
       }
-      // Rebuilt field by field rather than spread: `error` and `attempts` are
-      // exactly what a requeue is supposed to forget.
+      // Rebuilt field by field rather than spread: `error`, `attempts` and the
+      // deferral bookkeeping are exactly what a requeue is supposed to forget.
       const event: StoredEvent = {
         id: current.event.id,
         type: current.event.type,
@@ -360,15 +472,37 @@ export class QueueService {
     return this.status();
   }
 
+  /**
+   * Queue depth, one count per status directory.
+   *
+   * Each count names the status it counts, rather than being destructured
+   * positionally out of a map over the contract's status list: that ordering
+   * was load-bearing and silent, so inserting `deferred` into the middle of the
+   * list (CONTRACT-021) would have reported deferrals as `processed`, processed
+   * as `failed`, and so on down the line, with nothing failing to compile.
+   * Spelled this way, a status the contract adds and this method forgets is a
+   * missing property on `QueueStatus` — a type error.
+   *
+   * `deferred` counts what the store holds today, which is zero until
+   * SERVER-030 ships the transition that puts an event there. It is read the
+   * same way as every other status because the directory already exists:
+   * `ensureLayoutSync` creates one per contract status at every boot.
+   */
   async status(): Promise<QueueStatus> {
-    const [halted, counts] = await Promise.all([
-      this.store.isHalted(),
-      Promise.all(
-        QUEUE_EVENT_STATUSES.map(async (status) => (await this.store.listIds(status)).length),
-      ),
-    ]);
-    const [pending = 0, inProgress = 0, processed = 0, failed = 0, abandoned = 0] = counts;
-    return { halted, pending, inProgress, processed, failed, abandoned };
+    const depth = async (status: QueueEventStatus): Promise<number> =>
+      (await this.store.listIds(status)).length;
+    const [halted, pending, inProgress, deferred, processed, failed, abandoned] = await Promise.all(
+      [
+        this.store.isHalted(),
+        depth("pending"),
+        depth("in-progress"),
+        depth("deferred"),
+        depth("processed"),
+        depth("failed"),
+        depth("abandoned"),
+      ],
+    );
+    return { halted, pending, inProgress, deferred, processed, failed, abandoned };
   }
 
   /** Releases every parked request. Registered as a server disposer. */
@@ -394,23 +528,30 @@ export class QueueService {
   private async transition(
     id: string,
     to: QueueEventStatus,
-    extra: { error?: string } = {},
+    options: TransitionOptions = {},
   ): Promise<StoredEvent> {
     return this.serialize(async () => {
       const from = await this.store.locate(id);
       if (from === undefined) throw notFound(`no queue event ${id}`);
+      if (options.onlyFrom !== undefined && !options.onlyFrom.statuses.includes(from)) {
+        throw conflict(
+          `queue event ${id} is ${from}; only ${joinStatuses(options.onlyFrom.statuses)} work can be ${options.onlyFrom.verb}`,
+        );
+      }
 
       const current = await this.store.readEvent(from, id);
       if (current === undefined) throw notFound(`no queue event ${id}`);
       if (!current.ok) return this.quarantine(id, from, current);
       // Already there: idempotent, and the file is left exactly as it is — a
       // second `fail` does not overwrite the reason the first one recorded.
+      // Unreachable for a transition that declares `onlyFrom`, which refuses
+      // above rather than answering a repeat with a 200.
       if (from === to) return current.event;
 
       if (!(await this.store.move(from, to, id))) {
         throw notFound(`no queue event ${id}`);
       }
-      const event = this.stamp(current.event, to, extra);
+      const event = this.stamp(current.event, to, options.fields);
       await this.store.writeEvent(to, event);
       this.mirror.upsertEvent(event);
       this.invalidate(QUEUE_QUERY_KEYS);
@@ -433,14 +574,23 @@ export class QueueService {
     return event;
   }
 
+  /**
+   * The moved event as it is rewritten in its new directory.
+   *
+   * The deferral bookkeeping is stripped first and re-supplied only by the
+   * transition that owns it, so `blockedOn` is present exactly while the event
+   * is in `deferred/` — the invariant `Job.blockedOn` publishes (CONTRACT-021).
+   * Carrying it along would leave a processed job claiming to be waiting for a
+   * lock.
+   */
   private stamp(
     event: StoredEvent,
     status: QueueEventStatus,
-    extra: { error?: string } = {},
+    fields: TransitionFields = {},
   ): StoredEvent {
     return {
-      ...event,
-      ...extra,
+      ...withoutDeferral(event),
+      ...fields,
       status,
       updated: formatInstant(this.now()),
     };

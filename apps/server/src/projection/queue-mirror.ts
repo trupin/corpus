@@ -1,6 +1,6 @@
 // The projection's implementation of the queue's `events` mirror (SPEC.md §9.1).
 //
-// The queue owns the five status directories and calls this seam synchronously
+// The queue owns every status directory and calls this seam synchronously
 // on every transition, **before** responding; `project-runtime.ts` owns the
 // table and the row writer. This module is only the adapter between the two,
 // and is deliberately the single place where a queue event becomes an `events`
@@ -25,7 +25,10 @@ import { projectEvent } from "./project-runtime.js";
  * exactly that reason.
  */
 function upsert(db: ProjectionDb, event: StoredEvent): void {
-  projectEvent(db, toWireEvent(event), event.status);
+  // `blockedOn` rides beside the wire event rather than inside it: it is
+  // server-internal bookkeeping (SERVER-030), and `toWireEvent` exists precisely
+  // to keep the five contract fields and nothing else.
+  projectEvent(db, toWireEvent(event), event.status, event.blockedOn ?? null);
   db.prepare("UPDATE jobs SET status = ? WHERE event_id = ?").run(event.status, event.id);
 }
 

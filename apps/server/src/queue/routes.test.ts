@@ -90,6 +90,10 @@ describe("GET /api/queue/status", () => {
       halted: false,
       pending: 2,
       inProgress: 0,
+      // Zero until SERVER-030 ships the transition that puts an event here; the
+      // key is present because the count is real — the directory exists from the
+      // first boot (CONTRACT-021).
+      deferred: 0,
       processed: 0,
       failed: 0,
       abandoned: 0,
@@ -272,6 +276,94 @@ describe("the transition endpoints", () => {
     expect(parsed.success).toBe(true);
     expect(parsed.success && parsed.data.issues.length).toBeGreaterThan(0);
     expect(readdirSync(join(root, ".corpus", "queue", "pending"))).toEqual(before);
+  });
+});
+
+describe("POST /api/queue/{id}/defer", () => {
+  const defer = async (id: string, body: unknown): Promise<Response> =>
+    request(`/api/queue/${id}/defer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("moves a claimed event to deferred/ and answers with the contract's event", async () => {
+    const [id = ""] = await seed(1);
+    await request("/api/queue/claim-all", { method: "POST" });
+
+    const response = await defer(id, { blockedOn: "doc_locked01", reason: "user is editing" });
+
+    expect(response.status).toBe(200);
+    const body: unknown = await response.json();
+    expect(QueueEventSchema.safeParse(body).success).toBe(true);
+    // The five contract fields and nothing else: `blockedOn` is read back from
+    // `GET /api/jobs`, never smuggled onto the event response.
+    expect(Object.keys(body as object).sort()).toEqual([
+      "created",
+      "id",
+      "payload",
+      "source",
+      "type",
+    ]);
+    expect(await server.queue.status()).toMatchObject({
+      deferred: 1,
+      failed: 0,
+      inProgress: 0,
+    });
+    const onDisk: unknown = JSON.parse(
+      readFileSync(join(root, ".corpus", "queue", "deferred", `${id}.json`), "utf8"),
+    );
+    expect(onDisk).toMatchObject({
+      status: "deferred",
+      blockedOn: "doc_locked01",
+      deferReason: "user is editing",
+    });
+  });
+
+  it("accepts a deferral with no reason", async () => {
+    const [id = ""] = await seed(1);
+    await request("/api/queue/claim-all", { method: "POST" });
+
+    expect((await defer(id, { blockedOn: "doc_locked01" })).status).toBe(200);
+  });
+
+  it("409s an event that was never claimed, and a second defer", async () => {
+    const [id = ""] = await seed(1);
+
+    const unclaimed = await defer(id, { blockedOn: "doc_locked01" });
+    expect(unclaimed.status).toBe(409);
+    expect(ApiErrorSchema.safeParse(await unclaimed.json()).success).toBe(true);
+
+    await request("/api/queue/claim-all", { method: "POST" });
+    expect((await defer(id, { blockedOn: "doc_locked01" })).status).toBe(200);
+    expect((await defer(id, { blockedOn: "doc_locked01" })).status).toBe(409);
+  });
+
+  it("404s an unknown id", async () => {
+    const response = await defer("evt_missing00000", { blockedOn: "doc_locked01" });
+
+    expect(response.status).toBe(404);
+    const parsed = ApiErrorSchema.safeParse(await response.json());
+    expect(parsed.success && parsed.data.code).toBe("not_found");
+  });
+
+  it.each([
+    ["a missing blockedOn", {}],
+    // A thread id *is* a document id (`doc_`/`th_`) and a thread can be locked,
+    // so `th_abcd1234` is deliberately not in this list.
+    ["a blockedOn that is not a document id", { blockedOn: "locked" }],
+    ["a blank reason", { blockedOn: "doc_locked01", reason: "" }],
+    ["an unknown key", { blockedOn: "doc_locked01", until: "later" }],
+  ])("rejects %s without moving the event", async (_label, body) => {
+    const [id = ""] = await seed(1);
+    await request("/api/queue/claim-all", { method: "POST" });
+
+    const response = await defer(id, body);
+
+    expect(response.status).toBe(400);
+    const parsed = ValidationErrorSchema.safeParse(await response.json());
+    expect(parsed.success && parsed.data.issues.length).toBeGreaterThan(0);
+    expect(await server.queue.status()).toMatchObject({ deferred: 0, inProgress: 1 });
   });
 });
 
