@@ -342,8 +342,9 @@ about behavior.
   The server owns the mechanics; do not pre-check them — know what comes back when one is
   violated. The name is lowercase letters, digits and single hyphens, at most 64 characters
   (anything else is a `400`). A name already installed **or archived** is a `409`; for an
-  archived skill that `409` means unarchive it — never create the same skill again under a
-  different name. `--description` is required, not decoration: Claude Code discovers a skill
+  archived skill that `409` means unarchive it with `corpus doc unarchive <id>` — never
+  create the same skill again under a different name. `--description` is required, not
+  decoration: Claude Code discovers a skill
   by its `name` and `description`, so a skill without one is installed but never invoked.
   The file lands at `.claude/skills/<name>/SKILL.md` with **both** frontmatter vocabularies
   written by the server — `name`/`description` for Claude Code, `id`/`type`/`title`/`tags`/
