@@ -54,7 +54,6 @@ import {
   type Git,
 } from "../git/index.js";
 import {
-  SKILLS_ROOT,
   checkSave,
   findDocumentRowByPath,
   reportWarnings,
@@ -64,7 +63,8 @@ import {
   type DocsWorkspace,
   type DocumentMutex,
 } from "../docs/index.js";
-import { SKILL_FILENAME, classifyPath, syntheticDocumentId } from "../projection/index.js";
+import { classifyPath, syntheticDocumentId } from "../projection/index.js";
+import { skillDocumentPath } from "./paths.js";
 
 /**
  * The document workspace plus the raw git command builder. `DocsWorkspace.git` is
@@ -75,10 +75,6 @@ import { SKILL_FILENAME, classifyPath, syntheticDocumentId } from "../projection
 export interface SkillsWorkspace extends DocsWorkspace {
   readonly gitCommands: Git;
 }
-
-/** Where a named skill's document lives. §7: archived skills are elsewhere and are not installed. */
-export const skillDocumentPath = (name: string): string =>
-  `${SKILLS_ROOT}/${name}/${SKILL_FILENAME}`;
 
 /**
  * A revision that would restore something, with the bytes it holds.
