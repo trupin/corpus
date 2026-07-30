@@ -167,6 +167,16 @@ Plugin-rendered rows and plugin column bodies get the **native** menu (TEST-437)
 handler consults `resolveListItem(row.type)`, a plugin `View` marks its surface
 `data-plugin-surface`, and no handler is attached inside a plugin column body at all.
 
+### Shipped spec pin reconciled to the amended §11
+
+`apps/ui/e2e/compose-keyboard.spec.ts`'s cheat-sheet test pinned "SPEC.md §11's **twelve**
+bindings". UI-018 adds a thirteenth, and it is a §11 binding: the section's right-click
+bullet says "the menu key (or ⇧F10) opens the same menu on the current keyboard highlight".
+The spec now pins **thirteen**, with `menu.open` listed among the row bindings (which is
+what it acts on), and carries a comment naming the bullet the thirteenth comes from — so it
+stays a genuine pin on the amended spec rather than a count that was loosened to go green.
+Caught by the full e2e suite, which a scoped run of the three new specs could not see.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

@@ -185,6 +185,21 @@ Whole workspace: **98 files, 1446 tests, all passing.** No new coverage exemptio
 mechanism by construction (TEST-453) — the width path lives in `Column`, above the
 core/plugin body dispatch, and is conditioned on nothing about the column's type.
 
+### Shipped spec pin reconciled to the amended §11
+
+`apps/ui/e2e/reader.spec.ts`'s "gives the column reader the prototype's measure" read the
+560 px straight out of `.col.reading`. UI-019 deleted that constant on purpose — the
+reader-open width is now a ratio over the column's own base — so the assertion was pinning
+a rule the stylesheet no longer states. It has been split into the two things that are now
+true, neither of them weaker than what it replaced:
+
+- the **stylesheet** half asserts `.col` is still the prototype's `336px` and that the
+  `width` transition (`0.25s`) survives on `.col.reading`;
+- a **new running-board** test asserts that a column with no chosen width opens to exactly
+  `560px` — the prototype measure, pinned where it now actually lives, over `stubCorpus`.
+
+Caught by the full e2e suite, which a scoped run of the three new specs could not see.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

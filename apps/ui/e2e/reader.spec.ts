@@ -1,4 +1,5 @@
 import { expect, test } from "./coverage";
+import { stubCorpus } from "./stubCorpus";
 
 /**
  * UI-005's reader, in a real browser — the half that is honest to assert here.
@@ -96,7 +97,8 @@ test.describe("the reader's shipped stylesheet", () => {
          </div>
        </section>`,
       [
-        [".col.reading", ["width", "transition-property", "transition-duration"]],
+        [".col", ["width"]],
+        [".col.reading", ["transition-property", "transition-duration"]],
         [".col-list", ["display"]],
         [".col-head .chips", ["display"]],
         [".reader", ["display"]],
@@ -105,7 +107,17 @@ test.describe("the reader's shipped stylesheet", () => {
       ],
     );
 
-    expect(styles[".col.reading"]?.["width"]).toBe("560px");
+    /*
+     * The default column width is still the prototype's, and it is still the
+     * **stylesheet's** — but the reader-open widening stopped being a second
+     * hard constant in UI-019. `.col.reading` no longer declares a width at all:
+     * a column's base is its view document's (`extra.width`, SPEC.md §11) and
+     * the widening is a ratio applied to *that* base, so `Column.tsx` computes
+     * the result as an inline width. The prototype's 560 px is still exactly
+     * what a default-width column lands on, and the test below proves it in the
+     * running board rather than by reading a constant back out of the CSS.
+     */
+    expect(styles[".col"]?.["width"]).toBe("336px");
     expect(styles[".col.reading"]?.["transition-property"]).toContain("width");
     expect(styles[".col.reading"]?.["transition-duration"]).toContain("0.25s");
     // The column is a list or a reader, never both.
@@ -124,6 +136,39 @@ test.describe("the reader's shipped stylesheet", () => {
         ".doc-body",
       ),
     ).toBe(62);
+  });
+
+  /**
+   * The other half of the same guarantee, in the running board.
+   *
+   * UI-019 made the reader-open width a ratio over the column's own base rather
+   * than a second hard constant, so the prototype's 560 px is no longer
+   * readable out of the stylesheet — but it is still exactly what a column with
+   * no chosen width lands on, and that is the promise `design/index.html` makes.
+   * Asserting it here keeps the prototype measure pinned where it now actually
+   * lives.
+   */
+  test("a column with no chosen width still opens to the prototype's 560px", async ({ page }) => {
+    await stubCorpus(page, [
+      {
+        id: "doc_view_inbox",
+        type: "view",
+        title: "Inbox",
+        path: "data/docs/views/inbox.md",
+        pinned: true,
+        order: 1,
+        query: { folder: "inbox" },
+      },
+      { id: "doc_note", title: "Mortgage options", body: "Compare fixed against tracker." },
+    ]);
+    await page.goto("/");
+
+    const column = page.locator('.col[data-col="doc_view_inbox"]');
+    await expect(column).toHaveCSS("width", "336px");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await expect(column.locator(".reader")).toBeVisible();
+    await expect(column).toHaveCSS("width", "560px");
   });
 
   test("gives focus mode a full viewport and a wider measure", async ({ page }) => {
