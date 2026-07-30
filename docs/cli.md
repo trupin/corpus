@@ -42,6 +42,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus queue abandon`](#corpus-queue-abandon)
   - [`corpus queue claim-all`](#corpus-queue-claim-all)
   - [`corpus queue complete`](#corpus-queue-complete)
+  - [`corpus queue defer`](#corpus-queue-defer)
   - [`corpus queue fail`](#corpus-queue-fail)
   - [`corpus queue halt`](#corpus-queue-halt)
   - [`corpus queue idle`](#corpus-queue-idle)
@@ -873,7 +874,7 @@ corpus lock release doc_a1b2c3
 
 Park on, claim and settle the agent's event queue.
 
-The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `halt` is the kill switch: it stops consumption without stopping production.
+The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work blocked on a user-held edit lock waits rather than failing, and returns to `pending` by itself when that lock clears. `halt` is the kill switch: it stops consumption without stopping production.
 
 ### `corpus queue abandon`
 
@@ -951,6 +952,53 @@ Machine-readable form: the event as one JSON value.
 
 ```
 corpus queue complete evt_9f2a --json
+```
+
+### `corpus queue defer`
+
+Park a claimed event on a document's edit lock.
+
+Moves the event to `deferred/` — **waiting, not failed** (SPEC.md §7). The agent calls it when the work it claimed needs a document the user holds the edit lock on: reply to the waiting thread, defer the event, move on. It is the successor to the interim protocol of failing the event with a `deferred:`-prefixed reason, so no prefix is needed or wanted here — the status says that now.
+
+**The event comes back on its own.** Releasing, force-breaking or reaping the lock on `--blocked-on` returns it to `pending` and unparks `corpus queue idle` — no retry call, no operator. Until then it is not claimable, and `corpus queue status` counts it under `deferred` rather than `failed`. Nothing is silently dropped: it stays on disk across a restart and stays retryable by hand with `corpus job retry`.
+
+`--blocked-on` is required and checked before any request — a deferral that named no document could never re-enter. Only claimed work can be deferred: an event that is not `in-progress` is a server conflict (exit 5), as is an unknown id.
+
+```
+corpus queue defer <event-id> [flags]
+```
+
+**Arguments**
+
+| Argument   | Required | Description                                             |
+| ---------- | -------- | ------------------------------------------------------- |
+| `event-id` | yes      | The event's id, as printed by `corpus queue claim-all`. |
+
+**Flags**
+
+| Flag                    | Type   | Default | Description                                                                                                                                                                 |
+| ----------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--blocked-on <doc-id>` | string | —       | **Required.** The document whose edit lock the work is waiting for. Clearing that lock is what returns this event to `pending`, so naming the wrong document waits forever. |
+| `--reason <text>`       | string | —       | Why the work is waiting, shown in the console beside the blocking document. Omitted entirely when not given, never sent empty.                                              |
+
+**Examples**
+
+Park the event until the user releases the document.
+
+```
+corpus queue defer evt_9f2a --blocked-on doc_a1b2c3
+```
+
+Defer with a note for the console.
+
+```
+corpus queue defer evt_9f2a --blocked-on doc_a1b2c3 --reason "the user is editing it"
+```
+
+Machine-readable form: the event as one JSON value.
+
+```
+corpus queue defer evt_9f2a --blocked-on doc_a1b2c3 --json
 ```
 
 ### `corpus queue fail`

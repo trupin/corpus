@@ -187,7 +187,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
 | SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | todo | P2 | SERVER-005 |
-| CLI-015 | `corpus queue defer` verb | todo | P1 | CLI-004, CONTRACT-021, SERVER-030 |
+| CLI-015 | `corpus queue defer` verb | in_progress | P1 | CLI-004, CONTRACT-021, SERVER-030 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
