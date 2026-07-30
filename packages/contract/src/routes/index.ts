@@ -21,6 +21,7 @@ import {
   abandonEvent,
   claimAll,
   completeEvent,
+  deferEvent,
   failEvent,
   getQueueStatus,
   haltQueue,
@@ -28,7 +29,7 @@ import {
   reapStale,
   resumeQueue,
 } from "./queue.js";
-import { rollbackSkill } from "./skills.js";
+import { createSkill, rollbackSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
 import { deleteTurn, getThread, markThreadSeen, reopenThread, resolveThread } from "./threads.js";
 import { appendTurn } from "./turn-append.js";
@@ -100,6 +101,7 @@ export const contractRoutes = {
   resumeQueue,
   completeEvent,
   failEvent,
+  deferEvent,
   abandonEvent,
 
   listLocks,
@@ -118,6 +120,7 @@ export const contractRoutes = {
   doctorDb,
 
   checkDocuments,
+  createSkill,
   rollbackSkill,
 
   streamEvents,

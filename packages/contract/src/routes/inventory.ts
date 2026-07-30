@@ -10,6 +10,11 @@
  * drafted for them is signed off and applied — §9.2 now names both in its own
  * bullets (SPEC.md:323-325, SHARED-002).
  *
+ * `POST /api/skills` (CONTRACT-020) was derived the same way, from §7's skill
+ * genesis: the agent creates a skill, and it can only reach the workspace
+ * through the CLI and the server. §9.2 does not list it yet — that amendment is
+ * routed with the rest of the §7 set rather than applied here.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -55,6 +60,7 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/queue/resume",
   "POST /api/queue/{id}/complete",
   "POST /api/queue/{id}/fail",
+  "POST /api/queue/{id}/defer",
   "DELETE /api/queue/{id}",
 
   "GET /api/locks",
@@ -73,6 +79,7 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/db/doctor",
 
   "POST /api/check",
+  "POST /api/skills",
   "POST /api/skills/{name}/rollback",
 
   "GET /events",

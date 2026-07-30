@@ -23,6 +23,8 @@ const job = {
   lastLine: "reading doc_a1b2c3",
   originId: "th_x9y8",
   originTitle: "Re: 30-year fixed assumption",
+  blockedOn: null,
+  blockedOnTitle: null,
 };
 
 describe("Job", () => {
@@ -33,6 +35,35 @@ describe("Job", () => {
   it("round-trips a job that has not logged yet and has no origin", () => {
     const fresh = { ...job, lastLine: null, originId: null, originTitle: null };
     expect(JobSchema.parse(fresh)).toEqual(fresh);
+  });
+
+  /**
+   * CONTRACT-021. A deferred row has to say what it is waiting for, or it reads
+   * as stuck — which is the failure SPEC.md §7's dedicated state exists to end.
+   */
+  it("round-trips a deferred row carrying its blocking document", () => {
+    const deferred = {
+      ...job,
+      status: "deferred",
+      blockedOn: "doc_a1b2c3",
+      blockedOnTitle: "Mortgage options",
+    };
+    expect(JobSchema.parse(deferred)).toEqual(deferred);
+  });
+
+  it("keeps the blocking document's title representable when it is gone", () => {
+    const untitled = { ...job, status: "deferred", blockedOn: "doc_a1b2c3", blockedOnTitle: null };
+    expect(JobSchema.parse(untitled).blockedOnTitle).toBeNull();
+  });
+
+  /** Nullable, not optional — the key is on every row, deferred or not. */
+  it.each(["blockedOn", "blockedOnTitle"] as const)("demands the key %s", (field) => {
+    const { [field]: _dropped, ...missing } = job;
+    expect(JobSchema.safeParse(missing).success).toBe(false);
+  });
+
+  it("refuses an event id where the blocking document belongs", () => {
+    expect(JobSchema.safeParse({ ...job, blockedOn: "evt_7c1d" }).success).toBe(false);
   });
 
   /**

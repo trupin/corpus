@@ -49,6 +49,9 @@ const MANDATORY = {
   "POST /api/skills/{name}/rollback": false satisfies BodyIsMandatory<
     paths["/api/skills/{name}/rollback"]["post"]
   >,
+  // CONTRACT-020. A creation names the thing it creates: `name` and
+  // `description` are both mandatory, so there is no bodiless form.
+  "POST /api/skills": true satisfies BodyIsMandatory<paths["/api/skills"]["post"]>,
 } as const;
 
 describe("the generated client types demand every mandatory body", () => {
@@ -70,6 +73,7 @@ describe("the generated client types demand every mandatory body", () => {
       "POST /api/jobs/{id}/log": true,
       "POST /api/check": true,
       "POST /api/skills/{name}/rollback": false,
+      "POST /api/skills": true,
     });
   });
 });

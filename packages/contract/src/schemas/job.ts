@@ -42,6 +42,22 @@ export const JobSchema = z
           "response time, never a stored field, so a renamed document shows its new title on the " +
           "next read.",
       ),
+    blockedOn: DocumentIdSchema.nullable().describe(
+      "**The document whose edit lock this job is waiting for**, or null — non-null exactly when " +
+        "`status` is `deferred` (SPEC.md §7, CONTRACT-021). It is the document supplied at defer " +
+        "time, and the one whose release, break or reap returns the job to `pending` " +
+        "automatically. The console needs it to say what a waiting row is waiting *for*: a " +
+        "deferred job that names no document is indistinguishable from a stuck one.",
+    ),
+    blockedOnTitle: z
+      .string()
+      .nullable()
+      .describe(
+        "**The current title of whatever `blockedOn` names, or null** — the same denormalised " +
+          "copy `originTitle` is, read at response time rather than stored, so a renamed document " +
+          "shows its new title on the next read. Null exactly when `blockedOn` is null, or when " +
+          "the document it names no longer exists.",
+      ),
   })
   .openapi("Job");
 

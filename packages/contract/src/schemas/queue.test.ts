@@ -4,6 +4,7 @@ import {
   ClaimBatchSchema,
   CoreQueueEventTypeSchema,
   DEFAULT_IDLE_TIMEOUT_SECONDS,
+  DeferEventRequestSchema,
   FailEventRequestSchema,
   HaltQueueRequestSchema,
   IdleQuerySchema,
@@ -58,6 +59,28 @@ describe("queue vocabularies", () => {
 
   it.each(QUEUE_EVENT_STATUSES)("recognises the status %s", (status) => {
     expect(QueueEventStatusSchema.parse(status)).toBe(status);
+  });
+
+  /**
+   * CONTRACT-021. §7's status set gains exactly one member — the defer/requeue
+   * state §7 itself names — and loses none: the interim `deferred:`-prefixed
+   * failure protocol retires without any of the states it used going away.
+   */
+  it("adds `deferred` to §7's set and takes nothing away", () => {
+    expect([...QUEUE_EVENT_STATUSES]).toEqual([
+      "pending",
+      "in-progress",
+      "deferred",
+      "processed",
+      "failed",
+      "abandoned",
+    ]);
+  });
+
+  it("rejects a state nobody defined, so a typo is not a silent new directory", () => {
+    for (const status of ["waiting", "blocked", "deferred:lock"]) {
+      expect(QueueEventStatusSchema.safeParse(status).success, status).toBe(false);
+    }
   });
 });
 
@@ -141,6 +164,7 @@ describe("QueueStatus", () => {
       halted: true,
       pending: 3,
       inProgress: 1,
+      deferred: 2,
       processed: 42,
       failed: 0,
       abandoned: 2,
@@ -148,12 +172,17 @@ describe("QueueStatus", () => {
     expect(QueueStatusSchema.parse(status)).toEqual(status);
   });
 
-  /** Pinned by CONTRACT-001 and reused unchanged: widening it is out of scope here. */
-  it("carries exactly the six fields the console strip reads", () => {
+  /**
+   * Pinned by CONTRACT-001; widened once, by CONTRACT-021, because a deferral
+   * counted as a failure is exactly the misreading SPEC.md §7 asks the surface
+   * to stop making.
+   */
+  it("carries exactly the seven fields the console strip reads", () => {
     expect(Object.keys(QueueStatusSchema.shape)).toEqual([
       "halted",
       "pending",
       "inProgress",
+      "deferred",
       "processed",
       "failed",
       "abandoned",
@@ -182,6 +211,48 @@ describe("HaltQueueRequest", () => {
 
   it("leaves the reason optional rather than defaulting it", () => {
     expect(HaltQueueRequestSchema.parse({}).reason).toBeUndefined();
+  });
+});
+
+/**
+ * CONTRACT-021. The deferral's one mandatory fact is the document it waits on:
+ * §7's "re-enters automatically on lock release" has nothing to key off without
+ * it, and the payload cannot supply it for every event type.
+ */
+describe("DeferEventRequest", () => {
+  it("carries the blocking document, with or without a note", () => {
+    expect(DeferEventRequestSchema.parse({ blockedOn: "doc_a1b2c3" })).toEqual({
+      blockedOn: "doc_a1b2c3",
+    });
+    const annotated = { blockedOn: "doc_a1b2c3", reason: "user is editing the budget" };
+    expect(DeferEventRequestSchema.parse(annotated)).toEqual(annotated);
+  });
+
+  /** A thread is a document too (§6), and threads are locked like anything else. */
+  it("accepts a thread id, since threads are documents", () => {
+    expect(DeferEventRequestSchema.parse({ blockedOn: "th_x9y8" }).blockedOn).toBe("th_x9y8");
+  });
+
+  it("refuses a deferral that names no document, since it could never re-enter", () => {
+    expect(DeferEventRequestSchema.safeParse({}).success).toBe(false);
+    expect(DeferEventRequestSchema.safeParse({ reason: "locked" }).success).toBe(false);
+  });
+
+  it("refuses an event id where the blocking document belongs", () => {
+    expect(DeferEventRequestSchema.safeParse({ blockedOn: "evt_7c1d" }).success).toBe(false);
+  });
+
+  it("refuses a blank reason, which records an annotation that says nothing", () => {
+    expect(DeferEventRequestSchema.safeParse({ blockedOn: "doc_a1b2c3", reason: "" }).success).toBe(
+      false,
+    );
+  });
+
+  /** CONTRACT-017: `docId` is the plausible typo, and dropping it silently would wedge the event. */
+  it.each(["docId", "lock", "until"])("rejects the unknown key %s", (key) => {
+    expect(
+      DeferEventRequestSchema.safeParse({ blockedOn: "doc_a1b2c3", [key]: "doc_a1b2c3" }).success,
+    ).toBe(false);
   });
 });
 

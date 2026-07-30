@@ -4,6 +4,8 @@ import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "
 import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
 import { ERROR_CODES } from "./schemas/error.js";
+import { QUEUE_EVENT_STATUSES } from "./schemas/queue.js";
+import { SKILL_NAME_MAX_LENGTH, SKILL_NAME_PATTERN } from "./schemas/skill.js";
 import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
@@ -725,6 +727,139 @@ describe("the annotatable queue verbs take an omittable body", () => {
   });
 });
 
+/**
+ * CONTRACT-021, the wire half of SERVER-030. SPEC.md §7 promises a "dedicated
+ * defer/requeue queue state that re-enters automatically on lock release", and
+ * everything pinned here is that sentence and nothing more: one status, the
+ * document it waits on, and the counts and prose that keep a deferral from
+ * reading as a failure.
+ */
+describe("the deferred queue state (CONTRACT-021)", () => {
+  const DEFER_PATH = "/api/queue/{id}/defer";
+
+  it("adds one endpoint, on the queue rather than on the lock", () => {
+    expect(ENDPOINT_INVENTORY).toContain("POST /api/queue/{id}/defer");
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("defer"))).toHaveLength(1);
+  });
+
+  it("adds exactly one status to §7's set and reorders none of the rest", () => {
+    expect([...QUEUE_EVENT_STATUSES]).toEqual([
+      "pending",
+      "in-progress",
+      "deferred",
+      "processed",
+      "failed",
+      "abandoned",
+    ]);
+    expect(componentSchemas?.["Job"]?.properties?.["status"]?.enum).toEqual([
+      ...QUEUE_EVENT_STATUSES,
+    ]);
+  });
+
+  /**
+   * The one fact a consumer cannot read off the enum — which values are
+   * terminal — and the one it must not get wrong, since rendering `deferred` as
+   * a failure is the state of the world this issue exists to change.
+   */
+  it("publishes the deferred state as neither terminal nor claimable", () => {
+    const description = JSON.stringify(componentSchemas?.["Job"]?.properties?.["status"]);
+    expect(description).toContain("terminal");
+    expect(description).toContain("not claimable, not failed");
+    expect(description).toContain("released, broken or reaped");
+  });
+
+  it("counts deferrals separately from failures on the console strip's status", () => {
+    const status = componentSchemas?.["QueueStatus"];
+    expect(Object.keys(status?.properties ?? {})).toEqual([
+      "halted",
+      "pending",
+      "inProgress",
+      "deferred",
+      "processed",
+      "failed",
+      "abandoned",
+    ]);
+    expect(status?.required).toContain("deferred");
+    expect(JSON.stringify(status?.properties?.["deferred"])).toContain("not a failure");
+  });
+
+  it("declares only the codes a deferral can produce", () => {
+    expect(Object.keys(operation(DEFER_PATH, "post").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+      "404",
+      "409",
+    ]);
+  });
+
+  /**
+   * The blocking document is mandatory because automatic re-entry has nothing
+   * to key off without it, and it is in the body because no payload shape
+   * carries it for every event type — `form.respond` names no document at all.
+   */
+  it("demands the blocking document and nothing else", () => {
+    const schema = componentSchemas?.["DeferEventRequest"];
+    expect(Object.keys(schema?.properties ?? {})).toEqual(["blockedOn", "reason"]);
+    expect(schema?.required).toEqual(["blockedOn"]);
+    expect(schema?.additionalProperties).toBe(false);
+    expect(operation(DEFER_PATH, "post").requestBody?.required).toBe(true);
+  });
+
+  it("says why the body cannot be omitted, since every other queue annotation may be", () => {
+    expect(operation(DEFER_PATH, "post").requestBody?.description).toContain(
+      "A deferral that named no document could never re-enter",
+    );
+  });
+
+  it("carries the acting party, like every other queue transition", () => {
+    const header = operation(DEFER_PATH, "post").parameters?.find(
+      (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
+    );
+    expect(header?.required).toBe(false);
+  });
+
+  /** §7's three properties, published where a client author reads them. */
+  it("states automatic re-entry, non-claimability and never-silently-dropped", () => {
+    const description = operation(DEFER_PATH, "post").description ?? "";
+    expect(description).toContain("waiting, not failed");
+    expect(description).toContain("Releasing, force-breaking or reaping");
+    expect(description).toContain("`claim-all` skips deferred events");
+    expect(description).toContain("Nothing is ever silently dropped");
+    expect(description).toContain("survives a restart");
+  });
+
+  /**
+   * There is deliberately no re-entry route: re-entry is the server's own
+   * reaction to a lock clearing. `job retry` stays the manual override §7's
+   * force-break bullet names, and says so.
+   */
+  it("adds no route for the reverse transition, and names the manual override", () => {
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("requeue"))).toEqual([]);
+    const retry = operation("/api/jobs/{id}/retry", "post");
+    expect(retry.summary).toContain("deferred");
+    expect(retry.description).toContain("manual override");
+  });
+
+  it("gives the console the blocking document and its live title", () => {
+    const job = componentSchemas?.["Job"];
+    for (const field of ["blockedOn", "blockedOnTitle"]) {
+      expect(job?.required, field).toContain(field);
+      expect(JSON.stringify(job?.properties?.[field]), field).toContain('"null"');
+    }
+    expect(JSON.stringify(job?.properties?.["blockedOn"])).toContain(
+      "non-null exactly when `status` is `deferred`",
+    );
+  });
+
+  /** The invalidation story has to name the new emitters, or the console only sees it on refetch. */
+  it("names defer and every lock-clearing path among the queue key's emitters", () => {
+    const description = operation("/events", "get").description ?? "";
+    expect(description).toContain("complete, fail, defer, abandon");
+    expect(description).toContain("lock release, break or reap that re-enters a deferred event");
+  });
+});
+
 describe("locks distinguish 409 from 423", () => {
   it("declares 409 carrying the existing lock on acquire, and never 423", () => {
     const op = operation("/api/locks/{docId}", "post");
@@ -915,6 +1050,124 @@ describe("the validation and skill-rollback surface", () => {
       const description = operation(CHECK_PATH, "post").description ?? "";
       expect(description).toContain("same validator every server mutation runs before writing");
       expect(description).toContain("hooks and API share one implementation");
+    });
+  });
+
+  /**
+   * CONTRACT-020. §7's genesis clause needs a *create* verb, and creation is the
+   * one thing about a skill that cannot be an ordinary document call: `POST
+   * /api/docs` files under `data/docs/` by construction. What is pinned here is
+   * the shape SERVER-036 inherits — including the two facts that are decisions
+   * rather than mechanics: the traversal guard lives in the schema, and the
+   * archived-name question is left to the server without either answer needing
+   * a new response.
+   */
+  describe("the skill create (CONTRACT-020)", () => {
+    const CREATE_PATH = "/api/skills";
+
+    it("adds one endpoint to the inventory, on the collection", () => {
+      expect(ENDPOINT_INVENTORY).toContain("POST /api/skills");
+    });
+
+    it("declares only the codes a creation can produce, 409 among them and no 423", () => {
+      expect(Object.keys(operation(CREATE_PATH, "post").responses ?? {})).toEqual([
+        "201",
+        "400",
+        "401",
+        "409",
+      ]);
+    });
+
+    it("says why there is no 423, so the omission reads as a decision", () => {
+      const description = operation(CREATE_PATH, "post").description ?? "";
+      expect(description).toContain("There is no `423`");
+      expect(description).toContain("does not exist until the call succeeds");
+    });
+
+    it("names the skill in the body, since the path names no resource yet", () => {
+      expect(operation(CREATE_PATH, "post").parameters?.filter((e) => e.in === "path")).toEqual([]);
+      expect(componentSchemas?.["SkillCreateRequest"]?.properties?.["name"]).toBeDefined();
+    });
+
+    /**
+     * The guard is expressible on the wire: one pattern, published, admitting
+     * no separator — so a traversal attempt is a `400` on `body.name` rather
+     * than something a handler has to remember to check.
+     */
+    it("publishes the name pattern as the traversal guard", () => {
+      expect(componentSchemas?.["SkillCreateRequest"]?.properties?.["name"]).toMatchObject({
+        type: "string",
+        pattern: SKILL_NAME_PATTERN.source,
+      });
+      expect(SKILL_NAME_PATTERN.test("../evil")).toBe(false);
+    });
+
+    /**
+     * The length bound is published on both routes that take a name, from one
+     * definition — a client generating a form, or a server translating an
+     * `ENAMETOOLONG`, reads it off the document rather than guessing.
+     */
+    it("publishes the name length bound on the body and on the rollback path alike", () => {
+      expect(componentSchemas?.["SkillCreateRequest"]?.properties?.["name"]).toMatchObject({
+        maxLength: SKILL_NAME_MAX_LENGTH,
+      });
+      expect(parameter("/api/skills/{name}/rollback", "post", "name")?.schema).toMatchObject({
+        maxLength: SKILL_NAME_MAX_LENGTH,
+      });
+    });
+
+    it("demands the name and the description, and nothing else", () => {
+      const schema = componentSchemas?.["SkillCreateRequest"];
+      expect(Object.keys(schema?.properties ?? {})).toEqual([
+        "name",
+        "description",
+        "title",
+        "body",
+        "tags",
+      ]);
+      expect(schema?.required).toEqual(["name", "description"]);
+      expect(schema?.additionalProperties).toBe(false);
+    });
+
+    it("states the server-applied title default rather than declaring one", () => {
+      const title = componentSchemas?.["SkillCreateRequest"]?.properties?.["title"];
+      expect(title?.default).toBeUndefined();
+      expect(title?.description).toContain("Defaults to the skill's `name`");
+    });
+
+    it("publishes both frontmatter vocabularies, which is what a skill file is", () => {
+      const description = operation(CREATE_PATH, "post").description ?? "";
+      for (const phrase of ["`name`", "`description`", "`type: skill`", "anchors"]) {
+        expect(description, phrase).toContain(phrase);
+      }
+    });
+
+    it("carries the acting party, since the creation is an auto-commit", () => {
+      const header = operation(CREATE_PATH, "post").parameters?.find(
+        (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
+      );
+      expect(header?.required).toBe(false);
+      expect(operation(CREATE_PATH, "post").description).toContain("normal auto-commit");
+    });
+
+    it("returns the created skill as an ordinary document", () => {
+      expect(JSON.stringify(operation(CREATE_PATH, "post").responses?.["201"])).toContain(
+        "DocMutationResponse",
+      );
+    });
+
+    /**
+     * SERVER-036 leaves the archived-name collision open. The response set has
+     * to accommodate either ruling without a later contract change, and it does:
+     * refusing is the declared `409`, allowing is the declared `201`. The prose
+     * says so, so the openness is visible to a client author rather than only
+     * to whoever reads the issue files.
+     */
+    it("leaves the archived-name collision to the server without a third outcome", () => {
+      const description = operation(CREATE_PATH, "post").description ?? "";
+      expect(description).toContain("skills-archived");
+      expect(description).toContain("answered by the server");
+      expect(description).toContain("refusing it is this same `409`, allowing it is a plain `201`");
     });
   });
 
@@ -1175,6 +1428,9 @@ describe("the CONTRACT-007 riders", () => {
       "lastLine",
       "originId",
       "originTitle",
+      // CONTRACT-021's pair, required and nullable like the origin pair above.
+      "blockedOn",
+      "blockedOnTitle",
     ]);
     expect(JSON.stringify(job?.properties?.["originTitle"])).toContain('"null"');
   });
@@ -1480,7 +1736,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(14);
+    expect(bodies).toHaveLength(16);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -1534,6 +1790,8 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/docs/{id}/move": true,
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,
+      "POST /api/queue/{id}/defer": true,
+      "POST /api/skills": true,
       "POST /api/locks/{docId}": false,
       "POST /api/queue/halt": false,
       "POST /api/queue/{id}/fail": false,
