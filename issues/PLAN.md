@@ -168,10 +168,13 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| SHARED-004 | Spec pass: delegation, doc-abandon, context menu, view width, §12/§2.1 reconciliation | todo | P0 | — |
+| SHARED-004 | Spec pass: delegation, doc-abandon, context menu, view width, §12/§2.1/§7 reconciliation | todo | P0 | — |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
-| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-003 |
-| SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | SERVER-008, SERVER-009, AGENT-002 |
+| CONTRACT-020 | Route: POST /api/skills (skill create) | todo | P1 | CONTRACT-008 |
+| SERVER-036 | Skill-create write path (documents outside data/docs) | todo | P1 | CONTRACT-020 |
+| CLI-011 | `corpus skill create` + `corpus doc list` (doc list unblocked; skill create after SERVER-036) | todo | P1 | CLI-006, SERVER-019, SERVER-036 |
+| CONTRACT-021 | Rider: queue deferred-status surface | todo | P2 | CONTRACT-002 |
+| SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | CONTRACT-021, SERVER-008, SERVER-009, AGENT-002 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P1 | UI-014 |
 | AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | SHARED-004, AGENT-002 |
 | UI-017 | Never leave an empty untitled document behind | todo | P1 | SHARED-004, UI-005, UI-006 |
