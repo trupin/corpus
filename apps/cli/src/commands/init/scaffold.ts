@@ -15,8 +15,10 @@ import { dirname, join, resolve, sep } from "node:path";
 import { QUEUE_EVENT_STATUSES, type QueueEventStatus } from "@corpus/contract";
 import { templateManifestPath } from "../../paths.js";
 import {
+  planPluginSeedInstall,
   planPluginSkillInstall,
   planTemplateInstall,
+  templateSeedNames,
   templateSkillNames,
   type PlannedTemplateFile,
 } from "../../template/install.js";
@@ -212,7 +214,9 @@ export interface ScaffoldResult {
   readonly installed: readonly PlannedTemplateFile[];
   /** Plugin skill files installed, workspace-relative. */
   readonly installedPluginSkills: readonly string[];
-  /** Skipped plugin skills (name collisions) — surfaced by `corpus init`. */
+  /** Plugin seed templates installed, workspace-relative (SPEC.md §10, §11). */
+  readonly installedPluginSeeds: readonly string[];
+  /** Skipped plugin assets (name collisions, missing declarations) — surfaced by `corpus init`. */
   readonly pluginWarnings: readonly string[];
   readonly manifest: TemplateManifest;
   readonly configPath: string;
@@ -245,7 +249,12 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
   // `source: "plugin:<dir>"` marker (sprint-012 Adjudication 11) so
   // `corpus workspace upgrade` can tell the two provenances apart.
   const pluginSkills = planPluginSkillInstall(options.pluginsRoot, templateSkillNames(installed));
-  for (const file of pluginSkills.files) {
+  // Plugin seed templates (CLI-012): a second asset kind through the same path
+  // — declared in the plugin's `types.yaml`, installed beside the workspace's
+  // own templates, and marked with the same `plugin:<dir>` provenance so an
+  // upgrade refreshes it from its plugin under CLI-005's never-clobber rules.
+  const pluginSeeds = planPluginSeedInstall(options.pluginsRoot, templateSeedNames(installed));
+  for (const file of [...pluginSkills.files, ...pluginSeeds.files]) {
     const source = join(options.pluginsRoot ?? "", ...file.from.split("/"));
     created.copyFile(source, join(root, ...file.to.split("/")));
     files.push({
@@ -282,7 +291,8 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
     created,
     installed,
     installedPluginSkills: pluginSkills.files.map((file) => file.to),
-    pluginWarnings: pluginSkills.warnings,
+    installedPluginSeeds: pluginSeeds.files.map((file) => file.to),
+    pluginWarnings: [...pluginSkills.warnings, ...pluginSeeds.warnings],
     manifest,
     configPath,
   };

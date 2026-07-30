@@ -16,9 +16,11 @@
 !.corpus/template-manifest.json
 
 # ...and except the queue directory skeleton. The server moves event files between
-# these five directories, so a clone of this workspace has to arrive with them
-# already present. The event JSON files themselves are runtime state and stay
-# ignored; each directory's .gitkeep is what git actually tracks.
+# one directory per queue status — `corpus init` creates them all from the status
+# list itself, so counting them here would only go stale — and a clone of this
+# workspace has to arrive with them already present. The event JSON files
+# themselves are runtime state and stay ignored; each directory's .gitkeep is
+# what git actually tracks.
 !.corpus/queue/
 .corpus/queue/*/*.json
 

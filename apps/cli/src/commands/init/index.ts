@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { UsageError } from "../../errors.js";
 import { resolvePluginsRoot, resolveTemplateRoot, templateManifestPath } from "../../paths.js";
 import type { CommandContext, StandaloneCommandSpec } from "../../registry/types.js";
+import { WORKSPACE_TEMPLATES_DIR } from "../../template/install.js";
 import { CONFIG_DIR, CONFIG_FILE, findWorkspaceRoot } from "../../workspace.js";
 import {
   commitAll,
@@ -62,6 +63,8 @@ export interface InitReport {
   readonly installed: readonly string[];
   /** Plugin skill files copied into `.claude/skills/` (SPEC.md §10). */
   readonly installedPluginSkills: readonly string[];
+  /** Plugin seed templates copied into `data/docs/templates/` (SPEC.md §10, §11). */
+  readonly installedPluginSeeds: readonly string[];
   readonly warnings: readonly string[];
 }
 
@@ -193,6 +196,7 @@ export async function runInit(
       repository: reused ? "reused" : "initialized",
       installed: result.installed.map((file) => file.to),
       installedPluginSkills: result.installedPluginSkills,
+      installedPluginSeeds: result.installedPluginSeeds,
       warnings,
     };
   } catch (error) {
@@ -285,6 +289,13 @@ export const initCommand: StandaloneCommandSpec = {
         `  installed ${String(report.installedPluginSkills.length)} plugin skill file${
           report.installedPluginSkills.length === 1 ? "" : "s"
         } into .claude/skills/`,
+      );
+    }
+    if (report.installedPluginSeeds.length > 0) {
+      context.out.line(
+        `  installed ${String(report.installedPluginSeeds.length)} plugin seed template${
+          report.installedPluginSeeds.length === 1 ? "" : "s"
+        } into ${WORKSPACE_TEMPLATES_DIR}/`,
       );
     }
     context.out.line("Next: corpus server start");

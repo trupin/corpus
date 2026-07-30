@@ -27,6 +27,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus doc list`](#corpus-doc-list)
   - [`corpus doc move`](#corpus-doc-move)
   - [`corpus doc show`](#corpus-doc-show)
+  - [`corpus doc unarchive`](#corpus-doc-unarchive)
 - [`corpus job`](#corpus-job)
   - [`corpus job abandon`](#corpus-job-abandon)
   - [`corpus job list`](#corpus-job-list)
@@ -66,6 +67,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus todos add`](#corpus-todos-add)
   - [`corpus todos check`](#corpus-todos-check)
   - [`corpus todos list`](#corpus-todos-list)
+  - [`corpus todos migrate`](#corpus-todos-migrate)
 - [`corpus workspace`](#corpus-workspace)
   - [`corpus workspace upgrade`](#corpus-workspace-upgrade)
 - [Exit codes](#exit-codes)
@@ -255,9 +257,9 @@ corpus db rebuild --json
 
 ## `corpus doc`
 
-List, read, check, create, edit, move, archive and delete documents.
+List, read, check, create, edit, move, archive, unarchive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
+The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
 
 ### `corpus doc archive`
 
@@ -425,7 +427,7 @@ corpus doc delete doc_a1b2c3 --yes --json
 
 Edit a document's body and frontmatter.
 
-The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only edit** and the body is left exactly as it is — the CLI never sends an empty body it was not given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: remapped anchors moved with the text, orphaned ones name the threads that just became detached. `--reviewed` records the current instant as a “still current” confirmation, which is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's current tags first, so they cost one extra request; nothing else does — and because the API offers no conditional write, two tag edits racing on one document can end with only the later one's tag. A `423` from the other party's edit lock is reported as a server error (exit 5) and is never retried — the orchestrate skill defers instead. An edit that names no change at all is a usage error, not an empty request.
+The body comes from `-m`, `--file` or stdin; naming none of them is a **frontmatter-only edit** and the body is left exactly as it is — the CLI never sends an empty body it was not given. Every save runs anchor reconciliation (SPEC.md §6) and the result is reported: remapped anchors moved with the text, orphaned ones name the threads that just became detached. `--reviewed` records the current instant as a “still current” confirmation, which is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's current tags first and `--status` reads the current status, so those flags cost one extra request; nothing else does — and because the API offers no conditional write, two tag edits racing on one document can end with only the later one's tag. **`--status` refuses to move an archived document off `archived`** — that would set the frontmatter while leaving a skill's folder disabled in `.claude/skills-archived/` and its name blocked, so the refusal names `corpus doc unarchive <id>` instead. `--extra` writes non-core frontmatter keys — the column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` removes, unnamed keys are untouched. A `423` from the other party's edit lock is reported as a server error (exit 5) and is never retried — the orchestrate skill defers instead. An edit that names no change at all is a usage error, not an empty request.
 
 ```
 corpus doc edit <id> [flags]
@@ -439,17 +441,18 @@ corpus doc edit <id> [flags]
 
 **Flags**
 
-| Flag                        | Type                | Default | Description                                                                                                            |
-| --------------------------- | ------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `--title <text>`            | string              | —       | Replace the title.                                                                                                     |
-| `--add-tag <tag>`           | string (repeatable) | —       | Add a tag, keeping the existing ones.                                                                                  |
-| `--remove-tag <tag>`        | string (repeatable) | —       | Remove a tag. A tag both added and removed is removed.                                                                 |
-| `--status <status>`         | string              | —       | Set the lifecycle status: `open`, `resolved` or `archived`.                                                            |
-| `--due <yyyy-mm-dd>`        | string              | —       | Set the deadline.                                                                                                      |
-| `--reviewed`                | boolean             | `false` | Record "still current" as of now. Staleness runs from max(updated, reviewed), so this does not stamp `updated`.        |
-| `--evergreen <true\|false>` | string              | —       | Opt the document out of staleness, or back into it. Takes an explicit value: omitting the flag leaves the field alone. |
-| `-m, --message <text>`      | string              | —       | The replacement document body as a literal string. Wins over --file and stdin.                                         |
-| `--file <path>`             | string              | —       | Read the replacement document body from this file. Wins over stdin; the file is only read.                             |
+| Flag                        | Type                | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--title <text>`            | string              | —       | Replace the title.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `--add-tag <tag>`           | string (repeatable) | —       | Add a tag, keeping the existing ones.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `--remove-tag <tag>`        | string (repeatable) | —       | Remove a tag. A tag both added and removed is removed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `--status <status>`         | string              | —       | Set the lifecycle status: `open`, `resolved` or `archived`. On an **archived** document anything but `archived` is refused, naming `corpus doc unarchive <id>` — the verb that actually brings a document back.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `--due <yyyy-mm-dd>`        | string              | —       | Set the deadline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `--reviewed`                | boolean             | `false` | Record "still current" as of now. Staleness runs from max(updated, reviewed), so this does not stamp `updated`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `--evergreen <true\|false>` | string              | —       | Opt the document out of staleness, or back into it. Takes an explicit value: omitting the flag leaves the field alone.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `--extra <key=value>`       | string (repeatable) | —       | Set one non-core frontmatter key, repeatably — the agent's way to steward a column's `width` (SPEC.md §11) or any plugin key. **The value grammar is total**: `null` deletes the key (RFC 7386), `true`/`false` are booleans, a canonical JSON number (`520`, `-1.5`) is a number, a JSON string literal is its contents (`--extra note='"520"'` stores the characters), and **everything else is the string exactly as typed** — so `007` stays `"007"`. Only the keys named are sent: the rest of `extra` is untouched byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, `due`, `tags`, `id`, …) is a usage error before any request, pointing at the real flag where there is one. |
+| `-m, --message <text>`      | string              | —       | The replacement document body as a literal string. Wins over --file and stdin.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `--file <path>`             | string              | —       | Read the replacement document body from this file. Wins over stdin; the file is only read.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 **Examples**
 
@@ -471,6 +474,18 @@ Retag and mark the document "still current".
 
 ```
 corpus doc edit doc_a1b2c3 --add-tag housing --remove-tag draft --reviewed
+```
+
+Widen a board column: the width lives in its `type: view` document's frontmatter, so the board picks it up over SSE with no reload.
+
+```
+corpus doc edit doc_v1e2w3 --extra width=520 --from agent
+```
+
+Remove the stored width and let the column render at the default; every other `extra` key is left alone.
+
+```
+corpus doc edit doc_v1e2w3 --extra width=null
 ```
 
 One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warnings`, exactly as the server sent them.
@@ -609,6 +624,36 @@ One JSON value: `{"frontmatter":{"id":"doc_a1b2c3","type":"note","title":"Mortga
 
 ```
 corpus doc show doc_a1b2c3 --json
+```
+
+### `corpus doc unarchive`
+
+Bring an archived document back.
+
+The reverse of `corpus doc archive`, and the whole of it: `status` goes back to `open` and a `type: skill` document's folder moves back from `.claude/skills-archived/` to `.claude/skills/`, which re-enables the skill **and frees its name** — a `409` from `corpus skill create` saying the name belongs to an archived skill is telling you to run this verb. Unarchiving a document that is not archived is a no-op reporting exactly that and exits 0, mirroring `archive`'s treatment of an already-archived document, so a retried loop is harmless; note that unarchiving is `status: open` rather than a memory of the previous status, so a `resolved` document comes back `open` and the line says so. If a folder is already sitting at the destination path the server refuses rather than merging the two, and its message names the directory to move or remove first.
+
+```
+corpus doc unarchive <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Examples**
+
+Bring an archived note back into the default result set.
+
+```
+corpus doc unarchive doc_a1b2c3
+```
+
+Re-enable an archived skill and free its name, attributed to the agent. One JSON value — `{"doc":{…},"warnings":[]}`.
+
+```
+corpus doc unarchive doc_a1b2c3 --from agent --json
 ```
 
 ## `corpus job`
@@ -1545,7 +1590,7 @@ Discovered from `plugins/todos/cli/commands/` (SPEC.md §10) — the plugin's ve
 
 Add an item to a todo list.
 
-Appends one open item to a `type: todo` document. The list may be named by id, by its exact title, or by an unambiguous fragment of it; an ambiguous name is refused with the candidates listed rather than guessed at. The item's `ts` is its creation time, set by the server.
+Appends one open item to a `type: todo` document — a `- [ ] …` task-list line at the end of the document's list. The list may be named by id, by its exact title, or by an unambiguous fragment of it; an ambiguous name is refused with the candidates listed rather than guessed at. Items have no timestamps: the order they appear in the body is their order.
 
 ```
 corpus todos add <list> <text> [flags]
@@ -1560,9 +1605,9 @@ corpus todos add <list> <text> [flags]
 
 **Flags**
 
-| Flag           | Type   | Default | Description                                               |
-| -------------- | ------ | ------- | --------------------------------------------------------- |
-| `--due <date>` | string | —       | Optional deadline as an ISO calendar date (`2026-08-01`). |
+| Flag           | Type   | Default | Description                                                                                                                    |
+| -------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--due <date>` | string | —       | Optional deadline as an ISO calendar date (`2026-08-01`), written inline at the end of the item's line as `(due: 2026-08-01)`. |
 
 **Examples**
 
@@ -1572,7 +1617,7 @@ Append an item to the list titled “Week of Jul 20”.
 corpus todos add "Week of Jul 20" "Renew passport"
 ```
 
-One JSON value: `{"docId":"doc_a1b2c3","index":3,"item":{"text":"Book dentist","done":false,"ts":"…","due":"2026-08-01"}}`. `--from agent` makes the commit the agent's.
+One JSON value: `{"docId":"doc_a1b2c3","index":3,"item":{"text":"Book dentist","done":false,"due":"2026-08-01"}}`. `--from agent` makes the commit the agent's.
 
 ```
 corpus todos add "Week of Jul 20" "Book dentist" --due 2026-08-01 --from agent --json
@@ -1582,7 +1627,7 @@ corpus todos add "Week of Jul 20" "Book dentist" --due 2026-08-01 --from agent -
 
 Check an item off a todo list.
 
-Sets `done: true` on one item of a `type: todo` document — or `false` with `--uncheck`. The item is named by its 1-based number (as `corpus todos list` prints it) or by its text, matched case-insensitively; ambiguous text is refused with the candidate numbers listed. The item's `ts` is its creation time and is never changed by checking it.
+Sets `done: true` on one item of a `type: todo` document — or `false` with `--uncheck`. The item is named by its 1-based number (as `corpus todos list` prints it) or by its text, matched case-insensitively; ambiguous text is refused with the candidate numbers listed. Checking edits one character of one line — `- [ ]` becomes `- [x]` — so the item keeps its text, its place in the list, and any comment anchored to it.
 
 ```
 corpus todos check <list> <item> [flags]
@@ -1609,7 +1654,7 @@ Check the item off by its text.
 corpus todos check "Week of Jul 20" "Renew passport"
 ```
 
-One JSON value: `{"docId":"doc_a1b2c3","index":1,"item":{"text":"Call plumber","done":true,"ts":"…"}}`.
+One JSON value: `{"docId":"doc_a1b2c3","index":1,"item":{"text":"Call plumber","done":true}}`.
 
 ```
 corpus todos check "Week of Jul 20" 2 --json
@@ -1619,7 +1664,7 @@ corpus todos check "Week of Jul 20" 2 --json
 
 Show todo lists and their items.
 
-With no argument, one line per `type: todo` document with its open and done counts. With a list named — by id, exact title, or an unambiguous fragment — that list's items, numbered as `corpus todos check` accepts them. Archived todo documents are excluded, exactly as every other default list excludes them.
+With no argument, one line per `type: todo` document with its open and done counts. With a list named — by id, exact title, or an unambiguous fragment — that list's items, numbered as `corpus todos check` accepts them and in the order they appear in the document body. Archived todo documents are excluded, exactly as every other default list excludes them.
 
 ```
 corpus todos list [list] [flags]
@@ -1645,10 +1690,34 @@ Every todo list with its open and done counts.
 corpus todos list
 ```
 
-One JSON value: `{"lists":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","path":"data/docs/todos/week.md","status":"open","open":2,"done":1,"items":[{"text":"Renew passport","done":false,"ts":"…"}]}]}`.
+One JSON value: `{"lists":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","path":"data/docs/todos/week.md","status":"open","open":2,"done":1,"items":[{"text":"Renew passport","done":false}]}]}`.
 
 ```
 corpus todos list "Week of Jul 20" --json
+```
+
+### `corpus todos migrate`
+
+Move todo lists from the old `items` frontmatter into their bodies.
+
+Converts every `type: todo` document that still stores its items in the `items` frontmatter key — the pre-PLUGINS-005 format — into standard markdown task-list lines in its body, and removes the stale key in the same commit. Archived lists are included. Idempotent: a document already in the new format is left untouched and reported as unchanged, so running this twice changes nothing. A document that cannot be converted safely — a hand-edited `items` key that no longer parses, or one carrying items in both places — is reported as a conflict with the reason and left exactly as it was.
+
+```
+corpus todos migrate [flags]
+```
+
+**Examples**
+
+Convert every remaining frontmatter-stored list; safe to re-run.
+
+```
+corpus todos migrate
+```
+
+One JSON value: `{"migrated":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","items":3}],"conflicts":[],"unchanged":2}`.
+
+```
+corpus todos migrate --json
 ```
 
 ## `corpus workspace`
@@ -1663,7 +1732,9 @@ Refresh the workspace's template files after a tool update, without clobbering e
 
 `corpus init` copies the agent's skills into the workspace, and from that moment they are the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md §2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way compares each file the tool installs: the baseline `corpus init` recorded, the copy in the workspace now, and the copy the installed tool carries. A file the workspace never touched is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a file new to the template is **installed**; a file the workspace deleted is reported and reinstalled only under `--restore`; a file the template dropped is reported as retired, its copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old and new tool versions, so `corpus skill rollback` undoes a bad upgrade like any other skill change. A run with nothing to do prints `already up to date.` and makes no commit.
 
-Only template-provenance paths are touched — `.claude/` skills and personas, the workspace `README.md` and `.gitignore` — never anything under `data/`, and nothing under `.corpus/` except the manifest itself. Plugin-installed skills are refreshed from **their plugin**, not from the template.
+Only template-provenance paths are touched — `.claude/` skills and personas, the workspace `README.md` and `.gitignore`, the seed documents under `data/docs/` the template and plugins install — and nothing under `.corpus/` except the manifest itself and a missing queue status directory. Plugin-installed skills **and seed templates** are refreshed from **their plugin**, not from the template.
+
+One thing is repaired rather than compared: a workspace initialized before a queue status existed has no `.corpus/queue/<status>/.gitkeep` for it, so the directory does not survive a clone and that state has nowhere to live on a fresh checkout. Any missing marker is created and committed — it needs no baseline, because a directory is either there or it is not, and an empty marker overwrites nothing.
 
 This command and `corpus init` are the only two that write workspace files directly and commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the server stopped, because a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them. With the server running, the watcher treats the writes as ordinary out-of-band edits and re-projects. Every other document mutation goes through the server — the rule is not soft.
 
