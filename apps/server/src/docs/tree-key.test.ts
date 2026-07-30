@@ -281,7 +281,11 @@ describe("the ['tree'] invalidation key", () => {
 
       const archived = await observe(() => ws.put(`/api/docs/${doc}`, { status: "archived" }));
       ws.advance(60_000);
-      const restored = await observe(() => ws.put(`/api/docs/${doc}`, { status: "open" }));
+      // Back out through the unarchive route, because that is now the only way
+      // out: `PUT { status: "open" }` on an archived document is refused
+      // (SERVER-039), since for a skill it would restore the frontmatter and
+      // leave the folder disabled.
+      const restored = await observe(() => ws.post(`/api/docs/${doc}/unarchive`, {}));
       ws.advance(60_000);
       const edited = await observe(() =>
         ws.put(`/api/docs/${doc}`, { body: "a rewritten body\n" }),

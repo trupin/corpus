@@ -34,7 +34,6 @@ describe("core public surface", () => {
       "isAnchorId",
       "isEventId",
       "readForm",
-      "carriesForm",
       "extractRefs",
       "referencedIds",
       "documentPathFor",

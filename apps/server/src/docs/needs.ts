@@ -96,6 +96,16 @@ export const AWAITING_AGENT_SQL =
  * `NULL` for every other turn — but both conjuncts are spelled out because the
  * reason is exactly "an open thread has an agent form nobody answered", and a
  * predicate that reads as its own definition is one nobody has to reconstruct.
+ *
+ * **The two flag conjuncts are also an index condition** (wave-3 audit FIX 12).
+ * `turns_unanswered_form` is a partial index on `thread_id WHERE has_form = 1
+ * AND form_answered = 0` — `schema.ts` explains why it has to be partial — and
+ * SQLite uses a partial index only where the query's own terms provably imply
+ * its condition. So these two comparisons are load-bearing beyond readability:
+ * loosening either (`form_answered <> 1`, `has_form != 0`, moving a flag into a
+ * join) silently returns this fragment to fetching every turn row of every open
+ * thread. `docs/performance.test.ts` asserts the plan, which is the check that
+ * notices.
  */
 const UNANSWERED_FORM_SQL = `(t.id IS NOT NULL AND t.status = 'open' AND EXISTS (
   SELECT 1 FROM turns tu

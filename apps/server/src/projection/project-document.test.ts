@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { FORM_ANSWER_LABEL } from "@corpus/contract";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { reconcileAnchors, resolveAnchor } from "../anchors/index.js";
 import { openProjection, type ProjectionDb } from "./db.js";
@@ -272,6 +273,85 @@ describe("projectDocument — threads and turns", () => {
       { author: "user", body_md: "First." },
     ]);
     expect(db.prepare("SELECT turn_count FROM threads").get()).toEqual({ turn_count: 2 });
+  });
+
+  // Wave-3 audit TESTs 17 and 20: `has_form` / `form_answered` are the columns
+  // `needs=form` is built on (SERVER-029, SERVER-032), and nothing pinned what
+  // they actually hold per turn — in particular that `form_answered` is `NULL`
+  // for every turn that is not an agent turn carrying a form, which is the value
+  // the SQL's `= 0` relies on to exclude them.
+  describe("the form columns", () => {
+    const fence = (label: string): string =>
+      `\`\`\`form\nprompt: Pick ${label}\noptions:\n  - "${label}-yes"\n  - "${label}-no"\n\`\`\``;
+
+    const turn = (author: string, minute: number, body: string): string =>
+      `\n## ${author} · 2026-07-03T09:0${String(minute)}:00Z\n\n${body}\n`;
+
+    const projectTurns = (id: string, bodies: readonly string[]): void => {
+      project(
+        `data/threads/${id}.md`,
+        `---\nid: ${id}\ntype: thread\ntitle: Forms\nstatus: open\n---\n\nPreamble.\n` +
+          bodies.join(""),
+      );
+    };
+
+    const columns = (): { idx: number; has_form: number; form_answered: number | null }[] =>
+      db.prepare("SELECT idx, has_form, form_answered FROM turns ORDER BY idx").all() as never;
+
+    it("stores one row per turn: NULL unless an agent turn carries an answerable form", () => {
+      projectTurns("th_formcols", [
+        // 0: a plain user turn — no fence at all.
+        turn("user", 0, "Which option?"),
+        // 1: an agent form nobody answered.
+        turn("agent", 1, `Here you go.\n\n${fence("F1")}`),
+        // 2: a second agent form, this one answered below.
+        turn("agent", 2, `And another.\n\n${fence("F2")}`),
+        // 3: the answer to #2 — a turn with no form of its own.
+        turn("user", 3, `${FORM_ANSWER_LABEL} F2-no`),
+        // 4: a *user* turn quoting a fence: §6 makes a form an agent's, so this
+        // carries a form the route would refuse and has no answered state.
+        turn("user", 4, `The skill writes:\n\n${fence("F9")}`),
+        // 5: an agent turn whose fence is not a form at all.
+        turn("agent", 5, "Here you go.\n\n```form\ntitle: not a form\n```"),
+      ]);
+
+      expect(columns()).toEqual([
+        { idx: 0, has_form: 0, form_answered: null },
+        { idx: 1, has_form: 1, form_answered: 0 },
+        { idx: 2, has_form: 1, form_answered: 1 },
+        { idx: 3, has_form: 0, form_answered: null },
+        { idx: 4, has_form: 1, form_answered: null },
+        { idx: 5, has_form: 0, form_answered: null },
+      ]);
+    });
+
+    it("gives a turn that both answers a form and carries one both states", () => {
+      // Only a hand-edited file produces this turn, and the answer route accepts
+      // an answer for it, so the projection has to advertise it (wave-3 FIX 10).
+      projectTurns("th_formboth", [
+        turn("agent", 0, `Here you go.\n\n${fence("F1")}`),
+        turn("agent", 1, `${FORM_ANSWER_LABEL} F1-yes\n\n${fence("F2")}`),
+      ]);
+      expect(columns()).toEqual([
+        { idx: 0, has_form: 1, form_answered: 1 },
+        { idx: 1, has_form: 1, form_answered: 0 },
+      ]);
+    });
+
+    it("drops the second of two turns sharing a timestamp, form and all", () => {
+      // `INSERT OR IGNORE` on (thread_id, ts) keeps the first row, so a §14 hard
+      // failure the file already has — two turns at one instant — costs the
+      // *second* turn's form its row, and `needs=form` cannot mention a question
+      // that has no row. Recorded rather than worked around: the duplicate is
+      // what `corpus doc check` reports, and inventing a synthetic key here would
+      // put a turn in the projection that is not in the file.
+      projectTurns("th_formdupe", [
+        turn("user", 0, "Which option?"),
+        turn("agent", 0, `Here you go.\n\n${fence("F1")}`),
+      ]);
+      expect(columns()).toEqual([{ idx: 0, has_form: 0, form_answered: null }]);
+      expect(db.prepare("SELECT turn_count FROM threads").get()).toEqual({ turn_count: 2 });
+    });
   });
 });
 

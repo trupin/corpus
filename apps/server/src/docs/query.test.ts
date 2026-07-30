@@ -786,6 +786,59 @@ describe("needs=form — a thread may carry several independently answerable for
     seed("th_userfence", [ASK, { author: "user", body: formFence("F9") }]);
     expect(asks("th_userfence")).toBe(false);
   });
+
+  // Wave-3 audit TEST 19. The two halves — "is this a form" (SERVER-029) and
+  // "has it been answered" (SERVER-032) — were each tested alone. Together is
+  // where a detector that counted fences, or counted answers, goes wrong: a
+  // fence nobody can answer must never keep the reason lit, and must never
+  // absorb an answer meant for a form somebody can.
+  describe("a fence nobody can answer, beside forms somebody can", () => {
+    const UNTERMINATED = {
+      author: "agent",
+      body: "Here you go.\n\n```form\nprompt: Pick\n",
+    } as const;
+    const BAD_YAML = { author: "agent", body: "Here you go.\n\n```form\nprompt: [unclosed\n```\n" } as const; // prettier-ignore
+    const NOT_A_FORM = { author: "agent", body: "Here you go.\n\n```form\ntitle: nope\n```\n" } as const; // prettier-ignore
+
+    it("does not keep the reason lit after the answerable form is answered", () => {
+      seed("th_mixed", [ASK, F1, UNTERMINATED, BAD_YAML, NOT_A_FORM]);
+      expect(asks("th_mixed")).toBe(true);
+      seed("th_mixed", [ASK, F1, UNTERMINATED, BAD_YAML, NOT_A_FORM, answering("F1-yes")]);
+      expect(asks("th_mixed")).toBe(false);
+    });
+
+    it("does not let an answer be attributed to it", () => {
+      // `prompt: Pick` offers no options at all, so nothing here is answerable;
+      // the answer turn is ordinary prose that happens to start with the label.
+      seed("th_badanswer", [ASK, BAD_YAML, answering("F1-yes")]);
+      expect(asks("th_badanswer")).toBe(false);
+      // And with a real form beside it, the answer goes to the real one — not
+      // swallowed by the malformed neighbour that sits earlier in the thread.
+      seed("th_badbeside", [ASK, BAD_YAML, F1, answering("F1-yes")]);
+      expect(asks("th_badbeside")).toBe(false);
+    });
+
+    it("keeps the reason for the form that is left when another is answered", () => {
+      seed("th_mixedtwo", [ASK, F1, NOT_A_FORM, F2, answering("F1-yes")]);
+      expect(asks("th_mixedtwo")).toBe(true);
+      seed("th_mixedtwo", [ASK, F1, NOT_A_FORM, F2, answering("F1-yes"), answering("F2-no")]);
+      expect(asks("th_mixedtwo")).toBe(false);
+    });
+
+    // Wave-3 audit FIX 10, end to end through the SQL: a hand-edited turn that
+    // both answers a form and carries one is answerable at the route, so it has
+    // to be advertised here — and answering it has to clear the reason.
+    it("advertises a turn that both answers a form and carries one, until it too is answered", () => {
+      const both = {
+        author: "agent",
+        body: `${FORM_ANSWER_LABEL} F1-yes\n\n${formFence("F2")}`,
+      } as const;
+      seed("th_answerform", [ASK, F1, both]);
+      expect(asks("th_answerform")).toBe(true);
+      seed("th_answerform", [ASK, F1, both, answering("F2-no")]);
+      expect(asks("th_answerform")).toBe(false);
+    });
+  });
 });
 
 describe("row fields", () => {

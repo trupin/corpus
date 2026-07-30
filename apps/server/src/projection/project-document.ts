@@ -325,6 +325,11 @@ function projectThread(
   const forms = readThreadForms(turns);
   turns.forEach((turn, index) => {
     const state = forms[index];
+    // `answered` is already `boolean | null` — `null` for every turn that is not
+    // an agent turn carrying a form — so the column is that value in SQLite's
+    // vocabulary, and a missing state (impossible: one per turn, by
+    // construction) reads as the same "nothing to answer here".
+    const answered = state?.answered ?? null;
     insertTurn.run(
       fields.id,
       index,
@@ -332,7 +337,7 @@ function projectThread(
       turn.ts,
       turn.body,
       state?.hasForm === true ? 1 : 0,
-      state?.answered === null || state === undefined ? null : state.answered ? 1 : 0,
+      answered === null ? null : Number(answered),
     );
   });
 

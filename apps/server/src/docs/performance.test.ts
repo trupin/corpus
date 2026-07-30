@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { DocsQuerySchema } from "@corpus/contract";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
+import { NEEDS_REASON_SQL } from "./needs.js";
 import { queryDocs } from "./query.js";
 
 /** Target: < 100 ms warm for a filtered search over 2000 documents. */
@@ -104,6 +105,80 @@ describe("collection query performance", () => {
     );
     expect(timings.median).toBeLessThan(NEEDS_BUDGET_MS);
   }, 120_000);
+
+  // Wave-3 audit FIX 12. `needs=form` asks every open thread whether any of its
+  // turns is an unanswered agent form. `turns_thread_idx` seeks the thread and
+  // stops there — it carries neither flag — so the fragment used to fetch every
+  // turn row of every open thread and test them one at a time, a cost linear in
+  // how long the conversations are rather than in how many questions are open.
+  // The corpus above has two-turn threads and cannot show it, so this case
+  // builds deep ones.
+  describe("needs=form over long conversations", () => {
+    /** Target: the seek is over open questions, so depth must not move the clock. */
+    const FORM_BUDGET_MS = 500;
+    const THREADS = 150;
+    const TURNS = 80;
+
+    let deep: Workspace;
+
+    beforeAll(() => {
+      deep = createWorkspace("perf-forms");
+      deep.doc({ id: "doc_formhost" });
+      for (let index = 0; index < THREADS; index += 1) {
+        const turns = Array.from({ length: TURNS }, (_, turn) => ({
+          author: turn % 2 === 0 ? ("user" as const) : ("agent" as const),
+          ts: `2026-07-01T${String(Math.floor(turn / 60)).padStart(2, "0")}:${String(turn % 60).padStart(2, "0")}:00Z`,
+          // Only the last turn of every tenth thread is an open question; every
+          // other turn is ordinary prose, which is the realistic ratio and the
+          // one that makes a full turn scan expensive.
+          body:
+            turn === TURNS - 1 && index % 10 === 0
+              ? 'Here you go.\n\n```form\nprompt: Pick one\noptions:\n  - "a"\n  - "b"\n```\n'
+              : `Turn ${String(turn)} of thread ${String(index)}, ordinary prose about escrow.`,
+        }));
+        deep.thread({
+          id: `th_deep${String(index).padStart(6, "0")}`,
+          parent: "doc_formhost",
+          agent: "requested",
+          turns,
+        });
+      }
+      deep.reproject();
+    }, 300_000);
+
+    afterAll(() => {
+      deep.close();
+    });
+
+    it("seeks the open questions instead of scanning every turn of every thread", () => {
+      // The real fragment, read from the module the query builds with, so a
+      // predicate edited into a shape the partial index cannot serve fails here.
+      const plan = deep.db.sqlite
+        .prepare(
+          `EXPLAIN QUERY PLAN
+           SELECT d.id FROM documents d LEFT JOIN threads t ON t.id = d.id
+            WHERE ${NEEDS_REASON_SQL.form}`,
+        )
+        .all() as { detail: string }[];
+      const detail = plan.map((row) => row.detail).join(" | ");
+      console.log(`needs=form plan: ${detail}`);
+      expect(detail).toContain("turns_unanswered_form");
+      expect(detail).not.toContain("SCAN tu");
+    });
+
+    it("answers needs=form over deep threads inside the budget", () => {
+      const query = DocsQuerySchema.parse({ needs: "form", limit: "200" });
+      expect(queryDocs(deep.db, query, NOW).items).toHaveLength(THREADS / 10);
+
+      const timings = time(() => {
+        queryDocs(deep.db, query, NOW);
+      });
+      console.log(
+        `needs=form (${String(THREADS)}x${String(TURNS)} turns): min ${timings.min.toFixed(1)} ms, median ${timings.median.toFixed(1)} ms, max ${timings.max.toFixed(1)} ms`,
+      );
+      expect(timings.median).toBeLessThan(FORM_BUDGET_MS);
+    }, 120_000);
+  });
 
   it("plans the common filters against indexes rather than a full scan", () => {
     const plan = ws.db.sqlite

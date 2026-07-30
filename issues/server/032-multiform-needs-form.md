@@ -201,6 +201,61 @@ contract-dev issue to host the shared attribution is worth considering; it is no
 correctness today, because both copies agree on every thread read off disk (TEST-552 drills exactly
 that).
 
+## Audit fix round
+
+_Appended 2026-07-30 by server-dev (opus) in the wave-3 audit fix round
+(`issues/evals/AUDIT-S017-wave3.md`). Everything below lands in this issue's own files._
+
+- **FIX 10 — a turn that both answers a form and carries one now counts as both.** The old early
+  `return` left such a turn at `form_answered = NULL`, i.e. "nothing to answer here", while
+  `POST …/turns/{ts}/form` accepted an answer for it: the same accept-but-never-advertise
+  disagreement SERVER-029 and this issue exist to remove. Reproduced on a real server —
+  `(2, 'agent', has_form 1, form_answered NULL)`, `needs=form` empty, and `201` from the answer
+  route for that very turn — then fixed and re-verified (`form_answered 0`, thread listed with
+  `["unread-reply","form"]`, answering it clears the reason). The rejected alternative
+  (`answered: false` without opening the form) would have advertised a reason no answer could ever
+  clear, which SERVER-022 finding 3 forbids. It is the one place this reader is deliberately wider
+  than the renderer's `mapFormAnswers`, which `continue`s past its own registration and leaves such
+  a form live forever — pinned by a named test, and reported for a UI follow-up.
+- **FIX 12 — `turns_unanswered_form`.** `tu.has_form = 1 AND tu.form_answered = 0` inside the
+  `EXISTS` could only seek the thread, so every turn row of every open thread was fetched and
+  tested — a cost linear in conversation length, paid on every `needs=me`. A partial index on
+  `thread_id WHERE has_form = 1 AND form_answered = 0` holds one entry per open question: measured
+  on the real fixture (150 threads × 80 turns) **1.9 ms → 0.3 ms median**, and on a synthetic
+  500 × 60 corpus 2.26 ms → 0.06 ms. `SCHEMA_VERSION` 7 → 8, because an index only reaches a
+  database at `CREATE`; the plan is asserted in `docs/performance.test.ts` (it fails without the
+  index) and the two conjuncts are now documented in `needs.ts` as load-bearing for it.
+- **FIX 16 / TEST 18 — `db doctor` no longer blesses a projection it cannot read.**
+  `openProjectionReadonly` now checks the stamp and refuses, naming `corpus db rebuild`; a read-only
+  handle cannot repair, and a wrong "projection is clean" is worse than no answer. Reproduced on the
+  real server (stamp forced to `6` under a running server → `projection is clean — 13 documents from
+  13 files (1ms)`, exit 0) and re-verified after the fix (the CLI fails, exit 5, and the guidance is
+  in the server log verbatim). **Known limitation for the orchestrator**: `doctorDb` declares only
+  `200` and `401`, so the refusal surfaces to the CLI as `500 internal_error` — the same shape the
+  pre-existing "no projection at …" refusal already has. Making the message reach the terminal needs
+  a declared error response on that route, i.e. a contract change, which this round does not make.
+  TEST 18 covers the other half with a **frozen v6 DDL fixture** (a `turns` table with no
+  `form_answered`), rebuilt at open: new column filled from the file, stale row corrected, the new
+  index present. Live confirmation of the same path: `projection schema changed; rebuilding from
+  files {"from":6,"to":8}` at boot, then `corpus db rebuild` → stamp 8, `turns_unanswered_form`
+  present, `db doctor` clean.
+- **CLEAN 51 — the attribution choice is documented, and the `formTs` alternative is left a P3.**
+  The evaluator's FINDING-3 (two open forms sharing an option string; answering one twice retires
+  the other) is now a named test and a docblock section. Implementing exact attribution was
+  considered and declined as out of this domain: the answer route knows the form's `ts` and throws
+  it away because the turn is prose, so recovering it means changing SPEC §6's turn grammar, the
+  contract's `FORM_ANSWER_LABEL` and the renderer's reader together — and nothing local can fake it,
+  since every projected column must be rebuildable from the file alone.
+- **CLEAN 41** — `carriesForm` deleted (production-dead, and its docblock claimed a role
+  `readThreadForms` has held since this issue); the body-by-body question survives as the test
+  file's own helper. **CLEAN 50** — the nested ternary in `project-document.ts` is now
+  `state?.answered ?? null` plus one `Number()`.
+- **TESTs 17/19/20** — `form_answered`'s column values are pinned per turn (including every `NULL`
+  case), malformed fences are crossed with answers in `query.test.ts` (a fence nobody can answer
+  must neither light the reason nor absorb an answer meant for one that is answerable), and the
+  duplicate-`ts` case is recorded: `INSERT OR IGNORE` drops the second turn, form and all, so a
+  §14 hard failure in the file costs that form its row.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

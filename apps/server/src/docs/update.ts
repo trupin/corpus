@@ -205,6 +205,66 @@ function assertExtraWithinBound(
   ]);
 }
 
+/**
+ * **A `PUT` may not take a document off `archived`** (SERVER-039, wave-3 audit
+ * FIX 5).
+ *
+ * `PUT` writes frontmatter and nothing else. For a `type: skill` document, what
+ * makes archiving *mean* anything is where the folder lives — SPEC.md §7:
+ * archiving a skill "moves its folder to `.claude/skills-archived/` … no longer
+ * discovered by Claude Code" — so a `status: open` written here reports success
+ * and leaves the document disabled, invisible to Claude Code, and still holding
+ * its name against `corpus skill create`. `POST /api/docs/{id}/unarchive` is the
+ * operation that undoes archiving, because unarchiving is a filesystem move and
+ * a name release, not a field edit.
+ *
+ * The rule already existed — as a **client-side** guard in `corpus doc edit`
+ * (CLI-017), which the UI's frontmatter form and any `curl` walk straight past.
+ * The server is the sole writer (CLAUDE.md Architecture Decision 2); a rule only
+ * a client enforces is not enforced. So it lives in the verb.
+ *
+ * Three deliberate narrownesses:
+ *
+ * - **Only leaving `archived`.** Writing `status: archived` through `PUT` stays
+ *   allowed: for every non-skill type it is exactly what `POST /archive` does,
+ *   and for a skill the archive route heals it on the next call (`planFolderMove`
+ *   reads where the folder *is*, not what the frontmatter claims). Coming back
+ *   has no such healer from this side.
+ * - **Only a real change.** `changedFields` has already dropped a `status` equal
+ *   to the file's, so re-sending `archived` on an archived document — which is
+ *   what an autosave of an untouched form does — never reaches this.
+ * - **400, not 409.** The route declares `200/400/401/404/423` and no `409`
+ *   (`packages/contract/src/routes/docs.ts`); this is the same situation as the
+ *   archive route's "destination already exists", settled as a 400 by sprint-005
+ *   Open Conflict 4. It is also genuinely a statement about the request body.
+ *
+ * The archived-ness is read from the file *and* from the projection row, because
+ * they can disagree in exactly the case this guard is about: a `SKILL.md` sitting
+ * under `.claude/skills-archived/` is projected `archived` whatever its
+ * frontmatter says, and that row is what the client saw before it sent this.
+ */
+function assertNotUnarchivingByPut(
+  id: string,
+  current: Readonly<Record<string, unknown>>,
+  rowStatus: string,
+  fields: Readonly<Record<string, unknown>>,
+): void {
+  if (!Object.hasOwn(fields, "status")) return;
+  const next = fields["status"];
+  if (next === "archived") return;
+  if (current["status"] !== "archived" && rowStatus !== "archived") return;
+  throw badRequest("request failed validation", [
+    {
+      path: "body.status",
+      message:
+        `${id} is archived; \`status: ${String(next)}\` would set the frontmatter without ` +
+        `bringing the document back. Use \`POST /api/docs/${id}/unarchive\` — it restores the ` +
+        "status and, for a skill, moves its folder back out of `.claude/skills-archived/` and " +
+        "frees the name.",
+    },
+  ]);
+}
+
 export async function updateDocument(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -245,6 +305,9 @@ export async function updateDocumentLocked(
   const nextBody = patch.body ?? parsed.body;
   const bodyChanged = nextBody !== parsed.body;
   const fields = changedFields(parsed.data, patch);
+  // Before anything is reconciled or written, and after `changedFields` has
+  // decided the patch really moves `status` at all.
+  assertNotUnarchivingByPut(id, parsed.data, loaded.row.status, fields);
 
   // §6 step by step: resolve against `oldBody`, map through the diff, write
   // the result back. The engine owns every judgment; this call site owns only

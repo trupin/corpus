@@ -1,6 +1,15 @@
 import { FORM_ANSWER_LABEL } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
-import { answeredOption, carriesForm, readForm, readThreadForms, type FormTurn } from "./form.js";
+import { answeredOption, readForm, readThreadForms, type FormTurn } from "./form.js";
+
+/**
+ * What the projection stores in `turns.has_form`, asked of one body. It used to
+ * be a `carriesForm` export that nothing but this file called — and whose
+ * docblock claimed to be the projection's own reader, which it had not been
+ * since `readThreadForms` took that job (wave-3 audit CLEAN 41). The question is
+ * still worth asking body-by-body, so it stays here as the test's own helper.
+ */
+const carriesForm = (body: string): boolean => readForm(body).ok;
 
 const YAML_BODY = "prompt: Ship it?\noptions:\n  - Yes\n  - No";
 const fenced = (info: string, source: string): string =>
@@ -152,6 +161,70 @@ describe("readThreadForms", () => {
   it("treats an agent turn that answers its own form as the answer", () => {
     const turns = [form(0, 1), answer(1, "F1-yes", "agent")];
     expect(unanswered(turns)).toEqual([]);
+  });
+
+  // Wave-3 audit FIX 10. Only a hand-edited file produces this turn — the
+  // answer route writes the label and the note and nothing else — but
+  // `POST …/turns/{ts}/form` accepts an answer for it all the same (it asks
+  // only whether an agent turn's body parses as a form), so a state of `null`
+  // here meant the server advertised no question it was perfectly willing to
+  // answer.
+  describe("a turn that both answers a form and carries one", () => {
+    /** An agent turn whose first line answers `option` and whose body carries form `label`. */
+    const answeringForm = (index: number, option: string, label: number): FormTurn => ({
+      author: "agent",
+      ts: stamp(index),
+      body: `${FORM_ANSWER_LABEL} ${option}\n\n${form(index, label).body}`,
+    });
+
+    it("closes the earlier form and opens its own", () => {
+      const turns = [form(0, 1), answeringForm(1, "F1-yes", 2)];
+      expect(readThreadForms(turns)).toEqual([
+        { hasForm: true, answered: true },
+        { hasForm: true, answered: false },
+      ]);
+      expect(unanswered(turns)).toEqual([stamp(1)]);
+    });
+
+    it("can then be answered like any other form, so the reason clears", () => {
+      const turns = [form(0, 1), answeringForm(1, "F1-yes", 2), answer(2, "F2-no")];
+      expect(unanswered(turns)).toEqual([]);
+    });
+
+    it("never answers itself, however its own options read", () => {
+      // The turn's option is one of the form it carries — it must still be the
+      // *earlier* form that closes, and its own must stay open.
+      const turns = [form(0, 2), answeringForm(1, "F2-no", 2)];
+      expect(unanswered(turns)).toEqual([stamp(1)]);
+    });
+
+    it("opens its form even when its answer matches nothing", () => {
+      const turns = [answeringForm(0, "nothing offers this", 1)];
+      expect(unanswered(turns)).toEqual([stamp(0)]);
+    });
+
+    // The one place this reader is deliberately wider than the renderer's
+    // `mapFormAnswers`, which `continue`s past its own registration on such a
+    // turn and so leaves the form live forever. Pinned so the divergence is a
+    // decision rather than a surprise; the UI follow-up converges on this side,
+    // because §11's reasons have to be clearable (SERVER-022 finding 3).
+    it("diverges from the renderer, which would leave that form unanswerable", () => {
+      const turns = [form(0, 1), answeringForm(1, "F1-yes", 2), answer(2, "F2-no")];
+      expect(readThreadForms(turns)[1]).toEqual({ hasForm: true, answered: true });
+    });
+  });
+
+  // The evaluator's FINDING-3 on SERVER-032, kept as a test because it is the
+  // documented *limit* of order-based attribution rather than a defect to fix
+  // here: an exact pairing needs the form's `ts` in the answer turn's wire
+  // format, which is SPEC §6's grammar and the renderer's reader as much as it
+  // is this module (see the docblock; filed as a P3).
+  it("mis-attributes a repeated answer when two open forms share an option string", () => {
+    const shared = ["same", "other"];
+    const turns = [form(0, 1, shared), form(1, 2, ["same", "other2"]), answer(2, "same")];
+    expect(unanswered(turns)).toEqual([stamp(1)]);
+    // Answering form 1 a second time retires form 2, which nobody answered.
+    expect(unanswered([...turns, answer(3, "same")])).toEqual([]);
   });
 
   it("says nothing at all about a thread with no forms", () => {

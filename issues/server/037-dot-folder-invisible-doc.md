@@ -4,7 +4,7 @@
 server
 
 ## Status
-in_progress
+done
 
 ## Priority
 P2
@@ -216,6 +216,25 @@ same session belongs to SERVER-032's `turns.form_answered` column, which does no
 routes already declare, checked rather than assumed: `packages/contract/src/routes/docs.ts:83`
 (`createDoc` → `400: VALIDATION_RESPONSE`) and `:142` (`moveDoc` → the same) — and no `apps/ui`. Per this agent's standing rule it ran **no git command** in the development
 repository (TEST-575); the blast-radius diff is the orchestrator's to run.
+
+## Audit fix round
+
+_Appended 2026-07-30 by server-dev (opus) in the wave-3 audit fix round
+(`issues/evals/AUDIT-S017-wave3.md`)._
+
+Nothing in the round touched this issue's blast radius: `apps/server/src/docs/write.ts` and its two
+colocated test files are unchanged, and `classifyPath` / `roots.ts` were not read or edited. Two
+neighbouring changes are worth knowing about when reading this issue later:
+
+- **SERVER-039** (filed and implemented in the round, from audit FIX 5) adds a refusal to
+  `apps/server/src/docs/update.ts` — a `PUT` may not move a document off `status: archived`, because
+  for a `type: skill` document that writes the frontmatter and leaves the folder disabled in
+  `.claude/skills-archived/`. Like this issue's refusals it is a **400**, and for the same reason:
+  `packages/contract/src/routes/docs.ts:112` already declares `400: VALIDATION_RESPONSE` on
+  `updateDoc`, so no contract change was needed.
+- **FIX 16** made `openProjectionReadonly` (the handle `db doctor` opens) refuse a projection whose
+  schema stamp is not this build's, instead of reporting it clean — the projection files this issue
+  reasons about are unaffected, but `db doctor`'s verdict on a stale `cache.db` now differs.
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
