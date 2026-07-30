@@ -130,14 +130,14 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | done | P1 | CLI-003, SERVER-019 |
 | AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | done | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
-| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-006, SERVER-019 |
+| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | done | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P2 | UI-014, PLUGINS-002 |
 | UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
 | SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | todo | P1 | SERVER-003 |
 | UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | todo | P2 | UI-005 |
 | CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002, CLI-005 |
-| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
+| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
 | PLUGINS-002 | Todos reference plugin | done | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
@@ -145,7 +145,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-014 | Editor ownership of non-core document bodies | done | P2 | UI-006, PLUGINS-001 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | done | P1 | CLI-002, UI-010 |
 | CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | done | P1 | CLI-002, AGENT-001 |
-| SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | SERVER-008, SERVER-009, AGENT-002 |
+| SERVER-030 | Queue defer/requeue transition for lock-deferred work | done | P2 | SERVER-008, SERVER-009, AGENT-002 |
 | SERVER-031 | Empty JSON body returns 500 instead of 400 | done | P2 | SERVER-003 |
 | SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | done | P2 | CONTRACT-009 |
@@ -169,13 +169,13 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
 | SHARED-004 | Spec pass: delegation, doc-abandon, context menu, view width, §12/§2.1/§7 reconciliation | todo | P0 | — |
-| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
-| CONTRACT-020 | Route: POST /api/skills (skill create) | todo | P1 | CONTRACT-008 |
-| SERVER-036 | Skill-create write path (documents outside data/docs) | todo | P1 | CONTRACT-020 |
-| CLI-011 | `corpus skill create` + `corpus doc list` (doc list unblocked; skill create after SERVER-036) | todo | P1 | CLI-006, SERVER-019, SERVER-036 |
+| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
+| CONTRACT-020 | Route: POST /api/skills (skill create) | done | P1 | CONTRACT-008 |
+| SERVER-036 | Skill-create write path (documents outside data/docs) | done | P1 | CONTRACT-020 |
+| CLI-011 | `corpus skill create` + `corpus doc list` (doc list unblocked; skill create after SERVER-036) | done | P1 | CLI-006, SERVER-019, SERVER-036 |
 | AGENT-006 | Comment skill: upgrade skill genesis from propose to create | todo | P1 | CLI-011, AGENT-003 |
-| CONTRACT-021 | Rider: queue deferred-status surface | todo | P2 | CONTRACT-002 |
-| SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | CONTRACT-021, SERVER-008, SERVER-009, AGENT-002 |
+| CONTRACT-021 | Rider: queue deferred-status surface | done | P2 | CONTRACT-002 |
+| SERVER-030 | Queue defer/requeue transition for lock-deferred work | done | P2 | CONTRACT-021, SERVER-008, SERVER-009, AGENT-002 |
 | AGENT-007 | Orchestrate skill: replace the `deferred:`-prefixed failure with the defer transition | todo | P2 | SERVER-030, AGENT-002 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P1 | UI-014 |
 | AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | SHARED-004, AGENT-002 |
@@ -187,7 +187,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
 | SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | todo | P2 | SERVER-005 |
-| CLI-015 | `corpus queue defer` verb | in_progress | P1 | CLI-004, CONTRACT-021, SERVER-030 |
+| CLI-015 | `corpus queue defer` verb | done | P1 | CLI-004, CONTRACT-021, SERVER-030 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
