@@ -29,13 +29,30 @@
 //   It is the answer to the edit that made it necessary, not a continuation of
 //   it, and folding would amend that edit's commit away — deleting the history
 //   the restoration is reading from.
+//
+// And one on ordering, which the two locks make easy to get wrong. **The
+// document lane is outermost**, exactly as it is on every other write verb
+// (`docs/update.ts`, `docs/delete.ts`): the lane is entered first, the edit lock
+// is asserted inside it, and only then is the git lock taken — released again
+// before `runMutation` takes it for the commit. Nothing anywhere takes the git
+// lock and then waits for a document lane, so the two can never close a cycle.
+// Everything that decides *what* to restore — the file on disk, the candidate
+// walk, the validation — happens inside the lane too, because a rollback chosen
+// against bytes a concurrent save has since replaced would silently overwrite
+// that save (SERVER-022 finding 7, PR #11 review finding 14).
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Actor, SkillRollbackResult, Warning } from "@corpus/contract";
 import { badRequest, notFound } from "../errors.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
-import { listFileRevisions, readVersionAt, resolveRevision, type Git } from "../git/index.js";
+import {
+  REVISION_SEARCH_LIMIT,
+  listFileRevisions,
+  readVersionAt,
+  resolveRevision,
+  type Git,
+} from "../git/index.js";
 import {
   SKILLS_ROOT,
   checkSave,
@@ -47,7 +64,7 @@ import {
   type DocsWorkspace,
   type DocumentMutex,
 } from "../docs/index.js";
-import { SKILL_FILENAME, classifyPath, readDocumentIdentity } from "../projection/index.js";
+import { SKILL_FILENAME, classifyPath, syntheticDocumentId } from "../projection/index.js";
 
 /**
  * The document workspace plus the raw git command builder. `DocsWorkspace.git` is
@@ -77,49 +94,95 @@ export const skillDocumentPath = (name: string): string =>
  */
 type Candidate = { readonly sha: string; readonly content: string };
 
+/**
+ * The outcome of a search, which is not the same thing as its answer.
+ *
+ * A `null` candidate means "the search found nothing", and the refusal has to
+ * say how much of history the search actually covered — `truncated` is how it
+ * knows. Irrelevant when a candidate was found, and always `false` for an
+ * explicit `--to`, which examines exactly the revision it was given.
+ */
+type Search = { readonly candidate: Candidate | null; readonly truncated: boolean };
+
+/**
+ * The walk behind a bare rollback, bounded by {@link REVISION_SEARCH_LIMIT}.
+ *
+ * The bound is deliberate — each candidate costs one `git show` inside a request
+ * handler — so the walk is *scoped*, not exhaustive, and it reports which it
+ * was. One extra sha is listed rather than walked, purely as the probe that
+ * distinguishes "history ends here" from "history continues past the bound":
+ * listing is one `git log`, so the probe is free, while walking the extra
+ * revision would not be.
+ */
 async function findLastKnownGood(
   workspace: SkillsWorkspace,
   path: string,
   current: string,
-): Promise<Candidate | null> {
-  for (const sha of await listFileRevisions(workspace.gitCommands, path)) {
+): Promise<Search> {
+  const revisions = await listFileRevisions(workspace.gitCommands, path, REVISION_SEARCH_LIMIT + 1);
+  const truncated = revisions.length > REVISION_SEARCH_LIMIT;
+  for (const sha of revisions.slice(0, REVISION_SEARCH_LIMIT)) {
     const content = await readVersionAt(workspace.gitCommands, sha, path);
     if (content === null) continue;
     if (content === current) continue;
     if (checkSave(workspace.projection, path, content).blocking.length > 0) continue;
-    return { sha, content };
+    return { candidate: { sha, content }, truncated };
   }
-  return null;
+  return { candidate: null, truncated };
 }
 
 /**
- * The id the restored document will carry.
+ * The document this rollback is about: the id of whatever occupies `path` right
+ * now. It is the lane the write serializes under, the key the edit lock is
+ * asserted on, and the `docId` the response and the invalidation carry — one id,
+ * decided before anything is read, because a lane cannot be entered after the
+ * read it is supposed to protect.
  *
- * The projection's row is preferred: it is the id the board, every thread and
- * every `[[ref]]` already use, and §5 makes ids immutable, so a rollback must not
- * change it. But a skill so badly edited that it no longer parses has **no row** —
- * the projection skipped it — and that is precisely the case §7's escape hatch
- * exists for. So the fallback asks the projection's own identity function what id
- * the *restored* bytes project under, which for a skill root is derived from the
- * path and is therefore the same id the row held.
+ * Never derived from the restored bytes. §5 makes ids immutable, so the id a
+ * restoration writes under is the one the document already has; an old revision
+ * that happens to declare a different one is describing a document this
+ * workspace does not have.
+ *
+ * The projection's row is the authority: it is the id the board, every thread
+ * and every `[[ref]]` already use. A skill so badly edited that it no longer
+ * parses has **no row** — the projection skipped it — and that is precisely the
+ * case §7's escape hatch exists for, so the fallback is the id the skills root
+ * synthesizes from the path. That root synthesizes for every file under it, and
+ * a rollback never moves the file, so it is also the id the restored document
+ * will project under once it parses again.
  */
-function documentIdFor(workspace: SkillsWorkspace, path: string, restored: string): string {
+function documentIdFor(workspace: SkillsWorkspace, path: string): string {
   const row = findDocumentRowByPath(workspace.projection, path);
   if (row !== null) return row.id;
   const root = classifyPath(path);
   /* c8 ignore next */
   if (root === null) throw notFound(`${path} is not a document`);
-  const identity = readDocumentIdentity(root, path, restored);
-  if (identity.kind !== "id") {
-    // Unreachable through the route: `validateBeforeWrite` has already refused
-    // bytes that do not parse, and a skill root synthesizes an id for everything
-    // that does.
-    /* c8 ignore next 2 */
-    throw badRequest(`the restored content has no usable document id: ${identity.reason}`, [
-      { path: "to", message: identity.reason },
-    ]);
-  }
-  return identity.id;
+  return syntheticDocumentId(root, path);
+}
+
+/**
+ * Why a bare rollback found nothing — said no more strongly than the search
+ * earns (PR #11 review finding 15).
+ *
+ * "Its history holds nothing that differs and validates" is a claim about the
+ * whole history, and the walk covers only {@link REVISION_SEARCH_LIMIT}
+ * revisions. When it stopped at the bound the claim is scoped to the window it
+ * actually examined and the operator is pointed at the escape from that window,
+ * which already exists: `to` restores any revision git resolves, however far
+ * back. Scoping rather than walking to the root because the bound is deliberate
+ * — each candidate costs a `git show` inside a request handler, and an
+ * unbounded walk would make a rollback's cost a function of the repository's
+ * age. An operator who needs revision 51 knows something the walk cannot: which
+ * one it is.
+ */
+function noCandidateReason(path: string, truncated: boolean): string {
+  const opening = `no earlier committed version of ${path} to restore — `;
+  return truncated
+    ? opening +
+        `none of the ${String(REVISION_SEARCH_LIMIT)} most recent commits touching it holds ` +
+        "content that differs from the file on disk and validates, and older commits were not " +
+        "examined; name one explicitly with `to` to restore it"
+    : opening + "its history holds nothing that differs from the file on disk and validates";
 }
 
 /**
@@ -156,55 +219,73 @@ export async function rollbackSkill(
 ): Promise<SkillRollbackResult> {
   const path = skillDocumentPath(name);
   const absPath = resolve(workspace.workspaceRoot, path);
-  if (!existsSync(absPath)) {
-    // One uniform refusal for "no such skill" and "archived" alike: archiving a
-    // skill moves its folder to `.claude/skills-archived/` precisely to disable
-    // it (§7), so an archived skill is not installed and rolling it back is a
-    // 404. Unarchive it first.
+  // One uniform refusal for "no such skill" and "archived" alike: archiving a
+  // skill moves its folder to `.claude/skills-archived/` precisely to disable it
+  // (§7), so an archived skill is not installed and rolling it back is a 404.
+  // Unarchive it first.
+  const assertInstalled = (): void => {
+    if (existsSync(absPath)) return;
     throw notFound(`no skill named \`${name}\` is installed (${path} does not exist)`);
-  }
+  };
+  // Asked once here so an unknown name is refused without queuing behind an
+  // unrelated write, and once more inside the lane, where a deletion that landed
+  // while this waited becomes the same 404 rather than an ENOENT.
+  assertInstalled();
 
-  // What the file holds right now, which is what "restores nothing" is measured
-  // against. Read here rather than inferred from `HEAD`: the case §7 cares most
-  // about is an uncommitted edit by an outside editor.
-  const current = readFileSync(absPath, "utf8");
+  // Decided before the lane, because it *is* the lane key — and it reads the
+  // projection, never the file, so nothing a concurrent save could change is
+  // consulted outside the lane.
+  const docId = documentIdFor(workspace, path);
 
-  const candidate = await workspace.git.withGitLock(async () => {
-    if (to === null) return findLastKnownGood(workspace, path, current);
-    const sha = await resolveRevision(workspace.gitCommands, to);
-    if (sha === null) {
-      throw badRequest(`git does not resolve the revision \`${to}\``, [
-        { path: "to", message: `\`${to}\` is not a revision in this workspace` },
-      ]);
+  const result = await mutex.run(docId, async () => {
+    // §7's edit lock, inside the lane and before this verb reads or writes
+    // anything — the same one call per verb `docs/update.ts` makes. A rollback
+    // rewrites `SKILL.md`, so it is a document write path and §9.2 admits no
+    // carve-out: rolling back under the other party's lease would discard
+    // whatever that party is mid-way through writing (PR #11 review finding 1).
+    await (workspace.assertWritable ?? (() => undefined))(docId, actor);
+    assertInstalled();
+
+    // What the file holds right now, which is what "restores nothing" is
+    // measured against. Read here rather than inferred from `HEAD`: the case §7
+    // cares most about is an uncommitted edit by an outside editor. Inside the
+    // lane, so the bytes the candidate is chosen against are the bytes the
+    // restoration will overwrite.
+    const current = readFileSync(absPath, "utf8");
+
+    const search: Search = await workspace.git.withGitLock(async () => {
+      if (to === null) return findLastKnownGood(workspace, path, current);
+      const sha = await resolveRevision(workspace.gitCommands, to);
+      if (sha === null) {
+        throw badRequest(`git does not resolve the revision \`${to}\``, [
+          { path: "to", message: `\`${to}\` is not a revision in this workspace` },
+        ]);
+      }
+      const content = await readVersionAt(workspace.gitCommands, sha, path);
+      if (content === null) {
+        throw badRequest(`${path} does not exist at \`${to}\``, [
+          { path: "to", message: `${path} is not present in revision ${sha}` },
+        ]);
+      }
+      return { candidate: { sha, content }, truncated: false };
+    });
+
+    const candidate = search.candidate;
+    if (candidate === null) {
+      // TEST-24's honest outcome, and the only one the wire can express: there
+      // is no `warnings` code for "nothing to restore", and inventing a 200 that
+      // rewrote nothing would report a rollback that did not happen. The claim
+      // is scoped to what was actually examined — see {@link noCandidateReason}.
+      throw notFound(noCandidateReason(path, search.truncated));
     }
-    const content = await readVersionAt(workspace.gitCommands, sha, path);
-    if (content === null) {
-      throw badRequest(`${path} does not exist at \`${to}\``, [
-        { path: "to", message: `${path} is not present in revision ${sha}` },
-      ]);
-    }
-    return { sha, content };
-  });
 
-  if (candidate === null) {
-    // TEST-24's honest outcome, and the only one the wire can express: there is
-    // no `warnings` code for "nothing to restore", and inventing a 200 that
-    // rewrote nothing would report a rollback that did not happen.
-    throw notFound(
-      `no earlier committed version of ${path} to restore — ` +
-        `its history holds nothing that differs from the file on disk and validates`,
-    );
-  }
+    // The restoration is a save like any other and validates like any other
+    // (§14). It also cannot be skipped: `--to` accepts any revision git
+    // resolves, and an old revision predating a format rule is exactly the kind
+    // of bytes that must not be written back unchecked.
+    const validation = validateBeforeWrite(workspace, path, candidate.content);
 
-  // The restoration is a save like any other and validates like any other (§14).
-  // It also cannot be skipped: `--to` accepts any revision git resolves, and an
-  // old revision predating a format rule is exactly the kind of bytes that must
-  // not be written back unchecked.
-  const validation = validateBeforeWrite(workspace, path, candidate.content);
-  const docId = documentIdFor(workspace, path, candidate.content);
-
-  const result = await mutex.run(docId, () =>
-    runMutation(workspace, {
+    return runMutation(workspace, {
       docId,
       actor,
       warnings: validation,
@@ -221,8 +302,8 @@ export async function rollbackSkill(
         // Skills live outside `data/docs/`, which is the only tree
         // `GET /api/tree` describes — no folder badge can move (SERVER-018).
       },
-    }),
-  );
+    });
+  });
 
   const outcome = result.commit;
   const sha =

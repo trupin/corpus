@@ -4,11 +4,26 @@
 // was called. Every claim below is read off the file on disk, `git log`, the
 // projection, or the invalidation bus.
 
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SkillRollbackResultSchema, type QueryKey } from "@corpus/contract";
-import { createWriteWorkspace, type WriteWorkspace } from "../docs/write-fixture.js";
-import { skillDocumentPath } from "./rollback.js";
+import {
+  ACTOR_HEADER,
+  LockedErrorSchema,
+  LockSchema,
+  SkillRollbackResultSchema,
+  type QueryKey,
+} from "@corpus/contract";
+import {
+  createDocumentMutex,
+  updateDocument,
+  type DocumentMutex,
+  type DocsWorkspace,
+} from "../docs/index.js";
+import { AUTH, createWriteWorkspace, type WriteWorkspace } from "../docs/write-fixture.js";
+import { createAutoCommitter, createGit, REVISION_SEARCH_LIMIT } from "../git/index.js";
+import { silentLogger } from "../logger.js";
+import { rollbackSkill, skillDocumentPath, type SkillsWorkspace } from "./rollback.js";
 
 let ws: WriteWorkspace;
 let keys: QueryKey[][];
@@ -62,6 +77,18 @@ async function rollback(
 const docIdOf = (path: string): string | undefined =>
   (ws.db.prepare("SELECT id FROM documents WHERE path = ?").get(path) as { id: string } | undefined)
     ?.id;
+
+const acquire = async (id: string, actor: "user" | "agent"): Promise<Response> =>
+  ws.server.app.request(`/api/locks/${id}`, {
+    method: "POST",
+    headers: { ...AUTH, [ACTOR_HEADER]: actor },
+  });
+
+const release = async (id: string, actor: "user" | "agent"): Promise<Response> =>
+  ws.server.app.request(`/api/locks/${id}`, {
+    method: "DELETE",
+    headers: { ...AUTH, [ACTOR_HEADER]: actor },
+  });
 
 describe("restoring the last-known-good version", () => {
   beforeEach(() => {
@@ -261,6 +288,43 @@ describe("nothing to restore", () => {
     expect(result.warnings[0]?.detail).toContain("the file on disk holds it either way");
   });
 
+  it("refuses when the walk found nothing, scoping the claim to what it examined", async () => {
+    // Deeper than the bound, and nothing in the window is restorable: every
+    // revision is structurally broken, so `checkSave` refuses all fifty. The
+    // refusal must not then claim the *history* holds nothing (PR #11 review
+    // finding 15) — the walk stopped at the bound and never looked past it.
+    const revisions = REVISION_SEARCH_LIMIT + 1;
+    for (let index = 0; index < revisions; index += 1) {
+      ws.write(PATH, `---\nname: ${SKILL}\nanchors: not-a-mapping-${String(index)}\n---\n\nX.\n`);
+      // `git commit -- <path>` commits the working-tree content of a *tracked*
+      // path, so only the first revision needs an `add`: fifty-one revisions
+      // cost fifty-two processes rather than a hundred and two.
+      if (index === 0) ws.git("add", "-A", "--", PATH);
+      ws.git("commit", "-q", "-m", `broken ${String(index)}`, "--", PATH);
+    }
+    ws.reproject();
+    expect(ws.git("log", "--format=%H", "--", PATH).trim().split("\n")).toHaveLength(revisions);
+
+    const { status, payload } = await rollback();
+    expect(status).toBe(404);
+    const message = String(payload["message"]);
+    expect(message).toContain(`none of the ${String(REVISION_SEARCH_LIMIT)} most recent commits`);
+    expect(message).toContain("older commits were not examined");
+    // The escape from the window, which the operator has and the walk does not.
+    expect(message).toContain("name one explicitly with `to`");
+    expect(message).not.toContain("its history holds nothing");
+  });
+
+  it("keeps the unqualified claim when the walk reached the end of history", async () => {
+    commitSkill("The only version.", "seed the skill");
+    const { status, payload } = await rollback();
+    expect(status).toBe(404);
+    expect(String(payload["message"])).toContain(
+      "its history holds nothing that differs from the file on disk and validates",
+    );
+    expect(String(payload["message"])).not.toContain("were not examined");
+  });
+
   it("restores the file and reports `commit: null` in a workspace with no git", async () => {
     const bare = createWriteWorkspace("skill-nogit", { sprint: "s013", git: false });
     try {
@@ -391,5 +455,202 @@ describe("the restoration is an ordinary mutation", () => {
       ws.server.selfWrites.claim(join(ws.root, PATH), Buffer.from(skill("Version one."), "utf8")),
     ).toBe(true);
     expect(docId).toBe(docIdOf(PATH));
+  });
+});
+
+// PR #11 review, finding 1 (MAJOR). A rollback rewrites `SKILL.md`, so it is a
+// document write path — and it was the only one that never consulted the edit
+// lock. The user editing `comment/SKILL.md` in the board holds the lease (a
+// `PUT` on the same document is 423-refused), and `corpus skill rollback
+// comment` overwrote and committed straight over the in-progress edit.
+//
+// Driven through the real `createServer` wiring rather than a stubbed guard:
+// what is under test is that `mountSkillRoutes` gets the guard every other verb
+// gets, which is a wiring property no unit test of `assertWritable` can see.
+describe("the edit lock", () => {
+  beforeEach(() => {
+    commitSkill("The good version.", "seed the skill");
+    commitSkill("The bad edit.", "break it");
+  });
+
+  it("refuses the rollback with 423 when the other party holds it", async () => {
+    const docId = docIdOf(PATH) ?? "";
+    const taken = await acquire(docId, "user");
+    expect(taken.status).toBe(201);
+    const lock = LockSchema.parse(await taken.json());
+    const before = ws.read(PATH);
+    const head = ws.head();
+    keys.length = 0;
+
+    const { status, payload } = await rollback(SKILL, undefined, "agent");
+
+    expect(status).toBe(423);
+    expect(LockedErrorSchema.parse(payload)).toEqual({
+      code: "locked",
+      message: `${docId} is being edited by user; the lock was acquired at ${lock.acquired}`,
+      lock,
+    });
+    // Refused before anything was restored: file, history and the bus are
+    // byte-for-byte what they were.
+    expect(ws.read(PATH)).toBe(before);
+    expect(ws.head()).toBe(head);
+    expect(keys).toEqual([]);
+  });
+
+  it("refuses an explicit `--to` rollback too", async () => {
+    const docId = docIdOf(PATH) ?? "";
+    const oldest = ws.git("log", "--format=%H", "--", PATH).trim().split("\n")[1] ?? "";
+    expect((await acquire(docId, "user")).status).toBe(201);
+    const before = ws.read(PATH);
+
+    const { status } = await rollback(SKILL, { to: oldest }, "agent");
+
+    expect(status).toBe(423);
+    expect(ws.read(PATH)).toBe(before);
+  });
+
+  it("never blocks the lease's own holder", async () => {
+    const docId = docIdOf(PATH) ?? "";
+    expect((await acquire(docId, "agent")).status).toBe(201);
+
+    const { status } = await rollback(SKILL, undefined, "agent");
+
+    expect(status).toBe(200);
+    expect(ws.read(PATH)).toBe(skill("The good version."));
+  });
+
+  it("hands the rollback back once the lease is released", async () => {
+    const docId = docIdOf(PATH) ?? "";
+    expect((await acquire(docId, "user")).status).toBe(201);
+    expect((await rollback(SKILL, undefined, "agent")).status).toBe(423);
+
+    expect((await release(docId, "user")).status).toBe(200);
+
+    expect((await rollback(SKILL, undefined, "agent")).status).toBe(200);
+    expect(ws.read(PATH)).toBe(skill("The good version."));
+  });
+
+  // SERVER-022 finding 7, for this verb: the guard runs *inside* the lane, so a
+  // rollback that waited behind another write is judged against the lock state
+  // at the moment it runs, not the one it queued under.
+  it("refuses a rollback that was already queued when the lease was taken", async () => {
+    const docId = docIdOf(PATH) ?? "";
+    const hooks = join(ws.root, ".git", "hooks");
+    mkdirSync(hooks, { recursive: true });
+    const started = join(ws.root, ".git", "corpus-hook-started");
+    const gate = join(ws.root, ".git", "corpus-hook-gate");
+    writeFileSync(
+      join(hooks, "pre-commit"),
+      [
+        "#!/bin/sh",
+        `: > "${started}"`,
+        "i=0",
+        `while [ ! -f "${gate}" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done`,
+        "exit 0",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(join(hooks, "pre-commit"), 0o755);
+
+    // A save on the same document parks inside its own commit, holding the lane.
+    const holding = ws.put(`/api/docs/${docId}`, { body: "the save that holds the lane" });
+    for (let attempt = 0; attempt < 500 && !existsSync(started); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(existsSync(started)).toBe(true);
+
+    const queued = rollback(SKILL, undefined, "agent");
+    // The lease is taken while the rollback sits in the lane — after the point a
+    // guard outside the lane would have consulted it.
+    expect((await acquire(docId, "user")).status).toBe(201);
+    const before = ws.read(PATH);
+
+    writeFileSync(gate, "", "utf8");
+    expect((await holding).status).toBe(200);
+
+    const { status } = await queued;
+    expect(status).toBe(423);
+    expect(ws.read(PATH)).toBe(before);
+  });
+});
+
+// PR #11 review, finding 14 (MINOR). The current-content read and the candidate
+// selection ran outside the document lane, so a save landing in between was
+// overwritten by a rollback chosen against bytes that were already stale — and
+// the *wrong* revision was restored, because "the newest revision that differs
+// from the file on disk" had been measured against the wrong file.
+//
+// Driven in process rather than over HTTP: the point is an ordering, and the
+// only honest way to fix an ordering in a test is to decide it, not to time it.
+// Holding the lane directly makes the sequence — save first, rollback second —
+// a property of the test rather than of the machine.
+describe("choosing the revision inside the lane", () => {
+  function skillsWorkspace(): { skills: SkillsWorkspace; mutex: DocumentMutex } {
+    const workspaceRoot = ws.server.config.workspaceRoot;
+    const gitCommands = createGit(workspaceRoot);
+    const docs: DocsWorkspace = {
+      workspaceRoot,
+      projection: ws.db,
+      git: createAutoCommitter({ git: gitCommands, logger: silentLogger, now: () => ws.clock }),
+      selfWrites: ws.server.selfWrites,
+      bus: ws.server.bus,
+      logger: silentLogger,
+      now: () => ws.clock,
+    };
+    return { skills: { ...docs, gitCommands }, mutex: createDocumentMutex() };
+  }
+
+  it("is not fooled by a save that entered the lane first", async () => {
+    commitSkill("Version one.", "seed");
+    commitSkill("Version two.", "edit");
+    const docId = docIdOf(PATH) ?? "";
+    const { skills, mutex } = skillsWorkspace();
+
+    // Nothing enters `docId`'s lane until this resolves, so the order below is
+    // the order the three operations were registered in.
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    void mutex.run(docId, () => held);
+
+    const save = updateDocument(skills, mutex, "user", docId, {
+      body: "Version three — the concurrent save.\n",
+    });
+    // Registered while the save is still queued. The pre-fix code read the file
+    // here, synchronously, before the save had written a byte — and then chose
+    // "Version one." because "Version two." was what it believed was on disk.
+    const rolled = rollbackSkill(skills, mutex, "agent", SKILL, null);
+
+    release();
+    await save;
+    await rolled;
+
+    // Measured against the save's bytes: "Version three" is what the file held
+    // when the rollback ran, so the newest revision that differs from it is
+    // "Version two." — the save is undone, not the two edits before it.
+    expect(ws.read(PATH)).toBe(skill("Version two."));
+  });
+
+  it("restores nothing when the save that went first is already the last-known-good", async () => {
+    commitSkill("Version one.", "seed");
+    const docId = docIdOf(PATH) ?? "";
+    const { skills, mutex } = skillsWorkspace();
+
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    void mutex.run(docId, () => held);
+
+    const save = updateDocument(skills, mutex, "user", docId, { body: "Version two.\n" });
+    const rolled = rollbackSkill(skills, mutex, "agent", SKILL, null);
+
+    release();
+    await save;
+    // Only two revisions exist and the newer one is on disk, so the answer is
+    // "Version one." — reached without ever having seen the pre-save file.
+    await rolled;
+    expect(ws.read(PATH)).toBe(skill("Version one."));
   });
 });
