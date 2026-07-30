@@ -1,11 +1,11 @@
 ---
 name: orchestrate
-description: Run the Corpus agent loop in this workspace — claim queue events, route each one to a handler, report progress to the console, and park on idle until the next event arrives. Invoke as /orchestrate and leave it running.
+description: Run the Corpus agent loop in this workspace — claim queue events, dispatch each one to a subagent, settle outcomes from their reports, report progress to the console, and park on idle until the next event arrives. Invoke as /orchestrate and leave it running.
 id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-29T00:00:00Z
+updated: 2026-07-30T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -15,8 +15,9 @@ evergreen: true
 ## Purpose and when to run
 
 You are this workspace's agent, and `/orchestrate` is your main loop. It drains the event
-queue, routes every event to the right handler, reports progress to the console, drives each
-event to a terminal state, and parks — at zero token cost — until the next event arrives.
+queue, dispatches every event to a subagent running the right skill, reports progress to
+the console, drives each event to a settled state, and parks — at zero token cost — until
+the next event arrives.
 The operator starts `claude` in the workspace, invokes `/orchestrate` once, and leaves it
 running; you loop until the session is stopped. This session is the **only** process that
 claims queue events: the server enqueues them, the board displays them, and everything in
@@ -25,8 +26,9 @@ to two claimants, but a second loop would split the console's story in half.
 
 ## Invariants
 
-These bind every step below. Read them before the loop, because everything after depends on
-them.
+These bind every step below — and every subagent you dispatch, without dilution
+(Delegation states how they cross that boundary). Read them before the loop, because
+everything after depends on them.
 
 1. **Every mutation goes through the `corpus` CLI.** Never hand-edit files under `data/`,
    `.corpus/`, or `.claude/` — not with an editor, not with your own file tools, not with
@@ -40,9 +42,11 @@ them.
 3. **You archive; you never delete.** Deletion (`corpus doc delete`) belongs to the user
    alone, and the CLI refuses it from you. Where a person would delete, run
    `corpus doc archive` — reversible, still indexed, still in git.
-4. **Every claimed event reaches a terminal state** — `corpus queue complete` or
-   `corpus queue fail` — on success, on error, and on interruption alike. Work may fail;
-   accounting may not.
+4. **Every claimed event is settled** — `corpus queue complete`, `corpus queue fail`, or
+   `corpus queue defer` — on success, on error, on a blocking lock, and on interruption
+   alike. Complete and fail reach a terminal state; a deferred event is settled
+   accounting, not a dangling one — it leaves `in-progress/` and returns to `pending/` on
+   its own when the lock it names clears. Work may fail or wait; accounting may not.
 5. **`corpus queue idle` is the only wait.** Never `sleep`, never poll the queue, never
    busy-wait: `idle` parks you on a held response, so waiting costs zero tokens and ends the
    instant work arrives.
@@ -55,12 +59,20 @@ Run it exactly like this, in order, indefinitely:
 export CORPUS_FROM=agent    # once per session, before anything else
 corpus queue reap-stale     # returns events a dead session stranded in-progress
 corpus queue claim-all      # the whole pending batch, as one JSON payload
-# handle every claimed event (routing below), then settle each one:
+# dispatch every claimed event to a subagent (Routing and Delegation below), then park:
+corpus queue idle           # returns on a new event or on its ~8-minute rearm
+# on every return, settle each event whose subagent has reported —
 corpus queue complete evt_7c1d9a
 corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"
-corpus queue idle           # park until work arrives or the window expires
-# repeat from claim-all
+corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock"
+# — then repeat from claim-all
 ```
+
+The order is claim → dispatch → park. You return to `corpus queue idle` **as soon as the
+batch is dispatched** — you do not wait for the batch to finish, because a session waiting
+on one job is closed to every other, and keeping the queue open is the point. Settlement
+happens as subagent reports arrive: each time parking returns, record what has finished,
+then claim again.
 
 `corpus queue idle` exits `0` in every normal case. When its ~8-minute window expires with
 nothing pending it prints `{"idle":true,"reason":"timeout"}` — that is a normal outcome,
@@ -81,28 +93,33 @@ corpus queue claim-all
 {"events":[{"id":"evt_7c1d9a","type":"comment.created","created":"2026-07-28T09:14:02Z","source":"ui","payload":{"threadId":"th_4b8e2c","parentId":"doc_a1b2c3"}}]}
 ```
 
-Parse it, group it by the documents each event touches (two sections down), and work the
-whole batch to terminal states before claiming again — never call `claim-all` mid-batch,
-because a second claim reorders work you have already sequenced. An empty batch
-(`{"events":[]}`) is not an error: it means the queue is halted or another consumer claimed
-first. Go straight to `corpus queue idle`.
+Parse it, group it by the documents each event touches (Concurrency and ordering below),
+and dispatch the whole batch before claiming again — never call `claim-all` in the middle
+of dispatching, because a second claim splices new events into an ordering you have
+already computed. That is the whole rule: once the batch is dispatched, claiming again
+when parking returns is the normal loop, and events claimed then are simply dispatched
+behind whatever overlapping work is still running. An empty batch (`{"events":[]}`) is not
+an error: it means the queue is halted or another consumer claimed first. Go straight to
+`corpus queue idle`.
 
 ## Routing
 
-One handler per event type. Never guess: an event type with no row below is failed with a
-reason and is never silently completed.
+Every routable event is dispatched to a subagent; the row names **which skill that
+subagent is given**, never a job you take on yourself. Never guess: an event type with no
+row below is failed with a reason and is never silently completed.
 
-| Event type            | Handler                                                                                       |
+| Event type            | Dispatch                                                                                      |
 | --------------------- | --------------------------------------------------------------------------------------------- |
-| `comment.created`     | Invoke the **comment** skill on the thread named in the payload.                              |
-| `form.respond`        | Invoke the **comment** skill; the payload names the thread, the form's turn, and the answer.  |
-| `agent.done`          | A background subagent finished: pick up the work its payload identifies and carry it to its reply. |
-| `<plugin>.<action>`   | Invoke the skill named `<plugin>` — the part before the first dot.                            |
+| `comment.created`     | A subagent applying the **comment** skill to the thread named in the payload.                 |
+| `form.respond`        | A subagent applying the **comment** skill; the payload names the thread, the form's turn, and the answer. |
+| `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
+| `<plugin>.<action>`   | A subagent applying the skill named `<plugin>` — the part before the first dot.               |
 | anything else         | `corpus queue fail <id> --reason "unknown event type: <type>"`                                |
 
 Thread handling itself — reading context, honoring mentions, filing inbox captures, wording
-the reply, skill genesis — belongs to the comment skill. This skill routes, and owns queue
-state, ordering, locks, logging, and the halt switch.
+the reply, skill genesis — belongs to the comment skill, applied inside the subagent. This
+skill routes and dispatches, and owns queue state, ordering, locks, logging, and the halt
+switch.
 
 - **Structured targets.** The payload carries structured `mentions` and `skills` fields,
   parsed by the server at post time. `@<subagent>` (a `type: agent-def` document under
@@ -117,28 +134,103 @@ state, ordering, locks, logging, and the halt switch.
   console row says exactly what is missing.
 - **Gone context.** If an event's thread or parent document no longer exists (the user
   deleted it), fail with a reason naming the missing id. Never recreate deleted content.
-- **`agent.done` after resolution.** If the originating thread was resolved while the
-  subagent worked, deliver the result in a reply that says the thread was resolved
-  meanwhile — finish work that still has value, and never reopen the thread unilaterally.
+- **A report after resolution.** If the originating thread was resolved while the subagent
+  worked, deliver the result in a reply that says the thread was resolved meanwhile —
+  finish work that still has value, and never reopen the thread unilaterally.
+
+## Delegation
+
+**Every claimed event is worked by a subagent.** You never work a job inline — not a
+one-line answer, not a "quick" edit, no exception for small work: you claim, dispatch,
+settle, and park. A session deep inside one job is closed to every other; a dispatcher is
+back on the queue the moment the batch is out.
+
+Dispatch through Claude Code's subagent mechanism — the Task (Agent) tool — launched **in
+the background**, one subagent per event. A subagent inherits nothing, so its prompt
+carries everything: the event id and type, the payload's ids (thread, parent, the
+documents named), which skill to apply (the routing row, or the `@<subagent>` persona the
+payload directs to), and the binding rules below. Its report comes back as the task's
+final message. You park on `corpus queue idle` — never on a subagent — and reports are
+waiting whenever parking returns: on a new event, or on the ~8-minute rearm. On every
+return, settle what has reported, then claim. Settlement never depends on any queue event
+announcing the subagent; the report itself is the signal.
+
+**Pick the subagent's model by the task's weight** — small, mechanical work goes to a
+smaller, faster model; judgment goes to the strongest:
+
+| Weight               | Model      | What falls here                                                                                          |
+| -------------------- | ---------- | -------------------------------------------------------------------------------------------------------- |
+| Small and mechanical | **Haiku**  | The request prescribes the change exactly: a one-document edit spelled out in the comment, retitle-and-file an inbox capture, a factual reply that needs one read. |
+| Standard             | **Sonnet** | Most comment work: read a thread and its parent, decide the wording, edit, reply — multi-step but bounded to one or two documents. |
+| Heavy or judgment-laden | **Opus 5** | Cross-document restructuring, merges and splits, skill genesis or any edit to a skill, ambiguous requests that need judgment, anything where a wrong answer is expensive to unwind. |
+
+Judge weight by three things: how many documents the work touches, whether the request
+prescribes the change or asks for a decision, and the cost of getting it wrong. In doubt
+between two tiers, take the stronger — a wasted token is cheaper than a wrong edit.
+
+**Every invariant binds inside the subagent**, and the dispatch prompt states them rather
+than assuming them:
+
+- Every mutation goes through the `corpus` CLI — never hand-edit `data/`, `.corpus/`, or
+  `.claude/`, never call the HTTP API directly.
+- `export CORPUS_FROM=agent` before the first mutation and `--from agent` on mutating
+  commands — a subagent inherits no environment, and a change attributed to the wrong
+  party is a corrupted audit trail.
+- Locks are respected exactly as the edit verbs enforce them: a refused write is reported
+  back, never retried blind, never broken.
+- Progress lines go to **the dispatching event's job** — `corpus job log <eventId>
+  "<line>"` with the same event id you dispatched — so the console watches delegated work
+  exactly as it would watch you. Same discipline: name the object and the change.
+- A reply whose work changed documents closes with the `↳ ` trace line; the comment skill
+  states the grammar.
+
+**Queue state never crosses the boundary.** A subagent never runs `corpus queue
+claim-all`, `corpus queue complete`, `corpus queue fail`, or `corpus queue defer`: it
+**reports** an outcome, and you **record** it. Three paths, none of which loses a job:
+
+- **Reported success** — verify what the report claims (the reply exists, the named
+  changes landed), then `corpus queue complete`.
+- **Reported failure** — `corpus queue fail` with **the subagent's reason**, never a
+  generic one; if the subagent did not reply to the waiting thread, post the one-line
+  reply first.
+- **No report** — the subagent died mid-job. Its event stays `in-progress`, and the
+  loop's opening `corpus queue reap-stale` returns it to `pending` after the staleness
+  window. Nothing to do in the moment; nothing lost.
+
+**A blocked subagent defers — through you.** A subagent that hits a user-held lock
+reports the block with the document id and stops. Confirm the waiting thread got its
+one-line reply (the comment skill has the subagent post it; post it yourself if it is
+missing), then defer exactly as Locks and deferral below prescribes — never
+`corpus queue fail` for a lock, never a retry loop against it.
 
 ## Concurrency and ordering
 
-Compute, for every event in the batch, the set of documents it touches:
+Compute, for every event in the batch, the set of documents its work touches:
 
 - `comment.created` / `form.respond`: the thread id **and** the thread's `parent` document id.
 - `<plugin>.<action>`: every document id in the payload.
-- `agent.done`: the documents of the work it resumes.
+- `agent.done`: the documents of the work it reports.
 - An event whose touched set you cannot compute from its payload touches everything: run it
   serially, after the rest of the batch.
 
-Two events sharing any touched document run **serially, in claim order** — the second must
-see the first's effects, because answering a user against state that no longer exists is
-worse than answering late. Events with fully disjoint document sets may run in parallel by
-delegating the *work* to subagents — at most **3** at a time. The division of labor is
-absolute: a subagent reads, edits, and replies through the CLI, and it **never runs
-`corpus queue claim-all`, `corpus queue complete`, or `corpus queue fail`** — completing an
-event it does not own corrupts the queue accounting this loop guarantees. When a subagent
-returns, you verify what it did and you settle its event.
+Two events **overlap** when their work would touch the same document(s) — or when their
+touched sets otherwise conflict: a folder one event reorganizes while another files into
+it, a skill one event edits while another applies it, anything where one event's work
+changes what the other reads. Overlapping events run **serially, in dispatch order** —
+and within a batch, dispatch order is the order `claim-all` printed the events, which is
+the order they were created; never reorder an overlapping pair. The later event is
+dispatched only after the earlier one's outcome is recorded, because the second must see
+the first's effects — the person who commented second was looking at a corpus where the
+first comment had already been acted on, and answering them against state that no longer
+exists is worse than answering late. The rule spans batches: a newly claimed event that overlaps
+a still-running subagent's work waits for that subagent's outcome, not merely for a free
+slot.
+
+Non-overlapping events run concurrently, one subagent each, bounded to at most **10**
+concurrent subagents; further events wait their turn in dispatch order. That 10 is **this
+workspace agent's** bound, set by the product's contract — it is unrelated to any
+concurrency limit the operator's own tooling enforces elsewhere, and neither number
+constrains the other.
 
 ## Locks and deferral
 
@@ -150,21 +242,31 @@ document), the write is refused with the holder named, reported as a server erro
 
 ```bash
 corpus thread reply th_4b8e2c --from agent <<'EOF'
-You're editing [[doc_a1b2c3]] right now, so I haven't touched it. I'll apply
-this change once the document is free — retry the job from the console when
-you're done editing.
+You're editing [[doc_a1b2c3]] right now, so I haven't touched it. The change is
+ready and will land on its own once the document is free.
 EOF
 # nothing changed, so that reply carries no trace line
-corpus job log evt_7c1d9a "deferred: doc_a1b2c3 is locked by user"
-corpus queue fail evt_7c1d9a --reason "deferred: doc_a1b2c3 locked by user — retry when the lock clears"
+corpus queue defer evt_7c1d9a --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock on doc_a1b2c3"
 ```
 
-The `deferred:` prefix on the reason marks the failure as a postponement, not a defect. The
-work re-enters the queue through `corpus job retry evt_7c1d9a` — normally run by the
-operator from the console's failed-job row; run it yourself when a later batch shows you the
-lock has cleared (`corpus lock list`). When the operator force-unlocks a document, the break
-is recorded in the audit trail and the deferred edit re-enters the queue rather than being
-lost.
+Reply first — a person is watching a pending indicator — then defer. When the refusal
+happened inside a subagent, the sequence is unchanged: the subagent has normally posted
+that reply already and reported the block; you make the defer call. A deferral is a
+postponement, not a failure: the event moves to `deferred/`, `corpus queue status` counts
+it under `deferred`, never `failed`, and the console shows it waiting rather than broken.
+
+`--blocked-on` is required, and it is load-bearing: it names the **locked document** —
+never the thread — because clearing the lock on exactly that document is what returns the
+event to `pending`. Name the wrong document and the event parks forever, waiting on a lock
+that will never clear. The right value is always the id of the document whose write was
+refused.
+
+Re-entry is automatic. When the lock on the blocked-on document is **released**,
+**force-broken**, or **reaped**, the server returns the event to `pending` by itself and a
+parked `corpus queue idle` unparks — no operator action, no retry, nothing for you to
+watch. `corpus job retry` remains only as the by-hand override for a deferral automatic
+re-entry did not reach: a lock that cleared out of band, or a deferral that named the
+wrong document.
 
 - **Never force a lock.** `corpus lock break` is the human's escape hatch, and the CLI
   refuses it from you (exit `2`). That refusal is correct: contention you could break
@@ -180,40 +282,53 @@ Every event is a job whose log the console tails live. Append lines with
 argument (or piped stdin). Log at these moments, and only these:
 
 - **claimed** — `corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c"`
-- **routed** — which handler took it
-- **acted** — each notable action, named concretely
-- **terminal** — done, or failed with the reason repeated
+- **dispatched** — which skill's subagent took it, on which model tier, and why that
+  tier: `corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — one
+  document, prescribed change)"`
+- **acted** — each notable action, named concretely. These lines come from **inside the
+  subagent**, appended to the same event id it was dispatched for — never to a job of its
+  own.
+- **settled** — done, failed with the reason repeated, or deferred naming the blocking
+  document.
 
-A useful line names the object and the change: `"edited [[doc_a1b2c3]] — updated the rate
-assumption to 6.4%"` tells the operator what happened; `"working"` tells them nothing. Do
-not narrate individual tool calls and do not stream reasoning or token output into the log —
-the console is a progress feed, not a transcript.
+A delegated job's log is one story in one file: your claimed and dispatched lines, the
+subagent's acted lines, your recorded outcome — the operator watches delegated work
+exactly as they would watch inline work. A useful line names the object and the change:
+`"edited [[doc_a1b2c3]] — updated the rate assumption to 6.4%"` tells the operator what
+happened; `"working"` tells them nothing. That discipline binds the subagent's lines too.
+Do not narrate individual tool calls and do not stream reasoning or token output into the
+log — the console is a progress feed, not a transcript.
 
 ## Completing and failing
 
-Settle every claimed event with exactly one of:
+Settle every claimed event — from its subagent's report, never at dispatch time — with
+exactly one of:
 
 ```bash
 corpus queue complete evt_7c1d9a
 corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"
+corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock"
 ```
 
 The reason is a `--reason` flag, never a positional. A good reason is one short sentence
 naming the object and the obstacle — it is what the operator reads in the console's failed
-row. Write the same reason to the job log
+or deferred row. Write the same reason to the job log
 (`corpus job log evt_2e4f8b "failed: the parent document doc_f4e9d2 was deleted"`) so the
 drawer and the row agree.
 
 For `comment.created` and `form.respond`, a person is watching a pending indicator.
-**Reply before you fail**: post a short `corpus thread reply <id> --from agent` saying what
-went wrong, then fail the event. A pending indicator that silently becomes a failed job
-reads as the agent hanging; a one-line reply resolves it honestly.
+**Reply before you fail** — and before you defer: post a short
+`corpus thread reply <id> --from agent` saying what went wrong or what the work is waiting
+on, then settle the event. A pending indicator that silently becomes a failed job reads as
+the agent hanging; a one-line reply resolves it honestly.
 
-The invariant, restated: every claimed event ends in `processed/` or `failed/`, including
-when your own handling throws — catch, log, reply if a thread waits, fail with a reason,
-move on to the next event. If the session dies mid-batch, events stay in `in-progress/`;
-the next session's opening `corpus queue reap-stale` returns them to `pending/`. Failed
-events are retried with `corpus job retry` or written off with `corpus job abandon`.
+The invariant, restated: every claimed event ends settled — in `processed/`, in `failed/`,
+or in `deferred/` waiting on a named lock and coming back to `pending/` on its own —
+including when your own handling throws: catch, log, reply if a thread waits, fail with a
+reason, move on to the next event. If the session dies mid-batch, events stay in
+`in-progress/`; the next session's opening `corpus queue reap-stale` returns them to
+`pending/`. Failed events are retried with `corpus job retry` or written off with
+`corpus job abandon`.
 
 ## HALT
 
@@ -230,7 +345,8 @@ parked when they resume is the point.
 ## Stewardship
 
 Leave the corpus better than you found it — opportunistically, while working events, not
-only when asked. The charter:
+only when asked. The charter binds whoever does the work, which is normally a subagent
+applying the comment skill; delegation dilutes none of it. The charter:
 
 - **Durable knowledge becomes documents.** A preference, a decision, or a fact learned in a
   thread is written into a document — created, or an existing one updated — never left
@@ -309,13 +425,23 @@ the rate assumption to be updated.
 corpus queue claim-all
 {"events":[{"id":"evt_7c1d9a","type":"comment.created","created":"2026-07-28T09:14:02Z","source":"ui","payload":{"threadId":"th_4b8e2c","parentId":"doc_a1b2c3"}}]}
 corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c"
-corpus job log evt_7c1d9a "routed to the comment skill"
+corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — one document, prescribed change)"
 ```
 
-The comment skill reads `th_4b8e2c` and its parent `doc_a1b2c3`, finds the request, and
-does the work — every mutation through the CLI:
+Launch the subagent in the background — its prompt carries `evt_7c1d9a`, `th_4b8e2c`,
+`doc_a1b2c3`, the comment skill, and the binding rules from Delegation — and go straight
+back to parking:
 
 ```bash
+corpus queue idle
+```
+
+Inside the subagent, the comment skill reads `th_4b8e2c` and its parent `doc_a1b2c3`,
+finds the request, and does the work — every mutation through the CLI, every progress line
+on the dispatched event's id:
+
+```bash
+export CORPUS_FROM=agent
 corpus doc edit doc_a1b2c3 --from agent <<'EOF'
 # Mortgage options
 
@@ -330,10 +456,18 @@ Updated the rate assumption in [[doc_a1b2c3]] to 6.4% and reworded the
 projection note to match. Changed: [[doc_a1b2c3]] (edited).
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
 EOF
+```
+
+The subagent reports what it did and exits. When `idle` returns — here on its rearm, with
+no new event — the report is waiting: verify the reply and the edit landed, record the
+outcome, and park again:
+
+```bash
 corpus job log evt_7c1d9a "completed — replied on th_4b8e2c"
 corpus queue complete evt_7c1d9a
 corpus queue idle
 ```
 
 `idle` parks. The moment the operator replies in `th_4b8e2c` — or any new event lands —
-it returns, and the loop runs again from `corpus queue claim-all`.
+it returns, and the loop runs again from `corpus queue claim-all`, dispatching new work
+even while earlier subagents are still running.

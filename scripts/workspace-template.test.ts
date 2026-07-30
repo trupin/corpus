@@ -247,6 +247,7 @@ describe("skills", () => {
             "the loop",
             "claiming",
             "routing",
+            "delegation",
             "concurrency",
             "locks",
             "job logs",
@@ -350,7 +351,7 @@ describe("orchestrate skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    expect(sections.size).toBe(14);
+    expect(sections.size).toBe(15);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -365,6 +366,8 @@ describe("orchestrate skill body", () => {
       "corpus queue idle",
       "corpus queue complete",
       "corpus queue fail",
+      "corpus queue defer",
+      "--blocked-on",
       "corpus queue reap-stale",
       "corpus queue halt",
       "corpus queue resume",
@@ -380,7 +383,6 @@ describe("orchestrate skill body", () => {
       ".corpus/HALT",
       '{"idle":true,"reason":"timeout"}',
       '{"idle":true,"reason":"halted"}',
-      "deferred:",
       "<plugin>.<action>",
       "terminal state",
     ];
@@ -397,6 +399,76 @@ describe("orchestrate skill body", () => {
     expect(body.match(/\bsleep\b/gi)).toHaveLength(1);
     expect(body).not.toContain("while true");
     expect(body).not.toMatch(/\bset(?:Timeout|Interval)\b/);
+  });
+
+  it("defers on a user lock with the defer verb; the deferred:-prefix protocol is gone", () => {
+    // AGENT-007 / SPEC §7 as signed 2026-07-30: a deferral is the defer
+    // transition, never a `deferred:`-prefixed failure. The prefix survives
+    // nowhere — not as an instruction, an example, or an explanation.
+    expect(body).not.toMatch(/deferred:/);
+    expect(body).not.toMatch(/retry the job from the console/i);
+    // Reply first (a person watches a pending indicator), then defer, with
+    // `--blocked-on` naming the locked document.
+    expect(body).toMatch(
+      /# nothing changed, so that reply carries no trace line\ncorpus queue defer evt_7c1d9a --blocked-on doc_a1b2c3/,
+    );
+    expect(body).toMatch(/names the \*\*locked document\*\*/);
+    expect(body).toMatch(/parks forever/);
+    // A deferral is not a failure, and the status carries the meaning.
+    expect(body).toMatch(/under\s+`deferred`, never\s+`failed`/);
+    // Automatic re-entry: all three lock-clearing triggers, the parked idle
+    // unparking, and `corpus job retry` demoted to the by-hand override.
+    expect(body).toMatch(/\*\*released\*\*,\s+\*\*force-broken\*\*, or\s+\*\*reaped\*\*/);
+    expect(body).toMatch(/returns the event to `pending` by itself/);
+    expect(body).toMatch(/parked `corpus queue idle` unparks/);
+    expect(body).toMatch(/`corpus job retry` remains only as the by-hand override/);
+  });
+
+  it("delegates every event, parks on dispatch, and bounds concurrency at ten", () => {
+    // AGENT-005 / SPEC §7 signed 2026-07-30: delegation is unconditional and
+    // the orchestrator returns to parking as soon as the batch is dispatched.
+    expect(body).toMatch(/\*\*Every claimed event is worked by a subagent\.\*\*/);
+    expect(body).toMatch(/You never work a job inline/);
+    expect(body).toMatch(/claim → dispatch → park/);
+    expect(body).toMatch(/as soon as the\s+batch is dispatched/i);
+    // The bound is the product's 10 — and explicitly not the operator's number.
+    expect(body).toMatch(/at most \*\*10\*\*\s+concurrent subagents/);
+    expect(body).not.toMatch(/\*\*3\*\*/);
+    expect(body).toMatch(/unrelated to any\s+concurrency limit the operator's own tooling/);
+    // Overlap is generalized past same-document, serialized in dispatch order,
+    // and spans batches.
+    expect(body).toMatch(/touched sets otherwise conflict/);
+    expect(body).toMatch(/serially, in dispatch order/);
+    expect(body).toMatch(/spans batches/);
+  });
+
+  it("spawns subagents concretely and records outcomes only from their reports", () => {
+    // The mechanism is named, the context handed over is enumerated, and the
+    // wake-back story depends on nothing unshipped (Open Conflict 1 default:
+    // reports are reconciled at each idle return; no `agent.done` producer).
+    expect(body).toMatch(/Task \(Agent\) tool/);
+    expect(body).toMatch(/launched \*\*in\s+the background\*\*/);
+    expect(body).toMatch(/A subagent inherits nothing/);
+    expect(body).toMatch(/Settlement never depends on any queue event/);
+    // Invariants cross the boundary, including attribution and the job-log sink.
+    expect(body).toMatch(/a subagent inherits no environment/);
+    expect(body).toMatch(/same event id you dispatched/);
+    // Queue state stays on this side; outcomes come from reports.
+    expect(body).toMatch(/\*\*reports\*\* an outcome, and you \*\*record\*\* it/);
+    expect(body).toMatch(/from its subagent's report, never at dispatch time/);
+    expect(body).toMatch(/with \*\*the subagent's reason\*\*/);
+    expect(body).toMatch(/stays `in-progress`/);
+    // A blocked subagent defers through the orchestrator, never fails.
+    expect(body).toMatch(/\*\*A blocked subagent defers — through you\.\*\*/);
+  });
+
+  it("scales the subagent model with task weight, naming Opus 5 in the mix", () => {
+    expect(body).toMatch(/\*\*Opus 5\*\*/);
+    expect(body).toMatch(/\*\*Haiku\*\*/);
+    expect(body).toMatch(/\*\*Sonnet\*\*/);
+    // The guidance is executable: a decision rule, not a decoration.
+    expect(body).toMatch(/Judge weight by three things/);
+    expect(body).toMatch(/take the stronger/);
   });
 
   it("hardwires no plugin name and hedges nothing", () => {
@@ -491,7 +563,6 @@ describe("comment skill body", () => {
       "corpus thread reply",
       "corpus thread resolve",
       "corpus job log",
-      "corpus job retry",
       "corpus skill rollback",
       "--from agent",
       "export CORPUS_FROM=agent",
@@ -550,9 +621,19 @@ describe("comment skill body", () => {
   it("defers on a user lock without naming a queue verb", () => {
     expect(body).toContain("423");
     expect(body).toMatch(/Do not retry, and do not break the lock/i);
-    expect(body).toContain('corpus job log evt_7c1d9a "deferred: doc_a1b2c3 is locked by user"');
+    // The job-log line carries no `deferred:` prefix — the defer status says
+    // that now (AGENT-007) — and the dead protocol survives nowhere.
+    expect(body).toContain(
+      'corpus job log evt_7c1d9a "waiting on [[doc_a1b2c3]] — the user holds its edit lock"',
+    );
+    expect(body).not.toMatch(/deferred:/);
+    // Queue state stays with orchestrate (sprint-014 Adjudication 11): the
+    // comment skill hands the event back and never gains the defer verb.
     expect(body).toMatch(/hand the event back to the\s+orchestrate skill/i);
-    expect(body).toContain("corpus job retry");
+    expect(body).not.toContain("corpus queue defer");
+    // Re-entry is automatic; nobody is told to retry by hand.
+    expect(body).toMatch(/re-enters by itself/);
+    expect(body).not.toContain("corpus job retry");
   });
 
   it("makes reply mechanics exact", () => {
@@ -589,13 +670,32 @@ describe("comment skill body", () => {
 
   it("states skill genesis: threshold, destination, mechanism, announcement, conflicts", () => {
     expect(body).toMatch(/stated more than once/i);
+    // Extend-first stays the default; creation is for when nothing fits.
     expect(body).toMatch(/Extend an existing skill when one fits/i);
-    expect(body).toMatch(/Propose a genuinely new skill/i);
-    // Extend-plus-propose: creation outside `data/docs/` is impossible, and the
-    // skill says so rather than naming a verb that cannot do it.
-    expect(body).toMatch(/cannot write into `\.claude\/`/i);
+    expect(body).toMatch(/Create a genuinely new skill when nothing installed fits/i);
+    // AGENT-006: the creation branch names the shipped verb (CLI-011), and the
+    // propose-a-note path is gone — one documented way, not two.
+    expect(body).toContain('corpus skill create <name> --description "<one line>" --from agent');
+    expect(body).not.toMatch(/Propose a genuinely new skill/i);
+    expect(body).not.toMatch(/cannot write into `\.claude\/`/i);
     expect(body).toMatch(/an \*\*edit to that\s+skill\*\*, never a second skill/i);
     expect(body).toMatch(/Announce it in the reply/i);
+    expect(body).toMatch(/\*\*next\*\* run of the loop/i);
+  });
+
+  it("states what the server owns about skill creation, as outcomes not pre-checks", () => {
+    // TEST-411/412/413: name grammar, install/archive collision with the right
+    // recovery, required description, dual frontmatter, and the ways back.
+    expect(body).toMatch(/lowercase letters, digits and single hyphens, at most 64 characters/);
+    expect(body).toContain("`400`");
+    expect(body).toMatch(/installed \*\*or archived\*\* is a `409`/);
+    expect(body).toMatch(/`409` means unarchive it/);
+    expect(body).toMatch(/`--description` is required/);
+    expect(body).toContain(".claude/skills/<name>/SKILL.md");
+    expect(body).toMatch(/\*\*both\*\* frontmatter vocabularies\s+written by the server/i);
+    expect(body).toMatch(/corpus skill rollback <name>/);
+    expect(body).toMatch(/corpus doc archive/);
+    expect(body).toMatch(/do not pre-check/i);
   });
 
   it("bounds stewardship and forbids deletion", () => {

@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+in_progress
 
 ## Priority
 
@@ -111,15 +111,47 @@ that it appears in `corpus doc list --type skill`, and that the git commit is au
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent. State the model._
+**implemented on: fable** (the sprint runs AGENT-006 through this agent's session; the issue
+file recommends opus — recorded per the record-actuals rule). The live `/orchestrate` drill
+session ran on `claude-opus-5` (stream-json init record).
+
+**Change.** `assets/workspace/claude/skills/comment/SKILL.md`, Skill genesis section only:
+the propose bullet is now a create bullet naming
+`corpus skill create <name> --description "<one line>" --from agent` with a `<<'EOF'` heredoc
+example; the false `data/docs/`-only rationale is deleted; extend-first stays the first
+bullet verbatim; the conflict rule stays verbatim; server-owned mechanics stated as outcomes
+("do not pre-check them — know what comes back when one is violated": name grammar →
+`400`, installed-or-archived name → `409` with unarchive as the archived-name recovery,
+`--description` required for discovery, both frontmatter vocabularies server-written, later
+`corpus doc edit` keeps both); ways back named (`corpus skill rollback <name>`,
+`corpus doc archive`); the announce paragraph now covers created skills and the next-run
+effect. Plus `scripts/workspace-template.test.ts` (genesis assertions replaced, one new
+server-owned-facts test).
+
+| Test | Result | Evidence |
+| ---- | ------ | -------- |
+| TEST-407 | PASS | Second bullet: "**Create a genuinely new skill when nothing installed fits** — `corpus skill create <name> --description "<one line>" --from agent` with a heredoc body". "Propose it as a note in the inbox" is gone entirely (test pins `not.toMatch(/Propose a genuinely new skill/i)`). One documented way. |
+| TEST-408 | PASS | The "Documents are created under `data/docs/` and nowhere else…" sentence is deleted; test pins `not.toMatch(/cannot write into `\.claude\/`/i)`. |
+| TEST-409 | PASS | First bullet unchanged: extend an installed skill via `corpus doc edit <skillDocId> --from agent`, including the comment skill itself; creation is the nothing-fits branch. |
+| TEST-410 | PASS | Conflict rule verbatim: "A correction that contradicts an existing skill is an **edit to that skill**, never a second skill saying the opposite." Pinned by the surviving assertion. |
+| TEST-411 | PASS | Stated as server outcomes, not pre-checks: "lowercase letters, digits and single hyphens, at most 64 characters (anything else is a `400`)"; "A name already installed **or archived** is a `409`"; "`--description` is required, not decoration: Claude Code discovers a skill by its `name` and `description`"; "**both** frontmatter vocabularies written by the server … a later `corpus doc edit` keeps both field sets intact". |
+| TEST-412 | PASS | "for an archived skill that `409` means unarchive it — never create the same skill again under a different name." |
+| TEST-413 | PASS | "`corpus skill rollback <name>` undoes a genesis that misbehaves, and `corpus doc archive` disables a skill that stopped earning its place." |
+| TEST-414 | PASS | "**Announce it in the reply**, always, naming the skill you changed or created … a genesis is a real, immediate write into `.claude/` … takes effect on the **next** run of the loop, not in the session that is running." |
+| TEST-415 | PASS | `VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run scripts/workspace-template.test.ts` → **93 passed**; `CLI_COMMANDS_PENDING_CLI_006` still `[]`, no allowlist entry (CLI-011 documented both verbs in `docs/cli.md:1299-1395`); the `:323` pinned regex `not.toMatch(/corpus queue (?:complete|fail)/)` untouched and passing. |
+| TEST-416 | PASS | Scratch `/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s016-agent006-LsuxYL` (cwd outside the repo, `pwd` logged), `corpus init --port 9183`, server pid 6166. Live `claude -p "/orchestrate"` (pid 6455, transcript `…/transcript-agent006.stream.json`, tools `{Bash: 24, Skill: 1}`, zero Write/Edit). **Genesis branch**: standalone thread `th_fdws4f7g` ("third week in a row… codify it") → transcript shows `corpus skill create weekly-review --description "Run the workspace's weekly review: …"` (**1** real create; the other match is `skill create --help`; **0** `corpus doc create`); `corpus doc list --type skill` shows `doc_2o55qpkc  skill  open  Weekly review  .claude/skills/weekly-review/SKILL.md`; the file carries **both** vocabularies (`name`/`description` + `id`/`type: skill`/`title`/`tags`/`status`/`anchors`); `git log` → `agent skill create: weekly-review (doc_2o55qpkc) by agent`; the reply announces the codification, names `[[doc_2o55qpkc]]`, and even flags the no-scheduler gap honestly. **Extend branch**: thread `th_5ydbfgzz` ("lead with the number… about how you handle threads generally") → `corpus doc edit doc_skillcomment --file … --from agent` (a new "Lead with the number." bullet in Reply rules; frontmatter both-sets intact, `updated` advanced); **no second skill** (`.claude/skills/` still exactly 5 entries); `git log` → `agent doc edit: Comment (doc_skillcomment) by agent`; the reply states the extension-over-creation reasoning ("two skills on the same subject is how they start contradicting each other"). Queue ended `processed 2, failed 0`; workspace `git status --porcelain` empty (every mutation a server auto-commit). |
+
+Cleanup: claude pid 6455 killed; server stopped (pid 6166); `lsof` 9183-9184 and 8765 →
+nothing bound; `/Users/theophanerupin/code/corpus/.corpus` absent. Scratch retained with the
+transcript for the evaluator.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing (template suite 93/93)
+- [x] `/lint` passes (prettier + eslint on the touched test file; skills are markdown)
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
