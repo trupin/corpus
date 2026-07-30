@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import { QUEUE_EVENT_STATUSES, type QueueEventStatus } from "@corpus/contract";
 import { templateManifestPath } from "../../paths.js";
 import {
   planPluginSkillInstall,
@@ -27,6 +28,7 @@ import {
   type TemplateManifest,
 } from "../../template/manifest.js";
 import { CONFIG_DIR, CONFIG_FILE, DEFAULT_DATA_DIR } from "../../workspace.js";
+import { enclosingRepositoryRoot } from "./git.js";
 
 /**
  * Materializing a workspace on disk (SPEC.md §4). Everything here is synchronous
@@ -37,13 +39,16 @@ import { CONFIG_DIR, CONFIG_FILE, DEFAULT_DATA_DIR } from "../../workspace.js";
 /** Bytes of CSPRNG entropy behind the workspace bearer token (SPEC.md §2.1). */
 export const TOKEN_BYTES = 32;
 
-export const QUEUE_STATUSES = [
-  "pending",
-  "in-progress",
-  "processed",
-  "failed",
-  "abandoned",
-] as const;
+/**
+ * The queue's status directories, derived from the contract's enum rather than
+ * re-listed here. A local copy is how CONTRACT-021's `deferred` reached the
+ * server without reaching a fresh workspace: nothing in the type system relates
+ * a string literal array to the wire enum, so the divergence compiled silently
+ * and would have shipped a workspace missing `.corpus/queue/deferred/`. Reading
+ * the contract means the next status is created by `corpus init` the day it is
+ * declared.
+ */
+const QUEUE_STATUSES: readonly QueueEventStatus[] = QUEUE_EVENT_STATUSES;
 
 /**
  * Every directory a fresh workspace has, whether or not anything is copied into
@@ -97,9 +102,22 @@ export interface CreatedEntry {
  */
 export class CreatedPaths {
   readonly #entries: CreatedEntry[] = [];
+  readonly #overwritten: string[] = [];
 
   get entries(): readonly CreatedEntry[] {
     return this.#entries;
+  }
+
+  /**
+   * Paths that already existed and were written over. Recorded, never
+   * recoverable: {@link unwind} deletes what this run created and has no
+   * snapshot of what it replaced, so an overwritten `README.md` is gone
+   * (CLI-013 — the failure mode behind three destructive incidents). `runInit`
+   * refuses before the first write precisely so this list stays empty; it exists
+   * so that `--force`, which opts into the damage, can name what it did.
+   */
+  get overwritten(): readonly string[] {
+    return this.#overwritten;
   }
 
   record(path: string, kind: CreatedEntry["kind"]): void {
@@ -124,14 +142,16 @@ export class CreatedPaths {
     writeFileSync(path, contents, mode === undefined ? undefined : { mode });
     // `mode` on write is subject to umask; the token file's 0600 is not a hint.
     if (mode !== undefined) chmodSync(path, mode);
-    if (!existed) this.record(path, "file");
+    if (existed) this.#overwritten.push(path);
+    else this.record(path, "file");
   }
 
   copyFile(from: string, to: string): void {
     this.mkdir(dirname(to));
     const existed = existsSync(to);
     copyFileSync(from, to);
-    if (!existed) this.record(to, "file");
+    if (existed) this.#overwritten.push(to);
+    else this.record(to, "file");
   }
 
   /**
@@ -287,4 +307,54 @@ export function existingWorkspaceReason(root: string): string | undefined {
 
 function isEmptyDirectory(dir: string): boolean {
   return readdirSync(dir).length === 0;
+}
+
+/** How many pre-existing entries a refusal names before summarising the rest. */
+const NAMED_ENTRY_LIMIT = 5;
+
+/**
+ * Evidence that the target belongs to somebody else, gathered before anything is
+ * written. `corpus init` copies the template over same-named files and commits
+ * whatever it finds, and {@link CreatedPaths.unwind} cannot restore an overwrite
+ * — so refusing up front is the only safe shape (CLI-013).
+ *
+ * The three hazards stay distinct because they are three different accidents: a
+ * repository *at* the target means init commits into it, a repository *above* it
+ * means init creates a nested repository inside somebody's checkout, and
+ * pre-existing entries mean files are clobbered. An enclosing **Corpus
+ * workspace** is deliberately not evidence: nesting a workspace inside a
+ * workspace is confusing rather than destructive and stays the warning it
+ * already is (sprint-015 Adjudication 8).
+ */
+export function unrelatedContentReasons(target: string): readonly string[] {
+  const reasons: string[] = [];
+  const root = resolve(target);
+
+  if (existsSync(root)) {
+    const gitPath = join(root, ".git");
+    if (existsSync(gitPath)) {
+      reasons.push(
+        statSync(gitPath).isDirectory()
+          ? "it is a git repository (.git/)"
+          : "it is a linked git worktree of another repository (.git file)",
+      );
+    }
+    const entries = readdirSync(root).sort();
+    if (entries.length > 0) reasons.push(describeEntries(entries));
+  }
+
+  const enclosing = enclosingRepositoryRoot(dirname(root));
+  if (enclosing !== undefined && !existsSync(join(enclosing, CONFIG_DIR, CONFIG_FILE))) {
+    reasons.push(`it sits inside the git repository at ${enclosing}`);
+  }
+  return reasons;
+}
+
+function describeEntries(entries: readonly string[]): string {
+  const shown = entries.slice(0, NAMED_ENTRY_LIMIT);
+  const rest = entries.length - shown.length;
+  const names = rest === 0 ? shown.join(", ") : `${shown.join(", ")}, and ${String(rest)} more`;
+  return `it already holds ${String(entries.length)} entr${
+    entries.length === 1 ? "y" : "ies"
+  } (${names})`;
 }

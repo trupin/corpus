@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveTemplateRoot } from "../../paths.js";
 import { makeTempDir, removeTempDirs } from "../../testing/temp.js";
@@ -9,13 +10,13 @@ import { sha256 } from "../../template/manifest.js";
 import {
   CONFIG_MODE,
   CreatedPaths,
-  QUEUE_STATUSES,
   TOKEN_BYTES,
   WORKSPACE_DIRECTORIES,
   buildConfig,
   existingWorkspaceReason,
   generateToken,
   scaffoldWorkspace,
+  unrelatedContentReasons,
 } from "./scaffold.js";
 
 afterEach(removeTempDirs);
@@ -97,9 +98,25 @@ describe("scaffoldWorkspace", () => {
     const root = scaffold();
     expect(existsSync(join(root, "data", "threads", ".gitkeep"))).toBe(false);
     expect(existsSync(join(root, ".claude", "agents", ".gitkeep"))).toBe(false);
-    for (const status of QUEUE_STATUSES) {
+    for (const status of QUEUE_EVENT_STATUSES) {
       expect(existsSync(join(root, ".corpus", "queue", status, ".gitkeep"))).toBe(true);
     }
+  });
+
+  /**
+   * CONTRACT-021's consumer gap, pinned: `scaffold.ts` used to carry its own
+   * copy of the status list, so adding `deferred` to the contract left a fresh
+   * workspace without `.corpus/queue/deferred/` and nothing failed to compile.
+   * Asserting against the contract's enum is what makes the next addition loud.
+   */
+  it("creates one queue directory per status the contract declares, deferred included", () => {
+    const root = scaffold();
+    const queueDir = join(root, ".corpus", "queue");
+
+    expect(readdirSync(queueDir).sort()).toEqual([...QUEUE_EVENT_STATUSES].sort());
+    expect(statSync(join(queueDir, "deferred")).isDirectory()).toBe(true);
+    expect(existsSync(join(queueDir, "deferred", ".gitkeep"))).toBe(true);
+    expect(WORKSPACE_DIRECTORIES).toContain(".corpus/queue/deferred");
   });
 
   it("records a manifest of what it installed, hashed and versioned", () => {
@@ -173,6 +190,37 @@ describe("CreatedPaths", () => {
     expect(existsSync(join(root, "data", "theirs.md"))).toBe(true);
   });
 
+  /**
+   * CLI-013, pinned deliberately: `unwind()` deletes, it never restores. An
+   * overwritten file is unrecoverable, which is why `runInit` refuses a
+   * directory holding unrelated content **before** its first write instead of
+   * rolling back afterwards. If this assertion is ever inverted, the guard's
+   * ordering is the thing that must be re-proved, not softened.
+   */
+  it("does NOT restore a file it overwrote — it only records the damage", () => {
+    const root = makeTempDir("unwind-overwrite");
+    writeFileSync(join(root, "README.md"), "years of my notes");
+    writeFileSync(join(root, "seed.md"), "source");
+
+    const created = new CreatedPaths();
+    created.writeFile(join(root, "README.md"), "template");
+    created.copyFile(join(root, "seed.md"), join(root, "README.md"));
+    expect(created.overwritten).toEqual([join(root, "README.md"), join(root, "README.md")]);
+    // Nothing was *created*, so unwind has nothing to delete either.
+    expect(created.entries).toEqual([]);
+
+    created.unwind();
+    expect(readFileSync(join(root, "README.md"), "utf8")).toBe("source");
+    expect(readFileSync(join(root, "README.md"), "utf8")).not.toBe("years of my notes");
+  });
+
+  it("records nothing as overwritten when every write is a new file", () => {
+    const root = makeTempDir("unwind-fresh");
+    const created = new CreatedPaths();
+    created.writeFile(join(root, "a.md"), "a");
+    expect(created.overwritten).toEqual([]);
+  });
+
   it("removes a tree it owns outright, recursively", () => {
     const root = makeTempDir("unwind-tree");
     const created = new CreatedPaths();
@@ -208,5 +256,80 @@ describe("existingWorkspaceReason", () => {
     const root = makeTempDir("empty-data");
     mkdirSync(join(root, "data"));
     expect(existingWorkspaceReason(root)).toBeUndefined();
+  });
+});
+
+describe("unrelatedContentReasons", () => {
+  it("is empty for an empty directory outside any repository", () => {
+    expect(unrelatedContentReasons(makeTempDir("clear"))).toEqual([]);
+  });
+
+  it("is empty for a directory that does not exist yet", () => {
+    expect(unrelatedContentReasons(join(makeTempDir("clear-missing"), "new"))).toEqual([]);
+  });
+
+  it("counts and names pre-existing entries", () => {
+    const root = makeTempDir("entries");
+    writeFileSync(join(root, "a.txt"), "a");
+    mkdirSync(join(root, "src"));
+
+    expect(unrelatedContentReasons(root)).toEqual(["it already holds 2 entries (a.txt, src)"]);
+  });
+
+  it("says entry, singular, for exactly one", () => {
+    const root = makeTempDir("one-entry");
+    writeFileSync(join(root, "a.txt"), "a");
+    expect(unrelatedContentReasons(root)[0]).toBe("it already holds 1 entry (a.txt)");
+  });
+
+  it("names at most five entries and summarises the rest", () => {
+    const root = makeTempDir("many-entries");
+    for (const name of ["a", "b", "c", "d", "e", "f", "g"]) writeFileSync(join(root, name), "x");
+
+    expect(unrelatedContentReasons(root)[0]).toBe(
+      "it already holds 7 entries (a, b, c, d, e, and 2 more)",
+    );
+  });
+
+  it("names a repository at the target distinctly from its entries", () => {
+    const root = makeTempDir("repo-target");
+    mkdirSync(join(root, ".git"));
+
+    const reasons = unrelatedContentReasons(root);
+    expect(reasons[0]).toBe("it is a git repository (.git/)");
+    expect(reasons[1]).toContain("1 entry");
+  });
+
+  it("names a linked worktree, whose .git is a file", () => {
+    const root = makeTempDir("worktree-target");
+    writeFileSync(join(root, ".git"), "gitdir: /elsewhere/.git/worktrees/linked\n");
+
+    expect(unrelatedContentReasons(root)[0]).toBe(
+      "it is a linked git worktree of another repository (.git file)",
+    );
+  });
+
+  it("names the enclosing repository even when the target is empty", () => {
+    const repo = makeTempDir("enclosing");
+    mkdirSync(join(repo, ".git"));
+    const inner = join(repo, "sub");
+    mkdirSync(inner);
+
+    expect(unrelatedContentReasons(inner)).toEqual([
+      `it sits inside the git repository at ${repo}`,
+    ]);
+  });
+
+  // Adjudication 8: nesting a workspace inside a workspace is confusing, not
+  // destructive, and stays the warning `runInit` already emits.
+  it("does not treat an enclosing Corpus workspace as evidence", () => {
+    const workspace = makeTempDir("enclosing-workspace");
+    mkdirSync(join(workspace, ".git"));
+    mkdirSync(join(workspace, ".corpus"));
+    writeFileSync(join(workspace, ".corpus", "config.json"), "{}");
+    const inner = join(workspace, "sub");
+    mkdirSync(inner);
+
+    expect(unrelatedContentReasons(inner)).toEqual([]);
   });
 });

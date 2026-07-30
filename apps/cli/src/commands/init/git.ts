@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { Actor } from "@corpus/contract";
 import { InternalError, UsageError } from "../../errors.js";
@@ -98,6 +98,23 @@ export async function requireGit(git: GitRunner = runGit, cwd: string = "."): Pr
  */
 export function isRepositoryRoot(dir: string): boolean {
   return existsSync(join(dir, ".git"));
+}
+
+/**
+ * The nearest ancestor that is a repository root, or `undefined`.
+ * {@link isRepositoryRoot} answers "is this one"; `corpus init` also has to know
+ * whether the target is *inside* one, because initializing there creates a
+ * nested repository inside somebody else's checkout — the hazard is real even
+ * when the target directory is empty, which is the one case a "non-empty" check
+ * alone would miss (CLI-013).
+ */
+export function enclosingRepositoryRoot(start: string): string | undefined {
+  for (let dir = resolve(start); ;) {
+    if (isRepositoryRoot(dir)) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
 }
 
 export async function initRepository(dir: string, git: GitRunner = runGit): Promise<void> {

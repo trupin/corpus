@@ -1,3 +1,4 @@
+import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   closeStubServers,
@@ -11,6 +12,7 @@ const RUNNING = {
   halted: false,
   pending: 2,
   inProgress: 1,
+  deferred: 4,
   processed: 7,
   failed: 0,
   abandoned: 3,
@@ -69,9 +71,23 @@ describe("corpus queue resume", () => {
     await runResume(harness.context);
 
     expect(stub.requests[0]?.path).toBe("/api/queue/resume");
+    // Every status the contract declares appears, in its lifecycle order —
+    // `deferred` between the live and the terminal states, never beside
+    // `failed`, because it is work that resumes by itself (CONTRACT-021).
     expect(harness.stdout()).toBe(
-      "queue resumed — pending 2, in-progress 1, processed 7, failed 0, abandoned 3\n",
+      "queue resumed — pending 2, in-progress 1, deferred 4, processed 7, failed 0, abandoned 3\n",
     );
+  });
+
+  it("names every status the contract declares, so a new one cannot go unreported", async () => {
+    const stub = await startStubServer(jsonResponder(200, RUNNING));
+
+    const harness = stubContext(stub);
+    await runResume(harness.context);
+
+    for (const status of QUEUE_EVENT_STATUSES) {
+      expect(harness.stdout()).toContain(status);
+    }
   });
 });
 
