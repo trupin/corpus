@@ -87,7 +87,7 @@ describe("coverageScope", () => {
    */
   it("measures a plugin's source and not its build output", () => {
     expect(inScope("plugins/todos/items.ts")).toBe(true);
-    expect(inScope("plugins/todos/ui/TodoView.tsx")).toBe(true);
+    expect(inScope("plugins/todos/ui/TodoListItem.tsx")).toBe(true);
     expect(inScope("plugins/todos/server/routes.ts")).toBe(true);
     expect(inScope("plugins/todos/cli/commands/add.ts")).toBe(true);
 

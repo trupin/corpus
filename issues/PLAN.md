@@ -132,11 +132,9 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
 | CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | done | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs (design closed; impl = PLUGINS-005/006/007) | done | P1 | UI-014 |
-| UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
 | SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | todo | P1 | SERVER-003 |
 | UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | todo | P2 | UI-005 |
-| CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002, CLI-005 |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
@@ -145,9 +143,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | UI-014 | Editor ownership of non-core document bodies | done | P2 | UI-006, PLUGINS-001 |
 | INFRA-008 | npm packaging & release: the installable `corpus` tool | done | P1 | CLI-002, UI-010 |
 | CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | done | P1 | CLI-002, AGENT-001 |
-| SERVER-030 | Queue defer/requeue transition for lock-deferred work | done | P2 | SERVER-008, SERVER-009, AGENT-002 |
 | SERVER-031 | Empty JSON body returns 500 instead of 400 | done | P2 | SERVER-003 |
-| SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | done | P2 | CONTRACT-009 |
 | CONTRACT-018 | Rider: `423` on skill-rollback route + inventory docblock (PR #11 review 1, 4) | done | P1 | CONTRACT-008 |
 | CONTRACT-019 | Rider: atomic read-modify-write seam on PluginServerContext (PR #11 review 2) | done | P1 | CONTRACT-015 |
@@ -181,19 +177,23 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | UI-017 | Never leave an empty untitled document behind | done | P1 | SHARED-004, UI-005, UI-006 |
 | UI-018 | Right-click context menu for actions on the selected item | done | P2 | SHARED-004, UI-004, UI-012 |
 | UI-019 | Wider views: user-adjustable view/column width | done | P2 | SHARED-004, UI-003 |
-| CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002 |
+| CLI-012 | Install plugin seed templates at corpus init | done | P2 | PLUGINS-002 |
 | UI-015 | Remaining teardown callbacks | todo | P2 | UI-012 |
-| SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
+| SERVER-032 | needs=form drops threads with a second answerable form | done | P2 | SERVER-029 |
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
-| SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | todo | P2 | SERVER-005 |
+| SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | done | P2 | SERVER-005 |
 | CLI-015 | `corpus queue defer` verb | done | P1 | CLI-004, CONTRACT-021, SERVER-030 |
 | SHARED-005 | Wave-3 spec pass: §12 body-checkbox todos + residual §7 deferral sentences | done | P0 | SHARED-004 |
-| PLUGINS-005 | Todos items move into the body as GFM task-lists | todo | P1 | SHARED-005 |
-| PLUGINS-006 | Todos drops its View: core editor renders items, anchors apply | todo | P1 | PLUGINS-005 |
-| PLUGINS-007 | Todos column re-sourced off the body aggregate | todo | P1 | PLUGINS-005 |
-| CLI-016 | `corpus doc edit --extra`: agent-writable extra frontmatter (UI-019 escalation) | todo | P1 | CLI-003 |
-| CLI-017 | `corpus doc unarchive` + `--status open` half-state fix (evaluator MAJOR) | todo | P1 | CLI-003 |
+| PLUGINS-005 | Todos items move into the body as GFM task-lists | done | P1 | SHARED-005 |
+| PLUGINS-006 | Todos drops its View: core editor renders items, anchors apply | done | P1 | PLUGINS-005 |
+| PLUGINS-007 | Todos column re-sourced off the body aggregate | done | P1 | PLUGINS-005 |
+| CLI-016 | `corpus doc edit --extra`: agent-writable extra frontmatter (UI-019 escalation) | done | P1 | CLI-003 |
+| CLI-017 | `corpus doc unarchive` + `--status open` half-state fix (evaluator MAJOR) | done | P1 | CLI-003 |
 | SERVER-038 | Recovery path for already-committed invisible documents (SERVER-037 TEST-564) | todo | P2 | SERVER-037 |
+| SERVER-039 | Archived-status guard at the write boundary (audit FIX 5, sole-writer) | done | P1 | SERVER-005 |
+| UI-020 | Unarchive affordance in the reader menu (audit SPEC 34) | todo | P1 | SERVER-039, UI-012 |
+| CLI-018 | Agent-writable view keys: §11 "pin me a view" reachable (audit SPEC 37+38) | todo | P1 | CLI-016 |
+| UI-021 | Renderer: both-answer-and-form turn divergence (audit FIX 10 follow-up) | todo | P2 | UI-008 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 

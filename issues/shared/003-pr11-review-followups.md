@@ -62,6 +62,14 @@ triage into domain issues — do not let them silently expire.
 - (infra) Manual `npm run e2e` outside the pre-push hook still targets a possibly-live 8765 — INFRA-011 pinned the origin in the hook only; decide whether playwright.config.ts should own the hermetic default (INFRA-011 AC 3).
 - (spec, needs user sign-off) SPEC §2.1's status bullet "Stale pidfiles (dead or reused pid) are detected and cleaned" no longer matches CLI-014's shipped conservative semantics: a live pid's pidfile is kept (a reused pid is indistinguishable from a re-pointed daemon). Surfaced at the PR alongside the §12 decision.
 
+**From sprint-016 contracting (2026-07-30)**
+- (spec, phase-PR rider — RESOLVED by SHARED-005) SPEC §7's residual `deferred:`-prefix sentences were reworded with four coherence riders, user-signed-off, applied.
+- (contract/server/cli chain to file) `agent.done` has no producer — §7 makes it load-bearing for delegation wake-back but no route/verb enqueues it (sprint-016 OC1; AGENT-005 ships without it, reconciling at idle returns). File the chain when delegation's reconcile-at-idle proves insufficient in practice.
+
+**From the wave-3 audit fix round (2026-07-30)**
+- (contract, minor) `doctorDb` declares only 200/401, so the stamp-mismatch refusal (audit FIX 16) reaches the CLI as a bare `500 internal_error` (same shape as the pre-existing no-projection refusal). Surfacing the message needs a declared error response — small CONTRACT rider when the doctor surface is next touched.
+- (ui, filed) UI-021: renderer `mapFormAnswers` diverges from the server's both-answer-and-form detector (server FIX 10's docblock has the one-line change).
+
 **From sprint-015 implementation (2026-07-30)**
 - (server, flaky test) `apps/server/src/queue/service.test.ts:518` "requeueDeferredFor … wakes a parked poll" raced once in a commit gate (parked poll returned 1 of 2 re-entered events; green on retry and in adjacent gates). Deterministic-ize the interleaving (gate the poll on both writes) before it costs more gate retries.
 - (server, accepted design gap) an expired-but-unreaped lock lease does not re-enter deferred events on its own — no TTL sweeper; `corpus lock reap` and `job retry` are the escape hatches (SERVER-030's log has the reasoning: queue writes on a read path rejected). Revisit only if real usage shows deferrals stranded behind expired leases.
