@@ -222,7 +222,7 @@ export const docRowBaseShape = {
  * `.default()` — see the optional-in/defaulted-out note in `./index.ts`.
  */
 export const CreateDocRequestSchema = z
-  .object({
+  .strictObject({
     type: DocTypeSchema,
     title: z.string().min(1),
     body: z
@@ -264,8 +264,13 @@ export const CreateDocRequestSchema = z
   })
   .openapi("CreateDocRequest");
 
+/**
+ * Strict (CONTRACT-017): with every field optional, a typoed key — `pinnned`,
+ * or a plugin key sent at top level instead of inside `extra` — would otherwise
+ * validate as the empty update and silently change nothing.
+ */
 export const UpdateDocRequestSchema = z
-  .object({
+  .strictObject({
     title: z.string().min(1).optional(),
     body: z.string().optional(),
     tags: z.array(z.string()).optional(),
@@ -303,7 +308,7 @@ export const UpdateDocRequestSchema = z
  * survives a move untouched.
  */
 export const MoveDocRequestSchema = z
-  .object({ folder: z.string().describe(FOLDER_DESCRIPTION) })
+  .strictObject({ folder: z.string().describe(FOLDER_DESCRIPTION) })
   .openapi("MoveDocRequest");
 
 /**

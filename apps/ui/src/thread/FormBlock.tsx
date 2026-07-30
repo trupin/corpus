@@ -26,6 +26,16 @@ export interface FormBlockProps {
   readonly formTs: string;
   /** The option a later answer turn recorded, or `null` while unanswered. */
   readonly answered: string | null;
+  /**
+   * This form was answered from here, with this option.
+   *
+   * The route addresses the form by `ts`; the turn it writes back is prose and
+   * says only which option was chosen. Reporting the pairing lets the thread
+   * attribute the answer to the form the user clicked rather than inferring it
+   * from the conversation's order — which two open forms offering the same
+   * option make ambiguous (PR #10 finding 12).
+   */
+  readonly onAnswered?: ((formTs: string, option: string) => void) | undefined;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -34,6 +44,7 @@ export function FormBlock({
   threadId,
   formTs,
   answered,
+  onAnswered,
   onNotify,
 }: FormBlockProps): ReactElement {
   const [picked, setPicked] = useState<string | null>(null);
@@ -95,6 +106,7 @@ export function FormBlock({
                 {
                   onSuccess: (result) => {
                     setNote("");
+                    onAnswered?.(formTs, picked);
                     onNotify({
                       tone: "info",
                       message:

@@ -1,4 +1,4 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
@@ -13,8 +13,20 @@ import {
 } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { templateManifestPath } from "../../paths.js";
+import {
+  planPluginSkillInstall,
+  planTemplateInstall,
+  templateSkillNames,
+  type PlannedTemplateFile,
+} from "../../template/install.js";
+import {
+  pluginSourceMarker,
+  serializeManifest,
+  sha256,
+  type ManifestEntry,
+  type TemplateManifest,
+} from "../../template/manifest.js";
 import { CONFIG_DIR, CONFIG_FILE, DEFAULT_DATA_DIR } from "../../workspace.js";
-import { planTemplateInstall, type PlannedTemplateFile } from "./template.js";
 
 /**
  * Materializing a workspace on disk (SPEC.md §4). Everything here is synchronous
@@ -159,32 +171,15 @@ export function buildConfig(port: number, token: string): WorkspaceConfigFile {
   return { version: 1, port, token, dataDir: DEFAULT_DATA_DIR };
 }
 
-export interface ManifestEntry {
-  /** Workspace-relative, POSIX-separated, post-rename. */
-  readonly path: string;
-  readonly sha256: string;
-}
-
-/**
- * What `corpus init` installed, so `corpus workspace upgrade` (CLI-005) can
- * three-way compare against the *original* bytes later. It is worthless if
- * written later — nothing can retroactively learn what the first install
- * contained (SPEC.md §2.1, sprint-003 Open Conflict 10).
- */
-export interface TemplateManifest {
-  readonly version: 1;
-  readonly tool: string;
-  readonly installedAt: string;
-  readonly files: readonly ManifestEntry[];
-}
-
-export function sha256(contents: Buffer): string {
-  return createHash("sha256").update(contents).digest("hex");
-}
-
 export interface ScaffoldOptions {
   readonly root: string;
   readonly templateRoot: string;
+  /**
+   * The tool's bundled `plugins/` directory, or `undefined` for none. Plugin
+   * skills (`plugins/<dir>/skills/*`) install into `.claude/skills/` beside
+   * the template's own (SPEC.md §10); a missing root installs nothing.
+   */
+  readonly pluginsRoot?: string | undefined;
   readonly port: number;
   readonly token: string;
   readonly toolVersion: string;
@@ -195,6 +190,10 @@ export interface ScaffoldOptions {
 export interface ScaffoldResult {
   readonly created: CreatedPaths;
   readonly installed: readonly PlannedTemplateFile[];
+  /** Plugin skill files installed, workspace-relative. */
+  readonly installedPluginSkills: readonly string[];
+  /** Skipped plugin skills (name collisions) — surfaced by `corpus init`. */
+  readonly pluginWarnings: readonly string[];
   readonly manifest: TemplateManifest;
   readonly configPath: string;
 }
@@ -221,6 +220,21 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
     files.push({ path: file.to, sha256: sha256(readFileSync(source)) });
   }
 
+  // Plugin skills, after the template so the reserved-name rule is computed
+  // from what was actually installed. Entries land in the same manifest with a
+  // `source: "plugin:<dir>"` marker (sprint-012 Adjudication 11) so
+  // `corpus workspace upgrade` can tell the two provenances apart.
+  const pluginSkills = planPluginSkillInstall(options.pluginsRoot, templateSkillNames(installed));
+  for (const file of pluginSkills.files) {
+    const source = join(options.pluginsRoot ?? "", ...file.from.split("/"));
+    created.copyFile(source, join(root, ...file.to.split("/")));
+    files.push({
+      path: file.to,
+      sha256: sha256(readFileSync(source)),
+      source: pluginSourceMarker(file.plugin),
+    });
+  }
+
   const configPath = join(root, CONFIG_DIR, CONFIG_FILE);
   created.writeFile(
     configPath,
@@ -242,9 +256,16 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
     installedAt: (options.now ?? new Date()).toISOString(),
     files,
   };
-  created.writeFile(templateManifestPath(root), `${JSON.stringify(manifest, null, 2)}\n`);
+  created.writeFile(templateManifestPath(root), serializeManifest(manifest));
 
-  return { created, installed, manifest, configPath };
+  return {
+    created,
+    installed,
+    installedPluginSkills: pluginSkills.files.map((file) => file.to),
+    pluginWarnings: pluginSkills.warnings,
+    manifest,
+    configPath,
+  };
 }
 
 /**

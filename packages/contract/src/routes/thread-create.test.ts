@@ -164,6 +164,26 @@ describe("the dual-media thread-create body", () => {
     expect(response.status).toBe(400);
   });
 
+  /**
+   * CONTRACT-017, and the eval that filed it: `anchor: {quote: …}` instead of
+   * the declared `selector: {exact: …}` used to yield a 200 with a silently
+   * unanchored thread. A typoed key is a 400, not a different mutation.
+   */
+  it("rejects an unknown top-level key on the JSON form instead of silently dropping it", async () => {
+    const response = await post(
+      json({ body: "Why 6.1%?", parent: "doc_a1b2c3", anchor: { quote: "6.1%" } }),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an unknown part on the multipart form", async () => {
+    const form = new FormData();
+    form.set("text", "See this.");
+    form.set("anchor", JSON.stringify({ quote: "6.1%" }));
+
+    expect((await post(multipart(form))).status).toBe(400);
+  });
+
   it("rejects a multipart body carrying neither text nor files", async () => {
     const response = await post(multipart(new FormData()));
     expect(response.status).toBe(400);

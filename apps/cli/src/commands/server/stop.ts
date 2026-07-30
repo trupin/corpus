@@ -44,18 +44,29 @@ export async function runStop(
   }
 
   if (state.kind === "unowned") {
-    // The pid is alive but is not this workspace's server. Signalling it would
-    // kill whatever inherited the pid; the pidfile is the thing that is wrong.
-    removePidfile(pidfilePath);
+    // The pid is alive but nothing answered on the configured port. Signalling
+    // it would kill whatever inherited a reused pid — and deleting its pidfile
+    // is no safer (CLI-014, extending CLI-009 from `foreign` to this branch).
+    // "Alive, and not answering there" is equally the shape of this workspace's
+    // *own* daemon: still serving the port it was started with after `port` was
+    // re-pointed in the config, or wedged mid-shutdown. The pidfile is the only
+    // handle the CLI has on that process; deleting it makes `stop` answer "not
+    // running" while the server keeps serving, and nothing short of `lsof`
+    // finds it again. A dead pid's file is cleanup; a live pid's file is
+    // evidence.
+    const { pid, port } = state.record;
     out.emit({
       stopped: false,
       running: false,
-      reason: "stale pidfile removed",
-      unrelatedPid: state.record.pid,
+      reason: "pid alive but not answering",
+      pidfileKept: true,
+      pid,
+      pidfilePort: port,
     });
     out.line(
-      `not running (stale pidfile removed) — pid ${String(state.record.pid)} is alive but is not this workspace's server, and was left alone`,
+      `not stopped — pid ${String(pid)} is alive but nothing answered on :${String(workspace.port)}, and it was left alone`,
     );
+    out.line(`  Its pidfile was kept: ${unownedRemedy(pid, port, workspace.port)}`);
     return;
   }
 
@@ -63,16 +74,31 @@ export async function runStop(
     // Our pid is alive, but the port answers as another workspace's server, so
     // this pid is not the process that owns it. Signalling on the strength of a
     // health check we did not earn would stop somebody else's server.
-    removePidfile(pidfilePath);
+    //
+    // The pidfile is kept (CLI-009). A live pid is most often this workspace's
+    // own daemon, still listening on the port it was started with, after `port`
+    // was re-pointed in the config — exactly the case `status` reports here.
+    // Deleting the file would discard the only handle the CLI has on that
+    // daemon: `stop` would then answer "not running" while the server keeps
+    // serving, and nothing short of `lsof` could find it again. Only a dead
+    // pid's file is cleanup.
+    const { pid, port } = state.record;
     out.emit({
       stopped: false,
       running: false,
-      reason: "stale pidfile removed",
-      unrelatedPid: state.record.pid,
+      reason: "port held by another workspace",
+      pidfileKept: true,
+      pid,
+      pidfilePort: port,
       foreignWorkspace: state.health.workspace,
     });
     out.line(
-      `not running (stale pidfile removed) — ${foreignServerDetail(workspace.port, state.health)}, and pid ${String(state.record.pid)} was left alone`,
+      `not stopped — ${foreignServerDetail(workspace.port, state.health)}, and pid ${String(pid)} was left alone`,
+    );
+    out.line(
+      `  Its pidfile was kept: pid ${String(pid)} was started on :${String(port)}, so it may be this ` +
+        `workspace's own server. Point \`port\` in .corpus/config.json back at ${String(port)} and stop ` +
+        `again, or stop pid ${String(pid)} directly.`,
     );
     return;
   }
@@ -102,6 +128,30 @@ export async function runStop(
   );
 }
 
+/**
+ * What to do about a kept pidfile whose pid is alive but silent. The remedy
+ * depends on whether the config still names the port that pid was started on:
+ * when it does not, the file is the record of where that daemon actually is,
+ * and pointing `port` back at it is the fix; when it does, the process is
+ * genuinely not answering where it should be, and only inspecting it will say
+ * why.
+ */
+function unownedRemedy(pid: number, pidfilePort: number, configuredPort: number): string {
+  const named = String(pid);
+  if (pidfilePort !== configuredPort) {
+    return (
+      `pid ${named} was started on :${String(pidfilePort)}, so it may be this workspace's own ` +
+      `server. Point \`port\` in .corpus/config.json back at ${String(pidfilePort)} and stop ` +
+      `again, or stop pid ${named} directly.`
+    );
+  }
+  return (
+    `pid ${named} was started on :${String(pidfilePort)}, so it may be this workspace's own ` +
+    `server, wedged or still shutting down. Check it with \`ps -p ${named}\` and stop it ` +
+    "directly if it is; once that pid is gone, `corpus server stop` removes the file."
+  );
+}
+
 /** A process that vanished between the liveness check and the signal is a success. */
 function signal(pid: number, name: NodeJS.Signals): void {
   try {
@@ -117,8 +167,13 @@ export const stopCommand: WorkspaceCommandSpec = {
   description:
     "Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, " +
     "and removes the pidfile. Stopping a server that is not running is not an error: it says " +
-    "so and exits 0, so scripts can stop unconditionally. A pidfile naming a dead or reused " +
-    "pid is cleaned rather than acted on — an unrelated process is never signalled.",
+    "so and exits 0, so scripts can stop unconditionally. A pidfile naming a **dead** pid is " +
+    "cleaned rather than acted on — an unrelated process is never signalled. A pidfile naming a " +
+    "**live** pid that is not this workspace's server — nothing answers on the configured port, " +
+    "or **another workspace's** server holds it — leaves that pid alone **and keeps its " +
+    "pidfile**: it is usually this workspace's own daemon on the port it was started with, and " +
+    "deleting the file would leave a running server nothing can stop. The message says which " +
+    "port the pidfile names, so the daemon can be reached again.",
   args: [],
   flags: [],
   examples: [

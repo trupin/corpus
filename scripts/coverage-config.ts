@@ -8,16 +8,46 @@
  * A second enforcement site would be a gate that can disagree with itself.
  */
 
-/** Repo-relative, POSIX. Matched against paths relative to the repository root. */
-export const COVERAGE_INCLUDE = ["apps/*/src/**", "packages/*/src/**", "plugins/*/src/**"];
+/**
+ * Repo-relative, POSIX. Matched against paths relative to the repository root.
+ *
+ * `plugins/*⁠/**` rather than `plugins/*⁠/src/**` because SPEC.md §10 pins the
+ * plugin layout with `manifest.ts`, `server/routes.ts` and `cli/commands/*.ts`
+ * at the plugin **root** (sprint-012 Adjudication 10) — the layout plugin
+ * authors read wins over a tidier glob.
+ */
+export const COVERAGE_INCLUDE = ["apps/*/src/**", "packages/*/src/**", "plugins/*/**"];
 
 /**
  * Bin shims are thin process glue (argv in, stdout out) with no logic of their
  * own — the logic they delegate to is covered directly. Generated
  * `*.generated.ts` modules are type-only declarations with no runtime
- * statements to cover; their generator is tested instead.
+ * statements to cover; their generator is tested instead. Underscore-prefixed
+ * plugin directories (`plugins/_fixture`) are test fixtures — excluded from
+ * production surfaces by the leading-underscore convention (SPEC.md §10,
+ * sprint-012 Adjudication 9) and from coverage exactly like test files.
+ *
+ * The last two entries are **build output, not source** (PLUGINS-002).
+ * `COVERAGE_INCLUDE`'s plugin glob is `plugins/*⁠/**` rather than
+ * `plugins/*⁠/src/**`, because SPEC.md §10 pins a plugin's layout at its root —
+ * which also swept in `plugins/<name>/dist/`, the compiled copy of source that
+ * is already being measured, once a plugin was actually built. And because
+ * naming `coverage.exclude` at all *replaces* Vitest's defaults, the
+ * declaration-file exclusion those defaults carried had to come back with it;
+ * a `.d.ts` has no runtime statements to execute.
+ *
+ * Neither is a per-plugin exemption (sprint-014 Adjudication 18 forbids those):
+ * every line of `plugins/todos`'s **source** is inside the gate, and an
+ * unreachable surface stays an escalation.
  */
-export const COVERAGE_EXCLUDE = ["**/*.test.{ts,tsx}", "apps/*/src/bin/**", "**/*.generated.ts"];
+export const COVERAGE_EXCLUDE = [
+  "**/*.test.{ts,tsx}",
+  "apps/*/src/bin/**",
+  "**/*.generated.ts",
+  "plugins/_*/**",
+  "plugins/*/dist/**",
+  "**/*.d.ts",
+];
 
 export const COVERAGE_METRICS = ["lines", "statements", "functions", "branches"] as const;
 

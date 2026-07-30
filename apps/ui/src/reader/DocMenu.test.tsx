@@ -155,6 +155,127 @@ describe("DocMenu", () => {
     expect(screen.getByText(DELETE_LABEL)).toBeDefined();
   });
 
+  /**
+   * UI-012. Every item here calls `onClose()` in the same tick, which unmounts
+   * this component before the request settles. TanStack Query v5 skips a
+   * `mutate(…, { onSuccess })` callback once its observer has no listeners, so
+   * these three used to commit their write and say nothing at all. The notices
+   * now ride on the mutation hooks, and the close stays immediate — which is
+   * what returns focus to the ⋯ button that opened the menu.
+   */
+  describe("reporting a write the closed menu started", () => {
+    function gate(): { readonly held: Promise<void>; readonly release: () => void } {
+      let release = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = () => {
+          resolve();
+        };
+      });
+      return {
+        held,
+        release: () => {
+          release();
+        },
+      };
+    }
+
+    /** Parks every write until `held` resolves, recording through `inner`. */
+    function heldTransport(inner: ReaderTransport, held: Promise<void>): typeof globalThis.fetch {
+      return async (input, init) => {
+        const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+        if (method !== "GET") await held;
+        return inner.fetch(input, init);
+      };
+    }
+
+    it.each([
+      ["Still current", "still current"],
+      ["Archive", "Archived"],
+    ])("%s toasts even though the menu closed first", async (label, fragment) => {
+      const notify = vi.fn<(notice: RowNotice) => void>();
+      const onClose = vi.fn();
+      const { held, release } = gate();
+      const inner = readerTransport({ docs: [NOTE] });
+      const harness = createCorpusTestHarness({ fetch: heldTransport(inner, held) });
+      render(
+        <DocMenu
+          doc={NOTE}
+          threadStatus={null}
+          onClose={onClose}
+          onGone={() => undefined}
+          onNotify={notify}
+        />,
+        { wrapper: harness.Wrapper },
+      );
+
+      fireEvent.click(screen.getByText(label));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      // The host acts on `onClose` by unmounting the menu — the teardown that
+      // used to swallow the result.
+      cleanup();
+      release();
+
+      await waitFor(() => {
+        expect(notify.mock.calls.at(-1)?.[0]?.message).toContain(fragment);
+      });
+      expect(notify.mock.calls.at(-1)?.[0]?.tone).toBe("info");
+    });
+
+    it("Resolve toasts even though the menu closed first", async () => {
+      const notify = vi.fn<(notice: RowNotice) => void>();
+      const { held, release } = gate();
+      const inner = readerTransport({ docs: [THREAD] });
+      const harness = createCorpusTestHarness({ fetch: heldTransport(inner, held) });
+      render(
+        <DocMenu
+          doc={THREAD}
+          threadStatus="open"
+          onClose={() => undefined}
+          onGone={() => undefined}
+          onNotify={notify}
+        />,
+        { wrapper: harness.Wrapper },
+      );
+
+      fireEvent.click(screen.getByText("Resolve"));
+      cleanup();
+      release();
+
+      await waitFor(() => {
+        expect(notify.mock.calls.at(-1)?.[0]?.message).toContain("Thread resolved");
+      });
+    });
+
+    it("Reopen names its own verb when the flip is refused", async () => {
+      const notify = vi.fn<(notice: RowNotice) => void>();
+      const { held, release } = gate();
+      const inner = readerTransport({
+        docs: [THREAD],
+        failing: { "POST /api/threads/th_rate/reopen": 409 },
+      });
+      const harness = createCorpusTestHarness({ fetch: heldTransport(inner, held) });
+      render(
+        <DocMenu
+          doc={THREAD}
+          threadStatus="resolved"
+          onClose={() => undefined}
+          onGone={() => undefined}
+          onNotify={notify}
+        />,
+        { wrapper: harness.Wrapper },
+      );
+
+      fireEvent.click(screen.getByText("Reopen"));
+      cleanup();
+      release();
+
+      await waitFor(() => {
+        expect(notify.mock.calls.at(-1)?.[0]?.message).toContain("Reopen failed");
+      });
+      expect(notify.mock.calls.at(-1)?.[0]?.tone).toBe("error");
+    });
+  });
+
   it("closes on Escape rather than letting the surface below act on it", () => {
     const onClose = vi.fn();
     mount({ onClose });

@@ -21,6 +21,7 @@ import {
 import { z } from "zod";
 import { resolveAnchorExact } from "../anchors/index.js";
 import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/document.js";
+import { carriesForm } from "../core/form.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
@@ -310,10 +311,21 @@ function projectThread(
   // failure that `doc check` reports; the projection keeps the first and does
   // not abort the document over it.
   const insertTurn = db.prepare(
-    "INSERT OR IGNORE INTO turns (thread_id, idx, author, ts, body_md) VALUES (?, ?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO turns (thread_id, idx, author, ts, body_md, has_form) VALUES (?, ?, ?, ?, ?, ?)",
   );
   turns.forEach((turn, index) => {
-    insertTurn.run(fields.id, index, turn.author, turn.ts, turn.body);
+    // §6's form grammar, decided here rather than in the `needs=form` SQL: the
+    // fence is a regex over the info string and its contents must parse as a
+    // form, and a SQL approximation of that is what SERVER-029 fixed. One
+    // reader, `core/form.ts`, answers here and on the answer route.
+    insertTurn.run(
+      fields.id,
+      index,
+      turn.author,
+      turn.ts,
+      turn.body,
+      carriesForm(turn.body) ? 1 : 0,
+    );
   });
 
   return { turns, preamble };

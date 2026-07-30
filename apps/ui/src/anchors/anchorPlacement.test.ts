@@ -121,6 +121,44 @@ describe("offsets the trace cannot vouch for", () => {
     expect(offsetsComparable("Title\n=====\n\nbody\n", "# Title\n\nbody\n")).toBe(false);
   });
 
+  /**
+   * PR #10 finding 18. Total length equality was the licence, and normalisation
+   * both shortens (setext → ATX) and lengthens (indented code → fenced). One of
+   * each in the same document restores the total while shifting every offset
+   * between them — the case a length check cannot see and a highlight over the
+   * wrong sentence is the price of.
+   */
+  describe("a shortening and a lengthening construct that cancel out", () => {
+    const raw = "Title\n=====\n\n    code\n";
+    const canonical = serializeDoc(parseMarkdown(raw));
+
+    it("really does come back to the same total length", () => {
+      expect(canonical).toBe("# Title\n\n```\ncode\n```\n");
+      expect(canonical.length).toBe(raw.length);
+    });
+
+    it("is refused all the same, because the lines moved", () => {
+      expect(offsetsComparable(raw, canonical)).toBe(false);
+    });
+
+    it("draws nothing rather than a highlight in the wrong paragraph", () => {
+      const [placed] = placeAnchors({
+        anchors: [anchor({ range: { start: 0, end: 5 } })],
+        rows: [row()],
+        body: raw,
+        source: source(raw),
+      });
+      expect(placed?.placement.segments).toEqual([]);
+      expect(placed?.orphaned).toBe(false);
+    });
+  });
+
+  it("refuses a same-length respelling that redistributes characters across lines", () => {
+    // Same total, same line count, different line lengths: an offset in the
+    // first line is a different character in the two spellings.
+    expect(offsetsComparable("abcd\nef\n", "ab\ncdef\n")).toBe(false);
+  });
+
   it("draws no highlight rather than a wrong one", () => {
     const raw = "Title\n=====\n\nThe rate is 6.1% today.\n";
     const [placed] = placeAnchors({

@@ -12,6 +12,7 @@ import {
 import {
   attributionOf,
   coverageScope,
+  emptyScopeFailure,
   formatMetricsTable,
   projectExecutedLines,
   resolveServedSource,
@@ -75,6 +76,25 @@ describe("coverageScope", () => {
     expect(inScope("apps/ui/src/shell/Theme.test.tsx")).toBe(false);
     expect(inScope("apps/cli/src/bin/corpus.ts")).toBe(false);
     expect(inScope("packages/contract/src/client/schema.generated.ts")).toBe(false);
+  });
+
+  /**
+   * PLUGINS-002: a plugin's layout is its root (SPEC.md §10), so `plugins/*⁠/**`
+   * swept in the compiled copy of source it had just measured the moment a
+   * plugin was built. The **source** stays in scope — that is the gate
+   * sprint-014 Adjudication 18 insists on — and only `dist/` and declaration
+   * files, which have no runtime statements at all, drop out.
+   */
+  it("measures a plugin's source and not its build output", () => {
+    expect(inScope("plugins/todos/items.ts")).toBe(true);
+    expect(inScope("plugins/todos/ui/TodoView.tsx")).toBe(true);
+    expect(inScope("plugins/todos/server/routes.ts")).toBe(true);
+    expect(inScope("plugins/todos/cli/commands/add.ts")).toBe(true);
+
+    expect(inScope("plugins/todos/dist/server/routes.js")).toBe(false);
+    expect(inScope("plugins/todos/dist/items.d.ts")).toBe(false);
+    expect(inScope("packages/kit/src/plugin/types.d.ts")).toBe(false);
+    expect(inScope("plugins/_fixture/manifest.ts")).toBe(false);
   });
 
   it("rejects everything that is not a workspace source", () => {
@@ -335,6 +355,38 @@ describe("summarize", () => {
     expect(summary.workspaces.get("apps/server")?.statements.total).toBe(1);
     expect(summary.total.statements).toEqual({ covered: 0, total: 3, pct: 0 });
   });
+
+  it("counts the files it measured, which is what an empty scope has none of", () => {
+    expect(summarize(unitData(), REPO_ROOT).files).toBe(2);
+    expect(summarize({}, REPO_ROOT).files).toBe(0);
+  });
+});
+
+describe("emptyScopeFailure", () => {
+  it("fails a report of no files, which every threshold would otherwise clear", () => {
+    const summary = summarize({}, REPO_ROOT);
+
+    // The state this guards: nothing measured, and four vacuous 100%s.
+    expect(summary.total.lines).toEqual({ covered: 0, total: 0, pct: 100 });
+    expect(thresholdFailures(summary.total)).toEqual([]);
+
+    const failure = emptyScopeFailure(summary);
+    expect(failure).toContain("0 source files");
+    for (const glob of COVERAGE_INCLUDE) expect(failure).toContain(glob);
+    for (const glob of COVERAGE_EXCLUDE) expect(failure).toContain(glob);
+    expect(failure).toContain("scripts/coverage-config.ts");
+  });
+
+  it("names the globs it was given rather than the configured ones", () => {
+    const failure = emptyScopeFailure(summarize({}, REPO_ROOT), ["apps/*/srcc/**"], ["nothing/**"]);
+
+    expect(failure).toContain("apps/*/srcc/**");
+    expect(failure).toContain("nothing/**");
+  });
+
+  it("says nothing about a report that describes at least one file", () => {
+    expect(emptyScopeFailure(summarize(unitData(), REPO_ROOT))).toBeNull();
+  });
 });
 
 describe("thresholdFailures", () => {
@@ -392,6 +444,7 @@ describe("formatMetricsTable", () => {
     const table = formatMetricsTable({
       total: row,
       workspaces: new Map([["apps/ui", row]]),
+      files: 1,
     });
 
     expect(table).toContain("apps/ui");

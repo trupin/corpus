@@ -273,6 +273,109 @@ describe("PUT /api/docs/{id} — the extra merge patch", () => {
     expect(rowOf(await list("type=todo"), created.id)?.extra).toEqual({ lane: "doing" });
   });
 
+  // SERVER-029 (PR #10 finding 15). `ExtraFrontmatterSchema` bounds *one
+  // request*; `extra` is a merge patch, so a plugin writing 20 KiB under a fresh
+  // key each time walked a document past the 64 KiB the contract advertises,
+  // one legal request at a time. The bound belongs to the document, so it is
+  // checked against what the file will hold.
+  describe("the 64 KiB `extra` bound holds across requests, not just within one", () => {
+    const CHUNK = "x".repeat(20 * 1024);
+
+    const extraBytesOf = (text: string): number => {
+      const frontmatter = frontmatterLines(text);
+      const keys = frontmatter.filter((line) => /^[abcd]: /.test(line));
+      return keys.reduce((total, line) => total + line.length, 0);
+    };
+
+    it("refuses the patch that would cross the bound, and writes nothing", async () => {
+      ws = createWriteWorkspace("extra-accretion", { sprint: "s014" });
+      const created = await createDoc(ws, {
+        type: "todo",
+        title: "Accretion",
+        extra: { a: CHUNK },
+      });
+
+      // Two more keys under the bound: each request is legal on its own *and*
+      // the merged result still fits.
+      for (const key of ["b", "c"]) {
+        ws.advance(60_000);
+        const response = await ws.put(`/api/docs/${created.id}`, { extra: { [key]: CHUNK } });
+        expect([key, response.status]).toEqual([key, 200]);
+      }
+
+      const before = ws.read(created.path);
+      const head = ws.head();
+      expect(extraBytesOf(before)).toBeGreaterThan(60 * 1024);
+
+      // The fourth crosses it. Same request shape, same 20 KiB — what changed is
+      // the file it lands in.
+      ws.advance(60_000);
+      const refused = await ws.put(`/api/docs/${created.id}`, { extra: { d: CHUNK } });
+      const payload = (await refused.json()) as {
+        code: string;
+        issues: { path: string; message: string }[];
+      };
+
+      expect(refused.status).toBe(400);
+      expect(payload.code).toBe("bad_request");
+      expect(payload.issues[0]?.path).toBe("body.extra");
+      expect(payload.issues[0]?.message).toContain("65536");
+
+      // Not partially applied, not committed, not stamped.
+      expect(ws.read(created.path)).toBe(before);
+      expect(ws.head()).toBe(head);
+      expect(rowOf(await list("type=todo"), created.id)?.extra).toEqual({
+        a: CHUNK,
+        b: CHUNK,
+        c: CHUNK,
+      });
+    });
+
+    it("still lets an already-oversized document be edited down", async () => {
+      // A file can only exceed the bound by being hand-edited, and refusing
+      // every write to it would refuse the one patch that could fix it.
+      ws = createWriteWorkspace("extra-oversized", { sprint: "s014" });
+      const created = await createDoc(ws, { type: "todo", title: "Hand edited" });
+      // Five 20 KiB keys — over the bound before and *after* the patch below, so
+      // what is being asserted is the direction of the change, not its result.
+      ws.write(
+        created.path,
+        ws
+          .read(created.path)
+          .replace(
+            /^---\n/,
+            `---\na: ${CHUNK}\nb: ${CHUNK}\nc: ${CHUNK}\nd: ${CHUNK}\ne: ${CHUNK}\n`,
+          ),
+      );
+      ws.reproject();
+
+      ws.advance(60_000);
+      const shrunk = await ws.put(`/api/docs/${created.id}`, { extra: { e: null } });
+      expect(shrunk.status).toBe(200);
+      expect(ws.read(created.path)).not.toContain("\ne: ");
+
+      // Still over the bound, so growing it further is still refused.
+      ws.advance(60_000);
+      expect((await ws.put(`/api/docs/${created.id}`, { extra: { f: CHUNK } })).status).toBe(400);
+    });
+
+    it("leaves a patch that names no extra key alone, whatever the file holds", async () => {
+      // The autosave path carries a body and no `extra`, and must keep working
+      // on a hand-edited oversized document.
+      ws = createWriteWorkspace("extra-body-only", { sprint: "s014" });
+      const created = await createDoc(ws, { type: "todo", title: "Hand edited", body: "One.\n" });
+      ws.write(
+        created.path,
+        ws.read(created.path).replace(/^---\n/, `---\na: ${CHUNK}\nb: ${CHUNK}\nc: ${CHUNK}\nd: ${CHUNK}\n`), // prettier-ignore
+      );
+      ws.reproject();
+
+      ws.advance(60_000);
+      expect((await ws.put(`/api/docs/${created.id}`, { body: "Two.\n" })).status).toBe(200);
+      expect(ws.read(created.path)).toContain("Two.");
+    });
+  });
+
   it("does not write, commit or stamp `updated` for a patch that changes nothing", async () => {
     ws = createWriteWorkspace("extra-noop", { sprint: "s026" });
     const created = await createDoc(ws, {

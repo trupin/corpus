@@ -22,6 +22,14 @@ export class RegistryValidationError extends Error {
 
 const NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
 
+/**
+ * Topics additionally admit one leading underscore: a plugin topic is named
+ * after its directory, and `_`-prefixed plugin directories are the SPEC.md §10
+ * test-fixture convention (`plugins/_fixture` → `corpus _fixture …` in dev).
+ * Commands never take the prefix — only a directory name can carry it.
+ */
+const TOPIC_NAME_PATTERN = /^_?[a-z][a-z0-9-]*$/;
+
 export function collectRegistryProblems(registry: Registry): readonly string[] {
   const problems: string[] = [];
 
@@ -56,7 +64,9 @@ function topicProblems(topic: TopicSpec): readonly string[] {
   const problems: string[] = [];
   const label = `corpus ${topic.name}`;
 
-  if (!NAME_PATTERN.test(topic.name)) problems.push(`topic name "${topic.name}" is not kebab-case`);
+  if (!TOPIC_NAME_PATTERN.test(topic.name)) {
+    problems.push(`topic name "${topic.name}" is not kebab-case`);
+  }
   if (topic.summary.trim() === "") problems.push(`${label} has no summary`);
   if (topic.commands.length === 0) problems.push(`${label} declares no verbs`);
 
@@ -91,7 +101,7 @@ function commandProblems(command: CommandSpec, label: string): readonly string[]
 
   let optionalSeen = false;
   const argNames = new Set<string>();
-  for (const arg of command.args) {
+  command.args.forEach((arg, index) => {
     if (argNames.has(arg.name)) problems.push(`${label} declares argument "${arg.name}" twice`);
     argNames.add(arg.name);
     if (!NAME_PATTERN.test(arg.name)) {
@@ -102,8 +112,13 @@ function commandProblems(command: CommandSpec, label: string): readonly string[]
     if (arg.required && optionalSeen) {
       problems.push(`${label} declares required argument "${arg.name}" after an optional one`);
     }
+    // A variadic argument absorbs every remaining token, so anything declared
+    // after it could never be bound — a spec the parser cannot honour.
+    if (arg.variadic === true && index !== command.args.length - 1) {
+      problems.push(`${label} declares variadic argument "${arg.name}" before another argument`);
+    }
     if (!arg.required) optionalSeen = true;
-  }
+  });
 
   const flagNames = new Set<string>();
   const flagAliases = new Set<string>();

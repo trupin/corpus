@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
+import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
 import { ERROR_CODES } from "./schemas/error.js";
 import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
@@ -67,6 +68,7 @@ interface SchemaNode {
   readonly allOf?: SchemaNode[];
   readonly anyOf?: SchemaNode[];
   readonly oneOf?: SchemaNode[];
+  readonly additionalProperties?: boolean | SchemaNode;
   readonly description?: string;
 }
 
@@ -553,12 +555,20 @@ describe("DocRow.unreadThreads (CONTRACT-012)", () => {
 });
 
 describe("author attribution", () => {
+  /**
+   * `POST` because a request body is the only way to say what to check, not
+   * because anything is written: `/api/check` runs the validator and mutates
+   * nothing, so there is no git author to attribute and no header to carry one
+   * (SPEC.md §14). Declaring one would advertise a write that never happens.
+   */
+  const READ_ONLY_POSTS = new Set(["POST /api/check"]);
+
   it("declares the optional actor header on every mutating operation", () => {
     const problems: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
       for (const method of MUTATING_METHODS) {
         const op = (item as Record<string, Operation> | undefined)?.[method];
-        if (!op) continue;
+        if (!op || READ_ONLY_POSTS.has(endpointSignature(method, path))) continue;
         const header = op.parameters?.find(
           (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
         );
@@ -735,6 +745,9 @@ describe("locks distinguish 409 from 423", () => {
     ["/api/docs/{id}/unarchive", "post"],
     ["/api/threads", "post"],
     ["/api/threads/{id}/turns/{ts}", "delete"],
+    // A skill is an ordinary document; its rollback rewrites the file
+    // (CONTRACT-018), so it refuses under the other party's lock like the rest.
+    ["/api/skills/{name}/rollback", "post"],
   ])("declares 423 carrying the blocking lock on %s %s", (path, method) => {
     expect(JSON.stringify(operation(path, method).responses?.["423"])).toContain("LockedError");
   });
@@ -769,6 +782,223 @@ describe("routes declare only the codes they can return", () => {
 });
 
 /**
+ * CONTRACT-008. The validation surface §14 requires ("`corpus doc check` exposes
+ * the same validator on demand") and the loop-safety revert §7 requires
+ * ("`corpus skill rollback <name>` — a targeted git revert, performed by the
+ * server"). No handler serves either yet: SERVER-019 registers against exactly
+ * these definitions, so what is pinned here is the shape it inherits.
+ */
+describe("the validation and skill-rollback surface", () => {
+  const CHECK_PATH = "/api/check";
+  const ROLLBACK_PATH = "/api/skills/{name}/rollback";
+
+  it("adds exactly two endpoints to the inventory", () => {
+    expect(ENDPOINT_INVENTORY).toContain("POST /api/check");
+    expect(ENDPOINT_INVENTORY).toContain("POST /api/skills/{name}/rollback");
+  });
+
+  /** Both are ordinary authenticated routes: neither joins the §2.1 exception list. */
+  it.each([CHECK_PATH, ROLLBACK_PATH])("requires the workspace bearer token on %s", (path) => {
+    expect(operation(path, "post").security).toBeUndefined();
+    expect(operation(path, "post").responses?.["401"]).toBeDefined();
+  });
+
+  it("declares only the codes a check can produce", () => {
+    expect(Object.keys(operation(CHECK_PATH, "post").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+    ]);
+  });
+
+  it("declares only the codes a rollback can produce", () => {
+    expect(Object.keys(operation(ROLLBACK_PATH, "post").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+      "404",
+      "423",
+    ]);
+  });
+
+  describe("the check request", () => {
+    function requestSchema(): SchemaNode {
+      const media = operation(CHECK_PATH, "post").requestBody?.content?.["application/json"];
+      return (media as { schema: SchemaNode }).schema;
+    }
+
+    /**
+     * The XOR is in the document, not in a handler: two closed branches, so a
+     * body naming both keys matches neither and a body naming neither matches
+     * neither. `routes/check.test.ts` proves the validator enforces it.
+     */
+    it("publishes ids and content pairs as two closed alternatives", () => {
+      const branches = requestSchema().anyOf ?? [];
+      expect(branches).toHaveLength(2);
+      expect(branches.map((branch) => branch.required)).toEqual([["ids"], ["documents"]]);
+      expect(
+        branches.every(
+          (branch) => (branch as { additionalProperties?: unknown }).additionalProperties === false,
+        ),
+      ).toBe(true);
+    });
+
+    /** `toCheckDocument(path, raw)`'s argument list, field for field. */
+    it("shapes the content pair as (path, content) and nothing else", () => {
+      const pair = componentSchemas?.["CheckDocumentInput"];
+      expect(Object.keys(pair?.properties ?? {})).toEqual(["path", "content"]);
+      expect(pair?.required).toEqual(["path", "content"]);
+    });
+
+    it("says an empty collection is a real call, not an implicit everything", () => {
+      const description = operation(CHECK_PATH, "post").description ?? "";
+      expect(description).toContain("empty");
+      expect(description).toContain("no implicit everything form");
+    });
+  });
+
+  describe("the check report", () => {
+    it("reuses CheckFinding's field names verbatim", () => {
+      expect(Object.keys(componentSchemas?.["CheckFinding"]?.properties ?? {})).toEqual([
+        "code",
+        "severity",
+        "docId",
+        "path",
+        "detail",
+      ]);
+    });
+
+    it("separates the exit-6 class from the reportable one", () => {
+      const report = componentSchemas?.["CheckReport"];
+      expect(Object.keys(report?.properties ?? {})).toEqual(["ok", "errors", "warnings"]);
+      expect(report?.required).toEqual(["ok", "errors", "warnings"]);
+      expect(report?.properties?.["ok"]?.description).toContain("errors` is empty");
+    });
+
+    /**
+     * The published enum is the validator's, and the route says which two of it
+     * are warnings — the one fact a consumer cannot read off the enum itself.
+     */
+    it("publishes the closed thirteen-code vocabulary", () => {
+      expect(componentSchemas?.["CheckFinding"]?.properties?.["code"]?.enum).toEqual([
+        ...CHECK_CODES,
+      ]);
+      expect(CHECK_CODES).toHaveLength(13);
+    });
+
+    it("records the two warning codes, and only those, in the route description", () => {
+      const description = operation(CHECK_PATH, "post").description ?? "";
+      for (const code of CHECK_WARNING_CODES) expect(description, code).toContain(code);
+      expect(description).toContain("The other eleven codes are errors");
+      expect(description).toContain("`anchor-unused` among them");
+    });
+
+    it("leaves docId an unvalidated nullable string, since a bad id is a finding", () => {
+      expect(componentSchemas?.["CheckFinding"]?.properties?.["docId"]).toMatchObject({
+        type: ["string", "null"],
+      });
+    });
+  });
+
+  /**
+   * The check writes nothing, so there is no git author to attribute — and no
+   * §14 commit warning it could ever produce. Both absences are asserted, not
+   * merely intended.
+   */
+  describe("the check is read-only and says so", () => {
+    it("declares no acting party", () => {
+      const parameters = operation(CHECK_PATH, "post").parameters ?? [];
+      expect(parameters.filter((entry) => entry.in === "header")).toEqual([]);
+    });
+
+    it("states that it exposes the write path's own validator", () => {
+      const description = operation(CHECK_PATH, "post").description ?? "";
+      expect(description).toContain("same validator every server mutation runs before writing");
+      expect(description).toContain("hooks and API share one implementation");
+    });
+  });
+
+  describe("the rollback", () => {
+    it("names the skill in the path, as every other resource route does", () => {
+      const parameters = operation(ROLLBACK_PATH, "post").parameters ?? [];
+      expect(parameters.filter((entry) => entry.in === "path").map((entry) => entry.name)).toEqual([
+        "name",
+      ]);
+      expect(componentSchemas?.["SkillRollbackRequest"]?.properties?.["name"]).toBeUndefined();
+    });
+
+    it("carries the acting party, since the revert is an auto-commit", () => {
+      const header = operation(ROLLBACK_PATH, "post").parameters?.find(
+        (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
+      );
+      expect(header?.required).toBe(false);
+      expect(operation(ROLLBACK_PATH, "post").description).toContain("normal auto-commit");
+    });
+
+    it("takes an optional revision and nothing else", () => {
+      expect(Object.keys(componentSchemas?.["SkillRollbackRequest"]?.properties ?? {})).toEqual([
+        "to",
+      ]);
+      expect(componentSchemas?.["SkillRollbackRequest"]?.required).toBeUndefined();
+    });
+
+    it("returns the restored commit and path, plus the skill's name and id", () => {
+      const result = componentSchemas?.["SkillRollbackResult"];
+      expect(Object.keys(result?.properties ?? {})).toEqual([
+        "name",
+        "docId",
+        "commit",
+        "path",
+        "warnings",
+      ]);
+      for (const field of ["name", "docId", "commit", "path"] as const) {
+        expect(result?.properties?.[field]?.description, field).toBeTruthy();
+      }
+    });
+
+    /**
+     * CONTRACT-016. §14 keeps the file write when the auto-commit is rejected,
+     * so the response has to be able to say "restored, uncommitted". A
+     * non-nullable `commit` made that outcome undescribable on the wire, and the
+     * available shortcut — echoing the pre-existing HEAD — would have written a
+     * commit that is not this restoration into the field the audit trail reads.
+     */
+    it("lets `commit` be null, since §14 keeps the write when the commit fails", () => {
+      const commit = componentSchemas?.["SkillRollbackResult"]?.properties?.["commit"];
+      expect(commit).toMatchObject({ type: ["string", "null"], pattern: "^[0-9a-f]{7,64}$" });
+      expect(commit?.description).toContain("`null` means the file was restored but not committed");
+      expect(commit?.description).toContain("the file write stands regardless (SPEC.md §14)");
+      expect(commit?.description).toContain("is in `warnings`");
+    });
+
+    it("keeps `commit` required — nullable is not optional", () => {
+      expect(componentSchemas?.["SkillRollbackResult"]?.required).toContain("commit");
+    });
+
+    it("states the null outcome in the route's own prose, not only in the schema", () => {
+      expect(operation(ROLLBACK_PATH, "post").description).toContain(
+        "the file is restored anyway, `commit` is `null`",
+      );
+      expect(
+        JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["200"]?.description),
+      ).toContain("or `null` when that commit failed or was skipped");
+    });
+
+    it("uses the shipped 404 envelope and states the condition", () => {
+      expect(JSON.stringify(operation(ROLLBACK_PATH, "post").responses?.["404"])).toContain(
+        "NotFoundError",
+      );
+      expect(componentSchemas?.["NotFoundError"]?.properties?.["code"]?.enum).toEqual([
+        "not_found",
+      ]);
+      expect(operation(ROLLBACK_PATH, "post").description).toContain(
+        "no skill of that name is installed",
+      );
+    });
+  });
+});
+
+/**
  * CONTRACT-006. §14's "a warning on the API response" has to be true of every
  * mutation, not only of the document ones: thread writes go through the same
  * server pipeline, and anchored creation writes the **parent document's**
@@ -787,7 +1017,21 @@ describe("§14 warnings reach every mutation response", () => {
     // warnings the server already computed for them could only be logged.
     "ThreadMutationResponse",
     "FormAnswerResponse",
+    // CONTRACT-008: a skill rollback is a git revert the server performs and
+    // auto-commits (§7), so the workspace's hooks can reject it exactly as they
+    // can reject any other write.
+    "SkillRollbackResult",
   ];
+
+  /**
+   * Components whose `warnings` is a different vocabulary and must not be held
+   * to `Warning`'s shape. `CheckReport.warnings` is the **validator's** severity
+   * split — §14's "unresolvable-but-well-formed anchors and unresolved
+   * `[[refs]]` are warnings, not failures" — carrying `CheckFinding`s.
+   * `/api/check` writes nothing and can produce no commit warning at all, so
+   * there is no shape here for `Warning` to occupy.
+   */
+  const FOREIGN_WARNINGS = ["CheckReport"];
 
   it.each(CARRIERS)("declares `warnings` required on %s", (component) => {
     const schema = componentSchemas?.[component];
@@ -804,9 +1048,16 @@ describe("§14 warnings reach every mutation response", () => {
    */
   it("finds no other component carrying a differently-shaped warnings field", () => {
     const stray = Object.entries(componentSchemas ?? {})
-      .filter(([name]) => !CARRIERS.includes(name))
+      .filter(([name]) => !CARRIERS.includes(name) && !FOREIGN_WARNINGS.includes(name))
       .filter(([, schema]) => schema.properties?.["warnings"] !== undefined);
     expect(stray.map(([name]) => name)).toEqual([]);
+  });
+
+  it("keeps the check report's warnings a findings list, not a commit-warning list", () => {
+    expect(componentSchemas?.["CheckReport"]?.properties?.["warnings"]).toMatchObject({
+      type: "array",
+      items: { $ref: "#/components/schemas/CheckFinding" },
+    });
   });
 });
 
@@ -1159,28 +1410,35 @@ describe("request bodies declare whether they are mandatory", () => {
     readonly branching: readonly string[];
   }
 
-  /** Fields a schema demands, resolving `$ref` and flattening `allOf`. */
-  function requiredFields(node: SchemaNode | undefined, derefd: ReadonlySet<string>): string[] {
-    if (!node) return [];
+  /**
+   * Whether a bare `{}` would satisfy the schema — the operative question behind
+   * "wholly optional", and the one formulation that survives a branching body.
+   * An object demands nothing when its `required` list is empty; a union is
+   * satisfied by `{}` when *any* branch is; an `allOf` when *every* branch is.
+   */
+  function satisfiedByEmptyBody(
+    node: SchemaNode | undefined,
+    derefd: ReadonlySet<string>,
+  ): boolean {
+    if (!node) return true;
 
     if (node.$ref !== undefined) {
       const name = node.$ref.split("/").pop() ?? "";
       // Guards against a component that refers back to itself.
-      if (derefd.has(name)) return [];
-      return requiredFields(componentSchemas?.[name], new Set([...derefd, name]));
+      if (derefd.has(name)) return true;
+      return satisfiedByEmptyBody(componentSchemas?.[name], new Set([...derefd, name]));
     }
 
-    return [
-      ...(node.required ?? []),
-      ...(node.allOf ?? []).flatMap((branch) => requiredFields(branch, derefd)),
-    ];
+    const branches = node.anyOf ?? node.oneOf;
+    if (branches) return branches.some((branch) => satisfiedByEmptyBody(branch, derefd));
+
+    return (
+      (node.required ?? []).length === 0 &&
+      (node.allOf ?? []).every((branch) => satisfiedByEmptyBody(branch, derefd))
+    );
   }
 
-  /**
-   * `anyOf`/`oneOf` would make "every field is optional" branch-relative, and
-   * the rule above has no answer for that. No request body uses them today; if
-   * one ever does, this reports it rather than letting the rule quietly rot.
-   */
+  /** Where a body branches, so reaching for `anyOf`/`oneOf` stays a deliberate act. */
   function branchingSchemas(node: SchemaNode | undefined, derefd: ReadonlySet<string>): string[] {
     if (!node) return [];
 
@@ -1207,9 +1465,7 @@ describe("request bodies declare whether they are mandatory", () => {
         found.push({
           signature: endpointSignature(method, path),
           declared: body.required,
-          whollyOptional: media.every(
-            ([, schema]) => requiredFields(schema, new Set()).length === 0,
-          ),
+          whollyOptional: media.every(([, schema]) => satisfiedByEmptyBody(schema, new Set())),
           description: body.description,
           mediaTypes: media.map(([mediaType]) => mediaType),
           branching: media.flatMap(([, schema]) => branchingSchemas(schema, new Set())),
@@ -1224,7 +1480,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(12);
+    expect(bodies).toHaveLength(14);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -1255,15 +1511,25 @@ describe("request bodies declare whether they are mandatory", () => {
     expect(Object.keys(RULE_EXEMPTIONS)).toEqual([]);
   });
 
-  it("uses no branching schema that would make the rule ambiguous", () => {
+  /**
+   * A branching body makes "every field is optional" branch-relative, which is
+   * why `satisfiedByEmptyBody` asks the question the rule actually needs rather
+   * than counting required fields. The list is pinned anyway: branching is the
+   * shape that makes a request-level XOR expressible (CONTRACT-008's
+   * `POST /api/check`), and nothing should reach for it without saying so here.
+   */
+  it("names every branching request body, so a new one is a deliberate choice", () => {
     const branching = bodies.filter((body) => body.branching.length > 0);
-    expect(branching.map((body) => `${body.signature}: ${body.branching.join(",")}`)).toEqual([]);
+    expect(branching.map((body) => `${body.signature}: ${body.branching.join(",")}`)).toEqual([
+      "POST /api/check: anyOf",
+    ]);
   });
 
   it("partitions the surface into the mandatory and the omittable sets", () => {
     const partition = Object.fromEntries(bodies.map((body) => [body.signature, body.declared]));
     expect(partition).toEqual({
       "POST /api/capture": true,
+      "POST /api/check": true,
       "POST /api/docs": true,
       "POST /api/docs/{id}/move": true,
       "POST /api/jobs/{id}/log": true,
@@ -1271,6 +1537,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/locks/{docId}": false,
       "POST /api/queue/halt": false,
       "POST /api/queue/{id}/fail": false,
+      "POST /api/skills/{name}/rollback": false,
       "POST /api/threads/{id}/seen": false,
       "POST /api/threads/{id}/turns": true,
       "POST /api/threads/{id}/turns/{ts}/form": true,
@@ -1300,5 +1567,43 @@ describe("request bodies declare whether they are mandatory", () => {
     // The halt sentinel is rewritten wholesale, so a bare re-halt does not
     // merely leave a previously recorded reason alone — it clears it.
     expect(operation("/api/queue/halt", "post").description).toContain("replace, add, or clear");
+  });
+});
+
+/**
+ * CONTRACT-017: strict bodies, tolerant reads. Every request body — JSON and
+ * multipart alike — rejects unknown top-level keys with a `400` naming the key,
+ * so a typoed key (`anchor` for `selector`, the eval that filed the issue) can
+ * never validate as a silently different mutation. The policy and its
+ * boundaries — open *values* like `extra` stay open, queries and headers stay
+ * tolerant — are stated in `./schemas/index.ts`.
+ */
+describe("request bodies are strict (CONTRACT-017)", () => {
+  function deref(node: SchemaNode | undefined): SchemaNode | undefined {
+    if (node?.$ref === undefined) return node;
+    return componentSchemas?.[node.$ref.split("/").pop() ?? ""];
+  }
+
+  it("declares additionalProperties: false on every request body in the document", () => {
+    const seen: string[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of MUTATING_METHODS) {
+        if (!item || !(method in (item as object))) continue;
+        const content = operation(path, method).requestBody?.content ?? {};
+        for (const [mediaType, mediaObject] of Object.entries(content)) {
+          const where = `${method.toUpperCase()} ${path} (${mediaType})`;
+          seen.push(where);
+          const schema = deref((mediaObject as { schema?: SchemaNode }).schema);
+          // A branching body (the /api/check XOR) is strict when every branch is.
+          const branches = schema?.anyOf ?? schema?.oneOf ?? [schema];
+          for (const branch of branches) {
+            expect(deref(branch)?.additionalProperties, where).toBe(false);
+          }
+        }
+      }
+    }
+    // The sweep must not pass by matching nothing: the surface carries at least
+    // the fifteen bodies it had when the rule landed.
+    expect(seen.length).toBeGreaterThanOrEqual(15);
   });
 });

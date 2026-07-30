@@ -20,10 +20,12 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus db rebuild`](#corpus-db-rebuild)
 - [`corpus doc`](#corpus-doc)
   - [`corpus doc archive`](#corpus-doc-archive)
+  - [`corpus doc check`](#corpus-doc-check)
   - [`corpus doc create`](#corpus-doc-create)
   - [`corpus doc delete`](#corpus-doc-delete)
   - [`corpus doc edit`](#corpus-doc-edit)
   - [`corpus doc move`](#corpus-doc-move)
+  - [`corpus doc show`](#corpus-doc-show)
 - [`corpus job`](#corpus-job)
   - [`corpus job abandon`](#corpus-job-abandon)
   - [`corpus job list`](#corpus-job-list)
@@ -50,10 +52,19 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus server start`](#corpus-server-start)
   - [`corpus server status`](#corpus-server-status)
   - [`corpus server stop`](#corpus-server-stop)
+- [`corpus skill`](#corpus-skill)
+  - [`corpus skill rollback`](#corpus-skill-rollback)
 - [`corpus thread`](#corpus-thread)
   - [`corpus thread reopen`](#corpus-thread-reopen)
   - [`corpus thread reply`](#corpus-thread-reply)
   - [`corpus thread resolve`](#corpus-thread-resolve)
+  - [`corpus thread show`](#corpus-thread-show)
+- [`corpus todos`](#corpus-todos)
+  - [`corpus todos add`](#corpus-todos-add)
+  - [`corpus todos check`](#corpus-todos-check)
+  - [`corpus todos list`](#corpus-todos-list)
+- [`corpus workspace`](#corpus-workspace)
+  - [`corpus workspace upgrade`](#corpus-workspace-upgrade)
 - [Exit codes](#exit-codes)
 
 ## Usage
@@ -228,9 +239,9 @@ corpus db rebuild --json
 
 ## `corpus doc`
 
-Create, edit, move, archive and delete documents.
+Read, check, create, edit, move, archive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent creates, edits, moves and archives documents on its own initiative, and **archives where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what.
+The stewardship surface (SPEC.md §7): the agent reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
 
 ### `corpus doc archive`
 
@@ -260,6 +271,58 @@ One JSON value — `{"doc":{…},"warnings":[]}` — with the archiving attribut
 
 ```
 corpus doc archive doc_a1b2c3 --from agent --json
+```
+
+### `corpus doc check`
+
+Validate documents against the SPEC.md §14 rules; exit 6 on errors.
+
+Runs the corpus validator through `POST /api/check` — the **same** implementation every server mutation runs before writing, which is what §14 requires — and turns its verdict into an exit code: **6** when anything failed, **0** when nothing did. Warnings are printed and never fail: an orphaned anchor and a `[[ref]]` whose target does not exist yet are normal states of a living corpus (§14), and a hook that blocked on them would be switched off. Findings print one per line as `severity code path: detail`, and `--json` emits the server's report — `{ok, errors, warnings}` — unchanged, with the exit code unaffected.
+
+With ids, exactly those documents are read from the workspace and checked. With no ids, the whole workspace is enumerated first (archived documents included, so `.claude/skills-archived/` is covered) and checked in one request. With `--staged`, the content comes from git's **index** rather than from disk — the pre-commit form — and only staged paths under the document roots are sent; nothing in git is changed and nothing is written anywhere. Combining `--staged` with ids is a usage error (exit 2): they answer different questions and silently dropping one would leave the caller guessing.
+
+One rule this verb cannot report by id: `duplicate-id` needs two files claiming one id, and an id resolves to a single document, so neither the id form nor the whole-workspace form can surface it. `corpus db doctor` is that surface.
+
+```
+corpus doc check [id…] [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                 |
+| -------- | -------- | ----------------------------------------------------------- |
+| `id…`    | no       | Documents to check. Omit them to check the whole workspace. |
+
+**Flags**
+
+| Flag       | Type    | Default | Description                                                                                                                                                                                                        |
+| ---------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--staged` | boolean | `false` | Check the content staged in git instead of what is on disk — what a pre-commit hook wants, since the bytes about to be committed are not the bytes in the working tree. Nothing staged means no output and exit 0. |
+
+**Examples**
+
+Validate the whole workspace, archived documents and skills included; exits 6 if anything failed.
+
+```
+corpus doc check
+```
+
+Validate two documents before building on them.
+
+```
+corpus doc check doc_a1b2c3 doc_d4e5f6
+```
+
+The pre-commit form: validate exactly what is about to be committed, silently and quickly when nothing is staged.
+
+```
+corpus doc check --staged
+```
+
+One JSON value: `{"ok":false,"errors":[{"code":"anchor-unused","severity":"error","docId":"doc_a1b2c3","path":"data/docs/notes/plan.md","detail":"anchor anc_1 belongs to no thread"}],"warnings":[]}`.
+
+```
+corpus doc check --json
 ```
 
 ### `corpus doc create`
@@ -434,6 +497,36 @@ One JSON value — `{"doc":{…},"warnings":[]}` — carrying the document at it
 
 ```
 corpus doc move doc_a1b2c3 --folder archive-notes --json
+```
+
+### `corpus doc show`
+
+Read a document: its frontmatter, its anchored threads, and its body.
+
+Reads `GET /api/docs/{id}` and prints what the server returned — the CLI never opens the file. That matters for anchors: they are resolved against the _current_ body at read time, so each one is listed with the thread it belongs to, that thread's status, and either the character range it landed on or the fact that it is orphaned (SPEC.md §6). A timestamp the file does not carry renders as “—” rather than as an invented date. The human rendering is a summary: the whole payload — including the §11 view keys and any plugin `extra` — is what `--json` emits, unchanged. An id that names no document is the server's `404`, which is exit 5.
+
+```
+corpus doc show <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description        |
+| -------- | -------- | ------------------ |
+| `id`     | yes      | The document's id. |
+
+**Examples**
+
+Read a document before editing or commenting on it: header, anchored threads, then the body.
+
+```
+corpus doc show doc_a1b2c3
+```
+
+One JSON value: `{"frontmatter":{"id":"doc_a1b2c3","type":"note","title":"Mortgage options","created":"2026-07-28T10:00:00.000Z","updated":null,…},"body":"30-year fixed at 6.1%.\n","path":"data/docs/finance/mortgage-options.md","anchors":[{"anchorId":"anc_1","threadId":"th_x9y8","threadStatus":"open","range":{"start":12,"end":45},"orphaned":false,…}]}`.
+
+```
+corpus doc show doc_a1b2c3 --json
 ```
 
 ## `corpus job`
@@ -1048,7 +1141,7 @@ corpus server status || corpus server start
 
 Stop this workspace's server.
 
-Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, and removes the pidfile. Stopping a server that is not running is not an error: it says so and exits 0, so scripts can stop unconditionally. A pidfile naming a dead or reused pid is cleaned rather than acted on — an unrelated process is never signalled.
+Sends SIGTERM, waits for the process to exit, escalates to SIGKILL only if it will not, and removes the pidfile. Stopping a server that is not running is not an error: it says so and exits 0, so scripts can stop unconditionally. A pidfile naming a **dead** pid is cleaned rather than acted on — an unrelated process is never signalled. A pidfile naming a **live** pid that is not this workspace's server — nothing answers on the configured port, or **another workspace's** server holds it — leaves that pid alone **and keeps its pidfile**: it is usually this workspace's own daemon on the port it was started with, and deleting the file would leave a running server nothing can stop. The message says which port the pidfile names, so the daemon can be reached again.
 
 ```
 corpus server stop [flags]
@@ -1068,11 +1161,61 @@ Machine-readable form: what was stopped, or that nothing was running.
 corpus server stop --json
 ```
 
+## `corpus skill`
+
+Recover a skill: restore its last-known-good version.
+
+Skills are documents, so reading, editing and archiving one is `corpus doc …` like anything else. `rollback` is what has no document equivalent: the agent's skills are the workspace's memory and its loop, and a bad edit to `orchestrate` can break the very loop that would otherwise repair it (SPEC.md §7). The revert is performed by the server and lands as a normal attributed commit.
+
+### `corpus skill rollback`
+
+Restore a skill's last-known-good version through the server.
+
+Calls `POST /api/skills/{name}/rollback`, which restores `.claude/skills/<name>/SKILL.md` from git and commits the restoration as a normal auto-commit attributed to `--from` — so `git log` stays the whole audit trail and the board re-projects like it does for any other write. Prints the restored path and the **new** commit, not the revision the content came from. `--to` steps further back to any revision git resolves.
+
+A `commit` of `null` is reported as _uncommitted_ rather than dressed up: the workspace's own git hooks rejected the auto-commit (or there is no git), the file was restored anyway (SPEC.md §14), and the reason is printed as a warning. A skill nobody installed — including one that was archived, which moves it out of `.claude/skills/` — is the server's `404`, which is exit 5.
+
+```
+corpus skill rollback <name> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                                       |
+| -------- | -------- | ------------------------------------------------------------------------------------------------- |
+| `name`   | yes      | The skill's directory name under `.claude/skills/`: lowercase letters, digits and single hyphens. |
+
+**Flags**
+
+| Flag         | Type   | Default | Description                                                                                                            |
+| ------------ | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--to <ref>` | string | —       | Restore from this revision — a commit sha, a tag, anything git resolves. Omitted, the last-known-good version is used. |
+
+**Examples**
+
+Undo a bad edit to the core loop skill and record the agent as its author.
+
+```
+corpus skill rollback orchestrate --from agent
+```
+
+Step a skill back to a specific commit rather than the last-known-good one.
+
+```
+corpus skill rollback comment --to 9f3c1ab
+```
+
+One JSON value: `{"name":"orchestrate","docId":"doc_skill1a2b3c4d","commit":"9f3c1ab","path":".claude/skills/orchestrate/SKILL.md","warnings":[]}`.
+
+```
+corpus skill rollback orchestrate --json
+```
+
 ## `corpus thread`
 
-Reply to conversations and open or close them.
+Read conversations, reply to them, and open or close them.
 
-A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `reply` is the agent's half of the conversation — the exact command §7's comment skill is written in — and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `show` is the read §7's comment skill starts from — status, anchoring and every turn — `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
 
 ### `corpus thread reopen`
 
@@ -1108,7 +1251,7 @@ corpus thread reopen th_a1b2c3 --json
 
 Append a turn to a thread.
 
-Reads the turn's body from `-m`, `--file` or stdin — the heredoc form the comment skill uses — and appends it to the thread, committed with `--from` as the git author. An empty body is a usage error (exit 2), never a request. Whether the turn wakes the agent is the server's call (SPEC.md §8): a turn in an `engaged` thread, or one mentioning `@agent`, enqueues a `comment.created` event and the printed line names it; a resolved thread enqueues nothing. The body is passed through unchanged — fenced blocks, `~~~form` blocks and interior newlines all survive verbatim.
+Reads the turn's body from `-m`, `--file` or stdin — the heredoc form the comment skill uses — and appends it to the thread, committed with `--from` as the git author. An empty body is a usage error (exit 2), never a request. Whether the turn wakes the agent is the server's call (SPEC.md §8): a turn in an `engaged` thread, or one mentioning `@agent`, enqueues a `comment.created` event and the printed line names it. Resolving a thread stops only the automatic re-trigger — an explicit `@agent` mention (or `/skill` invocation) in a resolved thread still enqueues, because resolved is not a mute button on someone deliberately asking. The body is passed through unchanged — fenced code blocks (a ` ```form ` fence among them) and interior newlines all survive verbatim.
 
 ```
 corpus thread reply <id> [flags]
@@ -1177,6 +1320,206 @@ One JSON value — `{"thread":{…},"warnings":[]}` — the summary carrying `st
 
 ```
 corpus thread resolve th_a1b2c3 --from agent --json
+```
+
+### `corpus thread show`
+
+Read a conversation: its status, its anchoring, and every turn.
+
+Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent state, parent, anchor and every turn oldest first, each with its author and timestamp. The anchoring line names which of the three shapes the thread has: anchored to a selection, on a whole document (`parent` set, no anchor), or standalone (neither). This is the context SPEC.md §7's comment skill reads before it replies. **No read-state is reported**: the endpoint carries none, and the only endpoint that does is a mutation — reading a thread must not clear its unread badge. A thread id that names nothing is the server's `404`, which is exit 5.
+
+```
+corpus thread show <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description      |
+| -------- | -------- | ---------------- |
+| `id`     | yes      | The thread's id. |
+
+**Examples**
+
+Read a conversation before replying to it.
+
+```
+corpus thread show th_a1b2c3
+```
+
+One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open","tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","turns":[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.
+
+```
+corpus thread show th_a1b2c3 --json
+```
+
+## `corpus todos`
+
+Commands contributed by the todos plugin.
+
+Discovered from `plugins/todos/cli/commands/` (SPEC.md §10) — the plugin's verbs behave, document and validate exactly like core verbs.
+
+### `corpus todos add`
+
+Add an item to a todo list.
+
+Appends one open item to a `type: todo` document. The list may be named by id, by its exact title, or by an unambiguous fragment of it; an ambiguous name is refused with the candidates listed rather than guessed at. The item's `ts` is its creation time, set by the server.
+
+```
+corpus todos add <list> <text> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                |
+| -------- | -------- | -------------------------------------------------------------------------- |
+| `list`   | yes      | Todo document: its id, its title, or an unambiguous fragment of the title. |
+| `text`   | yes      | What the item says.                                                        |
+
+**Flags**
+
+| Flag           | Type   | Default | Description                                               |
+| -------------- | ------ | ------- | --------------------------------------------------------- |
+| `--due <date>` | string | —       | Optional deadline as an ISO calendar date (`2026-08-01`). |
+
+**Examples**
+
+Append an item to the list titled “Week of Jul 20”.
+
+```
+corpus todos add "Week of Jul 20" "Renew passport"
+```
+
+One JSON value: `{"docId":"doc_a1b2c3","index":3,"item":{"text":"Book dentist","done":false,"ts":"…","due":"2026-08-01"}}`. `--from agent` makes the commit the agent's.
+
+```
+corpus todos add "Week of Jul 20" "Book dentist" --due 2026-08-01 --from agent --json
+```
+
+### `corpus todos check`
+
+Check an item off a todo list.
+
+Sets `done: true` on one item of a `type: todo` document — or `false` with `--uncheck`. The item is named by its 1-based number (as `corpus todos list` prints it) or by its text, matched case-insensitively; ambiguous text is refused with the candidate numbers listed. The item's `ts` is its creation time and is never changed by checking it.
+
+```
+corpus todos check <list> <item> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                |
+| -------- | -------- | -------------------------------------------------------------------------- |
+| `list`   | yes      | Todo document: its id, its title, or an unambiguous fragment of the title. |
+| `item`   | yes      | The item's 1-based number, or its text (case-insensitive).                 |
+
+**Flags**
+
+| Flag        | Type    | Default | Description                                                        |
+| ----------- | ------- | ------- | ------------------------------------------------------------------ |
+| `--uncheck` | boolean | `false` | Set `done: false` instead — put a completed item back on the list. |
+
+**Examples**
+
+Check the item off by its text.
+
+```
+corpus todos check "Week of Jul 20" "Renew passport"
+```
+
+One JSON value: `{"docId":"doc_a1b2c3","index":1,"item":{"text":"Call plumber","done":true,"ts":"…"}}`.
+
+```
+corpus todos check "Week of Jul 20" 2 --json
+```
+
+### `corpus todos list`
+
+Show todo lists and their items.
+
+With no argument, one line per `type: todo` document with its open and done counts. With a list named — by id, exact title, or an unambiguous fragment — that list's items, numbered as `corpus todos check` accepts them. Archived todo documents are excluded, exactly as every other default list excludes them.
+
+```
+corpus todos list [list] [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                   |
+| -------- | -------- | ----------------------------------------------------------------------------- |
+| `list`   | no       | Todo document to show in full: its id, its title, or a fragment of the title. |
+
+**Flags**
+
+| Flag     | Type    | Default | Description                          |
+| -------- | ------- | ------- | ------------------------------------ |
+| `--open` | boolean | `false` | Show only items that are still open. |
+
+**Examples**
+
+Every todo list with its open and done counts.
+
+```
+corpus todos list
+```
+
+One JSON value: `{"lists":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","path":"data/docs/todos/week.md","status":"open","open":2,"done":1,"items":[{"text":"Renew passport","done":false,"ts":"…"}]}]}`.
+
+```
+corpus todos list "Week of Jul 20" --json
+```
+
+## `corpus workspace`
+
+Maintain the workspace's own scaffolding.
+
+Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4).
+
+### `corpus workspace upgrade`
+
+Refresh the workspace's template files after a tool update, without clobbering edits.
+
+`corpus init` copies the agent's skills into the workspace, and from that moment they are the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md §2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way compares each file the tool installs: the baseline `corpus init` recorded, the copy in the workspace now, and the copy the installed tool carries. A file the workspace never touched is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a file new to the template is **installed**; a file the workspace deleted is reported and reinstalled only under `--restore`; a file the template dropped is reported as retired, its copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old and new tool versions, so `corpus skill rollback` undoes a bad upgrade like any other skill change. A run with nothing to do prints `already up to date.` and makes no commit.
+
+Only template-provenance paths are touched — `.claude/` skills and personas, the workspace `README.md` and `.gitignore` — never anything under `data/`, and nothing under `.corpus/` except the manifest itself. Plugin-installed skills are refreshed from **their plugin**, not from the template.
+
+This command and `corpus init` are the only two that write workspace files directly and commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the server stopped, because a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them. With the server running, the watcher treats the writes as ordinary out-of-band edits and re-projects. Every other document mutation goes through the server — the rule is not soft.
+
+```
+corpus workspace upgrade [flags]
+```
+
+**Flags**
+
+| Flag        | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--dry-run` | boolean | `false` | Print the full plan and write nothing at all — no files, no manifest, no commit.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `--restore` | boolean | `false` | Also reinstall template files this workspace deleted. Without it they are reported and left absent, because deleting one is usually deliberate.                                                                                                                                                                                                                                                                                                                                                      |
+| `--adopt`   | boolean | `false` | For a workspace created before manifests existed: record a baseline from the files that already match the tool's copies. It writes **no** workspace file — not even one the tool carries and this workspace has never had, which is reported as `pending` and stays out of the manifest. Files that differ stay untracked and keep being reported, since nothing can tell an old copy from an edited one. Once the baseline exists, an ordinary `corpus workspace upgrade` installs what is missing. |
+
+**Examples**
+
+See exactly what a tool update would change before it changes anything.
+
+```
+corpus workspace upgrade --dry-run
+```
+
+Apply the plan: update untouched files, keep and report edited ones, in one attributed commit.
+
+```
+corpus workspace upgrade --from user
+```
+
+Also put back template files that were deleted from this workspace.
+
+```
+corpus workspace upgrade --restore
+```
+
+One JSON value: `{"workspace":"/home/me/notes","fromVersion":"0.1.0","toVersion":"0.2.0","dryRun":false,"withoutBaseline":false,"changes":[{"path":".claude/skills/comment/SKILL.md","action":"keep-modified","source":"template","detail":"modified here — 3 lines only here, 1 line only in the new copy"}],"written":[".claude/skills/orchestrate/SKILL.md"],"manifestWritten":true,"commit":"9f3c1ab"}`.
+
+```
+corpus workspace upgrade --json
 ```
 
 ## Exit codes

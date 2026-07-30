@@ -37,12 +37,15 @@ export const respondToForm = createRoute({
     "structured answer turn carrying the chosen option and any note, and enqueues a `form.respond` " +
     "event that re-triggers the agent like any engaged-thread reply (SPEC.md §6). The thread then " +
     "leaves `needs=form`.\n\n" +
-    "**The fence grammar**, which this route validates the answer against: an opening fence whose " +
-    "info string is exactly `form` (so ```` ```formula ```` is not one), then YAML with `prompt` " +
-    "(non-empty) and `options` (at least one, each non-empty, all distinct), then a closing fence. " +
-    "Selection is single: the answer names exactly one option, verbatim. A `note` is free text and " +
-    "always optional. Nothing else is part of the grammar — no form id, no per-option types, no " +
-    "required markers, no multi-select.\n\n" +
+    "**The fence grammar**, which this route validates the answer against — settled by " +
+    "CONTRACT-014 as a CommonMark subset: an opening backtick fence at column 0 whose info string " +
+    "is exactly `form` (so ```` ```formula ```` is not one, a tilde fence is not one, and a fence " +
+    "quoted inside an outer fenced block is not one), then YAML with `prompt` (non-empty) and " +
+    "`options` (at least one, each non-empty, all distinct), then a required closing fence — a " +
+    "whole line of at least as many backticks; an unterminated fence is not a form. Selection is " +
+    "single: the answer names exactly one option, verbatim. A `note` is free text and always " +
+    "optional. Nothing else is part of the grammar — no form id, no per-option types, no required " +
+    "markers, no multi-select.\n\n" +
     "`400` when `option` is not one of the offered options, naming `body.option` in `issues`; " +
     "`404` when the thread has no such turn, or that turn carries no form.",
   request: {

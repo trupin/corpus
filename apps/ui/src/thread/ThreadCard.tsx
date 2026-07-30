@@ -15,7 +15,7 @@ import {
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { NewChildThread } from "./NewChildThread";
-import { mapFormAnswers } from "./parseFormBlock";
+import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
 import { ThreadComposer } from "./ThreadComposer";
 import { Turn } from "./Turn";
@@ -122,7 +122,19 @@ export function ThreadCard({
 
   const children = useDocs({ parent: threadId, type: THREAD_DOC_TYPE });
   const placement = placeChildThreads(children.data?.items ?? [], turns);
-  const answers = mapFormAnswers(turns);
+  /*
+   * The answers this card submitted, in the order it submitted them.
+   *
+   * Browser-local and deliberately so: it is knowledge about *this* session's
+   * clicks, not corpus state, and it is never written anywhere. It exists
+   * because the answer turn the server writes is prose that names an option and
+   * not a form (SPEC.md §6), so with two open forms offering the same option
+   * the replay would otherwise credit the wrong one — observed in a browser
+   * (PR #10 finding 12). After a reload it is empty again and the ordering rule
+   * takes over, which is the honest limit of what the file says.
+   */
+  const [submitted, setSubmitted] = useState<readonly SubmittedAnswer[]>([]);
+  const answers = mapFormAnswers(turns, submitted);
 
   const status = data?.status ?? row?.status ?? "open";
   const resolved = status === "resolved";
@@ -220,6 +232,13 @@ export function ThreadCard({
               threadId={threadId}
               turn={turn}
               answeredForm={answers.get(turn.ts) ?? null}
+              onAnsweredForm={(formTs, option) => {
+                setSubmitted((current) =>
+                  current.some((entry) => entry.formTs === formTs)
+                    ? current
+                    : [...current, { formTs, option }],
+                );
+              }}
               onOpenRef={onOpenDoc}
               onNotify={onNotify}
               onDelete={(ts) => {

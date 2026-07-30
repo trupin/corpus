@@ -16,10 +16,39 @@ import { warningsField } from "./warning.js";
  * server's write path and the UI's controls — so the shape is written down once,
  * in the contract, rather than guessed three times:
  *
- * - **The fence.** An opening fence line whose info string is exactly `form`
- *   (`` ```form ``), at the start of a line, followed by YAML, closed by a bare
- *   fence. `` ```formula `` is not a form: the info string is matched whole, so a
- *   detector built on {@link FORM_FENCE_PATTERN} cannot be fooled by a prefix.
+ * - **The fence** — settled by CONTRACT-014. A form fence is what CommonMark
+ *   would render as a fenced code block whose info string is `form`, subject to
+ *   three deliberate restrictions. Each restriction only ever *declines* a block
+ *   CommonMark would accept — never the reverse — so a declined block degrades
+ *   to an ordinary code block in every consumer at once, while nothing is ever
+ *   claimed as a form that a CommonMark renderer would not draw as a
+ *   `form`-labelled code block:
+ *
+ *   1. Fences are recognised at **column 0** only: no 1–3-space indent, no
+ *      container blocks — a fence inside a blockquote or list item is an
+ *      ordinary code block. Turn bodies are written flush left; modelling
+ *      containers would mean shipping a markdown parser for input the server
+ *      never writes.
+ *   2. Only **backtick** fences open a form. A tilde fence (`~~~form`) opens an
+ *      ordinary code block, never a form — SPEC.md §6 spells the fence with
+ *      backticks.
+ *   3. The **closing fence is required**. CommonMark closes an unterminated
+ *      fence at end of input; here an unterminated `form` fence is not a form —
+ *      the server always closes the fences it writes, so an unterminated one is
+ *      a mangled file to surface (as a visibly broken code block), not a
+ *      question to answer. The same posture `readForm` takes on unparseable
+ *      YAML, on the server side.
+ *
+ *   Within those bounds CommonMark's rules hold exactly: the opening fence is
+ *   three or more backticks whose info string (trimmed, and containing no
+ *   backtick) is exactly `form` — `` ```formula `` and `` ```form-builder ``
+ *   open ordinary code blocks, so a detector built on {@link findFormFence}
+ *   cannot be fooled by a prefix; the closing fence is a line of at least as
+ *   many backticks as the opener with nothing but trailing whitespace — a
+ *   mid-line `` ``` `` never closes a form; and fences do not nest, so a
+ *   `` ```form `` line inside any open fenced block — an outer
+ *   ```` ````markdown ```` example block quoting one, say — is content, not a
+ *   form. The first form fence in the body wins.
  * - **The fields.** `prompt` (required, non-empty) and `options` (required, at
  *   least one, each non-empty, all distinct). Nothing else is pinned —
  *   required/optional markers, field types, validation rules and multi-select are
@@ -34,21 +63,98 @@ import { warningsField } from "./warning.js";
  *   **at most one form**, and the answer route addresses the form through its
  *   turn's path rather than through an id invented for it: no second identifier
  *   exists to drift from the first.
+ *
+ * The grammar is a line scanner rather than a regex because two of its rules —
+ * outer fences shadow inner ones, and a closer must be a whole line — are about
+ * *lines in sequence*, which is exactly what one regex over the body cannot
+ * see: the pre-CONTRACT-014 regex matched a fence quoted inside an outer
+ * example block, and accepted a mid-line closer.
  */
 
-/** The fence info string, matched whole. */
+/** The fence info string, matched whole after trimming. */
 export const FORM_FENCE_INFO_STRING = "form";
 
+/** The first form fence of a turn body: where it sits, and the YAML it carries. */
+export interface FormFenceMatch {
+  /** Offset of the opening fence line's first character. */
+  readonly start: number;
+  /** Offset just past the closing fence line, its trailing newline excluded. */
+  readonly end: number;
+  /** The YAML between the fences, line terminators normalised to `\n`. */
+  readonly source: string;
+}
+
+/** A column-0 fence line: three or more of one fence char, then a possible info string. */
+const FENCE_LINE = /^(`{3,}|~{3,})(.*)$/;
+
+interface FenceLine {
+  readonly char: "`" | "~";
+  readonly length: number;
+  readonly info: string;
+}
+
+function readFenceLine(line: string): FenceLine | undefined {
+  const marker = FENCE_LINE.exec(line)?.[1];
+  if (marker === undefined) return undefined;
+  const char = marker.startsWith("`") ? "`" : "~";
+  const info = line.slice(marker.length).trim();
+  // CommonMark: a backtick fence's info string may not contain a backtick
+  // (ambiguous with an inline code span). Such a line opens nothing.
+  if (char === "`" && info.includes("`")) return undefined;
+  return { char, length: marker.length, info };
+}
+
+/** A closing fence: the opener's char, at least its length, and no info string. */
+function closesFence(line: string, open: FenceLine): boolean {
+  const fence = readFenceLine(line);
+  return (
+    fence !== undefined &&
+    fence.char === open.char &&
+    fence.length >= open.length &&
+    fence.info === ""
+  );
+}
+
 /**
- * Matches an opening form fence and captures its YAML source.
- *
- * Anchored to a line start and requiring end-of-line immediately after the info
- * string, so `` ```formula `` and `` ```form-builder `` do not match — the
- * distinction the projection's `needs=form` detector has to make and cannot make
- * with a substring search.
+ * The first form fence in a turn body, or `undefined` when it carries none —
+ * the one implementation of the fence grammar documented above. The offsets let
+ * a renderer split the body around the fence; {@link extractFormSource} and
+ * {@link containsFormFence} are the narrower questions asked of the same scan.
  */
-export const FORM_FENCE_PATTERN =
-  /(?:^|\r?\n)```form[ \t]*\r?\n([\s\S]*?)\r?\n?```[ \t]*(?=\r?\n|$)/;
+export function findFormFence(body: string): FormFenceMatch | undefined {
+  let open: (FenceLine & { readonly start: number; readonly content: string[] }) | null = null;
+  let offset = 0;
+
+  // Visits every line start; `<=` so a final line without a trailing newline is
+  // still read, and a trailing "\n" yields one empty last line, which neither
+  // opens nor closes anything.
+  while (offset <= body.length) {
+    const nextBreak = body.indexOf("\n", offset);
+    const lineEnd = nextBreak === -1 ? body.length : nextBreak;
+    const raw = body.slice(offset, lineEnd);
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+
+    if (open === null) {
+      const fence = readFenceLine(line);
+      // Any fence opens a block — restriction 2 decides what can be a *form*,
+      // not what shadows one: a ~~~ or ```js block hides fences it quotes.
+      if (fence !== undefined) open = { ...fence, start: offset, content: [] };
+    } else if (closesFence(line, open)) {
+      if (open.char === "`" && open.info === FORM_FENCE_INFO_STRING) {
+        return { start: open.start, end: lineEnd, source: open.content.join("\n") };
+      }
+      open = null;
+    } else {
+      open.content.push(line);
+    }
+
+    if (nextBreak === -1) break;
+    offset = nextBreak + 1;
+  }
+
+  // Restriction 3: an unterminated fence — form or not — matches nothing.
+  return undefined;
+}
 
 /**
  * The YAML source of the first form fence in a turn body, or `undefined` when it
@@ -57,13 +163,12 @@ export const FORM_FENCE_PATTERN =
  * {@link FormSchema} to validate the result against.
  */
 export function extractFormSource(body: string): string | undefined {
-  const match = FORM_FENCE_PATTERN.exec(body);
-  return match?.[1];
+  return findFormFence(body)?.source;
 }
 
 /** Whether a turn body carries a form (SPEC.md §6's `needs=form` condition). */
 export function containsFormFence(body: string): boolean {
-  return FORM_FENCE_PATTERN.test(body);
+  return findFormFence(body) !== undefined;
 }
 
 /**
@@ -82,6 +187,19 @@ export function containsFormFence(body: string): boolean {
  * route composes the body with it; the UI matches turn bodies against it to know
  * whether the form above is already answered — and `apps/ui` cannot import
  * `apps/server`. One spelling, in the module that owns the grammar (CONTRACT-013).
+ *
+ * **A deliberate gap, kept (CONTRACT-014).** The answer names its option but not
+ * the form it answers, so a thread read back off disk pairs answers to forms by
+ * an order rule (earliest still-open form offering that option — the UI's
+ * `mapFormAnswers`), and a multi-form thread can in principle mis-attribute one.
+ * Closing it needs the form's identity (its turn's `ts`) written *into* the
+ * answer turn — and the turn format has nowhere to put it except the prose,
+ * which §6 keeps deliberately plain ("no form id") and this module's own
+ * rationale keeps machine-markup-free. The failure it buys is narrow (two forms
+ * open at once, sharing an option string, answered across a reload), visible,
+ * and self-limiting — answering again is legal and re-pairs it — so the wire
+ * stays as it is. Revisit via a SPEC.md §6 revision, not a silent format change,
+ * if multi-form threads become a real pattern.
  */
 export const FORM_ANSWER_LABEL = "**Answered:**";
 
@@ -105,7 +223,7 @@ export const FormSchema = z
   .describe("A form fence's YAML: a prompt and its options (SPEC.md §6).");
 
 export const FormAnswerRequestSchema = z
-  .object({
+  .strictObject({
     option: z
       .string()
       .min(1)

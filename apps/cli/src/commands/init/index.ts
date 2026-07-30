@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { UsageError } from "../../errors.js";
-import { resolveTemplateRoot, templateManifestPath } from "../../paths.js";
+import { resolvePluginsRoot, resolveTemplateRoot, templateManifestPath } from "../../paths.js";
 import type { CommandContext, StandaloneCommandSpec } from "../../registry/types.js";
 import { CONFIG_DIR, CONFIG_FILE, findWorkspaceRoot } from "../../workspace.js";
 import {
@@ -38,6 +38,13 @@ export const INITIAL_COMMIT_MESSAGE = "workspace: initialize corpus workspace by
 export interface InitDependencies {
   readonly git?: GitRunner;
   readonly templateRoot?: string;
+  /**
+   * The tool's bundled `plugins/` directory. Named to override (tests point it
+   * at a fixture tree; `undefined` means "no plugins"); absent, the real root
+   * is resolved from the install directory — never the workspace
+   * (SPEC.md §10, sprint-012 Adjudication 12).
+   */
+  readonly pluginsRoot?: string | undefined;
   readonly portProbe?: FindFreePortOptions;
 }
 
@@ -48,6 +55,8 @@ export interface InitReport {
   readonly manifestPath: string;
   readonly repository: "initialized" | "reused";
   readonly installed: readonly string[];
+  /** Plugin skill files copied into `.claude/skills/` (SPEC.md §10). */
+  readonly installedPluginSkills: readonly string[];
   readonly warnings: readonly string[];
 }
 
@@ -95,6 +104,7 @@ export async function runInit(
     const result = scaffoldWorkspace({
       root: target,
       templateRoot,
+      pluginsRoot: "pluginsRoot" in dependencies ? dependencies.pluginsRoot : resolvePluginsRoot(),
       port,
       token,
       toolVersion: context.version,
@@ -102,6 +112,7 @@ export async function runInit(
       // unwind together, or a failed commit leaves a half-workspace behind.
       created,
     });
+    warnings.push(...result.pluginWarnings);
 
     if (!reused) {
       await initRepository(target, git).catch((cause: unknown) => {
@@ -122,6 +133,7 @@ export async function runInit(
       manifestPath: templateManifestPath(target),
       repository: reused ? "reused" : "initialized",
       installed: result.installed.map((file) => file.to),
+      installedPluginSkills: result.installedPluginSkills,
       warnings,
     };
   } catch (error) {
@@ -186,6 +198,13 @@ export const initCommand: StandaloneCommandSpec = {
     context.out.line(
       `  installed ${String(report.installed.length)} template files, recorded in ${relative(report.workspace, report.manifestPath)}`,
     );
+    if (report.installedPluginSkills.length > 0) {
+      context.out.line(
+        `  installed ${String(report.installedPluginSkills.length)} plugin skill file${
+          report.installedPluginSkills.length === 1 ? "" : "s"
+        } into .claude/skills/`,
+      );
+    }
     context.out.line("Next: corpus server start");
   },
 };

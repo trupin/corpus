@@ -200,6 +200,44 @@ describe("debouncing", () => {
 
     expect(transport.puts()).toHaveLength(0);
   });
+
+  /**
+   * UI-013 rider. A buffer parked behind a foreign lock cannot be sent — the
+   * server refuses a write to a locked document — so the tab holding it is the
+   * only copy of that text. Leaving the page destroys it, and the chip that was
+   * saying so goes with it, so this is the one exit worth intercepting.
+   */
+  describe("leaving the page with a buffer parked behind a lock", () => {
+    function leave(): Event {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event;
+    }
+
+    it("asks the browser to confirm", () => {
+      const transport = wire();
+      render(<Host transport={transport} locked />);
+      act(() => {
+        type("text that cannot be saved yet\n");
+      });
+      expect(leave().defaultPrevented).toBe(true);
+    });
+
+    it("says nothing when there is no parked buffer", () => {
+      const transport = wire();
+      render(<Host transport={transport} locked />);
+      expect(leave().defaultPrevented).toBe(false);
+    });
+
+    it("says nothing for an ordinary pending save, which `pagehide` flushes", () => {
+      const transport = wire();
+      render(<Host transport={transport} />);
+      act(() => {
+        type("ordinary text\n");
+      });
+      expect(leave().defaultPrevented).toBe(false);
+    });
+  });
 });
 
 describe("edits typed while a save is on the wire", () => {

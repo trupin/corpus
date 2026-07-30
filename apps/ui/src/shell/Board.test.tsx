@@ -445,7 +445,11 @@ describe("Board", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".col[data-col]")).toHaveLength(1);
     });
-    expect(container.querySelector(".col-card")?.textContent).toContain("Plugin not installed");
+    // PLUGINS-001's PluginMissingCard: the column body degrades, the column
+    // stays — header, kind chip and controls intact, frontmatter untouched.
+    expect(container.querySelector(".plugin-missing-card")?.textContent).toContain(
+      "Plugin missing",
+    );
     expect(container.querySelector(".col-kind")?.textContent).toBe("plugin");
   });
 

@@ -224,6 +224,8 @@ describe("runServerProcess — boot", () => {
       cwd: root,
       hooks: h.hooks,
       logger: h.logger,
+      // No plugin discovery noise: this test pins the FIRST log line.
+      discoverPluginsFn: () => Promise.resolve([]),
       createServerFn: () => {
         throw new TypeError("something unexpected");
       },
@@ -248,6 +250,8 @@ describe("runServerProcess — boot", () => {
       cwd: root,
       hooks: h.hooks,
       logger: h.logger,
+      // No plugin discovery noise: this test pins the FIRST log line.
+      discoverPluginsFn: () => Promise.resolve([]),
     });
 
     expect(server).toBeUndefined();

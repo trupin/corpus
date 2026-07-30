@@ -1,6 +1,9 @@
 # Dependencies & build output
 node_modules/
 dist/
+# The published package, assembled by `npm run package:build` (INFRA-008).
+# `dist/` above does not match it, and it is a build artifact like any other.
+dist-package/
 build/
 coverage/
 coverage-raw/
@@ -24,3 +27,6 @@ apps/ui/playwright-report/
 
 # Agent worktrees (created by the dev harness, never repo content)
 .claude/worktrees/
+
+# npm pack artifacts at the repo root (PR #11 review finding 32)
+/*.tgz

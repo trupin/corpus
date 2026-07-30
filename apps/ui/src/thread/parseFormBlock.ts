@@ -1,18 +1,20 @@
-import { FORM_ANSWER_LABEL, FORM_FENCE_PATTERN, FormSchema, type Form } from "@corpus/contract";
+import { FORM_ANSWER_LABEL, findFormFence, FormSchema, type Form } from "@corpus/contract";
 import * as YAML from "yaml";
 
 /**
  * The ```` ```form ```` fence in a turn body (SPEC.md §6), split out so the
  * controls can be rendered in its place.
  *
- * **The grammar is the contract's, matched whole.** `FORM_FENCE_PATTERN` is
- * imported rather than approximated: ```` ```formula ```` and
- * ```` ```form-builder ```` open ordinary code blocks, and a looser match here
- * would make the UI offer controls on a turn the *server* would refuse to accept
- * an answer for (`POST …/form` 404s on a turn that carries no form). The YAML is
- * parsed by the `yaml` library — SPEC.md §5 says never hand-roll one — and
- * validated with the contract's own `FormSchema`, so "what is a form" has one
- * definition across the server, the projection and this menu.
+ * **The grammar is the contract's, matched whole.** `findFormFence` is imported
+ * rather than approximated: ```` ```formula ```` and ```` ```form-builder ````
+ * open ordinary code blocks — as do a tilde fence, an unterminated fence, and a
+ * form quoted inside an outer example block (the CONTRACT-014 settlement, whose
+ * edges live in the contract's docblock) — and a looser match here would make
+ * the UI offer controls on a turn the *server* would refuse to accept an answer
+ * for (`POST …/form` 404s on a turn that carries no form). The YAML is parsed
+ * by the `yaml` library — SPEC.md §5 says never hand-roll one — and validated
+ * with the contract's own `FormSchema`, so "what is a form" has one definition
+ * across the server, the projection and this menu.
  *
  * A malformed fence is not an error state: the bytes came off a file a person or
  * an agent wrote. It degrades to a code block plus a small warning, exactly as
@@ -40,12 +42,12 @@ export interface FormFenceSplit {
 }
 
 export function splitFormFence(body: string): FormFenceSplit {
-  const match = FORM_FENCE_PATTERN.exec(body);
-  if (match === null) return { before: body, after: "", source: undefined };
+  const match = findFormFence(body);
+  if (match === undefined) return { before: body, after: "", source: undefined };
   return {
-    before: body.slice(0, match.index).trimEnd(),
-    after: body.slice(match.index + match[0].length).trimStart(),
-    source: match[1] ?? "",
+    before: body.slice(0, match.start).trimEnd(),
+    after: body.slice(match.end).trimStart(),
+    source: match.source,
   };
 }
 
@@ -100,29 +102,69 @@ export interface AnswerableTurn {
 }
 
 /**
- * Which forms have already been answered, keyed by the timestamp of the turn
- * carrying the form.
+ * An answer this session actually submitted: the form's `ts` as
+ * `POST …/turns/{ts}/form` addressed it, and the option that was sent.
  *
- * A form is answered by the first later turn that records one of *its* options —
- * §6 makes an answer a turn like any other, so there is no back-reference to
- * follow, only order. Walking the conversation once is what keeps two forms in
- * one thread from stealing each other's answer: a form stops being the open one
- * the moment it is answered, and a second form opens after it.
+ * The route knows exactly which form is being answered; the turn the server
+ * writes back does not carry that — the answer travels as prose so it reads as
+ * prose in `git log` (`FORM_ANSWER_LABEL`). Keeping the pairing the client
+ * already had is what stops the replay below from having to guess about the
+ * one answer it does not have to guess about (PR #10 finding 12).
  */
-export function mapFormAnswers(turns: readonly AnswerableTurn[]): ReadonlyMap<string, string> {
+export interface SubmittedAnswer {
+  /** The `ts` of the turn carrying the form — the form's identity (SPEC.md §6). */
+  readonly formTs: string;
+  readonly option: string;
+}
+
+/**
+ * Which forms have already been answered, keyed by the timestamp of the turn
+ * carrying the form — which is the form's identity (SPEC.md §6).
+ *
+ * A form is answered by a later turn that records one of *its* options. The
+ * answer turn is prose with no back-reference to the form it answers, so a
+ * thread read off disk can only be attributed by **order**. Two rules, and the
+ * first is what PR #10's finding 12 is about:
+ *
+ * - **A known pairing wins.** `submitted` carries the `formTs` this session
+ *   sent an answer to, so the form the user actually clicked is the form that
+ *   goes inert — even when a second, still-open form offers the same option
+ *   string. Nothing is re-derived from the prose for that answer.
+ * - **Otherwise, earliest open form first.** Every unanswered form stays open:
+ *   tracking a single "current" form let a second form silently evict the
+ *   first, so the earlier one could never be marked answered at all. Forms are
+ *   asked and answered in order, so an unattributed answer goes to the earliest
+ *   still-open form that offers it, preferring one this session has *not*
+ *   already paired. That is a rule, not knowledge — after a reload the prose is
+ *   all there is — but it is the ordering the conversation itself implies.
+ *
+ * An answer no open form offers belongs to none of them and is left alone: it
+ * is an ordinary turn that happens to start with the label.
+ */
+export function mapFormAnswers(
+  turns: readonly AnswerableTurn[],
+  submitted: readonly SubmittedAnswer[] = [],
+): ReadonlyMap<string, string> {
   const answers = new Map<string, string>();
-  let open: { readonly ts: string; readonly options: readonly string[] } | null = null;
+  const known = new Map(submitted.map((entry) => [entry.formTs, entry.option]));
+  const open: { readonly ts: string; readonly options: readonly string[] }[] = [];
 
   for (const turn of turns) {
     const answered = answeredOption(turn.body);
-    if (answered !== undefined && open !== null && open.options.includes(answered)) {
-      answers.set(open.ts, answered);
-      open = null;
-      continue;
+    if (answered !== undefined) {
+      const target =
+        open.find((form) => known.get(form.ts) === answered) ??
+        open.find((form) => !known.has(form.ts) && form.options.includes(answered)) ??
+        open.find((form) => form.options.includes(answered));
+      if (target !== undefined) {
+        answers.set(target.ts, answered);
+        open.splice(open.indexOf(target), 1);
+        continue;
+      }
     }
     if (turn.author !== "agent") continue;
     const parsed = parseFormBlock(turn.body);
-    if (parsed.status === "ok") open = { ts: turn.ts, options: parsed.form.options };
+    if (parsed.status === "ok") open.push({ ts: turn.ts, options: parsed.form.options });
   }
 
   return answers;

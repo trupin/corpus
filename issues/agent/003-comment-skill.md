@@ -6,7 +6,7 @@ agent
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -18,7 +18,7 @@ opus — behavioral rules enumerated in §7/§8; judgment encoded in AGENT-002's
 
 ## Dependencies
 
-- Depends on: CLI-003, AGENT-002
+- Depends on: CLI-003, CLI-006, CLI-010, AGENT-002
 - Blocks: PLUGINS-002
 
 ## Spec References
@@ -27,7 +27,7 @@ opus — behavioral rules enumerated in §7/§8; judgment encoded in AGENT-002's
 - SPEC.md §8 (agent participation semantics) — what requests the agent, targeted `@<subagent>` / `/<skill>` as directives, structured `mentions`/`skills` in the event payload, `engaged` re-triggering, the honest pending indicator
 - SPEC.md §6 (threads and anchors) — turn format, anchor context, **standalone threads** (`parent: null`), forms in turns
 - SPEC.md §11 (capture filing) — quick creation lands in `data/docs/inbox/`; Capture creates an inbox document plus an agent-requested filing thread; "the agent files inbox arrivals per its skill"
-- SPEC.md §15 M4 — the executable check the loop plus this skill must satisfy
+- SPEC.md §15 M5 — the executable check the loop plus this skill must satisfy (corrected per sprint-014 Adjudication 15)
 
 ## Summary
 
@@ -147,11 +147,84 @@ Record exact commands, API responses, file diffs, and console/job-log excerpts f
 
 ### Reproduction (bugs only)
 
-_[Agent fills]_
+_N/A — feature issue._
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output, confirmation feature works]_
+**implemented on: opus** (per CLAUDE.md's Record-actuals rule / TEST-215).
+
+**Environment.** Scratch `/tmp/corpus-s014-agent003-aapyWT`; workspace `.../ws` created by
+`corpus init … --port 9130` (inside AGENT-003's allocated `9130`–`9134`; the orchestrator's brief
+named `9130`, the contract's table `9132` — either is in range). Real server (pid 40529), real
+from-source CLI through a `$SCRATCH/bin/corpus` wrapper on `PATH`, and a **live `claude` session**
+running `/orchestrate` with
+`--output-format stream-json --verbose --allowedTools "Bash(corpus *)" Read Glob Grep Skill Task TodoWrite`.
+User-side actions (creating threads, captures, form answers) went through the **HTTP API**, which is
+what the UI itself calls — the CLI has no thread-create verb; every **agent-side** action went
+through the CLI.
+
+**Transcript retained (TEST-214):** `/tmp/corpus-s014-agent003-aapyWT/transcript.stream.json`
+(435 stream-json lines). Audit script: `/tmp/corpus-s014-agent003-audit.js`.
+
+| Test | Result | Evidence |
+| ---- | ------ | -------- |
+| TEST-196 | PASS | Loop parked on `idle`; 12 events claimed and settled. Final `corpus queue status`: `pending 0, in-progress 0, processed 12, failed 0, abandoned 0`. Job logs in `.corpus/jobs/*.jsonl` carry claimed → routed → acted → terminal lines. |
+| TEST-197 | PASS | Anchored comment on `doc_tj4fupcq` (`th_nqftjave`). Agent turn posted; `git log` → `agent \| doc edit: Mortgage options (doc_tj4fupcq) by agent`; body on disk changed 6.1% → 6.6%; reply named `[[doc_tj4fupcq]]`; **anchor still resolves**: `corpus doc show` → `anc_a11ae2f4 → th_nqftjave (open) · chars 23–53 · "assume a 30-year fixed at 6.6%"` (later `chars 89–119` after the deferred edit landed). |
+| TEST-198 | PASS | Whole-document comment on `doc_e3rc5ioy` → agent created `doc_oxxcngzl` (`data/docs/kitchen/espresso-dial-in-routine.md`), edited the parent to link it, reply referenced both by `[[id]]`. |
+| TEST-199 | PASS | Standalone Ask (`th_fssjehws`, `parent: null`) answered and **retitled** to "Fixed vs variable mortgage rates"; `git log` → `agent \| doc edit: Fixed vs variable mortgage rates (th_fssjehws) by agent`. |
+| TEST-200 | PASS | Capture `doc_jzomuq7m` retitled "Replace the wagon's tires before winter", **moved out of `inbox/`** into a new `car/`, expanded with an open-questions section, tagged `car`/`maintenance`; reply said what it became and where. `GET /api/tree` → `car(2), finance(4), inbox(1), kitchen(5), tasks(2), templates(1), views(3)`. |
+| TEST-201 | PASS | Capture "sam — thursday?" → agent **asked** with a ` ```form ` block (3 options) and left `doc_tw6227ov` in `data/docs/inbox/sam-thursday.md`. |
+| TEST-202 | PASS | Form answered via `POST …/turns/{ts}/form` (`option: "a reminder to ask or message Sam about Thursday"`, `note: "about the ski trip"`). Agent **resumed**: filed into `tasks/`, folded the note into the body, no re-ask. Answer turn and continuation both in `data/threads/th_iqka6346.md`, in order. |
+| TEST-203 | PASS | `.claude/agents/researcher.md` written out of band (no CLI verb writes there — Open Conflict 1). Payload `mentions: [{name: "researcher", docId: "doc_agentresearcher", status: "open"}]`; transcript shows one `Agent` (subagent) call prompted as the researcher persona; job log: `routed to @researcher — background subagent checking sources`, then `acknowledged on th_aapo7vff — awaiting researcher result` — i.e. the "acknowledge immediately" edge case, live. |
+| TEST-204 | PASS | Same event's payload `unresolved: ["@nobody"]`; the agent proceeded and said so verbatim: "`@nobody` doesn't name anything in this workspace, so the researcher handled it alone." |
+| TEST-205 | PASS | `/fixture-notes` comment → payload `skills: [{name:"fixture-notes", docId:"doc_skill138ec106", status:"open"}]`; transcript `SKILL: {"skill":"fixture-notes",…}`; job log `routed to the fixture-notes skill`. |
+| TEST-206 | PASS | Engaged re-trigger: plain user turn with **no `@agent`** in `th_icqjrx64` enqueued `evt_2tvlzqj45sbd` and the agent replied. After `corpus thread resolve th_fssjehws`, a plain reply returned `eventId: null` and the queue depth was unchanged (12 → 12). *Observation, not a defect*: a reply carrying an explicit `@agent` **into a resolved thread** does enqueue — `participation.ts` documents this as sprint-006 Adjudication 5 ("resolving suppresses the *automatic* re-trigger; it is not a mute button on someone deliberately typing `@agent`"). `docs/cli.md`'s "a resolved thread enqueues nothing" is a simplification of that rule. |
+| TEST-207 | PASS | Note-only turn (`requestsAgent: false`) in engaged `th_fssjehws` → `eventId: null`, depth `pending 2` before and after. |
+| TEST-208 | PASS | `corpus lock acquire doc_tj4fupcq --from user` held. Agent **replied first** ("You're editing [[doc_tj4fupcq]] right now, so I haven't touched it…"), then `.corpus/jobs/evt_ndgzabbzws55.jsonl` → `deferred: doc_tj4fupcq is locked by user`, then the orchestrate skill failed the event. After `corpus lock release` + `corpus job retry evt_ndgzabbzws55`, the edit **landed** (one-line summary at the top of the note) and the anchor still resolved. |
+| TEST-209 | PASS | "get rid of it" → `git log` `agent \| doc archive: Old phone plan comparison (doc_z4egnag3) by agent`; `corpus doc show` → `status: archived`, file present. No `doc delete` anywhere in the transcript. |
+| TEST-210 | PASS (extension path, per Adjudication 8) | A stated preference ("always lead with the number… I keep having to ask") → agent ran `corpus doc edit doc_skillcomment --from agent`, adding a "**Lead with the number.**" rule to the Reply section; committed as `agent \| doc edit: Comment (doc_skillcomment) by agent`; indexed as `type: skill`; the reply **announced it** and named the rollback path. The "creates a new skill" half is **STRUCK → Adjudication 8** (no write path outside `data/docs/`). |
+| TEST-211 | PASS | `corpus skill rollback comment --from user` → `restored .claude/skills/comment/SKILL.md in commit 2c519fb…`; `git log` shows `user \| skill rollback: comment (doc_skillcomment) to a23563f by user`; the added rule is gone (grep count 0). |
+| TEST-212 | PASS | Transcript audit: `Bash 60, WebSearch 9, Skill 2, ToolSearch 2, Read 1, Agent 1, WebFetch 1`. **Zero** `Write`/`Edit`/`NotebookEdit` calls, **zero** `curl`/`fetch`/raw-HTTP, **zero** state-changing git. 57/60 Bash calls start with `corpus`; the 3 others are `export CORPUS_FROM=agent && corpus …`, `ls …/data/docs/`, `head -14 …/.claude/skills/comment/SKILL.md`. |
+| TEST-213 | PASS | 13 `corpus thread show` / `corpus doc show` invocations. The only direct filesystem reads are the two above: a `data/docs/` **folder survey** (exactly Adjudication 9's ruling) and a **content** read of the skill file before editing it through the CLI. Nothing under `.corpus/` was parsed. |
+| TEST-214 | PASS | Path recorded above; TEST-212/213 claims are derived from it. |
+| TEST-215 | PASS | implemented on: opus. |
+
+Also observed: `corpus doc check` over the finished workspace → `checked 24 documents — no findings` (exit 0).
+
+**Rider — the template manifest (TEST-229 – TEST-233, Adjudication 14 / Open Conflict 7).**
+
+- TEST-229 (analysis + recommendation): (a) the blanket `.corpus/*` rule's own comment enumerates
+  *secret* (`config.json`), *derived* (`cache.db`), *transient* (pid/log/jobs/locks/attachments/
+  seen/HALT) — the install manifest is **none of the three**; it is provenance carrying a
+  `toolVersion`. (b) `scaffoldWorkspace` writes it **before** `commitAll`'s `git add --all`, so a
+  freshly initialised workspace still comes out clean. (c) `upgrade.ts:191` already asks git
+  (`isIgnored` → `git check-ignore --quiet`), so the tracked case needs **no code change**.
+  (d) **Recommendation: un-ignore it** — a clone then carries its own upgrade baseline instead of
+  degrading to the `withoutBaseline` path. Done.
+- TEST-230: one negation added to `assets/workspace/gitignore` after `.corpus/*`, with a comment in
+  the file's voice. No other rule line changed.
+- TEST-231: live `corpus init` into the scratch dir → `git status --porcelain` **empty**;
+  `git ls-files` under `.corpus` lists the five queue `.gitkeep`s **plus**
+  `.corpus/template-manifest.json`; `git check-ignore .corpus/config.json` still matches.
+- TEST-232: `VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run scripts/ apps/cli/src/commands/init apps/cli/src/commands/workspace apps/cli/src/template` → **17 files, 330 tests, all green**. The three
+  directly-caused updates: `init/index.test.ts`'s tracked-set test (manifest added to the `toEqual`
+  list, removed from the `check-ignore` loop, name updated); `upgrade.test.ts`'s `makeTemplate()`
+  now mirrors the shipped rules (manifest un-ignored) so `it("commits the manifest when the
+  workspace does track it")` needs no override; and the "touching only template paths" test now
+  **synthesizes an ignoring template itself**. Both branches of `isIgnored` stay covered.
+- TEST-233: covered by the green `upgrade.test.ts` branch — `manifestCommitted: true` and the commit
+  lists `.corpus/template-manifest.json` alongside the changed template file.
+
+Two prose fixes fall out of the same change and ship in the same commit:
+`docs/workspace-template.md` (the parenthetical claiming `.gitignore` covers all of `.corpus/`
+except the queue skeleton) and `assets/workspace/README.md` (same claim, product-side).
+
+**Mechanical half.** `VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run scripts/workspace-template.test.ts`
+→ green. TEST-168–TEST-175 and TEST-176–TEST-195 are covered by the new
+`describe("comment skill body")` block plus the pinned tests, which pass unchanged;
+**TEST-174 is green with `CLI_COMMANDS_PENDING_CLI_006` still `[]`** — no allowlist entry added.
+TEST-195: the orchestrate skill is **untouched by the `[AGENT-003]` commit**; its only edit this
+sprint is AGENT-004's sanctioned trace rule (TEST-218).
 
 ## Completion Checklist (domain agent)
 

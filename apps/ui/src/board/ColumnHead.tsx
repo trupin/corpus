@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { ColumnMenu } from "./ColumnMenu";
-import { formatQueryString, parseQueryString, type BoardColumn } from "./viewDoc";
+import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from "./viewDoc";
 
 /**
  * A column's header: title, kind, live count, `＋`, `⋯`, and the stored query
@@ -61,7 +61,14 @@ export function ColumnHead({
   const commit = (): void => {
     const value = draft.trim();
     if (editing === "title" && value !== "" && value !== column.title) onRename(value);
-    if (editing === "query") onEditQuery(parseQueryString(value));
+    if (editing === "query") {
+      // Only a real change is written. Opening the field and clicking away is
+      // not an edit, and the rename branch has always known it: a no-op `PUT`
+      // still rewrites the view document, bumps `updated` and commits (PR #10
+      // finding 19).
+      const next = parseQueryString(value);
+      if (!sameQuery(next, column.filter)) onEditQuery(next);
+    }
     setEditing(null);
   };
 

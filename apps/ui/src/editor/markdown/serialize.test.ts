@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CHARACTER_REFERENCE } from "./escape.js";
 import { parseMarkdown } from "./parse.js";
 import { refSource } from "./refNode.js";
 import {
@@ -279,7 +280,9 @@ describe("whitespace at a boundary markdown cannot spell", () => {
         const trailing = serializeDoc(doc(paragraph(text("a ", mark), text(neighbour))));
         const leading = serializeDoc(doc(paragraph(text(neighbour), text(" a", mark))));
         for (const output of [trailing, leading]) {
-          expect(output, `${mark} beside ${JSON.stringify(neighbour)}`).not.toMatch(/&#x/i);
+          expect(output, `${mark} beside ${JSON.stringify(neighbour)}`).not.toMatch(
+            CHARACTER_REFERENCE,
+          );
           // And what it does write still means what the document said.
           expect(canonicalizeMarkdown(output)).toBe(output);
         }

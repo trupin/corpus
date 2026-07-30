@@ -1,0 +1,194 @@
+import {
+  AgeChip,
+  LockChip,
+  NeedsYouBadge,
+  UnreadBadge,
+  WorkingDot,
+  ageLabel,
+  hasStaleActions,
+  reasonChips,
+  rowContext,
+  stalenessClass,
+  stalenessLevel,
+  unreadBadgeProps,
+  useAgentActivity,
+  useDocLock,
+  useRowActions,
+} from "@corpus/kit";
+import type { ListItemProps } from "@corpus/kit/plugin";
+import type { KeyboardEvent, MouseEvent, ReactElement } from "react";
+import { dueCount, isOverdue, itemsOrEmpty } from "../items.js";
+import "./todos.css";
+
+/**
+ * A `todo` document's row, in every column that lists one (SPEC.md §10, §11).
+ *
+ * A registered `ListItem` replaces the kit `Row` **wholesale** for its type, so
+ * this component is responsible for everything a row owes the board — the
+ * unread pill, the working dot, the lock chip, the attention reasons, the
+ * staleness ladder and its quick actions — and adds the one thing only this
+ * plugin knows about: `design/index.html`'s `.todo-items` preview and its due
+ * count. Dropping the row's own signals to save code is how a whole document
+ * type quietly stops showing that the agent is working on it.
+ *
+ * Everything here is derived from what the server already computed on the row,
+ * plus the two live signals the kit publishes as hooks (`useDocLock`,
+ * `useAgentActivity`), each backed by one shared query for the whole board.
+ * The plugin re-derives nothing and issues no request of its own — which is
+ * exactly why a row like this can render anywhere.
+ */
+
+/** The design's three-item preview: enough to recognise the list, never the list. */
+const PREVIEW_ITEMS = 3;
+
+export interface TodoListItemProps extends ListItemProps {
+  /** Injectable clock, so a test can pin the age label and the overdue boundary. */
+  readonly now?: Date | undefined;
+}
+
+export function TodoListItem(props: TodoListItemProps): ReactElement {
+  const { row, onOpen, onNotify, unreadCount, now, showReasons, cursor } = props;
+
+  const level = stalenessLevel(row.stale);
+  const showActions = hasStaleActions(level);
+  const actions = useRowActions(row, {
+    ...(onNotify ? { onNotify } : {}),
+    ...(now ? { now: () => now } : {}),
+  });
+  const lock = useDocLock(row.id);
+  const activity = useAgentActivity(row);
+
+  const today = now ?? new Date();
+  const items = itemsOrEmpty(row);
+  const due = dueCount(items);
+  const preview = items.slice(0, PREVIEW_ITEMS);
+  const unread = unreadBadgeProps(row, unreadCount);
+  const chips = showReasons === false ? [] : reasonChips(row.attention, row.stale);
+
+  const open = (): void => {
+    if (onOpen !== undefined) onOpen(row);
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    open();
+  };
+
+  // A quick action must not also open the document.
+  const swallow = (event: MouseEvent | KeyboardEvent): void => {
+    event.stopPropagation();
+  };
+
+  const className = [
+    "row",
+    "todo-row",
+    stalenessClass(level),
+    actions.isLeaving ? "leaving" : "",
+    cursor === true ? "kbd" : "",
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+
+  return (
+    <div
+      className={className}
+      role="button"
+      tabIndex={0}
+      data-row-doc={row.id}
+      data-row-type={row.type}
+      data-row-status={row.status}
+      data-row-level={String(level)}
+      aria-label={`${row.type}: ${row.title}`}
+      onClick={open}
+      onKeyDown={onKeyDown}
+    >
+      <div className="row-top">
+        <span className="type-glyph">{row.type}</span>
+        <span className="row-title">{row.title}</span>
+        <span className="row-badges">
+          {unread === null ? null : <UnreadBadge {...unread} />}
+          {due === 0 ? null : <NeedsYouBadge text={`${String(due)} due`} />}
+          {activity.active ? <WorkingDot title={activity.title} /> : null}
+          {lock === null ? null : <LockChip holder={lock.holder} />}
+          {showActions ? <AgeChip label={ageLabel(row, today)} /> : null}
+        </span>
+      </div>
+
+      {preview.length === 0 ? null : (
+        <div className="todo-items">
+          {preview.map((item, index) => (
+            <div
+              key={`${item.ts}:${String(index)}`}
+              className={["t", item.done ? "done" : "", isOverdue(item, today) ? "overdue" : ""]
+                .filter((part) => part !== "")
+                .join(" ")}
+            >
+              <span className="box">{item.done ? "☑" : "☐"}</span>
+              <span className="todo-item-text">{item.text}</span>
+            </div>
+          ))}
+          {items.length > preview.length ? (
+            <div className="t todo-more">+{items.length - preview.length} more</div>
+          ) : null}
+        </div>
+      )}
+
+      {chips.length === 0 ? null : (
+        <div className="reason">
+          {chips.map((chip) => (
+            <span
+              key={chip.code}
+              className={`r-chip ${chip.chipClass}`.trimEnd()}
+              data-reason={chip.code}
+            >
+              {chip.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {showActions ? (
+        <div className="stale-actions" onClick={swallow} onKeyDown={swallow} role="presentation">
+          <button
+            type="button"
+            data-act="archive"
+            disabled={actions.isBusy}
+            onClick={actions.archive}
+          >
+            Archive
+          </button>
+          <button
+            type="button"
+            className="keep"
+            data-act="keep"
+            disabled={actions.isBusy}
+            onClick={actions.stillCurrent}
+          >
+            Still current
+          </button>
+          <button
+            type="button"
+            className="keep"
+            data-act="triage"
+            disabled={actions.isBusy}
+            onClick={actions.triage}
+          >
+            @agent triage
+          </button>
+        </div>
+      ) : (
+        <div className="row-meta">
+          <span className="row-context">{rowContext(row) ?? ""}</span>
+          <AgeChip label={ageLabel(row, today)} />
+        </div>
+      )}
+
+      {actions.error === null ? null : (
+        <p className="row-error" role="alert">
+          {actions.error.message}
+        </p>
+      )}
+    </div>
+  );
+}

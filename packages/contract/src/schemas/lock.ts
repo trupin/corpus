@@ -25,7 +25,7 @@ export const LockSchema = z
 export const DEFAULT_LOCK_TTL_SECONDS = 300;
 
 export const AcquireLockRequestSchema = z
-  .object({
+  .strictObject({
     ttl: z
       .number()
       .int()

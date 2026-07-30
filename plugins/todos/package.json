@@ -1,0 +1,27 @@
+{
+  "name": "corpus-plugin-todos",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The v1 reference plugin (SPEC.md §12): the `todo` document type, its renderers, an aggregating board column, server routes, CLI verbs and an agent skill.",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@corpus/contract": "*",
+    "@corpus/kit": "*",
+    "hono": "^4.12.32",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^18.3.31",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^7.3.6"
+  }
+}

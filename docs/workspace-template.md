@@ -109,10 +109,12 @@ their parents) arrive with the copy and are not listed here.
 - `.corpus/attachments/` — attachment bytes, under `<thread-id>/<turn-ts>/` (SPEC.md §4).
 - `.corpus/config.json` — version, the port chosen for this workspace, a freshly generated
   bearer token, and `dataDir`. Secret; never committed (the installed `.gitignore` covers
-  all of `.corpus/` except the queue skeleton).
+  all of `.corpus/` except the queue skeleton and the manifest below).
 - `.corpus/template-manifest.json` — a record of what this install wrote, for
   `corpus workspace upgrade` to three-way compare against later (SPEC.md §2.1, CLI-005). Its
-  shape is pinned below.
+  shape is pinned below. Unlike the rest of `.corpus/` it is **tracked**: it is install
+  provenance rather than secret, derived or transient state, so a clone arrives with its own
+  upgrade baseline.
 - `git init` — the workspace's git repository plus the initial commit containing the
   installed tree. Every later mutation auto-commits on top of it with the acting party as
   git author (SPEC.md §4).
@@ -132,11 +134,33 @@ The manifest, as `corpus init` writes it:
 }
 ```
 
-`files` lists the copied template files only — post-rename paths, `/`-separated, in install
-order — not the generated entries above and not anything the user later creates. The manifest
-is init's own artifact rather than part of this template, and is gitignored under
-`.corpus/*`. It is worthless if written later: nothing can retroactively learn what the first
-install contained.
+`files` lists what `corpus init` copied — post-rename paths, `/`-separated, in install order
+— not the generated entries above and not anything the user later creates. The manifest is
+init's own artifact rather than part of this template, and is gitignored under `.corpus/*`.
+It is worthless if written later: nothing can retroactively learn what the first install
+contained.
+
+## Installed from plugins
+
+After the template copy, `corpus init` also installs every bundled plugin's skills
+(SPEC.md §10, PLUGINS-001): each `plugins/<dir>/skills/<name>/` copies to
+`.claude/skills/<name>/`, beside the template's own skills. Rules:
+
+- A plugin skill whose name collides with a **template** skill (`orchestrate`, `comment`, …)
+  is skipped with a warning naming the collision — core wins, always; a plugin can never
+  replace the loop.
+- Two plugins shipping the same skill name: the first in plugin-directory order wins; the
+  loser is a warning.
+- Plugin-installed files are recorded in the same manifest with a provenance marker —
+  `{ "path": …, "sha256": …, "source": "plugin:<dir>" }` — so `corpus workspace upgrade`
+  can refresh them from the plugin rather than the template. Template entries keep the
+  two-key shape above; an absent `source` means template.
+- The plugins root is the **tool's install directory** (`resolvePluginsRoot()` in
+  `apps/cli/src/paths.ts`), never the workspace: a `plugins/` directory inside a workspace
+  is not discovered.
+
+This step is `corpus init`'s, not the template's: the template tree above never contains
+plugin files, and a tool with no plugins installs exactly the template.
 
 ## The install procedure
 
@@ -149,6 +173,50 @@ install contained.
 Steps 1–3 are exactly what `installedPath()` in `scripts/workspace-template.ts` computes for
 a single path — `null` means the file is dropped.
 
+## Upgrading an installed workspace
+
+`corpus workspace upgrade` carries a newer tool's copy of these files into a workspace that
+already has them. It is the other half of the install contract, and it exists because the
+installed files stop being the tool's the moment they land: the skills are the agent's
+memory and it evolves them (SPEC.md §2.1).
+
+For every path known to the manifest **or** to the tool's current sources, three hashes are
+compared — the **baseline** the manifest recorded, the **workspace** copy now, and the
+**incoming** copy the installed tool carries:
+
+| baseline vs. workspace  | baseline vs. incoming | verdict                                                            |
+| ----------------------- | --------------------- | ------------------------------------------------------------------ |
+| same (never touched)    | changed               | **update** — overwritten. The only writing cell.                   |
+| same                    | same                  | current — nothing to do, nothing said.                             |
+| differs (modified here) | changed               | **keep** — left alone, reported with a line-count summary.         |
+| differs                 | same                  | keep — silently: there is nothing to upgrade.                      |
+| file deleted here       | any                   | **restore candidate** — reported; reinstalled only `--restore`.    |
+| not in the manifest     | present upstream      | **install** when absent here; **keep** when present and different. |
+| in the manifest         | gone upstream         | **retired** — reported, copy left in place, entry dropped.         |
+
+Pairing happens **after** the rename table, so `claude/skills/comment/SKILL.md` compares
+against `.claude/skills/comment/SKILL.md`; filtered names (`.gitkeep`) are never installed
+and never compared. A `source: "plugin:<dir>"` entry is refreshed from **that plugin's**
+`skills/` directory, a template entry from `assets/workspace/`.
+
+Flags: `--dry-run` prints the plan and writes nothing at all; `--restore` also reinstalls
+deleted files; `--adopt` is for a workspace older than the manifest — without a baseline an
+untouched copy cannot be told from an edited one, so such a run overwrites **nothing** and
+`--adopt` records a baseline from the files that already match the tool's copies (files that
+differ stay untracked and keep being reported).
+
+Everything the run writes lands in **one** commit attributed to `--from`, with a subject
+naming the old and new tool versions. The manifest itself is rewritten every time; it joins
+that commit only if the workspace's own `.gitignore` tracks it, which the shipped template's
+does not (`.corpus/*`) — the same state `corpus init` leaves it in. A run with nothing to do
+prints `already up to date.` and makes no commit. Writes happen before the commit on
+purpose: if the commit fails, correct files stand on disk and in `git status`, which is
+recoverable.
+
+Like `corpus init`, upgrade is bootstrap-class (SPEC.md §2.2 rule 4): it writes files
+directly and must work with the server stopped. With the server running its writes are
+ordinary out-of-band edits, and the watcher re-projects them.
+
 ## Changing the template
 
 The seed views, the note template, and the README are **ordinary documents** in the
@@ -159,3 +227,21 @@ them, which is why `corpus workspace upgrade` three-way compares rather than ove
 When adding a file here, add it to the tree above and to the test's expected-tree list; when
 adding a rename or a filter, change `scripts/workspace-template.ts` and this document in the
 same commit — the test compares them.
+
+## Verified against the CLI reference
+
+The skill bodies are executable documentation, so
+`scripts/workspace-template.test.ts` extracts every `corpus …` invocation in the template
+tree — fenced code blocks and inline code alike, across all of its markdown files — and
+resolves each one against the generated `docs/cli.md`. A CLI surface change (a renamed verb,
+a removed command) therefore **breaks the AGENT skills' test suite**, on purpose: regenerate
+the reference with `npm run docs:cli -w apps/cli`, then fix the skill text to match the CLI
+— never the reference to match the skill.
+
+`CLI_COMMANDS_PENDING_CLI_006` in `scripts/workspace-template.ts` is the escape hatch for a
+skill that must name a verb before it ships. It is **empty**: it once held
+`corpus doc check` and `corpus skill rollback`, because the README's and the orchestrate
+skill's recovery documentation had to name them before CLI-006 shipped them, and it was
+self-invalidating — a companion test asserted each entry was still absent from
+`docs/cli.md`, so the suite went red the moment those verbs landed. It stays as the
+mechanism, not as a leftover.

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ExitCode, UsageError } from "./errors.js";
-import { mergedFlags, ParsedArgs, ParsedFlags, parseCommandInput } from "./parse-args.js";
+import {
+  argUsage,
+  mergedFlags,
+  ParsedArgs,
+  ParsedFlags,
+  parseCommandInput,
+  type ParseTarget,
+} from "./parse-args.js";
 import { fixtureEverythingCommand } from "./registry/fixtures.js";
 import { GLOBAL_FLAGS } from "./registry/globals.js";
 
@@ -150,5 +157,83 @@ describe("ParsedArgs", () => {
   it("throws for an argument the command never declared", () => {
     const args = new ParsedArgs(new Map());
     expect(() => args.get("nope")).toThrow(/No positional argument named "nope"/);
+  });
+
+  it("reads a scalar, a list and an absent argument through one accessor", () => {
+    const args = new ParsedArgs(
+      new Map<string, string | readonly string[]>([
+        ["one", "a"],
+        ["many", ["a", "b"]],
+      ]),
+    );
+    expect(args.list("one")).toEqual(["a"]);
+    expect(args.list("many")).toEqual(["a", "b"]);
+    expect(args.list("missing")).toEqual([]);
+  });
+
+  it("does not hand a list back through the scalar accessors", () => {
+    const args = new ParsedArgs(new Map<string, string | readonly string[]>([["many", ["a"]]]));
+    expect(() => args.get("many")).toThrow(/No positional argument named "many"/);
+    expect(args.optional("many")).toBeUndefined();
+  });
+});
+
+describe("a variadic positional", () => {
+  /** `corpus doc check [id…]`'s shape: optional, last, absorbing. */
+  const variadic: ParseTarget = {
+    name: "check",
+    args: [{ name: "id", required: false, variadic: true, description: "Documents to check." }],
+    flags: [{ name: "staged", type: "boolean", description: "Check the index." }],
+  };
+
+  it("absorbs every remaining positional, in order", () => {
+    const { args } = parseCommandInput(variadic, ["doc_a", "doc_b", "--staged", "doc_c"]);
+    expect(args.list("id")).toEqual(["doc_a", "doc_b", "doc_c"]);
+  });
+
+  it("binds an empty list when nothing is given, rather than failing", () => {
+    expect(parseCommandInput(variadic, []).args.list("id")).toEqual([]);
+    expect(parseCommandInput(variadic, ["--staged"]).flags.boolean("staged")).toBe(true);
+  });
+
+  it("never reports an unexpected argument, however many are given", () => {
+    expect(parseCommandInput(variadic, ["a", "b", "c", "d"]).args.list("id")).toHaveLength(4);
+  });
+
+  it("still requires at least one value when it is declared required", () => {
+    const required: ParseTarget = {
+      name: "check",
+      args: [{ name: "id", required: true, variadic: true, description: "Documents to check." }],
+      flags: [],
+    };
+    expect(() => parseCommandInput(required, [])).toThrow(/missing required argument <id…>/);
+    expect(parseCommandInput(required, ["doc_a"]).args.list("id")).toEqual(["doc_a"]);
+  });
+
+  it("follows a fixed argument, absorbing only what is left", () => {
+    const mixed: ParseTarget = {
+      name: "mixed",
+      args: [
+        { name: "head", required: true, description: "First." },
+        { name: "rest", required: false, variadic: true, description: "The remainder." },
+      ],
+      flags: [],
+    };
+    const { args } = parseCommandInput(mixed, ["one", "two", "three"]);
+    expect(args.get("head")).toBe("one");
+    expect(args.list("rest")).toEqual(["two", "three"]);
+  });
+});
+
+describe("argUsage", () => {
+  it("writes each shape the way help, the synopsis and docs/cli.md all show it", () => {
+    expect(argUsage({ name: "id", required: true, description: "d" })).toBe("<id>");
+    expect(argUsage({ name: "id", required: false, description: "d" })).toBe("[id]");
+    expect(argUsage({ name: "id", required: true, variadic: true, description: "d" })).toBe(
+      "<id…>",
+    );
+    expect(argUsage({ name: "id", required: false, variadic: true, description: "d" })).toBe(
+      "[id…]",
+    );
   });
 });

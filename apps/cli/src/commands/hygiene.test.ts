@@ -14,6 +14,17 @@ import { describe, expect, it } from "vitest";
  * topics (`server`, `init`) legitimately write the CLI's own two files — the
  * pidfile and the log (SPEC.md §2.2 rule 4) — and create the workspace itself.
  *
+ * That rule has **one** admitted exception, and it is named rather than
+ * implicit (sprint-013 Adjudication 12, Open Conflict 8). `corpus doc check
+ * --staged` must validate the content in git's **index**, which exists neither
+ * on disk nor on the server, so no HTTP call can produce it. The plumbing lives
+ * in `src/staged.ts` — outside these prefixes, one file, refusing any git
+ * subcommand outside a read-only allowlist before it spawns anything — and
+ * exactly one guarded module may import it, pinned below by name. Every other
+ * prohibition is untouched: a guarded module still imports no `node:fs` and no
+ * `node:child_process`, still calls no `exec*`/`spawn*`, still writes nothing,
+ * and still may not name git itself.
+ *
  * **`process.stdin` is reachable from exactly one file** (CLI-007, CLI-008 item
  * 5). An agent harness hands its child a socket on fd 0 that never ends, so a
  * verb that reads stdin because it "is not a TTY" hangs forever with no way to
@@ -66,6 +77,16 @@ const STDIN_OWNER = "input.ts";
 
 const STDIN_REFERENCE = /\bprocess\s*\.\s*stdin\b/;
 
+/**
+ * The guarded modules permitted to reach the read-only staged-git helper, and
+ * the only capability admitted through these prefixes at all. Exhaustive on
+ * purpose: a second verb wanting the index shows up here as a failing diff and
+ * has to justify itself in review.
+ */
+const STAGED_HELPER_IMPORTERS = ["doc/check.ts"];
+
+const STAGED_HELPER_IMPORT = /from\s+["'][^"']*\/staged\.js["']/;
+
 interface Module {
   /** Path relative to the scan's root, with `/` separators on every platform. */
   readonly path: string;
@@ -108,6 +129,20 @@ async function writeRestrictedModules(): Promise<readonly Module[]> {
   );
 }
 
+/** `<path> calls <api>` for every write API or subprocess call in the modules. */
+function processViolations(modules: readonly Module[]): readonly string[] {
+  return modules.flatMap((module) =>
+    [...FORBIDDEN_FS, ...FORBIDDEN_PROCESS]
+      .filter((forbidden) => new RegExp(`\\b${forbidden}\\s*\\(`).test(module.code))
+      .map((forbidden) => `${module.path} calls ${forbidden}`),
+  );
+}
+
+/** Modules naming git in code rather than in prose — none may, whatever the subcommand. */
+function gitViolations(modules: readonly Module[]): readonly string[] {
+  return modules.filter((module) => /\bgit\b/.test(module.code)).map((module) => module.path);
+}
+
 function stdinViolations(modules: readonly Module[]): readonly string[] {
   return modules
     .filter((module) => module.path !== STDIN_OWNER && STDIN_REFERENCE.test(module.code))
@@ -136,13 +171,16 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "db/index.ts",
       "db/rebuild.ts",
       "doc/archive.ts",
+      "doc/check.ts",
       "doc/create.ts",
       "doc/delete.ts",
       "doc/edit.ts",
       "doc/index.ts",
       "doc/move.ts",
+      "doc/show.ts",
       "thread/index.ts",
       "thread/reply.ts",
+      "thread/show.ts",
       "thread/status.ts",
     ]);
   });
@@ -158,19 +196,33 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
   });
 
   it("calls no write API and spawns no process", async () => {
-    for (const module of await writeRestrictedModules()) {
-      for (const forbidden of [...FORBIDDEN_FS, ...FORBIDDEN_PROCESS]) {
-        expect(module.code, `${module.path} calls ${forbidden}`).not.toMatch(
-          new RegExp(`\\b${forbidden}\\s*\\(`),
-        );
-      }
-    }
+    expect(processViolations(await writeRestrictedModules())).toEqual([]);
+  });
+
+  it("catches a spawned git command and names the file", () => {
+    const rogue = fabricate(
+      "doc/rogue.ts",
+      'export function rogue() { spawnSync("git", ["commit", "-m", "x"]); }',
+    );
+    expect(processViolations([rogue])).toEqual(["doc/rogue.ts calls spawnSync"]);
+    expect(gitViolations([rogue])).toEqual([]); // the word is inside a string literal…
+    expect(gitViolations([fabricate("doc/rogue2.ts", "export const c = git.commit();")])).toEqual([
+      "doc/rogue2.ts",
+    ]);
   });
 
   it("runs no git command, state-changing or otherwise", async () => {
-    for (const module of await writeRestrictedModules()) {
-      expect(module.code, `${module.path} mentions git in code`).not.toMatch(/\bgit\b/);
-    }
+    expect(gitViolations(await writeRestrictedModules())).toEqual([]);
+  });
+
+  it("admits the read-only staged helper in exactly one guarded module", async () => {
+    // The whole of Adjudication 12's carve-out, asserted rather than assumed:
+    // one importer, named. `staged.ts` itself proves it is read-only, in
+    // `src/staged.test.ts`.
+    const importers = (await writeRestrictedModules())
+      .filter((module) => STAGED_HELPER_IMPORT.test(module.source))
+      .map((module) => module.path);
+    expect(importers).toEqual(STAGED_HELPER_IMPORTERS);
   });
 
   it("builds every request through the generated typed client", async () => {
@@ -201,17 +253,18 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "db/index.ts",
       "db/rebuild.ts",
       "doc/archive.ts",
+      "doc/check.ts",
       "doc/create.ts",
       "doc/delete.ts",
       "doc/edit.ts",
       "doc/index.ts",
       "doc/move.ts",
+      "doc/show.ts",
       "health.ts",
       "init/git.ts",
       "init/index.ts",
       "init/port.ts",
       "init/scaffold.ts",
-      "init/template.ts",
       "job/console.ts",
       "job/index.ts",
       "job/log.ts",
@@ -231,9 +284,14 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "server/state.ts",
       "server/status.ts",
       "server/stop.ts",
+      "skill/index.ts",
+      "skill/rollback.ts",
       "thread/index.ts",
       "thread/reply.ts",
+      "thread/show.ts",
       "thread/status.ts",
+      "workspace/index.ts",
+      "workspace/upgrade.ts",
     ]);
   });
 

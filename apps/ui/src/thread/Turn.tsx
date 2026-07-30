@@ -20,7 +20,7 @@ export const DELETE_LABEL = "✕";
 export const DELETE_ARMED_LABEL = "delete?";
 
 /**
- * The trace grammar: a trailing line of an **agent** turn beginning with `↳`.
+ * The trace grammar: the final line of an **agent** turn, beginning with `↳ `.
  *
  * The prototype shows a trace line under agent turns describing what the agent
  * changed, and SPEC.md does not say how one is written — there is no `trace`
@@ -29,23 +29,44 @@ export const DELETE_ARMED_LABEL = "delete?";
  * stripped here and re-supplied by CSS `::before`, which is what keeps it out of
  * the document's bytes.
  */
-const TRACE_PREFIX = "↳";
+/**
+ * The arrow **and its space**. `↳x` is not the grammar, and neither is a bare
+ * `↳` on its own line: matching either would strip a character off a body that
+ * merely started with the glyph and print nothing in its place.
+ */
+const TRACE_PREFIX = "↳ ";
 
 export interface TurnSplit {
   readonly body: string;
   readonly trace: string | null;
 }
 
+/**
+ * The trace, or nothing — read off the **unindented final line** of the turn as
+ * it was written.
+ *
+ * Three exactness rules, each of which is a way the loose version claimed a
+ * trace that was not one (PR #10 finding 11):
+ *
+ * - the trailing space is part of the prefix (above);
+ * - the line is **not** left-trimmed first, so an indented `↳ ` — a list item's
+ *   continuation, a line inside a fence, a quoted reply — stays content;
+ * - the line examined is the last line of `body` itself. Splitting anything off
+ *   the end first (the attachment references, say) promotes an earlier line
+ *   into final position, and §6's grammar is about the line a turn *closes*
+ *   with, not about whichever line happens to be last after a rewrite.
+ */
 export function splitTrace(body: string, author: string): TurnSplit {
   if (author !== "agent") return { body, trace: null };
   const lines = body.split("\n");
-  const last = (lines.at(-1) ?? "").trim();
+  const last = (lines.at(-1) ?? "").trimEnd();
   if (!last.startsWith(TRACE_PREFIX)) return { body, trace: null };
+  const trace = last.slice(TRACE_PREFIX.length).trim();
+  // `↳` followed by nothing but blanks reports no action; it is not a trace,
+  // and rendering the arrow alone would be the UI inventing one.
+  if (trace === "") return { body, trace: null };
   lines.pop();
-  return {
-    body: lines.join("\n").trimEnd(),
-    trace: last.slice(TRACE_PREFIX.length).trim(),
-  };
+  return { body: lines.join("\n").trimEnd(), trace };
 }
 
 export interface TurnProps {
@@ -53,6 +74,8 @@ export interface TurnProps {
   readonly turn: ThreadTurn;
   /** The answer a later turn recorded for this turn's form, if any. */
   readonly answeredForm: string | null;
+  /** This turn's form was answered from here — see `FormBlock.onAnswered`. */
+  readonly onAnsweredForm?: ((formTs: string, option: string) => void) | undefined;
   readonly onOpenRef: (docId: string) => void;
   readonly onDelete: (ts: string) => void;
   /** Absent suppresses the per-turn comment affordance (a nested card at depth). */
@@ -66,6 +89,7 @@ export function Turn({
   threadId,
   turn,
   answeredForm,
+  onAnsweredForm,
   onOpenRef,
   onDelete,
   onComment,
@@ -97,8 +121,11 @@ export function Turn({
   }, [armed]);
 
   const pending = isPendingTurn(turn);
-  const { prose, attachments } = splitTurnAttachments(turn.body);
-  const { body, trace } = splitTrace(prose, turn.author);
+  // The trace is read first, off the turn's own last line. Splitting the
+  // attachment references off first would let an earlier line inherit "final"
+  // and be read as a trace it is not (PR #10 finding 11).
+  const { body: unstamped, trace } = splitTrace(turn.body, turn.author);
+  const { prose: body, attachments } = splitTurnAttachments(unstamped);
   // SPEC.md §6 makes a form something an *agent* turn carries, and the server
   // agrees: `POST …/form` 404s on a turn that is not the agent's. A user turn
   // that happens to quote a fence is a code block, not a question to answer.
@@ -168,6 +195,7 @@ export function Turn({
                 threadId={threadId}
                 formTs={turn.ts}
                 answered={answeredForm}
+                onAnswered={onAnsweredForm}
                 onNotify={onNotify}
               />
             ) : (

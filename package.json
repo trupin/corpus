@@ -2,6 +2,7 @@
   "name": "corpus-monorepo",
   "private": true,
   "type": "module",
+  "version": "0.0.0",
   "engines": {
     "node": ">=22"
   },
@@ -10,10 +11,22 @@
     "packages/*",
     "plugins/*"
   ],
+  "overrides": {
+    "@redocly/openapi-core": {
+      "brace-expansion": "^5.0.8"
+    },
+    "test-exclude": {
+      "minimatch": "^10.2.6"
+    }
+  },
   "scripts": {
     "setup-hooks": "git config core.hooksPath .githooks",
-    "build": "npm run build -w packages/contract && npm run build -w packages/kit && npm run build -w apps/cli && npm run build -w apps/server -w apps/ui --if-present",
-    "clean": "rm -rf packages/*/dist apps/*/dist plugins/*/dist coverage coverage-raw",
+    "build": "npm run build -w packages/contract && npm run build -w packages/kit && node --import tsx scripts/build-plugins.ts && npm run build -w apps/cli && npm run build -w apps/server -w apps/ui --if-present",
+    "clean": "rm -rf packages/*/dist apps/*/dist plugins/*/dist dist-package coverage coverage-raw",
+    "package:build": "node --import tsx scripts/build-package.ts",
+    "pack:check": "node --import tsx scripts/check-pack.ts",
+    "version:check": "node --import tsx scripts/check-versions.ts",
+    "publish:dry-run": "cd dist-package && npm publish --dry-run --access public",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -26,11 +39,13 @@
     "coverage:merge": "node --import tsx scripts/merge-coverage.ts"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/istanbul-lib-coverage": "^2.0.6",
     "@types/node": "^22.15.0",
     "@types/picomatch": "^4.0.3",
     "@vitest/coverage-v8": "^3.2.0",
-    "eslint": "^9.30.0",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.8.0",
     "istanbul-lib-coverage": "^3.2.2",
     "monocart-coverage-reports": "^2.12.12",
     "picomatch": "^4.0.5",

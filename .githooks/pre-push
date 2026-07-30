@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pre-push gate — everything pre-commit runs (build first, so cross-workspace
-# imports resolve through each package's dist/), plus the generated-artifact
-# drift check and Playwright e2e.
+# imports resolve through each package's dist/), plus version singularity, the
+# generated-artifact drift check and Playwright e2e.
 # Escape hatch (documented, use sparingly): git push --no-verify
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -14,6 +14,15 @@ cd "$(git rev-parse --show-toplevel)"
 # explicit value always wins: `CORPUS_UI_PORT=5999 git push`.
 export CORPUS_UI_PORT="${CORPUS_UI_PORT:-5273}"
 
+# The e2e suite's hermetic premise is a *dead* API origin: `vite.config.ts`
+# proxies to 8765 by default, which is exactly where a personally-installed
+# `corpus` server listens on a maintainer's machine — and with a live server
+# there, the two "server unreachable" specs fail (the health notice never
+# renders) while the rest of the suite quietly talks to a real workspace. Pin
+# the proxy at a port nothing binds so the suite tests the app, not whatever
+# 8765 happens to hold. An explicit value always wins.
+export CORPUS_SERVER_ORIGIN="${CORPUS_SERVER_ORIGIN:-http://127.0.0.1:8790}"
+
 fail=0
 step() {
   local name="$1"; shift
@@ -24,6 +33,12 @@ step() {
   fi
 }
 
+# First because it is the cheapest and needs no build: one version number
+# describes the whole tool (INFRA-008), and drift is far easier to fix here than
+# after a `v*` tag has been pushed, where the same check is the publish guard.
+# The tarball audit (`pack:check`) deliberately stays CI-only — it bundles and
+# packs, which is too slow for a push.
+step "version singularity"         npm run --silent version:check
 step "build"                       npm run --silent build
 # One inventory, two consumers: this and the `generated artifacts drift` step in
 # CI both run scripts/check-generated-artifacts.ts (openapi.json,

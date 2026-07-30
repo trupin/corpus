@@ -2,7 +2,13 @@ import { createRequire } from "node:module";
 import { isAbsolute, posix, relative, sep } from "node:path";
 import type { CoverageMapData, Range } from "istanbul-lib-coverage";
 import picomatch from "picomatch";
-import { COVERAGE_METRICS, type CoverageMetric, COVERAGE_THRESHOLDS } from "./coverage-config.js";
+import {
+  COVERAGE_EXCLUDE,
+  COVERAGE_INCLUDE,
+  COVERAGE_METRICS,
+  type CoverageMetric,
+  COVERAGE_THRESHOLDS,
+} from "./coverage-config.js";
 
 /**
  * The merge behind `npm run coverage` (INFRA-004).
@@ -286,6 +292,12 @@ export function projectExecutedLines(
   };
 }
 
+/**
+ * Nothing to cover is fully covered — a file with no branches must not drag the
+ * branch total to 0%. The cost is that an *empty* report clears every threshold,
+ * which is why `emptyScopeFailure` guards the one place that could be empty for a
+ * reason other than "there is genuinely nothing there" (INFRA-009).
+ */
 function percent(covered: number, total: number): number {
   return total === 0 ? 100 : (covered / total) * 100;
 }
@@ -306,14 +318,18 @@ function addInto(target: Metrics, metric: CoverageMetric, covered: number, total
 export interface CoverageSummary {
   total: Metrics;
   workspaces: Map<string, Metrics>;
+  /** How many source files the report describes. Zero is a configuration error. */
+  files: number;
 }
 
 export function summarize(data: CoverageMapData, repoRoot: string): CoverageSummary {
   const map = createCoverageMap(data);
   const total = emptyMetrics();
   const workspaces = new Map<string, Metrics>();
+  let files = 0;
 
   for (const absolute of map.files()) {
+    files += 1;
     const path = isAbsolute(absolute) ? toRepoRelative(absolute, repoRoot) : absolute;
     const workspace = workspaceOf(path);
     const bucket = workspaces.get(workspace) ?? emptyMetrics();
@@ -327,7 +343,35 @@ export function summarize(data: CoverageMapData, repoRoot: string): CoverageSumm
     }
   }
 
-  return { total, workspaces: new Map([...workspaces].sort(([a], [b]) => a.localeCompare(b))) };
+  return {
+    total,
+    workspaces: new Map([...workspaces].sort(([a], [b]) => a.localeCompare(b))),
+    files,
+  };
+}
+
+/**
+ * The gate's sanity check on its own scope (INFRA-009).
+ *
+ * Every threshold is a percentage, and every percentage of nothing is 100 — so a
+ * `COVERAGE_INCLUDE` typo, a renamed workspace, or a unit run whose report never
+ * reached the merge all produce a report of zero files that clears a 90% bar
+ * four times over. Measuring nothing is never a pass: it is the one outcome the
+ * percentages cannot distinguish from perfection, so it is refused by counting
+ * files instead, and the globs are named because they are what has to change.
+ */
+export function emptyScopeFailure(
+  summary: CoverageSummary,
+  include: readonly string[] = COVERAGE_INCLUDE,
+  exclude: readonly string[] = COVERAGE_EXCLUDE,
+): string | null {
+  if (summary.files > 0) return null;
+  return (
+    "the merged report describes 0 source files, so every metric is a vacuous 100%. " +
+    `Nothing matched the coverage scope — include [${include.join(", ")}] ` +
+    `minus exclude [${exclude.join(", ")}]. ` +
+    "Fix the globs in scripts/coverage-config.ts, or find out why the unit run covered nothing."
+  );
 }
 
 export interface ThresholdFailure {

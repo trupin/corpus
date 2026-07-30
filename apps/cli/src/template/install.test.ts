@@ -7,15 +7,15 @@ import {
   TEMPLATE_ROOT,
   installedPath as contractInstalledPath,
   listTemplateFiles as contractListTemplateFiles,
-} from "../../../../../scripts/workspace-template.js";
-import { makeTempDir, removeTempDirs } from "../../testing/temp.js";
+} from "../../../../scripts/workspace-template.js";
+import { makeTempDir, removeTempDirs } from "../testing/temp.js";
 import {
   INSTALL_FILTERS,
   INSTALL_RENAMES,
   installedPath,
   listTemplateFiles,
   planTemplateInstall,
-} from "./template.js";
+} from "./install.js";
 
 /**
  * `docs/workspace-template.md` is the install contract,

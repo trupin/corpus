@@ -27,7 +27,7 @@ interface Wire {
   readonly calls: Capture[];
 }
 
-function transport(payload: unknown, status = 200): Wire {
+function transport(payload: unknown, status = 200, hold?: Promise<void>): Wire {
   const calls: Capture[] = [];
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
@@ -37,6 +37,7 @@ function transport(payload: unknown, status = 200): Wire {
       path: new URL(request.url).pathname,
       body: raw === "" ? undefined : (JSON.parse(raw) as unknown),
     });
+    if (hold !== undefined) await hold;
     return new Response(JSON.stringify(payload), {
       status,
       headers: { "content-type": "application/json" },
@@ -115,6 +116,55 @@ describe("useSetThreadStatus", () => {
       expect(result.current.isSuccess).toBe(true);
     });
     expect(keys).toEqual([threadKey("th_1"), docKey("th_1"), DOCS_KEY]);
+  });
+});
+
+/**
+ * Why `SettledCallbacks` exists at all (UI-012).
+ *
+ * This is a characterization test of TanStack Query v5, not of our code: a
+ * per-call `mutate(…, { onSuccess })` is delivered through the observer and
+ * skipped once that observer has no listeners, while a callback given to
+ * `useMutation` rides on the mutation itself. If a future version changed
+ * that, every "close the menu and toast" call site would silently change
+ * behaviour — so the difference is asserted rather than remembered.
+ */
+describe("callbacks and observer teardown", () => {
+  it("delivers the hook's callback after unmount and drops the call's", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = () => {
+        resolve();
+      };
+    });
+    const wire = transport({ thread: { id: "th_1" }, warnings: [] }, 200, held);
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const fromHook: string[] = [];
+    const fromCall: string[] = [];
+
+    const { result, unmount } = renderHook(
+      () =>
+        useSetThreadStatus({
+          onSuccess: (_result, variables) => fromHook.push(variables.id),
+        }),
+      { wrapper: harness.Wrapper },
+    );
+
+    result.current.mutate(
+      { id: "th_1", resolved: true },
+      { onSuccess: () => fromCall.push("th_1") },
+    );
+    await waitFor(() => {
+      expect(wire.calls).toHaveLength(1);
+    });
+
+    unmount();
+    release();
+
+    await waitFor(() => {
+      expect(fromHook).toEqual(["th_1"]);
+    });
+    expect(fromCall).toEqual([]);
   });
 });
 

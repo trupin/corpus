@@ -1,0 +1,530 @@
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { InternalError } from "../../errors.js";
+import { plural } from "../../input.js";
+import {
+  resolvePluginsRoot,
+  resolveTemplateRoot,
+  TEMPLATE_MANIFEST_FILE,
+  templateManifestPath,
+} from "../../paths.js";
+import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import {
+  planPluginSkillInstall,
+  planTemplateInstall,
+  templateSkillNames,
+} from "../../template/install.js";
+import {
+  pluginSourceMarker,
+  readTemplateManifest,
+  serializeManifest,
+  sha256,
+  type TemplateManifest,
+} from "../../template/manifest.js";
+import {
+  isReported,
+  nextManifestFiles,
+  planUpgrade,
+  writes,
+  type IncomingFile,
+  type UpgradeAction,
+  type UpgradeDecision,
+} from "../../template/plan.js";
+import { CONFIG_DIR } from "../../workspace.js";
+import { commitPaths, gitExitCode, gitFailure, identityFor, runGit } from "../init/git.js";
+
+/**
+ * `corpus workspace upgrade` — bringing an existing workspace's template files
+ * up to the installed tool's, without ever destroying what the workspace made
+ * its own (SPEC.md §2.1).
+ *
+ * The problem is specific: `corpus init` copies the agent's skills into the
+ * workspace, and from that moment they are **the workspace's documents**. The
+ * agent evolves them; they are its memory. A later `npm update` of the tool
+ * therefore cannot simply re-copy — that would delete work — and cannot simply
+ * do nothing either, or a fix to a core-loop skill never reaches anybody. The
+ * answer is the three-way compare in `../../template/plan.ts`: the one cell that
+ * overwrites is "the workspace never touched this file, and the tool changed
+ * it". Everything else is reported and left alone.
+ *
+ * This is the second of SPEC.md §2.2 rule 4's two bootstrap-class exceptions to
+ * "the server is the sole writer": like `corpus init`, it writes files directly
+ * and commits directly, because it must work with the server stopped — a
+ * workspace whose skills are broken is exactly the workspace whose loop cannot
+ * be asked to fix them. With the server running, the watcher sees the writes as
+ * ordinary out-of-band edits and re-projects (rule 1). Nothing outside
+ * template-provenance paths is touched, and everything lands in **one**
+ * attributed commit, so `corpus skill rollback` undoes a bad upgrade like any
+ * other skill change.
+ *
+ * Order matters at the end: files are written first and committed last. A commit
+ * that fails leaves correct files on disk and in `git status`, which is
+ * recoverable; undoing the writes to keep git tidy is what would not be.
+ */
+
+/** Workspace-relative path of the one file under `.corpus/` an upgrade may write. */
+const MANIFEST_RELATIVE_PATH = `${CONFIG_DIR}/${TEMPLATE_MANIFEST_FILE}`;
+
+/** How each reported verdict is labelled, and the order the plan prints them in. */
+const ACTION_LABELS: Readonly<Record<UpgradeAction, string>> = {
+  update: "update",
+  install: "install",
+  "keep-modified": "keep",
+  "restore-candidate": "deleted",
+  retired: "retired",
+  "keep-silent": "keep",
+  current: "current",
+};
+
+/**
+ * The label a verdict prints under. Everything reads as "what this run did"
+ * except in a workspace with no baseline, where **no** run writes a workspace
+ * file: there an `install` is something the operator still has to make happen,
+ * so it is labelled `pending` rather than claiming an install that never
+ * occurred (CLI-014).
+ */
+function labelFor(action: UpgradeAction, withoutBaseline: boolean): string {
+  return withoutBaseline && action === "install" ? "pending" : ACTION_LABELS[action];
+}
+
+const ACTION_ORDER: readonly UpgradeAction[] = [
+  "update",
+  "install",
+  "keep-modified",
+  "restore-candidate",
+  "retired",
+];
+
+export interface ReportedChange {
+  readonly path: string;
+  readonly action: UpgradeAction;
+  /** Where the incoming bytes come from: `"template"` or `"plugin:<dir>"`. */
+  readonly source: string;
+  /** One line of why, for the verdicts a person has to judge. */
+  readonly detail?: string;
+}
+
+export interface UpgradeReport {
+  readonly workspace: string;
+  /** Tool version the manifest recorded, or `null` when there is no manifest. */
+  readonly fromVersion: string | null;
+  readonly toVersion: string;
+  readonly dryRun: boolean;
+  /** True when the workspace has no manifest: nothing is overwritten, whatever the plan says. */
+  readonly withoutBaseline: boolean;
+  readonly changes: readonly ReportedChange[];
+  /** Paths this run actually wrote, workspace-relative. */
+  readonly written: readonly string[];
+  readonly manifestWritten: boolean;
+  /**
+   * Whether the manifest went into the commit. False in a stock workspace: the
+   * template's `.gitignore` treats all of `.corpus/` as runtime state, and
+   * `corpus init` leaves the manifest untracked for the same reason.
+   */
+  readonly manifestCommitted: boolean;
+  /** The commit this run made, or `null` when it made none. */
+  readonly commit: string | null;
+}
+
+/**
+ * The tool-side roots, named so tests can point them at a scratch tree — the
+ * same seam `runInit` takes. Simulating "the operator ran `npm update`" means
+ * changing what the *tool* carries, which is otherwise fixed by the installed
+ * package's own layout.
+ */
+export interface UpgradeDependencies {
+  readonly templateRoot?: string;
+  readonly pluginsRoot?: string | undefined;
+}
+
+export async function runWorkspaceUpgrade(
+  context: WorkspaceCommandContext,
+  dependencies: UpgradeDependencies = {},
+): Promise<void> {
+  const root = context.workspace.root;
+  const dryRun = context.flags.boolean("dry-run");
+  const restore = context.flags.boolean("restore");
+  const adopt = context.flags.boolean("adopt");
+
+  const manifest = readTemplateManifest(templateManifestPath(root));
+  // Without a manifest there is no baseline, so "the workspace never touched
+  // this" is unknowable and nothing may be overwritten — however confidently the
+  // matrix would otherwise decide. `--adopt` is how an operator supplies one.
+  const withoutBaseline = manifest === undefined;
+
+  const incoming = collectIncoming(dependencies);
+  const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shaOnDisk(root, path));
+
+  const report: UpgradeReport = {
+    workspace: root,
+    fromVersion: manifest?.tool ?? null,
+    toVersion: context.version,
+    dryRun,
+    withoutBaseline,
+    changes: describe(decisions, root, incoming, withoutBaseline),
+    written: [],
+    manifestWritten: false,
+    manifestCommitted: false,
+    commit: null,
+  };
+
+  const pending = decisions.filter((decision) => writes(decision.action, restore));
+  if (report.changes.length === 0 && pending.length === 0 && !(withoutBaseline && adopt)) {
+    // An empty commit every time somebody checks would be noise in the one
+    // history that is supposed to mean something.
+    context.out.emit(report);
+    context.out.line("already up to date.");
+    return;
+  }
+
+  if (dryRun || (withoutBaseline && !adopt)) {
+    context.out.emit(report);
+    render(context, report);
+    return;
+  }
+
+  const written = withoutBaseline ? [] : applyPlan(root, pending, incoming);
+  const nextManifest: TemplateManifest = {
+    version: 1,
+    tool: context.version,
+    installedAt: new Date().toISOString(),
+    // What was written, never what was planned: under `--adopt` the plan is not
+    // applied at all, and recording its incoming shas would put paths in the
+    // manifest that are not on disk (CLI-014).
+    files: nextManifestFiles(decisions, new Set(written)),
+  };
+  mkdirSync(join(root, CONFIG_DIR), { recursive: true });
+  writeFileSync(templateManifestPath(root), serializeManifest(nextManifest), "utf8");
+
+  // The workspace's own `.gitignore` decides whether the manifest is part of the
+  // commit. The shipped template ignores all of `.corpus/` as runtime state, so
+  // in a stock workspace it is not — exactly as `corpus init` leaves it. Asking
+  // git rather than assuming means a workspace that *does* track it gets the
+  // manifest in the same commit as the files it describes, with no code change
+  // here, and neither case is achieved by overriding the operator's `.gitignore`.
+  const manifestCommitted = !(await isIgnored(root, MANIFEST_RELATIVE_PATH));
+  const staged = manifestCommitted ? [...written, MANIFEST_RELATIVE_PATH] : written;
+
+  const applied: UpgradeReport = { ...report, written, manifestWritten: true, manifestCommitted };
+  const commit = staged.length === 0 ? null : await commitUpgrade(context, staged, applied);
+  const finished: UpgradeReport = { ...applied, commit };
+
+  context.out.emit(finished);
+  render(context, finished);
+}
+
+/**
+ * Whether the workspace's own `.gitignore` excludes a path. `check-ignore` exits
+ * `0` when it matches and `1` when it does not, so the exit code *is* the
+ * answer; anything else is a real git failure and is rethrown.
+ */
+async function isIgnored(root: string, relative: string): Promise<boolean> {
+  try {
+    await runGit(["check-ignore", "--quiet", "--", relative], root);
+    return true;
+  } catch (cause) {
+    if (gitExitCode(cause) === 1) return false;
+    throw gitFailure("checking whether the workspace tracks its template manifest", cause);
+  }
+}
+
+/**
+ * Every file the installed tool would put in a workspace today, hashed: the
+ * bundled template, then the plugin skills, each carrying where it came from.
+ * A plugin-sourced entry is refreshed from **its plugin**, not from the template
+ * (sprint-012 Adjudication 11) — which falls out of building the source set the
+ * same way `corpus init` does, rather than by special-casing the manifest marker.
+ */
+function collectIncoming(dependencies: UpgradeDependencies): readonly IncomingFile[] {
+  const templateRoot = dependencies.templateRoot ?? resolveTemplateRoot();
+  const installed = planTemplateInstall(templateRoot);
+
+  const files: IncomingFile[] = installed.map((file) => {
+    const from = join(templateRoot, ...file.from.split("/"));
+    return { path: file.to, from, sha256: sha256(readFileSync(from)) };
+  });
+
+  const pluginsRoot =
+    "pluginsRoot" in dependencies ? dependencies.pluginsRoot : resolvePluginsRoot();
+  for (const file of planPluginSkillInstall(pluginsRoot, templateSkillNames(installed)).files) {
+    const from = join(pluginsRoot ?? "", ...file.from.split("/"));
+    files.push({
+      path: file.to,
+      from,
+      sha256: sha256(readFileSync(from)),
+      source: pluginSourceMarker(file.plugin),
+    });
+  }
+  return files;
+}
+
+function shaOnDisk(root: string, path: string): string | null {
+  const absolute = join(root, ...path.split("/"));
+  return existsSync(absolute) ? sha256(readFileSync(absolute)) : null;
+}
+
+/** Copies the bytes for every writing verdict and returns what it wrote. */
+function applyPlan(
+  root: string,
+  pending: readonly UpgradeDecision[],
+  incoming: readonly IncomingFile[],
+): readonly string[] {
+  const sources = new Map(incoming.map((file) => [file.path, file.from]));
+  const written: string[] = [];
+
+  for (const decision of pending) {
+    const from = sources.get(decision.path);
+    if (from === undefined) continue;
+    const to = join(root, ...decision.path.split("/"));
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(from, to);
+    written.push(decision.path);
+  }
+  return written;
+}
+
+function describe(
+  decisions: readonly UpgradeDecision[],
+  root: string,
+  incoming: readonly IncomingFile[],
+  withoutBaseline: boolean,
+): readonly ReportedChange[] {
+  const sources = new Map(incoming.map((file) => [file.path, file.from]));
+  const rank = (action: UpgradeAction): number => ACTION_ORDER.indexOf(action);
+
+  return decisions
+    .filter((decision) => isReported(decision.action))
+    .sort((one, other) => rank(one.action) - rank(other.action) || (one.path < other.path ? -1 : 1))
+    .map((decision) => ({
+      path: decision.path,
+      action: decision.action,
+      source: decision.source ?? "template",
+      ...detailFor(decision, root, sources.get(decision.path), withoutBaseline),
+    }));
+}
+
+function detailFor(
+  decision: UpgradeDecision,
+  root: string,
+  from: string | undefined,
+  withoutBaseline: boolean,
+): { detail?: string } {
+  // Without a baseline no run writes a workspace file — `--adopt` included — so
+  // an `install` verdict here is a prediction, not something that happened
+  // (CLI-014). It is labelled `pending` and says what makes it real.
+  if (withoutBaseline && decision.action === "install") {
+    return {
+      detail:
+        "the tool has it, this workspace does not; nothing is written without a baseline, " +
+        "so --adopt first, then upgrade again to install it",
+    };
+  }
+  switch (decision.action) {
+    case "keep-modified":
+      return { detail: `modified here — ${lineSummary(root, decision.path, from)}` };
+    case "restore-candidate":
+      return { detail: "deleted from this workspace; pass --restore to reinstall it" };
+    case "retired":
+      return { detail: "dropped from the template; your copy stays, the manifest entry goes" };
+    default:
+      return {};
+  }
+}
+
+/**
+ * One line of "how far apart are these", counted rather than diffed: how many
+ * lines exist only in the workspace copy and only in the incoming one. It is
+ * labelled as a count and not as a diff on purpose — a hunk-level diff is
+ * `git diff` between the two files, and a multiset comparison calling itself one
+ * would be the kind of small lie that gets trusted.
+ */
+function lineSummary(root: string, path: string, from: string | undefined): string {
+  if (from === undefined) return "no incoming copy to compare against";
+  const here = readLines(join(root, ...path.split("/")));
+  const there = readLines(from);
+  return `${plural(countMissing(here, there), "line")} only here, ${plural(
+    countMissing(there, here),
+    "line",
+  )} only in the new copy`;
+}
+
+function readLines(absolute: string): readonly string[] {
+  return readFileSync(absolute, "utf8").split("\n");
+}
+
+/** Lines of `from` that `against` does not also carry, counting repeats. */
+function countMissing(from: readonly string[], against: readonly string[]): number {
+  const remaining = new Map<string, number>();
+  for (const line of against) remaining.set(line, (remaining.get(line) ?? 0) + 1);
+
+  let missing = 0;
+  for (const line of from) {
+    const left = remaining.get(line) ?? 0;
+    if (left === 0) missing += 1;
+    else remaining.set(line, left - 1);
+  }
+  return missing;
+}
+
+async function commitUpgrade(
+  context: WorkspaceCommandContext,
+  paths: readonly string[],
+  report: UpgradeReport,
+): Promise<string | null> {
+  const message =
+    `workspace: upgrade template files ${report.fromVersion ?? "(no baseline)"} → ` +
+    `${report.toVersion} by ${context.actor}`;
+  try {
+    return await commitPaths({
+      dir: report.workspace,
+      message,
+      paths,
+      identity: identityFor(context.actor),
+    });
+  } catch (cause) {
+    // Loudly, and without undoing anything: the files are already correct on
+    // disk and visible in `git status`, which is a recoverable state. Reverting
+    // them to keep git tidy is the state that would not be.
+    throw new InternalError(
+      `${gitFailure("the workspace upgrade commit", cause).message} The upgraded files are written and uncommitted — nothing was lost.`,
+      {
+        hint: `Inspect them with \`git -C ${report.workspace} status\` and commit them yourself, or re-run the upgrade.`,
+        details: { written: report.written },
+        cause,
+      },
+    );
+  }
+}
+
+function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
+  if (report.withoutBaseline) {
+    context.out.line(
+      `no ${MANIFEST_RELATIVE_PATH} in this workspace — without the baseline it recorded, an ` +
+        "unmodified file cannot be told from an edited one, so nothing will be overwritten.",
+    );
+  }
+  context.out.line(
+    `${report.dryRun ? "plan" : "upgrade"} (tool ${report.fromVersion ?? "unknown"} → ${report.toVersion}):`,
+  );
+  for (const change of report.changes) {
+    const provenance = change.source === "template" ? "" : ` [${change.source}]`;
+    const detail = change.detail === undefined ? "" : ` — ${change.detail}`;
+    context.out.line(
+      `  ${labelFor(change.action, report.withoutBaseline).padEnd(7)} ${change.path}${provenance}${detail}`,
+    );
+  }
+
+  if (report.dryRun) {
+    context.out.line("nothing was written (--dry-run).");
+    return;
+  }
+  if (report.withoutBaseline) {
+    if (!report.manifestWritten) {
+      context.out.line(
+        "nothing was written. Re-run with --adopt to record a baseline from the files that already match.",
+      );
+      return;
+    }
+    context.out.line(
+      "wrote a fresh baseline manifest; files that already match the tool's copies are now " +
+        "tracked, and the ones that differ stay untracked because nothing can tell an old copy " +
+        "from an edited one." +
+        (report.commit === null ? "" : ` Commit ${report.commit}.`),
+    );
+    const pending = report.changes.filter((change) => change.action === "install").length;
+    if (pending > 0) {
+      context.out.line(
+        `  --adopt installs nothing, so ${plural(pending, "file")} the tool carries and this ` +
+          "workspace does not have stayed out of the manifest as well as off the disk. Run " +
+          "`corpus workspace upgrade` again, now that there is a baseline, to install " +
+          `${pending === 1 ? "it" : "them"}.`,
+      );
+    }
+    return;
+  }
+  context.out.line(
+    report.commit === null
+      ? // Restoring a file that was deleted but never committed puts the tree
+        // back exactly as HEAD already has it; there is genuinely nothing to record.
+        `wrote ${plural(report.written.length, "file")}; git had nothing new to record.`
+      : `wrote ${plural(report.written.length, "file")} in commit ${report.commit}.`,
+  );
+  if (!report.manifestCommitted) {
+    context.out.line(
+      `  ${MANIFEST_RELATIVE_PATH} was updated but is not tracked by this workspace's .gitignore, ` +
+        "so it is not in that commit — the same state `corpus init` leaves it in.",
+    );
+  }
+}
+
+export const upgradeCommand: WorkspaceCommandSpec = {
+  name: "upgrade",
+  summary: "Refresh the workspace's template files after a tool update, without clobbering edits.",
+  description:
+    "`corpus init` copies the agent's skills into the workspace, and from that moment they are " +
+    "the workspace's own documents — the agent evolves them, and they are its memory (SPEC.md " +
+    "§2.1). A later tool update therefore cannot re-copy them blindly. This verb three-way " +
+    "compares each file the tool installs: the baseline `corpus init` recorded, the copy in the " +
+    "workspace now, and the copy the installed tool carries. A file the workspace never touched " +
+    "is **updated**; a file the workspace changed is **kept and reported**, never overwritten; a " +
+    "file new to the template is **installed**; a file the workspace deleted is reported and " +
+    "reinstalled only under `--restore`; a file the template dropped is reported as retired, its " +
+    "copy left alone. Everything lands in **one** commit attributed to `--from`, naming the old " +
+    "and new tool versions, so `corpus skill rollback` undoes a bad upgrade like any other skill " +
+    "change. A run with nothing to do prints `already up to date.` and makes no commit.\n\n" +
+    "Only template-provenance paths are touched — `.claude/` skills and personas, the workspace " +
+    "`README.md` and `.gitignore` — never anything under `data/`, and nothing under `.corpus/` " +
+    "except the manifest itself. Plugin-installed skills are refreshed from **their plugin**, " +
+    "not from the template.\n\n" +
+    "This command and `corpus init` are the only two that write workspace files directly and " +
+    "commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the " +
+    "server stopped, because a workspace whose skills are broken is exactly the one whose loop " +
+    "cannot be asked to fix them. With the server running, the watcher treats the writes as " +
+    "ordinary out-of-band edits and re-projects. Every other document mutation goes through the " +
+    "server — the rule is not soft.",
+  args: [],
+  flags: [
+    {
+      name: "dry-run",
+      type: "boolean",
+      description:
+        "Print the full plan and write nothing at all — no files, no manifest, no commit.",
+    },
+    {
+      name: "restore",
+      type: "boolean",
+      description:
+        "Also reinstall template files this workspace deleted. Without it they are reported and left absent, because deleting one is usually deliberate.",
+    },
+    {
+      name: "adopt",
+      type: "boolean",
+      description:
+        "For a workspace created before manifests existed: record a baseline from the files that already match the tool's copies. It writes **no** workspace file — not even one the tool carries and this workspace has never had, which is reported as `pending` and stays out of the manifest. Files that differ stay untracked and keep being reported, since nothing can tell an old copy from an edited one. Once the baseline exists, an ordinary `corpus workspace upgrade` installs what is missing.",
+    },
+  ],
+  examples: [
+    {
+      command: "corpus workspace upgrade --dry-run",
+      description: "See exactly what a tool update would change before it changes anything.",
+    },
+    {
+      command: "corpus workspace upgrade --from user",
+      description:
+        "Apply the plan: update untouched files, keep and report edited ones, in one attributed commit.",
+    },
+    {
+      command: "corpus workspace upgrade --restore",
+      description: "Also put back template files that were deleted from this workspace.",
+    },
+    {
+      command: "corpus workspace upgrade --json",
+      description:
+        'One JSON value: `{"workspace":"/home/me/notes","fromVersion":"0.1.0","toVersion":"0.2.0",' +
+        '"dryRun":false,"withoutBaseline":false,"changes":[{"path":".claude/skills/comment/SKILL.md",' +
+        '"action":"keep-modified","source":"template","detail":"modified here — 3 lines only here, 1 line only in the new copy"}],' +
+        '"written":[".claude/skills/orchestrate/SKILL.md"],"manifestWritten":true,"commit":"9f3c1ab"}`.',
+    },
+  ],
+  handler: (context) => runWorkspaceUpgrade(context),
+};

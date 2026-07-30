@@ -1,5 +1,6 @@
 import { getAttachment } from "./attachments.js";
 import { capture } from "./capture.js";
+import { checkDocuments } from "./check.js";
 import { doctorDb, rebuildDb } from "./db.js";
 import {
   archiveDoc,
@@ -27,6 +28,7 @@ import {
   reapStale,
   resumeQueue,
 } from "./queue.js";
+import { rollbackSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
 import { deleteTurn, getThread, markThreadSeen, reopenThread, resolveThread } from "./threads.js";
 import { appendTurn } from "./turn-append.js";
@@ -34,6 +36,7 @@ import { getTree } from "./tree.js";
 
 export * from "./attachments.js";
 export * from "./capture.js";
+export * from "./check.js";
 export * from "./db.js";
 export * from "./docs.js";
 export * from "./events.js";
@@ -45,6 +48,7 @@ export * from "./locks.js";
 export * from "./queue.js";
 export * from "./dual-media.js";
 export * from "./responses.js";
+export * from "./skills.js";
 export * from "./thread-create.js";
 export * from "./threads.js";
 export * from "./tree.js";
@@ -112,6 +116,9 @@ export const contractRoutes = {
 
   rebuildDb,
   doctorDb,
+
+  checkDocuments,
+  rollbackSkill,
 
   streamEvents,
   getAttachment,

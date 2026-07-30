@@ -19,7 +19,9 @@ export {
 export type { DeleteOutcome } from "./delete.js";
 export { moveDocument } from "./move.js";
 export {
+  anchorClaimantIds,
   findDocumentRow,
+  findDocumentRowByPath,
   isIdTaken,
   loadDocument,
   readAnchorsMap,
@@ -30,7 +32,7 @@ export {
 export type { DocumentRow, LoadedDocument } from "./read.js";
 export { findTemplate } from "./templates.js";
 export type { TemplatePrefill } from "./templates.js";
-export { changedFields, updateDocument } from "./update.js";
+export { changedFields, updateDocument, updateDocumentLocked } from "./update.js";
 export { mountDocWriteRoutes, reportWarnings, serializeWarnings } from "./write-routes.js";
 export {
   CREATE_LANE,
@@ -38,7 +40,10 @@ export {
   WARNING_DETAIL_LENGTH,
   WARNING_DETAIL_LINES,
   allowAllWrites,
+  checkSave,
+  checkSeams,
   createDocumentMutex,
+  isSkillFrontmatterException,
   runInLanes,
   runMutation,
   validateBeforeWrite,
@@ -52,6 +57,7 @@ export type {
   FileOperation,
   MutationPlan,
   MutationResult,
+  SaveCheck,
   WriteGuard,
 } from "./write.js";
 export {

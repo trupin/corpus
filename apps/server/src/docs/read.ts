@@ -57,9 +57,48 @@ export function findDocumentRow(projection: ProjectionDb, id: string): DocumentR
   return row ?? null;
 }
 
+/**
+ * The row projected from a workspace-relative path, or `null` when that file is
+ * not indexed (it is not under a document root, it failed to parse, or another
+ * file won the same id).
+ *
+ * The by-path direction exists because a **skill's identity is its path**, not
+ * its frontmatter: §7 lets a hand-written `SKILL.md` carry no Corpus id at all
+ * and the projection derives one from where the file sits. `corpus skill
+ * rollback <name>` therefore starts from `.claude/skills/<name>/SKILL.md` and has
+ * to arrive at the document id, which is the opposite of every other read.
+ * `documents.path` is `TEXT NOT NULL UNIQUE`, so the answer is at most one row.
+ */
+export function findDocumentRowByPath(projection: ProjectionDb, path: string): DocumentRow | null {
+  const row = projection
+    .prepare("SELECT id, type, path, status, title FROM documents WHERE path = ?")
+    .get(path) as DocumentRow | undefined;
+  return row ?? null;
+}
+
 /** True when some document already claims this id — the `newId` collision predicate. */
 export function isIdTaken(projection: ProjectionDb, id: string): boolean {
   return findDocumentRow(projection, id) !== null;
+}
+
+/**
+ * The ids of threads the projection records as claiming `<docId>#<anchorId>` —
+ * §14's `anchor-unused` seam, the anchor-claim counterpart of {@link isIdTaken}.
+ *
+ * Every thread counts, resolved ones included: resolving a thread keeps both its
+ * `anchor` field and the parent's anchor entry (§6 removes the entry on
+ * *delete*), so a resolved thread is still a conversation the highlight points
+ * at.
+ */
+export function anchorClaimantIds(
+  projection: ProjectionDb,
+  docId: string,
+  anchorId: string,
+): readonly string[] {
+  return projection
+    .prepare("SELECT id FROM threads WHERE parent_id = ? AND anchor_id = ?")
+    .all(docId, anchorId)
+    .map((row) => (row as { id: string }).id);
 }
 
 /**

@@ -62,8 +62,6 @@ export function archivedMessage(title: string): string {
 export function useRowActions(row: RowActionSubject, options: RowActionsOptions = {}): RowActions {
   const { onNotify } = options;
   const clock = options.now ?? (() => new Date());
-  const update = useUpdateDoc(row.id);
-  const createThread = useCreateThread();
   const [isLeaving, setLeaving] = useState(false);
 
   const notify = useCallback(
@@ -83,7 +81,48 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
     [notify],
   );
 
-  const isBusy = update.isPending || createThread.isPending || isLeaving;
+  /*
+   * Three mutations, not one shared `useUpdateDoc`, and every notice on the
+   * **hook's** callbacks rather than on `mutate`'s (UI-012).
+   *
+   * The hook-level ones survive the caller's unmount, which is the difference
+   * between a toast and silence for the reader's ⋯ menu: it closes itself the
+   * moment an item is clicked, and a per-call callback dies with the observer
+   * (`SettledCallbacks`). Archive and "Still current" then need separate
+   * mutations because a hook-level callback is bound to the hook, not to the
+   * call — one `useUpdateDoc` would have to guess which verb it was reporting
+   * by sniffing the patch it sent.
+   */
+  const archiveWrite = useUpdateDoc(row.id, {
+    onSuccess: () => {
+      notify("info", archivedMessage(row.title));
+    },
+    onError: (error) => {
+      setLeaving(false);
+      failed("Archive", error);
+    },
+  });
+
+  const reviewWrite = useUpdateDoc(row.id, {
+    onSuccess: () => {
+      notify("info", `"${row.title}" marked still current — reviewed: now (committed).`);
+    },
+    onError: (error) => {
+      failed("Still current", error);
+    },
+  });
+
+  const createThread = useCreateThread({
+    onSuccess: () => {
+      notify("info", "Queued — the agent will review this document and propose next steps.");
+    },
+    onError: (error) => {
+      failed("@agent triage", error);
+    },
+  });
+
+  const isBusy =
+    archiveWrite.isPending || reviewWrite.isPending || createThread.isPending || isLeaving;
 
   const archive = useCallback(() => {
     if (isBusy) return;
@@ -92,59 +131,28 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
     // corpus says it left — the refetch that follows the invalidation is what
     // removes it, never a timer.
     setLeaving(true);
-    update.mutate(
-      { status: "archived" },
-      {
-        onSuccess: () => {
-          notify("info", archivedMessage(row.title));
-        },
-        onError: (error) => {
-          setLeaving(false);
-          failed("Archive", error);
-        },
-      },
-    );
-  }, [failed, isBusy, notify, row.title, update]);
+    archiveWrite.mutate({ status: "archived" });
+  }, [archiveWrite, isBusy]);
 
   const stillCurrent = useCallback(() => {
     if (isBusy) return;
     // `reviewed` and nothing else. SPEC.md §5 makes this a distinct act from
     // editing: it must not touch `updated` and it must not be modelled as a body
     // save, or every future staleness reading is wrong and silently so.
-    update.mutate(
-      { reviewed: clock().toISOString() },
-      {
-        onSuccess: () => {
-          notify("info", `"${row.title}" marked still current — reviewed: now (committed).`);
-        },
-        onError: (error) => {
-          failed("Still current", error);
-        },
-      },
-    );
-  }, [clock, failed, isBusy, notify, row.title, update]);
+    reviewWrite.mutate({ reviewed: clock().toISOString() });
+  }, [clock, isBusy, reviewWrite]);
 
   const triage = useCallback(() => {
     if (isBusy) return;
-    createThread.mutate(
-      {
-        parent: row.id,
-        // Whole-document: the request is about the document, not about a phrase in it.
-        selector: null,
-        title: `Stale review — ${row.title}`,
-        body: triagePrompt(row.title),
-        requestsAgent: true,
-      },
-      {
-        onSuccess: () => {
-          notify("info", "Queued — the agent will review this document and propose next steps.");
-        },
-        onError: (error) => {
-          failed("@agent triage", error);
-        },
-      },
-    );
-  }, [createThread, failed, isBusy, notify, row.id, row.title]);
+    createThread.mutate({
+      parent: row.id,
+      // Whole-document: the request is about the document, not about a phrase in it.
+      selector: null,
+      title: `Stale review — ${row.title}`,
+      body: triagePrompt(row.title),
+      requestsAgent: true,
+    });
+  }, [createThread, isBusy, row.id, row.title]);
 
   return {
     archive,
@@ -152,6 +160,6 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
     triage,
     isBusy,
     isLeaving,
-    error: update.error ?? createThread.error,
+    error: archiveWrite.error ?? reviewWrite.error ?? createThread.error,
   };
 }

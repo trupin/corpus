@@ -1,0 +1,12 @@
+# The non-TS mirror of manifest.ts's docTypes (SPEC.md §10): the server and CLI
+# read this file so they never load UI code. parity.test.ts asserts the two
+# declarations agree in both directions.
+#
+# `seedTemplate` names a BODY-only template (SPEC.md §11 — "template pre-fill is
+# body-only"): it contributes a heading and a hint, never frontmatter. A todo
+# document created with no `items` key renders as an empty list, which is why
+# nothing needs to seed one (sprint-014 Adjudication 17).
+types:
+  - type: todo
+    label: Todo
+    seedTemplate: seeds/todo-template.md

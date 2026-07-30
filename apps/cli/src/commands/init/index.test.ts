@@ -66,7 +66,7 @@ describe("corpus init", () => {
     expect((await runGit(["rev-parse", "--abbrev-ref", "HEAD"], root)).stdout.trim()).toBe("main");
   });
 
-  it("tracks the queue skeleton and nothing else under .corpus", async () => {
+  it("tracks the queue skeleton and the install manifest, and nothing else under .corpus", async () => {
     const root = makeTempDir("init-tracked");
     await initWithFreePort(root);
 
@@ -78,6 +78,9 @@ describe("corpus init", () => {
       ".corpus/queue/in-progress/.gitkeep",
       ".corpus/queue/pending/.gitkeep",
       ".corpus/queue/processed/.gitkeep",
+      // Install provenance, not runtime state: the template un-ignores it, and
+      // `scaffoldWorkspace` writes it before the first commit stages the tree.
+      ".corpus/template-manifest.json",
     ]);
 
     // The template's own .gitignore is what does this — init never writes one.
@@ -86,7 +89,6 @@ describe("corpus init", () => {
       ".corpus/cache.db",
       ".corpus/server.pid",
       ".corpus/server.log",
-      ".corpus/template-manifest.json",
     ]) {
       const { stdout } = await runGit(["check-ignore", runtime], root);
       expect(stdout.trim()).toBe(runtime);

@@ -8,6 +8,7 @@ import {
 import { useCorpusClient } from "../client/context.js";
 import type { UpdateDocChanges } from "../client/createCorpusClient.js";
 import { DOCS_KEY, docKey } from "./keys.js";
+import type { SettledCallbacks } from "./settledCallbacks.js";
 
 /**
  * `PUT /api/docs/{id}` — the document write, in two bindings (SPEC.md §9.2).
@@ -37,16 +38,28 @@ function invalidateDoc(queryClient: QueryClient, docId: string): void {
   void queryClient.invalidateQueries({ queryKey: DOCS_KEY });
 }
 
+/**
+ * `callbacks` are the **teardown-safe** ones (see {@link SettledCallbacks}): a
+ * caller that closes its own surface on click — the reader's ⋯ menu — has no
+ * observer left to receive a per-call `onSuccess`, and would commit the write
+ * in silence.
+ */
 export function useUpdateDoc(
   docId: string,
+  callbacks: SettledCallbacks<UpdateDocResponse, UpdateDocChanges> = {},
 ): UseMutationResult<UpdateDocResponse, Error, UpdateDocChanges> {
   const client = useCorpusClient();
   const queryClient = useQueryClient();
+  const { onSuccess, onError } = callbacks;
 
   return useMutation<UpdateDocResponse, Error, UpdateDocChanges>({
     mutationFn: (changes) => client.updateDoc(docId, changes),
-    onSuccess() {
+    onSuccess(response, changes) {
       invalidateDoc(queryClient, docId);
+      onSuccess?.(response, changes);
+    },
+    onError(error, changes) {
+      onError?.(error, changes);
     },
   });
 }

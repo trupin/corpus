@@ -1,11 +1,14 @@
 import type { DocRow } from "@corpus/contract";
 import { useDocs, type RowNotice } from "@corpus/kit";
 import { useState, type DragEvent, type ReactElement } from "react";
+import { PluginMissingCard } from "../plugins/PluginMissingCard";
+import { usePluginRegistry } from "../plugins/registry";
+import { resolveColumnType } from "../plugins/slots";
 import { Reader } from "../reader/Reader";
 import { ColumnHead } from "./ColumnHead";
 import { ColumnList } from "./ColumnList";
 import { openDocId, type ColumnLocalState, type NavEntry } from "./useBoardLocalState";
-import type { BoardColumn } from "./viewDoc";
+import type { BoardColumn, PluginColumnRef } from "./viewDoc";
 
 /**
  * One column card (`design/index.html`'s `.col`): a pinned view document,
@@ -114,6 +117,71 @@ function ColumnBody({
   );
 }
 
+interface PluginColumnBodyProps {
+  readonly column: BoardColumn;
+  /** The parsed `column:` reference — non-null by the dispatch branch. */
+  readonly pluginRef: PluginColumnRef;
+  readonly onHandle: (armed: boolean) => void;
+  /** Opens a document in this column's reader — handed to the plugin body. */
+  readonly onOpen: (docId: string) => void;
+  readonly onAdd: () => void;
+  readonly onRename: (title: string) => void;
+  readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
+  readonly onUnpin: () => void;
+}
+
+/**
+ * A plugin column's body (SPEC.md §10): the registered `Component`, already
+ * wrapped in its own error boundary by `resolveColumnType`, or the "plugin
+ * missing" card when the `column:` reference resolves to nothing. Split from
+ * `ColumnBody` so a plugin column issues no `GET /api/docs` it does not use —
+ * the plugin owns its own data path (`usePluginQuery`, `useDocs`, its choice).
+ * Header, drag handle, rename, edit-query and unpin are the board's, identical
+ * for every column kind.
+ */
+function PluginColumnBody({
+  column,
+  pluginRef,
+  onHandle,
+  onOpen,
+  onAdd,
+  onRename,
+  onEditQuery,
+  onUnpin,
+}: PluginColumnBodyProps): ReactElement {
+  // Subscribe: discovery settles after first render, and slot resolution must
+  // follow the registry swap (empty → loaded, or a test fixture) live.
+  usePluginRegistry();
+  const Body = resolveColumnType(`${pluginRef.plugin}/${pluginRef.type}`);
+  return (
+    <>
+      <ColumnHead
+        column={column}
+        count={null}
+        onAdd={onAdd}
+        onRename={onRename}
+        onEditQuery={onEditQuery}
+        onUnpin={onUnpin}
+        onHandle={onHandle}
+      />
+      {Body === null ? (
+        <PluginMissingCard plugin={pluginRef} />
+      ) : (
+        <div className="col-list">
+          {/*
+           * `onOpen` is the board's own "push onto this column's navigation
+           * stack" — the same callback a core row gets. Handing it to the
+           * plugin is what lets an aggregate column link a row back to the
+           * document it came from without reaching into `apps/ui` (SPEC.md §10:
+           * the Component renders its body "with the kit's reader affordances").
+           */}
+          <Body viewDocId={column.id} title={column.title} query={column.filter} onOpen={onOpen} />
+        </div>
+      )}
+    </>
+  );
+}
+
 export function Column(props: ColumnProps): ReactElement {
   const { column, isActive, isDragging, isFlashing, local, onActivate, onOpen } = props;
   const [draggable, setDraggable] = useState(false);
@@ -148,7 +216,18 @@ export function Column(props: ColumnProps): ReactElement {
         props.onDragEnd();
       }}
     >
-      {column.error === null ? (
+      {column.error === null && column.plugin !== null ? (
+        <PluginColumnBody
+          column={column}
+          pluginRef={column.plugin}
+          onHandle={setDraggable}
+          onOpen={onOpen}
+          onAdd={props.onAdd}
+          onRename={props.onRename}
+          onEditQuery={props.onEditQuery}
+          onUnpin={props.onUnpin}
+        />
+      ) : column.error === null ? (
         <ColumnBody
           column={column}
           local={local}

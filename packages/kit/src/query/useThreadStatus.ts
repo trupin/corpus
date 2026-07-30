@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { useCorpusClient } from "../client/context.js";
 import { DOCS_KEY, docKey, threadKey } from "./keys.js";
+import type { SettledCallbacks } from "./settledCallbacks.js";
 
 /**
  * The two thread state flips that are not turns: resolve/reopen, and the
@@ -34,19 +35,28 @@ export interface ThreadStatusVariables {
   readonly resolved: boolean;
 }
 
-export function useSetThreadStatus(): UseMutationResult<
-  ThreadMutationResponse,
-  Error,
-  ThreadStatusVariables
-> {
+/**
+ * `callbacks` are teardown-safe (see {@link SettledCallbacks}). The reader's ⋯
+ * menu resolves a thread and closes in the same click, so a per-call
+ * `onSuccess` would be dropped with the observer and the flip would commit
+ * without a word (UI-012).
+ */
+export function useSetThreadStatus(
+  callbacks: SettledCallbacks<ThreadMutationResponse, ThreadStatusVariables> = {},
+): UseMutationResult<ThreadMutationResponse, Error, ThreadStatusVariables> {
   const client = useCorpusClient();
   const queryClient = useQueryClient();
+  const { onSuccess, onError } = callbacks;
 
   return useMutation<ThreadMutationResponse, Error, ThreadStatusVariables>({
     mutationFn: ({ id, resolved }) =>
       resolved ? client.resolveThread(id) : client.reopenThread(id),
-    onSuccess(_result, variables) {
+    onSuccess(result, variables) {
       invalidateThread(queryClient, variables.id);
+      onSuccess?.(result, variables);
+    },
+    onError(error, variables) {
+      onError?.(error, variables);
     },
   });
 }

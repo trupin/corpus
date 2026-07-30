@@ -16,6 +16,11 @@
       "import": "./dist/testing/index.js",
       "default": "./dist/testing/index.js"
     },
+    "./plugin": {
+      "types": "./dist/plugin/index.d.ts",
+      "import": "./dist/plugin/index.js",
+      "default": "./dist/plugin/index.js"
+    },
     "./tokens.css": "./src/tokens.css",
     "./row.css": "./src/row/row.css",
     "./markdown.css": "./src/markdown/markdown.css",

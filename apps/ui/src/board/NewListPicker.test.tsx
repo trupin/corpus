@@ -3,6 +3,8 @@ import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { boardTransport } from "../testing/boardFixture";
+import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
+import { columnRequest, type NewListChoice } from "./newList";
 import { NewListPicker } from "./NewListPicker";
 
 afterEach(cleanup);
@@ -54,12 +56,68 @@ describe("NewListPicker", () => {
     expect(screen.getByRole("menuitem", { name: /inbox/ }).textContent).toContain("1 doc");
   });
 
-  it("offers presets and the inert plugin affordance", () => {
-    const { container } = renderPicker();
+  it("offers presets", () => {
+    expect(renderPicker()).toBeDefined();
     expect(screen.getByRole("menuitem", { name: /Due this week/ })).toBeDefined();
-    expect(container.querySelector(".ac-item-note")?.textContent).toContain(
-      "plugin column types appear here too",
+  });
+
+  it("offers registered plugin column types, and creates through the same choice path", () => {
+    setPluginRegistry(
+      buildRegistry([
+        {
+          dir: "fx",
+          loaded: {
+            module: {
+              default: {
+                id: "fx",
+                name: "FX",
+                docTypes: [],
+                columns: [
+                  {
+                    type: "board",
+                    label: "FX board",
+                    icon: "▣",
+                    Component: () => null,
+                    defaultQuery: { type: "fx-item" },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      ]),
     );
+    try {
+      const { onChoose } = renderPicker();
+      const item = screen.getByRole("menuitem", { name: /FX board/ });
+      expect(item.textContent).toContain("fx/board");
+      fireEvent.click(item);
+      expect(onChoose).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "plugin",
+          column: "fx/board",
+          query: { type: "fx-item" },
+        }),
+      );
+      // The choice compiles to the same POST /api/docs body every column uses,
+      // with the plugin reference and defaultQuery merged into frontmatter.
+      const choice = (onChoose.mock.calls[0] as [NewListChoice])[0];
+      expect(columnRequest(choice, 40)).toMatchObject({
+        type: "view",
+        pinned: true,
+        order: 40,
+        column: "fx/board",
+        query: { type: "fx-item" },
+      });
+    } finally {
+      setPluginRegistry(EMPTY_REGISTRY);
+    }
+  });
+
+  it("offers no plugin entries when no plugin is installed", () => {
+    setPluginRegistry(EMPTY_REGISTRY);
+    const { container } = renderPicker();
+    expect(container.querySelector("[data-newlist^='plugin:']")).toBeNull();
   });
 
   it("omits the from-search entry when no search query is active", () => {

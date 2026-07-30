@@ -207,3 +207,138 @@ export function parseContractDoc(markdown: string): ContractDocRules {
 export function readContractDoc(docPath: string = CONTRACT_DOC_PATH): ContractDocRules {
   return parseContractDoc(readFileSync(docPath, "utf8"));
 }
+
+// --- CLI command references --------------------------------------------------
+//
+// Skill bodies are executable documentation: every `corpus …` invocation in the
+// template tree must name a command the generated CLI reference documents. The
+// extractor below pulls invocations out of template markdown (fenced blocks and
+// inline code), normalizes each to `topic verb` (or a bare top-level command),
+// and the test resolves them against `docs/cli.md` — so a CLI surface change
+// that breaks an AGENT skill breaks the build, not a user's workspace.
+
+export const CLI_DOC_PATH = path.join(REPO_ROOT, "docs", "cli.md");
+
+/**
+ * Commands the template may name that `docs/cli.md` does not document **yet**.
+ *
+ * **Empty, as designed.** Sprint-012 Adjudication 5 (Open Conflict 1) opened
+ * this hole for exactly two verbs — `corpus doc check` and
+ * `corpus skill rollback` — because the workspace README and the orchestrate
+ * skill's loop-safety section had to document the recovery path before CLI-006
+ * shipped it. The allowlist was **self-invalidating**: a companion test asserted
+ * every entry was still absent from `docs/cli.md`, so the moment the verbs
+ * landed the suite went red and the list had to be emptied. CLI-006 landed and
+ * it was (sprint-013 Adjudication 17); the template's invocations now resolve
+ * against the generated reference with no exemption at all.
+ *
+ * It stays here, empty, as the mechanism rather than as a leftover: a future
+ * skill that has to name a verb before it exists gets one entry and the same
+ * self-expiring test. Add nothing that is not in that position.
+ */
+export const CLI_COMMANDS_PENDING_CLI_006: readonly string[] = [];
+
+export interface CliDocSurface {
+  /** Invocable commands: bare (`init`) or `topic verb` (`queue idle`). */
+  readonly commands: ReadonlySet<string>;
+  /** Topic names (`queue`) — legal as bare references in prose. */
+  readonly topics: ReadonlySet<string>;
+}
+
+/**
+ * The documented command surface, read out of `docs/cli.md`'s headings. Every
+ * command is a `## `/`### ` heading of the form `` `corpus <name>` ``; a
+ * heading whose name prefixes deeper headings (`db` before `db doctor`) is a
+ * topic rather than an invocable command.
+ */
+export function parseCliDoc(markdown: string): CliDocSurface {
+  const names = [...markdown.matchAll(/^#{2,3} `corpus ([^`]+)`/gm)]
+    .map((match) => match[1])
+    .filter((name): name is string => name !== undefined);
+  if (names.length === 0) {
+    throw new TemplateError("cli reference: no `corpus …` command headings found");
+  }
+  const topics = new Set(
+    names.filter((name) => names.some((other) => other.startsWith(`${name} `))),
+  );
+  return { commands: new Set(names.filter((name) => !topics.has(name))), topics };
+}
+
+/** Read `docs/cli.md` and parse its command surface. */
+export function readCliDoc(docPath: string = CLI_DOC_PATH): CliDocSurface {
+  return parseCliDoc(readFileSync(docPath, "utf8"));
+}
+
+const HEREDOC_MARKER = /<<-?\s*'?([A-Za-z_][A-Za-z_0-9]*)'?/;
+
+/** An invocation's tokens after `corpus`, flags dropped, heredocs and trailing comments cut. */
+const invocationTokens = (invocation: string): string[] => {
+  const command = invocation.split("<<")[0]?.split(/\s#\s/)[0] ?? "";
+  return command
+    .trim()
+    .split(/\s+/)
+    .slice(1)
+    .filter((token) => !token.startsWith("-"));
+};
+
+/**
+ * Every `corpus …` invocation in a markdown document, as token arrays (the
+ * words after `corpus`, flags dropped). Two sources are scanned: lines inside
+ * fenced code blocks, and inline code spans in prose. Heredoc bodies inside
+ * fenced blocks are content, not commands, and are skipped up to their
+ * terminator — a reply that merely mentions the word corpus at the start of a
+ * line is never extracted. Prose outside code is never scanned.
+ */
+export function extractCorpusInvocations(markdown: string): string[][] {
+  const invocations: string[][] = [];
+  const proseLines: string[] = [];
+  let inFence = false;
+  let heredocTerminator: string | null = null;
+
+  for (const line of markdown.split("\n")) {
+    if (line.trimStart().startsWith("```")) {
+      inFence = !inFence;
+      heredocTerminator = null;
+      continue;
+    }
+    if (!inFence) {
+      proseLines.push(line);
+      continue;
+    }
+    if (heredocTerminator !== null) {
+      if (line.trim() === heredocTerminator) heredocTerminator = null;
+      continue;
+    }
+    for (const segment of line.split(/&&|\|\||[|;]/)) {
+      const trimmed = segment.trim();
+      if (trimmed === "corpus" || trimmed.startsWith("corpus ")) {
+        invocations.push(invocationTokens(trimmed));
+      }
+    }
+    heredocTerminator = HEREDOC_MARKER.exec(line)?.[1] ?? null;
+  }
+
+  for (const match of proseLines.join("\n").matchAll(/`([^`\n]+)`/g)) {
+    const span = (match[1] ?? "").trim();
+    if (span.startsWith("corpus ")) invocations.push(invocationTokens(span));
+  }
+  return invocations;
+}
+
+/**
+ * An invocation's normalized command: a bare top-level command (`init`), a
+ * `topic verb` pair (`queue idle`), or a bare topic reference (`queue`).
+ * `null` when the invocation carries only flags (`corpus --help`). Anything a
+ * surface documents as a bare command keeps its arguments out of the name;
+ * everything else resolves to its first two words, so an undocumented verb
+ * (`doc frobnicate`) surfaces verbatim in the failure.
+ */
+export function normalizeInvocation(
+  tokens: readonly string[],
+  surface: CliDocSurface,
+): string | null {
+  const [first, second] = tokens;
+  if (first === undefined) return null;
+  if (surface.commands.has(first)) return first;
+  return second === undefined ? first : `${first} ${second}`;
+}

@@ -108,13 +108,13 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CONTRACT-012 | `DocRow.unreadThreads` aggregate unread count | done | P1 | CONTRACT-011 |
 | SERVER-027 | Populate `DocRow.unreadThreads` in the collection query | done | P1 | CONTRACT-012, SERVER-011 |
 | SERVER-028 | Queue transitions must invalidate `["docs"]` (needs=me lag) | done | P1 | SERVER-007, SERVER-011 |
-| UI-013 | UI hardening batch: PR #10 MINOR findings | todo | P2 | UI-006, UI-007, UI-008 |
-| SERVER-029 | Server hardening batch: PR #10 MINOR findings | todo | P2 | SERVER-016, SERVER-026 |
-| CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | todo | P2 | CONTRACT-007, CONTRACT-013 |
-| CLI-009 | `server stop` must not delete a live foreign pidfile | todo | P2 | CLI-002 |
-| INFRA-009 | Coverage gate: empty in-scope set must fail | todo | P2 | INFRA-004 |
-| CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | todo | P1 | CONTRACT-007, CONTRACT-009 |
-| UI-012 | DocMenu actions never toast (callback teardown) | todo | P2 | UI-005 |
+| UI-013 | UI hardening batch: PR #10 MINOR findings | done | P2 | UI-006, UI-007, UI-008 |
+| SERVER-029 | Server hardening batch: PR #10 MINOR findings | done | P2 | SERVER-016, SERVER-026 |
+| CONTRACT-014 | Form-fence grammar edges + SSE token transport decision | done | P2 | CONTRACT-007, CONTRACT-013 |
+| CLI-009 | `server stop` must not delete a live foreign pidfile | done | P2 | CLI-002 |
+| INFRA-009 | Coverage gate: empty in-scope set must fail | done | P2 | INFRA-004 |
+| CONTRACT-013 | Export uploadCreateThread from client barrel; FORM_ANSWER_LABEL to contract | done | P1 | CONTRACT-007, CONTRACT-009 |
+| UI-012 | DocMenu actions never toast (callback teardown) | done | P2 | UI-005 |
 | INFRA-004 | Merge Playwright e2e coverage into the combined 90% gate | done | P1 | INFRA-003, UI-001 |
 
 ---
@@ -123,16 +123,53 @@ The board, editor, threads, console. design/index.html is authoritative for look
 
 | ID | Title | Status | Priority | Dependencies |
 |----|-------|--------|----------|--------------|
-| AGENT-002 | Orchestrate skill: the agent's main loop | todo | P0 | CLI-004, CLI-007, AGENT-001 |
-| CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | todo | P1 | CONTRACT-002 |
-| SERVER-019 | Mount validation + skill-rollback handlers | todo | P1 | CONTRACT-008 |
-| CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | todo | P1 | CLI-003, SERVER-019 |
-| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | todo | P0 | CLI-003, CLI-006, AGENT-002 |
-| AGENT-004 | Emit trace lines in agent turns | todo | P2 | AGENT-002 |
-| PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | todo | P1 | UI-003, CLI-001, SERVER-003 |
-| PLUGINS-002 | Todos reference plugin | todo | P1 | PLUGINS-001, AGENT-003 |
-| INFRA-008 | npm packaging & release: the installable `corpus` tool | todo | P1 | CLI-002, UI-010 |
-| CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | todo | P1 | CLI-002, AGENT-001 |
+| AGENT-002 | Orchestrate skill: the agent's main loop | done | P0 | CLI-004, CLI-007, AGENT-001 |
+| CONTRACT-008 | Validation + skill-rollback routes (doc check / skill rollback surface) | done | P1 | CONTRACT-002 |
+| CONTRACT-016 | Rider: nullable rollback commit | done | P1 | CONTRACT-008 |
+| SERVER-019 | Mount validation + skill-rollback handlers | done | P1 | CONTRACT-008, CONTRACT-016 |
+| CLI-006 | `corpus doc check` + `corpus skill rollback` verbs | done | P1 | CLI-003, SERVER-019 |
+| AGENT-003 | Comment skill: thread handling + inbox filing + skill genesis | done | P0 | CLI-003, CLI-006, CLI-010, AGENT-002 |
+| CLI-010 | Read verbs: `corpus doc show` + `corpus thread show` | done | P1 | CLI-003 |
+| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-006, SERVER-019 |
+| PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P2 | UI-014, PLUGINS-002 |
+| UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
+| INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
+| SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | todo | P1 | SERVER-003 |
+| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | todo | P2 | UI-005 |
+| CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002, CLI-005 |
+| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
+| AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
+| PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
+| PLUGINS-002 | Todos reference plugin | done | P1 | PLUGINS-001, AGENT-003, CONTRACT-015 |
+| CONTRACT-015 | Graduate plugin-facing types into @corpus/contract | done | P1 | CONTRACT-002 |
+| UI-014 | Editor ownership of non-core document bodies | done | P2 | UI-006, PLUGINS-001 |
+| INFRA-008 | npm packaging & release: the installable `corpus` tool | done | P1 | CLI-002, UI-010 |
+| CLI-005 | `corpus workspace upgrade`: refresh template files after a tool update | done | P1 | CLI-002, AGENT-001 |
+| SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | SERVER-008, SERVER-009, AGENT-002 |
+| SERVER-031 | Empty JSON body returns 500 instead of 400 | done | P2 | SERVER-003 |
+| SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
+| CONTRACT-017 | CreateThreadRequest strictness (silent unanchored threads) | done | P2 | CONTRACT-009 |
+| CONTRACT-018 | Rider: `423` on skill-rollback route + inventory docblock (PR #11 review 1, 4) | done | P1 | CONTRACT-008 |
+| CONTRACT-019 | Rider: atomic read-modify-write seam on PluginServerContext (PR #11 review 2) | done | P1 | CONTRACT-015 |
+| SERVER-034 | Implement PluginServerContext atomic mutate under the document mutex | done | P1 | CONTRACT-019 |
+| SERVER-035 | Skill rollback honors edit locks (+ lane TOCTOU, truncation wording) | done | P1 | CONTRACT-018 |
+| PLUGINS-004 | Todos mutateItems uses the atomic seam (lost-update fix) | done | P1 | SERVER-034 |
+| CLI-014 | `stop` unowned-pidfile deletion + `upgrade --adopt` manifest honesty (PR #11 review 12, 13) | done | P1 | CLI-009, CLI-005 |
+| INFRA-011 | Pre-push e2e hermetic vs. a live personal server on 8765 | done | P1 | INFRA-004 |
+
+---
+
+## Phase 5 — Candidates (user follow-ups 2026-07-29, not yet sprint-planned)
+
+All four feature issues need a spec-writer pass (user-signed-off SPEC.md amendment) before implementation.
+
+| ID | Title | Status | Priority | Dependencies |
+| --- | --- | --- | --- | --- |
+| AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | AGENT-002 |
+| UI-017 | Never leave an empty untitled document behind | todo | P1 | UI-005, UI-006 |
+| UI-018 | Right-click context menu for actions on the selected item | todo | P2 | UI-004, UI-012 |
+| UI-019 | Wider views: user-adjustable view/column width | todo | P2 | UI-003 |
+| SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
 
 ---
 

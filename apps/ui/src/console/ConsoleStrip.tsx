@@ -1,6 +1,7 @@
 import type { QueueStatus } from "@corpus/contract";
 import { useHealth } from "@corpus/kit";
 import type { KeyboardEvent, ReactElement } from "react";
+import { usePluginRegistry } from "../plugins/registry";
 import { AgentPill } from "./AgentPill";
 import { consoleCounts } from "./consoleModel";
 
@@ -32,6 +33,27 @@ export function ServerStatus(): ReactElement {
   return (
     <span className="c-status" role="status">
       corpus {health.data.version}
+    </span>
+  );
+}
+
+/**
+ * Plugin load warnings (SPEC.md §10: "a manifest that fails to load is skipped
+ * with a visible warning"). Written once at bootstrap by `loadPlugins()` and
+ * read here, so a broken plugin is a fact in the strip — not only a
+ * `console.error` a user never opens. The class is its own (`.c-plugin-warn`),
+ * never `.c-failed`, which is the reachability notice's and is asserted in
+ * Playwright strict mode (sprint-010 adjudication 5).
+ */
+export function PluginWarnings(): ReactElement | null {
+  const warnings = usePluginRegistry().warnings;
+  if (warnings.length === 0) return null;
+  const detail = warnings.map((warning) => `${warning.plugin}: ${warning.reason}`).join("\n");
+  return (
+    <span className="c-plugin-warn" role="status" title={detail}>
+      {warnings.length === 1
+        ? `plugin ${warnings[0]?.plugin ?? ""} skipped`
+        : `${String(warnings.length)} plugin warnings`}
     </span>
   );
 }
@@ -95,6 +117,7 @@ export function ConsoleStrip({
       <AgentPill status={status} />
       <ConsoleCounts status={status} />
       <span className="spacer" />
+      <PluginWarnings />
       <ServerStatus />
       <button
         type="button"

@@ -1,4 +1,3 @@
-import { CORE_DOC_TYPES } from "@corpus/contract";
 import { Node as PmModelNode, Slice } from "@tiptap/pm/model";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -35,13 +34,13 @@ import "./editor.css";
  */
 
 /**
- * Types whose body the editor owns.
+ * The two types whose body is **not** markdown prose, and therefore never the
+ * editor's.
  *
  * A `thread` renders as its conversation — SPEC.md §6's "the conversation is
  * the document" — and a `view` is a saved query whose content is its
- * frontmatter, not its prose. A type the core does not know belongs to a
- * plugin, and §10 gives a plugin its own `View`; putting a markdown editor on
- * it would be the board deciding what a plugin's document is.
+ * frontmatter, not its prose. Everything else is a markdown body, and §11 says
+ * a markdown body is editable.
  */
 const NON_EDITABLE_TYPES = new Set(["thread", "view"]);
 
@@ -59,8 +58,26 @@ function asPmNode(content: JSONContent): PmNode {
   return content as unknown as PmNode;
 }
 
+/**
+ * Whether the core would put the editor on this document type (UI-014).
+ *
+ * **Every markdown body, not only the core's.** This used to gate on
+ * `CORE_DOC_TYPES`, which made a plugin-typed document — and any document whose
+ * plugin had since been deleted — render through the static `MarkdownView`: a
+ * body a person could read and not correct, in a product whose §11 principle is
+ * that there is no edit mode. §10's "a removed plugin's documents render as
+ * plain markdown" is about the absence of the plugin's *chrome*, not about the
+ * body turning read-only; sprint-011 adjudicated "the editor owns doc bodies
+ * always".
+ *
+ * A registered plugin `View` still wins, because it replaces the standard
+ * document view wholesale. That precedence is not decided here — this answers
+ * about the type alone, and `DocView` asks the plugin registry first — so a
+ * plugin installed or deleted mid-session flips its documents between its
+ * `View` and this editor with no second gate to keep in step.
+ */
 export function editorHandlesType(type: string): boolean {
-  return (CORE_DOC_TYPES as readonly string[]).includes(type) && !NON_EDITABLE_TYPES.has(type);
+  return !NON_EDITABLE_TYPES.has(type);
 }
 
 export interface DocEditorProps {
@@ -254,12 +271,23 @@ export function DocEditor({
    * the incoming body waits, and the effect re-runs when the session settles
    * because `editing` is reactive — which is what makes the deferred update
    * land exactly once rather than never (sprint-011 TEST-35).
+   *
+   * **The document's own save echoes back through here, and is not adopted**
+   * (PR #10 finding 18). A `PUT` invalidates the document, the refetch returns
+   * the body the user just typed, and `canonical` changes to text the editor is
+   * already showing. Adopting it replaces the ProseMirror document with an
+   * identical one, which discards the caret, the selection and every anchor
+   * decoration drawn on it — and then something downstream has to notice and
+   * put them back. Comparing against what the editor would save is the same
+   * comparison autosave makes, and it stops the wipe at its source rather than
+   * repairing it after the fact.
    */
   const applied = useRef(canonical);
   useEffect(() => {
     if (editor === null || editing) return;
     if (canonical === applied.current) return;
     applied.current = canonical;
+    if (canonical === serializeDoc(asPmNode(editor.getJSON()))) return;
     // `false`: adopting the server's copy is not the user's edit and must not
     // start an autosave, which would write the document back to itself.
     editor.commands.setContent(asContent(parseMarkdown(canonical)), false);

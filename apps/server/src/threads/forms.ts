@@ -8,17 +8,18 @@
 // particular to this route: the event it enqueues (`form.respond`, never
 // `comment.created`) and what its commit says.
 //
-// **The grammar is the contract's, and there is no third copy of it.** §6 gives
-// three words of form syntax; `@corpus/contract`'s `schemas/form.ts` pins the
-// rest — `FORM_FENCE_PATTERN` / `extractFormSource` for the fence, `FormSchema`
-// for the fields, `validateFormAnswer` for the answer, `FormRespondPayloadSchema`
-// for the event. Every one of them is imported here rather than reimplemented,
-// because a server that decided for itself what `` ```form `` means would
-// disagree with the UI that renders the controls (CONTRACT-007). The projection's
-// `needs=form` detector (`docs/needs.ts`) is the same grammar expressed in SQL,
-// which SQLite cannot express any other way; it is a *translation* of this one,
-// and if the two are ever found to disagree that is a finding to file, not a
-// reason to grow a third parser.
+// **The grammar is the contract's, and there is exactly one copy of it.** §6
+// gives three words of form syntax; `@corpus/contract`'s `schemas/form.ts` pins
+// the rest — `findFormFence` / `extractFormSource` for the fence,
+// `FormSchema` for the fields, `validateFormAnswer` for the answer,
+// `FormRespondPayloadSchema` for the event. A server that decided for itself
+// what `` ```form `` means would disagree with the UI that renders the controls
+// (CONTRACT-007). This route reaches all of it through `core/form.ts`'s
+// {@link readForm}, and so does the projection, whose `needs=form` reads the
+// answer off a `turns.has_form` column rather than re-deriving it in SQL. The
+// SQL translation that used to stand there disagreed with this route in both
+// directions — the finding `forms.ts` said to file, filed and fixed as
+// SERVER-029.
 //
 // **Which failure is which.** `400` is reserved for the one thing the static
 // schema cannot check — an `option` this form does not offer — because that is a
@@ -33,15 +34,8 @@
 // commenting (`turns.ts`).
 
 import type { Actor, Form, FormAnswerRequest, FormRespondPayload } from "@corpus/contract";
-import {
-  FORM_ANSWER_LABEL,
-  FORM_RESPOND_EVENT_TYPE,
-  FormSchema,
-  extractFormSource,
-  validateFormAnswer,
-} from "@corpus/contract";
-import * as YAML from "yaml";
-import { formatInstant, nextTurnTs, normalizeInstant } from "../core/index.js";
+import { FORM_ANSWER_LABEL, FORM_RESPOND_EVENT_TYPE, validateFormAnswer } from "@corpus/contract";
+import { formatInstant, nextTurnTs, normalizeInstant, readForm } from "../core/index.js";
 import type { DocumentMutex } from "../docs/index.js";
 import { badRequest, notFound } from "../errors.js";
 import { NO_MENTIONS } from "./mentions.js";
@@ -95,34 +89,21 @@ export function requireForm(
   const where = `the turn at ${normalized} in thread ${thread.id}`;
   if (turn.author !== "agent") throw notFound(`${where} is not an agent turn and carries no form`);
 
-  // The contract's parser, matched whole: ```formula and ```form-builder open
-  // ordinary code blocks and are not forms.
-  const source = extractFormSource(turn.body);
-  if (source === undefined) throw notFound(`${where} carries no form`);
+  // `core/form.ts`, which is also what the projection stored in `turns.has_form`
+  // — so a turn this route refuses is a turn `needs=form` never advertised, and
+  // vice versa (SERVER-029). ```formula and ```form-builder open ordinary code
+  // blocks and land on `no-fence` here, because the info string is matched whole.
+  const reading = readForm(turn.body);
+  if (reading.ok) return { form: reading.form, ts: normalized };
 
-  const parsed = parseFormYaml(source);
-  if (parsed === undefined) throw notFound(`the form in ${where} is not valid YAML`);
-
-  const form = FormSchema.safeParse(parsed);
-  if (!form.success) {
-    const detail = form.error.issues[0]?.message ?? "unknown error";
-    throw notFound(`the form in ${where} is not a valid form: ${detail}`);
-  }
-  return { form: form.data, ts: normalized };
-}
-
-/**
- * The fence's YAML as a plain value, or `undefined` when it does not parse. A
- * malformed fence is a `404` from {@link requireForm}, never a 500: the bytes
- * came off a file a person or an agent wrote, so bad YAML there is an ordinary
- * state of the world.
- */
-function parseFormYaml(source: string): unknown {
-  try {
-    return YAML.parse(source) ?? undefined;
-  } catch {
-    return undefined;
-  }
+  const detail = reading.detail ?? "unknown error";
+  throw notFound(
+    reading.reason === "no-fence"
+      ? `${where} carries no form`
+      : reading.reason === "not-yaml"
+        ? `the form in ${where} is not valid YAML`
+        : `the form in ${where} is not a valid form: ${detail}`,
+  );
 }
 
 /**

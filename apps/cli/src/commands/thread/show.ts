@@ -1,0 +1,92 @@
+import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+
+/**
+ * `corpus thread show` — the read half of the conversation surface (SPEC.md §6,
+ * §8). §7's comment skill reads a thread before it replies, and a thread's state
+ * lives in the projection as much as in its file: which document it hangs off,
+ * whether the anchor still resolves, and whether the agent is engaged are
+ * answers the server owns.
+ *
+ * **It renders exactly what `GET /api/threads/{id}` returns** — turns, status,
+ * agent state, parent and anchor (sprint-013 Adjudication 14). The endpoint
+ * carries no `events` array and no read-state, so this verb reports neither: a
+ * fabricated unread flag would be worse than none, and the only read-state
+ * endpoint is a *mutation* (`POST /api/threads/{id}/seen`), which a read verb
+ * must never call — showing a thread would silently clear its unread badge in
+ * the board.
+ *
+ * The three thread shapes §7's skill branches on are named in the output rather
+ * than left to be inferred from two nulls: anchored to a selection, on a whole
+ * document, or standalone.
+ */
+
+/** What an absent value renders as, matching `corpus doc show`. */
+const NONE = "—";
+
+export async function runThreadShow(context: WorkspaceCommandContext): Promise<void> {
+  const id = context.args.get("id");
+  const thread = await context.client.request((api) =>
+    api.GET("/api/threads/{id}", { params: { path: { id } } }),
+  );
+
+  context.out.emit(thread);
+
+  context.out.line(thread.title);
+  context.out.line(`${thread.id} · ${thread.status} · agent ${thread.agent}`);
+  context.out.line(
+    `parent ${thread.parent ?? NONE} · anchor ${thread.anchor ?? NONE} · ${shapeOf(thread.parent, thread.anchor)}`,
+  );
+  context.out.line(`created ${thread.created} · updated ${thread.updated}`);
+  context.out.line(`tags ${thread.tags.length === 0 ? NONE : thread.tags.join(", ")}`);
+
+  if (thread.turns.length === 0) {
+    context.out.line("");
+    context.out.line("(no turns)");
+    return;
+  }
+
+  // Oldest first, as the wire orders them: a conversation read backwards is a
+  // different conversation.
+  for (const turn of thread.turns) {
+    context.out.line("");
+    context.out.line(`${turn.author} · ${turn.ts}`);
+    context.out.line(turn.body.trimEnd());
+  }
+}
+
+/** The three shapes a thread can have (SPEC.md §6), named rather than implied. */
+function shapeOf(parent: string | null, anchor: string | null): string {
+  if (parent === null) return "standalone";
+  return anchor === null ? "whole document" : "anchored to a selection";
+}
+
+export const showCommand: WorkspaceCommandSpec = {
+  name: "show",
+  summary: "Read a conversation: its status, its anchoring, and every turn.",
+  description:
+    "Reads `GET /api/threads/{id}` and renders it as the wire returns it — title, status, agent " +
+    "state, parent, anchor and every turn oldest first, each with its author and timestamp. The " +
+    "anchoring line names which of the three shapes the thread has: anchored to a selection, on " +
+    "a whole document (`parent` set, no anchor), or standalone (neither). This is the context " +
+    "SPEC.md §7's comment skill reads before it replies. **No read-state is reported**: the " +
+    "endpoint carries none, and the only endpoint that does is a mutation — reading a thread " +
+    "must not clear its unread badge. A thread id that names nothing is the server's `404`, " +
+    "which is exit 5.",
+  args: [{ name: "id", required: true, description: "The thread's id." }],
+  flags: [],
+  examples: [
+    {
+      command: "corpus thread show th_a1b2c3",
+      description: "Read a conversation before replying to it.",
+    },
+    {
+      command: "corpus thread show th_a1b2c3 --json",
+      description:
+        'One JSON value: `{"id":"th_a1b2c3","title":"Is 6.1% right?","created":' +
+        '"2026-07-28T10:00:00.000Z","updated":"2026-07-28T10:05:00.000Z","status":"open",' +
+        '"tags":[],"parent":"doc_a1b2c3","anchor":"anc_1","agent":"engaged","turns":' +
+        '[{"author":"user","ts":"2026-07-28T10:00:00.000Z","body":"Is 6.1% right?"}]}`.',
+    },
+  ],
+  handler: (context) => runThreadShow(context),
+};

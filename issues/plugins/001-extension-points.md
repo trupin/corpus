@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -60,9 +60,9 @@ Build the plugin substrate: four independent discovery mechanisms (UI manifests,
 - `apps/server/src/app.ts` (modify) — call plugin discovery after core routes are mounted
 - `apps/cli/src/registry/plugins.ts` — scan `plugins/*/cli/commands/`, build `TopicSpec`s, merge into the root registry
 - `apps/cli/src/registry/index.ts` (modify) — include discovered plugin topics
-- `apps/cli/src/commands/init.ts` (modify, or the equivalent from CLI-002) — copy/link `plugins/*/skills/` into the workspace `.claude/skills/`
-- `assets/workspace/.claude/skills/orchestrate/SKILL.md` (modify) — document the `<plugin>.*` event-routing convention
-- `eslint.config.js` / `packages/eslint-config` (modify) — the two boundary rules (`no-restricted-imports` overrides scoped to `plugins/**`, and the core→plugin ban)
+- `apps/cli/src/commands/init/` (modify — a directory: `index.ts`, `scaffold.ts`, `template.ts`, …) — copy/link `plugins/*/skills/` into the workspace `.claude/skills/`; record plugin-sourced skills in `.corpus/template-manifest.json` with `source: "plugin:<name>"` (sprint-012 Adjudication 11)
+- ~~`assets/workspace/.claude/skills/orchestrate/SKILL.md`~~ — STRUCK (sprint-012 Adjudication 1: AGENT-002 owns the orchestrate skill exclusively; the `<plugin>.*` routing convention is part of its required routing table — do not touch that file)
+- `eslint.config.js` (root — `packages/eslint-config` does not exist) — the two boundary rules (`no-restricted-imports` overrides scoped to `plugins/**`, and the core→plugin ban)
 - `plugins/_fixture/` — a test-only fixture plugin (manifest with one doc type + one column, one server route, one CLI verb, one skill) used by the E2E and unit tests; explicitly excluded from packaging
 - `docs/PLUGINS.md` — the plugin author guide: directory layout, manifest contract, the kit-only rule, the `types.yaml` requirement
 
@@ -145,17 +145,226 @@ conclusions. State which model the implementing agent ran on ("implemented on:
 opus | fable")._
 
 ### Reproduction (bugs only)
-_[Agent fills: N/A — feature issue]_
+N/A — feature issue.
 
 ### Post-Implementation Verification
-_[Agent fills: application restarted, exact commands, observed output, confirmation feature works]_
+
+**implemented on: fable** (per the issue's Model recommendation; sprint-012 TEST-143).
+
+All verification against the real application: real `corpus init` workspace at
+`/tmp/corpus-s012-plugins001-BT5zCp/ws` on port **9072**, real server process
+(`corpus server start` via `node --import tsx apps/cli/src/bin/corpus.ts` — never npx), real
+Vite dev server on **5281** (`CORPUS_SERVER_ORIGIN=http://127.0.0.1:9072 npm run dev -w apps/ui
+-- --port 5281 --strictPort`, plus `VITE_CORPUS_TOKEN` so the dev shell can authenticate), real
+Chromium driven through the Playwright library (the Chrome-extension bridge was not connected
+on this machine), real `curl` on the SSE stream. 8765 stayed unbound throughout
+(`lsof -nP -iTCP:8765 -sTCP:LISTEN` empty before and after). Screenshots:
+`/tmp/corpus-s012-plugins001-BT5zCp/phase{1,3,5}-*.png`.
+
+**1. Baseline boot (E2E step 1).** `corpus init /tmp/…/ws --port 9072` printed
+`installed 8 template files … installed 1 plugin skill file into .claude/skills/`. Server log
+(`.corpus/server.log`):
+```
+{"level":"info","msg":"plugin discovered","plugin":"_fixture","routes":true,"types":["fixture-note"]}
+{"level":"info","msg":"plugin routes mounted","plugin":"_fixture","prefix":"/api/x/_fixture"}
+```
+`corpus --help` lists the `_fixture` topic (grep count 1); `corpus _fixture --help` and
+`corpus _fixture add --help` render like core verbs. Browser console strip read `corpus 0.0.0`,
+no plugin warning, zero page errors.
+
+**2–3. Doc type + DocPanel + ListItem (steps 2–3).** Fixture-note rows in an inbox folder
+column render through `FixtureListItem` (`.fixture-row` present, default `Row` absent); clicking
+one opens the reader with `FixtureView` (`data-fixture-view`) as the body and `FixtureDocPanel`
+(`data-fixture-panel`) **above** the body (DOM-order asserted:
+`panel.compareDocumentPosition(body) & DOCUMENT_POSITION_FOLLOWING` true); pressed `f` — both
+present in focus mode (`.focus-inner [data-fixture-panel]`, `[data-fixture-view]`). TEST-87
+note: the null-resolution fallback renders through the shipped standard document view — for a
+plugin type that view is the `MarkdownView` branch of `reader/DocView.tsx`'s single body call
+site (plugin types were already outside `editorHandlesType`); no second body renderer was
+introduced.
+
+**4. Plugin column (step 4).** "＋ New list" offered `Fixture notes`
+(`data-newlist="plugin:_fixture/sample"`); choosing it created a pinned view document **on
+disk** — `data/docs/views/fixture-notes.md`:
+```
+type: view … evergreen: true, pinned: true, order: 13
+query: { type: fixture-note }
+column: _fixture/sample
+```
+Keyboard reorder (`⇧←` on the hovered column) rewrote `order: 13 → 30` in the file (renumber
+pass; `git log`: `user doc edit: …` commits for the affected view docs) and the new position
+survived a full page reload (column order `doc_seedattention, doc_seedinbox, doc_sicvzu2k, …`).
+The column body is the plugin `Component`; a unit test additionally proves a plugin column
+issues **no** `GET /api/docs` of its own.
+
+**5. Server route + SSE (step 5).** With `curl -s -N "http://127.0.0.1:9072/events?token=$TOK"`
+running, `corpus _fixture add "First fixture note"` → `created fixture note doc_3k3onwoj`; raw
+frames captured:
+```
+event: invalidate
+data: {"keys":[["docs"],["docs","doc_3k3onwoj"],["tree"]]}
+event: invalidate
+data: {"keys":[["x","_fixture","notes"]]}
+```
+File `data/docs/inbox/first-fixture-note.md` on disk; `git log`:
+`user doc create: First fixture note (doc_3k3onwoj) by user`. In the browser, a
+`POST /api/x/_fixture/notes` (201) while the column was open made "Live SSE note" appear in the
+column **without reload** (`page.waitForFunction` on the DOM). The plugin write refreshing the
+board rides the core keys emitted by the write path itself; `x/_fixture/notes` names the
+plugin's own query — the division TEST-107 asks to be stated. Requests without the bearer token
+get 401 (`/api/*` guard covers `/api/x/*`). Server-side full-stack tests additionally prove:
+agent-attributed commit (`x-corpus-author: agent` → `agent doc create: …` in `git log`),
+projection row visible via `GET /api/docs?type=fixture-note`, and `/api/docs` not shadowable
+(a fixture registering `/api/docs` lands harmlessly at `/api/x/shadow/api/docs`).
+
+**6. CLI verb + docs (step 6, rewritten per Adjudication 9).** `corpus _fixture add` verified
+above against 9072. `npm run docs:cli -w apps/cli` → `git status --porcelain docs/cli.md`
+empty (the committed reference never documents `_fixture`); `node --import tsx
+scripts/check-generated-artifacts.ts` green **twice**. The unit test
+`apps/cli/src/registry/plugins.test.ts › "a non-underscore plugin topic WOULD reach the
+generator"` proves a real plugin's verbs document themselves.
+
+**7. Skill loading (step 7).** `<ws>/.claude/skills/fixture-notes/SKILL.md` exists and `cmp`
+says byte-identical to `plugins/_fixture/skills/fixture-notes/SKILL.md`; `orchestrate` and
+`comment` present and untouched; `.corpus/template-manifest.json` records
+`{"path":".claude/skills/fixture-notes/SKILL.md","sha256":"15568d0a…","source":"plugin:_fixture"}`
+while template entries keep the two-key shape (Adjudication 11). Collision rule (core wins,
+warning naming the collision) and cross-plugin collision rule unit-verified in
+`apps/cli/src/commands/init/scaffold-plugins.test.ts`.
+
+**8. §15 M5 deletion (step 8).** Stopped server+Vite; `tar` backup; `rm -rf plugins/_fixture`.
+`npm run build` succeeded; server restarted logging **no** plugin line;
+`GET /api/x/_fixture/notes → 404`; `corpus --help` no longer lists the topic. Browser: board
+renders all 5 columns; **no** plugin warning (absence is a normal state); the fixture column
+shows the "Plugin missing" card with header and ⋯ controls intact; fixture-note rows render
+through the default `Row`; opening one renders the standard document view (plain markdown, no
+`data-fixture-view`, no panel); zero page errors. Restored the directory, restarted server and
+dev server (a restored plugin appears on the next dev-server rebuild — §10's accepted behavior;
+observed that a reload alone under the still-running dev server did not re-glob): renderer,
+DocPanel, ListItem, column, server route and CLI verb all returned, and
+`corpus _fixture add "Post-restore note"` landed in the live column. `corpus db rebuild &&
+corpus db doctor` → `projection is clean — 12 documents from 12 files` (TEST-142). Outside
+`plugins/`, nothing changed between the two states.
+
+**9. §15 M6 lint rule (step 9).** Added `import "../../apps/ui/src/board/newList";` to
+`plugins/_fixture/manifest.ts` → `npm run lint` exit 1:
+```
+1:1 error '../../apps/ui/src/board/newList' import is restricted from being used by a pattern.
+Plugins may import only @corpus/kit and @corpus/contract (SPEC.md §10) — never a workspace's
+internals by path  no-restricted-imports
+```
+Removed it → exit 0. Also proven programmatically (`scripts/eslint-boundaries.test.ts`): the
+kit-only rule fires on `apps/ui` and `@corpus/server` imports and stays quiet for
+`@corpus/kit`/`@corpus/contract`; the core→plugin ban fires on a core file importing
+`plugins/**`; the three discovery entry points are allowlisted by exact path in
+`eslint.config.js` with a §10 comment.
+
+**10. Error boundary (step 10).** Made `FixtureColumn` throw → in-place card
+`Plugin error — _fixture / Its column crashed: deliberate crash for the boundary drill`; all 5
+columns still present, rows still rendered in siblings; "Try again" re-threw and the card
+stayed (terminal, no loop; boundary keyed `<plugin>/<role>/<type>`, reset on remount). Note:
+two `pageerror` events were observed — these are React 18 **development-mode re-throws of the
+same caught error** (React reports boundary-caught errors to `window` in dev builds); the
+boundary demonstrably contained rendering, and production builds do not re-throw. Repeated with
+a throwing `FixtureView`: card in the reader naming `_fixture`/`view`, board and the (restored)
+plugin column unaffected. Both reverted.
+
+**11. Broken manifest (step 11).** Set `id: 42` in the manifest → plugin skipped; console strip
+shows `plugin _fixture skipped` (`.c-plugin-warn` — a new class, never `.c-failed`; its title
+carries the Zod detail `its manifest is invalid — id: Invalid input: expected string, received
+number`); `console.error` with the same text; board unaffected; the plugin's column degrades to
+the missing card; default rows return. Reverted. Re-run against the final (non-blocking)
+loading code — identical results.
+
+**Playwright suite.** `CORPUS_UI_PORT=5281 npm run e2e` → **98 passed** (8765 unbound before
+and after). One shipped spec updated: `board.spec.ts` asserted the pre-PLUGINS-001 inert picker
+placeholder ("plugin column types appear here too"), replaced by an assertion on the real
+registry-driven entry `plugin:_fixture/sample`.
+
+**Unit/scoped tests.** All new suites green: `packages/kit/src/plugin/types.test.ts` (5),
+`apps/ui/src/plugins/{validate,registry,slots}` (24), `apps/ui/src/board/{NewListPicker,
+pluginColumn}` (13), `apps/server/src/plugins/{discover,context}` (24, incl. the full-stack
+write-path proof against a real git workspace), `apps/cli/src/registry/plugins.test.ts` (11),
+`apps/cli/src/commands/init/scaffold-plugins.test.ts` (10), `plugins/_fixture/parity.test.ts`
+(2), `scripts/eslint-boundaries.test.ts` (5). Regression: whole `apps/cli` suite 554 passed;
+kit client/query 246; UI board/shell/console/reader 415+; `scripts/workspace-template.test.ts`
++ `apps/cli … template.test.ts` 51 (the three-implementations-agree suites untouched and
+green). `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run build` (now
+building `plugins/*` after kit, per Adjudication 12) all green. Production-bundle exclusion
+(TEST-131): `grep -c "_fixture\|fixture-note" apps/ui/dist/assets/index-*.js` → 0 in the built
+bundle (the only match anywhere is a source comment in the sourcemap); enforcement lives in
+exactly one named place per surface — the glob composition in
+`apps/ui/src/plugins/registry.ts` (`!…/_*/manifest.ts` + a dev-only glob behind
+`import.meta.env.DEV`), `excludedInProduction` in `apps/cli/src/registry/plugins.ts`,
+`excludedInProduction` in `apps/server/src/plugins/discover.ts`, and the underscore filter in
+`apps/cli/src/docs/generate.ts` (docs are filtered in every environment).
+
+### Deviations and deferrals (recorded, not skipped)
+
+- **`import.meta.glob` is lazy, not `{eager: true}`** (issue AC 1 / sprint TEST-79 vs
+  TEST-82). With `eager: true` the glob compiles to *static* imports, so a manifest throwing at
+  module scope takes down the whole bundle's init **before any try/catch can run** — per-module
+  containment (TEST-82; §10's "a manifest that fails to load is skipped with a visible
+  warning") is physically impossible in that form. SPEC §10's own text shows the glob without
+  `eager`. Shipped: the lazy glob (still build-time compiled and bundled — no runtime loader),
+  loaded once at bootstrap with per-module try/catch, published through a
+  `useSyncExternalStore` registry so the first render never blocks on module fetches (a
+  blocking `await` was tried first and made the shipped e2e suite's immediately-after-goto
+  assertions racy). The glob path is `../../../../plugins/*/manifest.ts` — four ups from
+  `apps/ui/src/plugins/registry.ts`; the issue's three-up spelling assumed a file one level
+  higher. A parity test asserts the glob target and the server's `resolvePluginsRoot` agree on
+  the repo-root `plugins/` (Adjudication 12 iv).
+- **TEST-121's boot-warning half is narrowed to what the server can honestly see.** The server
+  never loads `manifest.ts` (§10: `types.yaml` exists *because* the server must not load UI
+  code), so it cannot name a specific manifest↔yaml mismatch at boot. Shipped: the
+  bidirectional mismatch fails the plugin's parity **test** (both directions demonstrated in
+  `plugins/_fixture/parity.test.ts`); the server warns at boot for what it can observe —
+  `manifest.ts` present with **no** `types.yaml`, and a malformed `types.yaml` (both
+  unit-verified with logged warnings). Flagged for the evaluator/orchestrator.
+- **`corpus init` installs underscore plugins' skills in dev.** The three adjudicated
+  exclusion surfaces are UI bundle / CLI registry / server discovery; the skills install is
+  deliberately not one of them — TEST-115 requires the fixture skill installed by a dev
+  `corpus init`, and a packaged tool ships no `_*` directory at all.
+- **Topic names admit one leading underscore** (`TOPIC_NAME_PATTERN` in
+  `apps/cli/src/registry/validate.ts`): the shipped `NAME_PATTERN` rejected `_fixture`, and
+  `corpus _fixture <verb>` is the pinned dev surface (TEST-110). Command names stay strict.
+- **`assets/workspace/claude/skills/orchestrate/SKILL.md` untouched** (Adjudication 1 /
+  TEST-118). The acceptance criterion "the orchestrate skill routes `<plugin>.*`" is satisfied
+  by AGENT-002's routing table — cited here as sprint-012 **TEST-14**; this issue verified
+  skills **loading** only (TEST-115…119).
+- **React dev-mode `pageerror` on boundary-caught crashes** — see step 10; not an escaped
+  error; production builds do not re-throw.
+
+### Open spec question filed for user sign-off (Adjudication 3 / TEST-135 — filed verbatim, not answered)
+
+> **Template frontmatter carry-over is a plugin-design question** _(SERVER-005 template-bleed
+> fix, 2026-07-27)_: SPEC §9.2 pins pre-fill as body-only and the server now enforces it
+> (template frontmatter shadowing documented defaults was a bug — evergreen:true silently opted
+> every templated note out of staleness). SPEC §11's looser "starting frontmatter/body"
+> phrasing survives only as this open question: **should plugins be able to declare SCOPED
+> template keys (e.g. `column: research`) that carry to instances — never fields with
+> documented server defaults?** If yes, a follow-up issue designs the declaration mechanism and
+> proposes the §11/§9.2 reconciliation as a spec clarification (user sign-off).
+
+No carry-over mechanism was built: `types.yaml`'s `seedTemplate` is documented as supplying a
+**body only** (docs/PLUGINS.md), and no code path moves template frontmatter onto instances.
+
+### Second open design question (raised, not improvised — this domain's standing note)
+
+Plugin **server** routes and **CLI** commands currently type their context/spec
+**structurally** (the fixture declares local interfaces built entirely from `@corpus/contract`
+types), because `PluginServerContext` lives in `apps/server` and `CommandSpec` in `apps/cli` —
+neither importable under the kit-only rule. Whether these contracts should graduate into
+`@corpus/contract` (or a new plugin-facing package) is the "plugin routes under the contract
+question" this domain has on file; it needs a decision before PLUGINS-002 hardens the todos
+plugin against it.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] `/audit` run (cross-domain: UI, server, CLI, agent-runtime)

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { ApiErrorSchema, ERROR_CODES, type Lock } from "@corpus/contract";
@@ -153,6 +154,47 @@ describe("toHttpError", () => {
     expect(mapped.status).toBe(500);
     expect(JSON.stringify(mapped.body)).not.toContain("hunter2");
     expect(mapped.body.message).toBe("internal error");
+  });
+
+  // SERVER-031: Hono throws these from below every handler — the body validator
+  // refuses an unreadable body before `defaultHook` runs — and unrecognised they
+  // became `500 internal_error` on every JSON route in the API.
+  it("keeps a framework HTTPException's status and re-clothes it as an ApiError", () => {
+    const mapped = toHttpError(
+      new HTTPException(400, { message: "Malformed JSON in request body" }),
+    );
+    expect(mapped.status).toBe(400);
+    expect(mapped.body).toEqual({
+      code: "bad_request",
+      message: "Malformed JSON in request body",
+      issues: [],
+    });
+    expect(ApiErrorSchema.safeParse(mapped.body).success).toBe(true);
+  });
+
+  it.each([
+    [401, "unauthorized"],
+    [403, "forbidden"],
+    [404, "not_found"],
+    [409, "conflict"],
+    [413, "bad_request"],
+    [422, "bad_request"],
+  ] as const)("maps an HTTPException %i to code %s", (status, code) => {
+    const mapped = toHttpError(new HTTPException(status, { message: "refused" }));
+    expect(mapped.status).toBe(status);
+    expect(mapped.body.code).toBe(code);
+    expect(ApiErrorSchema.safeParse(mapped.body).success).toBe(true);
+  });
+
+  it("still hides a 5xx HTTPException's message", () => {
+    const mapped = toHttpError(new HTTPException(503, { message: "token=hunter2 upstream down" }));
+    expect(mapped.status).toBe(500);
+    expect(mapped.body.message).toBe("internal error");
+    expect(JSON.stringify(mapped.body)).not.toContain("hunter2");
+  });
+
+  it("gives a message-less HTTPException something to say", () => {
+    expect(toHttpError(new HTTPException(400)).body.message).toBe("request refused");
   });
 });
 

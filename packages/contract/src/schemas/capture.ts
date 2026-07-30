@@ -13,7 +13,7 @@ import { warningsField } from "./warning.js";
  * document with its pending-agent indicator without a three-call round trip.
  */
 export const CaptureRequestSchema = z
-  .object({
+  .strictObject({
     text: z
       .string()
       .min(1)

@@ -8,7 +8,14 @@
 # (server.pid, server.log, jobs/, locks/, attachments/, seen.json, HALT).
 .corpus/*
 
-# ...except the queue directory skeleton. The server moves event files between
+# ...except the install manifest, which is none of those three. It records which
+# template files this workspace was installed with, and at which tool version —
+# provenance, not runtime state. Tracking it means a clone carries its own
+# upgrade baseline instead of `corpus workspace upgrade` having to guess which
+# files were edited and which are simply old.
+!.corpus/template-manifest.json
+
+# ...and except the queue directory skeleton. The server moves event files between
 # these five directories, so a clone of this workspace has to arrive with them
 # already present. The event JSON files themselves are runtime state and stay
 # ignored; each directory's .gitkeep is what git actually tracks.

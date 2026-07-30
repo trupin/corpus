@@ -58,6 +58,43 @@ describe("mergePendingTurns", () => {
     expect(merged.turns.some(isPendingTurn)).toBe(true);
   });
 
+  /**
+   * PR #10 finding 19. Two appends in flight: the server stamps the first with
+   * a time later than the second provisional's client-side stamp, so a plain
+   * "any confirmed turn at or after" test matched both and the second turn
+   * blinked out of the conversation until its own response landed.
+   */
+  describe("two appends in flight", () => {
+    const first = pending("2026-07-27T10:00:00Z", "One.");
+    const second = pending("2026-07-27T10:00:01Z", "Two.");
+
+    it("keeps the second one visible when only the first has been confirmed", () => {
+      const merged = mergePendingTurns(
+        thread([
+          { author: "agent", ts: "2026-07-27T09:00:00Z", body: "First." },
+          // The server's stamp for `first`, later than `second`'s client stamp.
+          { author: "user", ts: "2026-07-27T10:00:02Z", body: "One." },
+        ]),
+        [first, second],
+      );
+      const provisional = merged.turns.filter(isPendingTurn);
+      expect(provisional).toHaveLength(1);
+      expect(provisional[0]?.body).toBe("Two.");
+    });
+
+    it("drops both once both have been confirmed", () => {
+      const merged = mergePendingTurns(
+        thread([
+          { author: "user", ts: "2026-07-27T10:00:02Z", body: "One." },
+          { author: "user", ts: "2026-07-27T10:00:03Z", body: "Two." },
+        ]),
+        [first, second],
+      );
+      expect(merged.turns.some(isPendingTurn)).toBe(false);
+      expect(merged.turns).toHaveLength(2);
+    });
+  });
+
   it("returns the thread itself when there is nothing pending", () => {
     const original = thread([{ author: "agent", ts: "2026-07-27T09:00:00Z", body: "First." }]);
     expect(mergePendingTurns(original, [])).toBe(original);

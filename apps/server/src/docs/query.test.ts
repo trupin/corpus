@@ -590,6 +590,13 @@ describe("needs=form — what counts as an unanswered form", () => {
     seedThread("th_inline", "Answer the ```form``` I sent earlier.");
     // A real form in a thread the user has already resolved.
     seedThread("th_resolved", `Here you go.\n\n${FENCE}\n`, "resolved");
+    // SERVER-029 (PR #10 finding 8): the shapes the substring read and the
+    // answer route disagreed about. Each is now decided by the same reader the
+    // route uses, stored in `turns.has_form`.
+    seedThread("th_trailingblank", "Here you go.\n\n```form  \nprompt: Pick one\noptions: [a, b]\n```\n"); // prettier-ignore
+    seedThread("th_unterminated", "Here you go.\n\n```form\nprompt: Pick one\noptions: [a, b]\n");
+    seedThread("th_badyaml", "Here you go.\n\n```form\nprompt: [unclosed\n```\n");
+    seedThread("th_notaform", "Here you go.\n\n```form\ntitle: not a form\n```\n");
     // Every thread is marked read, so `form` is the only reason any of these
     // rows can carry and `needs=me` is exactly the form set.
     forms.seen(
@@ -603,6 +610,10 @@ describe("needs=form — what counts as an unanswered form", () => {
           "th_indented",
           "th_inline",
           "th_resolved",
+          "th_trailingblank",
+          "th_unterminated",
+          "th_badyaml",
+          "th_notaform",
         ].map((id) => [id, daysAgo(2)]),
       ),
     );
@@ -614,11 +625,28 @@ describe("needs=form — what counts as an unanswered form", () => {
   });
 
   it("flags a fence that opens a block, wherever the block starts and however the file ends its lines", () => {
-    expect(flagged("form")).toEqual(["th_crlf", "th_formatstart", "th_realform"]);
+    expect(flagged("form")).toEqual([
+      "th_crlf",
+      "th_formatstart",
+      "th_realform",
+      // The info string is the rest of its line, and trailing blanks are part of
+      // no info string — so this *is* a form fence, and was answerable all along
+      // while `needs=form` never mentioned it (SERVER-029).
+      "th_trailingblank",
+    ]);
   });
 
   it("does not flag a turn that merely mentions a fence", () => {
     for (const id of ["th_formula", "th_quoted", "th_indented", "th_inline"]) {
+      expect(flagged("form")).not.toContain(id);
+      expect(flagged("me")).not.toContain(id);
+    }
+  });
+
+  it("does not flag a fence nobody could answer (SERVER-029)", () => {
+    // Each of these sat in Attention with `POST …/form` 404ing it: an opening
+    // line is not a form, and the reason has to be one the user can clear.
+    for (const id of ["th_unterminated", "th_badyaml", "th_notaform"]) {
       expect(flagged("form")).not.toContain(id);
       expect(flagged("me")).not.toContain(id);
     }

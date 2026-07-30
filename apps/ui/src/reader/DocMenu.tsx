@@ -80,7 +80,33 @@ export function DocMenu({
 }: DocMenuProps): ReactElement {
   const docId = doc.frontmatter.id;
   const actions = useRowActions({ id: docId, title: doc.frontmatter.title }, { onNotify });
-  const setThreadStatus = useSetThreadStatus();
+  /*
+   * The notices ride on the hook, not on the call (UI-012).
+   *
+   * Every item here closes the menu, which unmounts this component before the
+   * request settles, and TanStack v5 skips a `mutate(…, { onSuccess })`
+   * callback once its observer has no listeners — so all three of Still
+   * current, Resolve and Archive committed their write and said nothing.
+   * `SettledCallbacks` are the mutation's own, and outlive the menu. The close
+   * stays immediate, because that is what returns focus to the ⋯ button that
+   * opened it.
+   */
+  const setThreadStatus = useSetThreadStatus({
+    onSuccess: (_result, variables) => {
+      onNotify({
+        tone: "info",
+        message: variables.resolved
+          ? "Thread resolved — committed. Replying reopens it."
+          : "Thread reopened — committed.",
+      });
+    },
+    onError: (error, variables) => {
+      onNotify({
+        tone: "error",
+        message: `${variables.resolved ? "Resolve" : "Reopen"} failed — ${error.message}`,
+      });
+    },
+  });
   const deleteDoc = useDeleteDoc();
   const [armed, setArmed] = useState(false);
   const pop = useRef<HTMLDivElement>(null);
@@ -116,25 +142,7 @@ export function DocMenu({
           meta="status flip, committed"
           disabled={setThreadStatus.isPending}
           onSelect={() => {
-            setThreadStatus.mutate(
-              { id: docId, resolved: !resolved },
-              {
-                onSuccess: () => {
-                  onNotify({
-                    tone: "info",
-                    message: resolved
-                      ? "Thread reopened — committed."
-                      : "Thread resolved — committed. Replying reopens it.",
-                  });
-                },
-                onError: (error) => {
-                  onNotify({
-                    tone: "error",
-                    message: `${resolved ? "Reopen" : "Resolve"} failed — ${error.message}`,
-                  });
-                },
-              },
-            );
+            setThreadStatus.mutate({ id: docId, resolved: !resolved });
             onClose();
           }}
         />

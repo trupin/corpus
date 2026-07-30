@@ -104,4 +104,84 @@ describe("answers", () => {
     ]);
     expect(answers.size).toBe(0);
   });
+
+  /**
+   * Two forms open at once (PR #10 finding 12). A single "current form" slot
+   * let the second evict the first, so the first could never be answered and an
+   * option both of them offer went to the wrong one.
+   */
+  describe("two unanswered forms", () => {
+    const form = (prompt: string, options: readonly string[]): string =>
+      ["```form", `prompt: ${prompt}`, "options:", ...options.map((o) => `  - ${o}`), "```"].join(
+        "\n",
+      );
+
+    const AMBIGUOUS = [
+      { author: "agent", ts: "1", body: form("First?", ["Yes", "No"]) },
+      { author: "agent", ts: "2", body: form("Second?", ["Yes", "Later"]) },
+      { author: "user", ts: "3", body: "**Answered:** Yes" },
+    ];
+
+    it("falls back to the earlier one when nothing knows better", () => {
+      const answers = mapFormAnswers(AMBIGUOUS);
+      expect(answers.get("1")).toBe("Yes");
+      expect(answers.has("2")).toBe(false);
+    });
+
+    /**
+     * The half the prose cannot supply. `POST …/turns/{ts}/form` addressed a
+     * form by its `ts`; the turn it wrote back names only the option. Observed
+     * in a browser: answering the *second* of two forms offering "Yes" marked
+     * the first one answered and left the second live.
+     */
+    it("credits the form the session actually answered, not the earlier one", () => {
+      const answers = mapFormAnswers(AMBIGUOUS, [{ formTs: "2", option: "Yes" }]);
+      expect(answers.get("2")).toBe("Yes");
+      expect(answers.has("1")).toBe(false);
+    });
+
+    it("leaves a known pairing's form alone when a later answer could also fit it", () => {
+      const answers = mapFormAnswers(
+        [...AMBIGUOUS, { author: "user", ts: "4", body: "**Answered:** No" }],
+        [{ formTs: "2", option: "Yes" }],
+      );
+      expect(answers.get("2")).toBe("Yes");
+      expect(answers.get("1")).toBe("No");
+    });
+
+    it("ignores a pairing for a form this thread does not carry", () => {
+      const answers = mapFormAnswers(AMBIGUOUS, [{ formTs: "999", option: "Yes" }]);
+      expect(answers.get("1")).toBe("Yes");
+    });
+
+    it("still answers the earlier one after the later one has been answered", () => {
+      const answers = mapFormAnswers([
+        { author: "agent", ts: "1", body: form("First?", ["Yes", "No"]) },
+        { author: "agent", ts: "2", body: form("Second?", ["Later"]) },
+        { author: "user", ts: "3", body: "**Answered:** Later" },
+        { author: "user", ts: "4", body: "**Answered:** No" },
+      ]);
+      expect(answers.get("2")).toBe("Later");
+      expect(answers.get("1")).toBe("No");
+    });
+
+    it("gives each of two answers to a different form", () => {
+      const answers = mapFormAnswers([
+        { author: "agent", ts: "1", body: form("First?", ["Yes", "No"]) },
+        { author: "agent", ts: "2", body: form("Second?", ["Yes", "No"]) },
+        { author: "user", ts: "3", body: "**Answered:** Yes" },
+        { author: "user", ts: "4", body: "**Answered:** No" },
+      ]);
+      expect(answers.get("1")).toBe("Yes");
+      expect(answers.get("2")).toBe("No");
+    });
+
+    it("keys every answer by the carrying turn's ts, never by the option's prose", () => {
+      const answers = mapFormAnswers([
+        { author: "agent", ts: "2026-07-28T10:00:00.000Z", body: form("Pick", ["Yes"]) },
+        { author: "user", ts: "2026-07-28T10:01:00.000Z", body: "**Answered:** Yes" },
+      ]);
+      expect([...answers.keys()]).toEqual(["2026-07-28T10:00:00.000Z"]);
+    });
+  });
 });

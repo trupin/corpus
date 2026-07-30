@@ -38,6 +38,7 @@ export {
   type DocsFilter,
   type FormAnswerInput,
   type JobsParams,
+  type PluginRequestInit,
   type RequestOptions,
   type UpdateDocChanges,
 } from "./client/createCorpusClient.js";
@@ -63,11 +64,13 @@ export {
   type JobLogView,
   type UseJobLogOptions,
 } from "./query/useJobLog.js";
+export { usePluginQuery } from "./query/usePluginQuery.js";
 export { useQueueStatus } from "./query/useQueueStatus.js";
 export { useLocks } from "./query/useLocks.js";
 export { useHealth } from "./query/useHealth.js";
 
 // The write path the board needs today.
+export type { SettledCallbacks } from "./query/settledCallbacks.js";
 export { provisionalBody, useAppendTurn, type AppendTurnVariables } from "./query/useAppendTurn.js";
 export { useDeleteTurn } from "./query/useDeleteTurn.js";
 export { useRespondToForm, type FormAnswerVariables } from "./query/useRespondToForm.js";

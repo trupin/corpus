@@ -357,6 +357,85 @@ describe("the server lifecycle, end to end", () => {
     await stopCommand.handler(context(a).ctx);
   }, 30_000);
 
+  it("keeps the pidfile when the port was re-pointed at another workspace, so the daemon stays stoppable", async () => {
+    // CLI-009: B's own daemon is alive on the port it was started with, and B's
+    // `port` has since been re-pointed at A's — a copied `.corpus/config.json`,
+    // an exported `CORPUS_PORT`. `stop` used to delete B's pidfile here, which
+    // left B's server running with nothing able to name it: every later `stop`
+    // answered "not running" while the daemon kept serving.
+    const a = await makeWorkspace("life-repoint-a");
+    const b = await makeWorkspace("life-repoint-b");
+    await runStart(context(a).ctx, stubEntry(a));
+    await runStart(context(b).ctx, stubEntry(b));
+    const record = readPidfile(serverPidfilePath(b.root));
+
+    const repointed = {
+      ...b,
+      workspace: { ...b.workspace, port: a.workspace.port, baseUrl: a.workspace.baseUrl },
+    };
+    const stop = context(repointed);
+    await stopCommand.handler(stop.ctx);
+
+    expect(stop.harness.stdout()).toContain("not stopped");
+    expect(stop.harness.stdout()).toContain("is held by another workspace's server");
+    expect(stop.harness.stdout()).toContain("pidfile was kept");
+    expect(existsSync(serverPidfilePath(b.root))).toBe(true);
+    expect(isProcessAlive(record?.pid ?? 0)).toBe(true);
+
+    // A was never signalled, and the surviving pidfile is enough to stop B once
+    // the config points back at the port it was started on.
+    const recovered = context(b);
+    await stopCommand.handler(recovered.ctx);
+    expect(recovered.harness.stdout()).toContain(`stopped (pid ${String(record?.pid ?? 0)})`);
+    expect(isProcessAlive(record?.pid ?? 0)).toBe(false);
+    expect(existsSync(serverPidfilePath(b.root))).toBe(false);
+
+    const statusA = context(a, { json: true });
+    await statusCommand.handler(statusA.ctx);
+    expect(JSON.parse(statusA.harness.stdout())).toMatchObject({ running: true, healthy: true });
+
+    await stopCommand.handler(context(a).ctx);
+  }, 30_000);
+
+  it("keeps the pidfile when the port was re-pointed at nothing at all", async () => {
+    // CLI-014, the `unowned` twin of the case above: the daemon is alive on the
+    // port it was started with, and `port` now names a free one, so the probe
+    // gets no answer at all. `stop` used to delete the pidfile here — the same
+    // stranded-daemon harm, reached by a shorter route.
+    const harness = await makeWorkspace("life-repoint-silent");
+    await runStart(context(harness).ctx, stubEntry(harness));
+    const record = readPidfile(serverPidfilePath(harness.root));
+    const started = harness.workspace.port;
+
+    const free = await ephemeralPort();
+    const repointed: Harness = {
+      ...harness,
+      workspace: {
+        ...harness.workspace,
+        port: free,
+        baseUrl: `http://127.0.0.1:${String(free)}`,
+      },
+    };
+    const stop = context(repointed);
+    await stopCommand.handler(stop.ctx);
+
+    expect(stop.harness.stdout()).toContain("not stopped");
+    expect(stop.harness.stdout()).toContain(`nothing answered on :${String(free)}`);
+    expect(stop.harness.stdout()).toContain("pidfile was kept");
+    expect(stop.harness.stdout()).toContain(
+      `Point \`port\` in .corpus/config.json back at ${String(started)}`,
+    );
+    expect(existsSync(serverPidfilePath(harness.root))).toBe(true);
+    expect(isProcessAlive(record?.pid ?? 0)).toBe(true);
+
+    // The kept pidfile is enough: following the message's own advice stops it.
+    const recovered = context(harness);
+    await stopCommand.handler(recovered.ctx);
+    expect(recovered.harness.stdout()).toContain(`stopped (pid ${String(record?.pid ?? 0)})`);
+    expect(isProcessAlive(record?.pid ?? 0)).toBe(false);
+    expect(existsSync(serverPidfilePath(harness.root))).toBe(false);
+  }, 30_000);
+
   it("refuses to start a second server for this workspace when no pidfile names the first", async () => {
     const harness = await makeWorkspace("life-orphan-daemon");
     await runStart(context(harness).ctx, stubEntry(harness));

@@ -13,7 +13,9 @@ export default defineConfig({
     include: [
       "apps/**/src/**/*.test.{ts,tsx}",
       "packages/**/src/**/*.test.{ts,tsx}",
-      "plugins/**/src/**/*.test.{ts,tsx}",
+      // Plugin layout puts source at the plugin root (SPEC.md §10), not under
+      // `src/` — mirror scripts/coverage-config.ts (sprint-012 Adjudication 10).
+      "plugins/**/*.test.{ts,tsx}",
       // Repo tooling lives outside the workspaces (CLAUDE.md → Repository
       // Structure) but is still tested by `npm test`.
       "scripts/**/*.test.ts",

@@ -122,6 +122,50 @@ describe("ColumnHead", () => {
     expect(props.onEditQuery).toHaveBeenCalledWith({ type: "thread", status: "resolved" });
   });
 
+  /**
+   * PR #10 finding 19. The rename branch has always declined a no-op; the query
+   * branch wrote unconditionally, so opening the field and clicking away
+   * rewrote the view document, bumped `updated` and left a commit in the log
+   * for an edit nobody made.
+   */
+  describe("an Edit-query field that changes nothing", () => {
+    function openQueryField(): HTMLElement {
+      fireEvent.click(screen.getByRole("button", { name: /List options/ }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /Edit query/ }));
+      return screen.getByLabelText("Edit query for Conversations");
+    }
+
+    it("writes nothing when the field is blurred untouched", () => {
+      const { props } = renderHead();
+      fireEvent.blur(openQueryField());
+      expect(props.onEditQuery).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing when the text is re-typed identically", () => {
+      const { props } = renderHead();
+      const field = openQueryField();
+      fireEvent.change(field, { target: { value: "type=thread&status=open" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(props.onEditQuery).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing when only the order of the filters changed", () => {
+      const { props } = renderHead();
+      const field = openQueryField();
+      fireEvent.change(field, { target: { value: "status=open&type=thread" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(props.onEditQuery).not.toHaveBeenCalled();
+    });
+
+    it("still writes when a filter is dropped", () => {
+      const { props } = renderHead();
+      const field = openQueryField();
+      fireEvent.change(field, { target: { value: "type=thread" } });
+      fireEvent.blur(field);
+      expect(props.onEditQuery).toHaveBeenCalledWith({ type: "thread" });
+    });
+  });
+
   it("unpins through the menu and closes it", () => {
     const { props } = renderHead();
     fireEvent.click(screen.getByRole("button", { name: /List options/ }));

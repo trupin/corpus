@@ -290,6 +290,75 @@ describe("§14 warnings", () => {
   });
 });
 
+/**
+ * `anchor-unused` is the one *error* whose answer a document subset cannot hold,
+ * so it is the one that must be unioned with the live corpus (sprint-013
+ * SERVER-019 FAIL-1). These pin the union's two directions: a claimant outside
+ * the submitted set proves the anchor used; a claimant *inside* it has already
+ * spoken through its own bytes and its row is ignored.
+ */
+describe("the anchorClaimants seam", () => {
+  const parentOnly = (): CheckDocument[] => [
+    doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY),
+  ];
+
+  it("accepts an anchor whose only thread lives outside the submitted set", () => {
+    const asked: [string, string][] = [];
+    const report = checkCorpus(parentOnly(), {
+      resolveAnchor: substringResolver,
+      anchorClaimants: (docId, anchorId) => {
+        asked.push([docId, anchorId]);
+        return ["th_x9y8"];
+      },
+    });
+    expect(report.errors).toEqual([]);
+    expect(report.warnings).toEqual([]);
+    expect(asked).toEqual([["doc_a1b2c3", "anc_k4f7"]]);
+  });
+
+  it("still reports an anchor no live thread claims", () => {
+    const report = checkCorpus(parentOnly(), {
+      resolveAnchor: substringResolver,
+      anchorClaimants: () => [],
+    });
+    expect(codes(report.errors)).toEqual([CHECK_CODES.anchorUnused]);
+  });
+
+  it("ignores a live claimant that is itself in the submitted set", () => {
+    // The staged shape of a genuine orphaning: the thread was passed in and no
+    // longer names the anchor, so the caller's stale row must not overrule it.
+    const wholeDocumentThread = { ...THREAD };
+    delete wholeDocumentThread["anchor"];
+    const report = checkCorpus(
+      [
+        doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY),
+        doc("data/threads/th_x9y8.md", wholeDocumentThread, THREAD_BODY),
+      ],
+      { resolveAnchor: substringResolver, anchorClaimants: () => ["th_x9y8"] },
+    );
+    expect(codes(report.errors)).toEqual([CHECK_CODES.anchorUnused]);
+  });
+
+  it("is never consulted for an anchor a submitted thread already claims", () => {
+    let asked = 0;
+    const report = checkCorpus(cleanCorpus(), {
+      resolveAnchor: substringResolver,
+      anchorClaimants: () => {
+        asked += 1;
+        return [];
+      },
+    });
+    expect(report.errors).toEqual([]);
+    expect(asked).toBe(0);
+  });
+
+  it("changes nothing when it is not supplied", () => {
+    expect(codes(checkCorpus(parentOnly(), { resolveAnchor: substringResolver }).errors)).toEqual([
+      CHECK_CODES.anchorUnused,
+    ]);
+  });
+});
+
 describe("resolver injection", () => {
   it("composes with a resolver that declares an optional hint parameter", () => {
     const withHint = (

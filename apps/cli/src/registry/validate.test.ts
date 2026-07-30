@@ -168,6 +168,38 @@ describe("collectRegistryProblems", () => {
     );
   });
 
+  it("rejects an argument declared after a variadic one", () => {
+    // A variadic absorbs every remaining token, so anything behind it could
+    // never be bound — a spec the parser cannot honour.
+    const problems = collectRegistryProblems(
+      registryOf([
+        command({
+          args: [
+            { name: "first", required: false, variadic: true, description: "First." },
+            { name: "second", required: false, description: "Second." },
+          ],
+        }),
+      ]),
+    );
+    expect(problems).toContain(
+      'corpus probe declares variadic argument "first" before another argument',
+    );
+  });
+
+  it("accepts a variadic argument in last position", () => {
+    const problems = collectRegistryProblems(
+      registryOf([
+        command({
+          args: [
+            { name: "first", required: true, description: "First." },
+            { name: "rest", required: false, variadic: true, description: "The remainder." },
+          ],
+        }),
+      ]),
+    );
+    expect(problems).toEqual([]);
+  });
+
   it("rejects duplicate, undocumented and non-kebab-case arguments", () => {
     const problems = collectRegistryProblems(
       registryOf([
