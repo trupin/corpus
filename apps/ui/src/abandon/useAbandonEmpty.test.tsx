@@ -2,7 +2,7 @@
 import type { CorpusClient } from "@corpus/kit";
 import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavEntry } from "../board/useBoardLocalState";
@@ -152,6 +152,69 @@ describe("leaving an empty document", () => {
       expect(screen.getByText("the list")).toBeTruthy();
     });
     expect(wire.of("DELETE")).toHaveLength(0);
+  });
+
+  /**
+   * UI-017 eval FAIL-1, as a test.
+   *
+   * The title field commits on `Enter` — and `Enter` is a keystroke nothing in
+   * the UI asks for. Before the fix, typing a title and leaving kept the
+   * document (the abandon rule read the uncommitted draft) **and** threw the
+   * title away, producing exactly the untitled empty document this issue
+   * exists to delete.
+   */
+  it("persists the title a user typed and left without pressing Enter", async () => {
+    const wire = wireFor([BLANK]);
+    render(<Host wire={wire} initial={[{ docId: "doc_blank", scrollY: 0 }]} />);
+    await opened("Untitled");
+
+    fireEvent.change(screen.getByLabelText("Document title"), {
+      target: { value: "Budget review 2027" },
+    });
+    press(BACK);
+
+    await waitFor(() => {
+      expect(wire.of("PUT", "/api/docs/doc_blank")).toHaveLength(1);
+    });
+    expect(wire.of("PUT", "/api/docs/doc_blank")[0]?.body).toEqual({
+      title: "Budget review 2027",
+    });
+    expect(wire.of("DELETE")).toHaveLength(0);
+  });
+
+  it("still removes a document whose typed title was erased again", async () => {
+    const wire = wireFor([BLANK]);
+    render(<Host wire={wire} initial={[{ docId: "doc_blank", scrollY: 0 }]} />);
+    await opened("Untitled");
+
+    const title = screen.getByLabelText("Document title");
+    fireEvent.change(title, { target: { value: "Budget review 2027" } });
+    fireEvent.change(title, { target: { value: "" } });
+    press(BACK);
+
+    await waitFor(() => {
+      expect(wire.of("DELETE", "/api/docs/doc_blank")).toHaveLength(1);
+    });
+    // Nothing was written on the way out: an erased title is not a change.
+    expect(wire.of("PUT", "/api/docs/doc_blank")).toHaveLength(0);
+  });
+
+  it("does not write an uncommitted title onto the document that took the reader", async () => {
+    const wire = wireFor([BLANK, RATES]);
+    render(<Host wire={wire} initial={[{ docId: "doc_blank", scrollY: 0 }]} />);
+    await opened("Untitled");
+
+    fireEvent.change(screen.getByLabelText("Document title"), {
+      target: { value: "Budget review 2027" },
+    });
+    press("open rates");
+    await opened("Rates");
+
+    await waitFor(() => {
+      expect(wire.of("PUT", "/api/docs/doc_blank")).toHaveLength(1);
+    });
+    expect(wire.of("PUT", "/api/docs/doc_rates")).toHaveLength(0);
+    expect(screen.getByLabelText("Document title")).toHaveProperty("value", "Rates");
   });
 
   it("keeps a document that has a body", async () => {

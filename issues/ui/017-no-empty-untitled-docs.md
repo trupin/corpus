@@ -191,6 +191,81 @@ race. No new exemption in `scripts/coverage-config.ts`.
 `apps/ui` only. `git diff SPEC.md` and `git diff packages/contract` are **empty** for this
 issue — neither was touched.
 
+### Evaluator fix round — FAIL-1 (TEST-419's title-only branch)
+
+**What was wrong.** The title input committed **only** on `Enter` or the Save button — it was
+never part of the save stream — while the emptiness predicate read the *uncommitted local*
+draft. So typing a title and leaving kept the document on the strength of a title that would
+never be written, and produced exactly the artifact this issue deletes: a document whose
+state on disk was `Untitled` plus the untouched template prefill. My original drill passed
+TEST-419 only because it scripted `press("Enter")`, a keystroke nothing in the UI asks for.
+
+**The fix, within the signed rule** — leaving with a typed title now persists **both** the
+document and the title:
+
+- `FrontmatterForm` gained an **exit flush** on the same seams the abandon registry watches:
+  the form's unmount and `pagehide`. Its notices moved from per-call to **hook-level**
+  callbacks (`SettledCallbacks`), because a save issued while the reader is unmounting has no
+  observer left and would otherwise commit in silence.
+- `DocView` now **keys the form by document id** (prefixed, so it does not collide with the
+  editor's key on the same parent), so a reader rebinding to another document flushes the
+  outgoing document's draft instead of leaking it onto the incoming one.
+- The flush **declines for an abandoned document**, exactly as autosave's does. The ordering
+  is load-bearing: the abandon decision is taken in the host's *layout*-effect teardown,
+  ahead of this passive one, so the blank case still deletes and no `PUT` chases the `DELETE`.
+- The predicate now judges **persisted-or-about-to-persist** state: the draft title is
+  published only when it can actually be written, and is withheld under a foreign lock, where
+  nothing the form holds can reach the corpus.
+
+**Regression tests that fail on the old behaviour.** Three in
+`apps/ui/src/abandon/useAbandonEmpty.test.tsx` (title typed and left → one `PUT {title}` and
+no `DELETE`; typed-then-erased → `DELETE` and no `PUT`; an uncommitted title never lands on
+the document that took the reader) — verified red by disabling only the unmount flush:
+
+```
+× persists the title a user typed and left without pressing Enter
+  → expected [] to have a length of 1 but got +0
+× does not write an uncommitted title onto the document that took the reader
+  → expected [] to have a length of 1 but got +0
+```
+
+and green with it. Two more in `apps/ui/e2e/abandon.spec.ts`, including the evaluator's A/B
+probe in one test.
+
+**Re-drilled in the real app** — fresh workspace
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s016-ui017fix-G5Dfie`, server `9188`, Vite
+`5290`, `CORPUS_SERVER_ORIGIN` exported before `npm run dev` and proved:
+
+```
+PROXY PROOF — /api/health through the Vite dev port 5290:
+  status   : ok
+  workspace: /Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s016-ui017fix-G5Dfie
+  8765: nothing bound, never proxied into
+```
+
+The evaluator's A/B probe and every blur gesture it listed, plus the symmetric cases:
+
+```
+  OK A) title + Enter             200  title='Via Enter'
+  OK B) title, then leave         200  title='Via leaving'
+  OK C) blur via Tab              200  title='Blur via Tab'
+  OK D) blur via column header    200  title='Blur via column header'
+  OK E) blur via clicking body    200  title='Blur via body'
+  OK F) typed + Escape (revert)   404  (gone)
+  OK G) typed then erased         404  (gone)
+  OK H) untouched                 404  (gone)
+  OK I) typed + tab close         200  title='Typed then tab closed'
+```
+
+`git log --format='%an %s'` shows a `doc edit` carrying each surviving title and a
+`doc delete` for each of F/G/H; `corpus lock list` → "no locks held."; `corpus db doctor` →
+"projection is clean — 14 documents from 14 files". Not one `Untitled` template-prefill
+document was left behind.
+
+**Verification**: `vitest run apps/ui/src` → **98 files, 1449 tests, all passing**; scoped
+Playwright (`abandon.spec.ts reader.spec.ts`, `--workers=1`, own port, `CORPUS_SERVER_ORIGIN`
+pinned) → **12 passed**; lint, format and typecheck green. `apps/ui` only.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

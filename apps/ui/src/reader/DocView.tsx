@@ -160,6 +160,15 @@ export function DocView({
         {...(PluginView === null ? {} : { "data-plugin-surface": "" })}
       >
         <FrontmatterForm
+          /*
+           * Keyed by document id, exactly as `DocEditor` is: a navigation is a
+           * remount, which is what flushes the outgoing document's unsaved
+           * frontmatter before the form rebinds — and what stops an uncommitted
+           * title leaking onto the document that took its place. The prefix keeps
+           * it distinct from the editor's key: they are siblings, and React
+           * requires sibling keys to differ.
+           */
+          key={`frontmatter:${doc.frontmatter.id}`}
           doc={doc}
           selectTitle={selectTitle}
           locked={lock !== null}

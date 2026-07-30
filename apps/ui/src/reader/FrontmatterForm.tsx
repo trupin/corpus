@@ -1,7 +1,7 @@
 import { DOC_STATUSES, type Doc, type DocStatus, type UpdateDocRequest } from "@corpus/contract";
 import { folderOf, useUpdateDoc, type RowNotice } from "@corpus/kit";
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { publishTitleDraft } from "../abandon/registry";
+import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 
 /**
  * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
@@ -18,6 +18,15 @@ import { publishTitleDraft } from "../abandon/registry";
  * The body is **not** here. UI-006 brings the always-editable document with its
  * own autosave; this form deliberately stops at frontmatter so there is one
  * writer per concern.
+ *
+ * **The draft outlives no surface.** Enter and Save are not the only ways a
+ * frontmatter edit reaches the corpus: leaving the document flushes it, on the
+ * same seams the abandon rule (SPEC.md §11) watches — the reader unmounting or
+ * rebinding, and `pagehide`. Without that, a user who typed a title and left
+ * (which is the gesture §11 describes as primary — "title selected, ready to
+ * type") lost it silently, *and* left behind exactly the untitled empty
+ * document UI-017 exists to delete: the abandon rule was keeping the document
+ * on the strength of a title that would never be written (UI-017 eval FAIL-1).
  */
 
 export interface FrontmatterFormProps {
@@ -91,7 +100,24 @@ export function FrontmatterForm({
   banner,
 }: FrontmatterFormProps): ReactElement {
   const docId = doc.frontmatter.id;
-  const update = useUpdateDoc(docId);
+  /*
+   * The callbacks ride on the **hook**, not on the call (the `SettledCallbacks`
+   * seam UI-012 added). A save issued while the reader is unmounting has no
+   * observer left to receive a per-call `onSuccess`, so it would commit the
+   * write in silence — and the exit flush below is exactly that save.
+   */
+  const update = useUpdateDoc(docId, {
+    onSuccess: (_response, saved) => {
+      setDraft(null);
+      onNotify({
+        tone: "info",
+        message: `Saved — ${Object.keys(saved).join(", ")} updated and committed.`,
+      });
+    },
+    onError: (error) => {
+      onNotify({ tone: "error", message: `Save failed — ${error.message}` });
+    },
+  });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState(false);
   const field = useRef<HTMLInputElement>(null);
@@ -103,16 +129,18 @@ export function FrontmatterForm({
   const isDirty = Object.keys(changes).length > 0;
 
   /**
-   * A title the user has typed but not yet committed still counts as a title
-   * for the abandon rule (SPEC.md §11).
+   * The title the abandon rule should judge: the one that is about to be
+   * written, not the one on disk.
    *
-   * The safe branch: a document nobody typed into is removed, and a document
-   * somebody typed a name into is kept, even when the name itself is lost to
-   * the existing "Enter or Save commits it" behaviour of this field.
+   * It is safe to publish an *uncommitted* draft here only because the exit
+   * flush below guarantees it is committed on every route the abandon rule
+   * treats as an exit — otherwise this would keep a document alive on a value
+   * that gets dropped. Under a foreign lock nothing here can be written at all,
+   * so the draft is withheld and the corpus's own title decides.
    */
   useEffect(() => {
-    publishTitleDraft(docId, draft === null ? null : draft.title);
-  }, [docId, draft]);
+    publishTitleDraft(docId, draft === null || locked ? null : draft.title);
+  }, [docId, draft, locked]);
 
   useEffect(() => {
     if (!selectTitle || selected.current) return;
@@ -125,19 +153,53 @@ export function FrontmatterForm({
 
   const save = (): void => {
     if (!isDirty || locked) return;
-    update.mutate(changes, {
-      onSuccess: () => {
-        setDraft(null);
-        onNotify({
-          tone: "info",
-          message: `Saved — ${Object.keys(changes).join(", ")} updated and committed.`,
-        });
-      },
-      onError: (error) => {
-        onNotify({ tone: "error", message: `Save failed — ${error.message}` });
-      },
-    });
+    update.mutate(changes);
   };
+
+  /*
+   * What the flush needs, read at flush time rather than closed over: the
+   * effect below is registered once, and a handler holding the first render's
+   * draft would write an empty title over a typed one.
+   */
+  const pending = useRef({ doc, draft, locked });
+  pending.current = { doc, draft, locked };
+  const mutate = useRef(update.mutate);
+  mutate.current = update.mutate;
+
+  /**
+   * Send the draft now — the document is being left.
+   *
+   * It declines for an **abandoned** document for the same reason autosave
+   * does: the emptiness that decided the removal is what this would be writing,
+   * and it would be a `PUT` racing the `DELETE` behind it. The ordering is
+   * load-bearing and not incidental — the abandon decision is taken in the
+   * host's *layout*-effect teardown, which runs ahead of this passive one.
+   */
+  const flush = useCallback((): void => {
+    const { doc: outgoing, draft: unsaved, locked: frozen } = pending.current;
+    if (unsaved === null || frozen) return;
+    const id = outgoing.frontmatter.id;
+    if (isAbandoned(id)) return;
+    const changed = changedFields(outgoing, unsaved);
+    if (Object.keys(changed).length === 0) return;
+    mutate.current(changed);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+    };
+  }, [flush]);
+
+  // Unmount, and — because `DocView` keys this form by document id — a reader
+  // rebinding to another document. Both are "the user left"; both must save.
+  useEffect(
+    () => () => {
+      flush();
+    },
+    [flush],
+  );
 
   const patch = (change: Partial<Draft>): void => {
     setDraft({ ...value, ...change });
