@@ -2,6 +2,7 @@ import {
   CreateDocRequestSchema,
   UpdateDocRequestSchema,
   type CreateDocRequest,
+  type Doc,
   type QueryKey,
   type QueryKeySegment,
   type UpdateDocRequest,
@@ -14,6 +15,7 @@ import {
   queryDocs,
   toWireDoc,
   updateDocument,
+  updateDocumentLocked,
   type DocsWorkspace,
   type DocumentMutex,
 } from "../docs/index.js";
@@ -85,6 +87,13 @@ function parseWith<Output>(schema: z.ZodType<Output>, value: unknown, what: stri
 export function createPluginContext(deps: PluginContextDeps): PluginServerContext {
   const { plugin, workspace, mutex, logger, now } = deps;
 
+  /** The document as `getDoc` would return it — the shape the callback is handed. */
+  const readDoc = (id: string): Doc =>
+    toWireDoc(
+      workspace.projection,
+      loadDocument(workspace.workspaceRoot, workspace.projection, id),
+    );
+
   const namespaced = (parts: readonly QueryKeySegment[]): QueryKey => {
     const first = parts[0];
     if (first === undefined) {
@@ -104,11 +113,7 @@ export function createPluginContext(deps: PluginContextDeps): PluginServerContex
     logger,
     now,
     listDocs: (query) => queryDocs(workspace.projection, query, now()),
-    getDoc: (id) =>
-      toWireDoc(
-        workspace.projection,
-        loadDocument(workspace.workspaceRoot, workspace.projection, id),
-      ),
+    getDoc: readDoc,
     createDoc: async (actor, input) => {
       const parsed: CreateDocRequest = parseWith(
         CreateDocRequestSchema,
@@ -127,6 +132,35 @@ export function createPluginContext(deps: PluginContextDeps): PluginServerContex
       const { doc } = await updateDocument(workspace, mutex, actor, id, parsed);
       return doc;
     },
+    // The whole read → recompute → write, in one pass of the lane
+    // `updateDoc` takes for this document (CONTRACT-019, SERVER-034). Nothing
+    // here is a second write path: `updateDocumentLocked` *is* `updateDoc`'s
+    // body, minus the `mutex.run` that would deadlock on a lane already held —
+    // so the lock guard, the validation, the anchor reconciliation, the commit,
+    // the re-projection and the core invalidation are the same code, reached
+    // the same way.
+    mutateDoc: async (actor, id, mutate) =>
+      mutex.run(id, async () => {
+        // Read inside the lane, so the callback sees the document as it stands
+        // now rather than as it stood when the request queued. A document
+        // deleted while this waited raises the same not-found `getDoc` raises.
+        const before = readDoc(id);
+        // A throw here propagates unwrapped — nothing has been written, and the
+        // plugin's own error type reaches its own handler's status mapping.
+        // `parseWith` refuses a bad patch exactly as `updateDoc` refuses one:
+        // the callback's return value is no more trusted than a request body.
+        const parsed: UpdateDocRequest = parseWith(
+          UpdateDocRequestSchema,
+          mutate(before),
+          "plugin doc mutate",
+        );
+        // The lock guard lives in here, after the callback: the refusal is part
+        // of the write, which is why the contract requires the callback to be a
+        // pure recompute. The re-read it does is the same document this lane
+        // just handed the callback — the lane is what makes that true.
+        const { doc } = await updateDocumentLocked(workspace, actor, id, parsed);
+        return doc;
+      }),
     broadcastInvalidate: (keys) => {
       if (keys.length === 0) return;
       workspace.bus.invalidate(keys.map(namespaced));

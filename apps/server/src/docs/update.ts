@@ -212,96 +212,114 @@ export async function updateDocument(
   id: string,
   patch: UpdateDocRequest,
 ): Promise<UpdateOutcome> {
-  return mutex.run(id, async () => {
-    // §7's edit lock, checked **inside** the lane: a write queued behind another
-    // operation on the same document can wait arbitrarily long, and a lease the
-    // other party acquires in that interval has to refuse it (SERVER-022
-    // finding 7). Still exactly one call per verb, and still before this verb
-    // reads or writes anything.
-    await (workspace.assertWritable ?? (() => undefined))(id, actor);
+  return mutex.run(id, () => updateDocumentLocked(workspace, actor, id, patch));
+}
 
-    const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
-    const { parsed } = loaded;
+/**
+ * The save itself, with the caller already holding the document's lane.
+ *
+ * Split out for the same reason `deleteDocumentLocked` is: a caller that has to
+ * do something *else* inside the lane — the plugin context's atomic
+ * read-modify-write, whose callback must see the document this save is about to
+ * overwrite (CONTRACT-019, SERVER-034) — cannot re-enter a mutex it is already
+ * holding without deadlocking it. Everything the verb does, including the lock
+ * guard, lives here, so no caller can reach the write pipeline having skipped a
+ * step.
+ */
+export async function updateDocumentLocked(
+  workspace: DocsWorkspace,
+  actor: Actor,
+  id: string,
+  patch: UpdateDocRequest,
+): Promise<UpdateOutcome> {
+  // §7's edit lock, checked **inside** the lane: a write queued behind another
+  // operation on the same document can wait arbitrarily long, and a lease the
+  // other party acquires in that interval has to refuse it (SERVER-022
+  // finding 7). Still exactly one call per verb, and still before this verb
+  // reads or writes anything.
+  await (workspace.assertWritable ?? (() => undefined))(id, actor);
 
-    const nextBody = patch.body ?? parsed.body;
-    const bodyChanged = nextBody !== parsed.body;
-    const fields = changedFields(parsed.data, patch);
+  const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
+  const { parsed } = loaded;
 
-    // §6 step by step: resolve against `oldBody`, map through the diff, write
-    // the result back. The engine owns every judgment; this call site owns only
-    // the inputs and the persistence.
-    const anchorsBefore = readAnchorsMap(parsed.data["anchors"]);
-    const reconciled =
-      bodyChanged && Object.keys(anchorsBefore).length > 0
-        ? reconcileAnchors(parsed.body, nextBody, anchorsBefore)
-        : null;
-    const report: AnchorReconciliation = {
-      remapped: reconciled?.report.remapped ?? [],
-      orphaned: reconciled?.report.orphaned ?? [],
-    };
+  const nextBody = patch.body ?? parsed.body;
+  const bodyChanged = nextBody !== parsed.body;
+  const fields = changedFields(parsed.data, patch);
 
-    // SPEC.md §5: marking a document "still current" is a committed act that is
-    // deliberately *not* an edit — staleness runs from `max(updated, reviewed)`,
-    // so stamping `updated` here would make review indistinguishable from
-    // editing and reset the very clock the act is about.
-    const stampUpdated = bodyChanged || Object.keys(fields).some((key) => key !== "reviewed");
+  // §6 step by step: resolve against `oldBody`, map through the diff, write
+  // the result back. The engine owns every judgment; this call site owns only
+  // the inputs and the persistence.
+  const anchorsBefore = readAnchorsMap(parsed.data["anchors"]);
+  const reconciled =
+    bodyChanged && Object.keys(anchorsBefore).length > 0
+      ? reconcileAnchors(parsed.body, nextBody, anchorsBefore)
+      : null;
+  const report: AnchorReconciliation = {
+    remapped: reconciled?.report.remapped ?? [],
+    orphaned: reconciled?.report.orphaned ?? [],
+  };
 
-    const nextParsed = setFrontmatterFields(setBody(parsed, nextBody), {
-      ...fields,
-      ...(reconciled === null ? {} : { anchors: reconciled.anchors }),
-      ...(stampUpdated ? { updated: formatInstant(workspace.now()) } : {}),
-    });
-    // Before anything is written, and only when the patch can move `extra` at
-    // all — the autosave path carries no `extra` and must not pay for the walk.
-    if (patch.extra !== undefined) assertExtraWithinBound(parsed.data, nextParsed.data);
+  // SPEC.md §5: marking a document "still current" is a committed act that is
+  // deliberately *not* an edit — staleness runs from `max(updated, reviewed)`,
+  // so stamping `updated` here would make review indistinguishable from
+  // editing and reset the very clock the act is about.
+  const stampUpdated = bodyChanged || Object.keys(fields).some((key) => key !== "reviewed");
 
-    const text = serializeDocument(nextParsed);
-
-    // Autosave fires on a timer, so most saves change nothing. A no-op that
-    // wrote, committed, re-projected and broadcast would put one commit per
-    // idle minute into the audit trail.
-    if (text === loaded.text) {
-      return {
-        doc: toWireDoc(workspace.projection, loaded),
-        anchors: report,
-        result: { changed: false, warnings: [], commit: null },
-      };
-    }
-
-    const warnings = validateBeforeWrite(workspace, loaded.path, text);
-
-    const result = await runMutation(workspace, {
-      docId: id,
-      actor,
-      warnings,
-      plan: {
-        operations: [{ kind: "write", path: loaded.path, content: text }],
-        stage: [loaded.path],
-        project: [loaded.path],
-        unproject: [],
-        commit: {
-          subject: `doc edit: ${titleOf(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
-          anchors: report,
-        },
-        keys: [DOCS_KEY, docKey(id)],
-        // `PUT` may set `status: archived`, and archived documents are counted
-        // in no folder — so an edit that carries a status is exactly as
-        // tree-changing as `POST /archive` (SERVER-018). Every other field the
-        // route can write is invisible to `docs/tree.ts`, and a body edit is
-        // the autosave path, which must not pay for a tree query.
-        mayChangeTree: "status" in fields,
-      },
-    });
-
-    return {
-      doc: toWireDoc(
-        workspace.projection,
-        loadDocument(workspace.workspaceRoot, workspace.projection, id),
-      ),
-      anchors: report,
-      result,
-    };
+  const nextParsed = setFrontmatterFields(setBody(parsed, nextBody), {
+    ...fields,
+    ...(reconciled === null ? {} : { anchors: reconciled.anchors }),
+    ...(stampUpdated ? { updated: formatInstant(workspace.now()) } : {}),
   });
+  // Before anything is written, and only when the patch can move `extra` at
+  // all — the autosave path carries no `extra` and must not pay for the walk.
+  if (patch.extra !== undefined) assertExtraWithinBound(parsed.data, nextParsed.data);
+
+  const text = serializeDocument(nextParsed);
+
+  // Autosave fires on a timer, so most saves change nothing. A no-op that
+  // wrote, committed, re-projected and broadcast would put one commit per
+  // idle minute into the audit trail.
+  if (text === loaded.text) {
+    return {
+      doc: toWireDoc(workspace.projection, loaded),
+      anchors: report,
+      result: { changed: false, warnings: [], commit: null },
+    };
+  }
+
+  const warnings = validateBeforeWrite(workspace, loaded.path, text);
+
+  const result = await runMutation(workspace, {
+    docId: id,
+    actor,
+    warnings,
+    plan: {
+      operations: [{ kind: "write", path: loaded.path, content: text }],
+      stage: [loaded.path],
+      project: [loaded.path],
+      unproject: [],
+      commit: {
+        subject: `doc edit: ${titleOf(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
+        anchors: report,
+      },
+      keys: [DOCS_KEY, docKey(id)],
+      // `PUT` may set `status: archived`, and archived documents are counted
+      // in no folder — so an edit that carries a status is exactly as
+      // tree-changing as `POST /archive` (SERVER-018). Every other field the
+      // route can write is invisible to `docs/tree.ts`, and a body edit is
+      // the autosave path, which must not pay for a tree query.
+      mayChangeTree: "status" in fields,
+    },
+  });
+
+  return {
+    doc: toWireDoc(
+      workspace.projection,
+      loadDocument(workspace.workspaceRoot, workspace.projection, id),
+    ),
+    anchors: report,
+    result,
+  };
 }
 
 const titleOf = (data: Readonly<Record<string, unknown>>, fallback: string): string =>

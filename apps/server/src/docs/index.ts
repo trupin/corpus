@@ -32,7 +32,7 @@ export {
 export type { DocumentRow, LoadedDocument } from "./read.js";
 export { findTemplate } from "./templates.js";
 export type { TemplatePrefill } from "./templates.js";
-export { changedFields, updateDocument } from "./update.js";
+export { changedFields, updateDocument, updateDocumentLocked } from "./update.js";
 export { mountDocWriteRoutes, reportWarnings, serializeWarnings } from "./write-routes.js";
 export {
   CREATE_LANE,

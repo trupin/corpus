@@ -4,7 +4,7 @@
 server
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -65,7 +65,83 @@ Scoped runs only (`npm test -w apps/server`, VITEST_MAX_THREADS=4).
 2. Exercise via the todos plugin once PLUGINS-004 lands (joint E2E there); for this issue, verify existing plugin routes still work end-to-end and the new method is reachable from a plugin context
 
 ## E2E Verification Log
-_Filled in by the implementing agent as proof-of-work._
+
+**Implemented on: opus** (server-dev, 2026-07-29).
+
+### What changed
+- `apps/server/src/docs/update.ts` — `updateDocument` split into the lane-taking
+  wrapper and `updateDocumentLocked`, which holds the *entire* verb (edit-lock
+  guard included) and assumes the caller already owns the lane. Same precedent
+  and same reason as `deleteDocumentLocked`. Exported through `docs/index.ts`.
+- `apps/server/src/plugins/context.ts` — `mutateDoc(actor, id, mutate)`:
+  `mutex.run(id, …)` → read (`getDoc`'s own reader, extracted as `readDoc`) →
+  `mutate(doc)` → `parseWith(UpdateDocRequestSchema, …)` → `updateDocumentLocked`.
+  One lane, no second write path, no re-entrancy.
+- `apps/server/src/plugins/mutate.test.ts` — new, 14 tests.
+
+### E2E, real server, real workspace
+Scratch workspace `~/.claude/jobs/4dd0ddef/tmp/s035-repro` (`corpus init`, git
+repo, port 9180), server started with `corpus server start` from source. The new
+seam was exercised from a genuine plugin loaded through discovery — a scratch
+plugin at `CORPUS_PLUGINS_DIR=~/.claude/jobs/4dd0ddef/tmp/s034-plugins/atomic`
+(the repo's `plugins/` was not touched); log confirms
+`plugin routes mounted plugin=atomic prefix=/api/x/atomic`.
+
+1. **The defect, still live on the unconverted path.** The todos plugin
+   (`getDoc` + `updateDoc`) with three concurrent `POST /api/x/todos/<doc>/items`:
+   all three answered `201`, the file holds **two** items
+   (`{"open":2,"done":0,"items":[{"text":"item 1"…},{"text":"item 3"…}]}`).
+   Item 2 was silently reverted after its own `201`. This is finding 2 verbatim
+   and is what PLUGINS-004 will close by adopting the new seam.
+2. **The seam.** Eight concurrent `POST /api/x/atomic/<doc>/bump`, each a
+   `mutateDoc` doing `counter + 1`: `200 200 200 200 200 200 200 200`, and the
+   file on disk holds `counter: 8`. Nothing lost.
+3. **Abort on throw.** `POST /api/x/atomic/<doc>/boom` (callback throws):
+   the plugin's handler received the error *unwrapped* — its own translator
+   reported `{"code":"plugin_error","message":"the plugin changed its mind"}` —
+   and `sha256(file)` plus `HEAD` were byte-identical before and after. The next
+   bump succeeded (`counter: 9`), so the lane was released.
+4. **Edit-lock parity.** With `agent` holding the lease, the same bump answered
+   `423` with the core `LockedError` body
+   (`"doc_5riai2gm is being edited by agent; the lock was acquired at …"`), file
+   unchanged at `counter: 9`. A missing document answered `404 not_found`.
+   (The plugin must translate the throw itself — Hono's `app.route()` gives a
+   mounted sub-app its own error handler; `plugins/todos/server/errors.ts`
+   already does exactly this, which is why the contract says the error arrives
+   unwrapped.)
+5. **SSE.** One bump produced two frames on `/events`:
+   `{"keys":[["docs"],["docs","doc_5riai2gm"]]}` from the core write path, then
+   `{"keys":[["x","atomic","counters","doc_5riai2gm"]]}` from the plugin's own
+   `broadcastInvalidate` — core keys still the core path's, plugin keys still the
+   plugin's.
+6. **No regression to existing plugin routes.** `GET /api/x/todos/lists`,
+   `POST /api/x/todos/<doc>/items`, `GET /api/x/todos/lists/<doc>` all behaved as
+   before (200/201, projection updated, commits authored). `corpus db doctor`:
+   `projection is clean — 12 documents from 12 files (2ms)`.
+
+Server stopped by pid; ports 9180–9199 free; `corpus/.corpus` does not exist.
+
+### Tests
+`apps/server/src/plugins/mutate.test.ts` — 14 tests, all passing. Proven to be
+real regression tests: with `mutateDoc` temporarily reimplemented as the naive
+`getDoc` → `updateDoc` pair, **3 fail** (the lost-update test, the
+core-write-serialization test, and the lane test) and the rest still pass; the
+fix restores all 14. Full `apps/server` suite: **121 files, 2385 tests, all
+passing**. `tsc --noEmit` in `apps/server`: clean. ESLint over `apps/server/src`:
+clean. Prettier: clean.
+
+### Decisions taken that the issue left open
+- **Where the split goes.** `updateDocumentLocked` carries the lock guard rather
+  than leaving it to callers, so `mutateDoc` cannot reach the write pipeline
+  having skipped it — and the guard lands *after* the callback, which is what
+  the contract's "the callback may already have run" clause requires.
+- **The read is `getDoc`'s own reader**, not a private one, so "the callback sees
+  the document `getDoc` would return" is true by construction. `updateDocumentLocked`
+  loads the document a second time inside the same lane; that re-read is free of
+  races by definition and keeps the save path byte-identical to `PUT`'s.
+- **Non-re-entrancy is documented, not enforced.** The contract states it; a
+  runtime guard would cost every call to catch a mistake the type system already
+  makes awkward (a synchronous callback can only float a write's promise).
 
 ## Completion Checklist (domain agent)
 - [ ] Tests written and passing
