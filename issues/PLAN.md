@@ -159,17 +159,30 @@ The board, editor, threads, console. design/index.html is authoritative for look
 
 ---
 
-## Phase 5 — Candidates (user follow-ups 2026-07-29, not yet sprint-planned)
+## Phase 5 — Follow-ups: delegation, UX polish, debt (branch `phase-5-followups`)
 
-All four feature issues need a spec-writer pass (user-signed-off SPEC.md amendment) before implementation.
+Phase 4 landed 2026-07-29 (PR #11, squash `1ab882f`). This phase combines the user's
+2026-07-29 feature requests (spec pass first), the ready backlog, and the PR #11 review
+follow-ups. SHARED-004 is the spec-writer pass — it gates the four feature issues and
+carries the §12 + §2.1 wording reconciliation held over from the PR.
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | AGENT-002 |
-| UI-017 | Never leave an empty untitled document behind | todo | P1 | UI-005, UI-006 |
-| UI-018 | Right-click context menu for actions on the selected item | todo | P2 | UI-004, UI-012 |
-| UI-019 | Wider views: user-adjustable view/column width | todo | P2 | UI-003 |
+| SHARED-004 | Spec pass: delegation, doc-abandon, context menu, view width, §12/§2.1 reconciliation | todo | P0 | — |
+| CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
+| CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-003 |
+| SERVER-030 | Queue defer/requeue transition for lock-deferred work | todo | P2 | SERVER-008, SERVER-009, AGENT-002 |
+| PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P1 | UI-014 |
+| AGENT-005 | Orchestrate skill: delegate jobs to subagents by default | todo | P1 | SHARED-004, AGENT-002 |
+| UI-017 | Never leave an empty untitled document behind | todo | P1 | SHARED-004, UI-005, UI-006 |
+| UI-018 | Right-click context menu for actions on the selected item | todo | P2 | SHARED-004, UI-004, UI-012 |
+| UI-019 | Wider views: user-adjustable view/column width | todo | P2 | SHARED-004, UI-003 |
+| CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002 |
+| UI-015 | Remaining teardown callbacks | todo | P2 | UI-012 |
+| SERVER-032 | needs=form drops threads with a second answerable form | todo | P2 | SERVER-029 |
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
+
+Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
 ---
 
