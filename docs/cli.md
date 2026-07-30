@@ -24,6 +24,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus doc create`](#corpus-doc-create)
   - [`corpus doc delete`](#corpus-doc-delete)
   - [`corpus doc edit`](#corpus-doc-edit)
+  - [`corpus doc list`](#corpus-doc-list)
   - [`corpus doc move`](#corpus-doc-move)
   - [`corpus doc show`](#corpus-doc-show)
 - [`corpus job`](#corpus-job)
@@ -53,6 +54,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus server status`](#corpus-server-status)
   - [`corpus server stop`](#corpus-server-stop)
 - [`corpus skill`](#corpus-skill)
+  - [`corpus skill create`](#corpus-skill-create)
   - [`corpus skill rollback`](#corpus-skill-rollback)
 - [`corpus thread`](#corpus-thread)
   - [`corpus thread reopen`](#corpus-thread-reopen)
@@ -131,7 +133,7 @@ corpus health --workspace ~/notes --timeout 1000
 
 Create a Corpus workspace here (document tree, config, git repository, agent skills).
 
-Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. Refuses to touch a directory that already holds a workspace — there is no `--force`.
+Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the current directory — in that order, so a positional always wins and naming two targets warns rather than picking one quietly. Refuses a directory that already holds a workspace, which `--force` never overrides. Refuses **before writing anything** a directory that holds unrelated content — existing files, a git repository or worktree, or any directory inside one — naming what it found; `--force` proceeds there and reports what it overwrote. Refusing first is the whole safety property: the template replaces same-named files such as `README.md` and `.gitignore`, and nothing can put them back.
 
 ```
 corpus init [path] [flags]
@@ -141,15 +143,16 @@ Runs outside a workspace; it does not contact the server.
 
 **Arguments**
 
-| Argument | Required | Description                                                                     |
-| -------- | -------- | ------------------------------------------------------------------------------- |
-| `path`   | no       | Directory to initialize, created if missing. Defaults to the current directory. |
+| Argument | Required | Description                                                                                                                                 |
+| -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`   | no       | Directory to initialize, created if missing. Wins over `--workspace` and `CORPUS_WORKSPACE`; with none of the three, the current directory. |
 
 **Flags**
 
-| Flag         | Type   | Default | Description                                                                                                                                       |
-| ------------ | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--port <n>` | number | —       | Port this workspace's server binds. Defaults to the first free port at or above 8765; a port already in use is an error, never silently replaced. |
+| Flag         | Type    | Default | Description                                                                                                                                                                                                                                                                                                     |
+| ------------ | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port <n>` | number  | —       | Port this workspace's server binds. Defaults to the first free port at or above 8765; a port already in use is an error, never silently replaced.                                                                                                                                                               |
+| `--force`    | boolean | `false` | Initialize into a directory that already holds unrelated content — existing files, a git repository or worktree, or a directory inside one. Same-named template files are overwritten and cannot be restored, so what was clobbered is reported. It never overrides the refusal to touch an existing workspace. |
 
 **Examples**
 
@@ -165,10 +168,22 @@ Create a workspace at ~/notes.
 corpus init ~/notes
 ```
 
+Same target, named by the global flag instead of a positional — for scripts that already carry one.
+
+```
+corpus init --workspace ~/notes
+```
+
 Pin the port instead of probing upward from 8765.
 
 ```
 corpus init ~/notes --port 8790
+```
+
+Initialize over a directory that already holds files or a git repository, overwriting same-named template files.
+
+```
+corpus init ~/project --force
 ```
 
 Machine-readable form. The bearer token is never printed.
@@ -239,9 +254,9 @@ corpus db rebuild --json
 
 ## `corpus doc`
 
-Read, check, create, edit, move, archive and delete documents.
+List, read, check, create, edit, move, archive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
+The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete**. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
 
 ### `corpus doc archive`
 
@@ -461,6 +476,72 @@ One JSON value carrying `doc`, `anchors.remapped`, `anchors.orphaned` and `warni
 
 ```
 corpus doc edit doc_a1b2c3 --file revised.md --json
+```
+
+### `corpus doc list`
+
+Query the document collection: what is in the corpus, and what needs attention.
+
+Reads `GET /api/docs`, the single collection query behind every list (SPEC.md §9.2) — the same one the board's columns and the search overlay compose. Values OR within a comma-separated flag and AND across flags, so `--type note,view --tag finance` reads "notes or views tagged finance". Threads are documents too: `--type thread` lists them, and the thread-only filters (`--parent`, `--agent`, `--author`, `--unread`) no-op for other types rather than erroring.
+
+Archived documents are **excluded by default** (SPEC.md §11). `--status archived` selects them alone; `--include-archived` widens the default set to the union.
+
+**The list is paginated and says so.** The server applies its own page limit, and the last line always states the range shown out of the total that matched, naming the `--offset` that fetches the next page when there is one. Under `--json` the server's `{items, page}` envelope is emitted unchanged — `page` is what makes the truncation visible to a caller that is not reading the human line, and every row carries its `extra` frontmatter, its Attention reasons and its thread affordances, so a skill parses one response instead of issuing a read per row.
+
+A misspelled value for one of the enumerated filters (`--status`, `--sort`, `--needs`, `--stale`, `--agent`, `--author`) is a usage error listing the alternatives, and no request is sent. The open ones — `--type`, `--tag`, `--folder`, `--due` — are passed through verbatim, since plugins define their own types and the CLI does not know the workspace's tags or folders.
+
+```
+corpus doc list [flags]
+```
+
+**Flags**
+
+| Flag                     | Type    | Default | Description                                                                                                                                                                   |
+| ------------------------ | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--q <text>`             | string  | —       | Full-text query across titles, bodies and turn bodies. Matching rows carry `snippets`, which `--json` includes; `--sort relevance` needs this flag and is refused without it. |
+| `--type <a,b>`           | string  | —       | Comma-separated document types; values OR together. Core types: `note`, `thread`, `view`, `template`, `skill`, `agent-def`, plus whatever a plugin defines.                   |
+| `--tag <a,b>`            | string  | —       | Comma-separated tags; values OR together.                                                                                                                                     |
+| `--folder <path>`        | string  | —       | Path prefix under `data/docs/`, matching the folder and its descendants. Threads inherit their parent's folder.                                                               |
+| `--status <status>`      | string  | —       | Lifecycle status: open, resolved, archived. Passing it replaces the default archived exclusion.                                                                               |
+| `--include-archived`     | boolean | `false` | Include archived documents **alongside** the rest, rather than excluding them — the board's archived chip. A no-op next to an explicit `--status`.                            |
+| `--needs <reason>`       | string  | —       | The Attention filter (SPEC.md §11): me, unread-reply, form, due, stale, failed-job. `me` is the union of every reason.                                                        |
+| `--parent <doc-id>`      | string  | —       | Threads whose parent is this document. Thread-only.                                                                                                                           |
+| `--references <doc-id>`  | string  | —       | Documents whose body contains `[[<doc-id>]]` — the backlinks of that document.                                                                                                |
+| `--agent <state>`        | string  | —       | Agent participation state: none, requested, engaged. Thread-only.                                                                                                             |
+| `--author <user\|agent>` | string  | —       | Author of the thread's last turn. Thread-only.                                                                                                                                |
+| `--unread`               | boolean | `false` | Only threads whose last turn is newer than your last-seen mark. Thread-only, and it selects the unread side only — there is no flag for the read side.                        |
+| `--pinned`               | boolean | `false` | Only documents pinned to the board as columns (SPEC.md §11) — in practice `type: view` documents. Selects the pinned side only.                                               |
+| `--due <date\|keyword>`  | string  | —       | An ISO date (due on or before it) or one of `overdue`, `today`, `week`, resolved against the workspace's clock.                                                               |
+| `--since <iso>`          | string  | —       | Documents updated strictly after this ISO 8601 instant.                                                                                                                       |
+| `--stale <tier>`         | string  | —       | Staleness tier (SPEC.md §5) and beyond: aging, stale, very-stale. Evergreen documents never match.                                                                            |
+| `--sort <key>`           | string  | —       | Sort key: updated, -updated, created, -created, due, title, order, relevance. Defaults to `-updated` (newest first).                                                          |
+| `--limit <n>`            | number  | —       | Rows per page, 1–200. The server applies its own default when omitted.                                                                                                        |
+| `--offset <n>`           | number  | —       | Rows to skip — how the tally line's next page is fetched.                                                                                                                     |
+
+**Examples**
+
+One padded line per document — id, type, status, title, path — then the tally of what was shown out of what matched.
+
+```
+corpus doc list
+```
+
+Every installed skill, which is how the agent sees what it already knows how to do before writing a new one (SPEC.md §7).
+
+```
+corpus doc list --type skill
+```
+
+What wants attention inside one folder — the board's Attention view, filtered.
+
+```
+corpus doc list --needs me --folder finance
+```
+
+One JSON value: `{"items":[{"id":"th_x9y8","type":"thread","title":"Rate assumptions","parent":"doc_a1b2c3","unread":true,"attention":["unread-reply"],"extra":{},…}],"page":{"total":3,"limit":50,"offset":0}}`.
+
+```
+corpus doc list --type thread --unread --json
 ```
 
 ### `corpus doc move`
@@ -1020,7 +1101,7 @@ corpus queue resume
 
 Show the halt state and the queue depth.
 
-Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each of `pending`, `in-progress`, `processed`, `failed` and `abandoned`.
+Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each of `pending`, `in-progress`, `deferred`, `processed`, `failed` and `abandoned`. A non-zero `deferred` is **not** breakage — those events are waiting on a user-held edit lock and return to `pending` on their own when it is released, broken or reaped (SPEC.md §7).
 
 ```
 corpus queue status [flags]
@@ -1034,7 +1115,7 @@ Is the queue halted, and how deep is it?
 corpus queue status
 ```
 
-One JSON value: `{"halted":false,"pending":0,"inProgress":0,"processed":12,"failed":0,"abandoned":0}`.
+One JSON value: `{"halted":false,"pending":0,"inProgress":0,"deferred":0,"processed":12,"failed":0,"abandoned":0}`.
 
 ```
 corpus queue status --json
@@ -1163,9 +1244,63 @@ corpus server stop --json
 
 ## `corpus skill`
 
-Recover a skill: restore its last-known-good version.
+Create a skill, and recover one: restore its last-known-good version.
 
-Skills are documents, so reading, editing and archiving one is `corpus doc …` like anything else. `rollback` is what has no document equivalent: the agent's skills are the workspace's memory and its loop, and a bad edit to `orchestrate` can break the very loop that would otherwise repair it (SPEC.md §7). The revert is performed by the server and lands as a normal attributed commit.
+Skills are documents, so reading, editing and archiving one is `corpus doc …` like anything else. These two verbs are what has no document equivalent. `create` is SPEC.md §7's skill genesis — a recurring pattern becomes a skill, written under `.claude/skills/` rather than `data/docs/`, which is the one thing `corpus doc create` cannot do. `rollback` is its safety net: the agent's skills are the workspace's memory and its loop, and a bad edit to `orchestrate` can break the very loop that would otherwise repair it. Both are performed by the server and land as normal attributed commits.
+
+### `corpus skill create`
+
+Create a skill through the server.
+
+Calls `POST /api/skills`, which writes `.claude/skills/<name>/SKILL.md` through the ordinary mutation pipeline — validation, atomic write, git auto-commit attributed to `--from`, synchronous re-projection and SSE invalidation. The skill is therefore live immediately: on the board, in `corpus doc list --type skill`, and rollback-able, with no server restart. The CLI writes nothing itself; the server is the sole writer.
+
+The created file carries **both** frontmatter vocabularies, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for discovery, then the document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`. `--description` is required rather than optional: a skill without one is installed but never invoked.
+
+The name is the traversal guard and it is checked by the server, not here — lowercase letters, digits and single hyphens, at most 64 characters. A name with a slash, a `..` segment or an uppercase letter is the server's `400`; a name already installed, or held by an archived skill, is its `409`. Both are exit 5, and neither writes anything. Everything after creation is ordinary document work: edit with `corpus doc edit`, disable with `corpus doc archive`, recover with `corpus skill rollback`.
+
+```
+corpus skill create <name> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                                                                   |
+| -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `name`   | yes      | The skill's directory name under `.claude/skills/`, and its frontmatter `name`: lowercase letters, digits and single hyphens. |
+
+**Flags**
+
+| Flag                   | Type   | Default | Description                                                                           |
+| ---------------------- | ------ | ------- | ------------------------------------------------------------------------------------- |
+| `--description <text>` | string | —       | One line saying when to use the skill — what Claude Code discovers it by. Required.   |
+| `--title <text>`       | string | —       | The document title shown on the board. Defaults to the skill's name.                  |
+| `--tags <a,b>`         | string | —       | Comma-separated tags. Blank entries are dropped; defaults to no tags.                 |
+| `-m, --message <text>` | string | —       | The skill's instructions as a literal string. Wins over --file and stdin.             |
+| `--file <path>`        | string | —       | Read the skill's instructions from this file. Wins over stdin; the file is only read. |
+
+**Examples**
+
+The agent's genesis form (SPEC.md §7): instructions from a heredoc, committed with `agent` as the git author.
+
+```
+corpus skill create weekly-review --description "Run the weekly review over the corpus." --from agent <<'EOF'
+# Weekly review
+
+Survey `corpus doc list --needs me` and file what has drifted.
+EOF
+```
+
+No body: the server pre-fills from the workspace's `skill` template when it has one, and leaves the body empty otherwise.
+
+```
+corpus skill create triage --description "Triage the inbox."
+```
+
+One JSON value — `{"doc":{"frontmatter":{"id":"doc_wy3a54lf","type":"skill",…},"body":"…","path":".claude/skills/triage/SKILL.md","anchors":[]},"warnings":[]}` — the same envelope `corpus doc create` returns, because what was created is the same kind of thing.
+
+```
+corpus skill create triage --description "Triage the inbox." --json
+```
 
 ### `corpus skill rollback`
 
