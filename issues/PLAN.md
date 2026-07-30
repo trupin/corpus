@@ -133,6 +133,9 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | todo | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs | todo | P2 | UI-014, PLUGINS-002 |
 | UI-015 | Remaining teardown-vulnerable mutation callbacks | todo | P2 | UI-012 |
+| INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
+| SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | todo | P1 | SERVER-003 |
+| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | todo | P2 | UI-005 |
 | CLI-012 | Install plugin seed templates at corpus init | todo | P2 | PLUGINS-002, CLI-005 |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | todo | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |

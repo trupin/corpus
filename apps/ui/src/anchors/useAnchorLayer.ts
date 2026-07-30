@@ -381,16 +381,17 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
         });
         return;
       }
-      let top = 0;
+      // The fallbacks hold when the position is momentarily out of the DOM:
+      // the popover still opens, at the top of the viewport, rather than not
+      // opening at all.
+      let top = 80;
       let left = 0;
       try {
         const coords = editor.view.coordsAtPos(selection.to);
         top = coords.bottom + 6;
         left = coords.left;
       } catch {
-        // A position momentarily out of the DOM. The popover still opens, at
-        // the top of the viewport, rather than not opening at all.
-        top = 80;
+        // keep the fallbacks
       }
       setDraft({ selection: anchor, range: { from: selection.from, to: selection.to }, top, left });
     },
