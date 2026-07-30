@@ -122,7 +122,19 @@
   background: var(--good);
 }
 
+/*
+ * A deadline is information; a *passed* deadline is the design's `--signal`,
+ * the same treatment `.todo-items .t.overdue` and `.check .due[data-overdue]`
+ * carry. One chip, one modifier — so the panel says what every other surface
+ * showing an item already says (SPEC.md §12).
+ */
 .doc-panel .todo-due-chip {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink-2);
+}
+
+.doc-panel .todo-due-chip.overdue {
   background: var(--signal-wash);
   border-color: transparent;
   color: var(--signal);

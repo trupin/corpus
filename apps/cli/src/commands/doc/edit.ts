@@ -114,29 +114,48 @@ function currentDocument(context: WorkspaceCommandContext, id: string): () => Pr
 
 /**
  * **A `--status` that would move an archived document off `archived` is refused**
- * (CLI-017, sprint-017 Adjudication 13).
+ * (CLI-017, sprint-017 Adjudication 13; the message made type-honest by the
+ * wave-3 audit, FIX 15).
  *
- * `PUT /api/docs/{id}` writes frontmatter and nothing else, so `--status open`
- * on an archived document reported success while producing a half-state: the
- * frontmatter said `open`, the skill folder stayed in `.claude/skills-archived/`
- * (disabled, invisible to Claude Code) and the name stayed `409`-blocked. The
- * verb that undoes archiving is `corpus doc unarchive`, because unarchiving is a
- * filesystem move and a name release, not a field edit — and a verb that reports
- * success while leaving the document unreachable by the very operation the
- * caller was enabling is worse than one that fails.
+ * Since SERVER-039 this guard is **no longer the enforcement** — `PUT
+ * /api/docs/{id}` refuses the same write itself, for every type, because a rule
+ * only a client enforces is not enforced (the UI's frontmatter form and any
+ * `curl` walked straight past this function). What it still is, is the *better
+ * error*: it costs no round trip and, crucially, it names a **command**. The
+ * server's refusal can only name `POST /api/docs/{id}/unarchive`, and the agent
+ * this CLI exists for has no way to issue an HTTP request — it reads error
+ * messages as instructions and needs `corpus doc unarchive <id>`. Same
+ * relationship as {@link assertWritableExtraKey} and the contract's
+ * `ExtraFrontmatterSchema`.
  *
- * So the refusal names the verb. The agent is CLI-only and reads error messages
- * as instructions; "run `corpus doc unarchive <id>`" turns a dead end into a next
- * step. The guard is narrow on purpose — it fires only when the document is
- * *already* archived and the new status is not `archived` — so every ordinary
- * status edit, and re-archiving an archived document, behave exactly as before.
+ * **The message is per type, because the consequence is.** For a `type: skill`
+ * document archiving is two facts — the status *and* which side of
+ * `.claude/skills-archived/` the folder is on — so `--status open` there leaves
+ * a skill disabled, invisible to Claude Code and still holding its name. For
+ * every other type archiving is the status alone, and the honest reason is
+ * simply that un-archiving is its own operation and a `PUT` may not do it. The
+ * single old message told every note a story about a folder that does not
+ * exist.
+ *
+ * The read this needs is one `GET`, and it carries the same accepted staleness
+ * as {@link mergeTags}: the document could be archived, or unarchived, between
+ * the read and the `PUT`. There is no conditional write to close that with (see
+ * `mergeTags` for why), so the exposure is the same bounded one — and here it
+ * costs nothing either way, because the server re-checks under its own lock: a
+ * document archived inside the window is refused there instead of here.
  */
 function assertNotArchived(current: Doc, id: string, status: DocStatus): void {
   if (current.frontmatter.status !== "archived" || status === "archived") return;
+
+  const isSkill = current.frontmatter.type === "skill";
   throw new UsageError(
-    `${id} is archived; \`--status ${status}\` would set the frontmatter without bringing the document back.`,
+    isSkill
+      ? `${id} is an archived skill; \`--status ${status}\` would set the frontmatter without bringing the skill back.`
+      : `${id} is archived; \`--status ${status}\` writes the frontmatter and nothing else, which is not how a document comes back.`,
     {
-      hint: `Run \`corpus doc unarchive ${id}\` — it restores the status and, for a skill, moves its folder back out of \`.claude/skills-archived/\` and frees the name.`,
+      hint: isSkill
+        ? `Run \`corpus doc unarchive ${id}\` — it restores the status *and* moves the folder back out of \`.claude/skills-archived/\`, which re-enables the skill and frees its name.`
+        : `Run \`corpus doc unarchive ${id}\` — the operation that un-archives a document. The server refuses this write too (SERVER-039); refusing it here is what lets the message name a command instead of a route.`,
     },
   );
 }
@@ -149,9 +168,9 @@ function assertNotArchived(current: Doc, id: string, status: DocStatus): void {
  * 1. `null` deletes the key — the server's `extra` patch is RFC 7386, so `null`
  *    removes rather than stores (`apps/server/src/docs/update.ts`).
  * 2. `true` / `false` are booleans.
- * 3. A **canonical** JSON number literal is a number. Canonical matters: `007`
- *    and `1.` are not JSON numbers, so they stay strings and an identifier that
- *    happens to be digits is not silently arithmetic.
+ * 3. A **canonical, finite** JSON number literal is a number. Canonical matters:
+ *    `007` and `1.` are not JSON numbers, so they stay strings and an identifier
+ *    that happens to be digits is not silently arithmetic.
  * 4. A JSON **string literal** is its own contents — the escape hatch that lets
  *    `--extra note='"520"'` store the characters `520`, and the only way to
  *    store the literal text `null`.
@@ -162,12 +181,33 @@ function assertNotArchived(current: Doc, id: string, status: DocStatus): void {
  * `typeof raw !== "number"` and falls back to its default for anything else
  * (`apps/ui/src/board/columnWidth.ts`), so `--extra width=520` storing `"520"`
  * would be a passing unit test and a column that never widens.
+ *
+ * **Finiteness is the load-bearing half of rule 3** (wave-3 audit, FIX 1).
+ * `1e400` is a perfectly canonical JSON number literal whose double is
+ * `Infinity`, `JSON.stringify` writes `Infinity` as `null`, and the server's
+ * `extra` patch is RFC 7386 — so an overflowing number silently *deleted* the
+ * key it was meant to set. Gating on `Number.isFinite` and falling through to
+ * rule 5 is the `parse-args.ts` `readNumber` pattern, and it keeps the grammar
+ * total in the sense that matters: the value is stored, as the characters that
+ * were typed, rather than being turned into a deletion nobody asked for.
+ *
+ * A finite number too large to survive a `double` — `9007199254740993`, past
+ * `Number.MAX_SAFE_INTEGER` — **is** taken as a number and does lose precision
+ * on the way (it stores as `9007199254740992`). That is documented rather than
+ * refused: it is exactly what every JSON parser in the stack would do to the
+ * same literal, so refusing here would make the CLI stricter than the wire it
+ * writes to, and the escape hatch for an exact-digits value already exists —
+ * quote it (`--extra id='"9007199254740993"'`) and it stays a string.
  */
 export function parseExtraValue(raw: string): unknown {
   if (raw === "null") return null;
   if (raw === "true") return true;
   if (raw === "false") return false;
-  if (JSON_NUMBER.test(raw)) return Number(raw);
+  if (JSON_NUMBER.test(raw)) {
+    const value = Number(raw);
+    if (Number.isFinite(value)) return value;
+    // `1e400` and friends: a canonical literal, an infinite double. Rule 5.
+  }
   if (raw.startsWith('"')) {
     try {
       const parsed: unknown = JSON.parse(raw);
@@ -250,15 +290,22 @@ export async function runDocEdit(
   dependencies: EditDependencies = {},
 ): Promise<void> {
   const id = context.args.get("id");
-  const body = await resolveBody(context, dependencies);
-  const read = currentDocument(context, id);
 
+  // **Flags are parsed before stdin is touched.** Every check in this block is
+  // pure — an unknown `--status`, a core key in `--extra`, a non-boolean
+  // `--evergreen` — and each one ends the command. Draining the heredoc first
+  // meant the caller's body was consumed and thrown away by a failure that
+  // never needed to read it, which for an agent piping a long document is a
+  // silently lost payload rather than a retryable usage error.
   const title = context.flags.string("title");
   const status = parseStatus(context.flags.string("status"));
   const due = context.flags.string("due");
   const reviewed = context.flags.boolean("reviewed");
   const evergreen = parseTriStateBoolean("evergreen", context.flags.string("evergreen"));
   const extra = parseExtraFlags(context.flags.strings("extra"));
+
+  const body = await resolveBody(context, dependencies);
+  const read = currentDocument(context, id);
 
   if (status !== undefined) assertNotArchived(await read(), id, status);
 
@@ -334,13 +381,17 @@ export const editCommand: WorkspaceCommandSpec = {
     "remapped anchors moved with the text, orphaned ones name the threads that just became " +
     "detached. `--reviewed` records the current instant as a “still current” confirmation, which " +
     "is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's " +
-    "current tags first and `--status` reads the current status, so those flags cost one extra " +
+    "current tags first and `--status` reads the current document, so those flags cost one extra " +
     "request; nothing else does — and because the API " +
     "offers no conditional write, two tag edits racing on one document can end with only the " +
-    "later one's tag. **`--status` refuses to move an archived document off `archived`** — that " +
-    "would set the frontmatter while leaving a skill's folder disabled in " +
-    "`.claude/skills-archived/` and its name blocked, so the refusal names " +
-    "`corpus doc unarchive <id>` instead. `--extra` writes non-core frontmatter keys — the " +
+    "later one's tag, and the archived check below is read from the same one-round-trip-old " +
+    "snapshot. **`--status` refuses to move an archived document off `archived`** and names " +
+    "`corpus doc unarchive <id>` instead — for a `type: skill` document because the frontmatter " +
+    "would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its " +
+    "name stayed blocked, and for every other type because un-archiving is its own operation. " +
+    "The server refuses the same write (SERVER-039); refusing it here costs no round trip and " +
+    "names a **command** where the server can only name a route. `--extra` writes non-core " +
+    "frontmatter keys — the " +
     "column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` " +
     "removes, unnamed keys are untouched. A `423` from the " +
     "other party's edit lock is reported as a server error (exit 5) and is never retried — the " +
@@ -368,9 +419,11 @@ export const editCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "status",
       description:
-        "Set the lifecycle status: `open`, `resolved` or `archived`. On an **archived** document " +
-        "anything but `archived` is refused, naming `corpus doc unarchive <id>` — the verb that " +
-        "actually brings a document back.",
+        "Set the lifecycle status: `open`, `resolved` or `archived`. On an **archived " +
+        "document** anything but `archived` is refused, naming `corpus doc unarchive <id>` — " +
+        "the verb that un-archives, and for a `type: skill` document also moves the folder back " +
+        "and frees the name, which frontmatter alone cannot do. Re-archiving an archived " +
+        "document is still allowed.",
     },
     {
       name: "due",
@@ -401,10 +454,14 @@ export const editCommand: WorkspaceCommandSpec = {
       description:
         "Set one non-core frontmatter key, repeatably — the agent's way to steward a column's " +
         "`width` (SPEC.md §11) or any plugin key. **The value grammar is total**: `null` deletes " +
-        "the key (RFC 7386), `true`/`false` are booleans, a canonical JSON number (`520`, `-1.5`) " +
-        "is a number, a JSON string literal is its contents (`--extra note='\"520\"'` stores the " +
-        "characters), and **everything else is the string exactly as typed** — so `007` stays " +
-        '`"007"`. Only the keys named are sent: the rest of `extra` is untouched ' +
+        "the key (RFC 7386), `true`/`false` are booleans, a canonical **finite** JSON number " +
+        "(`520`, `-1.5`) is a number, a JSON string literal is its contents " +
+        "(`--extra note='\"520\"'` stores the characters), and **everything else is the string " +
+        'exactly as typed** — so `007` stays `"007"`, and so does an overflowing literal like ' +
+        "`1e400`, which is stored rather than being turned into the deletion `null` would mean. " +
+        "A finite integer past `2^53` is taken as a number and rounds the way JSON does " +
+        "everywhere else (`9007199254740993` stores as `9007199254740992`); quote it to keep the " +
+        "digits. Only the keys named are sent: the rest of `extra` is untouched " +
         "byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, " +
         "`due`, `tags`, `id`, …) is a usage error before any request, pointing at the real flag " +
         "where there is one.",

@@ -20,7 +20,7 @@ import { TODO_DOC_TYPE, TODOS_PLUGIN } from "../shared.js";
  * Two things can now change an item, and they announce themselves differently:
  *
  * - a **plugin write** (`corpus todos check`, a route call) broadcasts
- *   `[["lists"], ["lists", docId]]` → `["x","todos","lists", …]` on the wire;
+ *   `[["lists"]]` → `["x","todos","lists"]` on the wire;
  * - a **core write** — which is the *ordinary* way to check a box since
  *   PLUGINS-006, because the editor owns the body — broadcasts `["docs"]` and
  *   never anything under `x/todos`.
@@ -47,13 +47,17 @@ import { TODO_DOC_TYPE, TODOS_PLUGIN } from "../shared.js";
  * `packages/kit` is untouched (sprint-017 TEST-515).
  */
 
-/** The plugin's own read key, `["x","todos","lists"]` — every key below extends it. */
+/**
+ * The plugin's own read key, `["x","todos","lists"]` — the *only* one.
+ *
+ * There is deliberately no per-document key. The plugin publishes one query,
+ * the aggregate, and a `["x","todos","lists",<docId>]` broadcast would name a
+ * query nothing has ever registered: TanStack matches by prefix, and a document
+ * id is not a prefix of `["x","todos","lists","at",<fingerprint>]`. It looked
+ * like precision and invalidated nothing (CLEAN 43). One key, and every write
+ * to any list refetches the one read every surface shares.
+ */
 export const TODO_LISTS_KEY: QueryKey = pluginKey(TODOS_PLUGIN, "lists");
-
-/** `["x","todos","lists",<docId>]` — what a write on one list announces. */
-export function todoListKey(docId: string): QueryKey {
-  return pluginKey(TODOS_PLUGIN, "lists", docId);
-}
 
 /** One todo document, as `GET /api/x/todos/lists` reports it. */
 const TodoListSchema = z.object({

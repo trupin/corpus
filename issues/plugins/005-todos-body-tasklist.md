@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-in_progress
+done
 
 ## Priority
 P1
@@ -337,6 +337,102 @@ passing** (was 220). `npm run build`, `npm run typecheck` and `npm run lint` gre
   (`corpus todos add "…" "call (due: 2026-08-01)"`) comes back with that as its `due`. Inherent to
   the inline convention the user signed off; the reverse — a marker that does not parse — is
   ordinary text, which is the direction SPEC.md:403 makes a promise about.
+
+
+## Audit fix round (2026-07-30, opus)
+
+Wave-3 audit `issues/evals/AUDIT-S017-wave3.md`, plugins slice. Scoped run after the round:
+`VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run plugins/todos` → **9 files, 254 tests**, green
+(was 242). `npm run build`, `npm run typecheck`, `./node_modules/.bin/eslint plugins/` and Prettier
+green. `CORPUS_UI_PORT=9185 npx playwright test todos.spec.ts` → **7 passed**.
+
+Live re-drill: real server on `9181`, real workspace at
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s017-plugfix-ws-BA5WOY` (outside the repo, job tmp dir), `8765` never
+bound; server pid `63372` and the Playwright vite on `9185` both stopped and their ports verified
+free. No `git` state-changing command was run in this repository.
+
+### Findings closed here
+
+- **FIX 3 — migrate caught only `TodoItemError`.** Any 423/404/git failure aborted the whole run:
+  nothing it had already converted was named, the successes were never broadcast, and the caller
+  could not tell how far it got. Now every document's work is wrapped individually, any failure is
+  recorded as that document's conflict (`reasonOf` runs the same `translateThrown` the route
+  answers with, so a lock reads as a sentence), and the broadcast sits in a `finally`.
+- **FIX 4 — the migrate count counted the wrong thing.** `parseBodyItems(plan.body).length` counted
+  every item in the resulting body, so clearing a stale `items: []` off a document with three body
+  items reported "3 items moved". It is now `legacyItemCount(doc)` — what actually moved.
+- **FIX 6 — `itemProblems` was silent on dual storage** while `planWrite` refused every write to it.
+  The manifest's `validate` now reports it, in the clause the refusal uses (`DUAL_STORAGE`, shared
+  by both so they cannot drift).
+- **FIX 7 — an unterminated fence swallowed the rest of the document.** Fence closing is now looked
+  *ahead* for (`fenceEnd`): a fence nothing closes is a typo and is bounded to its own line.
+- **FIX 8 — a 4-column-indented line parsed as an item.** `taskLines` now tracks one piece of block
+  context — the indent of the open list — so indented code is code and a 4-space nested subtask is
+  still an item. Capping indent at `<4` (the audit's other option) was rejected: it would have
+  broken the commonest nesting style.
+- **FIX 14 — the writer always wrote `\n`.** `insertLines` now matches the body's dominant ending,
+  so a CRLF document does not acquire mixed endings on its first append.
+- **CLEAN 45 — unbounded pagination loop**, now bounded by `page.total` as well as the short-page
+  check. **CLEAN 47 — `migrate --dry-run`**, routed through `planWrite` so the prediction and the
+  refusal are the same function. **CLEAN 48 — nested flattening documented** in `items.ts`'s header.
+- **TEST 23** (migrate past a non-`TodoItemError` failure; empty-corpus migrate), **TEST 27**
+  (empty legacy key + body items; a legacy `text` with a newline — which `migrateBody` used to pass
+  straight to `newLine`, bypassing `checked`; now refused, so it becomes that document's conflict),
+  **TEST 28** (unclosed fence + indented code).
+
+### Live evidence
+
+```
+$ corpus todos migrate --dry-run --from user
+would migrate Legacy A [doc_legacya00001] — 2 items to move into the body
+would migrate Legacy C [doc_legacyc00001] — 1 item to move into the body
+would migrate Legacy Locked [doc_legacylock01] — 2 items to move into the body
+would migrate Stale empty key [doc_staleempty01] — 0 items to move into the body   # FIX 4 (was 3)
+would skip Items in both places [doc_bothplaces01] — … remove whichever list is stale …
+4 to migrate · 1 to skip · 1 already migrated
+nothing was written — re-run without --dry-run to convert.
+$ git log --oneline -1        # unchanged; the hand-written fixtures are still untracked
+53f1c48 doc create: Week of Jul 20 (doc_fbzxamcz) by user
+
+$ corpus lock acquire doc_legacylock01 --from user
+locked doc_legacylock01 for user, lease 300s.
+$ corpus todos migrate --from agent                       # FIX 3: mid-run 423
+migrated Legacy A [doc_legacya00001] — 2 items moved into the body
+migrated Legacy C [doc_legacyc00001] — 1 item moved into the body
+migrated Stale empty key [doc_staleempty01] — 0 items moved into the body
+skipped Items in both places [doc_bothplaces01] — … remove whichever list is stale …
+skipped Legacy Locked [doc_legacylock01] — doc_legacylock01 is being edited by user; the lock was
+  acquired at 2026-07-30T23:19:56Z
+3 migrated · 2 skipped · 1 already migrated                # exit 0
+$ git log --oneline -3
+8539eef doc edit: Stale empty key (doc_staleempty01) by agent
+d96b25a doc edit: Legacy C (doc_legacyc00001) by agent
+1a16d01 doc edit: Legacy A (doc_legacya00001) by agent
+```
+
+Pre-fix this request answered `423` at `doc_legacylock01` — after `doc_legacya` and `doc_legacyc`
+were already on disk and committed — reporting none of them and broadcasting nothing. Releasing the
+lock and re-running converted the last one; a third run reports only the both-places conflict, and
+`/usr/bin/grep -rn "^items:" data/docs/` finds exactly one residual key: `both-places.md`, the
+document migrate refuses by design.
+
+FIX 7/8/14, live:
+
+```
+$ cat data/docs/todos/blocks.md   # 4-space-indented lookalike, then an UNCLOSED ```sh fence
+$ corpus todos list "Code blocks"
+Code blocks [doc_blocks00001] — 3 open · 1 done          # pre-fix: 0 open · 0 done
+   1 ☐ Renew passport
+   2 ☑ Send the form
+   3 ☐ parent
+   4 ☐ nested child                                      # flat, in body order (CLEAN 48)
+# the `    - [ ] indented code, not an item` line is correctly absent
+
+$ corpus todos add "CRLF list" "added by the plugin" --from agent
+$ od -c data/docs/todos/crlf.md | tail -2
+… a   d   d   e   d       b   y       t   h   e       p   l   u   g   i   n  \r
+\n                                                       # FIX 14: \r\n, not \n
+```
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

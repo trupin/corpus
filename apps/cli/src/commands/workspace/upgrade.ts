@@ -173,9 +173,9 @@ export interface UpgradeReport {
    */
   readonly queueSkeleton: readonly string[];
   /**
-   * Markers this run created that the workspace's own `.gitignore` excludes, so
-   * they were **not** staged. Empty in a stock workspace, whose `.gitignore`
-   * carries the template's `!.corpus/queue/` negation.
+   * Markers the workspace's own `.gitignore` excludes, so they were **not**
+   * staged — and under `--dry-run`, would not be. Empty in a stock workspace,
+   * whose `.gitignore` carries the template's `!.corpus/queue/` negation.
    */
   readonly queueSkeletonIgnored: readonly string[];
   /** Paths this run actually wrote, workspace-relative. */
@@ -255,8 +255,19 @@ export async function runWorkspaceUpgrade(
   }
 
   if (dryRun) {
-    context.out.emit(report);
-    render(context, report);
+    // The plan has to predict the *whole* outcome, including the part a real run
+    // would refuse. `isIgnoredByRules` asks git about the rules rather than about
+    // the index, so it answers for a marker that does not exist yet — which is
+    // the only reason a dry run can tell the truth here at all (wave-3 audit,
+    // TEST 31: this was hard-coded empty, so `--dry-run` promised a repair the
+    // real run then declined to commit).
+    const trackable = await trackableMarkers(root, queueSkeleton);
+    const planned: UpgradeReport = {
+      ...report,
+      queueSkeletonIgnored: queueSkeleton.filter((marker) => !trackable.includes(marker)),
+    };
+    context.out.emit(planned);
+    render(context, planned);
     return;
   }
 
@@ -555,11 +566,15 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
     );
   }
   if (report.queueSkeletonIgnored.length > 0) {
+    const one = report.queueSkeletonIgnored.length === 1;
     context.out.line(
       `  ${plural(report.queueSkeletonIgnored.length, "marker")} above ` +
-        `${report.queueSkeletonIgnored.length === 1 ? "is" : "are"} excluded by this workspace's ` +
-        ".gitignore, so it was created but not committed — allow `.corpus/queue/` through " +
-        "(the shipped template does, with `!.corpus/queue/`) and re-run.",
+        `${one ? "is" : "are"} excluded by this workspace's .gitignore, so ` +
+        (report.dryRun
+          ? `${one ? "it would be" : "they would be"} created but not committed`
+          : `${one ? "it was" : "they were"} created but not committed`) +
+        " — allow `.corpus/queue/` through (the shipped template does, with " +
+        "`!.corpus/queue/`) and re-run.",
     );
   }
 

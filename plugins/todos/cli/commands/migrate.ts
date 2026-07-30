@@ -26,10 +26,24 @@ export default {
     "document already in the new format is left untouched and reported as unchanged, so running " +
     "this twice changes nothing. A document that cannot be converted safely — a hand-edited " +
     "`items` key that no longer parses, or one carrying items in both places — is reported as a " +
-    "conflict with the reason and left exactly as it was.",
+    "conflict with the reason and left exactly as it was, and the run carries on to the next " +
+    "document. `--dry-run` reports the same answer without writing anything.",
   args: [],
-  flags: [],
+  flags: [
+    {
+      name: "dry-run",
+      type: "boolean",
+      description:
+        "Report exactly what a real run would convert and what it would skip, and write nothing. " +
+        "The prediction comes from the same check that refuses a real write, so a document listed " +
+        "as a conflict here is a document a real run refuses.",
+    },
+  ],
   examples: [
+    {
+      command: "corpus todos migrate --dry-run",
+      description: "See what would move before anything does.",
+    },
     {
       command: "corpus todos migrate",
       description: "Convert every remaining frontmatter-stored list; safe to re-run.",
@@ -37,35 +51,39 @@ export default {
     {
       command: "corpus todos migrate --json",
       description:
-        'One JSON value: `{"migrated":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","items":3}],"conflicts":[],"unchanged":2}`.',
+        'One JSON value: `{"dryRun":false,"migrated":[{"docId":"doc_a1b2c3","title":"Week of Jul 20","items":3}],"conflicts":[],"unchanged":2}`.',
     },
   ],
   handler: async (context: PluginCommandContext): Promise<void> => {
-    const result = await migrateLists(context);
+    const dryRun = context.flags.boolean("dry-run");
+    const result = await migrateLists(context, dryRun);
     context.out.emit(result);
 
     if (result.migrated.length === 0 && result.conflicts.length === 0) {
       context.out.line(
         `nothing to migrate — ${String(result.unchanged)} todo list${
-          result.unchanged === 1 ? "" : "s"
-        } already store items in the body.`,
+          result.unchanged === 1 ? " already stores" : "s already store"
+        } items in the body.`,
       );
       return;
     }
     for (const entry of result.migrated) {
       context.out.line(
-        `migrated ${entry.title} [${entry.docId}] — ${String(entry.items)} item${
-          entry.items === 1 ? "" : "s"
-        } moved into the body`,
+        `${dryRun ? "would migrate" : "migrated"} ${entry.title} [${entry.docId}] — ${String(
+          entry.items,
+        )} item${entry.items === 1 ? "" : "s"} ${dryRun ? "to move" : "moved"} into the body`,
       );
     }
     for (const entry of result.conflicts) {
-      context.out.line(`skipped ${entry.title} [${entry.docId}] — ${entry.reason}`);
+      context.out.line(
+        `${dryRun ? "would skip" : "skipped"} ${entry.title} [${entry.docId}] — ${entry.reason}`,
+      );
     }
     context.out.line(
-      `${String(result.migrated.length)} migrated · ${String(result.conflicts.length)} skipped · ${String(
-        result.unchanged,
-      )} already migrated`,
+      `${String(result.migrated.length)} ${dryRun ? "to migrate" : "migrated"} · ${String(
+        result.conflicts.length,
+      )} ${dryRun ? "to skip" : "skipped"} · ${String(result.unchanged)} already migrated`,
     );
+    if (dryRun) context.out.line("nothing was written — re-run without --dry-run to convert.");
   },
 } satisfies PluginCommandSpec;

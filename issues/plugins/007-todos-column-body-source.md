@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-in_progress
+done
 
 ## Priority
 P1
@@ -245,6 +245,78 @@ state-changing command was run in this repository.
 `VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run plugins/todos` → **9 files, 216 tests**, green.
 `npm run build`, `npm run typecheck`, `npm run lint` and Prettier all green. Playwright was not run
 again for this issue (PLUGINS-006 owns the batch's single scoped run).
+
+
+## Audit fix round (2026-07-30, opus)
+
+Wave-3 audit `issues/evals/AUDIT-S017-wave3.md`, plugins slice. Scoped run after the round:
+`VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run plugins/todos` → **9 files, 254 tests**, green
+(was 242). `npm run build`, `npm run typecheck`, `./node_modules/.bin/eslint plugins/` and Prettier
+green. `CORPUS_UI_PORT=9185 npx playwright test todos.spec.ts` → **7 passed**.
+
+Live re-drill: real server on `9181`, real workspace at
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s017-plugfix-ws-BA5WOY` (outside the repo, job tmp dir), `8765` never
+bound; server pid `63372` and the Playwright vite on `9185` both stopped and their ports verified
+free. No `git` state-changing command was run in this repository.
+
+### Findings closed here
+
+- **FIX 2 — `everyList` inherited the contract's default `limit` of 50.** A workspace's fifty-first
+  todo document was invisible to `corpus todos list`, to every todo row's item preview and to the
+  aggregate column at once, with nothing anywhere saying so. `everyTodoDoc` is now shared by both
+  walks, parameterised by `includeArchived` — the one real difference between them (the aggregate
+  inherits core's §11 archived exclusion; migration deliberately lifts it).
+- **CLEAN 43 — `todoListKey` was dead and its broadcast half a no-op.** The plugin publishes exactly
+  one query, whose key is `["x","todos","lists","at",<fingerprint>]`; TanStack matches by prefix, so
+  a `["x","todos","lists",<docId>]` broadcast is not a prefix of it and invalidated nothing. It
+  looked like precision. Removed on both sides — the export, and the second key every write and the
+  migration sent — so `broadcastInvalidate([["lists"]])` is now the whole story.
+- **TEST 24 — the fake context ignored `includeArchived` and no fixture exceeded a page**, so
+  neither `everyTodoDoc` reason was actually asserted. The fake now honours it (documents carry a
+  `status`), and there are 137- and 213-document fixtures for the two walks plus an archived-vs-open
+  case for each.
+- **TEST 30 — AC3 was pinned only by a key-shape proxy.** Every fingerprint test proved the value
+  *differs*; none proved the mounted hook turns that into a second request, which anything between
+  the two (`enabled`, a stale `docs.data` reference, the path builder) could break while the shape
+  assertions all still passed. `useTodoLists` is now mounted through `createCorpusTestHarness` with
+  a mutable transport: a core-write-shaped change to `updated` produces a second aggregate request
+  at a *different* path and the new items; an identical result set produces none; and a malformed
+  aggregate surfaces as `lists.error` rather than an empty column.
+
+### Live evidence — the 51+-document case
+
+Workspace with 61 `type: todo` documents (6 hand-authored + 55 bulk), real server on `9181`:
+
+```
+$ corpus doc list --type todo --json | …
+rows in one page: 50   total: 61          # core's default page — the bound that used to leak
+$ corpus todos list | wc -l
+      61                                  # pre-fix: 50
+$ corpus todos list | tail -1
+Bulk list 055 [doc_bulk055055055] — 1 open · 0 done
+$ curl -s -H "Authorization: Bearer …" http://127.0.0.1:9181/api/x/todos/lists | …
+lists: 61
+$ corpus db doctor
+projection is clean — 70 documents from 70 files (3ms)
+```
+
+FIX 9 (`corpus todos list --open` renumbered the survivors while `check` resolved against the
+unfiltered list) also proved live here, with a fixture whose *first* item is done:
+
+```
+$ corpus todos check "Week of Jul 20" 1 --from user
+checked item 1 of Week of Jul 20 [doc_fbzxamcz] — First thing to do
+$ corpus todos list "Week of Jul 20" --open
+Week of Jul 20 [doc_fbzxamcz] — 1 open · 1 done
+   2 ☐ Something with a deadline  (due 2026-12-31)      # pre-fix printed “1”
+$ corpus todos check "Week of Jul 20" 2 --from user
+checked item 2 of Week of Jul 20 [doc_fbzxamcz] — Something with a deadline
+```
+
+Pre-fix, `check 1` on that listing would have re-checked "First thing to do" — the printed number
+named a different item than the text beside it. **CLEAN 46** rides along: `cli/client.ts` decodes
+inside `request`, so a 2xx that is not JSON, and a 2xx whose JSON is the wrong shape, both name the
+route in a sentence instead of printing a raw `ZodError`.
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

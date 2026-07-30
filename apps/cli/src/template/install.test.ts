@@ -163,6 +163,89 @@ describe("planPluginSeedInstall", () => {
     expect(plan.warnings[0]).toContain("can never replace a core template");
   });
 
+  it("warns rather than throwing when the declared path is a directory", () => {
+    // Wave-3 audit, FIX 13. `existsSync` said yes to a directory and the
+    // `copyFileSync` that followed threw `EISDIR` out of the middle of
+    // `corpus init`, unwinding a whole workspace over one plugin's typo. The
+    // message has to say which mistake it is: "does not exist" would send the
+    // author looking for a missing file that is sitting right there.
+    const root = makePluginTree({ todos: { types: declaring("seeds/todo-template.md") } });
+    mkdirSync(join(root, "todos", "seeds", "todo-template.md"), { recursive: true });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files).toEqual([]);
+    expect(plan.warnings).toHaveLength(1);
+    expect(plan.warnings[0]).toContain("todos");
+    expect(plan.warnings[0]).toContain("seeds/todo-template.md");
+    expect(plan.warnings[0]).toContain("is a directory, not a file");
+    expect(plan.warnings[0]).not.toContain("does not exist");
+  });
+
+  it("says nothing when one plugin declares the same seed for two of its own types", () => {
+    // Wave-3 audit, CLEAN 44. Two doc types sharing one starter document is a
+    // legitimate declaration, not a collision — and the warning it used to
+    // produce named the plugin as the loser of a race against itself.
+    const root = makePluginTree({
+      todos: {
+        types:
+          "types:\n" +
+          "  - type: todo\n    label: Todo\n    seedTemplate: seeds/shared.md\n" +
+          "  - type: chore\n    label: Chore\n    seedTemplate: seeds/shared.md\n",
+        seeds: ["seeds/shared.md"],
+      },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.warnings).toEqual([]);
+    expect(plan.files).toEqual([
+      { plugin: "todos", from: "todos/seeds/shared.md", to: "data/docs/templates/shared.md" },
+    ]);
+  });
+
+  it("names both paths when one plugin's two seeds would install as the same file", () => {
+    // A real conflict, unlike the case above: two different files, one
+    // installed name. The message says which two, and does not pretend some
+    // other plugin got there first.
+    const root = makePluginTree({
+      todos: {
+        types:
+          "types:\n" +
+          "  - type: todo\n    label: Todo\n    seedTemplate: seeds/a/shared.md\n" +
+          "  - type: chore\n    label: Chore\n    seedTemplate: seeds/b/shared.md\n",
+        seeds: ["seeds/a/shared.md", "seeds/b/shared.md"],
+      },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files.map((file) => file.from)).toEqual(["todos/seeds/a/shared.md"]);
+    expect(plan.warnings).toHaveLength(1);
+    expect(plan.warnings[0]).toContain("two different seed templates");
+    expect(plan.warnings[0]).toContain("seeds/a/shared.md");
+    expect(plan.warnings[0]).toContain("seeds/b/shared.md");
+    expect(plan.warnings[0]).not.toContain("already installed by plugin");
+  });
+
+  it("still blames the right plugin when two different plugins collide on one name", () => {
+    // The same-plugin carve-out must not silence the collision it exists beside.
+    const root = makePluginTree({
+      alpha: { types: declaring("seeds/shared.md"), seeds: ["seeds/shared.md"] },
+      beta: {
+        types:
+          "types:\n" +
+          "  - type: todo\n    label: Todo\n    seedTemplate: seeds/shared.md\n" +
+          "  - type: chore\n    label: Chore\n    seedTemplate: seeds/shared.md\n",
+        seeds: ["seeds/shared.md"],
+      },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files.map((file) => file.plugin)).toEqual(["alpha"]);
+    // One warning, not two: beta's second declaration lost to alpha, not to beta.
+    expect(plan.warnings).toEqual([
+      'plugin beta ships a seed template named "shared.md", already installed by plugin alpha — skipped',
+    ]);
+  });
+
   it("gives a collision between two plugins to the first in directory order", () => {
     const root = makePluginTree({
       alpha: { types: declaring("seeds/shared.md"), seeds: ["seeds/shared.md"] },

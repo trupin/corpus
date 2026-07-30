@@ -270,3 +270,96 @@ recorded pid (50318); 9186/9187/9188/9190 all free; `8765` untouched;
 
 - [ ] `/evaluate` passes
 - [ ] Committed
+
+## Audit fix round (wave-3, 2026-07-30 — opus)
+
+Findings from `issues/evals/AUDIT-S017-wave3.md` closed here: **FIX 13**, **TEST 31**, **TEST 32**,
+**CLEAN 44**, **CLEAN 52**, **CLEAN 55**.
+
+**FIX 13 / TEST 32.** `existsSync` answers yes for a directory, so a plugin declaring
+`seedTemplate: seeds/oops.md` at a *directory* passed the guard and threw `EISDIR` out of
+`copyFileSync` in the middle of `corpus init` — unwinding a whole workspace over one plugin's typo.
+`fileKind()` now `statSync().isFile()`s and returns `file | other | missing`, so the warning also
+says which mistake it is: "does not exist" would have sent the author hunting for a file that is
+sitting right there.
+
+**CLEAN 44.** Two of a plugin's own doc types sharing one starter document is a legitimate
+declaration, and the collision warning named the plugin as the loser of a race against itself.
+Identical declarations within one plugin are now deduplicated silently. Two **different** files of
+one plugin landing on the same installed name is still a real conflict, and gets its own honest
+sentence naming both paths instead of borrowing the other-plugin one. The cross-plugin message is
+untouched, and a test pins that the carve-out did not silence it.
+
+**TEST 31.** `--dry-run` hard-coded `queueSkeletonIgnored: []`, so against an old `.gitignore` the
+plan promised a repair the real run then declined to commit — the one thing a plan may not do. The
+plan path now runs `trackableMarkers` too; `git check-ignore --no-index` answers about a path that
+does not exist yet, which is what makes the prediction possible at all. The rendered line reads
+"would be created but not committed" under `--dry-run` and "was" otherwise.
+
+**CLEAN 52 — done, but without a number.** The brief said "five" → six. The comment now names no
+count and says why: `QUEUE_STATUSES` is the source, and writing the number down is precisely what
+went stale when CONTRACT-021 added `deferred` — inside the comment explaining the mechanism meant to
+prevent that. Same call the evaluator recorded for the template `gitignore` at TEST-525.
+
+**CLEAN 55.** The three hand-rolled `${n === 1 ? "" : "s"}` sites in `init/index.ts` now use
+`plural()`; output is byte-identical.
+
+### E2E Verification Log (fix round)
+
+`corpus init` run from outside the repo, against a fixture plugins tree: one plugin declaring a
+**directory** as its seed, one declaring the same seed for two of its own doc types.
+
+```
+pluginsfix/broken/types.yaml          seedTemplate: seeds/oops.md
+pluginsfix/broken/seeds/oops.md/      ← a DIRECTORY
+pluginsfix/shared/types.yaml          type a and type b, both seedTemplate: seeds/two-types.md
+pluginsfix/shared/seeds/two-types.md
+
+$ CORPUS_PLUGINS_DIR=…/pluginsfix corpus init ws2 --port 9191
+warning: plugin broken declares seedTemplate "seeds/oops.md", which is a directory, not a file —
+         skipped; no template was installed for it
+Initialized Corpus workspace at …/ws2
+  installed 8 template files, recorded in .corpus/template-manifest.json
+  installed 1 plugin seed template into data/docs/templates/
+exit=0                                   ← init SURVIVES; pre-fix this unwound the workspace
+$ ls ws2/data/docs/templates/  →  note.md  two-types.md
+```
+
+No self-blaming warning from `shared` (CLEAN 44), and its file installed exactly once. The pre-fix
+failure mode, mechanically: `copyFileSync(<that directory>, …)` throws rather than copying.
+
+TEST 31 — an old `.gitignore` plus a missing status directory, plan then real run:
+
+```
+$ printf '.corpus/*\n' > .gitignore && git commit …  &&  rm -rf .corpus/queue/deferred
+
+$ corpus workspace upgrade --dry-run --from user
+plan (tool 0.0.0 → 0.0.0):
+  …
+  pending .corpus/queue/deferred/.gitkeep — queue status directory this workspace predates; …
+  1 marker above is excluded by this workspace's .gitignore, so it would be created but not
+  committed — allow `.corpus/queue/` through (the shipped template does, with `!.corpus/queue/`)
+  and re-run.
+nothing was written (--dry-run).
+  deferred created by the dry run? NO
+
+$ corpus workspace upgrade --from user
+upgrade (tool 0.0.0 → 0.0.0):
+  …
+  create  .corpus/queue/deferred/.gitkeep — …
+  1 marker above is excluded by this workspace's .gitignore, so it was created but not committed …
+wrote 4 files in commit 20ed3b3f…
+```
+
+The plan and the run now agree, and the plan says "would be" where the run says "was". A stock
+workspace is unaffected: the existing `--dry-run` marker test asserts the line is **absent** there.
+
+`plural()` (CLEAN 55) is visible in the init output above — "1 plugin seed template", "8 template
+files".
+
+### Checks (fix round)
+
+`npm run build`, `npx tsc --noEmit -p apps/cli/tsconfig.json`, `npx eslint apps/cli/src`,
+`npx prettier --check` — all clean. `VITEST_MAX_THREADS=4 npm test -w apps/cli` → **869 passed / 66
+files** (`install.test.ts` 23, `upgrade.test.ts` 26). `docs/cli.md` regenerated. Servers stopped by
+recorded pid; 9190–9195 and 8765 free; no workspace under the repo.

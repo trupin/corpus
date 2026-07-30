@@ -4,7 +4,7 @@
 cli
 
 ## Status
-in_progress
+done
 
 ## Priority
 P1
@@ -227,3 +227,119 @@ files**. Server on 9190 stopped by recorded pid (81969); `lsof -nP -iTCP:9190` e
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix
+
+## Audit fix round (wave-3, 2026-07-30 — opus)
+
+Findings from `issues/evals/AUDIT-S017-wave3.md` closed here: **FIX 11**, **FIX 15**, **TEST 22**,
+**TEST 26**, **CLEAN 49**, **CLEAN 54**.
+
+**CLEAN 49 / FIX 11.** `archive.ts` and `unarchive.ts` were the same twenty lines with two words
+changed, and the drift that invites is exactly what the audit found: the "already there?" read was
+decorative in one and destructive in the other. Both now sit on
+`doc/archive-toggle.ts#runArchiveToggle` (added to both `hygiene.test.ts` inventories). The toggle
+**sends nothing** when the document is already where the verb would put it, which is FIX 11 — the
+route sets `status: open` unconditionally, so the old unconditional `POST` silently reopened a
+`resolved` document while the output line called the run a no-op.
+
+**Deviation, deliberate: "settled" is status *and* folder, not status alone.** A plain
+`!wasArchived` skip would have given up the only CLI repair for a skill whose folder and status
+disagree — the server plans the folder move off the *path*, not the status. `isSettled` therefore
+also asks, for a `type: skill` document, which side of `.claude/skills-archived/` the wire `path` is
+on. Proven live below: a status-only skip would have printed "is already archived" and left an
+archived skill enabled and discoverable by Claude Code.
+
+**FIX 15 — took the audit's second branch, not the first.** The brief preferred narrowing
+`assertNotArchived` to `type: "skill"`. **SERVER-039 landed in the same round and refuses the same
+`PUT` for every type** (`apps/server/src/docs/update.ts#assertNotUnarchivingByPut`), so narrowing
+would have traded a local exit 2 naming `corpus doc unarchive <id>` for a server 400 naming
+`POST /api/docs/{id}/unarchive` — a route the CLI-only agent cannot issue, against TEST-540's whole
+point. So the guard stays universal and the *message* became honest per type, which is the audit's
+own stated alternative: a skill hears about its folder, every other type hears that un-archiving is
+its own operation. The guard is now explicitly documented as the better error rather than the
+enforcement — the same relationship `assertWritableExtraKey` has with `ExtraFrontmatterSchema`.
+**The choice is also the robust one if SERVER-039 were ever reverted**, which narrowing would not
+have been.
+
+### E2E Verification Log (fix round)
+
+Real server on `9190`, workspace `.../jobs/4dd0ddef/tmp/audit3-cli/ws1`, `corpus init` run from
+outside the repo, binary rebuilt (`npm run build -w apps/cli`) between the code change and these
+runs.
+
+FIX 15 — the two messages, from the one binary:
+
+```
+$ corpus doc edit doc_laegx37j --status open --from agent          # archived NOTE
+corpus: doc_laegx37j is archived; `--status open` writes the frontmatter and nothing else, which
+        is not how a document comes back.
+  Run `corpus doc unarchive doc_laegx37j` — the operation that un-archives a document. The server
+  refuses this write too (SERVER-039); refusing it here is what lets the message name a command
+  instead of a route.
+exit=2                          # no "skill", no ".claude/skills-archived/" anywhere in it
+
+$ corpus doc edit doc_w2av4hmv --status open --from agent          # archived SKILL
+corpus: doc_w2av4hmv is an archived skill; `--status open` would set the frontmatter without
+        bringing the skill back.
+  Run `corpus doc unarchive doc_w2av4hmv` — it restores the status *and* moves the folder back out
+  of `.claude/skills-archived/`, which re-enables the skill and frees its name.
+exit=2
+```
+
+FIX 11, beside the proof that the route really would have reopened it:
+
+```
+$ corpus doc edit doc_2cwqmfbh --status resolved --from agent   → edited doc_2cwqmfbh
+$ corpus doc unarchive doc_2cwqmfbh --from agent --json
+{"doc":{…"status":"resolved"…},"warnings":[]}            exit=0
+  status afterwards : resolved      (unchanged)
+  new commit        : NO
+
+# the same route, reached by hand, on an identically-prepared document:
+$ curl -XPOST -H "authorization: Bearer …" …/api/docs/doc_zrjrujrh/unarchive
+  status after raw POST : open      ← what this verb used to do to it
+```
+
+The folder half of `isSettled`, in the direction where it is load-bearing (status says `archived`,
+folder never moved — reachable by a hand edit or a merge):
+
+```
+  wire status: archived | wire path: .claude/skills/weekly-review/SKILL.md
+$ corpus doc archive doc_w2av4hmv --from agent
+archived doc_w2av4hmv
+  .claude/skills/          : comment fixture-notes orchestrate todos
+  .claude/skills-archived/ : weekly-review      ← the repair a status-only skip would have skipped
+```
+
+Settled cases send nothing, and `--json` is one shape either way:
+
+```
+$ corpus doc unarchive doc_w2av4hmv --from agent    (already open)   → "is not archived",      exit 0, no commit
+$ corpus doc archive   doc_w2av4hmv --from agent    (fully archived) → "is already archived",  exit 0, no commit
+$ corpus doc archive   doc_w2av4hmv --json                            → keys: doc,warnings
+```
+
+**CLEAN 54** — the status read is now documented as the same accepted read-then-write race as the
+tag merge, and the stdin-drain order turned out cheap to fix rather than document: `runDocEdit`
+parses every pure flag *before* `resolveBody`, so a usage error no longer swallows the caller's
+heredoc.
+
+```
+$ corpus doc edit doc_seedattention --extra title=Nope --from agent  (heredoc body piped in)
+corpus: `title` is a core frontmatter key, not an `extra` key — `--extra title=…` is refused.
+  Use `--title` instead.                                             exit=2
+```
+
+Pinned in `edit.test.ts` with `unreadable()` — a stdin that rejects on first read, so "this verb
+drained a body it never needed" fails as an assertion rather than as silently lost data.
+
+**TEST 22 / TEST 26.** `doc/fixtures.ts` gained `SKILL` and `ARCHIVED_SKILL` (a real skill, with the
+folder that makes the story true); the archived-guard tests use them instead of notes. `unarchive`
+now covers the `423` edit-lock (one attempt, exit 5, never retried) and both directions of the
+read-then-post window, including the one that has to fail safe.
+
+### Checks (fix round)
+
+`npm run build`, `npx tsc --noEmit -p apps/cli/tsconfig.json`, `npx eslint apps/cli/src`,
+`npx prettier --check` — all clean. `VITEST_MAX_THREADS=4 npm test -w apps/cli` → **869 passed / 66
+files** (was 831). `docs/cli.md` regenerated; `apps/cli/src/docs/generate.test.ts` green. Server
+stopped by recorded pid 54636; 9190–9195 and 8765 all free; no workspace under the repo.

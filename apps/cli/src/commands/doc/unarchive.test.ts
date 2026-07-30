@@ -6,10 +6,12 @@ import {
   startStubServer,
   stubContext,
 } from "../../testing/stub-server.js";
-import { archived, DOC } from "./fixtures.js";
-import { describeOutcome, runDocUnarchive, unarchiveCommand } from "./unarchive.js";
+import { isSettled } from "./archive-toggle.js";
+import { archived, ARCHIVED_SKILL, at, DOC, SKILL } from "./fixtures.js";
+import { runDocUnarchive, unarchiveCommand } from "./unarchive.js";
 
 const ARGS = { id: "doc_a1b2c3" };
+const SKILL_ARGS = { id: "doc_gqyrzvto" };
 
 const withStatus = (status: "open" | "resolved" | "archived") => ({
   ...DOC,
@@ -35,7 +37,7 @@ describe("corpus doc unarchive", () => {
     expect(harness.stdout()).toBe("unarchived doc_a1b2c3\n");
   });
 
-  it("reports a document that is not archived as a no-op and exits 0, mirroring archive", async () => {
+  it("sends nothing at all for a document that is not archived, and exits 0", async () => {
     const stub = await startStubServer((request, response) => {
       if (request.method === "GET") return sendJson(response, 200, DOC);
       sendJson(response, 200, { doc: DOC, warnings: [] });
@@ -44,10 +46,14 @@ describe("corpus doc unarchive", () => {
 
     await runDocUnarchive(harness.context);
 
+    expect(stub.requests.map((request) => request.method)).toEqual(["GET"]);
     expect(harness.stdout()).toBe("doc_a1b2c3 is not archived\n");
   });
 
-  it("says so when unarchiving a resolved document opens it — the route sets `open`, not the old status", async () => {
+  it("leaves a resolved document resolved — it never quietly reopens one", async () => {
+    // Wave-3 audit, FIX 11. The route sets `status: open` unconditionally, so
+    // posting at a document that was never archived *changed* it while the
+    // output line called the run a no-op. Nothing is sent now, so nothing moves.
     const stub = await startStubServer((request, response) => {
       if (request.method === "GET") return sendJson(response, 200, withStatus("resolved"));
       sendJson(response, 200, { doc: withStatus("open"), warnings: [] });
@@ -56,7 +62,55 @@ describe("corpus doc unarchive", () => {
 
     await runDocUnarchive(harness.context);
 
-    expect(harness.stdout()).toBe("doc_a1b2c3 was not archived — status is now open\n");
+    expect(stub.requests.map((request) => request.method)).toEqual(["GET"]);
+    expect(harness.stdout()).toBe("doc_a1b2c3 is not archived\n");
+  });
+
+  it("is idempotent: a second run on the now-open document sends nothing either", async () => {
+    let unarchived = false;
+    const stub = await startStubServer((request, response) => {
+      if (request.method === "GET")
+        return sendJson(response, 200, unarchived ? DOC : archived(DOC));
+      unarchived = true;
+      sendJson(response, 200, { doc: DOC, warnings: [] });
+    });
+
+    const first = stubContext(stub, { args: ARGS });
+    await runDocUnarchive(first.context);
+    expect(first.stdout()).toBe("unarchived doc_a1b2c3\n");
+
+    const second = stubContext(stub, { args: ARGS });
+    await runDocUnarchive(second.context);
+    expect(second.stdout()).toBe("doc_a1b2c3 is not archived\n");
+    expect(stub.requests.map((request) => request.method)).toEqual(["GET", "POST", "GET"]);
+  });
+
+  it("still posts for a skill whose folder is stranded in skills-archived", async () => {
+    // The half-state a raw `PUT` or the UI can still reach until SERVER-039
+    // lands: frontmatter `open`, folder still archived, name still 409-blocked.
+    // This verb is the only CLI repair for it, so the status alone must not be
+    // what decides to skip.
+    const stranded = at(SKILL, ".claude/skills-archived/weekly-review/SKILL.md");
+    const stub = await startStubServer((request, response) => {
+      if (request.method === "GET") return sendJson(response, 200, stranded);
+      sendJson(response, 200, { doc: SKILL, warnings: [] });
+    });
+    const harness = stubContext(stub, { args: SKILL_ARGS });
+
+    await runDocUnarchive(harness.context);
+
+    expect(stub.requests.map((request) => request.method)).toEqual(["GET", "POST"]);
+    expect(harness.stdout()).toBe("unarchived doc_gqyrzvto\n");
+  });
+
+  it("sends nothing for a skill that is already back in .claude/skills/", async () => {
+    const stub = await startStubServer((_request, response) => sendJson(response, 200, SKILL));
+    const harness = stubContext(stub, { args: SKILL_ARGS });
+
+    await runDocUnarchive(harness.context);
+
+    expect(stub.requests).toHaveLength(1);
+    expect(harness.stdout()).toBe("doc_gqyrzvto is not archived\n");
   });
 
   it("emits the server's response under --json", async () => {
@@ -64,6 +118,15 @@ describe("corpus doc unarchive", () => {
       if (request.method === "GET") return sendJson(response, 200, archived(DOC));
       sendJson(response, 200, { doc: DOC, warnings: [] });
     });
+    const harness = stubContext(stub, { args: ARGS, json: true });
+
+    await runDocUnarchive(harness.context);
+
+    expect(JSON.parse(harness.stdout())).toEqual({ doc: DOC, warnings: [] });
+  });
+
+  it("emits the same shape under --json when it sends nothing", async () => {
+    const stub = await startStubServer((_request, response) => sendJson(response, 200, DOC));
     const harness = stubContext(stub, { args: ARGS, json: true });
 
     await runDocUnarchive(harness.context);
@@ -93,7 +156,7 @@ describe("corpus doc unarchive", () => {
     // destination already exists. The CLI must hand that message through — an
     // agent that cannot read why it failed cannot recover.
     const stub = await startStubServer((request, response) => {
-      if (request.method === "GET") return sendJson(response, 200, archived(DOC));
+      if (request.method === "GET") return sendJson(response, 200, ARCHIVED_SKILL);
       sendJson(response, 400, {
         code: "bad_request",
         message: "the archive destination already exists",
@@ -105,13 +168,64 @@ describe("corpus doc unarchive", () => {
         ],
       });
     });
-    const harness = stubContext(stub, { args: ARGS });
+    const harness = stubContext(stub, { args: SKILL_ARGS });
 
     const error: unknown = await runDocUnarchive(harness.context).catch((cause: unknown) => cause);
 
     expect(exitCodeFor(error)).toBe(ExitCode.serverError);
     expect(String(error)).toContain("the archive destination already exists");
     expect(harness.stdout()).toBe("");
+  });
+
+  it("reports the other party's edit lock as a server error and never retries it", async () => {
+    // Wave-3 audit, TEST 26. `setArchived` runs inside the document mutex and
+    // re-checks the lease, so a `423` is a real outcome of this verb — and the
+    // orchestrate skill defers on it rather than looping.
+    const stub = await startStubServer((request, response) => {
+      if (request.method === "GET") return sendJson(response, 200, archived(DOC));
+      sendJson(response, 423, {
+        code: "locked",
+        message: "document is locked by user",
+        lock: { docId: "doc_a1b2c3", holder: "user", acquired: "2026-07-30T10:00:00Z", ttl: 120 },
+      });
+    });
+    const harness = stubContext(stub, { args: ARGS, actor: "agent" });
+
+    const error: unknown = await runDocUnarchive(harness.context).catch((cause: unknown) => cause);
+
+    expect(exitCodeFor(error)).toBe(ExitCode.serverError);
+    expect(String(error)).toContain("locked by user");
+    expect(stub.requests.map((request) => request.method)).toEqual(["GET", "POST"]); // one attempt
+    expect(harness.stdout()).toBe("");
+  });
+
+  it("reports the route's own outcome when the document is archived between the read and the post", async () => {
+    // The read is one round trip old, exactly like `doc edit`'s tag merge. If
+    // somebody archives the document in that window the route still runs — the
+    // server holds the lock, not this verb — and the line reports what the route
+    // did, not what the stale read predicted.
+    const stub = await startStubServer((request, response) => {
+      if (request.method === "GET") return sendJson(response, 200, archived(DOC));
+      sendJson(response, 200, { doc: DOC, warnings: [] });
+    });
+    const harness = stubContext(stub, { args: ARGS });
+
+    await runDocUnarchive(harness.context);
+
+    expect(harness.stdout()).toBe("unarchived doc_a1b2c3\n");
+  });
+
+  it("cannot be raced into a no-op: a document archived after an unarchived read is left alone", async () => {
+    // The other direction of the same window, and the one that has to fail
+    // safe. The read says "not archived", so nothing is sent — the document
+    // somebody just archived stays archived rather than being reopened by a
+    // decision made before they touched it.
+    const stub = await startStubServer((_request, response) => sendJson(response, 200, DOC));
+    const harness = stubContext(stub, { args: ARGS });
+
+    await runDocUnarchive(harness.context);
+
+    expect(stub.requests.map((request) => request.method)).toEqual(["GET"]);
   });
 
   it("reports an unknown id the way `doc archive` does — the server's own error", async () => {
@@ -128,20 +242,41 @@ describe("corpus doc unarchive", () => {
   });
 });
 
-describe("unarchive helpers", () => {
-  it("describes each outcome from the before/after statuses alone", () => {
-    expect(describeOutcome("doc_x", true, "archived", "open")).toBe("unarchived doc_x");
-    expect(describeOutcome("doc_x", false, "open", "open")).toBe("doc_x is not archived");
-    expect(describeOutcome("doc_x", false, "resolved", "open")).toBe(
-      "doc_x was not archived — status is now open",
-    );
+describe("isSettled — what counts as already there", () => {
+  it("reads a plain document's state off the status alone", () => {
+    expect(isSettled(DOC, false)).toBe(true);
+    expect(isSettled(DOC, true)).toBe(false);
+    expect(isSettled(archived(DOC), true)).toBe(true);
+    expect(isSettled(archived(DOC), false)).toBe(false);
   });
 
+  it("treats a resolved document as unarchived — the route would reopen it", () => {
+    expect(isSettled(withStatus("resolved"), false)).toBe(true);
+  });
+
+  it("asks a skill for its folder as well as its status", () => {
+    expect(isSettled(SKILL, false)).toBe(true);
+    expect(isSettled(ARCHIVED_SKILL, true)).toBe(true);
+
+    // Both half-states: each disagrees with itself, so neither is settled either way.
+    const strandedOpen = at(SKILL, ".claude/skills-archived/weekly-review/SKILL.md");
+    const strandedArchived = archived(SKILL);
+    expect(isSettled(strandedOpen, false)).toBe(false);
+    expect(isSettled(strandedArchived, true)).toBe(false);
+  });
+});
+
+describe("unarchive helpers", () => {
   it("tells the agent, in the published help, that this is what the skill-name 409 means", () => {
     // TEST-540: the instruction the server's 409 gives has to name a command
     // `docs/cli.md` documents, and this description is what `docs/cli.md`
     // publishes.
     expect(unarchiveCommand.description).toContain("409");
     expect(unarchiveCommand.description).toContain("frees its name");
+  });
+
+  it("publishes that a non-archived document is left alone, not reopened", () => {
+    expect(unarchiveCommand.description).toContain("without sending anything");
+    expect(unarchiveCommand.description).toContain("never");
   });
 });

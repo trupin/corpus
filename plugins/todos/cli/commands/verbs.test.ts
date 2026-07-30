@@ -380,6 +380,41 @@ describe("corpus todos list", () => {
     ]);
   });
 
+  /**
+   * FIX 9, and TEST-29's point: the fixture above hides the bug because its
+   * done item is *last*. Renumbering the survivors makes the printed number
+   * name a different item than the text beside it — `check <that number>` then
+   * checks off the wrong thing, which is a mistake nobody notices until the
+   * wrong task is missing.
+   */
+  it("keeps the document's own numbering when --open hides an earlier item", async () => {
+    const DONE_FIRST = listPayload("doc_week", "Week of Jul 20", [
+      item("Send lease notice", true),
+      item("Renew passport", false),
+      item("Call plumber", false),
+    ]);
+    const h = cliHarness({
+      args: { list: "doc_week" },
+      flags: { open: true },
+      actor: "user",
+      replies: [{ status: 200, body: lists(DONE_FIRST) }],
+    });
+    await list.handler(h.context);
+    expect(h.lines).toEqual([
+      "Week of Jul 20 [doc_week] — 2 open · 1 done",
+      "   2 ☐ Renew passport",
+      "   3 ☐ Call plumber",
+    ]);
+    // And 2 is genuinely what `check` resolves against the unfiltered list.
+    expect(h.emitted).toEqual([
+      {
+        lists: [
+          { ...DONE_FIRST, items: [item("Renew passport", false), item("Call plumber", false)] },
+        ],
+      },
+    ]);
+  });
+
   it("says so when there are no todo lists at all", async () => {
     const h = cliHarness({
       args: {},
@@ -398,28 +433,27 @@ describe("corpus todos migrate", () => {
     migrated: readonly Record<string, unknown>[],
     conflicts: readonly Record<string, unknown>[],
     unchanged: number,
-  ): Record<string, unknown> => ({ migrated, conflicts, unchanged });
+    dryRun = false,
+  ): Record<string, unknown> => ({ dryRun, migrated, conflicts, unchanged });
+
+  const MIXED = report(
+    [{ docId: "doc_week", title: "Week of Jul 20", items: 3 }],
+    [{ docId: "doc_bad", title: "Broken", reason: "doc_bad has malformed items" }],
+    2,
+  );
 
   it("POSTs once and reports what it changed", async () => {
     const h = cliHarness({
       args: {},
       flags: {},
       actor: "agent",
-      replies: [
-        {
-          status: 200,
-          body: report(
-            [{ docId: "doc_week", title: "Week of Jul 20", items: 3 }],
-            [{ docId: "doc_bad", title: "Broken", reason: "doc_bad has malformed items" }],
-            2,
-          ),
-        },
-      ],
+      replies: [{ status: 200, body: MIXED }],
     });
     await migrate.handler(h.context);
     expect(
       h.requests.map((request) => `${request.method} ${new URL(request.url).pathname}`),
     ).toEqual(["POST /api/x/todos/migrate"]);
+    expect(new URL(String(h.requests[0]?.url)).search).toBe("");
     expect(h.requests[0]?.headers[ACTOR_HEADER]).toBe("agent");
     expect(h.lines).toEqual([
       "migrated Week of Jul 20 [doc_week] — 3 items moved into the body",
@@ -436,7 +470,7 @@ describe("corpus todos migrate", () => {
       replies: [{ status: 200, body: report([], [], 3) }],
     });
     await migrate.handler(h.context);
-    expect(h.emitted).toEqual([{ migrated: [], conflicts: [], unchanged: 3 }]);
+    expect(h.emitted).toEqual([{ dryRun: false, migrated: [], conflicts: [], unchanged: 3 }]);
     expect(h.lines).toEqual(["nothing to migrate — 3 todo lists already store items in the body."]);
   });
 
@@ -449,5 +483,78 @@ describe("corpus todos migrate", () => {
     });
     await migrate.handler(h.context);
     expect(h.lines[0]).toBe("migrated A [doc_a] — 1 item moved into the body");
+  });
+
+  /**
+   * CLEAN 47. A data-transforming verb over every todo document in a workspace
+   * is exactly the kind of thing a person wants to look at before running.
+   */
+  it("asks the route for a prediction with --dry-run, and says nothing was written", async () => {
+    const h = cliHarness({
+      args: {},
+      flags: { "dry-run": true },
+      actor: "user",
+      replies: [{ status: 200, body: { ...MIXED, dryRun: true } }],
+    });
+    await migrate.handler(h.context);
+    expect(new URL(String(h.requests[0]?.url)).search).toBe("?dryRun=true");
+    expect(h.lines).toEqual([
+      "would migrate Week of Jul 20 [doc_week] — 3 items to move into the body",
+      "would skip Broken [doc_bad] — doc_bad has malformed items",
+      "1 to migrate · 1 to skip · 2 already migrated",
+      "nothing was written — re-run without --dry-run to convert.",
+    ]);
+  });
+
+  it("says the same nothing-to-do sentence in a dry run", async () => {
+    const h = cliHarness({
+      args: {},
+      flags: { "dry-run": true },
+      actor: "user",
+      replies: [{ status: 200, body: report([], [], 1, true) }],
+    });
+    await migrate.handler(h.context);
+    expect(h.lines).toEqual(["nothing to migrate — 1 todo list already stores items in the body."]);
+  });
+});
+
+/**
+ * CLEAN 46. Three ways an answer can be unusable, and only one of them used to
+ * produce a sentence: a raw `ZodError` — a wall of `invalid_type` paths — is
+ * what the other two printed at whoever ran the verb.
+ */
+describe("an answer the verb cannot use", () => {
+  it("names the route when a 2xx body is not JSON at all", async () => {
+    const h = cliHarness({
+      args: {},
+      flags: {},
+      actor: "user",
+      replies: [{ status: 200, body: null, text: "<html>proxy says hello</html>" }],
+    });
+    await expect(list.handler(h.context)).rejects.toThrow(
+      /GET \/api\/x\/todos\/lists answered HTTP 200 with a body that is not JSON/,
+    );
+  });
+
+  it("names the route when a 2xx body is JSON of the wrong shape", async () => {
+    const h = cliHarness({
+      args: {},
+      flags: {},
+      actor: "user",
+      replies: [{ status: 200, body: { lists: [{ docId: 7 }] } }],
+    });
+    await expect(list.handler(h.context)).rejects.toThrow(
+      /answered a shape this verb does not understand/,
+    );
+  });
+
+  it("still prefers the server's own message when it sent one", async () => {
+    const h = cliHarness({
+      args: {},
+      flags: {},
+      actor: "user",
+      replies: [{ status: 400, body: { code: "bad_request", message: "no such thing" } }],
+    });
+    await expect(list.handler(h.context)).rejects.toThrow("no such thing");
   });
 });

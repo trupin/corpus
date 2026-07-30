@@ -1,6 +1,5 @@
-import type { DocStatus } from "@corpus/contract";
-import { warningSuffix } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { runArchiveToggle } from "./archive-toggle.js";
 
 /**
  * `corpus doc unarchive` — the other half of `corpus doc archive`, and the
@@ -14,46 +13,25 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * folder back out of `.claude/skills-archived/`, which frees the name, and every
  * bit of that lives server-side.
  *
- * The status is read first for the same reason `archive` reads it: the server
- * treats unarchiving an already-open document as a no-op that commits nothing,
- * and its response cannot say which of the two happened.
+ * The document is read first, and **a document that is already unarchived is
+ * left completely alone** — no request. That is not politeness: the route sets
+ * `status: open` unconditionally, so sending it at a `resolved` document
+ * silently reopened it while the output line called the run a no-op (wave-3
+ * audit, FIX 11). What counts as "already unarchived" is decided by
+ * `isSettled`, which looks at the folder as well as the status so the one
+ * half-state worth repairing still is.
  */
 
 export async function runDocUnarchive(context: WorkspaceCommandContext): Promise<void> {
-  const id = context.args.get("id");
-
-  const before = await context.client.request((api) =>
-    api.GET("/api/docs/{id}", { params: { path: { id } } }),
-  );
-  const wasArchived = before.frontmatter.status === "archived";
-
-  const response = await context.client.request((api) =>
-    api.POST("/api/docs/{id}/unarchive", { params: { path: { id } } }),
-  );
-
-  context.out.emit(response);
-  const suffix = warningSuffix(response.warnings);
-  context.out.line(
-    `${describeOutcome(id, wasArchived, before.frontmatter.status, response.doc.frontmatter.status)}${suffix}`,
-  );
-}
-
-/**
- * Unarchiving is `status: open`, not "the status before archiving" — the server
- * keeps no memory of what it was. So a `resolved` document really does come back
- * `open`, and reporting that as an untouched no-op would be a small lie of
- * exactly the kind this issue exists to remove.
- */
-export function describeOutcome(
-  id: string,
-  wasArchived: boolean,
-  before: DocStatus,
-  after: DocStatus,
-): string {
-  if (wasArchived) return `unarchived ${id}`;
-  return after === before
-    ? `${id} is not archived`
-    : `${id} was not archived — status is now ${after}`;
+  await runArchiveToggle(context, {
+    wantArchived: false,
+    post: (ctx, id) =>
+      ctx.client.request((api) =>
+        api.POST("/api/docs/{id}/unarchive", { params: { path: { id } } }),
+      ),
+    moved: (id) => `unarchived ${id}`,
+    settled: (id) => `${id} is not archived`,
+  });
 }
 
 export const unarchiveCommand: WorkspaceCommandSpec = {
@@ -64,12 +42,16 @@ export const unarchiveCommand: WorkspaceCommandSpec = {
     "`type: skill` document's folder moves back from `.claude/skills-archived/` to " +
     "`.claude/skills/`, which re-enables the skill **and frees its name** — a `409` from " +
     "`corpus skill create` saying the name belongs to an archived skill is telling you to run " +
-    "this verb. Unarchiving a document that is not archived is a no-op reporting exactly that and " +
-    "exits 0, mirroring `archive`'s treatment of an already-archived document, so a retried loop " +
-    "is harmless; note that unarchiving is `status: open` rather than a memory of the previous " +
-    "status, so a `resolved` document comes back `open` and the line says so. If a folder is " +
-    "already sitting at the destination path the server refuses rather than merging the two, and " +
-    "its message names the directory to move or remove first.",
+    "this verb. Note that the status it restores is `open`, not a memory of what the status was " +
+    "before archiving, which the server does not keep — so a document archived while `resolved` " +
+    "comes back `open`. A document that is **not** archived is left exactly as it is: the verb " +
+    "reports that and exits 0 without sending anything, mirroring `archive`'s treatment of an " +
+    "already-archived document, so a retried loop is harmless and a `resolved` document is never " +
+    "quietly reopened by one. The one exception is a `type: skill` document whose folder is " +
+    "still in `.claude/skills-archived/` although its status says otherwise: that half-state is " +
+    "real and this verb repairs it. If a folder is already sitting at the destination path the " +
+    "server refuses rather than merging the two, and its message names the directory to move or " +
+    "remove first.",
   args: [{ name: "id", required: true, description: "The document's id." }],
   flags: [],
   examples: [

@@ -87,7 +87,11 @@ function httpish(status: number, code: string, message: string): unknown {
 function docFixture(
   id: string,
   body: string,
-  options: { readonly type?: string; readonly legacy?: unknown } = {},
+  options: {
+    readonly type?: string;
+    readonly legacy?: unknown;
+    readonly status?: "open" | "archived";
+  } = {},
 ): Doc {
   return {
     frontmatter: {
@@ -97,7 +101,7 @@ function docFixture(
       created: TS,
       updated: TS,
       tags: [],
-      status: "open",
+      status: options.status ?? "open",
       anchors: {},
       due: null,
       reviewed: null,
@@ -148,9 +152,11 @@ interface HarnessOptions {
   /**
    * Fails the write. Invoked inside the lane, *after* any mutation callback
    * has run — where the real context's edit-lock refusal happens, which is why
-   * the seam requires the callback to be a pure recompute.
+   * the seam requires the callback to be a pure recompute. It is handed the
+   * document id so a batch verb can be driven past a failure on **one** of the
+   * documents it walks.
    */
-  readonly onWrite?: () => void;
+  readonly onWrite?: (id: string) => void;
 }
 
 function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harness {
@@ -167,7 +173,7 @@ function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harne
   /** The write half of both write verbs — the lane is the caller's business. */
   const write = async (actor: Actor, id: string, patch: UpdateDocRequest): Promise<Doc> => {
     const doc = read(id);
-    options.onWrite?.();
+    options.onWrite?.(id);
     await writeWindow();
     recorded.updates.push({ id, actor, extra: patch.extra, body: patch.body });
     const next: Doc = {
@@ -200,11 +206,17 @@ function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harne
     logger: { info: () => undefined, debug: () => undefined, error: () => undefined },
     now: () => NOW,
     listDocs: (query): DocList => {
-      // Paged for real: `POST /migrate` walks every page, and a fake that
-      // ignored `offset` would hand it the first page forever.
-      const matched = [...docs.values()].filter(
-        (doc) => query.type === undefined || doc.frontmatter.type === query.type,
-      );
+      // Paged for real: both walks page to the end, and a fake that ignored
+      // `offset` would hand them the first page forever.
+      //
+      // `includeArchived` is honoured for real too (TEST-24). It is the whole
+      // difference between the two walks — the aggregate inherits core's
+      // archived exclusion, migration deliberately lifts it — and a fake that
+      // ignored it would let either of them claim the other's behaviour.
+      const matched = [...docs.values()].filter((doc) => {
+        if (query.type !== undefined && doc.frontmatter.type !== query.type) return false;
+        return query.includeArchived === true || doc.frontmatter.status !== "archived";
+      });
       return {
         items: matched.slice(query.offset, query.offset + query.limit).map((doc) =>
           docRowFixture({
@@ -212,6 +224,7 @@ function harness(seed: readonly Doc[] = [], options: HarnessOptions = {}): Harne
             type: doc.frontmatter.type,
             title: doc.frontmatter.title,
             path: doc.path,
+            status: doc.frontmatter.status,
             extra: doc.frontmatter.extra,
           }),
         ),
@@ -303,6 +316,36 @@ describe("GET /lists", () => {
     expect((await call(h, "GET", "/lists/at")).status).toBe(404);
   });
 
+  /**
+   * FIX 2. `GET /lists` used to ask the collection query once and inherit the
+   * contract's default `limit` of 50 — so a workspace's fifty-first todo
+   * document vanished from the CLI's `list`, from every todo row's preview and
+   * from the aggregate column at once, with nothing anywhere saying it had.
+   */
+  it("pages past the contract's default limit, however many lists there are", async () => {
+    const many = harness(
+      Array.from({ length: 137 }, (_entry, at) =>
+        docFixture(`doc_${String(at).padStart(3, "0")}`, `- [ ] item ${String(at)}\n`),
+      ),
+    );
+    const payload = (await (await call(many, "GET", "/lists")).json()) as {
+      lists: { docId: string }[];
+    };
+    expect(payload.lists).toHaveLength(137);
+    expect(payload.lists.at(-1)?.docId).toBe("doc_136");
+  });
+
+  it("excludes archived lists, as core's default result set does", async () => {
+    const mixed = harness([
+      docFixture("doc_open", "- [ ] a\n"),
+      docFixture("doc_archived", "- [ ] b\n", { status: "archived" }),
+    ]);
+    const payload = (await (await call(mixed, "GET", "/lists")).json()) as {
+      lists: { docId: string }[];
+    };
+    expect(payload.lists.map((list) => list.docId)).toEqual(["doc_open"]);
+  });
+
   it("reads a migrated and a not-yet-migrated document side by side", async () => {
     // TEST-488: the mixed state a real workspace is in for as long as the
     // chosen policy takes to converge. Both appear, neither duplicated.
@@ -372,11 +415,14 @@ describe("POST /:docId/items", () => {
     expect(h.recorded.updates[0]?.extra).toBeUndefined();
   });
 
-  it("broadcasts only the plugin's own namespaced keys", async () => {
+  it("broadcasts only the plugin's own namespaced key", async () => {
     await call(h, "POST", "/doc_week/items", { text: "Book dentist" });
-    // The context prefixes these to ["x","todos",…]; naming a core root throws,
-    // because the core write path already broadcast ["docs"] itself.
-    expect(h.recorded.keys).toEqual([["lists"], ["lists", "doc_week"]]);
+    // The context prefixes this to ["x","todos","lists"]; naming a core root
+    // throws, because the core write path already broadcast ["docs"] itself.
+    // One key and not two: a ["lists", docId] key would match no registered
+    // query — the aggregate's key is ["x","todos","lists","at",…] — so it was
+    // precision that invalidated nothing (CLEAN 43).
+    expect(h.recorded.keys).toEqual([["lists"]]);
   });
 
   it("appends to a document with no list in its body at all", async () => {
@@ -429,6 +475,17 @@ describe("POST /:docId/items", () => {
 
   it("404s an unknown document", async () => {
     expect((await call(h, "POST", "/doc_gone/items", { text: "a" })).status).toBe(404);
+  });
+
+  it("400s a document of another type, inside the lane, writing nothing", async () => {
+    // The read that decides this happens *in* the mutation callback, so the
+    // refusal is a throw that aborts the write rather than a check taken
+    // outside it against a document that may since have changed type.
+    const response = await call(h, "POST", "/doc_note/items", { text: "a" });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { message: string }).message).toContain("not a todo list");
+    expect(h.recorded.updates).toEqual([]);
+    expect(h.recorded.keys).toEqual([]);
   });
 });
 
@@ -582,34 +639,38 @@ describe("migration", () => {
     expect(m.recorded.updates[0]?.extra).toEqual({ items: null });
   });
 
+  interface Report {
+    dryRun: boolean;
+    migrated: { docId: string; title: string; items: number }[];
+    conflicts: { docId: string; title: string; reason: string }[];
+    unchanged: number;
+  }
+
+  const migrateWith = async (m: Harness, query = ""): Promise<Report> =>
+    (await (await call(m, "POST", `/migrate${query}`)).json()) as Report;
+
   it("converts every remaining document, reports what it changed, and is idempotent", async () => {
     const m = legacyDocs();
-    const first = (await (await call(m, "POST", "/migrate")).json()) as {
-      migrated: { docId: string; items: number }[];
-      conflicts: { docId: string; reason: string }[];
-      unchanged: number;
-    };
+    const first = await migrateWith(m);
     expect(first.migrated).toEqual([{ docId: "doc_legacy", title: "List doc_legacy", items: 2 }]);
     expect(first.conflicts[0]?.docId).toBe("doc_bad");
     expect(first.conflicts[0]?.reason).toContain("malformed items");
     expect(first.unchanged).toBe(1);
+    expect(first.dryRun).toBe(false);
     expect(m.docs.get("doc_legacy")?.body).toBe("## Notes\n\n- [ ] a (due: 2026-08-01)\n- [x] b\n");
     expect(m.docs.get("doc_body")?.body).toBe("- [ ] already migrated\n");
 
-    const second = (await (await call(m, "POST", "/migrate")).json()) as {
-      migrated: unknown[];
-      unchanged: number;
-    };
+    const second = await migrateWith(m);
     expect(second.migrated).toEqual([]);
     expect(second.unchanged).toBe(2);
     // The unconvertible document is reported every time, never written.
     expect(m.recorded.updates.filter((entry) => entry.id === "doc_bad")).toEqual([]);
   });
 
-  it("broadcasts only what it changed, and nothing when it changed nothing", async () => {
+  it("broadcasts once for the run, and nothing when it changed nothing", async () => {
     const m = legacyDocs();
     await call(m, "POST", "/migrate");
-    expect(m.recorded.keys).toEqual([["lists"], ["lists", "doc_legacy"]]);
+    expect(m.recorded.keys).toEqual([["lists"]]);
     m.recorded.keys.length = 0;
     await call(m, "POST", "/migrate");
     expect(m.recorded.keys).toEqual([]);
@@ -619,6 +680,199 @@ describe("migration", () => {
     const m = legacyDocs();
     await call(m, "POST", "/migrate", undefined, "agent");
     expect(m.recorded.updates[0]).toMatchObject({ id: "doc_legacy", actor: "agent" });
+  });
+
+  it("includes archived lists, unlike every read surface", async () => {
+    // A document left unmigrated because it happened to be archived is a
+    // document that breaks the day someone unarchives it.
+    const m = harness([
+      docFixture("doc_shelved", "## Notes\n", {
+        status: "archived",
+        legacy: [{ text: "a", done: false, ts: TS }],
+      }),
+    ]);
+    const report = await migrateWith(m);
+    expect(report.migrated.map((entry) => entry.docId)).toEqual(["doc_shelved"]);
+  });
+
+  it("walks past one page of documents", async () => {
+    const m = harness(
+      Array.from({ length: 213 }, (_entry, at) =>
+        docFixture(`doc_${String(at).padStart(3, "0")}`, "## Notes\n", {
+          legacy: [{ text: `item ${String(at)}`, done: false }],
+        }),
+      ),
+    );
+    const report = await migrateWith(m);
+    expect(report.migrated).toHaveLength(213);
+    expect(m.docs.get("doc_212")?.body).toBe("## Notes\n\n- [ ] item 212\n");
+  });
+
+  it("says so plainly for a workspace with no todo documents at all", async () => {
+    // TEST-23's other half: the loop's zero-iteration case must still answer a
+    // well-formed report rather than nothing.
+    expect(await migrateWith(harness([]))).toEqual({
+      dryRun: false,
+      migrated: [],
+      conflicts: [],
+      unchanged: 0,
+    });
+  });
+
+  /**
+   * FIX 4. `parseBodyItems(plan.body).length` counted every item in the
+   * resulting body, so clearing a stale empty `items:` key off a document that
+   * already had three body items reported "3 items moved into the body" — a
+   * number that is true of nothing that happened.
+   */
+  it("counts what moved, not what the body ended up holding", async () => {
+    const m = harness([docFixture("doc_stale", "- [ ] a\n- [ ] b\n- [ ] c\n", { legacy: [] })]);
+    const report = await migrateWith(m);
+    expect(report.migrated).toEqual([{ docId: "doc_stale", title: "List doc_stale", items: 0 }]);
+    expect(m.docs.get("doc_stale")?.body).toBe("- [ ] a\n- [ ] b\n- [ ] c\n");
+    expect(m.docs.get("doc_stale")?.frontmatter.extra).toEqual({});
+  });
+});
+
+/**
+ * FIX 3. Only `TodoItemError` used to be caught, so the first document whose
+ * write failed for any other reason — an edit lock, a document deleted between
+ * the listing and the write, a git failure — aborted the whole run: the
+ * successes already on disk were never named, never broadcast, and the user was
+ * given no way to tell how far it got. A migration is a batch, and a batch
+ * reports per item.
+ */
+describe("migrate past a failure it does not own", () => {
+  const withLock = (locked: ReadonlySet<string>): Harness =>
+    harness(
+      [
+        docFixture("doc_a", "## Notes\n", { legacy: [{ text: "a", done: false }] }),
+        docFixture("doc_held", "## Notes\n", { legacy: [{ text: "held", done: false }] }),
+        docFixture("doc_c", "## Notes\n", { legacy: [{ text: "c", done: false }] }),
+      ],
+      {
+        onWrite: (id) => {
+          if (locked.has(id)) throw httpish(423, "locked", `${id} is locked by user`);
+        },
+      },
+    );
+
+  it("records the locked document as a conflict and converts the rest", async () => {
+    const m = withLock(new Set(["doc_held"]));
+    const report = (await (await call(m, "POST", "/migrate")).json()) as {
+      migrated: { docId: string }[];
+      conflicts: { docId: string; reason: string }[];
+    };
+    expect(report.migrated.map((entry) => entry.docId)).toEqual(["doc_a", "doc_c"]);
+    expect(report.conflicts).toEqual([
+      { docId: "doc_held", title: "List doc_held", reason: "doc_held is locked by user" },
+    ]);
+    // And the two that did convert are on disk, not merely reported.
+    expect(m.docs.get("doc_c")?.body).toBe("## Notes\n\n- [ ] c\n");
+    expect(m.docs.get("doc_held")?.frontmatter.extra).toEqual({
+      items: [{ text: "held", done: false }],
+    });
+  });
+
+  it("still broadcasts the documents that did convert", async () => {
+    const m = withLock(new Set(["doc_held"]));
+    await call(m, "POST", "/migrate");
+    expect(m.recorded.keys).toEqual([["lists"]]);
+  });
+
+  it("reports an unexpected failure against the document it belongs to", async () => {
+    const boom = harness(
+      [
+        docFixture("doc_a", "## Notes\n", { legacy: [{ text: "a", done: false }] }),
+        docFixture("doc_b", "## Notes\n", { legacy: [{ text: "b", done: false }] }),
+      ],
+      {
+        onWrite: (id) => {
+          if (id === "doc_a") throw new Error("the disk caught fire");
+        },
+      },
+    );
+    const report = (await (await call(boom, "POST", "/migrate")).json()) as {
+      migrated: { docId: string }[];
+      conflicts: { docId: string; reason: string }[];
+    };
+    // A batch verb that dies on document one tells the user nothing about
+    // documents two through fifty — including which of them are already done.
+    expect(report.conflicts).toEqual([
+      { docId: "doc_a", title: "List doc_a", reason: "the disk caught fire" },
+    ]);
+    expect(report.migrated.map((entry) => entry.docId)).toEqual(["doc_b"]);
+  });
+
+  it("still names the document when something threw a value that is not an error", async () => {
+    const odd = harness(
+      [docFixture("doc_a", "## Notes\n", { legacy: [{ text: "a", done: false }] })],
+      {
+        // A throw with no `message` at all: an `Error` subclass someone built
+        // badly, a rejected string from a library. A batch verb must survive
+        // any shape of failure with the document still named.
+        onWrite: () => {
+          throw new Error("");
+        },
+      },
+    );
+    const report = (await (await call(odd, "POST", "/migrate")).json()) as {
+      conflicts: { reason: string }[];
+    };
+    expect(report.conflicts[0]?.reason).toBe("doc_a could not be migrated");
+  });
+});
+
+/**
+ * CLEAN 47. The route already computed every number a preview needs; what it
+ * lacked was a way to ask for them without writing. The prediction goes through
+ * `planWrite` — the same function that refuses a real write — so a document the
+ * dry run calls a conflict is a document a real run refuses.
+ */
+describe("POST /migrate?dryRun=true", () => {
+  const previewable = (): Harness =>
+    harness([
+      docFixture("doc_legacy", "## Notes\n", {
+        legacy: [
+          { text: "a", done: false, ts: TS },
+          { text: "b", done: true, ts: TS },
+        ],
+      }),
+      docFixture("doc_body", "- [ ] already migrated\n"),
+      docFixture("doc_both", "- [ ] in the body\n", { legacy: [{ text: "in fm", done: false }] }),
+    ]);
+
+  it("answers exactly what a real run then does, and writes nothing", async () => {
+    const m = previewable();
+    const preview = (await (await call(m, "POST", "/migrate?dryRun=true")).json()) as Record<
+      string,
+      unknown
+    >;
+    expect(preview["dryRun"]).toBe(true);
+    expect(preview["migrated"]).toEqual([
+      { docId: "doc_legacy", title: "List doc_legacy", items: 2 },
+    ]);
+    expect(preview["unchanged"]).toBe(1);
+    expect((preview["conflicts"] as { docId: string }[]).map((entry) => entry.docId)).toEqual([
+      "doc_both",
+    ]);
+    // Nothing written, nothing broadcast — the whole point of asking first.
+    expect(m.recorded.updates).toEqual([]);
+    expect(m.recorded.keys).toEqual([]);
+    expect(m.docs.get("doc_legacy")?.body).toBe("## Notes\n");
+
+    const real = (await (await call(m, "POST", "/migrate")).json()) as Record<string, unknown>;
+    expect({ ...real, dryRun: true }).toEqual(preview);
+    expect(m.recorded.keys).toEqual([["lists"]]);
+  });
+
+  it("treats any other value of the parameter as a real run", async () => {
+    const m = previewable();
+    const report = (await (await call(m, "POST", "/migrate?dryRun=yes")).json()) as {
+      dryRun: boolean;
+    };
+    expect(report.dryRun).toBe(false);
+    expect(m.recorded.updates).toHaveLength(1);
   });
 });
 

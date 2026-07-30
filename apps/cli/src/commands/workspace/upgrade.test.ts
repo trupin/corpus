@@ -594,6 +594,38 @@ describe("corpus workspace upgrade", () => {
 
     expect(harness.stdout()).toContain("pending .corpus/queue/deferred/.gitkeep");
     expect(existsSync(join(root, ".corpus", "queue", "deferred"))).toBe(false);
+    expect(harness.stdout()).not.toContain("excluded by this workspace's .gitignore");
+  });
+
+  it("predicts the marker it would create but not commit, instead of promising the repair", async () => {
+    // Wave-3 audit, TEST 31. `queueSkeletonIgnored` was hard-coded empty on the
+    // plan path, so `--dry-run` against an old `.gitignore` printed a repair the
+    // real run then declined to commit — the one thing a plan may not do.
+    // `check-ignore --no-index` answers about a path that does not exist yet,
+    // which is why the prediction can be made at all.
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    write(root, ".gitignore", ".corpus/*\n");
+    await commitAll({ dir: root, message: "the operator narrowed .gitignore" });
+    rmSync(join(root, ".corpus", "queue", "deferred"), { recursive: true, force: true });
+
+    const planned = harnessFor(root, { flags: { "dry-run": true }, json: true });
+    await upgrade(planned, { template, plugins });
+
+    expect(planned.report().queueSkeletonIgnored).toEqual([".corpus/queue/deferred/.gitkeep"]);
+    expect(existsSync(join(root, ".corpus", "queue", "deferred"))).toBe(false);
+
+    const spoken = harnessFor(root, { flags: { "dry-run": true } });
+    await upgrade(spoken, { template, plugins });
+    expect(spoken.stdout()).toContain("excluded by this workspace's .gitignore");
+    // A plan says "would be", never "was": nothing has happened yet.
+    expect(spoken.stdout()).toContain("would be created but not committed");
+
+    // And the real run agrees with the plan it printed.
+    const real = harnessFor(root, { json: true });
+    await upgrade(real, { template, plugins });
+    expect(real.report().queueSkeletonIgnored).toEqual([".corpus/queue/deferred/.gitkeep"]);
   });
 
   it("heals the skeleton even without a baseline, where no template file may be written", async () => {

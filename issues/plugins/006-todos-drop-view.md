@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-in_progress
+done
 
 ## Priority
 P1
@@ -359,6 +359,44 @@ green.
 and `queries.ts` is PLUGINS-007's file under Adjudication 6. It is left in place here rather than
 reached across the file split; PLUGINS-007 removes it (which also closes the coverage hole its
 deleted tests would otherwise leave at harvest).
+
+
+## Audit fix round (2026-07-30, opus)
+
+Wave-3 audit `issues/evals/AUDIT-S017-wave3.md`, plugins slice. Scoped run after the round:
+`VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run plugins/todos` → **9 files, 254 tests**, green
+(was 242). `npm run build`, `npm run typecheck`, `./node_modules/.bin/eslint plugins/` and Prettier
+green. `CORPUS_UI_PORT=9185 npx playwright test todos.spec.ts` → **7 passed**.
+
+Live re-drill: real server on `9181`, real workspace at
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s017-plugfix-ws-BA5WOY` (outside the repo, job tmp dir), `8765` never
+bound; server pid `63372` and the Playwright vite on `9185` both stopped and their ports verified
+free. No `git` state-changing command was run in this repository.
+
+### Findings closed here
+
+- **SPEC 39 — `TodoDocPanel` lacked the overdue treatment** SPEC.md §12 says applies wherever items
+  are shown. The panel was the one surface showing a deadline count without it: a list three weeks
+  past due read exactly like one due next month, on the screen the user opened to work on it. One
+  chip, one modifier class (`.todo-due-chip.overdue`, the same `--signal` the row preview's box and
+  the column's date already carry), and the label says which — `2 due · 1 overdue` — so the
+  distinction is not carried by colour alone. The base chip drops to a neutral treatment, since
+  "there are deadlines" and "a deadline has passed" are not the same claim. The component gains an
+  optional injectable `now`, exactly as `TodoListItem` and `TodosColumn` already have, so the
+  boundary is testable instead of depending on the wall clock.
+- **SPEC 40 — the deleted `View` was still documented.** `plugins/todos/README.md`'s extension-point
+  table no longer lists it and now carries the PLUGINS-006 reason; `docs/PLUGINS.md`'s manifest
+  sample no longer shows todos registering one, and the `View` bullet — the slot is real and the
+  `_fixture` plugin still covers it — now states the cost plainly: a `View` suppresses `anchorsHost`
+  and therefore §6 text-anchored commenting, so it is for a type the core editor genuinely cannot
+  render, which `todo` is not.
+
+Four new `TodoDocPanel` cases pin it: marked and counted when an open deadline has passed, plain
+when every deadline is ahead (`data-todo-overdue="0"`), never for a completed item however long
+overdue, and every passed deadline counted rather than just the first.
+
+`apps/ui/e2e/todos.spec.ts` asserts `[data-stat-open]`, `[data-stat-done]` and `plugin: todos`, none
+of which moved; the scoped Playwright run above confirms it (7 passed).
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

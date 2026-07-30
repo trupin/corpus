@@ -2,7 +2,7 @@
 import type { Thread } from "@corpus/contract";
 import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
@@ -149,6 +149,146 @@ describe("the head", () => {
     await waitFor(() => {
       expect(transport.of("POST", "/api/threads/th_a/resolve")).toHaveLength(1);
     });
+  });
+
+  it("reports resolving an open thread while mounted, once", async () => {
+    const notices = await flipWhileMounted("open");
+    expect(notices).toEqual([
+      { tone: "info", message: "Thread resolved — committed. Replying reopens it." },
+    ]);
+  });
+
+  it("reports reopening a resolved thread while mounted, once", async () => {
+    const notices = await flipWhileMounted("resolved");
+    expect(notices).toEqual([{ tone: "info", message: "Thread reopened — committed." }]);
+  });
+});
+
+/** Clicks the head's resolve/reopen with the card left mounted throughout. */
+async function flipWhileMounted(
+  status: Thread["status"],
+): Promise<readonly { tone: string; message: string }[]> {
+  const notices: { tone: string; message: string }[] = [];
+  const { container } = render(
+    <Host
+      transport={wire({ status })}
+      onNotify={(notice) => {
+        notices.push(notice);
+      }}
+    />,
+  );
+  await loaded(container);
+  fireEvent.click(container.querySelector(".t-resolve") as HTMLElement);
+  await waitFor(() => {
+    expect(notices).toHaveLength(1);
+  });
+  // Settle the rest of the chain: a callback left in both places toasts twice,
+  // and the second one arrives a tick after the first.
+  await settle();
+  return notices;
+}
+
+/** Lets every queued continuation and macrotask run out, inside `act`. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/**
+ * The flip's outcome outlives the card (UI-015).
+ *
+ * A per-call `onSuccess`/`onError` rides on the mutation's observer and is
+ * skipped once that observer has no listeners left, so a card that goes away
+ * mid-flight — a chip collapsing, a reader closing, the margin re-laying out —
+ * used to rewrite and commit the thread file in silence. The callbacks are on
+ * the hook now, and the direction is read off what was sent rather than off the
+ * render that sent it.
+ */
+describe("a flip whose card went away before it settled", () => {
+  /** A write held open until the test lets it answer (UI-012's gate). */
+  function gate(): { readonly held: Promise<void>; readonly release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = () => {
+        resolve();
+      };
+    });
+    return { held, release: () => release() };
+  }
+
+  async function flipAndUnmount(options: {
+    readonly status: Thread["status"];
+    readonly failing?: Readonly<Record<string, number>>;
+  }): Promise<{ tone: string; message: string }[]> {
+    const { held, release } = gate();
+    const notices: { tone: string; message: string }[] = [];
+    const transport = wire(
+      { status: options.status },
+      { holdWrites: held, ...(options.failing === undefined ? {} : { failing: options.failing }) },
+    );
+    const { container } = render(
+      <Host
+        transport={transport}
+        onNotify={(notice) => {
+          notices.push(notice);
+        }}
+      />,
+    );
+    await loaded(container);
+    fireEvent.click(container.querySelector(".t-resolve") as HTMLElement);
+    const verb = options.status === "resolved" ? "reopen" : "resolve";
+    await waitFor(() => {
+      expect(transport.of("POST", `/api/threads/th_a/${verb}`)).toHaveLength(1);
+    });
+
+    cleanup();
+    release();
+    await waitFor(() => {
+      expect(notices).toHaveLength(1);
+    });
+    await settle();
+    return notices;
+  }
+
+  it("still says the thread was resolved", async () => {
+    const notices = await flipAndUnmount({ status: "open" });
+    expect(notices).toEqual([
+      { tone: "info", message: "Thread resolved — committed. Replying reopens it." },
+    ]);
+  });
+
+  it("still says the thread was reopened", async () => {
+    const notices = await flipAndUnmount({ status: "resolved" });
+    expect(notices).toEqual([{ tone: "info", message: "Thread reopened — committed." }]);
+  });
+
+  it("still reports a refused resolve", async () => {
+    const notices = await flipAndUnmount({
+      status: "open",
+      failing: { "POST /api/threads/th_a/resolve": 423 },
+    });
+    expect(notices).toEqual([
+      {
+        tone: "error",
+        message:
+          "Resolve failed — POST /api/threads/{id}/resolve failed (HTTP 423): the server refused",
+      },
+    ]);
+  });
+
+  it("still reports a refused reopen", async () => {
+    const notices = await flipAndUnmount({
+      status: "resolved",
+      failing: { "POST /api/threads/th_a/reopen": 423 },
+    });
+    expect(notices).toEqual([
+      {
+        tone: "error",
+        message:
+          "Reopen failed — POST /api/threads/{id}/reopen failed (HTTP 423): the server refused",
+      },
+    ]);
   });
 });
 

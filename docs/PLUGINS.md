@@ -51,13 +51,22 @@ import { definePlugin } from "@corpus/kit/plugin";
 export default definePlugin({
   id: "todos",
   name: "Todos",
-  docTypes: [{ type: "todo", View, ListItem, DocPanel }], // each renderer optional
+  docTypes: [{ type: "todo", ListItem, DocPanel, validate }], // every field optional
   columns: [{ type: "board", label: "Todos", Component, defaultQuery: { type: "todo" } }],
 });
 ```
 
 - `View` replaces the standard document view for your type; no `View` (or no
-  plugin) falls back to plain markdown.
+  plugin) falls back to plain markdown. **Think hard before claiming it.** A
+  `View` also suppresses the anchor layer — `anchorsHost` is false wherever a
+  plugin `View` wins — so the document loses text-anchored commenting (SPEC.md
+  §6), and you inherit responsibility for editing, serializing and rendering
+  everything else in the body. If your data is ordinary markdown that the core
+  editor already handles, do not register one: `plugins/todos` stores its items
+  as GFM task-list lines and deliberately registers **no** `View` (PLUGINS-006),
+  which is why an item is commentable and why a todo document still works with
+  the plugin deleted. Claim the slot only for a type the core editor genuinely
+  cannot render.
 - `ListItem` replaces the default row (`Row`'s props, re-exported as
   `ListItemProps`) in every column list.
 - `DocPanel` renders in a fixed slot **above the document body**, in both the

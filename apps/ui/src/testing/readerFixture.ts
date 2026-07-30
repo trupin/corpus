@@ -1,4 +1,4 @@
-import type { Doc, DocRow, Lock, Thread } from "@corpus/contract";
+import type { Doc, DocRow, Lock, Thread, Warning } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -39,6 +39,22 @@ export interface ReaderTransportOptions {
   readonly locks?: readonly Lock[];
   /** `"<METHOD> <pathname>"` → status, for the failure paths. */
   readonly failing?: Readonly<Record<string, number>>;
+  /**
+   * Every non-`GET` request waits on this before it is answered.
+   *
+   * The teardown suites need a write that is genuinely in flight while the
+   * surface that started it unmounts (UI-012's `holdWrites` gate, UI-015's
+   * second application of it): resolve the promise after `cleanup()` and the
+   * response lands on a component that is already gone.
+   */
+  readonly holdWrites?: Promise<void>;
+  /**
+   * Warnings `POST /api/threads` answers with (SPEC.md §14). A created thread
+   * can succeed and still carry them — an unresolved `[[ref]]`, a skipped
+   * commit — and they are the half of the outcome the user has to be told
+   * about.
+   */
+  readonly threadWarnings?: readonly Warning[];
 }
 
 /** Every field overridable, `frontmatter` field by field rather than wholesale. */
@@ -129,6 +145,11 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     const url = new URL(request.url);
     const call = await recordCall(request, url, init);
     calls.push(call);
+
+    // Recorded first, answered after: a held write has to be observable on the
+    // wire while it is still outstanding, which is what the teardown suites
+    // wait for before they unmount.
+    if (options.holdWrites !== undefined && request.method !== "GET") await options.holdWrites;
 
     const failure = options.failing?.[`${request.method} ${url.pathname}`];
     if (failure !== undefined) {
@@ -242,7 +263,15 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     if (url.pathname === "/api/threads" && request.method === "POST") {
       const created = threadFixture({ id: `th_child_${String(threads.size)}` });
       threads.set(created.id, created);
-      return json({ thread: created, anchorId: "a_1", eventId: null, warnings: [] }, 201);
+      return json(
+        {
+          thread: created,
+          anchorId: "a_1",
+          eventId: null,
+          warnings: options.threadWarnings ?? [],
+        },
+        201,
+      );
     }
 
     if (url.pathname.endsWith("/break")) {

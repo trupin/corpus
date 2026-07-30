@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import * as YAML from "yaml";
 import { z } from "zod";
@@ -270,6 +270,21 @@ function declaredSeedTemplates(
   );
 }
 
+/**
+ * What sits at a declared path: a copyable file, something else on disk, or
+ * nothing. `existsSync` conflates the first two and only the first can be
+ * copied, so the caller needs all three answers to say which mistake was made.
+ */
+function fileKind(absolute: string): "file" | "other" | "missing" {
+  try {
+    return statSync(absolute).isFile() ? "file" : "other";
+  } catch {
+    // ENOENT, or a broken symlink, or a path whose parent is not a directory —
+    // all of them "there is no file here to install", which is what matters.
+    return "missing";
+  }
+}
+
 /** A declared path that would copy from outside the plugin's own directory. */
 function escapesPlugin(declared: string): boolean {
   return (
@@ -300,6 +315,10 @@ function escapesPlugin(declared: string): boolean {
  *   the loser is a warning, never a silent overwrite.
  * - **A declared-but-missing file is a warning naming the plugin and the path**,
  *   not a silent skip and not a manifest entry for a file that is not there.
+ *   A declared path that is a **directory** is the same class of mistake and is
+ *   warned about the same way (wave-3 audit, FIX 13) — `existsSync` said yes to
+ *   it, and the `copyFileSync` that followed threw `EISDIR` out of the middle of
+ *   `corpus init`, unwinding a workspace over one plugin's typo.
  */
 export function planPluginSeedInstall(
   pluginsRoot: string | undefined,
@@ -309,7 +328,8 @@ export function planPluginSeedInstall(
 
   const files: PlannedPluginSeedFile[] = [];
   const warnings: string[] = [];
-  const claimed = new Map<string, string>();
+  /** Installed name → the plugin that won it and the path it declared. */
+  const claimed = new Map<string, { readonly plugin: string; readonly declared: string }>();
 
   const dirs = readdirSync(pluginsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
@@ -317,7 +337,16 @@ export function planPluginSeedInstall(
     .sort();
 
   for (const dir of dirs) {
+    // Declaring one `seedTemplate` against two of the plugin's own doc types is
+    // two types sharing a starter document — a legitimate declaration, and one
+    // instruction, not two. Saying it twice therefore has nothing to add,
+    // whether it went on to win a name or lose one (wave-3 audit, CLEAN 44).
+    const alreadyDeclared = new Set<string>();
+
     for (const declared of declaredSeedTemplates(pluginsRoot, dir, warnings)) {
+      if (alreadyDeclared.has(declared)) continue;
+      alreadyDeclared.add(declared);
+
       if (escapesPlugin(declared)) {
         warnings.push(
           `plugin ${dir} declares seedTemplate "${declared}", which points outside the plugin ` +
@@ -326,10 +355,12 @@ export function planPluginSeedInstall(
         continue;
       }
       const from = `${dir}/${declared.split(path.sep).join("/")}`;
-      if (!existsSync(path.join(pluginsRoot, ...from.split("/")))) {
+      const kind = fileKind(path.join(pluginsRoot, ...from.split("/")));
+      if (kind !== "file") {
         warnings.push(
-          `plugin ${dir} declares seedTemplate "${declared}", which does not exist — skipped; ` +
-            "no template was installed for it",
+          `plugin ${dir} declares seedTemplate "${declared}", which ` +
+            (kind === "missing" ? "does not exist" : "is a directory, not a file") +
+            " — skipped; no template was installed for it",
         );
         continue;
       }
@@ -344,13 +375,22 @@ export function planPluginSeedInstall(
       }
       const holder = claimed.get(name);
       if (holder !== undefined) {
+        // Two *different* files landing on one installed name is a real
+        // conflict either way; only the sentence changes. Naming the losing
+        // plugin as the winner — which is what the old single message did when
+        // both were the same plugin — sent the author looking for a collision
+        // with somebody else (wave-3 audit, CLEAN 44).
         warnings.push(
-          `plugin ${dir} ships a seed template named "${name}", already installed by plugin ` +
-            `${holder} — skipped`,
+          holder.plugin === dir
+            ? `plugin ${dir} declares two different seed templates that would install as ` +
+                `"${name}" ("${holder.declared}" and "${declared}") — skipped the second; only ` +
+                "one file can hold the name"
+            : `plugin ${dir} ships a seed template named "${name}", already installed by plugin ` +
+                `${holder.plugin} — skipped`,
         );
         continue;
       }
-      claimed.set(name, dir);
+      claimed.set(name, { plugin: dir, declared });
       files.push({ plugin: dir, from, to: `${WORKSPACE_TEMPLATES_DIR}/${name}` });
     }
   }

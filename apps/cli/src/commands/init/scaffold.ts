@@ -272,9 +272,12 @@ export function scaffoldWorkspace(options: ScaffoldOptions): ScaffoldResult {
   );
 
   // The `.gitkeep`s the template's own `.gitignore` negation is built around:
-  // `.corpus/*` hides the runtime tree, `!.corpus/queue/` lets the five status
+  // `.corpus/*` hides the runtime tree, `!.corpus/queue/` lets the status
   // directories through, and these markers are what git actually tracks — so a
-  // clone of the workspace arrives with the skeleton already present.
+  // clone of the workspace arrives with the skeleton already present. The count
+  // is `QUEUE_STATUSES`'s and is deliberately not written down here: naming it
+  // "five" is what went stale when CONTRACT-021 added `deferred`, in the very
+  // comment explaining the mechanism that was supposed to prevent that.
   for (const status of QUEUE_STATUSES) {
     created.writeFile(join(root, CONFIG_DIR, "queue", status, ".gitkeep"), "");
   }

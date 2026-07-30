@@ -11,13 +11,14 @@ import {
   openItems,
   parseBodyItems,
   planWrite,
+  readLegacyItems,
   removeItemFromBody,
   TodoItemError,
   updateItemInBody,
   type TodoItem,
 } from "../items.js";
 import { TODO_DOC_TYPE } from "../shared.js";
-import { answering } from "./errors.js";
+import { answering, translateThrown } from "./errors.js";
 
 /**
  * The todos plugin's server half (SPEC.md §10, §12), mounted by discovery at
@@ -145,40 +146,99 @@ async function mutateItems(
     // answering 200 with an invented item.
     throw new Error(`mutateDoc resolved without mutating ${docId}`);
   }
-  // The plugin's own read keys, broadcast only after the write succeeded.
+  // The plugin's own read key, broadcast only after the write succeeded.
   // `["docs"]` is deliberately absent — the core write path above already
-  // broadcast it, and naming it here is refused.
-  context.broadcastInvalidate([["lists"], ["lists", docId]]);
+  // broadcast it, and naming it here is refused. One key and not two: the
+  // plugin publishes exactly one read (the aggregate, `ui/queries.ts`), so a
+  // `["lists", docId]` key would name a query nothing has ever registered and
+  // invalidate nothing at all (CLEAN 43).
+  context.broadcastInvalidate([["lists"]]);
   return next;
 }
 
-/** The contract's page bound; migration must see every list, not the first page. */
+/** The contract's page bound; these walks must see every list, not one page. */
 const PAGE = 200;
 
+/** One todo document, as far as either walk below needs it. */
+interface TodoRow {
+  readonly id: string;
+  readonly title: string;
+}
+
 /**
- * Every todo document in the workspace, archived ones included, paged through.
+ * Every todo document a query selects, paged through to the end.
  *
- * `GET /lists` deliberately inherits core's default result set (SPEC.md §11 —
- * archived documents are excluded); migration deliberately does not. A document
- * left unmigrated because it happened to be archived is a document that breaks
- * the day someone unarchives it.
+ * Both callers need *every* row, and both used to inherit the contract's
+ * default `limit` in one place or another: a workspace's fifty-first todo
+ * document is invisible to a walk that asks once (FIX 2). `total` bounds the
+ * walk as well as the short-page check, so no answer from the context — however
+ * odd — can spin this loop (CLEAN 45).
  */
-function everyTodoDoc(context: PluginServerContext): readonly { id: string; title: string }[] {
-  const found: { id: string; title: string }[] = [];
+function everyTodoDoc(context: PluginServerContext, includeArchived: boolean): readonly TodoRow[] {
+  const found: TodoRow[] = [];
   for (let offset = 0; ; offset += PAGE) {
-    const page = context.listDocs(
+    const result = context.listDocs(
       DocsQuerySchema.parse({
         type: TODO_DOC_TYPE,
-        includeArchived: "true",
+        ...(includeArchived ? { includeArchived: "true" } : {}),
         limit: String(PAGE),
         offset: String(offset),
       }),
     );
-    found.push(...page.items.map((row) => ({ id: row.id, title: row.title })));
-    // A short page is the last page — asked rather than inferred from `total`,
-    // which counts rows this query may not have been given.
-    if (page.items.length < PAGE) return found;
+    found.push(...result.items.map((row) => ({ id: row.id, title: row.title })));
+    if (result.items.length < PAGE || found.length >= result.page.total) return found;
   }
+}
+
+/**
+ * `POST /migrate`'s per-document work, and the two states it can end in.
+ *
+ * A conflict is anything that stopped *this* document — a legacy key that no
+ * longer parses, items in both places, an edit lock, a document deleted between
+ * the listing and the write, a git failure. All of them are recorded against
+ * the document they belong to and the run continues (FIX 3): a migration that
+ * aborts on the first locked document names nothing it converted, leaves the
+ * successes unbroadcast, and gives the user no way to tell how far it got.
+ */
+function reasonOf(error: unknown, docId: string): string {
+  // The same translation the route would have answered with, so a locked
+  // document reads "doc_x is locked by user" here and not "[object Object]".
+  const translated = translateThrown(error);
+  if (translated !== null) return translated.body.message;
+  if (error instanceof Error && error.message !== "") return error.message;
+  return `${docId} could not be migrated`;
+}
+
+/** How many items a not-yet-migrated document is about to move into its body. */
+function legacyItemCount(doc: Doc): number {
+  const legacy = readLegacyItems(doc.frontmatter.extra);
+  return legacy !== null && legacy.ok ? legacy.items.length : 0;
+}
+
+/**
+ * What a migration *would* do to this document: the item count, or the throw
+ * that a real run would refuse it with. No write, no lane, no lock taken.
+ */
+function plannedCount(doc: Doc, docId: string): number {
+  planWrite(docSource(doc), docId);
+  return legacyItemCount(doc);
+}
+
+/** Folds one document's legacy key into its body, and answers what moved. */
+async function migrateOne(
+  context: PluginServerContext,
+  actor: Actor,
+  docId: string,
+): Promise<number> {
+  let moved = 0;
+  await context.mutateDoc(actor, docId, (doc) => {
+    // Re-read inside the lane: the document may have been written — or migrated
+    // outright by a concurrent verb — since the listing that named it.
+    const plan = planWrite(docSource(doc), docId);
+    moved = legacyItemCount(doc);
+    return { body: plan.body, extra: { [LEGACY_ITEMS_KEY]: null } };
+  });
+  return moved;
 }
 
 export default function routes(context: PluginServerContext): Hono {
@@ -186,58 +246,73 @@ export default function routes(context: PluginServerContext): Hono {
 
   /**
    * `POST /migrate` — converge every pre-PLUGINS-005 document onto body storage.
+   * `?dryRun=true` reports exactly the same answer and writes nothing.
    *
    * Idempotent by construction: a document with no `extra.items` key is
    * untouched and counted as `unchanged`, so a second run reports nothing to do.
-   * A document nothing can migrate safely — a malformed key, or items in both
-   * places — is reported as a conflict with its reason and left exactly as it
-   * was, because the alternative is guessing which list the user meant.
+   * A document nothing can migrate safely — a malformed key, items in both
+   * places, a document someone else is holding — is reported as a conflict with
+   * its reason and left exactly as it was, and the run carries on to the next
+   * one. The dry run is honest because it asks the same question through the
+   * same function: `planWrite` is what refuses a real write, and a prediction
+   * that consulted anything else would be a second implementation to disagree
+   * with (CLEAN 47).
    */
   app.post("/migrate", (c) =>
     answering(async () => {
       const actor = actorOf(c.req.header(ACTOR_HEADER));
+      const dryRun = c.req.query("dryRun") === "true";
       const migrated: { docId: string; title: string; items: number }[] = [];
       const conflicts: { docId: string; title: string; reason: string }[] = [];
       let unchanged = 0;
 
-      for (const row of everyTodoDoc(context)) {
-        if (!hasLegacyItems(context.getDoc(row.id).frontmatter.extra)) {
-          unchanged += 1;
-          continue;
+      try {
+        for (const row of everyTodoDoc(context, true)) {
+          try {
+            const doc = context.getDoc(row.id);
+            if (!hasLegacyItems(doc.frontmatter.extra)) {
+              unchanged += 1;
+              continue;
+            }
+            const items = dryRun
+              ? plannedCount(doc, row.id)
+              : await migrateOne(context, actor, row.id);
+            // What "migrated" counts is what *moved* — the legacy key's items.
+            // The resulting body also holds anything that was already there,
+            // which a run that clears an empty key never moved (FIX 4).
+            migrated.push({ docId: row.id, title: row.title, items });
+          } catch (error) {
+            conflicts.push({ docId: row.id, title: row.title, reason: reasonOf(error, row.id) });
+          }
         }
-        let count = 0;
-        try {
-          await context.mutateDoc(actor, row.id, (doc) => {
-            const plan = planWrite(docSource(doc), row.id);
-            count = parseBodyItems(plan.body).length;
-            return { body: plan.body, extra: { [LEGACY_ITEMS_KEY]: null } };
-          });
-        } catch (error) {
-          if (!(error instanceof TodoItemError)) throw error;
-          conflicts.push({ docId: row.id, title: row.title, reason: error.message });
-          continue;
-        }
-        migrated.push({ docId: row.id, title: row.title, items: count });
+      } finally {
+        // Whatever stopped the walk itself, the documents already converted are
+        // converted: a board left showing their pre-migration state would be
+        // wrong about data on disk.
+        if (migrated.length > 0 && !dryRun) context.broadcastInvalidate([["lists"]]);
       }
-
-      if (migrated.length > 0) {
-        context.broadcastInvalidate([
-          ["lists"],
-          ...migrated.map((entry) => ["lists", entry.docId] as const),
-        ]);
-      }
-      return c.json({ migrated, conflicts, unchanged });
+      return c.json({ dryRun, migrated, conflicts, unchanged });
     }),
   );
 
-  /** Every todo list with its items — one read for the CLI's `list` verb. */
+  /**
+   * Every todo list with its items — one read for the CLI's `list` verb and for
+   * the board's aggregate column. Paged, because a workspace with more todo
+   * documents than one page holds is a workspace whose column, rows and
+   * `corpus todos list` would otherwise all stop at the same arbitrary row
+   * (FIX 2). Archived documents are excluded, inheriting core's default result
+   * set (SPEC.md §11) rather than inventing a second answer — unlike migration,
+   * which deliberately includes them: a document left unmigrated because it
+   * happened to be archived is a document that breaks the day it is unarchived.
+   */
   const everyList = (c: Context): Promise<Response> =>
-    answering(() => {
-      const list = context.listDocs(DocsQuerySchema.parse({ type: TODO_DOC_TYPE }));
-      return Promise.resolve(
-        c.json({ lists: list.items.map((row) => listView(context.getDoc(row.id))) }),
-      );
-    });
+    answering(() =>
+      Promise.resolve(
+        c.json({
+          lists: everyTodoDoc(context, false).map((row) => listView(context.getDoc(row.id))),
+        }),
+      ),
+    );
 
   app.get("/lists", everyList);
 

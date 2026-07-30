@@ -38,6 +38,33 @@ export const archived = (doc: Doc): Doc => ({
 export const at = (doc: Doc, path: string): Doc => ({ ...doc, path });
 
 /**
+ * The motivating document of CLI-017: a `type: skill` whose archiving is two
+ * facts, not one — the status *and* which side of `.claude/skills-archived/`
+ * the folder is on. Every guard that talks about a skill's folder has to be
+ * exercised against a fixture that actually has one, or it is only ever tested
+ * against a note that cannot reach the state being described (wave-3 audit,
+ * TEST 22).
+ */
+export const SKILL: Doc = {
+  ...DOC,
+  frontmatter: {
+    ...DOC.frontmatter,
+    id: "doc_gqyrzvto",
+    type: "skill",
+    title: "weekly-review",
+    tags: [],
+  },
+  body: "Review the week.\n",
+  path: ".claude/skills/weekly-review/SKILL.md",
+};
+
+/** The same skill after `corpus doc archive`: status *and* folder both moved. */
+export const ARCHIVED_SKILL: Doc = at(
+  archived(SKILL),
+  ".claude/skills-archived/weekly-review/SKILL.md",
+);
+
+/**
  * A `GET /api/docs` row. Every key the contract declares is present, including
  * the thread affordances that are `null` off a thread: a fixture that omitted
  * them would let a renderer read a field the server always sends.

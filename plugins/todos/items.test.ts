@@ -107,6 +107,76 @@ describe("parseBodyItems", () => {
   });
 });
 
+/**
+ * The two block contexts a checkbox-shaped line can hide in, and the two ways
+ * getting them wrong loses items (FIX 7, FIX 8). Both were reachable by typing
+ * ordinary markdown, and both were silent: the editor renders the document one
+ * way and the plugin counted it another.
+ */
+describe("code blocks", () => {
+  it("does not let an unterminated fence swallow the rest of the document", () => {
+    // TEST-28a. A stray fence is a typo; taking it at its word costs every item
+    // below it — the editor still shows the checkboxes, the panel says 0 open.
+    const body = ["```sh", "echo hi", "", "- [ ] Renew passport", "- [x] Call plumber"].join("\n");
+    expect(parseBodyItems(body)).toEqual([
+      { text: "Renew passport", done: false },
+      { text: "Call plumber", done: true },
+    ]);
+  });
+
+  it("still honours a fence that does close, wherever it closes", () => {
+    const closed = ["```", "- [ ] example", "```", "- [ ] real"].join("\n");
+    expect(parseBodyItems(closed).map((entry) => entry.text)).toEqual(["real"]);
+  });
+
+  it("bounds an unterminated fence to its own line, nested ones included", () => {
+    const body = ["```", "- [ ] one", "~~~", "- [ ] two"].join("\n");
+    // Neither fence ever closes, so neither opens a block: both items survive.
+    expect(parseBodyItems(body).map((entry) => entry.text)).toEqual(["one", "two"]);
+  });
+
+  it("never reads a four-space-indented line as an item when no list is open", () => {
+    // TEST-28b: an indented code block, which is how a markdown document shows
+    // a task list without being one.
+    const body = ["Here is the syntax:", "", "    - [ ] like this", "", "- [ ] a real one"].join(
+      "\n",
+    );
+    expect(parseBodyItems(body)).toEqual([{ text: "a real one", done: false }]);
+  });
+
+  it("reads a tab-indented line as code by the same measure", () => {
+    expect(parseBodyItems("Prose.\n\n\t- [ ] tabbed\n")).toEqual([]);
+  });
+
+  it("still reads a nested item, flat, when a list is open above it", () => {
+    // The whole reason the indent alone cannot decide: four spaces under a list
+    // item is a subtask, and it is item 2 in body order like anything else.
+    const body = ["- [ ] parent", "    - [ ] child", "        - [x] grandchild"].join("\n");
+    expect(parseBodyItems(body)).toEqual([
+      { text: "parent", done: false },
+      { text: "child", done: false },
+      { text: "grandchild", done: true },
+    ]);
+  });
+
+  it("keeps a nested item nested when it is checked", () => {
+    const body = "- [ ] parent\n    - [ ] child\n";
+    expect(updateItemInBody(body, 1, { done: true })).toBe("- [ ] parent\n    - [x] child\n");
+  });
+
+  it("closes the list again at prose, so later indented code is still code", () => {
+    const body = ["- [ ] parent", "", "Back to prose.", "", "    - [ ] code again"].join("\n");
+    expect(parseBodyItems(body).map((entry) => entry.text)).toEqual(["parent"]);
+  });
+
+  it("keeps a list open across a blank line, as a loose list is still a list", () => {
+    expect(parseBodyItems("- [ ] a\n\n    - [ ] b\n").map((entry) => entry.text)).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+});
+
 describe("the inline due marker", () => {
   // TEST-478, and SPEC.md:403 verbatim: "text that doesn't parse as the marker
   // is ordinary item text — never an error".
@@ -166,6 +236,26 @@ describe("appendItemToBody", () => {
   it("refuses empty text and text spanning lines", () => {
     expect(() => appendItemToBody("", { text: "" })).toThrow(/text/);
     expect(() => appendItemToBody("", { text: "two\nlines" })).toThrow(/single line/);
+  });
+
+  /**
+   * FIX 14. Splitting and rejoining on `\n` preserves an existing line's `\r`
+   * for free; a line the plugin *writes* has to be given one, or the first
+   * append turns a CRLF document into a mixed-convention one — and every line
+   * the plugin ever wrote then shows up as changed in `git diff`.
+   */
+  it("writes the document's own line ending, not always `\\n`", () => {
+    expect(appendItemToBody("- [ ] a\r\n", { text: "b" })).toBe("- [ ] a\r\n- [ ] b\r\n");
+    expect(appendItemToBody("## Notes\r\n", { text: "first" })).toBe(
+      "## Notes\r\n\r\n- [ ] first\r\n",
+    );
+  });
+
+  it("keeps LF for an LF document and for a mostly-LF mixed one", () => {
+    expect(appendItemToBody("- [ ] a\n", { text: "b" })).toBe("- [ ] a\n- [ ] b\n");
+    expect(appendItemToBody("- [ ] a\r\n- [ ] b\n- [ ] c\n", { text: "d" })).toBe(
+      "- [ ] a\r\n- [ ] b\n- [ ] c\n- [ ] d\n",
+    );
   });
 });
 
@@ -325,6 +415,32 @@ describe("itemsOrEmpty, itemProblems and docSource", () => {
     expect(itemProblems({ extra: { items: "nope" } })).not.toEqual([]);
   });
 
+  /**
+   * FIX 6. `planWrite` refuses every write to a document storing items in two
+   * places, so a validator that called it clean left the user with a document
+   * that silently rejects every edit and nothing on screen saying why.
+   */
+  it("reports dual storage as a problem, in the words the refusal uses", () => {
+    const both = {
+      body: "- [ ] in the body\n",
+      extra: { items: [{ text: "in fm", done: false }] },
+    };
+    expect(itemProblems(both)).toEqual([
+      "this document carries items in its body *and* in its `items` frontmatter — " +
+        "remove whichever list is stale; until then nothing can be written to it",
+    ]);
+    // And it is genuinely unwritable, which is the reason it is reported.
+    expect(() => planWrite(both, "doc_x")).toThrow(/remove whichever list is stale/);
+  });
+
+  it("does not call a merely-unmigrated or merely-empty document a problem", () => {
+    expect(
+      itemProblems({ body: "## Notes\n", extra: { items: [{ text: "a", done: false }] } }),
+    ).toEqual([]);
+    expect(itemProblems({ body: "- [ ] a\n", extra: { items: [] } })).toEqual([]);
+    expect(itemProblems({ body: "- [ ] a\n", extra: { items: null } })).toEqual([]);
+  });
+
   it("reads a whole document's body and its legacy key together", () => {
     const doc = { body: "- [ ] a\n", frontmatter: { extra: { items: [] } } };
     expect(docSource(doc)).toEqual({ body: "- [ ] a\n", extra: { items: [] } });
@@ -384,6 +500,29 @@ describe("migration", () => {
 
   it("appends to an empty body without a leading blank line", () => {
     expect(migrateBody("", [item({ text: "a" })])).toBe("- [ ] a\n");
+  });
+
+  /**
+   * TEST-27. The legacy key is hand-editable YAML and `TodoItemSchema` says
+   * nothing about newlines — only {@link checked} does, and `migrateBody` used
+   * to bypass it. An item whose text spans lines would have been written as one
+   * item plus a line of prose, mid-migration, silently.
+   */
+  it("refuses a legacy item whose text spans lines rather than splitting it", () => {
+    expect(() => migrateBody("", [item({ text: "two\nlines" })])).toThrow(/single line/);
+    expect(() =>
+      planWrite(
+        { body: "## Notes\n", extra: { items: [{ text: "two\nlines", done: false }] } },
+        "doc_x",
+      ),
+    ).toThrow(TodoItemError);
+  });
+
+  it("clears a present-but-empty legacy key from a document whose body already has items", () => {
+    // TEST-27's other half, and why the migrate count cannot be read off the
+    // resulting body: nothing moved, and the body's three items are not news.
+    const plan = planWrite({ body: "- [ ] a\n- [ ] b\n- [ ] c\n", extra: { items: [] } }, "doc_x");
+    expect(plan).toEqual({ body: "- [ ] a\n- [ ] b\n- [ ] c\n", clearLegacy: true });
   });
 });
 

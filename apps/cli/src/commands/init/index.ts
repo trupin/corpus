@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { UsageError } from "../../errors.js";
+import { plural } from "../../input.js";
 import { resolvePluginsRoot, resolveTemplateRoot, templateManifestPath } from "../../paths.js";
 import type { CommandContext, StandaloneCommandSpec } from "../../registry/types.js";
 import { WORKSPACE_TEMPLATES_DIR } from "../../template/install.js";
@@ -168,11 +169,8 @@ export async function runInit(
     warnings.push(...result.pluginWarnings);
     if (created.overwritten.length > 0) {
       warnings.push(
-        `overwrote ${String(created.overwritten.length)} pre-existing file${
-          created.overwritten.length === 1 ? "" : "s"
-        }, which cannot be restored: ${created.overwritten
-          .map((path) => relative(target, path))
-          .join(", ")}.`,
+        `overwrote ${plural(created.overwritten.length, "pre-existing file")}, which cannot be ` +
+          `restored: ${created.overwritten.map((path) => relative(target, path)).join(", ")}.`,
       );
     }
 
@@ -282,20 +280,16 @@ export const initCommand: StandaloneCommandSpec = {
         : `  git: initialized on ${DEFAULT_BRANCH}, one commit authored as user`,
     );
     context.out.line(
-      `  installed ${String(report.installed.length)} template files, recorded in ${relative(report.workspace, report.manifestPath)}`,
+      `  installed ${plural(report.installed.length, "template file")}, recorded in ${relative(report.workspace, report.manifestPath)}`,
     );
     if (report.installedPluginSkills.length > 0) {
       context.out.line(
-        `  installed ${String(report.installedPluginSkills.length)} plugin skill file${
-          report.installedPluginSkills.length === 1 ? "" : "s"
-        } into .claude/skills/`,
+        `  installed ${plural(report.installedPluginSkills.length, "plugin skill file")} into .claude/skills/`,
       );
     }
     if (report.installedPluginSeeds.length > 0) {
       context.out.line(
-        `  installed ${String(report.installedPluginSeeds.length)} plugin seed template${
-          report.installedPluginSeeds.length === 1 ? "" : "s"
-        } into ${WORKSPACE_TEMPLATES_DIR}/`,
+        `  installed ${plural(report.installedPluginSeeds.length, "plugin seed template")} into ${WORKSPACE_TEMPLATES_DIR}/`,
       );
     }
     context.out.line("Next: corpus server start");

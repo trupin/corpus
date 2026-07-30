@@ -15,8 +15,18 @@ function counts(list: TodoList): string {
   return `${String(list.open)} open · ${String(list.done)} done`;
 }
 
-function renderItems(context: PluginCommandContext, list: TodoList): void {
+/**
+ * The list's items, numbered as the **document** numbers them.
+ *
+ * `--open` filters what is printed and never what a number means. The numbers
+ * `corpus todos check` resolves are positions in the whole list, so renumbering
+ * the survivors 1, 2, 3 would print a selector that checks off a different item
+ * than the one on the line beside it — the filtered list's item 2 is the
+ * document's item 3 the moment anything above it is done (FIX 9).
+ */
+function renderItems(context: PluginCommandContext, list: TodoList, openOnly: boolean): void {
   for (const [index, item] of list.items.entries()) {
+    if (openOnly && item.done) continue;
     const due = item.due === undefined ? "" : `  (due ${item.due})`;
     context.out.line(
       `  ${String(index + 1).padStart(2, " ")} ${item.done ? "☑" : "☐"} ${item.text}${due}`,
@@ -43,7 +53,9 @@ export default {
     {
       name: "open",
       type: "boolean",
-      description: "Show only items that are still open.",
+      description:
+        "Show only items that are still open. The numbers shown stay the document's own, so one " +
+        "of them still names the same item to `corpus todos check`.",
     },
   ],
   examples: [
@@ -61,8 +73,9 @@ export default {
     const all = await fetchLists(context);
     const named = context.args.optional("list");
     const selected = named === undefined ? all : [resolveList(all, named)];
+    const openOnly = context.flags.boolean("open");
 
-    const lists = context.flags.boolean("open")
+    const lists = openOnly
       ? selected.map((list) => ({ ...list, items: list.items.filter((item) => !item.done) }))
       : selected;
 
@@ -72,11 +85,12 @@ export default {
       context.out.line("no todo lists.");
       return;
     }
-    for (const list of lists) {
+    for (const [at, list] of lists.entries()) {
       context.out.line(`${list.title} [${list.docId}] — ${counts(list)}`);
       // The whole-workspace listing stays a table: expanding every item of
-      // every list is what `corpus todos list <name>` is for.
-      if (named !== undefined) renderItems(context, list);
+      // every list is what `corpus todos list <name>` is for. The *unfiltered*
+      // list is what gets rendered from, because that is what the numbers mean.
+      if (named !== undefined) renderItems(context, selected[at] as TodoList, openOnly);
     }
   },
 } satisfies PluginCommandSpec;

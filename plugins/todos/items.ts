@@ -27,11 +27,21 @@ import { z } from "zod";
  * due date actually changed.
  *
  * **What is not an item**: a line inside a fenced code block (a fence is
- * tracked, so a `- [ ]` in an example is example text), a checkbox with no
- * content, and anything that is not a list bullet followed by `[ ]`/`[x]`.
- * `*` and `+` bullets are *read* as items because GFM writes them; the plugin
- * only ever *writes* `- `, which is also what the core editor's serializer
- * emits, so a round trip through the editor does not rewrite these lines.
+ * tracked, so a `- [ ]` in an example is example text), a line inside an
+ * *indented* code block (four columns of indent with no list open above it), a
+ * checkbox with no content, and anything that is not a list bullet followed by
+ * `[ ]`/`[x]`. `*` and `+` bullets are *read* as items because GFM writes them;
+ * the plugin only ever *writes* `- `, which is also what the core editor's
+ * serializer emits, so a round trip through the editor does not rewrite these
+ * lines.
+ *
+ * **Nested task lists are read flat**, in body order. A child item is an item
+ * like any other: it is the third line in the document, so it is item 3 to
+ * `corpus todos check`, and the aggregate column counts it once. Nothing
+ * re-nests it either — every mutation rewrites exactly the one line it owns, so
+ * the indentation that made it a child survives a check, a rename and a delete
+ * untouched. The plugin has no model of a subtask and deliberately does not
+ * invent one (SPEC.md §12 describes a list of items, not a tree).
  *
  * Nothing in here touches the filesystem, the network or React — it is data,
  * in and out. Per-item `ts` is gone (SHARED-005 A1(c)): body order is the
@@ -107,6 +117,18 @@ const TASK_LINE = /^([ \t]*)([-*+])([ \t]+)\[([ xX])\]([ \t]+)([^\n]*)$/;
 /** An opening or closing code fence — everything between two of them is text. */
 const FENCE = /^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$/;
 
+/**
+ * Any list marker — a bullet or an ordered number. What *opens a list context*,
+ * which is the difference between an indented item and indented code.
+ */
+const LIST_LINE = /^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/;
+
+/** A line's leading whitespace, measured by {@link indentWidth}. */
+const LEADING_SPACE = /^[ \t]*/;
+
+/** CommonMark's indented-code threshold, in columns. */
+const CODE_INDENT = 4;
+
 /** `(due: 2026-08-01)` at the very end of an item's text, after real content. */
 const DUE_MARKER = /^([^\n]*\S)[ \t]+\(due:[ \t]*(\d{4}-\d{2}-\d{2})\)$/;
 
@@ -168,66 +190,120 @@ function parseContent(content: string): { readonly text: string; readonly due?: 
   return { text: String(marker[1]), due: String(marker[2]) };
 }
 
+/** A line's indent in columns; a tab advances to the next multiple of four. */
+function indentWidth(raw: string): number {
+  let width = 0;
+  for (const char of String(LEADING_SPACE.exec(raw)?.[0] ?? "")) {
+    width = char === "\t" ? width + CODE_INDENT - (width % CODE_INDENT) : width + 1;
+  }
+  return width;
+}
+
 /**
- * Every task line in a body, in body order, skipping fenced code.
+ * The index of the line that closes the fence opened at `open`, or `null` when
+ * nothing in the rest of the document does.
  *
- * Fence tracking is deliberately simple and CommonMark-shaped: a run of three
- * or more backticks or tildes opens, and a run of the same character at least
- * as long with nothing after it closes. That is what separates “an item” from
- * “an example of an item” (TEST-477), and a regex without it would check off a
- * line inside a code block.
+ * Looked **ahead** rather than tracked as state, because the answer changes what
+ * the opening line meant: a fence that never closes is a typo, and treating it
+ * as a code block would silently swallow every item below it for the rest of the
+ * document (FIX 7 — the editor still shows the checkboxes, and the panel says
+ * `0 open`). Bounded to its own line instead, the typo costs one line.
+ */
+function fenceEnd(lines: readonly string[], open: number, marker: string): number | null {
+  for (let at = open + 1; at < lines.length; at += 1) {
+    const fenced = FENCE.exec(String(lines[at]));
+    if (fenced === null) continue;
+    const closer = String(fenced[1]);
+    // A closing run is the same character, at least as long, and carries no
+    // info string — which is what makes ```` ``` ```` inside ```` ```` ```` text.
+    if (
+      closer.startsWith(marker.slice(0, 1)) &&
+      closer.length >= marker.length &&
+      String(fenced[2]).trim() === ""
+    ) {
+      return at;
+    }
+  }
+  return null;
+}
+
+/** One task line, or `null` for a line that is not one. */
+function parseTaskLine(raw: string, at: number): ItemLine | null {
+  const match = TASK_LINE.exec(raw);
+  if (match === null) return null;
+  const rest = String(match[6]);
+  const trailing = String(TRAILING_SPACE.exec(rest)?.[0] ?? "");
+  const content = rest.slice(0, rest.length - trailing.length);
+  // `- [ ]` with nothing after it is a checkbox the user is still typing, not
+  // an item: it has no text to name, to comment on, or to check off.
+  if (content === "") return null;
+  const mark = String(match[4]);
+  const parsed = parseContent(content);
+  return {
+    at,
+    indent: String(match[1]),
+    bullet: String(match[2]),
+    afterBullet: String(match[3]),
+    mark,
+    afterMark: String(match[5]),
+    content,
+    trailing,
+    // Field order is `text, done, due` everywhere — the same shape the CLI's
+    // `--json` prints, so a route response and a verb's output read alike.
+    item: {
+      text: parsed.text,
+      done: mark !== " ",
+      ...(parsed.due === undefined ? {} : { due: parsed.due }),
+    },
+  };
+}
+
+/**
+ * Every task line in a body, in body order, skipping both kinds of code block.
+ *
+ * **Fenced code** is CommonMark-shaped: a run of three or more backticks or
+ * tildes opens, and a run of the same character at least as long with nothing
+ * after it closes. That is what separates “an item” from “an example of an
+ * item” (TEST-477), and a regex without it would check off a line inside a code
+ * block. A fence that is never closed is bounded to its own line — see
+ * {@link fenceEnd}.
+ *
+ * **Indented code** needs the one piece of block context this parser keeps: a
+ * line indented four columns or more is a code line *unless a list is open
+ * above it*, in which case it is that list's nested item. Without the
+ * distinction, four-space-indented prose in a code block parses as an item
+ * (FIX 8) and four-space-nested subtasks stop being items — the tracked list
+ * indent is what lets both be right. A blank line does not close a list (a
+ * loose list is still a list); prose at or left of the list's own indent does.
  */
 function taskLines(body: string): readonly ItemLine[] {
+  const lines = body.split("\n");
   const found: ItemLine[] = [];
-  let fence: { readonly char: string; readonly length: number } | null = null;
+  /** The indent of the shallowest open list, in columns; `null` outside one. */
+  let list: number | null = null;
 
-  for (const [at, raw] of body.split("\n").entries()) {
+  for (let at = 0; at < lines.length; at += 1) {
+    const raw = String(lines[at]);
+
     const fenced = FENCE.exec(raw);
-    if (fence !== null) {
-      const marker = fenced?.[1] ?? "";
-      if (
-        fenced !== null &&
-        marker.startsWith(fence.char) &&
-        marker.length >= fence.length &&
-        String(fenced[2]).trim() === ""
-      ) {
-        fence = null;
-      }
-      continue;
-    }
     if (fenced !== null) {
-      const marker = String(fenced[1]);
-      fence = { char: marker.slice(0, 1), length: marker.length };
+      const end = fenceEnd(lines, at, String(fenced[1]));
+      if (end !== null) at = end;
       continue;
     }
 
-    const match = TASK_LINE.exec(raw);
-    if (match === null) continue;
-    const rest = String(match[6]);
-    const trailing = String(TRAILING_SPACE.exec(rest)?.[0] ?? "");
-    const content = rest.slice(0, rest.length - trailing.length);
-    // `- [ ]` with nothing after it is a checkbox the user is still typing, not
-    // an item: it has no text to name, to comment on, or to check off.
-    if (content === "") continue;
-    const mark = String(match[4]);
-    const parsed = parseContent(content);
-    found.push({
-      at,
-      indent: String(match[1]),
-      bullet: String(match[2]),
-      afterBullet: String(match[3]),
-      mark,
-      afterMark: String(match[5]),
-      content,
-      trailing,
-      // Field order is `text, done, due` everywhere — the same shape the CLI's
-      // `--json` prints, so a route response and a verb's output read alike.
-      item: {
-        text: parsed.text,
-        done: mark !== " ",
-        ...(parsed.due === undefined ? {} : { due: parsed.due }),
-      },
-    });
+    if (raw.trim() === "") continue;
+
+    const indent = indentWidth(raw);
+    if (!LIST_LINE.test(raw)) {
+      if (list !== null && indent <= list) list = null;
+      continue;
+    }
+    if (list === null && indent >= CODE_INDENT) continue;
+    list = list === null ? indent : Math.min(list, indent);
+
+    const line = parseTaskLine(raw, at);
+    if (line !== null) found.push(line);
   }
   return found;
 }
@@ -318,16 +394,37 @@ export function itemsOrEmpty(source: ItemsSource | undefined): readonly TodoItem
 }
 
 /**
+ * The one clause the validator and the write refusal both say about a document
+ * storing its items in two places, so the two can never drift apart.
+ */
+const DUAL_STORAGE = `carries items in its body *and* in its \`${LEGACY_ITEMS_KEY}\` frontmatter`;
+
+/** True when items are in the body *and* in a legacy key — nothing can write it. */
+function isDualStorage(source: ItemsSource | undefined): boolean {
+  const legacy = readLegacyItems(source?.extra);
+  if (legacy === null || !legacy.ok || legacy.items.length === 0) return false;
+  return parseBodyItems(source?.body ?? "").length > 0;
+}
+
+/**
  * The manifest's `validate` answer: what is wrong with this document's items,
  * empty when nothing is (SPEC.md §10 — a plugin validates its own document).
  *
  * Under body storage there is nothing a *body* can say that is malformed — a
- * line either is a task item or is prose — so this reports only a legacy
- * frontmatter key that cannot be parsed.
+ * line either is a task item or is prose — so what is left is the two states a
+ * not-yet-migrated document can be in that {@link planWrite} refuses to write:
+ * a legacy key that cannot be parsed, and items in **both** places. Both are
+ * reported, because a document every write refuses and every surface calls
+ * valid is a document whose refusals nothing on screen explains (FIX 6).
  */
 export function itemProblems(source: ItemsSource | undefined): readonly string[] {
   const read = readItems(source);
-  return read.ok ? [] : read.problems;
+  if (!read.ok) return read.problems;
+  if (!isDualStorage(source)) return [];
+  return [
+    `this document ${DUAL_STORAGE} — remove whichever list is stale; ` +
+      "until then nothing can be written to it",
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +500,24 @@ function checked(candidate: { text: string; done: boolean; due?: string | undefi
 // ---------------------------------------------------------------------------
 
 /**
- * Splices new lines into a body.
+ * The carriage return this document's lines already end with, or `""`.
+ *
+ * Bodies are split and rejoined on `\n` throughout, so a CRLF document's `\r`
+ * simply rides along at the end of every existing line — every mutation of an
+ * *existing* line therefore preserves it for free. A line the plugin **adds**
+ * has to be given one, or a CRLF document acquires mixed endings on its first
+ * append and every line the plugin ever wrote shows up as changed in a diff
+ * (FIX 14). The dominant ending wins, so a document already mixed is not made
+ * more so.
+ */
+function dominantReturn(body: string): string {
+  const crlf = (body.match(/\r\n/g) ?? []).length;
+  const lf = (body.match(/(?<!\r)\n/g) ?? []).length;
+  return crlf > lf ? "\r" : "";
+}
+
+/**
+ * Splices new lines into a body, in the body's own line ending.
  *
  * New items join the end of the **existing list** when there is one, so a
  * document whose items sit between a heading and its notes keeps them there.
@@ -412,16 +526,18 @@ function checked(candidate: { text: string; done: boolean; due?: string | undefi
  * precedes it.
  */
 function insertLines(body: string, added: readonly string[]): string {
+  const cr = dominantReturn(body);
+  const written = added.map((line) => `${line}${cr}`);
   const lines = body.split("\n");
   const last = taskLines(body).at(-1);
   if (last !== undefined) {
-    lines.splice(last.at + 1, 0, ...added);
+    lines.splice(last.at + 1, 0, ...written);
     return lines.join("\n");
   }
   let lastContent = -1;
   for (const [at, raw] of lines.entries()) if (raw.trim() !== "") lastContent = at;
-  if (lastContent === -1) return `${added.join("\n")}\n`;
-  lines.splice(lastContent + 1, 0, "", ...added);
+  if (lastContent === -1) return `${written.join("\n")}${cr}\n`;
+  lines.splice(lastContent + 1, 0, cr, ...written);
   return lines.join("\n");
 }
 
@@ -516,18 +632,28 @@ export function planWrite(source: ItemsSource, label: string): WritePlan {
   if (parseBodyItems(body).length > 0) {
     throw new TodoItemError(
       400,
-      `${label} carries items in its body *and* in its \`${LEGACY_ITEMS_KEY}\` frontmatter, and was ` +
-        "not written — remove whichever list is stale before writing to it",
+      `${label} ${DUAL_STORAGE}, and was not written — remove whichever list is stale before ` +
+        "writing to it",
     );
   }
   return { body: migrateBody(body, legacy.items), clearLegacy: true };
 }
 
-/** Appends legacy frontmatter items to a body as task lines, in their order. */
+/**
+ * Appends legacy frontmatter items to a body as task lines, in their order.
+ *
+ * Every item goes through {@link checked} on the way, so the *one* gate on what
+ * may become a line is the same one every other write uses. A legacy key is
+ * hand-editable YAML: an item whose text carries a newline would otherwise
+ * arrive here unvalidated and be written as one item plus a line of prose —
+ * silent corruption in the middle of a migration. Refused instead, it becomes
+ * that document's migration conflict, with the same message a `text` containing
+ * a newline gets at any other boundary.
+ */
 export function migrateBody(body: string, items: readonly TodoItem[]): string {
   return insertLines(
     body,
-    items.map((item) => newLine(item)),
+    items.map((item) => newLine(checked(item))),
   );
 }
 

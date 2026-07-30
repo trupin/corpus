@@ -4,7 +4,7 @@
 cli
 
 ## Status
-in_progress
+done
 
 ## Priority
 P1
@@ -219,3 +219,85 @@ stopped by recorded pid (87785); `lsof -nP -iTCP:9188` empty; `ls -d /Users/theo
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix
+
+## Audit fix round (wave-3, 2026-07-30 — opus)
+
+Findings from `issues/evals/AUDIT-S017-wave3.md` closed here: **FIX 1**, **TEST 21**, **TEST 25**,
+**CLEAN 56**.
+
+**FIX 1 — the "total grammar" claim was falsifiable, and the audit falsified it.** `1e400` is a
+perfectly canonical JSON number literal whose `double` is `Infinity`; `JSON.stringify(Infinity)` is
+`null`; the server's `extra` patch is RFC 7386. So `--extra width=1e400` did not set a huge width —
+it **removed the key**. `parseExtraValue` now gates rule 3 on `Number.isFinite` and falls through to
+rule 5 (verbatim string), which is the `parse-args.ts#readNumber` pattern the audit named. The value
+is stored rather than turned into a deletion nobody asked for.
+
+**TEST 25, the `>2^53` half — documented, not refused** (the audit left the choice open and accepts
+documenting with a test). `9007199254740993` is taken as a number and rounds to
+`9007199254740992`, because every JSON parser between the flag and the file does the same to that
+literal; refusing here would make the CLI stricter than the wire it writes to, and the escape hatch
+already exists (quote it). Both halves are now in the flag's own description, so `docs/cli.md`
+publishes them, and pinned by a test that reads the description back.
+
+### E2E Verification Log (fix round)
+
+Real server on `9190`, workspace `.../jobs/4dd0ddef/tmp/audit3-cli/ws1`, `corpus init` from outside
+the repo, binary rebuilt between the change and these runs.
+
+```
+$ corpus doc edit doc_seedattention --extra width=520   --from agent   → edited
+$ corpus doc edit doc_seedattention --extra width=1e400 --from agent   → edited
+$ corpus doc show doc_seedattention --json
+  extra.width = "1e400"  typeof string  | key present: true
+$ grep width data/docs/views/attention.md
+  15:width: "1e400"
+```
+
+The regression it closes, demonstrated by sending the payload the pre-fix code produced:
+
+```
+$ node -e 'console.log(JSON.stringify({width:Number("1e400")}))'
+{"width":null}
+$ curl -XPUT … -d '{"extra":{"width":null}}' …/api/docs/doc_seedattention
+$ corpus doc show doc_seedattention --json
+  key present: false          ← the key the caller was trying to SET, gone
+```
+
+Nothing else about the grammar moved:
+
+```
+$ corpus doc edit doc_seedattention --extra width=760 \
+      --extra big=9007199254740993 --extra exact='"9007199254740993"' --from agent
+  width 760 number | big 9007199254740992 number | exact "9007199254740993" string
+```
+
+**TEST 21 — the CLI-016 × CLI-017 interaction, which nothing exercised.** Four cases, in
+`edit.test.ts`, all against a real archived-skill fixture:
+
+- `--extra` on an archived skill goes through in **one** request, with **no `GET`** — the archived
+  check belongs to `--status`, and `--extra` names no status, so it costs nothing.
+- `--extra status=open` cannot smuggle the field past the guard: refused locally before even the
+  read (and by `ExtraFrontmatterSchema` behind that).
+- **Precedence pinned**: with `--status open` *and* `--extra title=…` both wrong, the pure flag
+  check wins — the cheap, certain error, raised with no server in the loop.
+- `--status open --extra width=520` on an archived skill writes **neither**.
+
+```
+$ corpus doc edit doc_seedattention --extra title=Nope --from agent   (with a heredoc piped in)
+corpus: `title` is a core frontmatter key, not an `extra` key — `--extra title=…` is refused.
+  Use `--title` instead.                                              exit=2
+```
+
+That last run is also CLI-017's CLEAN 54: flags are parsed before `resolveBody`, so a usage error no
+longer drains and discards the caller's body.
+
+**CLEAN 56** — `docs/cli.md` regenerated (`npm run docs:cli -w apps/cli`) so the published grammar
+matches the code. The regeneration necessarily also carries the concurrent todos-plugin registry
+prose (`todos migrate --dry-run`, `todos list --open`), since one generator emits the whole file.
+
+### Checks (fix round)
+
+`npm run build`, `npx tsc --noEmit -p apps/cli/tsconfig.json`, `npx eslint apps/cli/src`,
+`npx prettier --check` — all clean. `VITEST_MAX_THREADS=4 npm test -w apps/cli` → **869 passed / 66
+files**; `edit.test.ts` alone is 66 tests. Server stopped by recorded pid 54636; 9190–9195 and 8765
+free; no workspace under the repo.

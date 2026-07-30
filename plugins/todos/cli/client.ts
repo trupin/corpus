@@ -56,11 +56,38 @@ export class TodosRequestError extends Error {
   }
 }
 
-async function request(
+/** A parsed JSON body, or the fact that there was not one. */
+type Payload = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
+
+/** An empty body is `null`, not a failure — a `204` has nothing to say. */
+function readJson(text: string): Payload {
+  if (text === "") return { ok: true, value: null };
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * One request to the plugin's own routes, decoded into the shape the verb
+ * expects — or refused with a sentence a person can act on.
+ *
+ * The decode belongs **here** rather than at each call site because there are
+ * three ways an answer can be unusable and only one of them used to produce a
+ * readable error: a refusal carrying the contract's `ApiError`, a 2xx whose body
+ * is not JSON at all (a proxy's HTML error page, a truncated response), and a
+ * 2xx whose JSON is not what this route promises. The last two used to surface
+ * as a raw `ZodError` — a wall of `invalid_type` paths printed at an agent that
+ * just wanted its todo list (CLEAN 46).
+ */
+async function request<T>(
   context: PluginCommandContext,
   path: string,
+  schema: z.ZodType<T>,
   init: { method: string; body?: unknown } = { method: "GET" },
-): Promise<unknown> {
+): Promise<T> {
+  const route = `${init.method} /api/x/${TODOS_PLUGIN}/${path}`;
   const response = await fetch(`${context.workspace.baseUrl}/api/x/${TODOS_PLUGIN}/${path}`, {
     method: init.method,
     headers: {
@@ -70,22 +97,38 @@ async function request(
     },
     ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
   });
-  const payload: unknown = response.status === 204 ? null : await response.json().catch(() => null);
+  const payload = readJson(await response.text());
+
   if (!response.ok) {
-    const parsed = ApiErrorSchema.safeParse(payload);
+    const parsed = payload.ok ? ApiErrorSchema.safeParse(payload.value) : null;
     throw new TodosRequestError(
       response.status,
-      parsed.success
+      parsed?.success === true
         ? parsed.data.message
-        : `${init.method} /api/x/${TODOS_PLUGIN}/${path} failed (HTTP ${String(response.status)})`,
+        : `${route} failed (HTTP ${String(response.status)})`,
     );
   }
-  return payload;
+  if (!payload.ok) {
+    throw new TodosRequestError(
+      response.status,
+      `${route} answered HTTP ${String(response.status)} with a body that is not JSON — ` +
+        "the server this workspace points at may not be a Corpus server",
+    );
+  }
+  const decoded = schema.safeParse(payload.value);
+  if (!decoded.success) {
+    throw new TodosRequestError(
+      response.status,
+      `${route} answered a shape this verb does not understand — the todos plugin on the server ` +
+        "is a different version than this CLI",
+    );
+  }
+  return decoded.data;
 }
 
 /** Every todo list in the workspace, items included — one request. */
 export async function fetchLists(context: PluginCommandContext): Promise<readonly TodoList[]> {
-  return ListsSchema.parse(await request(context, "lists")).lists;
+  return (await request(context, "lists", ListsSchema)).lists;
 }
 
 /**
@@ -142,16 +185,16 @@ export async function addItem(
   text: string,
   due: string | undefined,
 ): Promise<ItemMutation> {
-  const parsed = MutationSchema.parse(
-    await request(context, `${docId}/items`, {
-      method: "POST",
-      body: { text, ...(due === undefined ? {} : { due }) },
-    }),
-  );
+  const parsed = await request(context, `${docId}/items`, MutationSchema, {
+    method: "POST",
+    body: { text, ...(due === undefined ? {} : { due }) },
+  });
   return { docId: parsed.docId, index: parsed.index, item: parsed.item };
 }
 
 export const MigrationSchema = z.object({
+  /** Echoed by the route, so the JSON says for itself whether anything moved. */
+  dryRun: z.boolean(),
   migrated: z.array(z.object({ docId: z.string(), title: z.string(), items: z.number() })),
   conflicts: z.array(z.object({ docId: z.string(), title: z.string(), reason: z.string() })),
   unchanged: z.number(),
@@ -159,9 +202,17 @@ export const MigrationSchema = z.object({
 
 export type Migration = z.infer<typeof MigrationSchema>;
 
-/** `POST /api/x/todos/migrate` — move pre-PLUGINS-005 lists into their bodies. */
-export async function migrateLists(context: PluginCommandContext): Promise<Migration> {
-  return MigrationSchema.parse(await request(context, "migrate", { method: "POST" }));
+/**
+ * `POST /api/x/todos/migrate` — move pre-PLUGINS-005 lists into their bodies,
+ * or, with `dryRun`, report exactly what a real run would do and write nothing.
+ */
+export async function migrateLists(
+  context: PluginCommandContext,
+  dryRun: boolean,
+): Promise<Migration> {
+  return await request(context, `migrate${dryRun ? "?dryRun=true" : ""}`, MigrationSchema, {
+    method: "POST",
+  });
 }
 
 /** `PUT /api/x/todos/<docId>/items/<index>` — set `done` on one item. */
@@ -172,11 +223,9 @@ export async function setDone(
   done: boolean,
   expectedText: string,
 ): Promise<ItemMutation> {
-  const parsed = MutationSchema.parse(
-    await request(context, `${docId}/items/${String(index)}`, {
-      method: "PUT",
-      body: { done, expectedText },
-    }),
-  );
+  const parsed = await request(context, `${docId}/items/${String(index)}`, MutationSchema, {
+    method: "PUT",
+    body: { done, expectedText },
+  });
   return { docId: parsed.docId, index: parsed.index, item: parsed.item };
 }

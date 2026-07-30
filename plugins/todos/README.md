@@ -4,12 +4,19 @@ The v1 reference plugin (SPEC.md §12). It owns the `todo` document type and
 exercises all four extension points, so it doubles as the worked example
 `docs/PLUGINS.md` describes in the abstract:
 
-| Extension point    | Here                                                                                                  |
-| ------------------ | ----------------------------------------------------------------------------------------------------- |
-| `manifest.ts`      | the `todo` doc type with `View`, `ListItem`, `DocPanel` and `validate`, plus the `todos` board column |
-| `server/routes.ts` | `/api/x/todos` — append, update and delete one item, all through the core write path                  |
-| `cli/commands/`    | `corpus todos add \| check \| list \| migrate`                                                        |
-| `skills/todos/`    | what the agent does when a thread asks for a todo                                                     |
+| Extension point    | Here                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `manifest.ts`      | the `todo` doc type with `ListItem`, `DocPanel` and `validate`, plus the `todos` board column |
+| `server/routes.ts` | `/api/x/todos` — append, update and delete one item, all through the core write path          |
+| `cli/commands/`    | `corpus todos add \| check \| list \| migrate`                                                |
+| `skills/todos/`    | what the agent does when a thread asks for a todo                                             |
+
+**No `View`, deliberately** (PLUGINS-006; SPEC.md §12: "the plugin registers no
+custom document renderer"). Items are GFM task-list lines, and the core editor
+already renders, toggles and serializes those — so claiming the slot would
+replace the standard document surface with a worse one _and_ suppress the anchor
+layer, which is what made item-level commenting unreachable. The slot itself is
+still part of the contract; `plugins/_fixture` covers it.
 
 **The item format lives in exactly one module**, [`items.ts`](./items.ts):
 standard GFM task-list lines in the document **body** — `- [ ] text` /

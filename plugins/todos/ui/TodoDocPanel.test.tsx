@@ -9,9 +9,12 @@ afterEach(cleanup);
 /** `[text, done, due?]`, rendered into body task-list lines. */
 type Line = readonly [string, boolean, string?];
 
+/** The day every dated fixture below is read against. */
+const TODAY = new Date("2026-07-20T12:00:00.000Z");
+
 /** The panel takes no props but the document — it has no data path of its own. */
 function panelFor(items: readonly Line[]): void {
-  render(<TodoDocPanel doc={todoDoc("doc_week", {}, todoBody(items))} />);
+  render(<TodoDocPanel doc={todoDoc("doc_week", {}, todoBody(items))} now={TODAY} />);
 }
 
 const stat = (which: "open" | "done"): string | null =>
@@ -86,6 +89,50 @@ describe("TodoDocPanel", () => {
     cleanup();
     panelFor([["a", false]]);
     expect(screen.queryByText(/due/)).toBeNull();
+  });
+
+  /**
+   * SPEC.md §12: the overdue treatment applies wherever items are shown, and
+   * this was the one surface showing a deadline count without it — a list with
+   * a deadline three weeks gone read exactly like one due next month, on the
+   * very screen the user opened to work on it.
+   */
+  describe("the overdue treatment", () => {
+    const chip = (): HTMLElement | null => document.querySelector("[data-todo-overdue]");
+
+    it("marks the chip and says how many, when an open deadline has passed", () => {
+      panelFor([
+        ["a", false, "2026-07-10"],
+        ["b", false, "2026-08-01"],
+      ]);
+      expect(chip()?.textContent).toBe("2 due · 1 overdue");
+      expect(chip()?.className).toContain("overdue");
+    });
+
+    it("leaves the chip plain when every deadline is still ahead", () => {
+      panelFor([["a", false, "2026-08-01"]]);
+      expect(chip()?.textContent).toBe("1 due");
+      expect(chip()?.className).not.toContain("overdue");
+      expect(chip()?.getAttribute("data-todo-overdue")).toBe("0");
+    });
+
+    it("never calls a completed item overdue, however long ago it was due", () => {
+      panelFor([
+        ["a", true, "2026-01-01"],
+        ["b", false, "2026-08-01"],
+      ]);
+      expect(chip()?.textContent).toBe("1 due");
+      expect(chip()?.className).not.toContain("overdue");
+    });
+
+    it("counts every passed deadline, not just the first", () => {
+      panelFor([
+        ["a", false, "2026-07-01"],
+        ["b", false, "2026-07-10"],
+        ["c", false, "2026-08-01"],
+      ]);
+      expect(chip()?.textContent).toBe("3 due · 2 overdue");
+    });
   });
 
   it("names the plugin, as the design's panel does", () => {

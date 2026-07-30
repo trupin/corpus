@@ -21,6 +21,12 @@ export interface RecordedRequest {
 export interface Reply {
   readonly status: number;
   readonly body: unknown;
+  /**
+   * The response body verbatim, instead of `body` as JSON — the only way to
+   * pose the question "what does a verb do when the thing answering is not the
+   * server it thinks it is?" (a proxy's HTML error page, a truncated body).
+   */
+  readonly text?: string | undefined;
 }
 
 export interface CliHarness {
@@ -57,7 +63,7 @@ export function cliHarness(input: HarnessInput): CliHarness {
     });
     const reply = replies.shift() as Reply;
     return Promise.resolve(
-      new Response(JSON.stringify(reply.body), {
+      new Response(reply.text ?? JSON.stringify(reply.body), {
         status: reply.status,
         headers: { "content-type": "application/json" },
       }),
