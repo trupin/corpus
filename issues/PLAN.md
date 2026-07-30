@@ -168,7 +168,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| SHARED-004 | Spec pass: delegation, doc-abandon, context menu, view width, §12/§2.1/§7 reconciliation | todo | P0 | — |
+| SHARED-004 | Spec pass: delegation, doc-abandon, context menu, view width, §12/§2.1/§7 reconciliation | done | P0 | — |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | CONTRACT-020 | Route: POST /api/skills (skill create) | done | P1 | CONTRACT-008 |
 | SERVER-036 | Skill-create write path (documents outside data/docs) | done | P1 | CONTRACT-020 |
