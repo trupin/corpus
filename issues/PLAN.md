@@ -188,6 +188,11 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
 | SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | todo | P2 | SERVER-005 |
 | CLI-015 | `corpus queue defer` verb | done | P1 | CLI-004, CONTRACT-021, SERVER-030 |
+| SHARED-005 | Wave-3 spec pass: §12 body-checkbox todos + residual §7 deferral sentences | todo | P0 | SHARED-004 |
+| PLUGINS-005 | Todos items move into the body as GFM task-lists | todo | P1 | SHARED-005 |
+| PLUGINS-006 | Todos drops its View: core editor renders items, anchors apply | todo | P1 | PLUGINS-005 |
+| PLUGINS-007 | Todos column re-sourced off the body aggregate | todo | P1 | PLUGINS-005 |
+| CLI-016 | `corpus doc edit --extra`: agent-writable extra frontmatter (UI-019 escalation) | todo | P1 | CLI-003 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
