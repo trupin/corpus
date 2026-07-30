@@ -47,7 +47,33 @@ interface StoredDoc {
   parent: string | null;
   extra: Record<string, unknown>;
   stale: unknown;
+  /**
+   * Stamped on every write, exactly as the server stamps it. Kept per document
+   * rather than as one frozen constant because a surface may legitimately key
+   * on "has this document changed" — the todos column's `(id, updated)`
+   * fingerprint is the shipped case (PLUGINS-007) — and a stub that never moves
+   * `updated` would make such a query look correct while pinning nothing.
+   */
+  updated: string;
+  /** Resolved anchors, as `GET /api/docs/{id}` reports them. */
+  anchors: StoredAnchor[];
 }
+
+/**
+ * One anchor on a document, kept the way the server keeps it: the selector is
+ * stored verbatim and the **range is recomputed on every read**, so a body edit
+ * moves it and a deleted quote orphans it.
+ */
+interface StoredAnchor {
+  readonly anchorId: string;
+  readonly threadId: string;
+  readonly selector: { readonly exact: string; readonly prefix?: string; readonly suffix?: string };
+  threadStatus: string;
+}
+
+/** The seeded instant every document starts at, and the clock a write advances. */
+const SEEDED_AT = "2026-07-01T09:00:00.000Z";
+let writes = 0;
 
 export interface StubRequest {
   readonly method: string;
@@ -80,7 +106,36 @@ function seeded(row: StubRow): StoredDoc {
     parent: row.parent ?? null,
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
+    updated: SEEDED_AT,
+    anchors: [],
   };
+}
+
+/**
+ * Resolves one anchor against the body it lives in — §6's rung 2, the useful
+ * half for a stub: a unique `exact` resolves, anything else orphans. Enough to
+ * make a highlight a **persistent** fact about the document rather than the
+ * optimistic decoration a creation briefly shows, which is the difference
+ * between pinning the anchor layer and pinning a race.
+ */
+function resolveAnchor(doc: StoredDoc, anchor: StoredAnchor): unknown {
+  const start = doc.body.indexOf(anchor.selector.exact);
+  const unique =
+    start >= 0 && doc.body.indexOf(anchor.selector.exact, start + 1) === -1 ? start : -1;
+  return {
+    anchorId: anchor.anchorId,
+    threadId: anchor.threadId,
+    threadStatus: anchor.threadStatus,
+    selector: anchor.selector,
+    range: unique < 0 ? null : { start: unique, end: unique + anchor.selector.exact.length },
+    orphaned: unique < 0,
+  };
+}
+
+/** The instant a write stamps: monotonic, so two saves never collide. */
+function stampUpdated(doc: StoredDoc): void {
+  writes += 1;
+  doc.updated = new Date(Date.parse(SEEDED_AT) + writes * 1000).toISOString();
 }
 
 /**
@@ -107,8 +162,8 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     path: doc.path,
     status: doc.status,
     tags: [],
-    created: "2026-07-01T09:00:00.000Z",
-    updated: "2026-07-01T09:00:00.000Z",
+    created: SEEDED_AT,
+    updated: doc.updated,
     due: null,
     reviewed: null,
     evergreen: false,
@@ -136,13 +191,13 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
   const asDoc = (doc: StoredDoc): unknown => ({
     body: doc.body,
     path: doc.path,
-    anchors: [],
+    anchors: doc.anchors.map((anchor) => resolveAnchor(doc, anchor)),
     frontmatter: {
       id: doc.id,
       type: doc.type,
       title: doc.title,
-      created: "2026-07-01T09:00:00.000Z",
-      updated: "2026-07-01T09:00:00.000Z",
+      created: SEEDED_AT,
+      updated: doc.updated,
       tags: [],
       status: doc.status,
       anchors: {},
@@ -222,6 +277,61 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       return json(route, { doc: asDoc(doc), warnings: [] }, 201);
     }
 
+    /**
+     * A comment, as `POST /api/threads` makes one: a `type: thread` document
+     * plus — when the request carries a selector — a **resolved anchor on its
+     * parent**, which is what puts a highlight in the parent's body and keeps it
+     * there across refetches. Without this the stub answered `anchors: []`
+     * forever, and a spec asserting a highlight was really asserting the
+     * optimistic decoration that the first refetch clears.
+     */
+    if (url.pathname === "/api/threads" && method === "POST") {
+      created += 1;
+      const input = (requests.at(-1)?.body ?? {}) as Record<string, unknown>;
+      const parentId = typeof input["parent"] === "string" ? input["parent"] : "";
+      const thread = seeded({
+        id: `th_new${String(created)}`,
+        type: "thread",
+        title: "Re: comment",
+        path: `data/docs/threads/th_new${String(created)}.md`,
+        body: typeof input["body"] === "string" ? input["body"] : "",
+        parent: parentId,
+      });
+      store.set(thread.id, thread);
+
+      const selector = input["selector"] as StoredAnchor["selector"] | undefined;
+      const parent = store.get(parentId);
+      const anchorId = `anc_new${String(created)}`;
+      if (parent !== undefined && selector !== undefined) {
+        parent.anchors.push({
+          anchorId,
+          threadId: thread.id,
+          selector,
+          threadStatus: "open",
+        });
+      }
+      return json(
+        route,
+        {
+          thread: {
+            id: thread.id,
+            title: thread.title,
+            created: SEEDED_AT,
+            updated: thread.updated,
+            status: "open",
+            tags: [],
+            parent: parentId,
+            anchor: selector === undefined ? null : anchorId,
+            agent: input["requestsAgent"] === true ? "requested" : null,
+            turns: [{ author: "user", ts: thread.updated, body: thread.body }],
+          },
+          ...(selector === undefined ? {} : { anchorId }),
+          warnings: [],
+        },
+        201,
+      );
+    }
+
     if (url.pathname.startsWith("/api/docs/")) {
       const id = decodeURIComponent(url.pathname.slice("/api/docs/".length));
       if (method === "DELETE") {
@@ -239,6 +349,8 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
           // RFC 7386 shallow merge, exactly as the server applies it.
           doc.extra = { ...doc.extra, ...(changes["extra"] as Record<string, unknown>) };
         }
+        // Every save stamps `updated`, as the server's write path does.
+        stampUpdated(doc);
         return json(route, {
           doc: asDoc(doc),
           anchors: { remapped: [], orphaned: [] },

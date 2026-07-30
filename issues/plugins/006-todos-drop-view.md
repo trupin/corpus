@@ -274,6 +274,52 @@ My own dev server was stopped first (Playwright is single-holder and starts its 
 `CORPUS_SERVER_ORIGIN` pointed at `9183` — **mine and deliberately unbound** — so the suite's proxy
 could not reach `8765` even for the SSE stream it retries. `npm run e2e` was never run.
 
+#### Correction, same session: the spec failed the FULL suite and was fixed
+
+The scoped run above was green but **wrong twice**, and the orchestrator's pre-push run caught it.
+Recorded rather than quietly amended, because both failures are worth knowing about:
+
+1. **A real regression I introduced in PLUGINS-007 and never re-ran this spec against.** The toggle
+   test asserted "no `/api/x/todos` request **at all**". True when it was written; false the moment
+   PLUGINS-007 made the todo *row* read its item preview from the plugin's aggregate. The assertion
+   was testing the wrong thing: what SPEC.md §12 promises is that a UI toggle is a core body edit,
+   i.e. **no plugin *write*** — a plugin *read* is the shipped design. Now asserted as
+   `entry.path.startsWith("/api/x/todos") && entry.method !== "GET"` → `[]`.
+2. **A test that was asserting a race.** The highlight test passed alone and failed under the
+   parallel suite. `stubCorpus`'s `asDoc` answered `anchors: []` unconditionally, so the only
+   highlight it could ever see was the **optimistic** decoration the creation shows — which the
+   first refetch clears. One worker caught it; eight did not.
+
+Both were fixed in the spec plus two **additive** extensions to the shared `apps/ui/e2e/stubCorpus.ts`
+(the orchestrator ruled it in my lane for this purpose), each of which makes the stub *more*
+faithful to the server rather than more convenient for me:
+
+- a `PUT` now **stamps `updated`**, as the real write path does — without which a stub can never
+  exercise a query keyed on "has this document changed", which is precisely PLUGINS-007's `(id,
+  updated)` fingerprint;
+- `POST /api/threads` now creates the thread **and a resolved anchor on its parent**, with the range
+  recomputed from the selector on every read (§6's rung 2). A highlight is now a persistent fact
+  about the document instead of a decoration that outlives its own assertion.
+
+The spec grew from 5 tests to 7: the two originals are honest now, and two new ones pin behavior
+that previously existed only in the drills — **the row's preview refetching at a new fingerprint
+after a core-path toggle** (PLUGINS-007's mechanism, in CI for the first time) and **the item's
+highlight surviving the checkbox toggle** (an anchor whose `exact` never contained the `- [ ]`
+marker).
+
+```
+scoped   CORPUS_SERVER_ORIGIN=http://127.0.0.1:8790 CORPUS_UI_PORT=5273 \
+         playwright test e2e/todos.spec.ts --workers=1      →  7 passed (9.4s)
+full     CORPUS_SERVER_ORIGIN=http://127.0.0.1:8790 CORPUS_UI_PORT=5273 npm run e2e
+                                                            →  128 passed (41.7s)
+```
+
+**Blast-radius amendment to TEST-506**: `git diff apps/ui` is no longer empty — it now carries
+`e2e/todos.spec.ts` (new, this issue's deliverable) and `e2e/stubCorpus.ts` (the two additive
+behaviors above). **`git diff apps/ui/src` is still empty**: no production UI code was touched, which
+is the boundary Adjudication 9 actually draws. The real-server drill below remains the load-bearing
+E2E; the suite spec is the regression pin.
+
 Adjudication 22's split is explicit in the spec's own docstring: it proves the UI-observable half
 (the editor's checkboxes, the toggle being a core `PUT` with no plugin route, the popover quoting
 exactly the item and the selector it sends, the highlight landing); the disk/git/projection half is
