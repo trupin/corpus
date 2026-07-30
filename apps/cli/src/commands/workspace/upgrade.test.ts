@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -374,6 +374,69 @@ describe("corpus workspace upgrade", () => {
       ".claude/skills/comment/SKILL.md",
     );
     expect(read(root, ".claude/skills/comment/SKILL.md")).toBe("edited, and nothing knows it\n");
+  });
+
+  it("neither installs nor records a template file the workspace has never had, under --adopt", async () => {
+    // CLI-014. A pre-manifest workspace that is *missing* one of the tool's
+    // files: `--adopt` applies no plan, so recording the incoming sha claimed a
+    // path that is not on disk, and the run after that read the absence as a
+    // user deletion. The recording is per file — the ones that do match are
+    // still adopted.
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    rmSync(templateManifestPath(root));
+    rmSync(join(root, ".claude/skills/comment/SKILL.md"));
+    write(root, "README.md", "the operator's own readme\n");
+
+    const adopted = harnessFor(root, { flags: { adopt: true } });
+    await upgrade(adopted, { template, plugins });
+
+    // The plan names it as pending, never as something this run did.
+    expect(adopted.stdout()).toContain("pending .claude/skills/comment/SKILL.md");
+    expect(adopted.stdout()).not.toContain("install .claude");
+    expect(adopted.stdout()).toContain("--adopt installs nothing");
+    expect(existsSync(join(root, ".claude/skills/comment/SKILL.md"))).toBe(false);
+
+    // The manifest matches the disk, file by file: the untouched ones adopted,
+    // the edited one left unknown, the absent one absent.
+    const baseline = readTemplateManifest(templateManifestPath(root));
+    const recorded = baseline?.files.map((file) => file.path) ?? [];
+    expect(recorded).toContain(".claude/skills/orchestrate/SKILL.md");
+    expect(recorded).not.toContain("README.md");
+    expect(recorded).not.toContain(".claude/skills/comment/SKILL.md");
+
+    // And the next ordinary run installs it, rather than calling it deleted.
+    const second = harnessFor(root, { json: true });
+    await upgrade(second, { template, plugins });
+
+    expect(second.report().changes).toContainEqual(
+      expect.objectContaining({ path: ".claude/skills/comment/SKILL.md", action: "install" }),
+    );
+    expect(second.report().written).toContain(".claude/skills/comment/SKILL.md");
+    expect(read(root, ".claude/skills/comment/SKILL.md")).toBe("comment v1\n");
+    expect(
+      readTemplateManifest(templateManifestPath(root))?.files.map((file) => file.path),
+    ).toContain(".claude/skills/comment/SKILL.md");
+  });
+
+  it("calls a missing file pending even in the plan that precedes --adopt", async () => {
+    // The same honesty one step earlier: no run writes a workspace file without
+    // a baseline, so `install` would be a claim about a command the operator has
+    // not reached yet.
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    rmSync(templateManifestPath(root));
+    rmSync(join(root, ".claude/skills/comment/SKILL.md"));
+
+    const planned = harnessFor(root);
+    await upgrade(planned, { template, plugins });
+
+    expect(planned.stdout()).toContain("pending .claude/skills/comment/SKILL.md");
+    expect(planned.stdout()).toContain("nothing is written without a baseline");
+    expect(planned.stdout()).toContain("nothing was written.");
+    expect(existsSync(templateManifestPath(root))).toBe(false);
   });
 
   it("never writes under data/ or elsewhere in .corpus/", async () => {

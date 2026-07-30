@@ -145,9 +145,11 @@ describe("corpus server stop", () => {
     expect(existsSync(serverPidfilePath(root))).toBe(false);
   });
 
-  it("never signals a live pid that is not this workspace's server", async () => {
+  it("never signals a live pid that is not answering, and keeps its pidfile", async () => {
     // `process.pid` stands in for the reused pid: if `stop` signalled it, this
-    // test process would die rather than fail.
+    // test process would die rather than fail. CLI-014: the file is kept for the
+    // same reason as the foreign branch — a live pid is most often this
+    // workspace's own daemon, and its pidfile is the only handle on it.
     const { root, output } = await stop({
       label: "stop-unowned",
       record: {
@@ -157,8 +159,70 @@ describe("corpus server stop", () => {
         version: "1.2.3",
       },
     });
-    expect(output).toContain("stale pidfile removed");
+    expect(output).toContain(`pid ${String(process.pid)} is alive but nothing answered on :8790`);
     expect(output).toContain("was left alone");
+    expect(output).toContain("pidfile was kept");
+    // The pidfile names the port that was probed, so re-pointing `port` is not
+    // the remedy: the process itself has to be looked at.
+    expect(output).toContain(`ps -p ${String(process.pid)}`);
+    expect(output).not.toContain("Point `port`");
+    expect(existsSync(serverPidfilePath(root))).toBe(true);
+  });
+
+  it("points a silent pid's remedy at the port its pidfile names, when they differ", async () => {
+    // The re-pointed-config case: the daemon is alive on :8791, `port` now says
+    // :8790, and nothing is there. Deleting the file here is what stranded a
+    // live server before CLI-014.
+    const { root, output } = await stop({
+      label: "stop-unowned-repointed",
+      record: {
+        pid: process.pid,
+        port: 8791,
+        startedAt: "2026-07-26T10:00:00.000Z",
+        version: "1.2.3",
+      },
+    });
+    expect(output).toContain("nothing answered on :8790");
+    expect(output).toContain("Point `port` in .corpus/config.json back at 8791");
+    expect(existsSync(serverPidfilePath(root))).toBe(true);
+  });
+
+  it("emits the kept pidfile of a silent pid in the JSON form too", async () => {
+    const { output } = await stop({
+      label: "stop-unowned-json",
+      json: true,
+      record: {
+        pid: process.pid,
+        port: 8791,
+        startedAt: "2026-07-26T10:00:00.000Z",
+        version: "1.2.3",
+      },
+    });
+
+    expect(JSON.parse(output)).toEqual({
+      stopped: false,
+      running: false,
+      reason: "pid alive but not answering",
+      pidfileKept: true,
+      pid: process.pid,
+      pidfilePort: 8791,
+    });
+  });
+
+  it("still removes the pidfile of a dead pid that nothing answers for", async () => {
+    // The other half of the pair, unchanged by CLI-014: only a dead pid's file
+    // is cleanup.
+    const { root, output } = await stop({
+      label: "stop-unowned-dead",
+      record: {
+        pid: 0x7ffffffe,
+        port: 8790,
+        startedAt: "2026-07-26T10:00:00.000Z",
+        version: "1.2.3",
+      },
+    });
+
+    expect(output).toBe("not running (stale pidfile removed)\n");
     expect(existsSync(serverPidfilePath(root))).toBe(false);
   });
 });

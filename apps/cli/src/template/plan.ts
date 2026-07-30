@@ -166,16 +166,23 @@ export interface IncomingFile {
  * when the workspace copy already matches the incoming one, and is otherwise
  * left out — unknown, and reported again next time. `retired` entries are
  * dropped; their files stay.
+ *
+ * `written` is what the run **actually** put on disk, not what its verdicts said
+ * it would: the two differ in a workspace with no baseline, where `--adopt`
+ * records a manifest without applying the plan. Recording an incoming sha for a
+ * file nobody installed made the manifest claim a path that is not on disk, and
+ * the next run then read that absence as "the user deleted it" (CLI-014). A
+ * manifest is a record of what happened, so it takes what happened as its input.
  */
 export function nextManifestFiles(
   decisions: readonly UpgradeDecision[],
-  restore: boolean,
+  written: ReadonlySet<string>,
 ): readonly ManifestEntry[] {
   const files: ManifestEntry[] = [];
   for (const decision of decisions) {
     if (decision.action === "retired" || decision.incoming === null) continue;
 
-    const sha = writes(decision.action, restore)
+    const sha = written.has(decision.path)
       ? decision.incoming
       : (decision.baseline ?? adoptable(decision));
     if (sha === null) continue;

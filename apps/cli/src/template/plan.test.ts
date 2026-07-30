@@ -158,13 +158,52 @@ describe("nextManifestFiles", () => {
     source?: string,
   ): UpgradeDecision => ({ path, action, ...shas, ...(source === undefined ? {} : { source }) });
 
+  /** What the run put on disk: the second argument is a fact, not a plan. */
+  const NOTHING: ReadonlySet<string> = new Set();
+  const WROTE_A: ReadonlySet<string> = new Set(["a"]);
+
   it("records what a write actually put on disk", () => {
     expect(
       nextManifestFiles(
         [decision("a", "update", { baseline: A, workspace: A, incoming: B })],
-        false,
+        WROTE_A,
       ),
     ).toEqual([{ path: "a", sha256: B }]);
+  });
+
+  it("records the OLD baseline for a writing verdict the run did not carry out", () => {
+    // `--adopt` on a workspace with no manifest plans an install and then applies
+    // nothing (CLI-014). Recording the incoming sha would claim a file that is
+    // not on disk, and the next run would read that absence as a user deletion.
+    expect(
+      nextManifestFiles(
+        [decision("a", "install", { baseline: null, workspace: null, incoming: B })],
+        NOTHING,
+      ),
+    ).toEqual([]);
+    // Same install, actually performed.
+    expect(
+      nextManifestFiles(
+        [decision("a", "install", { baseline: null, workspace: null, incoming: B })],
+        WROTE_A,
+      ),
+    ).toEqual([{ path: "a", sha256: B }]);
+  });
+
+  it("records per path, so a mixed run is half adopted and half installed", () => {
+    expect(
+      nextManifestFiles(
+        [
+          decision("a", "install", { baseline: null, workspace: null, incoming: B }),
+          decision("b", "current", { baseline: null, workspace: A, incoming: A }),
+          decision("c", "install", { baseline: null, workspace: null, incoming: C }),
+        ],
+        new Set(["c"]),
+      ),
+    ).toEqual([
+      { path: "b", sha256: A },
+      { path: "c", sha256: C },
+    ]);
   });
 
   it("keeps a modified file's ORIGINAL baseline, so it stays modified next time", () => {
@@ -174,7 +213,7 @@ describe("nextManifestFiles", () => {
     expect(
       nextManifestFiles(
         [decision("a", "keep-modified", { baseline: A, workspace: B, incoming: C })],
-        false,
+        NOTHING,
       ),
     ).toEqual([{ path: "a", sha256: A }]);
   });
@@ -183,13 +222,13 @@ describe("nextManifestFiles", () => {
     expect(
       nextManifestFiles(
         [decision("a", "restore-candidate", { baseline: A, workspace: null, incoming: A })],
-        false,
+        NOTHING,
       ),
     ).toEqual([{ path: "a", sha256: A }]);
     expect(
       nextManifestFiles(
         [decision("a", "restore-candidate", { baseline: A, workspace: null, incoming: B })],
-        true,
+        WROTE_A,
       ),
     ).toEqual([{ path: "a", sha256: B }]);
   });
@@ -198,7 +237,7 @@ describe("nextManifestFiles", () => {
     expect(
       nextManifestFiles(
         [decision("a", "retired", { baseline: A, workspace: A, incoming: null })],
-        false,
+        NOTHING,
       ),
     ).toEqual([]);
   });
@@ -207,13 +246,13 @@ describe("nextManifestFiles", () => {
     expect(
       nextManifestFiles(
         [decision("a", "current", { baseline: null, workspace: A, incoming: A })],
-        false,
+        NOTHING,
       ),
     ).toEqual([{ path: "a", sha256: A }]);
     expect(
       nextManifestFiles(
         [decision("a", "keep-modified", { baseline: null, workspace: B, incoming: A })],
-        false,
+        NOTHING,
       ),
     ).toEqual([]);
   });
@@ -222,7 +261,7 @@ describe("nextManifestFiles", () => {
     expect(
       nextManifestFiles(
         [decision("a", "update", { baseline: A, workspace: A, incoming: B }, "plugin:todos")],
-        false,
+        WROTE_A,
       ),
     ).toEqual([{ path: "a", sha256: B, source: "plugin:todos" }]);
   });

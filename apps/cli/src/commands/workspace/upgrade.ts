@@ -76,6 +76,17 @@ const ACTION_LABELS: Readonly<Record<UpgradeAction, string>> = {
   current: "current",
 };
 
+/**
+ * The label a verdict prints under. Everything reads as "what this run did"
+ * except in a workspace with no baseline, where **no** run writes a workspace
+ * file: there an `install` is something the operator still has to make happen,
+ * so it is labelled `pending` rather than claiming an install that never
+ * occurred (CLI-014).
+ */
+function labelFor(action: UpgradeAction, withoutBaseline: boolean): string {
+  return withoutBaseline && action === "install" ? "pending" : ACTION_LABELS[action];
+}
+
 const ACTION_ORDER: readonly UpgradeAction[] = [
   "update",
   "install",
@@ -150,7 +161,7 @@ export async function runWorkspaceUpgrade(
     toVersion: context.version,
     dryRun,
     withoutBaseline,
-    changes: describe(decisions, root, incoming),
+    changes: describe(decisions, root, incoming, withoutBaseline),
     written: [],
     manifestWritten: false,
     manifestCommitted: false,
@@ -177,7 +188,10 @@ export async function runWorkspaceUpgrade(
     version: 1,
     tool: context.version,
     installedAt: new Date().toISOString(),
-    files: nextManifestFiles(decisions, withoutBaseline ? false : restore),
+    // What was written, never what was planned: under `--adopt` the plan is not
+    // applied at all, and recording its incoming shas would put paths in the
+    // manifest that are not on disk (CLI-014).
+    files: nextManifestFiles(decisions, new Set(written)),
   };
   mkdirSync(join(root, CONFIG_DIR), { recursive: true });
   writeFileSync(templateManifestPath(root), serializeManifest(nextManifest), "utf8");
@@ -273,6 +287,7 @@ function describe(
   decisions: readonly UpgradeDecision[],
   root: string,
   incoming: readonly IncomingFile[],
+  withoutBaseline: boolean,
 ): readonly ReportedChange[] {
   const sources = new Map(incoming.map((file) => [file.path, file.from]));
   const rank = (action: UpgradeAction): number => ACTION_ORDER.indexOf(action);
@@ -284,7 +299,7 @@ function describe(
       path: decision.path,
       action: decision.action,
       source: decision.source ?? "template",
-      ...detailFor(decision, root, sources.get(decision.path)),
+      ...detailFor(decision, root, sources.get(decision.path), withoutBaseline),
     }));
 }
 
@@ -292,7 +307,18 @@ function detailFor(
   decision: UpgradeDecision,
   root: string,
   from: string | undefined,
+  withoutBaseline: boolean,
 ): { detail?: string } {
+  // Without a baseline no run writes a workspace file — `--adopt` included — so
+  // an `install` verdict here is a prediction, not something that happened
+  // (CLI-014). It is labelled `pending` and says what makes it real.
+  if (withoutBaseline && decision.action === "install") {
+    return {
+      detail:
+        "the tool has it, this workspace does not; nothing is written without a baseline, " +
+        "so --adopt first, then upgrade again to install it",
+    };
+  }
   switch (decision.action) {
     case "keep-modified":
       return { detail: `modified here — ${lineSummary(root, decision.path, from)}` };
@@ -384,7 +410,7 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
     const provenance = change.source === "template" ? "" : ` [${change.source}]`;
     const detail = change.detail === undefined ? "" : ` — ${change.detail}`;
     context.out.line(
-      `  ${ACTION_LABELS[change.action].padEnd(7)} ${change.path}${provenance}${detail}`,
+      `  ${labelFor(change.action, report.withoutBaseline).padEnd(7)} ${change.path}${provenance}${detail}`,
     );
   }
 
@@ -405,6 +431,15 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
         "from an edited one." +
         (report.commit === null ? "" : ` Commit ${report.commit}.`),
     );
+    const pending = report.changes.filter((change) => change.action === "install").length;
+    if (pending > 0) {
+      context.out.line(
+        `  --adopt installs nothing, so ${plural(pending, "file")} the tool carries and this ` +
+          "workspace does not have stayed out of the manifest as well as off the disk. Run " +
+          "`corpus workspace upgrade` again, now that there is a baseline, to install " +
+          `${pending === 1 ? "it" : "them"}.`,
+      );
+    }
     return;
   }
   context.out.line(
@@ -465,7 +500,7 @@ export const upgradeCommand: WorkspaceCommandSpec = {
       name: "adopt",
       type: "boolean",
       description:
-        "For a workspace created before manifests existed: record a baseline from the files that already match the tool's copies. Files that differ stay untracked and keep being reported, since nothing can tell an old copy from an edited one.",
+        "For a workspace created before manifests existed: record a baseline from the files that already match the tool's copies. It writes **no** workspace file — not even one the tool carries and this workspace has never had, which is reported as `pending` and stays out of the manifest. Files that differ stay untracked and keep being reported, since nothing can tell an old copy from an edited one. Once the baseline exists, an ordinary `corpus workspace upgrade` installs what is missing.",
     },
   ],
   examples: [
