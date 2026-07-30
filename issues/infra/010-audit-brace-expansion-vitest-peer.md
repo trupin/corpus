@@ -64,9 +64,12 @@ Implemented on: fable (orchestrator-direct, with the user in the loop).
 
 Final shipped set, each element verified:
 
-- overrides scoped to `@redocly/openapi-core` and `test-exclude` subtrees only: brace-expansion
-  ^5.0.8 (the GLOBAL override broke eslint 9.s minimatch@3 — 8 boundary-test failures — and was
-  withdrawn; minimatch@5/@9 handle it, proven by the drift check and the coverage run).
+- overrides, both scoped and both empirically forced: `@redocly/openapi-core` -> brace-expansion
+  ^5.0.8 (minimatch@5 tolerates it — drift check green); `test-exclude` -> minimatch ^10.2.6
+  (brace-expansion@5 BREAKS minimatch@9.s CJS default import — "brace_expansion_1.default is not
+  a function" under a real coverage run — so that subtree gets the minimatch@10 pairing instead;
+  proven by a coverage-loaded vitest run). The GLOBAL brace-expansion override broke eslint 9.s
+  minimatch@3 (8 boundary-test failures) and was withdrawn.
 - eslint ^10.8.0 + @eslint/js ^10.0.1 (declared — eslint.config.js imported it as a phantom):
   clears the whole eslint-family brace-expansion chain; combo was already gate-proven earlier
   the same night. One new eslint-10 core finding fixed (useAnchorLayer dead initializer).
