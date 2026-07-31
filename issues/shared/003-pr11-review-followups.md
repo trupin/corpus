@@ -171,6 +171,14 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
   deliberate deferral): never a skill, no folder move, so harmless — but it is now
   the only archive path off the POST route; consistency follow-up at triage.
+- **Thread-create warnings are document-scoped, not call-scoped** (Phase 6 eval
+  LEDGER-P6-2): a create response carries every unresolved anchor on the parent, so
+  the CLI's warning suffix can list other threads' orphans. Either scope the printed
+  list to the new anchor id or document the semantics in the verb help. (§14
+  validates the whole rewritten frontmatter — server behavior is by design.)
+- **UI-021 eval methodology caveat** (recorded, not waived): pre-fix reproduction was
+  unit-level (pure function), live leg post-fix only — fine here, not precedent for
+  bugs with runtime surface.
 - **`db doctor`'s `--json` description is stale** (SERVER-038 deferral): still says
   `{ok, drift, stats}`; one-line fix regenerates `docs/cli.md` — fold into the next
   CLI docs regeneration.

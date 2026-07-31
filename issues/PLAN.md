@@ -214,6 +214,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-028 | ↵ does not activate context-menu items (eval finding, §11) | done | P2 | UI-018 |
 | CLI-022 | No CLI surface for anchored thread creation (CLI-018 finding, §7) | done | P2 | CLI-003 |
 | UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | todo | P1 | — |
+| UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | todo | P2 | UI-005 |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 
