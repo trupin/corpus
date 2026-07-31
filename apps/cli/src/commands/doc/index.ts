@@ -6,6 +6,7 @@ import { deleteCommand } from "./delete.js";
 import { editCommand } from "./edit.js";
 import { listCommand } from "./list.js";
 import { moveCommand } from "./move.js";
+import { relatedCommand } from "./related.js";
 import { showCommand } from "./show.js";
 import { unarchiveCommand } from "./unarchive.js";
 
@@ -16,20 +17,22 @@ import { unarchiveCommand } from "./unarchive.js";
  * never runs git. Locking, anchor reconciliation, validation and the auto-commit
  * that records who did it all happen server-side.
  *
- * `list` is the enumeration — the collection query behind the board's columns,
- * and the only way an agent that reaches the workspace through the CLI can ask
- * what is in the corpus at all; `show` is the single read; `check` is the
- * validator (SPEC.md §14) reported rather than run here; `create`, `edit`,
- * `move`, `archive` and `unarchive` are the agent's own initiative; `delete` is
- * the user's alone.
+ * `list` is the enumeration — the collection query behind the board's columns;
+ * `related` is its opposite number, the one-hop expansion from a document the
+ * agent already holds, which with `corpus search` is how it locates content
+ * without enumerating anything (SPEC.md §7); `show` is the single read; `check`
+ * is the validator (SPEC.md §14) reported rather than run here; `create`,
+ * `edit`, `move`, `archive` and `unarchive` are the agent's own initiative;
+ * `delete` is the user's alone.
  */
 export const docTopic: TopicSpec = {
   name: "doc",
   summary: "List, read, check, create, edit, move, archive, unarchive and delete documents.",
   description:
     "The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the " +
-    "collection query behind the board's own columns, filters, Attention and search — reads " +
-    "documents through `show` — anchors " +
+    "collection query behind the board's own columns, filters, Attention and search — expands " +
+    "from a document it already holds through `related`, the follow-up move to `corpus search` " +
+    "(SPEC.md §7) — reads documents through `show` — anchors " +
     "resolve against the current body server-side, so reading the file would answer differently " +
     "— and creates, edits, moves and archives them on its own initiative, **archiving where a " +
     "person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal " +
@@ -39,6 +42,7 @@ export const docTopic: TopicSpec = {
     "documents, the whole workspace, or what is staged in git.",
   commands: [
     listCommand,
+    relatedCommand,
     showCommand,
     checkCommand,
     createCommand,

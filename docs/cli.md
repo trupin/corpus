@@ -15,6 +15,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [Global flags](#global-flags)
 - [`corpus health`](#corpus-health)
 - [`corpus init`](#corpus-init)
+- [`corpus search`](#corpus-search)
 - [`corpus db`](#corpus-db)
   - [`corpus db doctor`](#corpus-db-doctor)
   - [`corpus db rebuild`](#corpus-db-rebuild)
@@ -26,6 +27,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus doc edit`](#corpus-doc-edit)
   - [`corpus doc list`](#corpus-doc-list)
   - [`corpus doc move`](#corpus-doc-move)
+  - [`corpus doc related`](#corpus-doc-related)
   - [`corpus doc show`](#corpus-doc-show)
   - [`corpus doc unarchive`](#corpus-doc-unarchive)
 - [`corpus job`](#corpus-job)
@@ -196,6 +198,70 @@ Machine-readable form. The bearer token is never printed.
 corpus init --json
 ```
 
+## `corpus search`
+
+Find where something is said in the corpus, without reading the corpus.
+
+Reads `GET /api/search` (SPEC.md §9.2) and prints one line per hit: the document id, the heading path of the best-matching passage, and one line of context. **Never a body** — that absence is the point of the verb. Reading is a separate, deliberate act on a hit's id: `corpus doc show <id>`.
+
+**This is how the agent locates content** (SPEC.md §7): searching, then reading the one or two documents the ranking pointed at, costs what the answer costs. Listing the corpus and reading candidates costs the corpus.
+
+Threads are documents too, so a match inside a reply is a hit on the thread, and its heading path is that turn's heading. A passage with no heading above it reports the document's title, so a hit always has an address. Heading levels are joined for display by a spaced `›` — print the path, never split it, since a heading may contain the character.
+
+It takes the same structured filters as `corpus doc list`, with the same meanings and the same archived default, because both are built from one definition. What it does **not** take is `--sort`, `--pinned` or `--offset`: a ranked result set has one order — its ranking — and is a top-k rather than a page. `--limit` (default 10, max 50) is the cap; widen it or narrow the filters. Nothing matching is an empty ranking and exit 0, never an error.
+
+`--json` emits the server's envelope unchanged — the hits plus each one's title, and the `semanticIndex` state — which is what a skill parses when it wants a field rather than a glance.
+
+```
+corpus search <query> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                                               |
+| -------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `query`  | yes      | What to look for. Matched across document titles, bodies and turn bodies; quote it if it contains spaces. |
+
+**Flags**
+
+| Flag                     | Type    | Default | Description                                                                                                                                                       |
+| ------------------------ | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--type <a,b>`           | string  | —       | Comma-separated document types; values OR together. Core types: `note`, `thread`, `view`, `template`, `skill`, `agent-def`, plus whatever a plugin defines.       |
+| `--tag <a,b>`            | string  | —       | Comma-separated tags; values OR together.                                                                                                                         |
+| `--folder <path>`        | string  | —       | Path prefix under `data/docs/`, matching the folder and its descendants. Threads inherit their parent's folder.                                                   |
+| `--status <status>`      | string  | —       | Lifecycle status: open, resolved, archived. Passing it replaces the default archived exclusion.                                                                   |
+| `--include-archived`     | boolean | `false` | Include archived documents **alongside** the rest, rather than excluding them — the board's archived chip. A no-op next to an explicit `--status`.                |
+| `--needs <reason>`       | string  | —       | The Attention filter (SPEC.md §11): me, unread-reply, form, due, stale, failed-job. `me` is the union of every reason.                                            |
+| `--parent <doc-id>`      | string  | —       | Threads whose parent is this document. Thread-only.                                                                                                               |
+| `--references <doc-id>`  | string  | —       | Documents whose body contains `[[<doc-id>]]` — the backlinks of that document.                                                                                    |
+| `--agent <state>`        | string  | —       | Agent participation state: none, requested, engaged. Thread-only.                                                                                                 |
+| `--author <user\|agent>` | string  | —       | Author of the thread's last turn. Thread-only.                                                                                                                    |
+| `--unread`               | boolean | `false` | Only threads whose last turn is newer than your last-seen mark. Thread-only, and it selects the unread side only — there is no flag for the read side.            |
+| `--due <date\|keyword>`  | string  | —       | An ISO date (due on or before it) or one of `overdue`, `today`, `week`, resolved against the workspace's clock.                                                   |
+| `--since <iso>`          | string  | —       | Documents updated strictly after this ISO 8601 instant.                                                                                                           |
+| `--stale <tier>`         | string  | —       | Staleness tier (SPEC.md §5) and beyond: aging, stale, very-stale. Evergreen documents never match.                                                                |
+| `--limit <n>`            | number  | —       | How many hits to return, 1–50 (default 10). Lower than the list's cap on purpose: retrieval is read by an agent that pays for every line. There is no `--offset`. |
+
+**Examples**
+
+One padded line per hit — id, heading path, snippet — best match first. Read the winner with `corpus doc show <id>`.
+
+```
+corpus search "rate assumptions"
+```
+
+The same structured filters `corpus doc list` takes, narrowing the ranking rather than enumerating what matched.
+
+```
+corpus search "mortgage" --type note --folder finance --limit 5
+```
+
+One JSON value: `{"hits":[{"id":"doc_a1b2c3","title":"Mortgage options","headingPath":"Mortgage options › Rates","snippet":"…the rate lock deadline is 30 June…"}],"semanticIndex":"current"}`.
+
+```
+corpus search "deadline" --json
+```
+
 ## `corpus db`
 
 Maintain the SQLite projection.
@@ -260,7 +326,7 @@ corpus db rebuild --json
 
 List, read, check, create, edit, move, archive, unarchive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
+The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — expands from a document it already holds through `related`, the follow-up move to `corpus search` (SPEC.md §7) — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
 
 ### `corpus doc archive`
 
@@ -641,6 +707,53 @@ One JSON value — `{"doc":{…},"warnings":[]}` — carrying the document at it
 
 ```
 corpus doc move doc_a1b2c3 --folder archive-notes --json
+```
+
+### `corpus doc related`
+
+Expand from one document to the documents around it.
+
+Reads `GET /api/docs/{id}/related` (SPEC.md §9.2) and prints one line per neighbour: the document id, why it is related, and one line to recognise it by — **never a body**. The body of one that looks right is `corpus doc show <id>`.
+
+This is the follow-up move to `corpus search`: search finds an entry point, this walks out from it. Phase A relates through the reference graph — an outgoing `[[ref]]`, a backlink, or both directions, which ranks first — so every row is labelled `linked`. `similar` and `both` arrive with semantic retrieval (SPEC.md §9.1) and are already in the vocabulary, so nothing about this output changes shape when they do.
+
+Threads are documents, so a thread whose reply mentions this document is a legitimate neighbour and appears as one. Every id printed is a document that exists and can be read: references to documents nobody has created yet are real in the corpus but are not offered here. Archived neighbours are excluded by default, like every list — `--include-archived` widens the set. An id that names no document is the server's `404`, which is exit 5, and a document nothing relates to is a single honest line and exit 0.
+
+```
+corpus doc related <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                  |
+| -------- | -------- | ---------------------------- |
+| `id`     | yes      | The document to expand from. |
+
+**Flags**
+
+| Flag                 | Type    | Default | Description                                                                                                                                                                                                           |
+| -------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--limit <n>`        | number  | —       | How many related documents to return, 1–50 (default 10) — the same frugal cap ranked search uses, for the same reason. There is no `--offset`.                                                                        |
+| `--include-archived` | boolean | `false` | Include archived neighbours as well. Archiving is organizational rather than deletion, so an archived neighbour is still a real relation — just not what an agent expanding from a live document usually wants first. |
+
+**Examples**
+
+One padded line per neighbour — id, relation, excerpt — most related first. Read one with `corpus doc show <id>`.
+
+```
+corpus doc related doc_a1b2c3
+```
+
+The three closest neighbours, archived documents included — the sweep that follows a search hit.
+
+```
+corpus doc related doc_a1b2c3 --limit 3 --include-archived
+```
+
+One JSON value: `{"related":[{"id":"th_x9y8","title":"Rate assumptions","excerpt":"Locking at 6.1% assumes the survey lands before June.","relation":"linked"}],"semanticIndex":"current"}`.
+
+```
+corpus doc related doc_a1b2c3 --json
 ```
 
 ### `corpus doc show`

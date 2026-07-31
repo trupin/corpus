@@ -5,6 +5,7 @@ import { initCommand } from "../commands/init/index.js";
 import { jobTopic } from "../commands/job/index.js";
 import { lockTopic } from "../commands/lock/index.js";
 import { queueTopic } from "../commands/queue/index.js";
+import { searchCommand } from "../commands/search.js";
 import { serverTopic } from "../commands/server/index.js";
 import { skillTopic } from "../commands/skill/index.js";
 import { threadTopic } from "../commands/thread/index.js";
@@ -38,7 +39,10 @@ for (const warning of pluginScan.warnings) {
 
 export const registry: Registry = validateRegistry({
   summary: "conversations around documents, driven by an agent.",
-  commands: [healthCommand, initCommand],
+  // `search` is top-level rather than a `doc` verb because it retrieves across
+  // the corpus — documents, threads and turns alike (SPEC.md §7, §9.2) — and it
+  // is the first thing the agent runs, not a document operation.
+  commands: [healthCommand, initCommand, searchCommand],
   topics: [
     workspaceTopic,
     serverTopic,
