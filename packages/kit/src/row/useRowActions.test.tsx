@@ -104,7 +104,15 @@ const writes = (calls: readonly Capture[]): Capture[] =>
   calls.filter((call) => call.method !== "GET");
 
 describe("Archive", () => {
-  it("issues a single PUT setting status: archived", async () => {
+  /**
+   * UI-020, sprint-018 Adjudication 7. This used to be
+   * `PUT {status: "archived"}`, which for a `type: skill` document set the
+   * frontmatter key and left the folder in `.claude/skills/` — still discovered
+   * by Claude Code, still holding its name against `corpus skill create`. Only
+   * `POST …/archive` runs the server's folder move, so the assertion is on the
+   * route, not on a patch body.
+   */
+  it("issues a single POST to the archive route, carrying no status patch", async () => {
     const { calls, notices } = renderStaleRow();
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
 
@@ -112,10 +120,11 @@ describe("Archive", () => {
       expect(writes(calls)).toHaveLength(1);
     });
     expect(writes(calls)[0]).toMatchObject({
-      method: "PUT",
-      path: "/api/docs/doc_taxchecklist",
-      body: { status: "archived" },
+      method: "POST",
+      path: "/api/docs/doc_taxchecklist/archive",
+      body: undefined,
     });
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(0);
     await waitFor(() => {
       expect(notices.at(-1)?.message).toContain("Archived");
     });

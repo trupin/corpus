@@ -121,6 +121,92 @@ describe("corpus doc create", () => {
     expect(JSON.parse(stub.requests[0]?.body ?? "")).toMatchObject({ folder: "does/not/exist" });
   });
 
+  it("creates a pinned view in one request — SPEC.md §11's promise, on the wire", async () => {
+    // The command from the verb's own example, minus the body: what an agent
+    // types for "pin me a view of unresolved finance threads".
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, {
+      flags: {
+        type: "view",
+        title: "Unresolved finance",
+        folder: "views",
+        evergreen: "true",
+        pinned: "true",
+        order: "4",
+        query: ["type=thread", "status=open", "tag=finance"],
+      },
+      actor: "agent",
+    });
+
+    await runDocCreate(harness.context, { stdinIsBodySource: false });
+
+    expect(stub.requests[0]?.headers["x-corpus-author"]).toBe("agent");
+    expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
+      type: "view",
+      title: "Unresolved finance",
+      folder: "views",
+      evergreen: true,
+      pinned: true,
+      // A YAML number, not a quoted one: the board sorts on it.
+      order: 4,
+      query: { type: "thread", status: "open", tag: "finance" },
+    });
+  });
+
+  it("sends what the board's own new-column creator sends", async () => {
+    // `apps/ui/src/board/newList.ts#columnRequest`: a CLI-created column must
+    // not be a second dialect of the one document type.
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, {
+      flags: {
+        type: "view",
+        title: "Todos",
+        folder: "views",
+        evergreen: "true",
+        pinned: "true",
+        order: "5",
+        query: ["type=note"],
+        column: "todos/board",
+      },
+    });
+
+    await runDocCreate(harness.context, { stdinIsBodySource: false });
+
+    expect(Object.keys(JSON.parse(stub.requests[0]?.body ?? "") as object).sort()).toEqual(
+      ["type", "title", "folder", "evergreen", "pinned", "order", "query", "column"].sort(),
+    );
+  });
+
+  it("omits every view key the caller did not name", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    const harness = stubContext(stub, { flags: { type: "note", title: "T", pinned: "false" } });
+
+    await runDocCreate(harness.context, { stdinIsBodySource: false });
+
+    expect(JSON.parse(stub.requests[0]?.body ?? "")).toEqual({
+      type: "note",
+      title: "T",
+      pinned: false,
+    });
+  });
+
+  it("refuses a malformed view flag before any request", async () => {
+    const stub = await startStubServer(jsonResponder(201, CREATED));
+    for (const flags of [
+      { order: "first" },
+      { column: "nonsense" },
+      { pinned: "yes" },
+      { query: ["type"] },
+    ]) {
+      const harness = stubContext(stub, { flags: { type: "view", title: "T", ...flags } });
+      const error: unknown = await runDocCreate(harness.context, {
+        stdinIsBodySource: false,
+      }).catch((cause: unknown) => cause);
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    }
+    expect(stub.requests).toHaveLength(0);
+  });
+
   it("documents the body sources and the inbox-first default", () => {
     const text = `${createCommand.description ?? ""}`;
     expect(text).toContain("stdin");

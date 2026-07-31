@@ -37,6 +37,23 @@ export type DocumentRoot = {
 };
 
 /**
+ * The corpus proper. Named on its own because two callers need *this* root
+ * rather than the list — `projection/unindexable.ts` walks it and asks
+ * {@link classifyPath} what it would refuse — and a `find` over
+ * {@link DOCUMENT_ROOTS} would make a total lookup carry an unreachable
+ * "no such root" branch.
+ */
+export const DOCS_ROOT: DocumentRoot = {
+  key: "docs",
+  path: "data/docs",
+  shape: "markdown-tree",
+  type: null,
+  status: null,
+  synthesizeId: false,
+  idPrefix: "doc",
+};
+
+/**
  * The five roots, in the order enumeration visits them. `data/docs` and
  * `data/threads` are spelled out rather than derived from the config's
  * `dataDir`, matching `core/paths.ts`: the layout §4 fixes is what every path
@@ -44,15 +61,7 @@ export type DocumentRoot = {
  * be a silent split-brain.
  */
 export const DOCUMENT_ROOTS: readonly DocumentRoot[] = [
-  {
-    key: "docs",
-    path: "data/docs",
-    shape: "markdown-tree",
-    type: null,
-    status: null,
-    synthesizeId: false,
-    idPrefix: "doc",
-  },
+  DOCS_ROOT,
   {
     key: "threads",
     path: "data/threads",

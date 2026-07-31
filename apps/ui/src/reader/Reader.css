@@ -167,6 +167,15 @@
   padding: 4px 8px;
 }
 
+/* Where a field's act actually lives, when it is not this field (UI-020). */
+.fm-hint {
+  max-width: 34ch;
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink-3);
+}
+
 .fm-actions {
   display: flex;
   align-items: center;

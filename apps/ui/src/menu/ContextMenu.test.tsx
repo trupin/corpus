@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BoardCommands } from "../keyboard/boardCommands";
+import { useShortcuts } from "../keyboard/useShortcuts";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
 import { ContextMenuProvider, useContextMenu } from "./ContextMenuHost";
 import { MenuItems } from "./MenuItems";
@@ -23,6 +25,32 @@ afterEach(() => {
 
 const ARCHIVE = vi.fn();
 const DELETE = vi.fn();
+
+beforeEach(() => {
+  ARCHIVE.mockClear();
+  DELETE.mockClear();
+});
+
+/** A board that records rather than acts, so a swallowed key is visible. */
+function boardSpy(): BoardCommands & { readonly calls: string[] } {
+  const calls: string[] = [];
+  const record =
+    (name: string) =>
+    (...args: unknown[]): void => {
+      calls.push(args.length === 0 ? name : `${name}:${String(args[0])}`);
+    };
+  return {
+    calls,
+    moveRowCursor: record("moveRowCursor"),
+    openRowAtCursor: record("openRowAtCursor"),
+    switchColumn: record("switchColumn"),
+    moveActiveColumn: record("moveActiveColumn"),
+    toggleFocusMode: record("toggleFocusMode"),
+    archiveTarget: record("archiveTarget"),
+    focusReply: record("focusReply"),
+    openContextMenu: record("openContextMenu"),
+  };
+}
 
 function actions(): MenuAction[] {
   return [
@@ -192,6 +220,67 @@ describe("the context menu frame", () => {
     fireEvent.click(screen.getByText(/open menu/));
     expect(screen.queryByText("Really delete?")).toBeNull();
     expect(screen.getByRole("menuitem", { name: /Delete…/ })).toBeTruthy();
+  });
+
+  /**
+   * SPEC.md §11's "`↵` activates", and UI-028's regression.
+   *
+   * The frame does not implement `↵` — a focused `<button>` activates on it
+   * through its default action. What broke it was the board's own `↵` binding
+   * (`rows.open`) matching first on the document listener and calling
+   * `preventDefault()`, which cancels that default action. So what is asserted
+   * here is the whole chain with the real dispatcher mounted: the key reaches
+   * the item **unprevented**, no board command ran, and the activation the
+   * browser then performs runs the action and closes the menu.
+   */
+  describe("↵ activates the focused item", () => {
+    function mountWithShortcuts(): BoardCommands & { readonly calls: string[] } {
+      const board = boardSpy();
+      function Harness(): ReactElement {
+        useShortcuts({
+          openCompose: () => undefined,
+          openSearch: () => undefined,
+          toggleCheatSheet: () => undefined,
+          board,
+        });
+        return (
+          <ContextMenuProvider>
+            <Opener autoFocus />
+          </ContextMenuProvider>
+        );
+      }
+      render(<Harness />);
+      return board;
+    }
+
+    for (const code of ["Enter", "NumpadEnter"]) {
+      it(`reaches the item unprevented on ${code}`, () => {
+        const board = mountWithShortcuts();
+        fireEvent.click(screen.getByText(/open menu/));
+        const first = items()[0];
+        expect(document.activeElement).toBe(first);
+
+        const event = new KeyboardEvent("keydown", { key: "Enter", code, bubbles: true });
+        first?.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(board.calls).toEqual([]);
+        // The default action the browser performs on an unprevented ↵: a click
+        // on the focused button. jsdom does not synthesise it, so it is fired.
+        fireEvent.click(first as HTMLElement);
+        expect(ARCHIVE).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole("menu")).toBeNull();
+      });
+    }
+
+    it("still lets esc dismiss without running anything", () => {
+      const board = mountWithShortcuts();
+      fireEvent.click(screen.getByText(/open menu/));
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(ARCHIVE).not.toHaveBeenCalled();
+      expect(board.calls).toEqual([]);
+    });
   });
 
   it("is a no-op, not a crash, with no host above it", () => {

@@ -2835,7 +2835,7 @@ export interface paths {
         };
         /**
          * Check the projection against the files
-         * @description Reports every disagreement between the workspace's files and the projection's rows (SPEC.md §14). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never re-read, and a file that already has a row is never re-parsed. Nothing is mutated and no rebuild is triggered — a drifted projection is reported, never quietly repaired, because the point of the check is that drift is visible. `ok` is the verdict `corpus db doctor` turns into its exit code.
+         * @description Reports every disagreement between the workspace's files and the projection's rows (SPEC.md §14). Cheap enough for a pre-commit hook: a file whose size and mtime are unchanged is never re-read, and a file that already has a row is never re-parsed. Nothing is mutated and no rebuild is triggered — a drifted projection is reported, never quietly repaired, because the point of the check is that drift is visible. `ok` is the verdict `corpus db doctor` turns into its exit code. Findings that are worth reporting but are not disagreements arrive separately in `warnings`, which never moves `ok`.
          */
         get: {
             parameters: {
@@ -2846,7 +2846,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description The drift report. `ok` is true exactly when `drift` is empty; a drifted projection is a `200` carrying the findings, not an error status. */
+                /** @description The drift report. `ok` is true exactly when `drift` is empty; a drifted projection is a `200` carrying the findings, not an error status. `warnings`, when present, is report-only and leaves `ok` alone. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -4170,11 +4170,13 @@ export interface components {
             reason: string;
         };
         DoctorReport: {
-            /** @description True exactly when `drift` is empty. The single flag `corpus db doctor` turns into its exit code, so a caller never has to re-derive the verdict from the list. */
+            /** @description True exactly when `drift` is empty. The single flag `corpus db doctor` turns into its exit code, so a caller never has to re-derive the verdict from the list. `warnings` never moves it. */
             ok: boolean;
             /** @description Every disagreement found between the files and the projection. Empty when `ok`. */
             drift: components["schemas"]["ProjectionDrift"][];
             stats: components["schemas"]["DoctorStats"];
+            /** @description Report-only findings that are not drift: things worth a person's attention that the projection is nonetheless correct about. **Never moves `ok` and never changes the exit code** — SPEC.md §14's standing `rebuild && doctor` clean invariant is about drift, and a warning that flipped the verdict would fail a routine check on workspaces where nothing is wrong with the projection. Absent and empty mean the same thing: a server that runs no warning pass omits the key entirely, which is what keeps this field additive for clients generated before it existed. */
+            warnings?: components["schemas"]["DoctorWarning"][];
         };
         ProjectionDrift: {
             /**
@@ -4198,6 +4200,16 @@ export interface components {
             parsed: number;
             /** @description Wall-clock time the check took. */
             durationMs: number;
+        };
+        DoctorWarning: {
+            /** @description What kind of report-only finding this is. **Open by design**, unlike `ProjectionDrift.kind`: a warning carries no verdict, so a consumer that does not recognise the kind still renders `detail` and loses nothing, and the server can add a finding without a contract release. Core values: unindexable_file. `unindexable_file`: a markdown file the projection will never index because its path lies under a segment the document walk skips, so the corpus can never show it (SPEC.md §5). Constrained to a lowercase snake_case token of at most 64 characters — it is a key to switch on, not prose. */
+            kind: string;
+            /** @description Workspace-relative path this warning concerns. Null when it concerns no single file. */
+            path: string | null;
+            /** @description Human-readable specifics — what was found and what a person can do about it. Rendered verbatim by `corpus db doctor`; never parsed. Named `detail` to match `ProjectionDrift.detail` and `Warning.detail`, so the render-verbatim string has one name across the whole contract. */
+            detail: string;
+            /** @description Sha of the commit that introduced whatever this warning names — `git show <commit>` is where it came from, which is the difference between a finding a person can act on and a path they must go hunting for. `null` when there is no such commit: the file is uncommitted, the workspace has no git, or the kind concerns no single file. */
+            commit: string | null;
         };
         CheckReport: {
             /** @description True exactly when `errors` is empty — the verdict `corpus doc check` turns into its exit code (0, or 6 for a check-style failure). Warnings never affect it. */

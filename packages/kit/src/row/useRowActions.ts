@@ -1,6 +1,7 @@
 import type { DocRow } from "@corpus/contract";
 import { useCallback, useState } from "react";
 import { useCreateThread } from "../query/useCreateThread.js";
+import { useSetDocArchived } from "../query/useSetDocArchived.js";
 import { useUpdateDoc } from "../query/useUpdateDoc.js";
 
 /**
@@ -53,7 +54,7 @@ export function triagePrompt(title: string): string {
 /**
  * What archiving narrates. Exported because archiving has two entry points —
  * this row action and SPEC.md §11's `e` — and a second wording would be a second
- * claim about what the same `PUT /api/docs/{id}` write did.
+ * claim about what the same `POST /api/docs/{id}/archive` call did.
  */
 export function archivedMessage(title: string): string {
   return `Archived "${title}" — committed. Archiving is reversible.`;
@@ -82,18 +83,24 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
   );
 
   /*
-   * Three mutations, not one shared `useUpdateDoc`, and every notice on the
-   * **hook's** callbacks rather than on `mutate`'s (UI-012).
+   * Three mutations, and every notice on the **hook's** callbacks rather than on
+   * `mutate`'s (UI-012).
    *
    * The hook-level ones survive the caller's unmount, which is the difference
    * between a toast and silence for the reader's ⋯ menu: it closes itself the
    * moment an item is clicked, and a per-call callback dies with the observer
-   * (`SettledCallbacks`). Archive and "Still current" then need separate
+   * (`SettledCallbacks`). "Still current" and "@agent triage" then need their own
    * mutations because a hook-level callback is bound to the hook, not to the
-   * call — one `useUpdateDoc` would have to guess which verb it was reporting
-   * by sniffing the patch it sent.
+   * call — one shared write would have to guess which verb it was reporting by
+   * sniffing the patch it sent.
+   *
+   * Archive is a **route**, not a patch (UI-020, sprint-018 Adjudication 7).
+   * `PUT {status: "archived"}` sets the frontmatter key and leaves a skill's
+   * folder in `.claude/skills/`, where Claude Code still reads it and where it
+   * still holds its name against `corpus skill create` — §7's promise with the
+   * only part that mattered missing. Only `POST …/archive` moves the folder.
    */
-  const archiveWrite = useUpdateDoc(row.id, {
+  const archiveWrite = useSetDocArchived({
     onSuccess: () => {
       notify("info", archivedMessage(row.title));
     },
@@ -131,8 +138,8 @@ export function useRowActions(row: RowActionSubject, options: RowActionsOptions 
     // corpus says it left — the refetch that follows the invalidation is what
     // removes it, never a timer.
     setLeaving(true);
-    archiveWrite.mutate({ status: "archived" });
-  }, [archiveWrite, isBusy]);
+    archiveWrite.mutate({ id: row.id, archived: true });
+  }, [archiveWrite, isBusy, row.id]);
 
   const stillCurrent = useCallback(() => {
     if (isBusy) return;

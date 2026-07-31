@@ -50,6 +50,7 @@ const RUNTIME_SURFACE = [
   "resetSeenMarks",
   "useUpdateDoc",
   "useUpdateDocById",
+  "useSetDocArchived",
   "useCreateDoc",
   "useCapture",
   "useCreateThread",

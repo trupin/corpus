@@ -23,6 +23,17 @@ const INBOX_VIEW = {
   query: { folder: "inbox" },
 };
 
+/** The second column UI-020 needs: somewhere an archived document is visible. */
+const ARCHIVE_VIEW = {
+  id: "doc_view_archive",
+  type: "view",
+  title: "Archive",
+  path: "data/docs/views/archive.md",
+  pinned: true,
+  order: 2,
+  query: { status: "archived" },
+};
+
 const NOTE = { id: "doc_note", title: "Mortgage options", body: "6.4% this week." };
 const OTHER = { id: "doc_other", title: "Rates" };
 
@@ -59,6 +70,61 @@ test.describe("the context menu", () => {
     expect((await corpus.doc("doc_note"))?.status).toBe("open");
   });
 
+  /**
+   * UI-020, and the half a browser can prove. SPEC.md §7 says an archived skill
+   * is "restorable"; the menu offered Archive with no inverse, and the only
+   * inverse the UI could reach was the `PUT` SERVER-039 refuses. The other half
+   * — the folder actually moving to `.claude/skills-archived/` and the name
+   * coming free of `corpus skill create`'s 409 — is only observable against a
+   * real workspace and lives in the issue's real-app drill (Adjudication 19).
+   */
+  test("offers Unarchive on an archived row, and only there, calling the route that owns it", async ({
+    page,
+  }) => {
+    const corpus = await stubCorpus(page, [
+      INBOX_VIEW,
+      ARCHIVE_VIEW,
+      NOTE,
+      { ...OTHER, status: "archived", title: "Old rates" },
+    ]);
+    await page.goto("/");
+
+    // A live row offers Archive and no inverse.
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    let menu = page.getByRole("menu", { name: "Actions for Mortgage options" });
+    await expect(menu.locator('[data-act="archive"]')).toBeVisible();
+    await expect(menu.locator('[data-act="unarchive"]')).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    const archivedRow = page.locator('.row[data-row-doc="doc_other"]');
+    await expect(archivedRow).toBeVisible();
+
+    await archivedRow.click({ button: "right" });
+    menu = page.getByRole("menu", { name: "Actions for Old rates" });
+    await expect(menu.locator('[data-act="unarchive"]')).toBeVisible();
+    await expect(menu.locator('[data-act="archive"]')).toHaveCount(0);
+
+    await menu.locator('[data-act="unarchive"]').click();
+
+    await expect.poll(async () => (await corpus.doc("doc_other"))?.status).toBe("open");
+    expect(await corpus.of("POST", "/api/docs/doc_other/unarchive")).toHaveLength(1);
+    // Never the write SERVER-039 refuses with a 400 naming this route.
+    expect(await corpus.of("PUT", "/api/docs/doc_other")).toHaveLength(0);
+  });
+
+  /** Adjudication 7: Archive moves onto its own route too, from every surface. */
+  test("archives through POST …/archive rather than a status patch", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.getByRole("menu").locator('[data-act="archive"]').click();
+
+    await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("archived");
+    expect(await corpus.of("POST", "/api/docs/doc_note/archive")).toHaveLength(1);
+    expect(await corpus.of("PUT", "/api/docs/doc_note")).toHaveLength(0);
+  });
+
   test("keeps deletion behind its explicit confirmation", async ({ page }) => {
     const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
     await page.goto("/");
@@ -88,6 +154,64 @@ test.describe("the context menu", () => {
 
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
+  });
+
+  /**
+   * SPEC.md §11: "`esc` dismisses, arrows navigate, `↵` activates". UI-028 —
+   * the case above only ever exercised the arrows, and `↵` activated nothing in
+   * any menu in the app: the board's own `↵` (`rows.open`) matched first on the
+   * document listener and `preventDefault()` cancelled the focused button's
+   * default action. Only a real browser performs that default action, so only a
+   * real browser can prove the key now gets through — and the assertion is that
+   * the **action ran**, not that a key was pressed.
+   */
+  for (const key of ["Enter", "NumpadEnter"] as const) {
+    test(`activates the focused item on ${key}`, async ({ page }) => {
+      await stubCorpus(page, [INBOX_VIEW, NOTE]);
+      await page.goto("/");
+
+      await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+      const menu = page.getByRole("menu");
+      await page.keyboard.press("ArrowDown");
+      await expect(menu.locator('[data-act="open"]')).toBeFocused();
+
+      await page.keyboard.press(key);
+
+      await expect(menu).toBeHidden();
+      // Open ran: the row's reader is what the act produces.
+      await expect(page.locator('.reader[data-reader-doc="doc_note"]')).toBeVisible();
+    });
+  }
+
+  test("still activates on Space, and esc still runs nothing", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toBeHidden();
+    await expect(page.locator(".reader")).toHaveCount(0);
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Space");
+    await expect(page.getByRole("menu")).toBeHidden();
+    await expect(page.locator('.reader[data-reader-doc="doc_note"]')).toBeVisible();
+  });
+
+  test("takes the board's keys out of scope while it is open", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+
+    // `c` opens the compose overlay on the board; with a menu up it must not.
+    await page.keyboard.press("c");
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
+    await expect(menu).toBeVisible();
   });
 
   /**

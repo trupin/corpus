@@ -80,6 +80,11 @@ function toRebuildResult(report: RebuildReport): WireRebuildResult {
  * `Drift.path` is absent for the one kind that concerns no single file
  * (`count_mismatch`); the contract carries the key always and says so with
  * `null`, so a consumer never has to tell "no path" from "the server forgot".
+ * A warning's `path` and `commit` follow the same rule (CONTRACT-025).
+ *
+ * `warnings` is always present, empty included: this handler always runs the
+ * pass, so an empty array is the honest answer "it looked and found nothing" —
+ * which the contract makes indistinguishable from the absent key anyway.
  */
 function toDoctorReport(report: DoctorReport): WireDoctorReport {
   return {
@@ -88,6 +93,12 @@ function toDoctorReport(report: DoctorReport): WireDoctorReport {
       kind: entry.kind,
       path: entry.path ?? null,
       detail: entry.detail,
+    })),
+    warnings: (report.warnings ?? []).map((entry) => ({
+      kind: entry.kind,
+      path: entry.path ?? null,
+      detail: entry.detail,
+      commit: entry.commit ?? null,
     })),
     stats: { ...report.stats },
   };

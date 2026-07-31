@@ -19,6 +19,21 @@ const DRIFTED = {
   stats: STATS,
 };
 
+const WARNED = {
+  ok: true,
+  drift: [],
+  warnings: [
+    {
+      kind: "unindexable_file",
+      path: "data/docs/.claude/skills/invisible-doc.md",
+      detail: 'it can never be indexed. Added in abc1234 "seed it".',
+      commit: "abc1234",
+    },
+    { kind: "unindexable_files_truncated", path: null, detail: "more than 50 files", commit: null },
+  ],
+  stats: STATS,
+};
+
 afterEach(closeStubServers);
 
 describe("corpus db doctor", () => {
@@ -32,6 +47,34 @@ describe("corpus db doctor", () => {
     expect(request?.method).toBe("GET");
     expect(request?.path).toBe("/api/db/doctor");
     expect(harness.stdout()).toBe("projection is clean — 18 documents from 18 files (12ms)\n");
+  });
+
+  /**
+   * A report-only finding is printed and changes nothing else: SPEC.md §14's
+   * standing `rebuild && doctor` clean invariant is about drift, so a warning
+   * that moved the exit code would fail a routine check on a workspace whose
+   * projection is correct (SERVER-038).
+   */
+  it("prints warnings and still exits 0 with the clean verdict", async () => {
+    const stub = await startStubServer(jsonResponder(200, WARNED));
+    const harness = stubContext(stub, {});
+
+    await runDbDoctor(harness.context);
+
+    expect(harness.stdout()).toBe(
+      'unindexable_file data/docs/.claude/skills/invisible-doc.md: it can never be indexed. Added in abc1234 "seed it".\n' +
+        "unindexable_files_truncated (no file): more than 50 files\n" +
+        "projection is clean — 18 documents from 18 files (12ms)\n",
+    );
+  });
+
+  it("passes warnings through untouched under --json", async () => {
+    const stub = await startStubServer(jsonResponder(200, WARNED));
+    const harness = stubContext(stub, { json: true });
+
+    await runDbDoctor(harness.context);
+
+    expect(JSON.parse(harness.stdout())).toEqual(WARNED);
   });
 
   it("maps a drift report to exit 6 — the code a pre-commit hook gates on", async () => {

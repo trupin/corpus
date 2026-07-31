@@ -203,12 +203,13 @@ describe("readThreadForms", () => {
       expect(unanswered(turns)).toEqual([stamp(0)]);
     });
 
-    // The one place this reader is deliberately wider than the renderer's
-    // `mapFormAnswers`, which `continue`s past its own registration on such a
-    // turn and so leaves the form live forever. Pinned so the divergence is a
-    // decision rather than a surprise; the UI follow-up converges on this side,
-    // because §11's reasons have to be clearable (SERVER-022 finding 3).
-    it("diverges from the renderer, which would leave that form unanswerable", () => {
+    // Pinned as the *agreement* it now is: the renderer's `mapFormAnswers`
+    // used to `continue` past its own registration on such a turn and leave the
+    // form live forever, and UI-021 converged it on this side, because §11's
+    // reasons have to be clearable (SERVER-022 finding 3). Its paired block —
+    // `apps/ui/src/thread/parseFormBlock.test.ts`, same name, same four cases —
+    // is what keeps the two readers from drifting apart again.
+    it("agrees with the renderer, which now clears that form too", () => {
       const turns = [form(0, 1), answeringForm(1, "F1-yes", 2), answer(2, "F2-no")];
       expect(readThreadForms(turns)[1]).toEqual({ hasForm: true, answered: true });
     });

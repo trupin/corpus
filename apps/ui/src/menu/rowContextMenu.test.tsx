@@ -125,20 +125,28 @@ describe("a row's context menu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
 
     await waitFor(() => {
-      expect(wire.writes("PUT").filter((call) => call.path === "/api/docs/doc_b")).toHaveLength(1);
+      expect(
+        wire.writes("POST").filter((call) => call.path === "/api/docs/doc_b/archive"),
+      ).toHaveLength(1);
     });
-    expect(wire.writes("PUT").some((call) => call.path === "/api/docs/doc_a")).toBe(false);
+    expect(wire.writes("POST").some((call) => call.path === "/api/docs/doc_a/archive")).toBe(false);
   });
 
-  it("archives through the shipped route", async () => {
+  /**
+   * UI-020, Adjudication 7. "The shipped route" used to be
+   * `PUT {status: "archived"}`, which is not the route that archives: only
+   * `POST …/archive` moves a skill's folder out of `.claude/skills/`.
+   */
+  it("archives through the route that owns the transition", async () => {
     const wire = renderBoard([FRESH]);
     fireEvent.contextMenu(await row("doc_a"), { clientX: 40, clientY: 60 });
     fireEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
 
     await waitFor(() => {
-      expect(wire.writes("PUT")).toHaveLength(1);
+      expect(wire.writes("POST")).toHaveLength(1);
     });
-    expect(wire.writes("PUT")[0]?.body).toEqual({ status: "archived" });
+    expect(wire.writes("POST")[0]?.path).toBe("/api/docs/doc_a/archive");
+    expect(wire.writes("PUT")).toHaveLength(0);
   });
 
   it("keeps deletion behind its explicit confirmation", async () => {

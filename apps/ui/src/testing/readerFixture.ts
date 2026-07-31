@@ -175,7 +175,27 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname.startsWith("/api/docs/")) {
-      const id = url.pathname.slice("/api/docs/".length);
+      const rest = url.pathname.slice("/api/docs/".length);
+      /*
+       * `POST …/archive` and `POST …/unarchive` (SPEC.md §7): the routes that own
+       * the transition, answered here as the server answers them — the document
+       * back with its new `status`, so a reader that refetches sees the flip.
+       */
+      const [docId = "", verb] = rest.split("/");
+      if (verb === "archive" || verb === "unarchive") {
+        const subject = docs.get(docId);
+        if (subject === undefined) return json({ code: "not_found", message: `no ${docId}` }, 404);
+        const flipped: Doc = {
+          ...subject,
+          frontmatter: {
+            ...subject.frontmatter,
+            status: verb === "archive" ? "archived" : "open",
+          },
+        };
+        docs.set(docId, flipped);
+        return json({ doc: flipped, warnings: [] });
+      }
+      const id = rest;
       if (request.method === "DELETE") {
         docs.delete(id);
         return json({ deletedId: id, orphanedThreadIds: [], warnings: [] });

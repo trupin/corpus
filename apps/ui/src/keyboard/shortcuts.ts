@@ -29,9 +29,10 @@ import type { BoardCommands } from "./boardCommands";
  *   overlay: the column readers and focus mode. These keys are for acting on
  *   documents, and focus mode is a way of reading one, not a mode that suspends
  *   the scheme.
- * - `overlay` — a modal surface owns the keyboard by construction (its own panel
- *   handles its keys), so the only entry in this scope is the one the escape
- *   layer dispatches.
+ * - `overlay` — a surface above the board owns the keyboard by construction (its
+ *   own panel handles its keys), so the only entry in this scope is the one the
+ *   escape layer dispatches. A modal overlay is one; so is an open **menu**,
+ *   whose `↵` is its focused item's own default action (UI-028).
  */
 export type ShortcutScope = "global" | "board" | "overlay";
 

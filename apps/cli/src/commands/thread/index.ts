@@ -1,4 +1,5 @@
 import type { TopicSpec } from "../../registry/types.js";
+import { createCommand } from "./create.js";
 import { replyCommand } from "./reply.js";
 import { showCommand } from "./show.js";
 import { reopenCommand, resolveCommand } from "./status.js";
@@ -9,17 +10,21 @@ import { reopenCommand, resolveCommand } from "./status.js";
  * state is the server's: `show` reads one whole conversation, and the rest of
  * these verbs write to it.
  *
- * Thread creation has no verb here on purpose: a thread is anchored to a
- * selection in a document, which is a thing the UI's selection carries and a
- * command line does not. The agent replies to conversations it was invited to.
+ * `create` covers all three of SPEC.md §6's creation shapes — anchored on a
+ * quote, on a whole document, or standalone — because §7 binds the agent to this
+ * CLI for _every_ interaction, and a surface that could only reply would leave
+ * the agent unable to start a conversation about a document at all (CLI-022).
+ * The quote is the anchor: a command line has no selection, so the caller names
+ * the text and the server resolves it.
  */
 export const threadTopic: TopicSpec = {
   name: "thread",
-  summary: "Read conversations, reply to them, and open or close them.",
+  summary: "Open conversations, read them, reply to them, and resolve them.",
   description:
     "A comment opens a thread anchored to the text it is about; every later turn appends to that " +
-    "thread's file (SPEC.md §6). `show` is the read §7's comment skill starts from — status, " +
-    "anchoring and every turn — `reply` is the agent's half of the conversation, and " +
-    "`resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).",
-  commands: [showCommand, replyCommand, resolveCommand, reopenCommand],
+    "thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, " +
+    "or standalone — `show` is the read §7's comment skill starts from (status, anchoring and " +
+    "every turn), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control " +
+    "whether later turns keep waking it (SPEC.md §8).",
+  commands: [createCommand, showCommand, replyCommand, resolveCommand, reopenCommand],
 };

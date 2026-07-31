@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   answeredOption,
+  FORM_ANSWER_LABEL,
   mapFormAnswers,
   optionParts,
   parseFormBlock,
   splitFormFence,
+  type AnswerableTurn,
 } from "./parseFormBlock";
 
 const FENCE = [
@@ -182,6 +184,97 @@ describe("answers", () => {
         { author: "user", ts: "2026-07-28T10:01:00.000Z", body: "**Answered:** Yes" },
       ]);
       expect([...answers.keys()]).toEqual(["2026-07-28T10:00:00.000Z"]);
+    });
+  });
+
+  /**
+   * UI-021, paired case for case with `apps/server/src/core/form.test.ts`'s
+   * block of the same name (wave-3 audit FIX 10). Only a hand-edited file
+   * produces this turn, but `POST …/turns/{ts}/form` accepts an answer for its
+   * form all the same — so until this fix the renderer left a form live and
+   * unclearable while the server's `needs=form` said the thread was waiting on
+   * it. The names match the server's on purpose: a paired test that is merely
+   * similar is how the two sides drift again.
+   */
+  describe("a turn that both answers a form and carries one", () => {
+    const form = (label: number, options: readonly string[]): string =>
+      [
+        "```form",
+        `prompt: F${String(label)}?`,
+        "options:",
+        ...options.map((o) => `  - ${o}`),
+        "```",
+      ].join("\n");
+
+    /** The `ts` scheme the server's fixture uses, so the two read alike. */
+    const stamp = (index: number): string =>
+      new Date(Date.UTC(2026, 6, 28, 10, index)).toISOString();
+
+    const formTurn = (index: number, label: number): AnswerableTurn => ({
+      author: "agent",
+      ts: stamp(index),
+      body: form(label, [`F${String(label)}-yes`, `F${String(label)}-no`]),
+    });
+
+    /** An agent turn whose first line answers `option` and whose body carries form `label`. */
+    const answeringForm = (index: number, option: string, label: number): AnswerableTurn => ({
+      author: "agent",
+      ts: stamp(index),
+      body: `${FORM_ANSWER_LABEL} ${option}\n\n${form(label, [`F${String(label)}-yes`, `F${String(label)}-no`])}`,
+    });
+
+    const answer = (index: number, option: string): AnswerableTurn => ({
+      author: "user",
+      ts: stamp(index),
+      body: `${FORM_ANSWER_LABEL} ${option}`,
+    });
+
+    /**
+     * The turns still rendering live controls — the renderer's half of what
+     * `needs=form` advertises, and the counterpart of the server test's
+     * `unanswered`. Derived from the same two functions the thread view uses, so
+     * it cannot claim a state the rendered thread does not have.
+     */
+    const liveForms = (turns: readonly AnswerableTurn[]): string[] => {
+      const answers = mapFormAnswers(turns);
+      return turns
+        .filter(
+          (turn) =>
+            turn.author === "agent" &&
+            parseFormBlock(turn.body).status === "ok" &&
+            !answers.has(turn.ts),
+        )
+        .map((turn) => turn.ts);
+    };
+
+    it("closes the earlier form and opens its own", () => {
+      const turns = [formTurn(0, 1), answeringForm(1, "F1-yes", 2)];
+      expect(mapFormAnswers(turns).get(stamp(0))).toBe("F1-yes");
+      expect(liveForms(turns)).toEqual([stamp(1)]);
+    });
+
+    it("can then be answered like any other form, so the reason clears", () => {
+      const turns = [formTurn(0, 1), answeringForm(1, "F1-yes", 2), answer(2, "F2-no")];
+      const answers = mapFormAnswers(turns);
+      expect(answers.get(stamp(0))).toBe("F1-yes");
+      expect(answers.get(stamp(1))).toBe("F2-no");
+      expect(liveForms(turns)).toEqual([]);
+    });
+
+    it("never answers itself, however its own options read", () => {
+      // Its option is one of the form it carries — it must still be the
+      // *earlier* form that closes, and its own must stay open.
+      const turns = [formTurn(0, 2), answeringForm(1, "F2-no", 2)];
+      expect(mapFormAnswers(turns).get(stamp(0))).toBe("F2-no");
+      expect(liveForms(turns)).toEqual([stamp(1)]);
+    });
+
+    it("opens its form even when its answer matches nothing", () => {
+      const turns = [answeringForm(0, "nothing offers this", 1)];
+      expect(mapFormAnswers(turns).size).toBe(0);
+      expect(liveForms(turns)).toEqual([stamp(0)]);
+      // And it is a real form rather than a decoration: an answer clears it.
+      expect(liveForms([...turns, answer(1, "F1-yes")])).toEqual([]);
     });
   });
 });

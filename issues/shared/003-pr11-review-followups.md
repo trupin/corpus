@@ -163,6 +163,39 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - **§14 rider queued for the next spec sign-off round** (CONTRACT-025): one line —
   doctor may carry report-only warnings; pass/fail semantics unchanged.
 
+## Wave-1 harvest ledger additions (2026-07-31, sprint-018)
+
+- **§11 rider queued for the next sign-off round** (TEST-647, UI-020): the ⋯-menu
+  sentence enumerates "Archive, Delete, Resolve/Reopen" and now needs "Unarchive
+  (archived documents)".
+- **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
+  deliberate deferral): never a skill, no folder move, so harmless — but it is now
+  the only archive path off the POST route; consistency follow-up at triage.
+- **Thread-create warnings are document-scoped, not call-scoped** (Phase 6 eval
+  LEDGER-P6-2): a create response carries every unresolved anchor on the parent, so
+  the CLI's warning suffix can list other threads' orphans. Either scope the printed
+  list to the new anchor id or document the semantics in the verb help. (§14
+  validates the whole rewritten frontmatter — server behavior is by design.)
+- **UI-021 eval methodology caveat** (recorded, not waived): pre-fix reproduction was
+  unit-level (pure function), live leg post-fix only — fine here, not precedent for
+  bugs with runtime surface.
+- **`db doctor`'s `--json` description is stale** (SERVER-038 deferral): still says
+  `{ok, drift, stats}`; one-line fix regenerates `docs/cli.md` — fold into the next
+  CLI docs regeneration.
+- **`unindexable_files_truncated` is a server-only warning kind** (SERVER-038): legal
+  under CONTRACT-025's open kind space; publishing it in `DOCTOR_WARNING_KINDS` is an
+  optional CONTRACT rider at triage.
+- **In-column margin mode is unreachable** (UI-027 observation): `MARGIN_MIN_WIDTH`
+  1100 > `MAX_COLUMN_WIDTH` 960 (and UI-023 caps reading at 560), so
+  `.reader-scroll.with-margin` never fires in a column — "wide" is focus-only in
+  practice. §11 says "focus mode and wide layouts"; decide at triage whether that
+  text means the current behavior (then no change) or column-margin was intended
+  (then a numbers decision).
+- **SERVER-033 honest-scope note**: the @hono/node-server advisory was Windows-only
+  and 1.19.17 already carried the identical traversal regex — the bump closes the
+  audit finding, not a live hole; v2 adds `Last-Modified` on static asset hits
+  (additive, no test asserted its absence). State plainly in the phase PR.
+
 ## Acceptance Criteria
 - [ ] Each finding above is either fixed, converted to a domain issue, or explicitly waived with a note here.
 

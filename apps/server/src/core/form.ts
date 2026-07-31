@@ -183,13 +183,13 @@ export type TurnFormState = {
  * form that was never open. §11's reasons must have an action that clears them
  * (SERVER-022 finding 3), so that one was rejected.
  *
- * This is the single point where the rule is deliberately *wider* than the
- * renderer's `mapFormAnswers`, which `continue`s past its own registration on
- * that turn and therefore leaves such a form live forever: after answering it
- * the board goes quiet and the controls stay. The divergence is pinned by a
- * test below and reported for a UI follow-up; it is reachable only from a
- * hand-edited thread file, and of the two behaviours the clearable one is the
- * one to converge on.
+ * The renderer's `mapFormAnswers` (`apps/ui/src/thread/parseFormBlock.ts`) read
+ * this shape differently until UI-021: it `continue`d past its own registration
+ * on such a turn, so the form stayed live forever — after answering it the board
+ * went quiet and the controls stayed. It now falls through and registers, which
+ * is the clearable behaviour of the two, so the badge and the controls agree
+ * here as they do everywhere else. The test below pins the agreement rather than
+ * the divergence.
  */
 export function readThreadForms(turns: readonly FormTurn[]): readonly TurnFormState[] {
   const states: TurnFormState[] = [];

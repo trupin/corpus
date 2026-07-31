@@ -92,13 +92,34 @@ describe("DocMenu", () => {
     expect(typeof body["reviewed"]).toBe("string");
   });
 
-  it("archives through the same unit, reversibly", async () => {
+  /**
+   * UI-020. The route, not `PUT {status: "archived"}` — only the route runs the
+   * server's folder move, and without it archiving a skill left its folder in
+   * `.claude/skills/`, still discovered and still holding its name.
+   */
+  it("archives through the route that owns the transition", async () => {
     const wire = mount();
     fireEvent.click(screen.getByText("Archive"));
     await waitFor(() => {
-      expect(wire.of("PUT")).toHaveLength(1);
+      expect(wire.of("POST", "/api/docs/doc_m/archive")).toHaveLength(1);
     });
-    expect(wire.of("PUT")[0]?.body).toEqual({ status: "archived" });
+    expect(wire.of("PUT")).toHaveLength(0);
+  });
+
+  /** SPEC.md §7: an archived skill is "restorable", and this is where from. */
+  it("offers Unarchive in Archive's place once a document is archived", async () => {
+    const archived = docFixture({
+      frontmatter: { id: "doc_m", title: "Mortgage options", status: "archived" },
+    });
+    const wire = mount({ doc: archived });
+    expect(itemLabels()).toEqual(["Still current", "Unarchive", DELETE_LABEL]);
+
+    fireEvent.click(screen.getByText("Unarchive"));
+    await waitFor(() => {
+      expect(wire.of("POST", "/api/docs/doc_m/unarchive")).toHaveLength(1);
+    });
+    // SERVER-039 refuses the `PUT` that would otherwise express this.
+    expect(wire.of("PUT")).toHaveLength(0);
   });
 
   it("flips a thread's status through the thread route, not through a doc write", async () => {

@@ -249,6 +249,28 @@ export interface CorpusClient {
    */
   updateDoc(id: string, changes: UpdateDocChanges): Promise<UpdateDocResponse>;
   /**
+   * `POST /api/docs/{id}/archive` — the reversible organizational act
+   * (SPEC.md §7).
+   *
+   * **Not `updateDoc(id, { status: "archived" })`, and the difference is not
+   * cosmetic.** Only this route runs the server's folder move: archiving a
+   * `type: skill` document relocates it to `.claude/skills-archived/<name>/`,
+   * which is what actually disables the skill and frees its name for
+   * `corpus skill create`. A `PUT` sets the frontmatter key and leaves the
+   * folder in `.claude/skills/` — still discovered, still holding its name —
+   * which is §7's "archived" promise with the only part that mattered missing
+   * (UI-020, sprint-018 Adjudication 7).
+   */
+  archiveDoc(id: string): Promise<DocMutationResponse>;
+  /**
+   * `POST /api/docs/{id}/unarchive` — the inverse, back to `status: open`.
+   *
+   * The **only** way back: `PUT /api/docs/{id}` with a non-archived `status` on
+   * an archived document is refused with a `400` whose message names this route
+   * (SERVER-039). The document id never changes in either direction.
+   */
+  unarchiveDoc(id: string): Promise<DocMutationResponse>;
+  /**
    * `DELETE /api/docs/{id}` — **user-only** (SPEC.md §7, §9.2).
    *
    * The agent archives and never deletes, so this method exists for exactly one
@@ -691,6 +713,20 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "PUT /api/docs/{id}",
         await api.PUT("/api/docs/{id}", { params: { path: { id } }, body }),
+      );
+    },
+
+    async archiveDoc(id) {
+      return unwrap(
+        "POST /api/docs/{id}/archive",
+        await api.POST("/api/docs/{id}/archive", { params: { path: { id } } }),
+      );
+    },
+
+    async unarchiveDoc(id) {
+      return unwrap(
+        "POST /api/docs/{id}/unarchive",
+        await api.POST("/api/docs/{id}/unarchive", { params: { path: { id } } }),
       );
     },
 

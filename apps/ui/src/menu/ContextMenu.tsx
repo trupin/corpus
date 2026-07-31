@@ -13,6 +13,12 @@ import "./menu.css";
  * own), and focus returned to whatever opened it. What is *in* the menu is the
  * caller's declaration and never this component's.
  *
+ * `↵` is deliberately **not** handled here: a focused `<button>` activates on
+ * `↵` through its default action, and re-implementing that would be a second
+ * activation path that could disagree with the click one. What it needs instead
+ * is for nothing else to claim the key first — which is why `currentScope()`
+ * takes the board's shortcuts out of scope while a menu is open (UI-028).
+ *
  * `esc` goes through {@link useEscapeLayer} at `Popover` priority deliberately:
  * a menu open over focus mode must eat the key before focus mode does, and a
  * private `keydown` listener would be racing the chain instead of joining it —

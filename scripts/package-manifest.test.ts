@@ -22,7 +22,7 @@ const declared: readonly DeclaredDependencies[] = [
   {
     workspace: "apps/server/package.json",
     dependencies: {
-      "@hono/node-server": "^1.19.0",
+      "@hono/node-server": "^2.0.12",
       "better-sqlite3": "^12.4.1",
       hono: "^4.12.32",
       zod: "^4.4.3",
@@ -57,7 +57,7 @@ describe("resolveRuntimeDependencies", () => {
         declared,
       ),
     ).toEqual({
-      "@hono/node-server": "^1.19.0",
+      "@hono/node-server": "^2.0.12",
       "better-sqlite3": "^12.4.1",
       hono: "^4.12.32",
       zod: "^4.4.3",

@@ -200,6 +200,66 @@ describe("useShortcuts", () => {
       );
     });
 
+    /**
+     * UI-028. `rows.open` is bound to `↵` on the board, and a focused menu item
+     * activates on `↵` through its **default action** — which only happens if
+     * nothing claims the key first. It did, and `↵` activated nothing in any
+     * menu in the app while `Space` (bound to nothing) worked.
+     */
+    describe("an open menu", () => {
+      const menu = (): HTMLElement => {
+        const element = document.createElement("div");
+        element.setAttribute("role", "menu");
+        document.body.append(element);
+        return element;
+      };
+
+      it("owns the keyboard, read off the ARIA role rather than off state", () => {
+        expect(currentScope()).toBe("board");
+        const open = menu();
+        expect(currentScope()).toBe("overlay");
+        open.remove();
+        expect(currentScope()).toBe("board");
+      });
+
+      it("leaves ↵ to the focused item, in both of its spellings", () => {
+        const board = boardSpy();
+        mount({
+          openCompose: vi.fn(),
+          openSearch: vi.fn(),
+          toggleCheatSheet: vi.fn(),
+          board,
+        });
+        const open = menu();
+        const item = document.createElement("button");
+        item.setAttribute("role", "menuitem");
+        open.append(item);
+        item.focus();
+
+        // `NumpadEnter` is the same `key` with a different `code`; both must
+        // reach the button, and neither may be prevented.
+        for (const code of ["Enter", "NumpadEnter"]) {
+          const event = new KeyboardEvent("keydown", { key: "Enter", code, bubbles: true });
+          item.dispatchEvent(event);
+          expect(event.defaultPrevented, code).toBe(false);
+        }
+        expect(board.calls).toEqual([]);
+      });
+
+      it("keeps the board's other keys off the board behind it", () => {
+        const board = boardSpy();
+        const openCompose = vi.fn();
+        mount({ openCompose, openSearch: vi.fn(), toggleCheatSheet: vi.fn(), board });
+        menu();
+
+        for (const pressed of ["c", "e", "f", "r", "j", "k"]) {
+          fireEvent.keyDown(document, { key: pressed });
+        }
+        expect(board.calls).toEqual([]);
+        expect(openCompose).not.toHaveBeenCalled();
+      });
+    });
+
     it("stops at the first match rather than running two handlers", () => {
       expect(resolveShortcut(key({ key: "Enter" }), { scope: "board", editing: false })?.id).toBe(
         "rows.open",

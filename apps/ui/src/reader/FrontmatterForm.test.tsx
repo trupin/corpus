@@ -18,19 +18,28 @@ const DOC = docFixture({
   },
 });
 
-function mount(options: { locked?: boolean; wire?: ReaderTransport } = {}): ReaderTransport {
-  const wire = options.wire ?? readerTransport({ docs: [DOC] });
+/** The same document after `POST …/archive` — status flipped, id unchanged. */
+const ARCHIVED = docFixture({
+  frontmatter: { ...DOC.frontmatter, status: "archived" },
+});
+
+function mount(options: { locked?: boolean; wire?: ReaderTransport; doc?: typeof DOC } = {}): {
+  wire: ReaderTransport;
+  unmount: () => void;
+} {
+  const doc = options.doc ?? DOC;
+  const wire = options.wire ?? readerTransport({ docs: [doc] });
   const harness = createCorpusTestHarness({ fetch: wire.fetch });
-  render(
+  const view = render(
     <FrontmatterForm
-      doc={DOC}
+      doc={doc}
       selectTitle={false}
       locked={options.locked ?? false}
       onNotify={() => undefined}
     />,
     { wrapper: harness.Wrapper },
   );
-  return wire;
+  return { wire, unmount: view.unmount };
 }
 
 describe("tags round-trip", () => {
@@ -72,6 +81,47 @@ describe("changedFields", () => {
       {},
     );
   });
+
+  /**
+   * UI-020. Both directions belong to routes this form does not call, and the
+   * guard sits in `changedFields` rather than only on the `<select>` because
+   * every path to the wire — Save, Enter, the unmount flush, the reader
+   * rebinding and `pagehide` — funnels through here.
+   */
+  describe("the archive boundary", () => {
+    it("never unarchives, which SERVER-039 refuses with a 400 naming the route", () => {
+      expect(
+        changedFields(ARCHIVED, {
+          title: ARCHIVED.frontmatter.title,
+          tags: "finance",
+          status: "open",
+          due: "",
+        }),
+      ).toEqual({});
+    });
+
+    it("never archives, because a status flip does not move a skill's folder", () => {
+      expect(
+        changedFields(DOC, {
+          title: DOC.frontmatter.title,
+          tags: "finance",
+          status: "archived",
+          due: "",
+        }),
+      ).toEqual({});
+    });
+
+    it("still carries everything else on an archived document", () => {
+      expect(
+        changedFields(ARCHIVED, {
+          title: "Renamed while archived",
+          tags: "finance",
+          status: "open",
+          due: "",
+        }),
+      ).toEqual({ title: "Renamed while archived" });
+    });
+  });
 });
 
 describe("FrontmatterForm", () => {
@@ -82,7 +132,7 @@ describe("FrontmatterForm", () => {
   });
 
   it("issues one PUT carrying only the changed fields", async () => {
-    const wire = mount();
+    const { wire } = mount();
     fireEvent.click(screen.getByRole("button", { name: "edit" }));
 
     fireEvent.change(screen.getByLabelText("Document title"), {
@@ -110,7 +160,7 @@ describe("FrontmatterForm", () => {
   });
 
   it("saves from the title field alone, with Enter", async () => {
-    const wire = mount();
+    const { wire } = mount();
     const title = screen.getByLabelText("Document title");
     fireEvent.change(title, { target: { value: "Renamed" } });
     fireEvent.keyDown(title, { key: "Enter" });
@@ -122,7 +172,7 @@ describe("FrontmatterForm", () => {
   });
 
   it("reverts the draft on Escape, and writes nothing", () => {
-    const wire = mount();
+    const { wire } = mount();
     const title = screen.getByLabelText("Document title");
     fireEvent.change(title, { target: { value: "Half a thought" } });
     expect(screen.getByText("unsaved changes")).toBeDefined();
@@ -168,6 +218,45 @@ describe("FrontmatterForm", () => {
     expect(screen.getByLabelText("Document title")).toHaveProperty("value", "Typed");
     expect(screen.getByText(/the document was locked while you were editing/)).toBeDefined();
     expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+  });
+
+  /**
+   * UI-020, TEST-619 and TEST-620. The refusal SERVER-039 ships is the
+   * enforcement; this is the better error in front of it — and the flush leg is
+   * the one that gets missed, because guarding the Save button alone ships a
+   * `400` the user cannot connect to anything they did.
+   */
+  describe("archiving is the ⋯ menu's, not this form's", () => {
+    it("disables the status control on an archived document and says where the way out is", () => {
+      mount({ doc: ARCHIVED });
+      fireEvent.click(screen.getByRole("button", { name: "edit" }));
+      const status = screen.getByDisplayValue("archived");
+      expect(status).toHaveProperty("disabled", true);
+      expect(screen.getByText(/Unarchive in the ⋯ menu/)).toBeDefined();
+    });
+
+    it("offers no archived destination on a live document", () => {
+      mount();
+      fireEvent.click(screen.getByRole("button", { name: "edit" }));
+      const status = screen.getByDisplayValue<HTMLSelectElement>("open");
+      expect([...status.options].map((option) => option.value)).toEqual(["open", "resolved"]);
+      expect(status).toHaveProperty("disabled", false);
+    });
+
+    it("flushes a draft on the way out without ever carrying status", async () => {
+      const { wire, unmount } = mount({ doc: ARCHIVED });
+      fireEvent.change(screen.getByLabelText("Document title"), {
+        target: { value: "Renamed while archived" },
+      });
+
+      unmount();
+
+      await waitFor(() => {
+        expect(wire.of("PUT", "/api/docs/doc_m")).toHaveLength(1);
+      });
+      expect(wire.of("PUT")[0]?.body).toEqual({ title: "Renamed while archived" });
+      expect(Object.keys(wire.of("PUT")[0]?.body as object)).not.toContain("status");
+    });
   });
 
   it("selects the title of a just-created document", () => {

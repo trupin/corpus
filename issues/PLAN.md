@@ -133,8 +133,8 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | CLI-011 | `corpus skill create` (server write path) + `corpus doc list` | done | P1 | CLI-006, SERVER-019 |
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs (design closed; impl = PLUGINS-005/006/007) | done | P1 | UI-014 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
-| SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | todo | P1 | SERVER-003 |
-| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | todo | P2 | UI-005 |
+| SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | done | P1 | SERVER-003 |
+| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | blocked | P2 | UI-029 |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
@@ -189,11 +189,11 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | PLUGINS-007 | Todos column re-sourced off the body aggregate | done | P1 | PLUGINS-005 |
 | CLI-016 | `corpus doc edit --extra`: agent-writable extra frontmatter (UI-019 escalation) | done | P1 | CLI-003 |
 | CLI-017 | `corpus doc unarchive` + `--status open` half-state fix (evaluator MAJOR) | done | P1 | CLI-003 |
-| SERVER-038 | Recovery path for already-committed invisible documents (SERVER-037 TEST-564) | todo | P2 | SERVER-037 |
+| SERVER-038 | Recovery path for already-committed invisible documents (SERVER-037 TEST-564) | done | P2 | SERVER-037 |
 | SERVER-039 | Archived-status guard at the write boundary (audit FIX 5, sole-writer) | done | P1 | SERVER-005 |
-| UI-020 | Unarchive affordance in the reader menu (audit SPEC 34) | todo | P1 | SERVER-039, UI-012 |
-| CLI-018 | Agent-writable view keys: §11 "pin me a view" reachable (audit SPEC 37+38) | todo | P1 | CLI-016 |
-| UI-021 | Renderer: both-answer-and-form turn divergence (audit FIX 10 follow-up) | todo | P2 | UI-008 |
+| UI-020 | Unarchive affordance in the reader menu (audit SPEC 34) | done | P1 | SERVER-039, UI-012 |
+| CLI-018 | Agent-writable view keys: §11 "pin me a view" reachable (audit SPEC 37+38) | done | P1 | CLI-016 |
+| UI-021 | Renderer: both-answer-and-form turn divergence (audit FIX 10 follow-up) | done | P2 | UI-008 |
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
@@ -206,12 +206,15 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| CONTRACT-025 | Rider: doctor response gains report-only warnings (SERVER-038 seam) | todo | P2 | — |
+| CONTRACT-025 | Rider: doctor response gains report-only warnings (SERVER-038 seam) | done | P2 | — |
 | UI-022 | Focus mode: redundant back-to-list button next to ✕ Close (user report) | done | P1 | — |
 | UI-023 | Reader-open column widening must cap at the content measure (user report) | done | P1 | — |
 | UI-024 | Selection context menu (comment on selection) + item menus win over stray selections (user reports) | done | P1 | UI-018, UI-008 |
-| UI-027 | Anchor highlights never render in the document body (eval finding, §11) | todo | P1 | UI-008 |
-| UI-028 | ↵ does not activate context-menu items (eval finding, §11) | todo | P2 | UI-018 |
+| UI-027 | Anchor highlights never render in the document body (eval finding, §11) | done | P1 | UI-008 |
+| UI-028 | ↵ does not activate context-menu items (eval finding, §11) | done | P2 | UI-018 |
+| CLI-022 | No CLI surface for anchored thread creation (CLI-018 finding, §7) | done | P2 | CLI-003 |
+| UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | todo | P1 | — |
+| UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | todo | P2 | UI-005 |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 

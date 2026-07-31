@@ -349,6 +349,41 @@ describe("GET /api/db/doctor", () => {
     expect(projectedIds()).toEqual(["doc_aaa"]);
   });
 
+  it("carries a warnings array even when it is empty", async () => {
+    boot();
+
+    const raw = (await (await request("/api/db/doctor")).json()) as { warnings: unknown };
+    expect(raw.warnings).toEqual([]);
+    expect(DoctorReportSchema.parse(raw).ok).toBe(true);
+  });
+
+  /**
+   * The recovery surface on the wire (SERVER-038): a file the projection can
+   * never index is a `warning`, so `ok` — and therefore `corpus db doctor`'s
+   * exit code — stays exactly where it was. `path` and `commit` follow
+   * `ProjectionDrift.path`'s convention: always present, `null` when there is
+   * none.
+   */
+  it("sends an unindexable file as a warning without moving ok", async () => {
+    boot();
+    write("data/docs/.claude/skills/invisible-doc.md", doc("doc_invisible001"));
+
+    const raw = await (await request("/api/db/doctor")).json();
+    const body = DoctorReportSchema.parse(raw);
+
+    expect(body.ok).toBe(true);
+    expect(body.drift).toEqual([]);
+    expect(body.warnings).toHaveLength(1);
+    const [warning] = body.warnings ?? [];
+    expect(warning).toMatchObject({
+      kind: "unindexable_file",
+      path: "data/docs/.claude/skills/invisible-doc.md",
+      // No repository in this fixture, so there is honestly no commit.
+      commit: null,
+    });
+    expect(warning?.detail).toContain("the projection will never index");
+  });
+
   it("needs the bearer token", async () => {
     boot();
     expect((await server.app.request("/api/db/doctor")).status).toBe(401);
