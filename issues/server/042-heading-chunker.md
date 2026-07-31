@@ -38,7 +38,12 @@ heading derivation (SERVER-040) switches to chunk-table lookup here.
 - [ ] Move/rename: zero chunk changes; heading inside a code fence: not a boundary
 - [ ] Oversized section splits at the budget with stable sub-addressing; turns chunk per turn heading
 - [ ] `db rebuild` reconstructs chunks identically; SCHEMA_VERSION bumped with migration + downgrade refusal per existing pattern
-- [ ] `/api/search` heading paths now come from chunks (on-read derivation removed)
+- [ ] `/api/search` heading paths now come from chunks (on-read derivation removed).
+PR #15 review note to close here: the on-read derivation addresses the FIRST
+occurrence of a repeated passage (`locatePassage` indexOf) — a doc with identical
+boilerplate under two headings always reports the earlier section. Chunk addressing
+must key on the actual matched chunk, making this class impossible; add the
+repeated-passage fixture as a test.
 
 ## Technical Design
 ### Files to Create/Modify

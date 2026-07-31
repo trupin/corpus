@@ -229,3 +229,13 @@ _n/a until triage._
   which Phase A servers never emit (contract-legal, illustrative of Phase B) —
   recorded so it isn't re-litigated as drift.
 - EPIPE on piped output → filed as CLI-024.
+
+## PR #15 review residue (2026-07-31, verdict APPROVE)
+
+- (cli, wording) `doc` topic description still frames `list` as "the agent surveys
+  the corpus" — tension with §7's never-enumerate; reword at the next docs/cli.md
+  regeneration.
+- (server, NIT) search's doc-vs-own-turn bm25 tie-break is by `ref` not `id`
+  (deterministic, tested); the code comment slightly overstates — comment fix only.
+- (server, MINOR→SERVER-042) repeated-passage first-occurrence addressing — note
+  added to SERVER-042's design; superseded by chunk addressing.
