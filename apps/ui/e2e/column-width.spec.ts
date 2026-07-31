@@ -111,6 +111,29 @@ test.describe("column width", () => {
     await expect(column).toHaveCSS("width", "500px");
   });
 
+  /**
+   * UI-023: the widening stops at the reader's content measure. A column
+   * dragged to 900 px used to open a reader 900 px wide around a body capped at
+   * `62ch` — everything past the measure was dead gutter.
+   */
+  test("a column wider than the content measure opens the reader at the measure", async ({
+    page,
+  }) => {
+    await stubCorpus(page, [view({ width: 900 }), NOTE]);
+    await page.goto("/");
+
+    const column = page.locator(".col[data-col]");
+    await expect(column).toHaveCSS("width", "900px");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await expect(page.locator(".reader")).toBeVisible();
+    await expect(column).toHaveCSS("width", "560px");
+
+    // Closing the reader returns the column to the base it carries.
+    await page.locator(".col.reading .back").click();
+    await expect(column).toHaveCSS("width", "900px");
+  });
+
   test("snap scrolling and the ghost column are unchanged", async ({ page }) => {
     await stubCorpus(page, [view({ width: 700 }), NOTE]);
     await page.goto("/");
