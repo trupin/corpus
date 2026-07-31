@@ -123,7 +123,7 @@ export interface SubmittedAnswer {
  *
  * A form is answered by a later turn that records one of *its* options. The
  * answer turn is prose with no back-reference to the form it answers, so a
- * thread read off disk can only be attributed by **order**. Two rules, and the
+ * thread read off disk can only be attributed by **order**. Three rules, and the
  * first is what PR #10's finding 12 is about:
  *
  * - **A known pairing wins.** `submitted` carries the `formTs` this session
@@ -137,6 +137,16 @@ export interface SubmittedAnswer {
  *   still-open form that offers it, preferring one this session has *not*
  *   already paired. That is a rule, not knowledge — after a reload the prose is
  *   all there is — but it is the ordering the conversation itself implies.
+ * - **A turn that both answers a form and carries one counts as both** (UI-021,
+ *   converging on the server's wave-3 audit FIX 10). It closes the earliest open
+ *   form offering its option and *then* registers its own — never answering
+ *   itself, because the lookup above runs before the registration below. Only a
+ *   hand-edited file produces such a turn (the answer route writes the label and
+ *   the note, nothing else), but `POST …/turns/{ts}/form` accepts an answer for
+ *   its form all the same, so a renderer that returned early left a live,
+ *   answerable form that no later answer could ever clear. §11's reasons must
+ *   have an action that clears them (SERVER-022 finding 3), and
+ *   `apps/server/src/core/form.ts`'s `readThreadForms` reads it the same way.
  *
  * An answer no open form offers belongs to none of them and is left alone: it
  * is an ordinary turn that happens to start with the label.
@@ -159,7 +169,6 @@ export function mapFormAnswers(
       if (target !== undefined) {
         answers.set(target.ts, answered);
         open.splice(open.indexOf(target), 1);
-        continue;
       }
     }
     if (turn.author !== "agent") continue;
