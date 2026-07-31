@@ -247,3 +247,15 @@ _n/a until triage._
   collision). Both cosmetic; noted for sprint-021's wording.
 - INFRA-014 TEST-819/820/821 are orchestrator-live on the batch PR/merge (sticky
   comment, no-release negative, artifact-download install).
+
+## PR #16 review residue (2026-07-31, verdict APPROVE)
+
+- Finding 1 (release.yml tag interpolation) FIXED pre-merge (env indirection).
+- Finding 3 (+2 folded) → INFRA-015 (checker overflow/spawn fail-closed + advisory
+  text sanitization).
+- Finding 4: fork PRs' read-only GITHUB_TOKEN makes the sticky comment fail red
+  (non-required job) — revisit if/when outside contributions start.
+- Finding 5 (spec, needs user sign-off): one-sentence §11 rider making UI-031's
+  signed pointer rule spec text ("the active column ignores a stationary pointer
+  across programmatic closes; hover re-adopts on real movement") — queue for the
+  next sign-off round.
