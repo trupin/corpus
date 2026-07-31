@@ -1,4 +1,7 @@
-# [INFRA-012] Package the bundled embedding model + native vector extension
+# [INFRA-012] Pack stays lean: prove no model, no runtime, no native extension ships
+
+**RESCOPED 2026-07-31** (sprint-021 OC1 user ruling + OC2): the bundled model and the
+native extension are both rejected. This issue is now the negative proof.
 
 ## Domain
 infra

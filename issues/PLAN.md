@@ -255,7 +255,7 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 | SERVER-045 | Vector storage + hybrid ranking; related gains `similar` | todo | P1 | SERVER-044, CONTRACT-023 |
 | SERVER-046 | Index endpoints; rebuild queueing; doctor drift-vs-staleness | todo | P1 | SERVER-044, CONTRACT-023 |
 | CLI-020 | `corpus index status` / `rebuild`; search degrade note | todo | P1 | CONTRACT-023, SERVER-046, CLI-019 |
-| INFRA-012 | Package the bundled model + native vector extension | todo | P1 | SERVER-043, SERVER-045 |
+| INFRA-012 | Pack stays lean: negative proof — no model/runtime/extension ships (rescoped, OC1/OC2) | todo | P1 | SERVER-043, SERVER-045 |
 
 ## Phase 9 — Retrieval C: auto-context
 
