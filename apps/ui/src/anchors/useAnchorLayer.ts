@@ -68,8 +68,8 @@ export interface CommentDraft {
 
 export interface AnchorLayer {
   /** The column the document is in; the margin measures against it. */
-  readonly mainRef: RefObject<HTMLDivElement>;
-  readonly marginRef: RefObject<HTMLDivElement>;
+  readonly mainRef: RefObject<HTMLDivElement | null>;
+  readonly marginRef: RefObject<HTMLDivElement | null>;
   /**
    * The body's live editor, or `null` when the body is not one.
    *
@@ -188,7 +188,11 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   }, []);
 
   useEffect(() => {
-    if (editor === null) return undefined;
+    // The destroyed check guards the mount path as well as the cleanup: React 19
+    // can run this passive effect after the editor it captured has already been
+    // torn down, and `registerPlugin` on a destroyed view dereferences a null
+    // `docView` inside ProseMirror rather than no-opping.
+    if (editor === null || editor.isDestroyed) return undefined;
     editor.registerPlugin(anchorDecorationPlugin({ onActivate: activate, slotFor }));
     return () => {
       if (!editor.isDestroyed) editor.unregisterPlugin(anchorPluginKey);

@@ -49,7 +49,7 @@ export function popoverShift(
  * first. jsdom reports every rect as zero and therefore always yields `0`, which
  * is the correct answer for a viewport with no layout.
  */
-export function usePopoverShift(ref: RefObject<HTMLElement>, open: boolean): number {
+export function usePopoverShift(ref: RefObject<HTMLElement | null>, open: boolean): number {
   const [shift, setShift] = useState(0);
 
   useLayoutEffect(() => {

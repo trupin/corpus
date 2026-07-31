@@ -45,7 +45,7 @@ interface RestoreState {
 }
 
 export interface ReaderSurface {
-  readonly scrollRef: RefObject<HTMLDivElement>;
+  readonly scrollRef: RefObject<HTMLDivElement | null>;
   readonly expandedThreads: readonly string[];
   readonly flashThread: string | null;
   readonly toggleThread: (threadId: string) => void;

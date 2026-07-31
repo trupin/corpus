@@ -739,3 +739,44 @@ describe("a document replaced under the layer", () => {
     expect(segment?.from).toBe(segment?.to);
   });
 });
+
+describe("an editor destroyed before the layer's effect runs", () => {
+  it("registers nothing rather than dereferencing a torn-down view", () => {
+    // React 19 can run the registration effect after the editor it captured has
+    // been destroyed. ProseMirror's `updateStateInner` then reads `matchesNode`
+    // off a null `docView`, which surfaced as an uncaught TypeError.
+    const registered: Plugin[] = [];
+    const destroyed = {
+      get isDestroyed() {
+        return true;
+      },
+      registerPlugin: (plugin: Plugin) => {
+        registered.push(plugin);
+        throw new TypeError("Cannot read properties of null (reading 'matchesNode')");
+      },
+      unregisterPlugin: () => undefined,
+      on: () => undefined,
+      off: () => undefined,
+    } as unknown as Editor;
+
+    let current: AnchorLayer | null = null;
+    render(
+      <Host
+        wire={readerTransport({})}
+        anchors={[]}
+        threads={[]}
+        onLayer={(layer) => {
+          current = layer;
+        }}
+        onNotify={() => undefined}
+      />,
+    );
+
+    expect(() => {
+      act(() => {
+        current?.onEditor(destroyed);
+      });
+    }).not.toThrow();
+    expect(registered).toHaveLength(0);
+  });
+});
