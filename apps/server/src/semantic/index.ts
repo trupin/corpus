@@ -35,3 +35,60 @@ export {
   turnRef,
 } from "./chunks.js";
 export type { ChunkablePassage } from "./chunks.js";
+export { attachSemanticIndex } from "./attach.js";
+export type {
+  AttachSemanticIndexDeps,
+  SemanticIndexBootReport,
+  SemanticIndexHandle,
+} from "./attach.js";
+export {
+  EMBEDDED_ENGINE_UNAVAILABLE_REASONS,
+  EMBEDDED_PROVIDER,
+  createStaticEmbeddedEngine,
+} from "./embedded-engine.js";
+export type {
+  EmbeddedEngine,
+  EmbeddedEngineAvailability,
+  EmbeddedEngineOpenOptions,
+  EmbeddedEngineUnavailableReason,
+} from "./embedded-engine.js";
+export {
+  EMBEDDING_STATES,
+  blobToVector,
+  recordedIdentities,
+  recordedIdentity,
+  vectorToBlob,
+  writeEmbedding,
+} from "./embeddings.js";
+export type { EmbeddingRecord, EmbeddingState } from "./embeddings.js";
+export { EMBED_TIMEOUT_MS, createConfiguredProvider, embedUrl } from "./http-provider.js";
+export type { ConfiguredProviderDeps, FetchLike } from "./http-provider.js";
+export {
+  checkIndexIdentity,
+  formatIdentity,
+  identityNamesModel,
+  identityPrefix,
+} from "./identity.js";
+export type { EmbeddingModelRef, IndexIdentityCheck } from "./identity.js";
+export { EmbeddingError, createEmbeddingProvider, redactSecrets } from "./provider.js";
+export type { EmbedBatchFn, EmbeddingProvider } from "./provider.js";
+export { PROBE_TEXT, describeResolution, resolveEmbeddingProvider } from "./resolve.js";
+export type {
+  DisabledReason,
+  ProviderResolution,
+  ProviderSource,
+  ResolutionErrorReason,
+  ResolveProviderOptions,
+} from "./resolve.js";
+export {
+  CONFIGURED_PROVIDER_KINDS,
+  EMBEDDING_PROVIDER_NONE,
+  EmbeddingConfigSchema,
+  resolveEmbeddingSettings,
+} from "./settings.js";
+export type {
+  ConfiguredEmbeddingProvider,
+  ConfiguredProviderKind,
+  EmbeddingConfig,
+  EmbeddingSettings,
+} from "./settings.js";

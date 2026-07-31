@@ -549,6 +549,56 @@ describe("runServerProcess — boot", () => {
     expect(h.exits).toEqual([1]);
     expect(h.lines.join("\n")).toContain("cache.db is unreadable");
   });
+
+  /**
+   * SERVER-043. The seam attaches last so its disposer runs first: it reads the
+   * projection, and an aborted resolution must be awaited before the database
+   * closes.
+   */
+  it("attaches the embedding seam after the watcher", async () => {
+    const workspace = makeWorkspace("ws-semantic-order");
+    const h = harness();
+    const order: string[] = [];
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      attachWatcherFn: () => order.push("watcher"),
+      attachSemanticFn: () => order.push("semantic"),
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+
+    expect(order).toEqual(["watcher", "semantic"]);
+    await server.close();
+  });
+
+  it("says in the boot log that a zero-config workspace has no semantic index", async () => {
+    const workspace = makeWorkspace("ws-semantic-disabled");
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      // `runServerProcess` deliberately does not hand its logger to
+      // `createServer` (the server builds one from `config.logLevel`), so the
+      // seam's line goes to stdout in production; this is how a test reads it.
+      createServerFn: (config, deps) => createServer(config, { ...deps, logger: h.logger }),
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+
+    // The resolution runs beside the boot; the seam's disposer is what awaits it.
+    await server.close();
+
+    const line = h.lines.find((entry) => entry.includes("semantic index disabled"));
+    expect(line).toContain("this build has no embedded engine");
+    expect(line).toContain('"level":"info"');
+  });
 });
 
 describe("runServerProcess — shutdown", () => {
@@ -657,6 +707,7 @@ describe("runServerProcess — shutdown", () => {
       // workspace to open; what is under test here is the shutdown path.
       openProjectionFn: () => undefined,
       attachProjectionFn: () => undefined,
+      attachSemanticFn: () => undefined,
     });
 
     h.raise("SIGTERM");

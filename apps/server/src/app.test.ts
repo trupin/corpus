@@ -50,6 +50,7 @@ function makeConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
     version: "9.9.9",
     logLevel: "silent",
     uiDistDir: undefined,
+    embedding: { kind: "absent" },
     warnings: [],
     ...overrides,
   };
