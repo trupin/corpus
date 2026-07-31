@@ -3,6 +3,7 @@ import type { RowNotice } from "@corpus/kit";
 import { useRef, type ReactElement } from "react";
 import { useDocActions } from "../menu/docActions";
 import { MenuItems } from "../menu/MenuItems";
+import { useRovingMenu } from "../menu/useRovingMenu";
 import { usePopoverShift } from "./popover";
 import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
 
@@ -14,6 +15,12 @@ import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
  * reader's *context* menu reads too — one source of actions, two presentations
  * (sprint-016 TEST-440). What is left here is the presentation: an anchored
  * sheet that slides to stay inside the viewport, at `Popover` escape priority.
+ *
+ * Its keyboard behaviour is `ContextMenu`'s, through the same
+ * {@link useRovingMenu} (UI-030): the sheet takes focus when it opens, the
+ * arrows walk the items, `↵`/Space activate the focused one natively, Tab and
+ * `esc` dismiss, and focus returns to the ⋯ button. Before that it had
+ * `role="menuitem"` buttons focus never reached.
  *
  * **The publish-plugin items are deliberately absent.** The prototype's menu
  * carries "Copy for Google Docs" and "Push update to Google Doc…", but SPEC.md
@@ -48,6 +55,7 @@ export function DocMenu({
 }: DocMenuProps): ReactElement {
   const pop = useRef<HTMLDivElement>(null);
   const shift = usePopoverShift(pop, true);
+  const roving = useRovingMenu(pop, { onDismiss: onClose });
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
 
   const actions = useDocActions(
@@ -68,6 +76,7 @@ export function DocMenu({
       aria-label="Document actions"
       data-dm-pop
       style={shift === 0 ? undefined : { transform: `translateX(${String(-shift)}px)` }}
+      {...roving}
     >
       <MenuItems actions={actions} variant="popover" onDone={onClose} />
     </div>

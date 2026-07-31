@@ -1,5 +1,6 @@
 import type { DocRow } from "@corpus/contract";
 import { useRef, type ReactElement } from "react";
+import { useRovingMenu } from "../menu/useRovingMenu";
 import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
 import { usePopoverShift } from "./popover";
 
@@ -11,6 +12,12 @@ import { usePopoverShift } from "./popover";
  * returned — one request for the whole list, and the same rows the board's
  * thread rows are built from, so the turn counts and statuses here can never
  * disagree with the ones a column shows.
+ *
+ * It is the same kind of surface as the ⋯ menu and gets the same keyboard
+ * behaviour from the same {@link useRovingMenu} (UI-030) — arrows between the
+ * threads, `↵` to open one, Tab or `esc` to dismiss, focus back on the 💬
+ * button. With no threads there is nothing to rove: the empty line is not an
+ * item, and the hook leaves focus on the container so `esc` still lands.
  */
 
 export interface CommentsPopoverProps {
@@ -39,6 +46,7 @@ export function CommentsPopover({
 }: CommentsPopoverProps): ReactElement {
   const pop = useRef<HTMLDivElement>(null);
   const shift = usePopoverShift(pop, true);
+  const roving = useRovingMenu(pop, { onDismiss: onClose });
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
 
   return (
@@ -48,6 +56,7 @@ export function CommentsPopover({
       role="menu"
       aria-label="Threads on this document"
       style={shift === 0 ? undefined : { transform: `translateX(${String(-shift)}px)` }}
+      {...roving}
     >
       {threads.length === 0 ? (
         <div className="cp-meta cp-empty">
