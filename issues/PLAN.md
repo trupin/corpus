@@ -178,7 +178,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | UI-018 | Right-click context menu for actions on the selected item | done | P2 | SHARED-004, UI-004, UI-012 |
 | UI-019 | Wider views: user-adjustable view/column width | done | P2 | SHARED-004, UI-003 |
 | CLI-012 | Install plugin seed templates at corpus init | done | P2 | PLUGINS-002 |
-| UI-015 | Remaining teardown callbacks | todo | P2 | UI-012 |
+| UI-015 | Remaining teardown callbacks | done | P2 | UI-012 |
 | SERVER-032 | needs=form drops threads with a second answerable form | done | P2 | SERVER-029 |
 | SHARED-003 | PR #11 review — non-blocking MINOR/NIT findings ledger (triage) | todo | P2 | — |
 | SERVER-037 | POST /api/docs dot-segment folder commits an invisible document | done | P2 | SERVER-005 |
