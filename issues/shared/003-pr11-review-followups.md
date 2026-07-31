@@ -169,8 +169,19 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
   sentence enumerates "Archive, Delete, Resolve/Reopen" and now needs "Unarchive
   (archived documents)".
 - **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
-  deliberate deferral): never a skill, no folder move, so harmless — but it is now
-  the only archive path off the POST route; consistency follow-up at triage.
+  deliberate deferral; independently confirmed as PR #14 review MINOR 1,
+  Board.tsx:598-604): never a skill, no folder move, so harmless — but it is now the
+  only archive path off the POST route, and asymmetric with its own inverse (that
+  column unarchives via POST from the reader). Consistency follow-up at triage.
+- **Doctor's per-finding git spawn is synchronous in the request handler** (PR #14
+  review MINOR 2, unindexable.ts:94-126): bounded 50 × 5s, so a pathological
+  workspace can block the single-threaded server ~250s worst case (SSE heartbeats
+  stall). Healthy workspaces spawn nothing; fix shape at triage (async exec, or
+  resolve commits lazily/CLI-side).
+- **PR #14 review NITs**: `normalizeBody`'s docblock overstates the invariant for the
+  extra-trailing-newlines direction (behavior safe — clamped, tail highlight drops);
+  `unarchivedMessage` uses typographic quotes where `archivedMessage` uses straight
+  ones.
 - **Thread-create warnings are document-scoped, not call-scoped** (Phase 6 eval
   LEDGER-P6-2): a create response carries every unresolved anchor on the parent, so
   the CLI's warning suffix can list other threads' orphans. Either scope the printed
