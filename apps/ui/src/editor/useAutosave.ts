@@ -1,6 +1,7 @@
 import type { UpdateDocResponse } from "@corpus/contract";
 import { useUpdateDocById } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { onPageHide } from "../abandon/pagehide.js";
 import { isAbandoned, publishBodyDraft } from "../abandon/registry.js";
 import { beginEditing, endEditing } from "./editingRegistry.js";
 
@@ -356,12 +357,19 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
       event.preventDefault();
     };
     document.addEventListener("visibilitychange", onHide);
-    window.addEventListener("pagehide", flush);
     window.addEventListener("beforeunload", onLeave);
+    /*
+     * The tab-close flush joins the ordered sequence rather than adding a fourth
+     * `pagehide` listener: it declines for a document the abandon rule is
+     * removing, and a plain listener registered here — in a child of the reader
+     * — would run *before* that decision was taken and send a `PUT` chasing the
+     * `DELETE` behind it (PR #12 review, MINOR 14).
+     */
+    const offPageHide = onPageHide("flush", flush);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
-      window.removeEventListener("pagehide", flush);
       window.removeEventListener("beforeunload", onLeave);
+      offPageHide();
     };
   }, [flush]);
 

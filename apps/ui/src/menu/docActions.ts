@@ -164,9 +164,23 @@ export function useDocActions(
     // The request can be refused, so this item owns its own close: a menu that
     // had already gone would leave the refusal with nothing to re-arm.
     keepOpen: true,
+    /*
+     * Through the promise rather than through per-call callbacks (PR #12
+     * review, NIT 24). This item keeps the menu open — but `esc`, an outside
+     * click or the reader closing dismisses it anyway, and a per-call callback
+     * dies with the observer that dismissal removes (`SettledCallbacks`). The
+     * one outcome nobody may lose is a *refused* deletion: without it the
+     * document is still there and the user was told nothing. `useDeleteDoc`
+     * takes no hook-level callbacks and `@corpus/kit` is not this issue's to
+     * change; `mutateAsync` returns the mutation's own promise, which settles
+     * wherever the menu went. `close`/`onGone`/`disarm` are surface state and
+     * are no-ops once the surface has gone, which is the correct behaviour for
+     * them.
+     */
     run: (disarm) => {
-      deleteDoc.mutate(subject.id, {
-        onSuccess: (result) => {
+      void deleteDoc
+        .mutateAsync(subject.id)
+        .then((result) => {
           const orphans = result.orphanedThreadIds.length;
           onNotify({
             tone: "info",
@@ -180,12 +194,12 @@ export function useDocActions(
           });
           close();
           onGone?.();
-        },
-        onError: (error) => {
-          onNotify({ tone: "error", message: `Delete failed — ${error.message}` });
+        })
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : "the server refused it";
+          onNotify({ tone: "error", message: `Delete failed — ${detail}` });
           disarm();
-        },
-      });
+        });
     },
   });
 

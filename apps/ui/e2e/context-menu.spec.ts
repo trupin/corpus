@@ -90,6 +90,33 @@ test.describe("the context menu", () => {
     await expect(menu).toBeHidden();
   });
 
+  /**
+   * PR #12 review, MINOR 16. Tab was neither trapped nor dismissing: focus left
+   * a surface painted over the page while the menu stayed on screen. Only a real
+   * browser moves focus on Tab, so only a real browser can prove this.
+   */
+  test("dismisses on Tab rather than letting focus walk out of it", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    const row = page.locator('.row[data-row-doc="doc_note"]');
+    await row.hover();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Shift+F10");
+    const menu = page.getByRole("menu");
+    await expect(menu.locator('[data-act="open"]')).toBeFocused();
+
+    await page.keyboard.press("Tab");
+
+    await expect(menu).toBeHidden();
+    await expect(page.locator('[role="menuitem"]')).toHaveCount(0);
+    // And the keyboard is not left inside a surface that no longer exists.
+    const inMenu = await page.evaluate(
+      () => document.activeElement?.closest('[role="menu"]') !== null,
+    );
+    expect(inMenu).toBe(false);
+  });
+
   test("⇧F10 opens the menu on the keyboard highlight, focused", async ({ page }) => {
     await stubCorpus(page, [INBOX_VIEW, NOTE]);
     await page.goto("/");

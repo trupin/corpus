@@ -16,7 +16,8 @@ import {
   threadsSearch,
   type ReaderTransport,
 } from "../testing/readerFixture";
-import { publishDoc, releaseDoc, resetAbandonRegistry, retainDoc } from "./registry";
+import { onPageHide, resetPageHide } from "./pagehide";
+import { isAbandoned, publishDoc, releaseDoc, resetAbandonRegistry, retainDoc } from "./registry";
 import { setUnloadClient } from "./unloadClient";
 import { useAbandonEmptyDoc } from "./useAbandonEmpty";
 
@@ -38,6 +39,7 @@ afterEach(() => {
   resetEscapeLayers();
   resetSeenMarks();
   resetAbandonRegistry();
+  resetPageHide();
   setUnloadClient(null);
   vi.restoreAllMocks();
 });
@@ -286,6 +288,107 @@ describe("leaving an empty document", () => {
     await waitFor(() => {
       expect(deleteDoc).toHaveBeenCalledWith("doc_blank");
     });
+  });
+
+  /**
+   * The tab-close ordering, as a test (PR #12 review, MINOR 14).
+   *
+   * On every other exit route the abandon decision is taken in a *layout*-effect
+   * teardown, which React runs ahead of the passive teardowns carrying the
+   * flushes (sprint-016 TEST-425). Nothing unmounts on `pagehide`, so the
+   * ordering there is whatever the registration order was — and registration
+   * order is effect order, which is child-before-parent: the editor's flush
+   * registers **before** the reader's decision. The probe below stands in for
+   * that flush and registers first, deliberately.
+   */
+  it("has decided the removal before any flush handler runs", async () => {
+    const wire = wireFor([BLANK]);
+    const deleteDoc = vi.fn(() =>
+      Promise.resolve({ deletedId: "doc_blank", orphanedThreadIds: [], warnings: [] }),
+    );
+    setUnloadClient({ deleteDoc } as unknown as CorpusClient);
+
+    const seen: boolean[] = [];
+    const off = onPageHide("flush", () => {
+      // What `useAutosave.flush` and `FrontmatterForm`'s exit flush consult
+      // before writing. False here is a `PUT` chasing the `DELETE` below.
+      seen.push(isAbandoned("doc_blank"));
+    });
+
+    render(<Host wire={wire} initial={[{ docId: "doc_blank", scrollY: 0 }]} />);
+    await opened("Untitled");
+
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    off();
+
+    expect(seen).toEqual([true]);
+    await waitFor(() => {
+      expect(deleteDoc).toHaveBeenCalledWith("doc_blank");
+    });
+  });
+
+  /**
+   * The typed title, on the one exit an ordinary `PUT` does not survive
+   * (PR #12 review, MINOR 13).
+   *
+   * The document is kept — a typed title is a document — so what has to reach
+   * the server is the title itself, through the keepalive client rather than
+   * through a request the browser cancels as it tears the page down.
+   */
+  it("sends a typed title through the keepalive client when the tab goes away", async () => {
+    const wire = wireFor([BLANK]);
+    const updateDoc = vi.fn(() =>
+      Promise.resolve({ id: "doc_blank", path: BLANK.path, anchors: {}, warnings: [] }),
+    );
+    const deleteDoc = vi.fn(() =>
+      Promise.resolve({ deletedId: "doc_blank", orphanedThreadIds: [], warnings: [] }),
+    );
+    setUnloadClient({ updateDoc, deleteDoc } as unknown as CorpusClient);
+
+    render(<Host wire={wire} initial={[{ docId: "doc_blank", scrollY: 0 }]} />);
+    await opened("Untitled");
+    fireEvent.change(screen.getByLabelText("Document title"), {
+      target: { value: "Budget review 2027" },
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+    expect(updateDoc).toHaveBeenCalledWith("doc_blank", { title: "Budget review 2027" });
+    // The title is what keeps the document, so nothing may delete it — and the
+    // ordinary client, whose request the unload would cancel, is not used.
+    expect(deleteDoc).not.toHaveBeenCalled();
+    expect(wire.of("PUT", "/api/docs/doc_blank")).toHaveLength(0);
+  });
+
+  it("writes nothing on the way out when the document is being removed", async () => {
+    const wire = wireFor([BLANK]);
+    const updateDoc = vi.fn();
+    const deleteDoc = vi.fn(() =>
+      Promise.resolve({ deletedId: "doc_blank", orphanedThreadIds: [], warnings: [] }),
+    );
+    setUnloadClient({ updateDoc, deleteDoc } as unknown as CorpusClient);
+
+    render(<Host wire={wire} initial={[{ docId: "doc_blank", scrollY: 0 }]} />);
+    await opened("Untitled");
+    const title = screen.getByLabelText("Document title");
+    fireEvent.change(title, { target: { value: "Budget review 2027" } });
+    fireEvent.change(title, { target: { value: "" } });
+
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+    await waitFor(() => {
+      expect(deleteDoc).toHaveBeenCalledWith("doc_blank");
+    });
+    // The draft the flush would have carried is the emptiness that decided the
+    // removal: the `decide` phase has already said so by the time it asks.
+    expect(updateDoc).not.toHaveBeenCalled();
+    expect(wire.of("PUT", "/api/docs/doc_blank")).toHaveLength(0);
   });
 });
 

@@ -88,19 +88,27 @@ export function ContextMenu({
       tabIndex={-1}
       style={{ left: `${String(placement.left)}px`, top: `${String(placement.top)}px` }}
       onKeyDown={(event) => {
+        /*
+         * Tab dismisses, which is what native menus do (PR #12 review,
+         * MINOR 16). It is not optional politeness: this frame is painted over
+         * the page, so a Tab that neither moved focus within it nor closed it
+         * left the menu on screen with the keyboard walking the document
+         * behind it. The default is prevented so focus lands back on the
+         * opener — the unmount effect's job — rather than on whatever happens
+         * to follow the menu in the DOM; the next Tab then continues from the
+         * control the user actually came from.
+         */
+        if (event.key === "Tab") {
+          event.preventDefault();
+          onClose();
+          return;
+        }
         const enabled = items(menu.current);
         if (enabled.length === 0) return;
         const at = enabled.findIndex((item) => item === document.activeElement);
-        const step =
-          event.key === "ArrowDown"
-            ? 1
-            : event.key === "ArrowUp"
-              ? -1
-              : event.key === "Tab"
-                ? 0
-                : 0;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
+          const step = event.key === "ArrowDown" ? 1 : -1;
           const next = at < 0 ? (step === 1 ? 0 : enabled.length - 1) : at + step;
           enabled[Math.min(enabled.length - 1, Math.max(0, next))]?.focus();
           return;

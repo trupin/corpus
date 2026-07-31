@@ -31,10 +31,28 @@ export function JobMenuItems({ job, close }: JobMenuItemsProps): ReactElement {
   const canOpen = job.originId !== null;
   const canAct = job.status === "failed" || job.status === "deferred";
 
+  /**
+   * The refusal is reported off the **promise**, not off a per-call callback
+   * (PR #12 review, MAJOR 2).
+   *
+   * Every item here closes the menu in the same tick it acts, which unmounts
+   * this component before the request settles — and TanStack Query v5 delivers
+   * `mutate(…, { onError })` through the observer, which it skips once that
+   * observer has no listeners left (`SettledCallbacks`). A refused retry was
+   * therefore silent: the job stays failed and nothing says why.
+   *
+   * `useRetryJob`/`useAbandonJob` take no hook-level callbacks, and this issue
+   * does not change `@corpus/kit`. `mutateAsync` needs none: it returns the
+   * *mutation's* own promise (`MutationObserver#mutate` hands back
+   * `mutation.execute(...)`), which settles wherever the menu went. The toast
+   * goes to `useToast`, whose provider is the shell — it outlives this menu by
+   * construction.
+   */
   const reportFailure =
     (verb: string) =>
-    (error: Error): void => {
-      notify({ tone: "error", message: `Could not ${verb} ${job.eventId}: ${error.message}` });
+    (error: unknown): void => {
+      const detail = error instanceof Error ? error.message : "the server refused it";
+      notify({ tone: "error", message: `Could not ${verb} ${job.eventId}: ${detail}` });
     };
 
   const actions: MenuAction[] = [
@@ -63,7 +81,7 @@ export function JobMenuItems({ job, close }: JobMenuItemsProps): ReactElement {
             : "re-queue this failed job",
         disabled: retry.isPending,
         run: () => {
-          retry.mutate(job.eventId, { onError: reportFailure("retry") });
+          void retry.mutateAsync(job.eventId).catch(reportFailure("retry"));
         },
       },
       {
@@ -72,7 +90,7 @@ export function JobMenuItems({ job, close }: JobMenuItemsProps): ReactElement {
         meta: "drops the job from the queue",
         disabled: abandon.isPending,
         run: () => {
-          abandon.mutate(job.eventId, { onError: reportFailure("abandon") });
+          void abandon.mutateAsync(job.eventId).catch(reportFailure("abandon"));
         },
       },
     );

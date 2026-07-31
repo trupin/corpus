@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-in_progress
+done
 
 ## Priority
 
@@ -213,6 +213,42 @@ Nothing under `packages/kit`, `packages/contract`, `apps/server`, `apps/cli`, `p
 
 **Cleanup**: pids 58990, 58974, 46690 killed by pid; `5293` and `9196` verified free; **`8765`
 verified untouched and unbound**; `/Users/theophanerupin/code/corpus/.corpus` verified **absent**.
+
+### PR #12 fix round (2026-07-30, opus) — two more sites of this class, and the menu frame
+
+The reviewer found the same teardown class at two call sites this issue did not reach, plus one
+menu-frame defect. All three fixed in `apps/ui` only; **`git diff packages/kit` is still empty**.
+
+- **MAJOR 2 — `apps/ui/src/menu/JobMenuItems.tsx`.** Retry/Abandon passed per-call `onError` while
+  `MenuItems` closes the menu on activation, so a refused queue write was silent. `useRetryJob`/
+  `useAbandonJob` accept **no** hook-level callbacks, and kit is out of scope — so the UI-side
+  equivalent: `mutateAsync().catch(...)`. `MutationObserver#mutate` returns
+  `mutation.execute(variables)`, i.e. the *mutation's* own promise, and only `#notify` is gated on
+  `hasListeners()` — the promise settles wherever the menu went (verified in
+  `node_modules/@tanstack/query-core@5.101.4/build/modern/mutationObserver.js:56-77`). `useToast`'s
+  provider is the shell, so the notice has somewhere to land. Same treatment, same reasoning, for
+  **NIT 24** — `menu/docActions.ts`'s Delete, whose refusal notice died if `esc` dismissed the menu
+  mid-flight.
+- **MINOR 16 — `apps/ui/src/menu/ContextMenu.tsx`.** Tab was neither trapped nor dismissing (menu
+  left painted over the page, keyboard walking the document behind it), and the dead
+  `=== "Tab" ? 0 : 0` ternary is gone. Tab now dismisses, `preventDefault`d so the unmount effect's
+  focus restore decides where the keyboard lands.
+
+**Red-bar proof (jsdom).** Each fix reverted, suites re-run: `Tests 5 failed | 58 passed (63)` —
+the 2 `JobMenuItems` refusal tests, the ContextMenu Tab test, and the 2 `DocMenu` delete-teardown
+tests, and nothing else. Restored: `43 passed` (menu) and all of `apps/ui/src` at **1474 passed
+(100 files)**.
+
+**Red-bar proof (real browser, Playwright/Chromium on the real Vite dev server).** Both fixes
+reverted: `dismisses on Tab rather than letting focus walk out of it` → *"Expected: hidden /
+Received: visible"*, and `a refused retry says so, though the menu that asked has closed` →
+*"Expected substring: 'Could not retry evt_e2e'"* (no toast in 5 s). Restored: **45 e2e passed**
+(`abandon`, `context-menu`, `console`, `reader`, `editor`).
+
+New tests: `apps/ui/src/menu/JobMenuItems.test.tsx` (4, via the **real** `ContextMenuProvider` —
+the menu really unmounts on activation, no simulated `cleanup()`), 2 in
+`apps/ui/src/reader/DocMenu.test.tsx`, 1 in `apps/ui/src/menu/ContextMenu.test.tsx`, 1 in
+`apps/ui/e2e/context-menu.spec.ts`, 1 in `apps/ui/e2e/console.spec.ts`.
 
 ## Completion Checklist (domain agent)
 

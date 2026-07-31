@@ -1,7 +1,9 @@
 import { DOC_STATUSES, type Doc, type DocStatus, type UpdateDocRequest } from "@corpus/contract";
 import { folderOf, useUpdateDoc, type RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
+import { unloadClient } from "../abandon/unloadClient";
 
 /**
  * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
@@ -167,30 +169,55 @@ export function FrontmatterForm({
   mutate.current = update.mutate;
 
   /**
-   * Send the draft now — the document is being left.
+   * What leaving the document would write, or `null` when it would write
+   * nothing.
    *
    * It declines for an **abandoned** document for the same reason autosave
    * does: the emptiness that decided the removal is what this would be writing,
    * and it would be a `PUT` racing the `DELETE` behind it. The ordering is
    * load-bearing and not incidental — the abandon decision is taken in the
-   * host's *layout*-effect teardown, which runs ahead of this passive one.
+   * host's *layout*-effect teardown, which runs ahead of this passive one, and
+   * on the tab-close route by {@link onPageHide}'s `decide` phase.
    */
-  const flush = useCallback((): void => {
+  const outgoingWrite = useCallback((): { id: string; changes: UpdateDocRequest } | null => {
     const { doc: outgoing, draft: unsaved, locked: frozen } = pending.current;
-    if (unsaved === null || frozen) return;
+    if (unsaved === null || frozen) return null;
     const id = outgoing.frontmatter.id;
-    if (isAbandoned(id)) return;
-    const changed = changedFields(outgoing, unsaved);
-    if (Object.keys(changed).length === 0) return;
-    mutate.current(changed);
+    if (isAbandoned(id)) return null;
+    const changes = changedFields(outgoing, unsaved);
+    if (Object.keys(changes).length === 0) return null;
+    return { id, changes };
   }, []);
 
-  useEffect(() => {
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("pagehide", flush);
-    };
-  }, [flush]);
+  /** Send the draft now — the document is being left, inside a living page. */
+  const flush = useCallback((): void => {
+    const write = outgoingWrite();
+    if (write === null) return;
+    mutate.current(write.changes);
+  }, [outgoingWrite]);
+
+  /**
+   * The same flush, on the one exit the ordinary client does not survive
+   * (PR #12 review, MINOR 13).
+   *
+   * A `PUT` issued from `pagehide` on the ordinary client is racing the
+   * browser's own teardown and is routinely cancelled — which would make
+   * closing the tab the one exit route that silently threw away a typed title,
+   * the very loss this flush exists to prevent (UI-017 eval FAIL-1). It goes
+   * out through {@link unloadClient} for the same reason the abandon `DELETE`
+   * does: `keepalive: true` lets the request outlive the document that issued
+   * it. Nothing is reported — the toast surface is going away with the page —
+   * and the refusal is swallowed rather than left as an unhandled rejection.
+   */
+  const flushOnUnload = useCallback((): void => {
+    const write = outgoingWrite();
+    if (write === null) return;
+    void unloadClient()
+      .updateDoc(write.id, write.changes)
+      .catch(() => undefined);
+  }, [outgoingWrite]);
+
+  useEffect(() => onPageHide("flush", flushOnUnload), [flushOnUnload]);
 
   // Unmount, and — because `DocView` keys this form by document id — a reader
   // rebinding to another document. Both are "the user left"; both must save.

@@ -34,6 +34,15 @@ const known = new Map<string, DocSnapshot>();
  * content the user wrote, and a document still holding exactly it is still
  * untouched. Only this session can know it — hence a registry entry rather
  * than a derivation.
+ *
+ * **It is the one map that outlives its document, deliberately** (PR #12
+ * review, NIT 24). {@link forgetDoc} leaves it alone — see the note there — so
+ * an entry is dropped only when the document is actually deleted
+ * ({@link forgetPristineBody}). A document created and *kept* therefore leaves
+ * one id and one body string here until the tab is reloaded. That is the whole
+ * cost: it is bounded by documents created in this session, it is the size of
+ * their template prefill, and it is not a growing-per-navigation leak.
+ * Trimming it earlier is what broke the `＋` path once already.
  */
 const pristine = new Map<string, string>();
 /** Uncommitted title text, published by the frontmatter form. */

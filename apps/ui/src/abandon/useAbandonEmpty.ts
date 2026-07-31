@@ -3,6 +3,7 @@ import { useCorpusClient } from "@corpus/kit";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { abandonEmptyDoc, scheduleAbandonEmptyDoc } from "./abandonEmptyDoc";
+import { onPageHide } from "./pagehide";
 import { publishDoc, releaseDoc, retainDoc, subscribeAbandoned } from "./registry";
 import { unloadClient } from "./unloadClient";
 
@@ -90,16 +91,23 @@ export function useAbandonEmptyDoc({
    * Closing or reloading the tab (SPEC.md §11's "closing the tab").
    *
    * Nothing unmounts, so the teardown above never runs. `pagehide` is the same
-   * event `useAutosave` flushes on, and it is deliberately **not** paired with
-   * a `beforeunload` prompt: an automatic rule that asks is not automatic.
+   * event `useAutosave` and `FrontmatterForm` flush on, and it is deliberately
+   * **not** paired with a `beforeunload` prompt: an automatic rule that asks is
+   * not automatic.
+   *
+   * It registers in the sequence's **`decide`** phase rather than as a plain
+   * listener, and that is the whole point of {@link onPageHide}: the two flushes
+   * decline for a document that is being abandoned, so the decision has to be
+   * recorded before either of them runs. `abandonEmptyDoc` marks the document
+   * before its first `await`, so by the time the `flush` phase starts the answer
+   * is on the registry — the same ordering the unmount path gets for free from
+   * layout-effect teardown (sprint-016 TEST-425).
    */
-  useEffect(() => {
-    const onLeave = (): void => {
-      void abandonEmptyDoc(docId, unloadClient(), deps.current.queryClient);
-    };
-    window.addEventListener("pagehide", onLeave);
-    return () => {
-      window.removeEventListener("pagehide", onLeave);
-    };
-  }, [docId]);
+  useEffect(
+    () =>
+      onPageHide("decide", () => {
+        void abandonEmptyDoc(docId, unloadClient(), deps.current.queryClient);
+      }),
+    [docId],
+  );
 }

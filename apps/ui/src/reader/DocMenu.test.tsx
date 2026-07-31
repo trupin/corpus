@@ -246,6 +246,72 @@ describe("DocMenu", () => {
       });
     });
 
+    /**
+     * PR #12 review, NIT 24. Delete keeps the menu open on purpose — a refusal
+     * has to have something to re-arm — but `esc`, an outside click or the
+     * reader closing dismisses it anyway, and the refusal notice went with the
+     * observer. The one outcome nobody may lose: the document is still there
+     * and the user was told nothing.
+     */
+    it("reports a refused delete even though the menu was dismissed mid-flight", async () => {
+      const notify = vi.fn<(notice: RowNotice) => void>();
+      const { held, release } = gate();
+      const inner = readerTransport({
+        docs: [NOTE],
+        failing: { "DELETE /api/docs/doc_m": 423 },
+      });
+      const harness = createCorpusTestHarness({ fetch: heldTransport(inner, held) });
+      render(
+        <DocMenu
+          doc={NOTE}
+          threadStatus={null}
+          onClose={() => undefined}
+          onGone={() => undefined}
+          onNotify={notify}
+        />,
+        { wrapper: harness.Wrapper },
+      );
+
+      fireEvent.click(screen.getByText(DELETE_LABEL));
+      fireEvent.click(screen.getByText(DELETE_ARMED_LABEL));
+      // What `esc` does to this surface: the menu goes while the request is
+      // still on the wire.
+      cleanup();
+      release();
+
+      await waitFor(() => {
+        expect(notify.mock.calls.at(-1)?.[0]?.message).toContain("Delete failed");
+      });
+      expect(notify.mock.calls.at(-1)?.[0]?.tone).toBe("error");
+    });
+
+    it("reports a delete that committed after the menu was dismissed", async () => {
+      const notify = vi.fn<(notice: RowNotice) => void>();
+      const { held, release } = gate();
+      const inner = readerTransport({ docs: [NOTE] });
+      const harness = createCorpusTestHarness({ fetch: heldTransport(inner, held) });
+      render(
+        <DocMenu
+          doc={NOTE}
+          threadStatus={null}
+          onClose={() => undefined}
+          onGone={() => undefined}
+          onNotify={notify}
+        />,
+        { wrapper: harness.Wrapper },
+      );
+
+      fireEvent.click(screen.getByText(DELETE_LABEL));
+      fireEvent.click(screen.getByText(DELETE_ARMED_LABEL));
+      cleanup();
+      release();
+
+      await waitFor(() => {
+        expect(notify.mock.calls.at(-1)?.[0]?.message).toContain("Deleted “Mortgage options”");
+      });
+      expect(notify.mock.calls.at(-1)?.[0]?.tone).toBe("info");
+    });
+
     it("Reopen names its own verb when the flip is refused", async () => {
       const notify = vi.fn<(notice: RowNotice) => void>();
       const { held, release } = gate();

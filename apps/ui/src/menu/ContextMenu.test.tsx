@@ -136,6 +136,24 @@ describe("the context menu frame", () => {
     expect(document.activeElement).not.toBe(items()[0]);
   });
 
+  /**
+   * PR #12 review, MINOR 16. Tab was neither trapped nor dismissing: focus
+   * walked out of a surface painted over the page and left the menu standing
+   * over content the keyboard was now in.
+   */
+  it("dismisses on Tab and hands focus back, as a native menu does", () => {
+    mount(true);
+    const opener = screen.getByText(/open menu/);
+    opener.focus();
+    fireEvent.click(opener);
+    const menu = screen.getByRole("menu");
+
+    fireEvent.keyDown(menu, { key: "Tab" });
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("returns focus to whatever opened it", () => {
     mount(true);
     const opener = screen.getByText(/open menu/);

@@ -266,6 +266,59 @@ document was left behind.
 Playwright (`abandon.spec.ts reader.spec.ts`, `--workers=1`, own port, `CORPUS_SERVER_ORIGIN`
 pinned) → **12 passed**; lint, format and typecheck green. `apps/ui` only.
 
+### PR #12 fix round (2026-07-30, opus) — the tab-close route
+
+The reviewer found that the tab-close exit was the weak one: the title flush went out on a client
+the browser cancels, and nothing enforced that the abandon decision preceded the flushes. Both
+fixed in `apps/ui` only.
+
+- **MINOR 13 — `reader/FrontmatterForm.tsx`.** The `pagehide` flush now goes through
+  `abandon/unloadClient.ts` (`keepalive: true`), the same client the abandon `DELETE` uses; the
+  unmount/rebind flush still goes through the hook (whose `SettledCallbacks` carry the toast). One
+  helper, `outgoingWrite()`, decides what to send, so the two routes cannot drift about the
+  abandoned-document guard.
+- **MINOR 14 — new `abandon/pagehide.ts`.** Three surfaces acted on `pagehide` as plain listeners,
+  fired in registration order = effect order = child-before-parent — i.e. the editor's flush **ran
+  before** the reader's abandon decision, which is the `PUT`-racing-`DELETE` this rule exists to
+  avoid. There is now one listener and two phases: `decide` (`useAbandonEmpty`) runs to completion
+  before `flush` (`useAutosave`, `FrontmatterForm`). That restores, on the tab-close route, exactly
+  the guarantee layout-effect teardown gives every other route (sprint-016 TEST-425).
+- **MINOR 15 — `abandon/emptiness.ts`.** The `hasExtra` comment justified the guard with the old
+  §12 (`extra.items`), falsified by this PR. Re-checked and re-justified: `extra` is opaque
+  passthrough the core never interprets (§8's `extra_json`, §12), so a blank body is no evidence
+  about a document that has any. The guard still stands — but **not** for todos: §12 puts items in
+  the body, so a todo with items has a non-blank body and never reaches it, and an empty new one is
+  correctly removed like any other note.
+- **NIT 24 (second half) — `abandon/registry.ts`.** The pristine map is the one that outlives its
+  document; documented rather than trimmed (trimming it earlier is what broke the `＋` path once).
+  Bounded by documents created in this tab's session, one body string each.
+
+**Red-bar proof (jsdom).** Ordering and keepalive reverted: `Tests 2 failed | 73 passed (75)` —
+`has decided the removal before any flush handler runs` → *"expected [ false ] to deeply equal
+[ true ]"* (the flush handler saw `isAbandoned === false`), and `sends a typed title through the
+keepalive client when the tab goes away` → the keepalive `updateDoc` was never called.
+
+**Red-bar proof (real browser + real server, A/B).** Workspace
+`…/tmp/pr12-fix/ws` on `127.0.0.1:9186` (pid 87229, `corpus init --port 9186` run from a cwd
+outside this repo), Vite on `9188 --strictPort`, `CORPUS_SERVER_ORIGIN` exported before it and
+proven mine — `curl http://localhost:9188/api/health` → `"workspace":"…/tmp/pr12-fix/ws"`. Same
+drill both ways: ＋ a document, type a title, `page.goto("about:blank")` (a genuine unload), then
+read the file back with the CLI.
+
+```
+post-fix (keepalive):      corpus doc show doc_ej6k5s62 → "Typed and closed"   data/docs/inbox/untitled.md
+pre-fix  (ordinary client): corpus doc show doc_3xoyk7dy → "Untitled"           data/docs/inbox/untitled-2.md
+```
+
+The typed title is **lost on disk** without the fix and committed with it. (A permanent Playwright
+spec for this is not possible: a `keepalive` request issued during unload is detached from the
+frame, so neither `page.route` nor `page.on("request")` observes it — the earlier attempt was
+removed rather than left as a test that cannot fail for the right reason. The deterministic proof
+is the jsdom test above; this is the corpus half.)
+
+New tests: `apps/ui/src/abandon/pagehide.test.ts` (4) and 3 in
+`apps/ui/src/abandon/useAbandonEmpty.test.tsx`. `8765` was never bound, proxied to, or killed.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes
