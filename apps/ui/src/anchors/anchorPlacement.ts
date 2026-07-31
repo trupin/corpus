@@ -1,4 +1,5 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
+import { normalizeBody } from "../editor/markdown/serialize";
 import type { AnchorPlacement } from "./anchorDecorations";
 import { mdRangeToPm } from "./offsetMap";
 import type { DocumentTrace } from "./traceCache";
@@ -37,17 +38,31 @@ import type { DocumentTrace } from "./traceCache";
  * changes that, because a construct cannot lengthen or shorten without moving
  * a line boundary or a line's length. So that is what is checked.
  *
+ * **The file's tail is not part of its shape** (UI-027). The serializer ends
+ * every document with exactly one newline (`normalizeBody`); the server stores
+ * the body it was handed, and a `POST /api/docs` body that ends without one —
+ * which is what every capture, every CLI creation from a here-string and every
+ * seeded fixture produces — is stored and returned without one. That single
+ * missing character made `body.length !== canonical.length` true for a document
+ * that is otherwise canonical to the byte, and the trailing newline moves *no*
+ * offset: every character of the body keeps its index in the canonical form,
+ * and no anchor can occupy the position past the last one. Judging both sides
+ * by the serializer's own tail convention is what stops "the file does not end
+ * in a newline" from meaning "this document has no highlights, ever".
+ *
  * When the two do not line up, this answers false: the threads stay listed and
  * fully usable, they simply carry no highlight until the first save writes the
  * body back in canonical form.
  */
 export function offsetsComparable(body: string, canonical: string): boolean {
-  if (body === canonical) return true;
-  if (body.length !== canonical.length) return false;
-  const left = body.split("\n");
-  const right = canonical.split("\n");
+  const left = normalizeBody(body);
+  const right = normalizeBody(canonical);
+  if (left === right) return true;
   if (left.length !== right.length) return false;
-  return left.every((line, index) => line.length === right[index]?.length);
+  const leftLines = left.split("\n");
+  const rightLines = right.split("\n");
+  if (leftLines.length !== rightLines.length) return false;
+  return leftLines.every((line, index) => line.length === rightLines[index]?.length);
 }
 
 export interface AnchoredThread {

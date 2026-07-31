@@ -122,6 +122,40 @@ describe("offsets the trace cannot vouch for", () => {
   });
 
   /**
+   * UI-027. The one difference the check used to reject that shifts nothing:
+   * the file's tail. The serializer ends every document with exactly one
+   * newline; the server returns the body it was handed, and a creation whose
+   * body ended without one is stored without one. Every character keeps its
+   * index either way, so the offsets are comparable — and treating them as
+   * incomparable meant *no document created that way ever showed a highlight*.
+   */
+  describe("the file's tail", () => {
+    it("accepts a body the serializer would only add a final newline to", () => {
+      expect(offsetsComparable("The rate is 6.1% today.", "The rate is 6.1% today.\n")).toBe(true);
+    });
+
+    it("accepts a body with newlines to spare at the end", () => {
+      expect(offsetsComparable("one\n\ntwo\n\n\n", "one\n\ntwo\n")).toBe(true);
+    });
+
+    it("still judges everything before the tail by the same rule", () => {
+      expect(offsetsComparable("Title\n=====\n\nbody", "# Title\n\nbody\n")).toBe(false);
+      expect(offsetsComparable("* one\n* two", "- one\n- two\n")).toBe(true);
+    });
+
+    it("places the highlight on a body that ends without a newline", () => {
+      const raw = "The rate is 6.1% today.";
+      const [placed] = placeAnchors({
+        anchors: [anchor({ range: { start: 12, end: 16 } })],
+        rows: [row()],
+        body: raw,
+        source: source(raw),
+      });
+      expect(placed?.placement.segments).toEqual([{ from: 13, to: 17, block: 1 }]);
+    });
+  });
+
+  /**
    * PR #10 finding 18. Total length equality was the licence, and normalisation
    * both shortens (setext → ATX) and lengthens (indented code → fenced). One of
    * each in the same document restores the total while shifting every offset

@@ -31,6 +31,27 @@ export interface StubRow {
   readonly parent?: string | null;
   readonly extra?: Readonly<Record<string, unknown>>;
   readonly stale?: unknown;
+  /**
+   * Anchors the document already carries, as a workspace that has been
+   * commented on before this page loaded (UI-027).
+   *
+   * Seeding them matters because the stub pushes no `invalidate` over SSE: a
+   * spec that could only *create* an anchor was always asserting the state one
+   * comment produces, never the state a **fresh load** finds — which is exactly
+   * the state that shipped broken. Ranges are still resolved on every read, so
+   * a seeded anchor orphans the moment its quote leaves the body.
+   */
+  readonly anchors?: readonly SeedAnchor[];
+}
+
+/** A seeded anchor: the selector, and the thread it belongs to. */
+export interface SeedAnchor {
+  readonly anchorId: string;
+  readonly threadId: string;
+  readonly exact: string;
+  readonly prefix?: string;
+  readonly suffix?: string;
+  readonly threadStatus?: string;
 }
 
 interface StoredDoc {
@@ -107,7 +128,12 @@ function seeded(row: StubRow): StoredDoc {
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
     updated: SEEDED_AT,
-    anchors: [],
+    anchors: (row.anchors ?? []).map((anchor) => ({
+      anchorId: anchor.anchorId,
+      threadId: anchor.threadId,
+      selector: { exact: anchor.exact, prefix: anchor.prefix ?? "", suffix: anchor.suffix ?? "" },
+      threadStatus: anchor.threadStatus ?? "open",
+    })),
   };
 }
 
