@@ -12,8 +12,8 @@
  *
  * `POST /api/skills` (CONTRACT-020) was derived the same way, from §7's skill
  * genesis: the agent creates a skill, and it can only reach the workspace
- * through the CLI and the server. §9.2 does not list it yet — that amendment is
- * routed with the rest of the §7 set rather than applied here.
+ * through the CLI and the server. §9.2 now lists it in its own bullet (signed
+ * off and applied 2026-07-30, PR #12 review — SHARED-003's sign-off record).
  *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
