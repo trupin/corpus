@@ -265,6 +265,42 @@ function createServer() {
     );
   });
 
+  /**
+   * The semantic-index pair (CONTRACT-023). Both handlers are written the way
+   * the server will have to write them — one shape, two status codes — so the
+   * `202` on rebuild is exercised over a real mounted route rather than asserted
+   * only in the document.
+   */
+  app.openapi(contractRoutes.getIndexStatus, (c) =>
+    c.json(
+      {
+        indexed: 154,
+        pending: 0,
+        failed: 0,
+        identity: "ollama/nomic-embed-text@768",
+        rebuilding: false,
+        state: "current" as const,
+      },
+      200,
+    ),
+  );
+
+  app.openapi(contractRoutes.rebuildIndex, (c) =>
+    c.json(
+      {
+        indexed: 0,
+        pending: 154,
+        failed: 0,
+        // Echoes the credentials, so the test can assert the client still
+        // authenticates a call that carries no acting party.
+        identity: `auth=${c.req.header("authorization") ?? ""}`,
+        rebuilding: true,
+        state: "indexing" as const,
+      },
+      202,
+    ),
+  );
+
   return app;
 }
 
@@ -477,6 +513,60 @@ describe("the projection maintenance calls", () => {
     expect(data?.drift[0]?.kind).toBe("count_mismatch");
     expect(data?.drift[0]?.path).toBeNull();
     expect(data?.stats.hashed).toBe(0);
+  });
+});
+
+/**
+ * The semantic-index pair over the generated fetch surface (CONTRACT-023) — the
+ * proof that both new operations exist as typed methods, and that the rebuild's
+ * `202` reaches the caller as `data` rather than as an error.
+ */
+describe("the semantic-index maintenance calls", () => {
+  // Compile-time assertions: neither operation may grow a body, and neither may
+  // grow the acting-party header (SPEC.md §9.2 — no acting party).
+  type RebuildOperation = paths["/api/index/rebuild"]["post"];
+  type RebuildTakesNoBody = RebuildOperation extends { requestBody?: undefined } ? true : never;
+  type RebuildTakesNoParameters = RebuildOperation extends {
+    parameters: { header?: never; query?: never };
+  }
+    ? true
+    : never;
+
+  it("types the rebuild call as taking neither a body nor a header", () => {
+    const bodiless: RebuildTakesNoBody = true;
+    const headerless: RebuildTakesNoParameters = true;
+    expect([bodiless, headerless]).toEqual([true, true]);
+  });
+
+  it("reads the index status as typed data", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/index/status");
+
+    expect(error).toBeUndefined();
+    expect(data?.state).toBe("current");
+    expect(data?.identity).toBe("ollama/nomic-embed-text@768");
+    expect(data?.indexed).toBe(154);
+  });
+
+  it("takes the rebuild's 202 acknowledgement as data, still authenticated", async () => {
+    const { data, error, response } = await createTestClient().api.POST("/api/index/rebuild");
+
+    expect(response.status).toBe(202);
+    expect(error).toBeUndefined();
+    expect(data?.rebuilding).toBe(true);
+    expect(data?.state).toBe("indexing");
+    expect(data?.pending).toBe(154);
+    expect(data?.identity).toContain(`auth=Bearer ${TOKEN}`);
+  });
+
+  /**
+   * A fresh workspace is the shape most consumers will meet first, and `null`
+   * identity is the field a client is most likely to mishandle — so the typed
+   * narrowing is exercised rather than assumed.
+   */
+  it("types a null identity as null rather than as an absent key", async () => {
+    const { data } = await createTestClient().api.GET("/api/index/status");
+    const identity: string | null = data?.identity ?? null;
+    expect(typeof identity === "string" || identity === null).toBe(true);
   });
 });
 

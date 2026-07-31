@@ -186,6 +186,16 @@ const doctorReport = {
   stats: { files: 6, documents: 7, hashed: 1, parsed: 0, durationMs: 9 },
 };
 
+/** A caught-up semantic index: the shape both index routes answer with. */
+const indexStatus = {
+  indexed: 154,
+  pending: 0,
+  failed: 0,
+  identity: "ollama/nomic-embed-text@768",
+  rebuilding: false,
+  state: "current" as const,
+};
+
 /**
  * Registers **every** contract route against a real handler, exactly the way
  * `apps/server` will (SPEC.md §9.3). The handlers are canned, but the
@@ -462,6 +472,13 @@ function createStubApp() {
 
   app.openapi(contractRoutes.rebuildDb, (c) => c.json(rebuildResult, 200));
   app.openapi(contractRoutes.doctorDb, (c) => c.json(doctorReport, 200));
+
+  // The semantic-index pair answers with one shape under two status codes: the
+  // status read is a `200`, the rebuild's post-queue acknowledgement a `202`.
+  app.openapi(contractRoutes.getIndexStatus, (c) => c.json(indexStatus, 200));
+  app.openapi(contractRoutes.rebuildIndex, (c) =>
+    c.json({ ...indexStatus, pending: 12, rebuilding: true, state: "indexing" as const }, 202),
+  );
 
   // The report echoes which branch of the XOR the validator actually saw: `ids`
   // reports nothing, `documents` reports one finding per submitted pair, so a

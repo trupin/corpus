@@ -64,6 +64,12 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
       { name: "jobs", description: "Job rows and their log streams — the console feed." },
       { name: "db", description: "Projection maintenance: rebuild and drift check." },
       { name: "check", description: "The corpus validator behind `corpus doc check`." },
+      {
+        name: "index",
+        description:
+          "The semantic index behind retrieval's second half (SPEC.md §9.1): its health, and the " +
+          "rebuild that re-queues it. Derived runtime state only — no files, no commits.",
+      },
       { name: "skills", description: "Skills as documents: loop-safety rollback." },
       { name: "events", description: "The SSE invalidation stream." },
       { name: "attachments", description: "Attachment bytes." },
