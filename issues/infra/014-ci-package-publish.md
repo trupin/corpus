@@ -33,11 +33,18 @@ Design:
   comment (create-or-update, not append) linking the artifact download + recording
   version, head sha, and size. Note artifact downloads require a logged-in GitHub
   user — acceptable, this is the repo's own workflow.
-- **Main trigger**: create a release per merge, auto-tagged `v<version>-main.<run_number>`
-  (collision-free while the manifest version is static), marked **prerelease**, with
-  the tarball as a release asset and the squash-commit subject as the release body.
-  The existing user-decided `v*` tag flow (version:check reads GITHUB_REF) remains
-  the path for real releases and is NOT touched.
+- **Releases are DELIBERATE, not per-merge** _(user amendment, 2026-07-31)_: no
+  workflow runs on main pushes. A release happens only when the orchestrator judges
+  a change significant (user-visible feature phases, notable milestones) or the user
+  asks explicitly. Mechanism: the existing `v*` tag flow — the orchestrator bumps
+  the version (`npm version <x.y.z> --workspaces --include-workspace-root`), tags,
+  pushes the tag; this issue builds the tag-triggered workflow that packages
+  (build → package:build → pack:check → npm pack) and creates the GitHub release
+  with the tarball attached and generated notes since the previous tag.
+  `version:check`'s GITHUB_REF guard already protects against tag/manifest mismatch.
+- **CLAUDE.md**: add the release-decision rule to the Git Workflow section (one
+  bullet: releases are orchestrator-judged or user-requested, via version bump +
+  `v*` tag; never automatic).
 - Permissions: workflow needs `contents: write` (releases) and `pull-requests: write`
   (sticky comment) — scope them per-job, not workflow-wide.
 - Keep the packaging job parallel to validate, but gate release creation on validate
@@ -45,7 +52,9 @@ Design:
 
 ## Acceptance Criteria
 - [ ] PR push: tarball artifact uploaded; sticky comment on the PR links it with version/sha/size; second push updates the same comment
-- [ ] Main merge: prerelease `v<version>-main.<run>` created with the tarball attached, only after validate succeeds
+- [ ] Main merges create NO release and run NO packaging publish (negative test: the merge of this issue's own PR)
+- [ ] Pushing a `v*` tag runs package + pack:check and creates the release with the installable tarball attached; a tag mismatching the manifest version fails before publishing (existing version:check behavior, verified not weakened)
+- [ ] CLAUDE.md carries the release-decision rule
 - [ ] `pack:check` failure fails the job before any publish/comment
 - [ ] Real `v*` tag release flow demonstrably unchanged
 - [ ] Installable proof in the log: download the PR artifact, `npm install -g <tgz>` into a scratch prefix, `corpus --version` works

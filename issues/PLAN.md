@@ -218,7 +218,8 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-031 | Focus close must not adopt the column under the resting pointer (signed rule) | todo | P2 | UI-005 |
 | CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
 | INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | todo | P1 | UI-016 |
-| INFRA-014 | CI packaging: tarball on every PR, prerelease on every main merge (user request) | todo | P1 | — |
+| INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | todo | P1 | — |
+| CLI-024 | SIGPIPE guard for piped output (eval finding) | todo | P2 | CLI-001 |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 
