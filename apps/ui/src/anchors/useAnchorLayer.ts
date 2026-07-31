@@ -3,7 +3,7 @@ import { useCreateThread, type RowNotice } from "@corpus/kit";
 import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useIsEditing } from "../editor/editingRegistry";
-import type { EditorSelection } from "../editor/selection";
+import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
 import {
   anchorDecorationPlugin,
@@ -70,9 +70,28 @@ export interface AnchorLayer {
   /** The column the document is in; the margin measures against it. */
   readonly mainRef: RefObject<HTMLDivElement>;
   readonly marginRef: RefObject<HTMLDivElement>;
+  /**
+   * The body's live editor, or `null` when the body is not one.
+   *
+   * Published because this layer is already the only thing that holds it, and
+   * the selection context menu (SPEC.md §11) has to act on the same instance —
+   * a second subscription to `DocEditor.onEditor` would be a second source of
+   * truth for one editor.
+   */
+  readonly editor: Editor | null;
   /** `DocEditor` props. */
   readonly onEditor: (editor: Editor | null) => void;
   readonly onComment: (selection: EditorSelection) => void;
+  /**
+   * The live selection as a comment action, captured now — SPEC.md §11's
+   * "Comment on selection", which is 💬's own act reached by right-click.
+   *
+   * Returns `null` when there is nothing to comment on: no editor, a foreign
+   * lock, or a selection with no quotable text. The range is read here rather
+   * than when the action runs, because opening the menu moves focus out of the
+   * body and the composer must anchor to the words that were right-clicked.
+   */
+  readonly captureComment: () => (() => void) | null;
   readonly onAnchors: (report: AnchorReport) => void;
   /** Anchored threads, in document order. */
   readonly anchored: readonly AnchoredThread[];
@@ -393,11 +412,11 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     setEditor(instance);
   }, []);
 
-  const onComment = useCallback(
-    (selection: EditorSelection) => {
+  const openDraft = useCallback(
+    (from: number, to: number) => {
       if (editor === null || locked) return;
       const live = traceOfDoc(editor.state.doc);
-      const anchor = selectorFromSelection(live, { from: selection.from, to: selection.to });
+      const anchor = selectorFromSelection(live, { from, to });
       if (anchor === null) {
         onNotify({
           tone: "error",
@@ -411,16 +430,48 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       let top = 80;
       let left = 0;
       try {
-        const coords = editor.view.coordsAtPos(selection.to);
+        const coords = editor.view.coordsAtPos(to);
         top = coords.bottom + 6;
         left = coords.left;
       } catch {
         // keep the fallbacks
       }
-      setDraft({ selection: anchor, range: { from: selection.from, to: selection.to }, top, left });
+      setDraft({ selection: anchor, range: { from, to }, top, left });
     },
     [editor, locked, onNotify],
   );
+
+  /**
+   * 💬 hands over the whole payload; only the two positions are used, because
+   * the selector is re-derived from the *live* document rather than from the
+   * body the toolbar serialized (a save may have landed in between).
+   */
+  const onComment = useCallback(
+    (selection: EditorSelection) => {
+      openDraft(selection.from, selection.to);
+    },
+    [openDraft],
+  );
+
+  const captureComment = useCallback((): (() => void) | null => {
+    if (editor === null || editor.isDestroyed || locked || !editable) return null;
+    const { from, to, empty } = editor.state.selection;
+    if (empty) return null;
+    const quoted = editor.state.doc.textBetween(from, to, "\n", "");
+    if (quoted.trim() === "") return null;
+    return () => {
+      if (editor.isDestroyed) return;
+      // The menu can sit open across an SSE-driven adoption of a new body, and
+      // the captured positions then point at other words — or, on a shrunken
+      // document, past its end (PR #13 review, MINOR). Quoting the wrong
+      // sentence is the one failure the anchor layer exists to prevent.
+      if (!rangeStillReads(editor.state.doc, from, to, quoted)) {
+        onNotify({ tone: "error", message: STALE_SELECTION_NOTICE });
+        return;
+      }
+      openDraft(from, to);
+    };
+  }, [editable, editor, locked, onNotify, openDraft]);
 
   const onAnchors = useCallback((incoming: AnchorReport): void => {
     setReport((current) => {
@@ -508,8 +559,10 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   return {
     mainRef,
     marginRef,
+    editor,
     onEditor,
     onComment,
+    captureComment,
     onAnchors,
     anchored,
     wholeDocument: detached.wholeDocument,

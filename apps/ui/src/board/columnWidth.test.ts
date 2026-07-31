@@ -3,6 +3,7 @@ import {
   DEFAULT_COLUMN_WIDTH,
   MAX_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
+  READING_WIDTH_CEILING,
   clampColumnWidth,
   readStoredWidth,
   renderedWidth,
@@ -71,13 +72,41 @@ describe("renderedWidth", () => {
 
   it("widens relative to the chosen base, never to a fixed 560", () => {
     // The specific regression sprint-016 TEST-450 names: a narrow column that
-    // jumps to 560, or a wide one that shrinks.
+    // jumps to 560.
     expect(renderedWidth(260, true, WIDE_VIEWPORT)).toBeGreaterThan(260);
-    expect(renderedWidth(260, true, WIDE_VIEWPORT)).toBeLessThan(560);
-    expect(renderedWidth(800, true, WIDE_VIEWPORT)).toBeGreaterThan(800);
+    expect(renderedWidth(260, true, WIDE_VIEWPORT)).toBeLessThan(READING_WIDTH_CEILING);
+    // 300 × (560 / 336) — the widening the e2e suite measures in the browser.
+    expect(renderedWidth(300, true, WIDE_VIEWPORT)).toBe(500);
   });
 
-  it("still clamps the widened width", () => {
-    expect(renderedWidth(MAX_COLUMN_WIDTH, true, WIDE_VIEWPORT)).toBe(MAX_COLUMN_WIDTH);
+  it("never widens past the content measure (UI-023)", () => {
+    // The reported bug: a column dragged wide opened a reader that was mostly
+    // gutter, because the ratio was clamped only by MAX_COLUMN_WIDTH.
+    expect(renderedWidth(800, true, WIDE_VIEWPORT)).toBe(READING_WIDTH_CEILING);
+    expect(renderedWidth(MAX_COLUMN_WIDTH, true, WIDE_VIEWPORT)).toBe(READING_WIDTH_CEILING);
+    // A base already at the measure opens there rather than past it.
+    expect(renderedWidth(READING_WIDTH_CEILING, true, WIDE_VIEWPORT)).toBe(READING_WIDTH_CEILING);
+    // The last base that still widens on its own terms, and the first that does not.
+    expect(renderedWidth(DEFAULT_COLUMN_WIDTH - 1, true, WIDE_VIEWPORT)).toBeLessThan(
+      READING_WIDTH_CEILING,
+    );
+    expect(renderedWidth(DEFAULT_COLUMN_WIDTH + 1, true, WIDE_VIEWPORT)).toBe(
+      READING_WIDTH_CEILING,
+    );
+  });
+
+  it("leaves the base width alone when the reader closes", () => {
+    // The ceiling is a property of *reading*, not of the column: a column the
+    // user dragged to 900 is still 900 wide with its list showing.
+    expect(renderedWidth(900, false, WIDE_VIEWPORT)).toBe(900);
+    expect(renderedWidth(MAX_COLUMN_WIDTH, false, WIDE_VIEWPORT)).toBe(MAX_COLUMN_WIDTH);
+  });
+
+  it("takes the narrower of the ceiling and the viewport clamp", () => {
+    // A viewport too narrow for the measure wins over it…
+    expect(renderedWidth(400, true, 500)).toBe(500 - 48);
+    // …and a viewport with room to spare leaves the ceiling in charge.
+    expect(renderedWidth(400, true, WIDE_VIEWPORT)).toBe(READING_WIDTH_CEILING);
+    expect(renderedWidth(900, true, 288)).toBe(MIN_COLUMN_WIDTH);
   });
 });

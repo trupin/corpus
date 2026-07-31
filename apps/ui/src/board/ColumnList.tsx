@@ -2,7 +2,7 @@ import type { DocRow } from "@corpus/contract";
 import { Row, type RowNotice } from "@corpus/kit";
 import { useEffect, useRef, type ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
-import { keepsNativeMenu, selectionText } from "../menu/nativeMenu";
+import { keepsNativeMenu } from "../menu/nativeMenu";
 import { RowMenuItems, subjectFromRow } from "../menu/RowMenuItems";
 import { usePluginRegistry } from "../plugins/registry";
 import { resolveListItem } from "../plugins/slots";
@@ -99,9 +99,11 @@ export function ColumnList({
       onContextMenu={(event) => {
         const element = (event.target as Element | null)?.closest?.<HTMLElement>("[data-row-doc]");
         const row = items.find((item) => item.id === element?.dataset["rowDoc"]);
-        // Off any row, on a selection, or inside a field: the browser's menu.
+        // Off any row, or inside a field: the browser's menu. A selection —
+        // here, or anywhere else on the page — does not suppress a row's own
+        // menu (SPEC.md §11, user report 2026-07-30).
         if (row === undefined) return;
-        if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+        if (keepsNativeMenu({ target: event.target })) return;
         // A plugin `ListItem` owns its own surface; v1 leaves it the native menu
         // rather than half-populating a core menu over it (sign-off item 4).
         if (resolveListItem(row.type) !== null) return;

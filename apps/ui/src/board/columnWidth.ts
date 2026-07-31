@@ -36,6 +36,39 @@ export const MAX_COLUMN_WIDTH = 960;
  */
 export const READING_WIDTH_RATIO = 560 / 336;
 
+/**
+ * How wide a reading column can usefully get: the reader's content measure.
+ *
+ * Widening past where the content stops buys nothing — it buys dead gutter, and
+ * a column dragged to 900 px opened a reader that was 900 px of chrome around
+ * 517 px of text (UI-023). So the widening has a ceiling, and the ceiling is the
+ * measure itself, derived from the stylesheet that draws it:
+ *
+ * - `.doc-body` (`@corpus/kit/markdown.css`) caps the body at `62ch` at 15 px in
+ *   `--serif`. Measured in Chromium against the shipped stylesheet, `62ch`
+ *   resolves to **517.2 px** (Iowan Old Style / Charter — the first two
+ *   families of `--serif` that a machine is likely to have). Every other
+ *   element in the reader that carries a measure — `.doc-title`, `.thread-card`,
+ *   `.backlinks`, the banners — is capped at the same `62ch`.
+ * - `.col .reader-scroll` (`Column.css`) pads it by `12px 14px`: **+28 px**.
+ * - `.col` is `border-box` with a 1 px border on each side: **+2 px**.
+ *
+ * 517.2 + 28 + 2 = **547.2 px** of content measure on this machine — and `ch` is
+ * font-dependent, so the same CSS lands between ~495 px (Palatino, Times) and
+ * ~601 px (Georgia) on machines where `--serif` falls through differently, and
+ * platforms with classic (non-overlay) scrollbars spend another 8 px of the
+ * column on `.reader-scroll`'s scrollbar.
+ *
+ * The prototype's own reading width, **560**, is the constant that sits in that
+ * band: it covers the reference-font measure with just enough slack for the
+ * scrollbar, and it is what `design/index.html` already calls a full reading
+ * column. Taking it as the ceiling is therefore both the honest measure and the
+ * mockup's number — which is why a default column still opens at exactly 560
+ * (`DEFAULT_COLUMN_WIDTH × READING_WIDTH_RATIO`, sprint-016 TEST-450) while a
+ * column dragged wider than the measure opens at the measure instead of past it.
+ */
+export const READING_WIDTH_CEILING = 560;
+
 /** How much one arrow-key press moves the edge. Matches the console's step. */
 export const COLUMN_RESIZE_STEP = 16;
 
@@ -68,7 +101,22 @@ export function readStoredWidth(
   return raw;
 }
 
-/** The width a column renders at: its base, widened while a reader is open. */
+/**
+ * The width a column renders at: its base, widened while a reader is open.
+ *
+ * Reading takes the **narrower** of the widened base and the content measure
+ * ({@link READING_WIDTH_CEILING}), so a column whose base is already at or past
+ * the measure opens the reader at the measure rather than adding gutter. The
+ * viewport clamp still applies underneath: on a laptop the smaller of the two
+ * wins, and the column never grows past the window (sprint-016 TEST-451).
+ *
+ * Closing the reader is untouched — a column returns to the base its view
+ * document carries, however wide the user dragged it.
+ */
 export function renderedWidth(base: number, reading: boolean, viewportWidth: number): number {
-  return clampColumnWidth(reading ? base * READING_WIDTH_RATIO : base, viewportWidth);
+  if (!reading) return clampColumnWidth(base, viewportWidth);
+  return Math.min(
+    clampColumnWidth(base * READING_WIDTH_RATIO, viewportWidth),
+    READING_WIDTH_CEILING,
+  );
 }

@@ -19,8 +19,37 @@
  * sentence.
  */
 
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+
 /** Characters of context on each side. Enough to disambiguate, short enough to store. */
 export const SELECTOR_CONTEXT = 32;
+
+/**
+ * What is said when the document moved between capturing a range and using it.
+ *
+ * The context menu (SPEC.md §11) captures a range when it opens and acts on it
+ * when an item is chosen; anything can land in between, including the agent's
+ * write arriving over SSE. Both users of that pattern say the same thing.
+ */
+export const STALE_SELECTION_NOTICE =
+  "The document changed under the menu — reselect and try again.";
+
+/**
+ * Whether `doc` still carries exactly `text` between `from` and `to`.
+ *
+ * The bounds are checked first: `textBetween` throws on a position past the end
+ * of the document, and a document can shrink under an open menu — a refusal is
+ * the answer there, not an exception (PR #13 review, MINOR).
+ */
+export function rangeStillReads(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number,
+  text: string,
+): boolean {
+  if (from < 0 || to > doc.content.size) return false;
+  return doc.textBetween(from, to, "\n", "") === text;
+}
 
 export interface TextQuoteSelector {
   readonly exact: string;

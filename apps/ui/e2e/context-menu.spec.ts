@@ -141,7 +141,128 @@ test.describe("the context menu", () => {
     await expect(menu.getByRole("menuitem")).toHaveCount(3);
   });
 
-  test("leaves the native menu alone on a selection, in a field, and off any item", async ({
+  /**
+   * UI-024, report 2. A selection anywhere on the page used to send every
+   * right-click to the browser's own menu — including the word the browser
+   * auto-selects under the right-click itself, which is why the failure read as
+   * "sometimes the row menu doesn't open".
+   *
+   * The selection is made in the page rather than by clicking, because a click
+   * on a row opens it. **Where** the right-click then lands is not incidental:
+   * Chromium clears a selection when the press falls outside it, so the only
+   * gesture that carries a live selection into `contextmenu` is a right-click
+   * *on the selected text* — which is exactly the reported case, the word under
+   * the cursor.
+   */
+  async function selectWithin(page: import("@playwright/test").Page, selector: string) {
+    await page.locator(selector).waitFor();
+    await page.evaluate((target) => {
+      const node = document.querySelector(target);
+      if (node === null) throw new Error(`no ${target}`);
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }, selector);
+    expect((await page.evaluate(() => getSelection()?.toString())) ?? "").not.toBe("");
+  }
+
+  test("opens a row's menu on the selected word under the cursor", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    const title = page.locator('.row[data-row-doc="doc_note"] .row-title');
+    await selectWithin(page, '.row[data-row-doc="doc_note"] .row-title');
+
+    await title.click({ button: "right" });
+
+    // The selection is still live at this point — the guard it used to trip.
+    expect(await page.evaluate(() => getSelection()?.toString())).toBe("Mortgage options");
+    await expect(page.getByRole("menu", { name: "Actions for Mortgage options" })).toBeVisible();
+  });
+
+  test("opens a column header's menu on its own selected title", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await selectWithin(page, ".col-head .col-title");
+    await page.locator(".col-head .col-title").click({ button: "right" });
+
+    await expect(page.getByRole("menu", { name: "List options for Inbox" })).toBeVisible();
+  });
+
+  /** UI-024, report 1: the document body's own selection menu. */
+  test("offers the selection's actions in the document body, Comment first", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    const paragraph = page.locator(".doc-body[contenteditable] p").first();
+    await expect(paragraph).toBeVisible();
+    await paragraph.selectText();
+
+    await paragraph.click({ button: "right" });
+
+    const menu = page.getByRole("menu", { name: "Actions for the selection" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem")).toHaveCount(4);
+    expect(
+      await menu
+        .getByRole("menuitem")
+        .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset["act"])),
+    ).toEqual(["comment", "copy", "cut", "paste"]);
+    // And the reader's own document menu did not open over it.
+    await expect(page.getByRole("menu", { name: "Actions for Mortgage options" })).toHaveCount(0);
+  });
+
+  test("comments on the selection through the same composer 💬 opens", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    const paragraph = page.locator(".doc-body[contenteditable] p").first();
+    await paragraph.selectText();
+    await paragraph.click({ button: "right" });
+    await page.getByRole("menu").locator('[data-act="comment"]').click();
+
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await expect(composer).toBeVisible();
+    // The quote is the text that was right-clicked — the §6 selector's `exact`.
+    await expect(composer.locator(".cm-quote")).toContainText("6.4% this week.");
+
+    await composer.getByLabel("Comment").fill("is that the 30-year?");
+    await composer.locator("[data-comment-send]").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
+    const posted = await corpus.of("POST", "/api/threads");
+    expect(posted[0]?.body).toMatchObject({
+      parent: "doc_note",
+      selector: { exact: "6.4% this week." },
+    });
+    // The §6 anchor the thread lands with is not asserted here: the stub answers
+    // `POST /api/threads` but pushes no invalidation, so the parent's highlight
+    // is a real-app fact — proved in the issue's E2E log against a real server,
+    // exactly as `anchors.spec.ts` documents for the rest of the anchor layer.
+  });
+
+  test("copies the selected text to the real clipboard", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    const paragraph = page.locator(".doc-body[contenteditable] p").first();
+    await paragraph.selectText();
+    await paragraph.click({ button: "right" });
+    await page.getByRole("menu").locator('[data-act="copy"]').click();
+
+    await expect
+      .poll(async () => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe("6.4% this week.");
+  });
+
+  test("leaves the native menu alone in the editor with nothing selected, in a field, and off any item", async ({
     page,
   }) => {
     await stubCorpus(page, [INBOX_VIEW, NOTE]);
