@@ -1,46 +1,53 @@
 name: Release
 
-# Tag-triggered. `npm version <x> --workspaces --include-workspace-root` writes
-# the version everywhere and creates the tag; pushing it publishes.
+# Tag-triggered, and *only* tag-triggered. Releases are a deliberate act
+# (CLAUDE.md, Git Workflow): the orchestrator or the user bumps the version with
+# `npm version <x.y.z> --workspaces --include-workspace-root`, which writes the
+# version everywhere and creates the tag, and pushing that tag runs this. Nothing
+# on `main` reaches this workflow — a merge is not a release.
 on:
   push:
     tags:
       - "v*"
 
-# `id-token: write` is what makes npm provenance possible: npm exchanges the
-# workflow's OIDC token for a signed attestation tying the tarball to this
-# commit of this public repository. `contents: read` is all the job needs.
-permissions:
-  contents: read
-  id-token: write
+# No workflow-level grant. The single job below asks for `contents: write`, which
+# is what creating a GitHub Release and uploading its asset requires.
+#
+# `id-token: write` used to live here for npm provenance. It is gone with the
+# publish step it existed for: the standing decision is that Corpus is not
+# published to npm — distribution is the repo-hosted tarball this workflow
+# attaches to the release. INFRA-014, sprint-020 Adjudication 1.
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          # Required for npm to authenticate and for provenance to be attached.
-          registry-url: https://registry.npmjs.org
       - run: npm ci
 
       # The tag/version guard. `check-versions.ts` reads GITHUB_REF: a
       # `refs/tags/v1.2.3` push against a manifest at any other version fails
-      # here, before anything is built and long before anything is published.
+      # here, before anything is built and long before a release exists.
       # It also fails if any workspace has drifted from the root version.
       - name: version singularity + tag guard
         run: npm run version:check
 
       # The full validate gate, same steps and same order as CI / validate. A
       # tag is not a licence to skip them: this is the last point where a broken
-      # release can still be stopped, and an unpublish is not a rollback.
+      # release can still be stopped. Everything below — packaging, and the
+      # release itself — runs only if every one of these passes, because they
+      # are ordered steps of one job (TEST-789: the release is gated on
+      # validation, not racing it).
       - run: npm run build
       - name: generated artifacts drift
         run: node --import tsx scripts/check-generated-artifacts.ts
@@ -56,27 +63,42 @@ jobs:
       - name: merged coverage gate (unit + e2e, >=90%)
         run: npm run coverage:merge
 
-      # Assemble the single published package and audit the tarball before it is
-      # sent anywhere. `pack:check` asserts in both directions, so an empty or
-      # half-staged package cannot slip past.
+      # Assemble the single publishable package and audit the tarball before it
+      # is attached to anything. `pack:check` asserts in both directions, so an
+      # empty or half-staged package cannot slip past into a release asset.
       - name: package build + tarball audit
         run: |
           npm run package:build
           npm run pack:check
 
-      # Provenance requires a public repository and a GitHub Actions run; both
-      # hold for github.com/trupin/corpus. The flag is unconditional on purpose:
-      # a release that silently drops provenance is worse than one that fails,
-      # because nothing downstream can tell the difference afterwards.
-      #
-      # Re-running this workflow on an existing tag fails cleanly rather than
-      # half-publishing: the version guard above passes (tag and manifest still
-      # agree), and `npm publish` then rejects the already-published version with
-      # E403 "cannot publish over the previously published versions". Nothing is
-      # mutated before that point — the tarball is built into a staging
-      # directory, not into the source tree.
-      - name: publish to npm with provenance
+      # `npm pack` runs from the staging directory and writes there, never into
+      # the repository root (the manifest is generated, so no workspace manifest
+      # is mutated by a pack). `--silent` puts the filename, and nothing else, on
+      # stdout.
+      - name: npm pack
+        id: pack
         working-directory: dist-package
+        run: |
+          tarball=$(npm pack --silent)
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "path=dist-package/$tarball" >> "$GITHUB_OUTPUT"
+          ls -l "$tarball"
+
+      # The terminal step. It creates a GitHub Release for the tag that
+      # triggered this run, attaches the installable tarball, and generates the
+      # notes since the previous tag. `gh` uses GITHUB_TOKEN with the job's
+      # `contents: write`; no third-party action, no registry, no secret beyond
+      # the one GitHub issues to the run.
+      #
+      # Re-running on an already-released tag fails cleanly rather than
+      # half-releasing: `gh release create` rejects an existing release for the
+      # tag, and nothing before this point has mutated anything outside the
+      # gitignored staging directory.
+      - name: create GitHub Release with the tarball attached
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.pack.outputs.path }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
