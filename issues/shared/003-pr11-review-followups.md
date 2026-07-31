@@ -163,6 +163,19 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - **§14 rider queued for the next spec sign-off round** (CONTRACT-025): one line —
   doctor may carry report-only warnings; pass/fail semantics unchanged.
 
+## Wave-1 harvest ledger additions (2026-07-31, sprint-018)
+
+- **§11 rider queued for the next sign-off round** (TEST-647, UI-020): the ⋯-menu
+  sentence enumerates "Archive, Delete, Resolve/Reopen" and now needs "Unarchive
+  (archived documents)".
+- **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
+  deliberate deferral): never a skill, no folder move, so harmless — but it is now
+  the only archive path off the POST route; consistency follow-up at triage.
+- **SERVER-033 honest-scope note**: the @hono/node-server advisory was Windows-only
+  and 1.19.17 already carried the identical traversal regex — the bump closes the
+  audit finding, not a live hole; v2 adds `Last-Modified` on static asset hits
+  (additive, no test asserted its absence). State plainly in the phase PR.
+
 ## Acceptance Criteria
 - [ ] Each finding above is either fixed, converted to a domain issue, or explicitly waived with a note here.
 
