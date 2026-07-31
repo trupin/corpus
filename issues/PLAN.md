@@ -225,7 +225,7 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| SHARED-006 | Spec pass: retrieval (signed; apply amendment at phase kickoff) | todo | P0 | — |
+| SHARED-006 | Spec pass: retrieval (signed; apply amendment at phase kickoff) | done | P0 | — |
 | CONTRACT-022 | Routes: GET /api/search + GET /api/docs/{id}/related (frozen shapes) | todo | P0 | SHARED-006 |
 | SERVER-040 | /api/search: lexical ranked retrieval with heading-path hits | todo | P1 | CONTRACT-022 |
 | SERVER-041 | /api/docs/:id/related: links-graph expansion | todo | P1 | CONTRACT-022 |
