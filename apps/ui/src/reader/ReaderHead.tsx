@@ -14,7 +14,8 @@ import type { NavEntry } from "./useNavStack";
  *
  * Shared by the column reader and focus mode, whose heads carry the same
  * actions; focus mode adds a close control and the esc hint and drops ⤢, since
- * it *is* full screen.
+ * it *is* full screen — and drops the back button until its excursion has depth
+ * (see {@link showsBack}).
  *
  * The `.save-chip` is now UI-006's `SaveChip`, which reads the editor's save
  * state from a context the reader host mounts. With no editor below it — a
@@ -66,6 +67,23 @@ export function backLabel(
   return `‹ ${title === "" ? previous.docId : title}`;
 }
 
+/**
+ * Whether this head carries a back button at all.
+ *
+ * In a column it always does: Back is the only way out of the reader and into
+ * the list. In focus mode ✕ Close already *is* that way out — at the bottom of
+ * the excursion `FocusMode`'s depth-0 effect turns Back into a second Close, so
+ * the head would render two adjacent controls performing one action (UI-022).
+ * The back button earns its place only once the stack has depth, where it is
+ * named after the previous document and navigates *within* the excursion.
+ *
+ * `design/index.html` models exactly this: `#focus-back` ships `hidden` and
+ * `openFocus` unhides it only when the focus stack has a previous entry.
+ */
+export function showsBack(variant: ReaderHeadProps["variant"], previous: NavEntry | null): boolean {
+  return variant !== "focus" || previous !== null;
+}
+
 export function ReaderHead(props: ReaderHeadProps): ReactElement {
   const { doc, previous, threads } = props;
   const [open, setOpen] = useState<"comments" | "menu" | null>(null);
@@ -77,16 +95,20 @@ export function ReaderHead(props: ReaderHeadProps): ReactElement {
   return (
     <div className={props.variant === "focus" ? "reader-head focus-head" : "reader-head"}>
       {props.leading ?? null}
-      <button
-        type="button"
-        className="back"
-        title={previous === null ? "Back to list" : "Back (shift-click, or ⇧esc: straight to list)"}
-        onClick={(event) => {
-          props.onBack(event.shiftKey);
-        }}
-      >
-        {backLabel(previous, previousTitle, props.listTitle)}
-      </button>
+      {showsBack(props.variant, previous) ? (
+        <button
+          type="button"
+          className="back"
+          title={
+            previous === null ? "Back to list" : "Back (shift-click, or ⇧esc: straight to list)"
+          }
+          onClick={(event) => {
+            props.onBack(event.shiftKey);
+          }}
+        >
+          {backLabel(previous, previousTitle, props.listTitle)}
+        </button>
+      ) : null}
       {props.hint === undefined ? null : <span className="focus-hint">{props.hint}</span>}
       <span className="reader-id">{props.docId} · git ✓</span>
       <SaveChip />

@@ -157,17 +157,49 @@ describe("FocusMode", () => {
     expect(document.querySelector(".col.reading .doc-title")).not.toBeNull();
   });
 
-  it("closes when Back goes past the bottom of its own stack", async () => {
+  /**
+   * UI-022: at the bottom of the excursion a back button would just close the
+   * overlay — the same act as the ✕ Close beside it. The prototype hides
+   * `#focus-back` until the stack has depth, and so does this head.
+   */
+  it("carries ✕ Close alone at the bottom of its own stack", async () => {
     const onClose = vi.fn();
     render(<Solo transport={wire()} onClose={onClose} />);
     await waitFor(() => {
       expect(titleOf(document)).toBe("Mortgage options");
     });
 
-    fireEvent.click(document.querySelector(".focus .back:not([data-close-focus])") as HTMLElement);
+    expect(document.querySelector(".focus [data-close-focus]")).not.toBeNull();
+    expect(document.querySelector(".focus .back:not([data-close-focus])")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("shows Back once the excursion has depth, and it navigates rather than closes", async () => {
+    const onClose = vi.fn();
+    render(<Solo transport={wire()} onClose={onClose} />);
     await waitFor(() => {
-      expect(onClose).toHaveBeenCalled();
+      expect(titleOf(document)).toBe("Mortgage options");
     });
+
+    fireEvent.click(document.querySelector(".focus .ref") as HTMLElement);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Rates");
+    });
+
+    const back = await waitFor(() => {
+      const button = document.querySelector<HTMLElement>(".focus .back:not([data-close-focus])");
+      expect(button?.textContent).toBe("‹ Mortgage options");
+      return button as HTMLElement;
+    });
+
+    fireEvent.click(back);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+    // Back within the excursion: the overlay is still open, and with the stack
+    // back at its bottom the button is gone again.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.querySelector(".focus .back:not([data-close-focus])")).toBeNull();
   });
 
   it("closes on ✕", async () => {
