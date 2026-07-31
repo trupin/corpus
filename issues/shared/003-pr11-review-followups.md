@@ -152,22 +152,18 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
   reference font, and the body sits ~13px off-center (15px left vs 27.8px right
   gutter). Runtime-measured ceiling would be exact; decide at triage whether the
   polish is worth the moving part.
-- **`esc` goes dead after closing full screen when the parked pointer hovers a
-  different column** (UI-022 eval LEDGER-1): §11's hover-follows-active rule adopts
-  the column under the resting pointer on overlay close, so keyboard-only flow loses
-  `esc` until the mouse moves. Needs a design decision (suppress pointer adoption on
-  programmatic close, or restore the origin column as active) — not a one-liner.
+- ~~esc dead after focus close~~ — **RULED 2026-07-31 (user): ignore the pointer
+  until it moves.** Filed as UI-031.
 - **UI-024 issue prose corrected in place** (eval LEDGER-3): a selection in a thread
   turn opens the reader's item menu (correct per §11), it does not fall through to
   the native menu as the "As built" note claimed; behavior right, text fixed.
-- **§14 rider queued for the next spec sign-off round** (CONTRACT-025): one line —
-  doctor may carry report-only warnings; pass/fail semantics unchanged.
+- ~~§14 doctor report-only warnings rider~~ — **SIGNED AND APPLIED 2026-07-31**
+  (user sign-off round; SPEC.md §14 updated).
 
 ## Wave-1 harvest ledger additions (2026-07-31, sprint-018)
 
-- **§11 rider queued for the next sign-off round** (TEST-647, UI-020): the ⋯-menu
-  sentence enumerates "Archive, Delete, Resolve/Reopen" and now needs "Unarchive
-  (archived documents)".
+- ~~§11 ⋯-menu Unarchive rider~~ — **SIGNED AND APPLIED 2026-07-31** (user sign-off
+  round; SPEC.md §11 updated).
 - **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
   deliberate deferral; independently confirmed as PR #14 review MINOR 1,
   Board.tsx:598-604): never a skill, no folder move, so harmless — but it is now the
@@ -196,12 +192,9 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - **`unindexable_files_truncated` is a server-only warning kind** (SERVER-038): legal
   under CONTRACT-025's open kind space; publishing it in `DOCTOR_WARNING_KINDS` is an
   optional CONTRACT rider at triage.
-- **In-column margin mode is unreachable** (UI-027 observation): `MARGIN_MIN_WIDTH`
-  1100 > `MAX_COLUMN_WIDTH` 960 (and UI-023 caps reading at 560), so
-  `.reader-scroll.with-margin` never fires in a column — "wide" is focus-only in
-  practice. §11 says "focus mode and wide layouts"; decide at triage whether that
-  text means the current behavior (then no change) or column-margin was intended
-  (then a numbers decision).
+- **In-column margin mode: RULED 2026-07-31 (user)** — focus-only is the intended
+  reading of §11; no numbers change. Remaining triage item: remove or annotate the
+  unreachable `.reader-scroll.with-margin` in-column CSS path.
 - **SERVER-033 honest-scope note**: the @hono/node-server advisory was Windows-only
   and 1.19.17 already carried the identical traversal regex — the bump closes the
   audit finding, not a live hole; v2 adds `Last-Modified` on static asset hits
