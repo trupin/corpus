@@ -11,8 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ONE_LINE_MAX_CHARS } from "../core/one-line.js";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { SNIPPET_CLOSE, SNIPPET_OPEN, queryDocs } from "../docs/index.js";
-import type { ProjectionDb } from "../projection/index.js";
-import { loadPassageTexts, searchCorpus, type PassageTextLoader } from "./search.js";
+import { loadChunkAddresses, type ChunkAddressLoader } from "../semantic/index.js";
+import { searchCorpus } from "./search.js";
 
 const NOW = Date.parse("2026-07-26T12:00:00Z");
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -25,7 +25,7 @@ const daysAhead = (days: number): string =>
 const search = (
   ws: Workspace,
   params: Readonly<Record<string, string>>,
-  loader?: PassageTextLoader,
+  loader?: ChunkAddressLoader,
 ): SearchHit[] =>
   searchCorpus(
     ws.db,
@@ -268,10 +268,10 @@ describe("heading paths", () => {
   });
 
   it("addresses a turn hit by its own heading, without reading any text", () => {
-    // The loader throws: a turn hit that needed a body would fail here rather
-    // than pass quietly.
-    const forbidden: PassageTextLoader = (_db, refs) => {
-      if (refs.length > 0) throw new Error(`turn hit read ${String(refs.length)} text(s)`);
+    // The loader throws: a turn hit that needed a chunk lookup would fail here
+    // rather than pass quietly.
+    const forbidden: ChunkAddressLoader = (_db, refs) => {
+      if (refs.length > 0) throw new Error(`turn hit read ${String(refs.length)} address(es)`);
       return new Map();
     };
     const hits = searchCorpus(
@@ -319,6 +319,54 @@ describe("heading paths", () => {
     // thread's title — and it can never quote a turn's text.
     expect(pathOf({ q: "preamble before" }, "th_anchored")).toBe("Escrow thread");
   });
+
+  // The PR #15 finding, closed. Phase A derived the address by locating
+  // `snippet()`'s window in the indexed text with `indexOf` and scanning the
+  // headings above it — so a document that repeats itself was always addressed
+  // by the *first* copy, whichever passage the ranking was about. Addressing
+  // the chunk that matched makes the class impossible. Run on a private
+  // workspace so the shared corpus, and therefore every byte-stability
+  // assertion above it, is untouched.
+  it("addresses a repeated passage by the section that actually matched", () => {
+    const repeated = createWorkspace("search-repeat");
+    try {
+      const boilerplate = "The thermocline reading is recorded once per shift.";
+      // Alpha carries the boilerplate buried in a long section; Omega carries
+      // it alone. The text is byte-identical, but Omega is genuinely the better
+      // passage — it is what that section is about, and bm25 says so.
+      const body =
+        `## Alpha\n\n${"Unrelated survey narrative filler. ".repeat(40)}\n\n${boilerplate}\n\n` +
+        `${"More unrelated survey narrative. ".repeat(40)}\n\n## Omega\n\n${boilerplate}\n`;
+      repeated.doc({ id: "doc_repeat", path: "data/docs/repeat.md", title: "Survey log", body });
+      repeated.reproject();
+
+      // The naive answer really is `Alpha`: the first occurrence of the
+      // boilerplate in the indexed text falls inside Alpha's chunk, which is
+      // all `indexOf` could ever have found.
+      const indexed = (
+        repeated.db.prepare("SELECT body FROM search WHERE ref = 'doc_repeat'").get() as {
+          body: string;
+        }
+      ).body;
+      const first = indexed.indexOf(boilerplate);
+      const alpha = repeated.db
+        .prepare("SELECT start_offset, end_offset FROM chunks WHERE heading_path = 'Alpha'")
+        .get() as { start_offset: number; end_offset: number };
+      expect(first).toBeGreaterThanOrEqual(alpha.start_offset);
+      expect(first).toBeLessThan(alpha.end_offset);
+      expect(indexed.lastIndexOf(boilerplate)).toBeGreaterThan(first);
+
+      const hits = searchCorpus(
+        repeated.db,
+        SearchQuerySchema.parse({ q: "thermocline reading" }),
+        NOW,
+      ).hits;
+      expect(hits.map((hit) => hit.id)).toEqual(["doc_repeat"]);
+      expect(hits[0]?.headingPath).toBe("Omega");
+    } finally {
+      repeated.close();
+    }
+  });
 });
 
 describe("frugality", () => {
@@ -337,9 +385,9 @@ describe("frugality", () => {
       big.reproject();
 
       const readRefs: string[] = [];
-      const counting: PassageTextLoader = (db, refs) => {
+      const counting: ChunkAddressLoader = (db, refs, match) => {
         readRefs.push(...refs);
-        return loadPassageTexts(db, refs);
+        return loadChunkAddresses(db, refs, match);
       };
       const matched = queryDocs(big.db, DocsQuerySchema.parse({ q: "escrow", limit: "200" }), NOW)
         .page.total;
@@ -352,7 +400,7 @@ describe("frugality", () => {
 
       expect(matched).toBe(60);
       expect(hits).toHaveLength(5);
-      // Five bodies read for five hits, out of sixty that matched.
+      // Five addresses looked up for five hits, out of sixty that matched.
       expect(readRefs).toHaveLength(5);
       expect(new Set(readRefs).size).toBe(5);
       expect(hits[0]?.headingPath).toMatch(/^Section \d{3}$/);
@@ -452,14 +500,23 @@ describe("query handling", () => {
   });
 });
 
-describe("loadPassageTexts", () => {
+describe("loadChunkAddresses", () => {
   it("reads nothing for no refs", () => {
-    const db: ProjectionDb = ws.db;
-    expect(loadPassageTexts(db, []).size).toBe(0);
+    expect(loadChunkAddresses(ws.db, [], "escrow").size).toBe(0);
   });
 
-  it("reads the indexed copy of the text, keyed by ref", () => {
-    const texts = loadPassageTexts(ws.db, ["doc_flat"]);
-    expect(texts.get("doc_flat")).toContain("no heading above it");
+  it("answers the best-matching chunk's heading path, keyed by ref", () => {
+    const both = loadChunkAddresses(ws.db, ["doc_flat", "doc_sectioned"], "escrow");
+    // The floor: a chunk with no heading above it records the document's title.
+    expect(both.get("doc_flat")).toBe("Flat note");
+    expect(both.get("doc_sectioned")).toBeDefined();
+    // And the address follows the query into the section that answers it.
+    expect(loadChunkAddresses(ws.db, ["doc_sectioned"], "quarterly").get("doc_sectioned")).toBe(
+      ["Mortgage", "Fees"].join(HEADING_PATH_SEPARATOR),
+    );
+  });
+
+  it("answers nothing for a ref whose chunks do not match", () => {
+    expect(loadChunkAddresses(ws.db, ["doc_flat"], "zzzznothingmatchesthis").size).toBe(0);
   });
 });

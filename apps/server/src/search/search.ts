@@ -19,7 +19,6 @@
 
 import type { ProjectionDb } from "../projection/index.js";
 import type { SearchHit, SearchQuery, SearchResults } from "@corpus/contract";
-import { HEADING_PATH_SEPARATOR } from "@corpus/contract";
 import { toOneLine } from "../core/one-line.js";
 import { TURN_SEPARATOR } from "../core/turns.js";
 import {
@@ -30,8 +29,9 @@ import {
   RELEVANCE_ORDER_BY,
   whereClause,
 } from "../docs/index.js";
-import { enclosingHeadings, hasMatch, locatePassage, unmarkSnippet } from "./heading-path.js";
-import type { UnmarkedSnippet } from "./heading-path.js";
+import { loadChunkAddresses, type ChunkAddressLoader } from "../semantic/index.js";
+import { hasMatch, unmarkSnippet } from "./snippet.js";
+import type { UnmarkedSnippet } from "./snippet.js";
 
 /**
  * One document per hit, ranked by its best-matching passage, and that passage
@@ -73,52 +73,6 @@ interface RawHit {
   readonly body_snippet: string;
 }
 
-/**
- * Reads the text a hit's address is derived from, keyed by `search.ref`.
- *
- * **The projection's own copy of the text is the source, not the file on disk**
- * — the decision SERVER-040 was required to make and state. Three reasons:
- *
- * 1. *It is the text the hit is about.* The snippet, the rank and the heading
- *    path then describe one string. Reading the file instead would address a
- *    passage in whatever the document says **now** while quoting the passage the
- *    index matched, and the two disagree during exactly the window that matters
- *    — the seconds after a save, when the watcher has not caught up.
- * 2. *It is already the right slice.* A thread's `kind='doc'` row indexes only
- *    its preamble (`projection/project-document.ts`), so the scan cannot walk
- *    into a turn and claim its heading; the file would need that boundary
- *    reconstructed here, in a second place.
- * 3. *It costs no filesystem.* No `readFileSync`, no frontmatter parse, no
- *    ENOENT race against a document deleted since it was projected — one
- *    indexed `ref IN (…)` lookup for the whole page.
- *
- * The cost is that the indexed copy is lossy by exactly two characters: U+0002
- * and U+0003, stripped at index time because they are `snippet()`'s own markup
- * (`docs/fts.ts`). Neither can appear in a heading's *name* after stripping, and
- * neither is a line terminator or a `#`, so heading structure is identical in
- * both copies. That is the whole of the difference, and it is invisible in an
- * address.
- *
- * Injectable so a test can count what a request actually read (the `readHead`
- * seam's precedent, SERVER-022).
- */
-export type PassageTextLoader = (
-  db: ProjectionDb,
-  refs: readonly string[],
-) => ReadonlyMap<string, string>;
-
-export const loadPassageTexts: PassageTextLoader = (db, refs) => {
-  const texts = new Map<string, string>();
-  if (refs.length === 0) return texts;
-  const placeholders = refs.map((_, index) => `@r${String(index)}`).join(", ");
-  const params = Object.fromEntries(refs.map((ref, index) => [`r${String(index)}`, ref]));
-  const rows = db
-    .prepare(`SELECT ref, body FROM search WHERE ref IN (${placeholders})`)
-    .all(params) as { ref: string; body: string }[];
-  for (const row of rows) texts.set(row.ref, row.body);
-  return texts;
-};
-
 /** A turn row's identity, as `search.ref` encodes it: `<threadId>#<ts>`. */
 const splitTurnRef = (ref: string): { readonly threadId: string; readonly ts: string } | null => {
   const hash = ref.indexOf("#");
@@ -155,15 +109,15 @@ function snippetOf(body: UnmarkedSnippet, title: UnmarkedSnippet): string {
 }
 
 /**
- * Runs ranked retrieval. Two statements at most beyond the ranking: one text
- * lookup for the document hits that matched in their body, one `turns` seek per
- * turn hit — both bounded by `limit`, never by the corpus.
+ * Runs ranked retrieval. Two statements at most beyond the ranking: one chunk
+ * address lookup for the document hits that matched in their body, one `turns`
+ * seek per turn hit — both bounded by `limit`, never by the corpus.
  */
 export function searchCorpus(
   db: ProjectionDb,
   query: SearchQuery,
   nowMs: number,
-  loadTexts: PassageTextLoader = loadPassageTexts,
+  loadAddresses: ChunkAddressLoader = loadChunkAddresses,
 ): SearchResults {
   const compiled = compileFilters(query, nowMs);
   // `q` is required and non-empty by the schema, so the only way here is a
@@ -181,18 +135,19 @@ export function searchCorpus(
     body: unmarkSnippet(row.body_snippet),
     title: unmarkSnippet(row.title_snippet),
   }));
-  // Only the hits whose address actually depends on the text: a turn's heading
+  // Only the hits whose address actually depends on a chunk: a turn's heading
   // comes from its `turns` row, and a document that matched in its title alone
   // is addressed by that title.
-  const texts = loadTexts(
+  const addresses = loadAddresses(
     db,
     found.filter((hit) => hit.row.kind !== "turn" && hasMatch(hit.body)).map((hit) => hit.row.ref),
+    compiled.match,
   );
 
   const hits = found.map((hit): SearchHit => ({
     id: hit.row.id,
     title: hit.row.title,
-    headingPath: headingPathFor(db, hit.row, hit.body, texts),
+    headingPath: headingPathFor(db, hit.row, addresses),
     snippet: snippetOf(hit.body, hit.title),
   }));
 
@@ -207,30 +162,29 @@ export function searchCorpus(
 /**
  * A hit's address, in the three shapes there are (SPEC.md §9.2):
  *
- * - **A turn hit** — the turn's own heading, from the `turns` row.
- * - **A document hit** — the enclosing headings of the matched passage, joined
- *   by the contract's `HEADING_PATH_SEPARATOR`, which is a *display* join: a
- *   heading may contain the separator, so a client prints this and never splits
- *   it.
+ * - **A turn hit** — the turn's own heading, from the `turns` row. §9.2 says
+ *   "for a hit in a thread turn, the turn's heading", full stop: a turn's
+ *   chunks nest under that heading, but the address a turn hit reports is the
+ *   heading itself, and it is built from the `ref` plus one row seek.
+ * - **A document hit** — the heading path of the chunk that matched, recorded
+ *   at projection time and joined by the contract's `HEADING_PATH_SEPARATOR`,
+ *   which is a *display* join: a heading may contain the separator, so a client
+ *   prints this and never splits it.
  * - **Anything with no heading above it** — the document's title, so a hit
  *   always has an address. This covers three real cases at once: a document
  *   whose body opens without a heading, a match in a *title* (there is no
- *   passage in the body to enclose), and a hit on a **thread's preamble** —
+ *   passage in the body to address), and a hit on a **thread's preamble** —
  *   the text a thread carries before its first turn, which conventionally has
- *   no headings at all. The preamble case is the one worth naming: it is
- *   neither a turn nor a sectioned document body, and it comes out right here
- *   without a special case because the indexed text for a thread's document row
- *   *is* its preamble, so the scan is bounded to it and finds nothing above.
+ *   no headings at all. The first case the chunker itself answers, since a
+ *   chunk with no heading above it records the document's title as its path;
+ *   the other two arrive here as a ref the address lookup found nothing for,
+ *   because there was no body match to find a chunk with.
  */
 function headingPathFor(
   db: ProjectionDb,
   row: RawHit,
-  body: UnmarkedSnippet,
-  texts: ReadonlyMap<string, string>,
+  addresses: ReadonlyMap<string, string>,
 ): string {
   if (row.kind === "turn") return turnHeading(db, row.ref) ?? row.title;
-  const text = texts.get(row.ref);
-  if (text === undefined) return row.title;
-  const headings = enclosingHeadings(text, locatePassage(text, body));
-  return headings.length === 0 ? row.title : headings.join(HEADING_PATH_SEPARATOR);
+  return addresses.get(row.ref) ?? row.title;
 }

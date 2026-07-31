@@ -6,15 +6,8 @@
  * This file is the surface: nothing outside `search/` imports its internals.
  */
 
-export {
-  enclosingHeadings,
-  hasMatch,
-  locatePassage,
-  primaryMatch,
-  unmarkSnippet,
-} from "./heading-path.js";
-export type { UnmarkedSnippet } from "./heading-path.js";
+export { hasMatch, unmarkSnippet } from "./snippet.js";
+export type { UnmarkedSnippet } from "./snippet.js";
 export { mountSearchRoutes } from "./routes.js";
 export type { SearchRoutesOptions } from "./routes.js";
-export { loadPassageTexts, searchCorpus } from "./search.js";
-export type { PassageTextLoader } from "./search.js";
+export { searchCorpus } from "./search.js";

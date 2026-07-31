@@ -27,6 +27,13 @@ import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
 import { parseThreadBody, type TurnAuthor } from "../core/turns.js";
 import { toIndexableText } from "../docs/fts.js";
+import {
+  deleteDocumentChunks,
+  insertChunkRows,
+  turnHeadingFor,
+  turnRef,
+  type ChunkablePassage,
+} from "../semantic/index.js";
 import type { ProjectionDb } from "./db.js";
 import { classifyPath, workspaceRelativePath, SKILL_FILENAME, type DocumentRoot } from "./roots.js";
 
@@ -231,6 +238,10 @@ function deleteRowsAtPath(db: ProjectionDb, path: string): void {
     ]) {
       db.prepare(sql).run(existing.id);
     }
+    // Chunk rows go the same way — but `chunk_embeddings` deliberately does
+    // not: it is keyed by content-addressed chunk id, so an edit that leaves a
+    // section's bytes alone leaves its embedding attached (§9.1).
+    deleteDocumentChunks(db, existing.id);
   }
   db.prepare("DELETE FROM documents WHERE path = ?").run(path);
   db.prepare("DELETE FROM file_hashes WHERE path = ?").run(path);
@@ -386,11 +397,35 @@ function insertAnchors(
   return ids.length;
 }
 
-function insertSearchRows(
-  db: ProjectionDb,
+/**
+ * The passages a document contributes to the two search structures: its own
+ * body — a thread's is only its preamble — followed by one per turn.
+ *
+ * Derived once and handed to both writers, because `search` and `chunks` must
+ * agree about what a passage *is*. They share the `ref` key, and a hit chosen
+ * by the first is addressed by the second (`semantic/address.ts`): a passage
+ * one of them split differently would be a hit nothing could name.
+ */
+function indexablePassages(
   fields: DocumentFields,
   body: string,
   thread: ThreadProjection | null,
+): ChunkablePassage[] {
+  return [
+    { ref: fields.id, kind: "doc", body: thread === null ? body : thread.preamble },
+    ...(thread?.turns ?? []).map((turn): ChunkablePassage => ({
+      ref: turnRef(fields.id, turn.ts),
+      kind: "turn",
+      body: turn.body,
+      rootHeading: turnHeadingFor(turn.author, turn.ts),
+    })),
+  ];
+}
+
+function insertSearchRows(
+  db: ProjectionDb,
+  fields: DocumentFields,
+  passages: readonly ChunkablePassage[],
 ): void {
   const insert = db.prepare(
     "INSERT INTO search (ref, kind, doc_id, title, body) VALUES (?, ?, ?, ?, ?)",
@@ -404,15 +439,14 @@ function insertSearchRows(
   // are the FTS layer's own markup, and text that carries them would come back
   // from `snippet()` marked as a hit the query never produced (SERVER-022
   // finding 11). The file itself keeps its bytes.
-  insert.run(
-    fields.id,
-    "doc",
-    fields.id,
-    toIndexableText(fields.title),
-    toIndexableText(thread === null ? body : thread.preamble),
-  );
-  for (const turn of thread?.turns ?? []) {
-    insert.run(`${fields.id}#${turn.ts}`, "turn", fields.id, "", toIndexableText(turn.body));
+  for (const passage of passages) {
+    insert.run(
+      passage.ref,
+      passage.kind,
+      fields.id,
+      passage.kind === "doc" ? toIndexableText(fields.title) : "",
+      toIndexableText(passage.body),
+    );
   }
 }
 
@@ -505,7 +539,9 @@ export function projectDocument(db: ProjectionDb, absPath: string): ProjectionOu
       parsed.body,
       ...(thread?.turns ?? []).map((turn) => turn.body),
     ]);
-    insertSearchRows(db, fields, parsed.body, thread);
+    const passages = indexablePassages(fields, parsed.body, thread);
+    insertSearchRows(db, fields, passages);
+    insertChunkRows(db, fields.id, fields.title, passages);
     recordFileHash(db, relativePath, content, size, mtimeMs);
     return {
       threads: thread === null ? 0 : 1,

@@ -5,7 +5,7 @@
 // previous `cache.db` intact and a leftover temp file, never a half-written
 // database — and the next rebuild cleans the leftovers.
 
-import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { silentLogger, type Logger } from "../logger.js";
 import {
@@ -16,6 +16,7 @@ import {
   removeDatabaseSidecars,
   CACHE_DB_FILE,
   type ProjectionConfig,
+  type ProjectionDb,
 } from "./db.js";
 import { populateFromFiles, type PopulateReport } from "./populate.js";
 import { META_REBUILT_AT } from "./schema.js";
@@ -37,6 +38,67 @@ export type RebuildReport = PopulateReport & {
   /** Where the rebuilt database ended up. */
   readonly path: string;
 };
+
+/**
+ * Copies `chunk_embeddings` out of the projection being replaced and into the
+ * one replacing it (SPEC.md §9.1; sprint-021, Open Conflict 5).
+ *
+ * Every other table a rebuild produces is re-derived from files in
+ * milliseconds. An embedding cannot be: it costs a model inference, and a
+ * corpus of any size is minutes of CPU. But a chunk's id is a hash of its
+ * document, heading path and content, so an embedding computed before the
+ * rebuild describes the identical chunk after it — `corpus db rebuild` on an
+ * unchanged corpus therefore queues nothing, which is what makes §2.2 rule 1's
+ * "restores everything else synchronously and queues semantic re-indexing" a
+ * cheap promise rather than an expensive one. `corpus index rebuild` stays the
+ * verb that genuinely discards.
+ *
+ * A rebuild builds into a fresh temp database and commits by renaming it over
+ * `cache.db`, so the temp database starts empty and the carry-over has to be
+ * explicit: ATTACH the previous file, copy, DETACH — all before the rename,
+ * inside the same connection that just wrote the rest.
+ *
+ * Every reason the previous database might not have the table is a no-op rather
+ * than an error: there may be no previous database at all (a first rebuild), it
+ * may predate the semantic index (any stamp below 9 — this is exactly the
+ * schema bump that introduced it), or it may be unreadable, in which case the
+ * rebuild's job — reconstructing from files — is unaffected and losing a cache
+ * is the correct cost.
+ *
+ * The count it returns is **logged, not reported**: {@link RebuildReport} is the
+ * wire shape of `POST /api/db/rebuild`, and the contract does not carry this
+ * field. It is also copied in `into` mode, where the previous database is not
+ * being replaced — the source is always the live `cache.db`, and carrying a
+ * cache into a database built beside it costs nothing and keeps one behaviour
+ * rather than two.
+ */
+function carryOverEmbeddings(db: ProjectionDb, previousPath: string): number {
+  if (!existsSync(previousPath)) return 0;
+  try {
+    db.sqlite.prepare("ATTACH DATABASE ? AS prev").run(previousPath);
+  } catch (error) {
+    db.logger.info("skipping embedding carry-over; previous projection unreadable", {
+      path: previousPath,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  }
+  try {
+    const table = db.sqlite
+      .prepare("SELECT name FROM prev.sqlite_master WHERE type = 'table' AND name = ?")
+      .get("chunk_embeddings");
+    if (table === undefined) return 0;
+    return db.sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO chunk_embeddings
+           (chunk_id, identity, dim, vec, state, failures, updated_ms)
+         SELECT chunk_id, identity, dim, vec, state, failures, updated_ms FROM prev.chunk_embeddings`,
+      )
+      .run().changes;
+  } finally {
+    db.sqlite.exec("DETACH DATABASE prev");
+  }
+}
 
 /** Removes leftovers from rebuilds that were interrupted before their rename. */
 function cleanStaleRebuilds(corpusDir: string, keep: string): void {
@@ -67,10 +129,12 @@ export function rebuild(config: ProjectionConfig, options: RebuildOptions = {}):
   removeDatabaseFiles(target);
 
   let report: PopulateReport;
+  let embeddingsCarriedOver: number;
   const sqlite = openProjectionDatabase(target, logger);
   const db = createProjectionDb(sqlite, config, target, logger);
   try {
     report = populateFromFiles(db);
+    embeddingsCarriedOver = carryOverEmbeddings(db, cacheDbPath(config));
     db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(
       META_REBUILT_AT,
       new Date().toISOString(),
@@ -82,13 +146,21 @@ export function rebuild(config: ProjectionConfig, options: RebuildOptions = {}):
   }
 
   if (options.into !== undefined) {
-    logger.info("projection rebuilt", { path: target, documents: report.documents });
+    logger.info("projection rebuilt", {
+      path: target,
+      documents: report.documents,
+      embeddingsCarriedOver,
+    });
     return { ...report, path: target };
   }
 
   const destination = cacheDbPath(config);
   renameSync(target, destination);
   removeDatabaseSidecars(destination);
-  logger.info("projection rebuilt", { path: destination, documents: report.documents });
+  logger.info("projection rebuilt", {
+    path: destination,
+    documents: report.documents,
+    embeddingsCarriedOver,
+  });
   return { ...report, path: destination };
 }
