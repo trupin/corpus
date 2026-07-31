@@ -59,6 +59,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus skill create`](#corpus-skill-create)
   - [`corpus skill rollback`](#corpus-skill-rollback)
 - [`corpus thread`](#corpus-thread)
+  - [`corpus thread create`](#corpus-thread-create)
   - [`corpus thread reopen`](#corpus-thread-reopen)
   - [`corpus thread reply`](#corpus-thread-reply)
   - [`corpus thread resolve`](#corpus-thread-resolve)
@@ -1487,9 +1488,68 @@ corpus skill rollback orchestrate --json
 
 ## `corpus thread`
 
-Read conversations, reply to them, and open or close them.
+Open conversations, read them, reply to them, and resolve them.
 
-A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `show` is the read §7's comment skill starts from — status, anchoring and every turn — `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, or standalone — `show` is the read §7's comment skill starts from (status, anchoring and every turn), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+
+### `corpus thread create`
+
+Open a thread on a selection, on a whole document, or standalone.
+
+The three creation shapes of SPEC.md §6, chosen by which flags are present. `--parent` with `--quote` anchors the thread to that text: the server derives the text-quote selector, writes the anchor entry into the parent's frontmatter and creates the thread file in **one** atomic mutation, so a highlight never points at a conversation that was not written. `--parent` alone comments on the whole document, and neither flag opens a standalone thread whose conversation is its own context. The first turn's body comes from `-m`, `--file` or stdin — the heredoc form the agent's skills use — and is mandatory: a thread with no first turn is not a thread (exit 2, no request). Bytes are passed through untouched.
+
+**The quote is not resolved here.** The CLI never reads the parent document and never computes the surrounding context: it sends the text you quoted, and the server matches it (SPEC.md §6). Matching is not a gate — a quote the document does not contain, or one it contains twice with nothing to tell the occurrences apart, still creates the thread and comes back with the `orphaned_anchor` warning appended to the printed line, because an orphaned anchor is a normal state of a living corpus rather than a rejected request. Pass `--prefix`/`--suffix` — the text immediately before and after the quote — to disambiguate a repeated quote. An unknown `--parent` is a `404` (exit 5), and a parent held by the other party's edit lock refuses an _anchored_ create with a `423`, since anchoring rewrites it (SPEC.md §7); a whole-document or standalone thread takes no lock. Prints the new thread's id, where it landed, and any enqueued event; `--json` emits the server's `{thread, anchorId, eventId, warnings}` response unchanged.
+
+```
+corpus thread create [flags]
+```
+
+**Flags**
+
+| Flag                             | Type   | Default | Description                                                                                                                                                                                                                                                                                                     |
+| -------------------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--parent <doc-id>`              | string | —       | Document being commented on, which may itself be a thread. Omit it for a standalone thread.                                                                                                                                                                                                                     |
+| `--quote <text>`                 | string | —       | The exact text in the parent to anchor the thread to, copied verbatim — nothing is trimmed or normalised, because the anchor resolves on those exact characters. Requires `--parent`; omit it to comment on the whole document.                                                                                 |
+| `--prefix <text>`                | string | —       | Text immediately preceding the quote, for disambiguation. Only needed when the quote occurs more than once in the parent.                                                                                                                                                                                       |
+| `--suffix <text>`                | string | —       | Text immediately following the quote, for disambiguation.                                                                                                                                                                                                                                                       |
+| `--title <text>`                 | string | —       | The thread's title. Defaults to one the server derives from the anchor quote, the parent's title, or the first turn.                                                                                                                                                                                            |
+| `--requests-agent <true\|false>` | string | —       | The composer's _ask agent_ toggle (SPEC.md §8). Omitted, the agent is woken only when the body carries an explicit `@agent` mention, a targeted `@<subagent>` mention or a `/<skill>` invocation. `true` requests it regardless; `false` is _note only_ and suppresses the wake even when the body mentions it. |
+| `-m, --message <text>`           | string | —       | The first turn's body as a literal string. Wins over --file and stdin.                                                                                                                                                                                                                                          |
+| `--file <path>`                  | string | —       | Read the first turn's body from this file. Wins over stdin; the file is only read.                                                                                                                                                                                                                              |
+
+**Examples**
+
+An anchored comment: the highlight lands in `doc_a1b2c3`'s frontmatter and the mention wakes the agent.
+
+```
+corpus thread create --parent doc_a1b2c3 --quote "assume a 30-year fixed at 6.1%" -m "@agent is this still right?"
+```
+
+A whole-document thread from the agent, body as a heredoc, committed with `agent` as the git author.
+
+```
+corpus thread create --parent doc_a1b2c3 --from agent <<'EOF'
+I split this into two notes; the second needs a title.
+EOF
+```
+
+Disambiguating a quote that appears more than once, with the text around it. Body from stdin.
+
+```
+corpus thread create --parent doc_a1b2c3 --quote "6.1%" --prefix "fixed at " --suffix " which"
+```
+
+A standalone thread — no parent, no anchor — that asks the agent directly.
+
+```
+corpus thread create -m "Where did the Q3 numbers end up?" --requests-agent true
+```
+
+One JSON value — `{"thread":{…},"anchorId":"anc_k4f7","eventId":null,"warnings":[]}` — for a caller that needs the ids.
+
+```
+corpus thread create --parent doc_a1b2c3 --quote "6.1%" --file question.md --json
+```
 
 ### `corpus thread reopen`
 
