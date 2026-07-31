@@ -222,6 +222,49 @@ function createServer() {
     ),
   );
 
+  app.openapi(contractRoutes.searchCorpus, (c) => {
+    const { q, limit, type, includeArchived } = c.req.valid("query");
+    return c.json(
+      {
+        hits: [
+          {
+            id: frontmatter.id,
+            title: frontmatter.title,
+            headingPath: `${frontmatter.title} › Rates`,
+            // The handler echoes the parsed query so the test can assert what
+            // the typed client actually put on the wire.
+            snippet: `${q}|limit=${String(limit)}|type=${type ?? "any"}|archived=${String(
+              includeArchived ?? false,
+            )}`,
+          },
+        ],
+      },
+      200,
+    );
+  });
+
+  app.openapi(contractRoutes.relatedDocs, (c) => {
+    const { id } = c.req.valid("param");
+    if (id !== frontmatter.id) {
+      return c.json({ code: "not_found" as const, message: `No document ${id}.` }, 404);
+    }
+    const { limit, includeArchived } = c.req.valid("query");
+    return c.json(
+      {
+        related: [
+          {
+            id: "doc_b2c3d4",
+            title: "Lender comparison",
+            excerpt: `limit=${String(limit)}|archived=${String(includeArchived ?? false)}`,
+            relation: "linked" as const,
+          },
+        ],
+        semanticIndex: "current" as const,
+      },
+      200,
+    );
+  });
+
   return app;
 }
 
@@ -330,6 +373,57 @@ describe("the typed collection query", () => {
     });
     expect(error).toBeUndefined();
     expect(data?.items).toHaveLength(1);
+  });
+});
+
+/**
+ * CONTRACT-022. Both retrieval verbs reach the agent through this client and
+ * nothing else (SPEC.md §2.2 rule 4), so the generated types are the contract
+ * `corpus search` and `corpus doc related` compile against — including the
+ * absences: a hit has no body to read, and the search query has no `sort`,
+ * `offset` or `pinned` to pass.
+ */
+describe("the typed retrieval calls", () => {
+  it("searches with the query and the shared filters, and gets frugal hits back", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/search", {
+      params: { query: { q: "rates", limit: 3, type: "note", includeArchived: true } },
+    });
+    expect(error).toBeUndefined();
+    const hit = data?.hits[0];
+    expect(hit?.snippet).toBe("rates|limit=3|type=note|archived=true");
+    expect(hit?.headingPath).toBe("Mortgage options › Rates");
+    expect(Object.keys(hit ?? {})).toEqual(["id", "title", "headingPath", "snippet"]);
+  });
+
+  it("defaults the cap when the call passes only a query", async () => {
+    const { data } = await createTestClient().api.GET("/api/search", {
+      params: { query: { q: "rates" } },
+    });
+    expect(data?.hits[0]?.snippet).toBe("rates|limit=10|type=any|archived=false");
+    expect(data?.semanticIndex).toBeUndefined();
+  });
+
+  it("expands from a known document through the path parameter", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/docs/{id}/related", {
+      params: { path: { id: "doc_a1b2c3" }, query: { includeArchived: true } },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.related[0]).toEqual({
+      id: "doc_b2c3d4",
+      title: "Lender comparison",
+      excerpt: "limit=10|archived=true",
+      relation: "linked",
+    });
+    expect(data?.semanticIndex).toBe("current");
+  });
+
+  it("surfaces an unknown document as the shipped typed 404", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/docs/{id}/related", {
+      params: { path: { id: "doc_nope" }, query: {} },
+    });
+    expect(data).toBeUndefined();
+    expect(isApiError(error)).toBe(true);
+    expect(error?.code).toBe("not_found");
   });
 });
 

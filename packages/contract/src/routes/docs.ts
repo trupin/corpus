@@ -11,6 +11,7 @@ import {
 } from "../schemas/doc.js";
 import { DocumentIdSchema } from "../schemas/id.js";
 import { DocListSchema, DocsQuerySchema } from "../schemas/query.js";
+import { RelatedDocsSchema, RelatedQuerySchema } from "../schemas/retrieval.js";
 import {
   FORBIDDEN_RESPONSE,
   jsonContent,
@@ -55,6 +56,41 @@ export const getDoc = createRoute({
   request: { params: DocIdParamSchema },
   responses: {
     200: jsonContent(DocSchema, "Frontmatter, body, and this document's anchors."),
+    400: VALIDATION_RESPONSE,
+    401: UNAUTHORIZED_RESPONSE,
+    404: NOT_FOUND_RESPONSE,
+  },
+});
+
+/**
+ * Expansion from a known document (SPEC.md §7 Retrieval discipline, §9.2 —
+ * SHARED-006 Edit 8, signed 2026-07-30): the other half of retrieval, and the
+ * endpoint behind `corpus doc related`.
+ *
+ * Registered next to `getDoc` in `routes/index.ts`. No static-versus-parameter
+ * competition arises — `/api/docs/{id}/related` is a `GET` one segment deeper
+ * than `/api/docs/{id}`, and the three routes sharing its depth
+ * (`move`, `archive`, `unarchive`) are `POST`s — so its placement is for
+ * readability rather than for routing.
+ */
+export const relatedDocs = createRoute({
+  method: "get",
+  path: "/api/docs/{id}/related",
+  tags: ["search"],
+  summary: "Documents most related to this one",
+  description:
+    "The documents most related to this one, ranked, in retrieval's frugal shape: id, title, a " +
+    "one-line excerpt, and **why** each is related — never bodies. Retrieval Phase A relates " +
+    "through the reference graph only (outgoing `[[refs]]` and backlinks, via the projection's " +
+    "`links` table), so every row is `linked`; from Phase B, semantically similar documents join " +
+    "the same ranked list and rows are labelled `linked` / `similar` / `both` without the shape " +
+    "moving (SPEC.md §9.1). Archived documents are excluded unless `includeArchived` lifts the " +
+    "default, like every list. A reference to a document that does not exist is not a row: the " +
+    "`links` table stores dangling references on purpose, and an id the caller cannot read is " +
+    "worse than no row. `404` when the document itself is unknown. Read-only; no acting party.",
+  request: { params: DocIdParamSchema, query: RelatedQuerySchema },
+  responses: {
+    200: jsonContent(RelatedDocsSchema, "Related documents, most related first."),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,

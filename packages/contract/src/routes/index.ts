@@ -9,6 +9,7 @@ import {
   getDoc,
   listDocs,
   moveDoc,
+  relatedDocs,
   unarchiveDoc,
   updateDoc,
 } from "./docs.js";
@@ -29,6 +30,7 @@ import {
   reapStale,
   resumeQueue,
 } from "./queue.js";
+import { searchCorpus } from "./search.js";
 import { createSkill, rollbackSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
 import { deleteTurn, getThread, markThreadSeen, reopenThread, resolveThread } from "./threads.js";
@@ -49,6 +51,7 @@ export * from "./locks.js";
 export * from "./queue.js";
 export * from "./dual-media.js";
 export * from "./responses.js";
+export * from "./search.js";
 export * from "./skills.js";
 export * from "./thread-create.js";
 export * from "./threads.js";
@@ -68,6 +71,12 @@ export * from "./turn-append.js";
  * failure mode is silent misrouting, so `index.test.ts` holds the order rather
  * than a comment alone. It also fixes the path order of the generated document,
  * which is what makes `openapi.json` byte-stable across runs.
+ *
+ * `relatedDocs` sits next to `getDoc` for readability rather than for routing:
+ * it is a `GET` one segment deeper than `/api/docs/{id}`, and the three routes
+ * at its depth (`move`, `archive`, `unarchive`) are `POST`s, so no static
+ * segment competes with `{id}` here. `searchCorpus` follows the document group,
+ * where §9.2 lists it.
  */
 export const contractRoutes = {
   getHealth,
@@ -75,11 +84,14 @@ export const contractRoutes = {
   listDocs,
   createDoc,
   getDoc,
+  relatedDocs,
   updateDoc,
   deleteDoc,
   moveDoc,
   archiveDoc,
   unarchiveDoc,
+
+  searchCorpus,
 
   getTree,
   capture,

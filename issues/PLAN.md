@@ -216,6 +216,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | todo | P1 | — |
 | UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | todo | P2 | UI-005 |
 | UI-031 | Focus close must not adopt the column under the resting pointer (signed rule) | todo | P2 | UI-005 |
+| CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 

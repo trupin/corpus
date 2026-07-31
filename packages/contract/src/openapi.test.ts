@@ -5,6 +5,14 @@ import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
 import { ERROR_CODES } from "./schemas/error.js";
 import { QUEUE_EVENT_STATUSES } from "./schemas/queue.js";
+import { docFilterShape } from "./schemas/query.js";
+import {
+  HEADING_PATH_SEPARATOR,
+  RELATIONS,
+  RETRIEVAL_DEFAULT_LIMIT,
+  RETRIEVAL_MAX_LIMIT,
+  SEMANTIC_INDEX_STATES,
+} from "./schemas/retrieval.js";
 import { SKILL_NAME_MAX_LENGTH, SKILL_NAME_PATTERN } from "./schemas/skill.js";
 import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
@@ -417,6 +425,241 @@ describe("GET /api/docs parameter grammar", () => {
   it("documents that relevance without a query is a 400, not a silent fallback", () => {
     expect(parameter("/api/docs", "get", "sort")?.description).toContain("`400`");
     expect(operation("/api/docs", "get").responses?.["400"]).toBeDefined();
+  });
+});
+
+/**
+ * CONTRACT-022: SPEC.md §7's two retrieval verbs, as SHARED-006 Edits 7 and 8
+ * spell them. Two things are being pinned here beyond the shapes: that the
+ * filter grammar has **one** definition site (so `/api/search` cannot drift from
+ * `/api/docs`), and that the frozen seams Retrieval Phase B needs — the
+ * semantic-state field and the full relation vocabulary — are published now and
+ * carry nothing behind them.
+ */
+describe("the retrieval surface (CONTRACT-022)", () => {
+  const SEARCH_PATH = "/api/search";
+  const RELATED_PATH = "/api/docs/{id}/related";
+
+  it("adds exactly two endpoints to the inventory", () => {
+    expect(ENDPOINT_INVENTORY).toContain("GET /api/search");
+    expect(ENDPOINT_INVENTORY).toContain("GET /api/docs/{id}/related");
+  });
+
+  it.each([SEARCH_PATH, RELATED_PATH])("requires the workspace bearer token on %s", (path) => {
+    expect(operation(path, "get").security).toBeUndefined();
+    expect(operation(path, "get").responses?.["401"]).toBeDefined();
+  });
+
+  it("declares only the codes a search can produce", () => {
+    expect(Object.keys(operation(SEARCH_PATH, "get").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+    ]);
+  });
+
+  it("declares only the codes a related read can produce, 404 among them", () => {
+    expect(Object.keys(operation(RELATED_PATH, "get").responses ?? {})).toEqual([
+      "200",
+      "400",
+      "401",
+      "404",
+    ]);
+  });
+
+  it("reuses the shipped not-found envelope rather than inventing one for a read", () => {
+    const content = operation(RELATED_PATH, "get").responses?.["404"]?.content ?? {};
+    const schema = (content["application/json"] as { schema?: SchemaNode } | undefined)?.schema;
+    expect(schema?.$ref).toBe("#/components/schemas/NotFoundError");
+  });
+
+  /** Read-only, so neither declares the acting party nor takes a body (SPEC.md §9.2). */
+  it.each([SEARCH_PATH, RELATED_PATH])("names no acting party on %s", (path) => {
+    const op = operation(path, "get");
+    expect(op.requestBody).toBeUndefined();
+    expect(op.parameters?.some((entry) => entry.in === "header")).toBe(false);
+    expect(op.description).toContain("Read-only; no acting party.");
+  });
+
+  describe("the search parameter grammar", () => {
+    /** Edit 7's signed parameter string, in its signed order. */
+    const SIGNED_PARAMS = [
+      "q",
+      "type",
+      "status",
+      "includeArchived",
+      "tag",
+      "folder",
+      "parent",
+      "references",
+      "agent",
+      "author",
+      "since",
+      "due",
+      "stale",
+      "unread",
+      "needs",
+      "limit",
+    ];
+
+    it("declares exactly the signed parameter list, in order", () => {
+      const params = operation(SEARCH_PATH, "get").parameters ?? [];
+      expect(params.map((entry) => entry.name)).toEqual(SIGNED_PARAMS);
+      for (const entry of params) expect(entry.in).toBe("query");
+    });
+
+    it("makes the query required and everything else optional", () => {
+      expect(parameter(SEARCH_PATH, "get", "q")?.required).toBe(true);
+      for (const entry of operation(SEARCH_PATH, "get").parameters ?? []) {
+        if (entry.name !== "q") expect(entry.required).toBe(false);
+      }
+    });
+
+    it.each(["pinned", "sort", "offset"])("declares no %s", (name) => {
+      expect(parameter(SEARCH_PATH, "get", name)).toBeUndefined();
+    });
+
+    it("says what happens to an undeclared parameter, since silence is the alternative", () => {
+      expect(operation(SEARCH_PATH, "get").description).toContain(
+        "`pinned`, `sort` and `offset` are not among them and are ignored if sent",
+      );
+    });
+
+    /**
+     * The one-definition-site proof. Both parameter sets are compared **through
+     * the shared shape**, so adding a filter to `docFilterShape` extends this
+     * assertion to both endpoints without an edit — and a filter added to only
+     * one of them fails here rather than at some consumer months later.
+     */
+    it.each(Object.keys(docFilterShape))(
+      "publishes %s identically on the collection query and on search",
+      (name) => {
+        const onDocs = parameter("/api/docs", "get", name);
+        const onSearch = parameter(SEARCH_PATH, "get", name);
+        expect(onDocs).toBeDefined();
+        expect(onSearch).toEqual(onDocs);
+      },
+    );
+
+    it("shares every filter and nothing but the filters", () => {
+      const searchNames = (operation(SEARCH_PATH, "get").parameters ?? []).map(
+        (entry) => entry.name,
+      );
+      expect(searchNames).toEqual(["q", ...Object.keys(docFilterShape), "limit"]);
+    });
+
+    it("caps results below the list convention, and says why there is no paging", () => {
+      const limit = parameter(SEARCH_PATH, "get", "limit");
+      expect(limit?.schema?.default).toBe(RETRIEVAL_DEFAULT_LIMIT);
+      expect(limit?.schema).toMatchObject({
+        type: "integer",
+        minimum: 1,
+        maximum: RETRIEVAL_MAX_LIMIT,
+      });
+      expect(limit?.description).toContain("There is no `offset`");
+    });
+  });
+
+  describe("the hit shape", () => {
+    it("is an address and a line of context — and the absences are the contract", () => {
+      const hit = componentSchemas?.["SearchHit"];
+      expect(Object.keys(hit?.properties ?? {})).toEqual(["id", "title", "headingPath", "snippet"]);
+      expect(hit?.required).toEqual(["id", "title", "headingPath", "snippet"]);
+    });
+
+    it("says `never a body` where a client author reads it", () => {
+      expect(operation(SEARCH_PATH, "get").description).toContain("never a body");
+      expect(componentSchemas?.["SearchHit"]?.properties?.["snippet"]?.description).toContain(
+        "never the passage",
+      );
+    });
+
+    it("publishes the heading path's separator and its display-join rule", () => {
+      const description = componentSchemas?.["SearchHit"]?.properties?.["headingPath"]?.description;
+      expect(description).toContain(HEADING_PATH_SEPARATOR);
+      expect(description).toContain("print it, never split it");
+      expect(description).toContain("turn's heading");
+    });
+  });
+
+  describe("Phase B's two frozen seams", () => {
+    it.each(["SearchResults", "RelatedDocs"])(
+      "carries the optional semantic state on %s",
+      (name) => {
+        const envelope = componentSchemas?.[name];
+        expect(Object.keys(envelope?.properties ?? {})).toContain("semanticIndex");
+        expect(envelope?.required).not.toContain("semanticIndex");
+        expect(envelope?.properties?.["semanticIndex"]?.enum).toEqual([...SEMANTIC_INDEX_STATES]);
+      },
+    );
+
+    it("documents the field as Phase B's seam and tells consumers not to switch on it", () => {
+      const description =
+        componentSchemas?.["SearchResults"]?.properties?.["semanticIndex"]?.description;
+      expect(description).toContain("Retrieval Phase B's seam, inert in Phase A");
+      expect(description).toContain("Treat **any** value other than `current` as degraded");
+    });
+
+    it("publishes the whole relation vocabulary though Phase A emits one of it", () => {
+      const relation = componentSchemas?.["RelatedDoc"]?.properties?.["relation"];
+      expect(relation?.enum).toEqual([...RELATIONS]);
+      expect(relation?.description).toContain("Retrieval Phase A emits only `linked`");
+    });
+
+    it("pages neither envelope, so no `page` meta describes a ranking", () => {
+      expect(Object.keys(componentSchemas?.["SearchResults"]?.properties ?? {})).toEqual([
+        "hits",
+        "semanticIndex",
+      ]);
+      expect(Object.keys(componentSchemas?.["RelatedDocs"]?.properties ?? {})).toEqual([
+        "related",
+        "semanticIndex",
+      ]);
+    });
+  });
+
+  describe("the related read", () => {
+    it("takes the document id in the path and two query parameters", () => {
+      const params = operation(RELATED_PATH, "get").parameters ?? [];
+      expect(params.map((entry) => entry.name)).toEqual(["id", "limit", "includeArchived"]);
+      expect(params[0]?.in).toBe("path");
+      expect(params[0]?.required).toBe(true);
+      expect(params[0]?.schema?.type).toBe("string");
+      for (const entry of params.slice(1)) {
+        expect(entry.in).toBe("query");
+        expect(entry.required).toBe(false);
+      }
+    });
+
+    it("shares ranked search's cap", () => {
+      expect(parameter(RELATED_PATH, "get", "limit")?.schema?.default).toBe(
+        RETRIEVAL_DEFAULT_LIMIT,
+      );
+      expect(parameter(RELATED_PATH, "get", "limit")?.schema).toMatchObject({
+        maximum: RETRIEVAL_MAX_LIMIT,
+      });
+    });
+
+    it("applies the archived default every list applies", () => {
+      const param = parameter(RELATED_PATH, "get", "includeArchived");
+      expect(param?.schema?.type).toBe("boolean");
+      expect(param?.schema?.default).toBeUndefined();
+      expect(param?.description).toContain("union");
+      expect(operation(RELATED_PATH, "get").description).toContain(
+        "Archived documents are excluded unless `includeArchived` lifts the default",
+      );
+    });
+
+    it("is a row of id, title, one line and why", () => {
+      const row = componentSchemas?.["RelatedDoc"];
+      expect(Object.keys(row?.properties ?? {})).toEqual(["id", "title", "excerpt", "relation"]);
+      expect(row?.required).toEqual(["id", "title", "excerpt", "relation"]);
+      expect(row?.properties?.["excerpt"]?.description).toContain("never enough to read it");
+    });
+
+    it("says a dangling reference is not a row, since `links` stores them on purpose", () => {
+      expect(operation(RELATED_PATH, "get").description).toContain("stores dangling references");
+    });
   });
 });
 

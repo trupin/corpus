@@ -15,6 +15,14 @@
  * through the CLI and the server. §9.2 now lists it in its own bullet (signed
  * off and applied 2026-07-30, PR #12 review — SHARED-003's sign-off record).
  *
+ * `GET /api/search` and `GET /api/docs/{id}/related` (CONTRACT-022) are §7
+ * Retrieval discipline's two agent-facing verbs, and §9.2 lists both in their
+ * own bullets — SHARED-006 Edits 7 and 8, signed 2026-07-30 and applied as this
+ * phase branch's kickoff commit. Nothing in this repository parses `SPEC.md`, so
+ * the agreement between those bullets and these two entries is review
+ * discipline: the parameter lists were walked item by item against the applied
+ * text in CONTRACT-022's E2E log, the way the amendments above were.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -34,11 +42,14 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/docs",
   "POST /api/docs",
   "GET /api/docs/{id}",
+  "GET /api/docs/{id}/related",
   "PUT /api/docs/{id}",
   "DELETE /api/docs/{id}",
   "POST /api/docs/{id}/move",
   "POST /api/docs/{id}/archive",
   "POST /api/docs/{id}/unarchive",
+
+  "GET /api/search",
 
   "GET /api/tree",
   "POST /api/capture",

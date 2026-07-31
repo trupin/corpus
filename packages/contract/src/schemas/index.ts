@@ -55,6 +55,7 @@ export * from "./lock.js";
 export * from "./pagination.js";
 export * from "./query.js";
 export * from "./queue.js";
+export * from "./retrieval.js";
 export * from "./skill.js";
 export * from "./sse.js";
 export * from "./thread.js";

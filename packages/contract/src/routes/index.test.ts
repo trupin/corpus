@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { CONTRACT_VERSION } from "../openapi.js";
 import { FormSchema, validateFormAnswer } from "../schemas/form.js";
+import { HEADING_PATH_SEPARATOR } from "../schemas/retrieval.js";
 import { ALL_CONTRACT_ROUTES, contractRoutes } from "./index.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./inventory.js";
 import {
@@ -246,6 +247,45 @@ function createStubApp() {
     ),
   );
   app.openapi(contractRoutes.unarchiveDoc, (c) => c.json({ doc, warnings: [] }, 200));
+
+  // The two retrieval reads. Their handlers echo the parsed query back through
+  // the frugal shapes, which is what proves a request reaches *them*:
+  // `/api/docs/{id}/related` must not be swallowed by `/api/docs/{id}`, and
+  // `/api/search` answers hits rather than rows.
+  app.openapi(contractRoutes.relatedDocs, (c) => {
+    const { id } = c.req.valid("param");
+    const { limit, includeArchived } = c.req.valid("query");
+    return c.json(
+      {
+        related: [
+          {
+            id: "doc_b2c3d4",
+            title: `related to ${id}`,
+            excerpt: `limit=${String(limit)} includeArchived=${String(includeArchived ?? false)}`,
+            relation: "linked" as const,
+          },
+        ],
+      },
+      200,
+    );
+  });
+  app.openapi(contractRoutes.searchCorpus, (c) => {
+    const { q, limit, type } = c.req.valid("query");
+    return c.json(
+      {
+        hits: [
+          {
+            id: "doc_a1b2c3",
+            title: "Mortgage options",
+            headingPath: `Mortgage options${HEADING_PATH_SEPARATOR}Rates`,
+            snippet: `${q} · limit=${String(limit)} · type=${type ?? "any"}`,
+          },
+        ],
+        semanticIndex: "current" as const,
+      },
+      200,
+    );
+  });
 
   app.openapi(contractRoutes.getTree, (c) =>
     c.json(
@@ -597,6 +637,64 @@ describe("routes mounted on a Hono app", () => {
     const app = createStubApp();
     expect((await app.request("/api/docs/doc_a1b2c3")).status).toBe(200);
     expect((await app.request("/api/docs/not-an-id")).status).toBe(400);
+  });
+
+  /**
+   * The routing half of CONTRACT-022: `/api/docs/{id}/related` sits one segment
+   * below `/api/docs/{id}`, so a real request has to prove it reaches the
+   * related handler rather than the document read. Asserted by the *answer*,
+   * since both routes are `200`s on the same id.
+   */
+  it("routes /api/docs/{id}/related to the related handler, not the document read", async () => {
+    const app = createStubApp();
+    const response = await app.request("/api/docs/doc_a1b2c3/related");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { related: { title: string; excerpt: string }[] };
+    expect(body.related[0]?.title).toBe("related to doc_a1b2c3");
+    expect(body.related[0]?.excerpt).toBe("limit=10 includeArchived=false");
+
+    const read = (await (await app.request("/api/docs/doc_a1b2c3")).json()) as {
+      body: string;
+    };
+    expect(read.body).toBe("Body.");
+  });
+
+  it("applies the retrieval caps and rejects a limit past the maximum", async () => {
+    const app = createStubApp();
+    expect((await app.request("/api/docs/doc_a1b2c3/related?limit=50")).status).toBe(200);
+    expect((await app.request("/api/docs/doc_a1b2c3/related?limit=51")).status).toBe(400);
+    expect((await app.request("/api/search?q=rates&limit=51")).status).toBe(400);
+    expect((await app.request("/api/search?q=rates&limit=0")).status).toBe(400);
+  });
+
+  it("refuses a search with no query and answers hits with one", async () => {
+    const app = createStubApp();
+    expect((await app.request("/api/search")).status).toBe(400);
+    expect((await app.request("/api/search?q=")).status).toBe(400);
+
+    const response = await app.request("/api/search?q=rates&type=note");
+    expect(response.status).toBe(200);
+    const results = (await response.json()) as {
+      hits: { snippet: string; headingPath: string }[];
+    };
+    expect(results.hits[0]?.snippet).toBe("rates · limit=10 · type=note");
+    expect(results.hits[0]?.headingPath).toBe(`Mortgage options${HEADING_PATH_SEPARATOR}Rates`);
+  });
+
+  /**
+   * Queries are tolerant by policy (`schemas/index.ts`), so the three
+   * `GET /api/docs` parameters `/api/search` does not declare are **stripped,
+   * not rejected**. Written down as a real request because "an agent that
+   * passes it and gets silence deserves to have been told" — the telling is the
+   * route description, and this is the behaviour it describes.
+   */
+  it("ignores pinned, sort and offset on a search rather than rejecting them", async () => {
+    const response = await createStubApp().request(
+      "/api/search?q=rates&sort=relevance&offset=10&pinned=true",
+    );
+    expect(response.status).toBe(200);
+    const results = (await response.json()) as { hits: { snippet: string }[] };
+    expect(results.hits[0]?.snippet).toBe("rates · limit=10 · type=any");
   });
 
   it("defaults the acting party to the user when the header is absent", async () => {
