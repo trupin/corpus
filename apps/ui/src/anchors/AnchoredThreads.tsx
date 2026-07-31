@@ -69,7 +69,7 @@ export function AnchorChips({
 }
 
 export interface MarginColumnProps extends AnchorThreadsProps {
-  readonly innerRef: React.RefObject<HTMLDivElement>;
+  readonly innerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 /**

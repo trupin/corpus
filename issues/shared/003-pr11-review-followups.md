@@ -32,7 +32,7 @@ triage into domain issues — do not let them silently expire.
 
 **MINOR**
 - (5, infra) `scripts/pack-audit.ts:40` — no positive `REQUIRED_PACK_ENTRIES` entry for the todos plugin; if `npm run build` stops invoking `build-plugins.ts`, the tarball ships without the §15 reference plugin while `pack:check` stays green.
-- (6, infra) `.github/workflows/release.yml:78-82` — only the absent `NPM_TOKEN` bars a `v*` tag from publishing; an `environment:` with required reviewers would make the no-publish decision structural. (User decision on record: no publish, ever — consider deleting the publish job instead.)
+- ~~(6, infra) `.github/workflows/release.yml:78-82` — only the absent `NPM_TOKEN` bars a `v*` tag from publishing; an `environment:` with required reviewers would make the no-publish decision structural. (User decision on record: no publish, ever — consider deleting the publish job instead.)~~ **CLOSED by INFRA-014** (sprint-020 Adjudication 1): the `publish` job is repurposed into a `release` job — `npm publish` and `id-token: write` are gone, and the tag flow now attaches the tarball to a GitHub Release. Nothing in `.github/` can publish.
 - (7, infra) `eslint.config.js:116-120` — core→plugin import ban enumerates only relative depths 3–5; shallower/deeper files slip through; boundary test probes depth 3 only.
 - (8, kit) `packages/kit/src/client/createCorpusClient.ts:655-660` — `pluginRequest` claims plugin-namespace-only but only strips leading slashes; `../../` escapes with the bearer token attached. Reject dot segments or soften the claim.
 - (9, kit) `packages/kit/src/query/usePluginQuery.ts:26-30` — a query string in the path breaks cache-key matching against `broadcastInvalidate`, silently losing SSE invalidation; docblock promises "byte-identical" keys without that precondition.
@@ -239,3 +239,23 @@ _n/a until triage._
   (deterministic, tested); the code comment slightly overstates — comment fix only.
 - (server, MINOR→SERVER-042) repeated-passage first-occurrence addressing — note
   added to SERVER-042's design; superseded by chunk addressing.
+
+## Phase 7b eval notes (2026-07-31)
+
+- Process: three E2E logs phrase the model datum as "Model: opus" vs the contract's
+  literal; UI-031's drill reused UI-030's ports rather than its assigned row (no
+  collision). Both cosmetic; noted for sprint-021's wording.
+- INFRA-014 TEST-819/820/821 are orchestrator-live on the batch PR/merge (sticky
+  comment, no-release negative, artifact-download install).
+
+## PR #16 review residue (2026-07-31, verdict APPROVE)
+
+- Finding 1 (release.yml tag interpolation) FIXED pre-merge (env indirection).
+- Finding 3 (+2 folded) → INFRA-015 (checker overflow/spawn fail-closed + advisory
+  text sanitization).
+- Finding 4: fork PRs' read-only GITHUB_TOKEN makes the sticky comment fail red
+  (non-required job) — revisit if/when outside contributions start.
+- Finding 5 (spec, needs user sign-off): one-sentence §11 rider making UI-031's
+  signed pointer rule spec text ("the active column ignores a stationary pointer
+  across programmatic closes; hover re-adopts on real movement") — queue for the
+  next sign-off round.

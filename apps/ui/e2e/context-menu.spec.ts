@@ -424,4 +424,58 @@ test.describe("the context menu", () => {
     await expect(menu.locator('[data-act="delete"]')).toBeVisible();
     await expect(menu.locator('[data-act="open"]')).toHaveCount(0);
   });
+
+  /**
+   * UI-030, and the first e2e case that has ever touched the ⋯ *button*
+   * popover — every other test in this file goes through the right-click frame.
+   *
+   * The evaluator's finding was that this menu was decorative from the
+   * keyboard: `↓` and Tab both left `document.activeElement` on the ⋯ trigger,
+   * so `↵` re-toggled the trigger and no action could be run without a mouse.
+   * Nothing below touches the pointer after the reader is open.
+   */
+  test("the ⋯ popover is operable from the keyboard alone", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await expect(page.locator(".reader")).toBeVisible();
+
+    const dots = page.locator(".reader [data-doc-menu]");
+    await dots.focus();
+    /*
+     * Space, not ↵, and deliberately: with no menu open the scope is still the
+     * board's, so `rows.open` matches `↵` on the document listener and
+     * `preventDefault()` cancels the focused button's activation before it can
+     * open anything. Nothing binds Space, so the trigger's own default action
+     * survives. That preemption is the board's, not this sheet's — UI-030 is
+     * about what the keyboard can do *inside* the popover, which is everything
+     * below — and it is reported as its own finding.
+     */
+    await page.keyboard.press("Space");
+
+    const menu = page.getByRole("menu", { name: "Document actions" });
+    await expect(menu).toBeVisible();
+    // Focus is in the sheet, not still on the trigger — the finding itself.
+    await expect(dots).not.toBeFocused();
+
+    // esc first: it closes, runs nothing, and gives the trigger its focus back.
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.locator('[data-act="review"]')).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(dots).toBeFocused();
+    expect((await corpus.doc("doc_note"))?.status).toBe("open");
+
+    // Then the drill from the issue: open, arrow to Archive, ↵ — it runs.
+    await page.keyboard.press("Space");
+    await expect(menu).toBeVisible();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.locator('[data-act="archive"]')).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect.poll(async () => (await corpus.doc("doc_note"))?.status).toBe("archived");
+    await expect(menu).toHaveCount(0);
+  });
 });

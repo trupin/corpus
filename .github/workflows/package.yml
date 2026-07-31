@@ -1,0 +1,145 @@
+name: Package
+
+# Pull requests only. This is the structural half of "a merge is not a release"
+# (INFRA-014): packaging runs here on PRs and in `release.yml` on `v*` tags, and
+# nowhere else. `CI / validate` keeps running on `main` pushes as it always has —
+# what must never run on a main push is packaging or a release, and no trigger
+# block in this repository lets it.
+on:
+  pull_request:
+
+# Deliberately NOT a required status check: `validate` is the only required
+# context (repo ruleset), and renaming or adding to that set would make every
+# open PR unmergeable until the ruleset is edited. This job runs in parallel with
+# `CI / validate` and reports through its sticky comment, which is why the
+# comment matters — a silent failure here blocks nothing.
+concurrency:
+  group: package-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tarball:
+    runs-on: ubuntu-latest
+    # Per-job and minimal: read the code, write one comment. No `contents: write`
+    # here — this job creates no release and mutates no ref.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # `package:build` bundles from built output, so the workspace build comes
+      # first. `pack:check` audits the tarball `npm pack` would produce, in both
+      # directions — every artifact the installed tool resolves must be present,
+      # and no development state may leak.
+      #
+      # Ordering here is the guard, not decoration: a `pack:check` failure exits
+      # non-zero and the job stops. Nothing below runs — no artifact is uploaded
+      # and no comment is posted or updated. None of the steps below carry
+      # `if: always()`, so that ordering cannot quietly stop being true.
+      - run: npm run build
+      - name: package build + tarball audit
+        run: |
+          npm run package:build
+          npm run pack:check
+
+      # `npm pack` runs from the staging directory and writes the tarball there,
+      # never into the repository root. `--silent` puts the filename, and nothing
+      # else, on stdout.
+      - name: npm pack
+        id: pack
+        working-directory: dist-package
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          tarball=$(npm pack --silent)
+          version=$(node -p "require('./package.json').version")
+          bytes=$(stat -c %s "$tarball")
+          {
+            echo "tarball=$tarball"
+            echo "path=dist-package/$tarball"
+            echo "version=$version"
+            echo "bytes=$bytes"
+            echo "kb=$((bytes / 1024))"
+            echo "sha_short=${HEAD_SHA:0:7}"
+          } >> "$GITHUB_OUTPUT"
+          ls -l "$tarball"
+
+      # Belt and braces for the rule the pack step encodes: the repository root
+      # is `/*.tgz`-gitignored, so a tarball written there would be invisible to
+      # `git status`. Assert it directly instead.
+      - name: no tarball at the repository root
+        run: |
+          if compgen -G "*.tgz" > /dev/null; then
+            echo "npm pack wrote into the repository root:" >&2
+            ls -l ./*.tgz >&2
+            exit 1
+          fi
+          git status --porcelain
+
+      # `if-no-files-found: error` on purpose: a packaging job that uploads
+      # nothing has failed, whatever the exit codes above said. The name carries
+      # the version and the short head sha so two runs on the same PR are
+      # distinguishable in the run's artifact list.
+      #
+      # 14 days of retention: long enough to outlive a normal PR review cycle
+      # (and any re-review after a force-push), short enough that a busy PR does
+      # not leave a month of ~1 MB tarballs behind. The repository default is 90,
+      # which is storage spent on artifacts nobody will download.
+      - name: upload tarball artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ steps.pack.outputs.version }}-${{ steps.pack.outputs.sha_short }}
+          path: ${{ steps.pack.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # One sticky comment, created once and edited in place thereafter —
+      # `--edit-last --create-if-none` on the run's own `GITHUB_TOKEN` identity,
+      # so no third-party action is involved. This is the only workflow in the
+      # repository that comments as that identity; if another is ever added,
+      # `--edit-last` (which has no marker filter) would need one.
+      #
+      # Because this step is last and unconditional, a failed run leaves the
+      # previous run's comment in place. That comment names the head sha it was
+      # built from, so a stale one is identifiable at a glance: its sha is not
+      # the PR's head.
+      - name: sticky packaging comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          VERSION: ${{ steps.pack.outputs.version }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+          BYTES: ${{ steps.pack.outputs.bytes }}
+          KB: ${{ steps.pack.outputs.kb }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Written to the runner temp, not the checkout: the job must not leave
+          # a stray file in the working tree it just asserted was clean.
+          cat > "$RUNNER_TEMP/comment.md" <<EOF
+          ### 📦 Packaged CLI
+
+          | | |
+          | --- | --- |
+          | Tarball | \`$TARBALL\` |
+          | Version | \`$VERSION\` |
+          | Head commit | \`$SHA\` |
+          | Size | $KB KB ($BYTES bytes) |
+          | Download | [$TARBALL]($ARTIFACT_URL) |
+
+          Install it with \`npm install -g <path-to-tgz>\`. Downloading a workflow
+          artifact requires being signed in to GitHub.
+
+          <sub>Built by [this run]($RUN_URL) after \`pack:check\` passed. Updated in
+          place on every push — this comment always describes the head commit named
+          above.</sub>
+          EOF
+          gh pr comment "$PR" --edit-last --create-if-none --body-file "$RUNNER_TEMP/comment.md"

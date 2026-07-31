@@ -2,8 +2,10 @@
 import type { RowNotice } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
 import {
@@ -50,6 +52,60 @@ function mount(options: MountOptions = {}): ReaderTransport {
     { wrapper: harness.Wrapper },
   );
   return wire;
+}
+
+/**
+ * The sheet as the reader actually mounts it: behind a ⋯ button that toggles it
+ * (`ReaderHead.tsx`). Focus behaviour is only meaningful with the trigger in the
+ * tree — "focus never left the trigger" was the whole finding (UI-030), and
+ * "focus goes back to it" is half the fix.
+ */
+function mountWithTrigger(options: MountOptions = {}): ReaderTransport {
+  const doc = options.doc ?? NOTE;
+  const wire = options.wire ?? readerTransport({ docs: [doc] });
+  const harness = createCorpusTestHarness({ fetch: wire.fetch });
+  function Head(): ReactElement {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button
+          type="button"
+          data-doc-menu
+          onClick={() => {
+            setOpen((was) => !was);
+          }}
+        >
+          ⋯
+        </button>
+        {open ? (
+          <DocMenu
+            doc={doc}
+            threadStatus={options.threadStatus ?? null}
+            onClose={() => {
+              setOpen(false);
+              options.onClose?.();
+            }}
+            onGone={options.onGone ?? (() => undefined)}
+            onNotify={options.onNotify ?? (() => undefined)}
+          />
+        ) : null}
+      </>
+    );
+  }
+  render(<Head />, { wrapper: harness.Wrapper });
+  return wire;
+}
+
+function trigger(): HTMLElement {
+  return screen.getByRole("button", { name: "⋯" });
+}
+
+/** The `data-act` of whatever has focus, or `null` when it is not an item. */
+function focusedAction(): string | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return null;
+  if (active.closest("[data-dm-pop]") === null) return null;
+  return active.dataset["act"] ?? null;
 }
 
 function itemLabels(): string[] {
@@ -368,6 +424,133 @@ describe("DocMenu", () => {
     mount({ onClose });
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * UI-030. The sheet shipped with `role="menuitem"` buttons focus never reached:
+ * `↓` and Tab both left `activeElement` on the ⋯ trigger, so `↵` re-toggled the
+ * trigger and no action on this menu could be run from the keyboard at all.
+ * These assert on `activeElement` — the exact thing that was stuck.
+ */
+describe("the ⋯ sheet from the keyboard", () => {
+  it("takes focus when it opens, instead of leaving it on the ⋯ button", async () => {
+    const user = userEvent.setup();
+    mountWithTrigger();
+    await user.click(trigger());
+
+    expect(document.activeElement).toBe(screen.getByRole("menu", { name: "Document actions" }));
+    expect(document.activeElement).not.toBe(trigger());
+  });
+
+  it("moves focus onto the items with the arrows, Home and End", async () => {
+    const user = userEvent.setup();
+    mountWithTrigger();
+    await user.click(trigger());
+
+    await user.keyboard("{ArrowDown}");
+    expect(focusedAction()).toBe("review");
+    await user.keyboard("{ArrowDown}");
+    expect(focusedAction()).toBe("archive");
+    await user.keyboard("{End}");
+    expect(focusedAction()).toBe("delete");
+    await user.keyboard("{Home}");
+    expect(focusedAction()).toBe("review");
+    // Clamped, not wrapped: ↑ at the top is not a jump to Delete…
+    await user.keyboard("{ArrowUp}");
+    expect(focusedAction()).toBe("review");
+  });
+
+  it.each([
+    ["↵", "{Enter}"],
+    ["space", "[Space]"],
+  ])("runs the focused action on %s, once, and closes", async (_key, press) => {
+    const user = userEvent.setup();
+    const wire = mountWithTrigger();
+    await user.click(trigger());
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(focusedAction()).toBe("archive");
+
+    await user.keyboard(press);
+
+    await waitFor(() => {
+      expect(wire.of("POST", "/api/docs/doc_m/archive")).toHaveLength(1);
+    });
+    // A second activation path bolted on top of the button's native one is the
+    // obvious wrong fix, and it would show up here as two.
+    expect(wire.calls.filter((call) => call.method !== "GET")).toHaveLength(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  /**
+   * The frame implements no `↵` of its own — a focused `<button>` activates
+   * through its default action, and a handler on top of that would be a second
+   * activation path that fires twice. What the frame must do is stay out of the
+   * way, and the raw event is what proves it: unprevented, nothing run by the
+   * keydown itself, and exactly one write once the browser's own click lands.
+   *
+   * The numpad key only reaches this way: `user-event` has no `NumpadEnter` in
+   * its keyboard map, while a browser reports it as `key: "Enter"` with that
+   * code — which is the case worth asserting, since a `code`-based handler would
+   * miss it.
+   */
+  it.each(["Enter", "NumpadEnter"])(
+    "leaves activation to the item itself on code %s",
+    async (code) => {
+      const user = userEvent.setup();
+      const wire = mountWithTrigger();
+      await user.click(trigger());
+      await user.keyboard("{ArrowDown}{ArrowDown}");
+      const item = document.activeElement;
+      expect(focusedAction()).toBe("archive");
+
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        code,
+        bubbles: true,
+        cancelable: true,
+      });
+      item?.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(wire.calls.filter((call) => call.method !== "GET")).toHaveLength(0);
+      expect(screen.getByRole("menu")).toBeDefined();
+
+      // The default action the browser performs on an unprevented ↵: a click on
+      // the focused button. jsdom does not synthesise it, so it is fired.
+      fireEvent.click(item as HTMLElement);
+      await waitFor(() => {
+        expect(wire.of("POST", "/api/docs/doc_m/archive")).toHaveLength(1);
+      });
+      expect(wire.calls.filter((call) => call.method !== "GET")).toHaveLength(1);
+      expect(screen.queryByRole("menu")).toBeNull();
+    },
+  );
+
+  it("closes on esc without running anything, and hands focus back to ⋯", async () => {
+    const user = userEvent.setup();
+    const wire = mountWithTrigger();
+    await user.click(trigger());
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(focusedAction()).toBe("archive");
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(wire.calls.filter((call) => call.method !== "GET")).toHaveLength(0);
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it("dismisses on Tab rather than walking the keyboard out behind the sheet", async () => {
+    const user = userEvent.setup();
+    mountWithTrigger();
+    await user.click(trigger());
+
+    await user.keyboard("{Tab}");
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger());
   });
 });
 

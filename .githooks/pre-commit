@@ -18,6 +18,16 @@ step() {
   fi
 }
 
+# First, ahead of the expensive build: the supply-chain gate (INFRA-013) needs no
+# build output, costs one registry round-trip (~0.7s), and a dependency advisory
+# is not something the next five minutes of compiling and testing can change. It
+# still goes through step() like everything else, so a developer sees every
+# failing check in one run rather than stopping at the first.
+# `--tolerate-unreachable-registry` is passed HERE and nowhere else: a dead
+# network warns loudly and lets the commit through, while CI runs the identical
+# command without the flag and fails closed. The flag governs only the
+# registry-unreachable branch — advisories block a commit with or without it.
+step "npm audit"       node --import tsx scripts/check-audit.ts --tolerate-unreachable-registry
 step "build"           npm run --silent build
 step "eslint"          npm run --silent lint
 step "prettier check"  npm run --silent format:check

@@ -206,6 +206,7 @@ All acceptance criteria met · tests pass, no regressions · combined coverage �
 9. **Stage specifically** — `git add <path>`; never `git add -A` blindly.
 10. **Never force push, amend published commits, or `reset --hard`** unless explicitly asked.
 11. **Never skip hooks** (`--no-verify`).
+12. **Releases are deliberate, never automatic** _(user decision, 2026-07-31)_. Merging to `main` produces no release: `CI / validate` runs, and nothing packages or publishes. A release happens only when the orchestrator judges a change significant (a user-visible feature phase, a notable milestone) or the user asks for one — the mechanism is a version bump (`npm version <x.y.z> --workspaces --include-workspace-root`) followed by pushing the resulting `v*` tag, which is the sole trigger of `.github/workflows/release.yml`. That workflow runs the full validate gate, then `package:build` → `pack:check` → `npm pack`, and creates a GitHub Release with the tarball attached and generated notes. It does **not** publish to npm — distribution is the repo-hosted tarball. Every PR gets the same tarball as a workflow artifact (`.github/workflows/package.yml`), linked from a single sticky comment, so an installable build is always available without cutting a release.
 
 Domain agents must never run `git commit`, `git push`, `git checkout`, `git reset`, `git stash`, or any state-changing git command.
 

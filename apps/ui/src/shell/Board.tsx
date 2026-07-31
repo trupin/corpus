@@ -266,6 +266,28 @@ export function Board(): ReactElement {
   const openDoc = useDoc(openInActive ?? undefined);
 
   /**
+   * The one way out of focus mode — every close goes through here (UI-031).
+   *
+   * Closing is programmatic and the pointer is wherever the user left it, which
+   * is usually not over the column focus was entered from. Unmounting the
+   * full-viewport overlay makes the column under that resting cursor fire
+   * `mouseover`, and `activate` would hand it the board on the strength of a
+   * gesture nobody made — leaving `esc` dead over a column with no reader open
+   * (the UI-022 finding: seven dead presses, surviving a reload, cured by
+   * wiggling the mouse). So the close arms the keyboard's latch on the column
+   * that is already active; the next real `mousemove` releases it and
+   * hover-follows-active resumes untouched.
+   *
+   * It must stay the only close: `esc`, `⌫`, the ✕ button and the depth-0
+   * auto-close all arrive as `FocusMode`'s `onClose`, and `f` toggles through
+   * here too. A close that skipped it would reproduce the bug "only sometimes".
+   */
+  const closeFocus = useCallback(() => {
+    active.hold();
+    setFocusDoc(null);
+  }, [active]);
+
+  /**
    * `⇧←`/`⇧→` — the keyboard drag (SPEC.md §11). Same `persistMove` the pointer
    * drag ends in, so `order` is written through UI-003's one path; a silent
    * no-op at either end, with no wrap-around and no write.
@@ -403,11 +425,12 @@ export function Board(): ReactElement {
       },
       moveActiveColumn,
       toggleFocusMode: () => {
-        setFocusDoc((current) => {
-          if (current !== null) return null;
-          if (openInActive === null) return null;
-          return { columnTitle: activeColumn?.title ?? "", docId: openInActive };
-        });
+        if (focusDoc !== null) {
+          closeFocus();
+          return;
+        }
+        if (openInActive === null) return;
+        setFocusDoc({ columnTitle: activeColumn?.title ?? "", docId: openInActive });
       },
       archiveTarget,
       openContextMenu: openRowMenu,
@@ -422,7 +445,9 @@ export function Board(): ReactElement {
       activeColumn,
       activeColumnId,
       archiveTarget,
+      closeFocus,
       cursor,
+      focusDoc,
       moveActiveColumn,
       navigation,
       openInActive,
@@ -629,9 +654,7 @@ export function Board(): ReactElement {
         <FocusMode
           docId={focusDoc.docId}
           listTitle={focusDoc.columnTitle}
-          onClose={() => {
-            setFocusDoc(null);
-          }}
+          onClose={closeFocus}
           onNotify={notify}
         />
       )}

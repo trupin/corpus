@@ -32,6 +32,17 @@ const VIEW: StubRow = {
   query: { folder: "inbox" },
 };
 
+/** A second column, so there is somewhere else for a pointer to be resting. */
+const THREADS_VIEW: StubRow = {
+  id: "doc_view_threads",
+  type: "view",
+  title: "Conversations",
+  path: "data/docs/views/threads.md",
+  pinned: true,
+  order: 2,
+  query: { type: "thread" },
+};
+
 /** The regression's shape: a body the serializer would add a final newline to. */
 const NOTE: StubRow = {
   id: "doc_note",
@@ -56,6 +67,25 @@ const THREAD: StubRow = {
   body: "Which lenders?",
   parent: "doc_note",
 };
+
+/**
+ * Two animation frames: long enough for the browser's own post-layout hover
+ * recomputation to be dispatched and for React to have rendered whatever it
+ * caused. Asserting before it is asserting about a state the page is in the
+ * middle of leaving.
+ */
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(
+    async () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      }),
+  );
+}
 
 async function openNote(page: Page, rows: readonly StubRow[]): Promise<void> {
   await stubCorpus(page, rows);
@@ -137,6 +167,69 @@ test.describe("a document that arrives with an anchor already on it", () => {
     expect(offsets.cardTop).toBe(offsets.anchorTop);
     // The margin replaces the chip rather than doubling it.
     await expect(focus.locator(".anchor-slot .t-chip")).toBeHidden();
+  });
+});
+
+/**
+ * UI-031, in the one file that enters focus mode against the real app.
+ *
+ * The UI-022 evaluation left the pointer resting over a neighbouring column,
+ * followed a ref in full screen, and pressed `esc` seven times to no effect at
+ * all — it survived a reload and came back only when the mouse was wiggled.
+ * Closing the overlay let the column under the parked cursor adopt the board on
+ * a `mouseover` nobody caused, and `Reader`'s escape layer is live only on the
+ * active column.
+ *
+ * Only a browser can testify to this: the `mouseover` on unmount is the
+ * browser's, not the app's, and so is the absence of a `mousemove` beside it.
+ */
+test.describe("closing full screen with the pointer parked over another column", () => {
+  test("keeps the origin column active, and esc keeps working", async ({ page }) => {
+    await openNote(page, [VIEW, THREADS_VIEW, NOTE, THREAD]);
+    const origin = page.locator('.col[data-col="doc_view_inbox"]');
+    const neighbour = page.locator('.col[data-col="doc_view_threads"]');
+    await expect(neighbour).toHaveCount(1);
+    await expect(origin).toHaveClass(/kactive/);
+
+    await page.locator('.reader[data-reader-doc="doc_note"] [data-expand]').click();
+    await expect(page.locator(".focus.open")).toHaveCount(1);
+
+    // Park the pointer over the neighbouring column's area and leave it there:
+    // nothing below moves the mouse again.
+    const box = await neighbour.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(
+      (box?.x ?? 0) + (box?.width ?? 0) / 2,
+      (box?.y ?? 0) + (box?.height ?? 0) / 2,
+    );
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".focus.open")).toHaveCount(0);
+
+    /*
+     * Chromium recomputes hover when the element under a stationary cursor
+     * changes and emits a single `mouseover` on the neighbour with **no**
+     * `mousemove` beside it — verified by recording every mouse event across
+     * this close. That event is the bug, and it lands a frame after the
+     * unmount, so the assertions below have to be made after it: an immediate
+     * `toHaveClass` would pass on the state the adoption is about to replace.
+     */
+    await settle(page);
+
+    // The overlay unmounted under the cursor, and the board did not change hands.
+    await expect(origin).toHaveClass(/kactive/);
+    await expect(neighbour).not.toHaveClass(/kactive/);
+
+    // Which is the point: `esc` still has the reader beneath to act on.
+    await expect(page.locator(".reader")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".reader")).toHaveCount(0);
+
+    // And an actual movement resumes hover-follows-active immediately: the
+    // columns have resized, so this is a fresh box and a genuine input event.
+    const moved = await neighbour.boundingBox();
+    await page.mouse.move((moved?.x ?? 0) + (moved?.width ?? 0) / 2, (moved?.y ?? 0) + 120);
+    await expect(neighbour).toHaveClass(/kactive/);
   });
 });
 

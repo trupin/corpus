@@ -20,8 +20,8 @@ import { applyMargin, cascade, measureMargin } from "./marginLayout";
  */
 
 export interface MarginLayoutOptions {
-  readonly main: RefObject<HTMLElement>;
-  readonly margin: RefObject<HTMLElement>;
+  readonly main: RefObject<HTMLElement | null>;
+  readonly margin: RefObject<HTMLElement | null>;
   /** Off in chip mode: nothing is measured and nothing is written. */
   readonly active: boolean;
   /** Changing this re-observes: the set of cards is different. */

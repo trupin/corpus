@@ -27,7 +27,7 @@ export interface RowCursor {
 
 export interface RowCursorOptions {
   /** The board scroller; the cursor only ever looks inside it. */
-  readonly board: RefObject<HTMLElement>;
+  readonly board: RefObject<HTMLElement | null>;
   readonly activeColumnId: string | null;
 }
 

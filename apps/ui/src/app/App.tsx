@@ -1,7 +1,7 @@
 import { CorpusProvider, type CorpusClient, type EventSourceFactory } from "@corpus/kit";
 import type { QueryClient } from "@tanstack/react-query";
 import type { ReactElement } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router";
 import { devRoutes } from "../dev/devRoutes";
 import { Shell } from "../shell/Shell";
 import { uiClient } from "./apiClient";
@@ -37,8 +37,7 @@ export function App({ client, corpusClient, eventSourceFactory }: AppProps = {})
       queryClient={client ?? appQueryClient}
       {...(eventSourceFactory ? { eventSourceFactory } : {})}
     >
-      {/* Opt into the v7 behaviours now, while there is one route to migrate. */}
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <BrowserRouter>
         <Routes>
           <Route path="/" element={<Shell />} />
           {devRoutes()}

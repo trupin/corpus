@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { Route } from "react-router-dom";
+import { Route } from "react-router";
 import { DataProbe } from "./DataProbe";
 
 /** Where the kit data probe lives. Double underscore: never a document route. */

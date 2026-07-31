@@ -134,7 +134,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs (design closed; impl = PLUGINS-005/006/007) | done | P1 | UI-014 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
 | SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | done | P1 | SERVER-003 |
-| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | blocked | P2 | UI-029 |
+| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | done | P1 | UI-029 |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
@@ -213,13 +213,21 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-027 | Anchor highlights never render in the document body (eval finding, §11) | done | P1 | UI-008 |
 | UI-028 | ↵ does not activate context-menu items (eval finding, §11) | done | P2 | UI-018 |
 | CLI-022 | No CLI surface for anchored thread creation (CLI-018 finding, §7) | done | P2 | CLI-003 |
-| UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | todo | P1 | — |
-| UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | todo | P2 | UI-005 |
-| UI-031 | Focus close must not adopt the column under the resting pointer (signed rule) | todo | P2 | UI-005 |
+| UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | done | P1 | — |
+| UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | done | P2 | UI-005 |
+| UI-031 | Focus close must not adopt the column under the resting pointer (signed rule) | done | P2 | UI-005 |
 | CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
-| INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | todo | P1 | UI-016 |
-| INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | todo | P1 | — |
+| INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | done | P1 | UI-016 |
+| INFRA-014 | CI packaging: PR tarball artifacts; deliberate v*-tag releases only (user request, amended) | done | P1 | — |
 | CLI-024 | SIGPIPE guard for piped output (eval finding) | todo | P2 | CLI-001 |
+| UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | todo | P2 | UI-028, UI-030 |
+| INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | todo | P2 | INFRA-013 |
+
+## Phase 7b — React 19, router 8, CI directives (branch `phase-7b-upgrades-ci`)
+
+User-directed batch (2026-07-31): UI-029 → UI-016 → INFRA-013 (upgrade first, then the
+strict audit gate), INFRA-014 in the parallel infra lane; UI-030/031 ride along. Rows
+live in the Phase 6 table above. Sprint contract: sprint-020.
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 

@@ -1,5 +1,8 @@
 /** @vitest-environment jsdom */
+import type { DocRow } from "@corpus/contract";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { threadRowFixture } from "../testing/readerFixture";
 import { CommentsPopover, threadMeta, threadQuote } from "./CommentsPopover";
@@ -77,5 +80,113 @@ describe("CommentsPopover", () => {
     render(<CommentsPopover threads={[ANCHORED]} onSelect={() => undefined} onClose={onClose} />);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * UI-030. The 💬 sheet had the ⋯ sheet's gap exactly: `role="menuitem"` buttons
+ * with no way for focus to reach them. It gets the same mechanism, so it gets
+ * the same evidence — including the empty case, which is where a roving-focus
+ * hook handed zero items ships broken.
+ */
+describe("the 💬 sheet from the keyboard", () => {
+  function mountWithTrigger(threads: readonly DocRow[], onSelect = vi.fn()): () => void {
+    function Head(): ReactElement {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button
+            type="button"
+            className="comments-btn"
+            onClick={() => {
+              setOpen((was) => !was);
+            }}
+          >
+            💬
+          </button>
+          {open ? (
+            <CommentsPopover
+              threads={threads}
+              onSelect={onSelect}
+              onClose={() => {
+                setOpen(false);
+              }}
+            />
+          ) : null}
+        </>
+      );
+    }
+    render(<Head />);
+    return onSelect;
+  }
+
+  function trigger(): HTMLElement {
+    return screen.getByRole("button", { name: "💬" });
+  }
+
+  /** The `data-cp-item` of whatever has focus, or `null` when it is not an item. */
+  function focusedThread(): string | null {
+    const active = document.activeElement;
+    return active instanceof HTMLElement ? (active.dataset["cpItem"] ?? null) : null;
+  }
+
+  it("takes focus and walks the threads with the arrows, Home and End", async () => {
+    const user = userEvent.setup();
+    mountWithTrigger([ANCHORED, WHOLE]);
+    await user.click(trigger());
+    expect(document.activeElement).toBe(
+      screen.getByRole("menu", { name: "Threads on this document" }),
+    );
+
+    await user.keyboard("{ArrowDown}");
+    expect(focusedThread()).toBe("th_rate");
+    await user.keyboard("{ArrowDown}");
+    expect(focusedThread()).toBe("th_carrier");
+    await user.keyboard("{Home}");
+    expect(focusedThread()).toBe("th_rate");
+    await user.keyboard("{End}");
+    expect(focusedThread()).toBe("th_carrier");
+  });
+
+  it("opens the focused thread on ↵, and closes", async () => {
+    const user = userEvent.setup();
+    const onSelect = mountWithTrigger([ANCHORED, WHOLE]);
+    await user.click(trigger());
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+
+    await user.keyboard("{Enter}");
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith("th_carrier");
+  });
+
+  it("closes on esc without opening a thread, and hands focus back to 💬", async () => {
+    const user = userEvent.setup();
+    const onSelect = mountWithTrigger([ANCHORED, WHOLE]);
+    await user.click(trigger());
+    await user.keyboard("{ArrowDown}");
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it("degrades sanely with no threads: focus lands, nothing traps, esc still closes", async () => {
+    const user = userEvent.setup();
+    mountWithTrigger([]);
+    await user.click(trigger());
+    const menu = screen.getByRole("menu", { name: "Threads on this document" });
+    expect(document.activeElement).toBe(menu);
+
+    // Nothing to rove to, and no crash trying.
+    await user.keyboard("{ArrowDown}{ArrowUp}{Home}{End}");
+    expect(document.activeElement).toBe(menu);
+    expect(screen.getByText(/No threads on this document yet/)).toBeDefined();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger());
   });
 });
