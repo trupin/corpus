@@ -239,3 +239,11 @@ _n/a until triage._
   (deterministic, tested); the code comment slightly overstates — comment fix only.
 - (server, MINOR→SERVER-042) repeated-passage first-occurrence addressing — note
   added to SERVER-042's design; superseded by chunk addressing.
+
+## Phase 7b eval notes (2026-07-31)
+
+- Process: three E2E logs phrase the model datum as "Model: opus" vs the contract's
+  literal; UI-031's drill reused UI-030's ports rather than its assigned row (no
+  collision). Both cosmetic; noted for sprint-021's wording.
+- INFRA-014 TEST-819/820/821 are orchestrator-live on the batch PR/merge (sticky
+  comment, no-release negative, artifact-download install).
