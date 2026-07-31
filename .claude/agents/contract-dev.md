@@ -30,6 +30,8 @@ When given an issue ID (e.g., CONTRACT-001):
 
 ## Domain Knowledge
 
+- **`exactOptionalPropertyTypes` optional-widening asymmetry (2026-07-31, CONTRACT-025):** `z.infer` widens optionals to `?: T | undefined` while `openapi-typescript` emits `?: T` (zero `| undefined` across the generated client's optional properties). Zod-inferred types are assignable _from_ generated ones, never _to_ them — uniformly, for every optional field. Write compat tests against hand-transcribed generated shapes, not schema-derived ones.
+
 _Durable facts, decisions, and gotchas for this domain. Append as you learn; keep entries dated._
 
 - **2026-07-26 — Contract-first via code (Architecture Decision 3).** Routes are _defined_ here with `createRoute` from `@hono/zod-openapi`; the server imports the definitions and attaches handlers. The OpenAPI doc is _derived_ — never hand-edited. `openapi.json` and the generated client types are committed; pre-push regenerates and diffs (drift check).

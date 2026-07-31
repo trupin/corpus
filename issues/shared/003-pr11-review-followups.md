@@ -171,6 +171,18 @@ violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
 - **Column ⋯ → Unpin still archives its view doc via `PUT {status}`** (UI-020
   deliberate deferral): never a skill, no folder move, so harmless — but it is now
   the only archive path off the POST route; consistency follow-up at triage.
+- **`db doctor`'s `--json` description is stale** (SERVER-038 deferral): still says
+  `{ok, drift, stats}`; one-line fix regenerates `docs/cli.md` — fold into the next
+  CLI docs regeneration.
+- **`unindexable_files_truncated` is a server-only warning kind** (SERVER-038): legal
+  under CONTRACT-025's open kind space; publishing it in `DOCTOR_WARNING_KINDS` is an
+  optional CONTRACT rider at triage.
+- **In-column margin mode is unreachable** (UI-027 observation): `MARGIN_MIN_WIDTH`
+  1100 > `MAX_COLUMN_WIDTH` 960 (and UI-023 caps reading at 560), so
+  `.reader-scroll.with-margin` never fires in a column — "wide" is focus-only in
+  practice. §11 says "focus mode and wide layouts"; decide at triage whether that
+  text means the current behavior (then no change) or column-margin was intended
+  (then a numbers decision).
 - **SERVER-033 honest-scope note**: the @hono/node-server advisory was Windows-only
   and 1.19.17 already carried the identical traversal regex — the bump closes the
   audit finding, not a live hole; v2 adds `Last-Modified` on static asset hits

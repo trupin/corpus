@@ -189,7 +189,7 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 | PLUGINS-007 | Todos column re-sourced off the body aggregate | done | P1 | PLUGINS-005 |
 | CLI-016 | `corpus doc edit --extra`: agent-writable extra frontmatter (UI-019 escalation) | done | P1 | CLI-003 |
 | CLI-017 | `corpus doc unarchive` + `--status open` half-state fix (evaluator MAJOR) | done | P1 | CLI-003 |
-| SERVER-038 | Recovery path for already-committed invisible documents (SERVER-037 TEST-564) | todo | P2 | SERVER-037 |
+| SERVER-038 | Recovery path for already-committed invisible documents (SERVER-037 TEST-564) | done | P2 | SERVER-037 |
 | SERVER-039 | Archived-status guard at the write boundary (audit FIX 5, sole-writer) | done | P1 | SERVER-005 |
 | UI-020 | Unarchive affordance in the reader menu (audit SPEC 34) | done | P1 | SERVER-039, UI-012 |
 | CLI-018 | Agent-writable view keys: §11 "pin me a view" reachable (audit SPEC 37+38) | done | P1 | CLI-016 |
@@ -206,13 +206,13 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| CONTRACT-025 | Rider: doctor response gains report-only warnings (SERVER-038 seam) | todo | P2 | — |
+| CONTRACT-025 | Rider: doctor response gains report-only warnings (SERVER-038 seam) | done | P2 | — |
 | UI-022 | Focus mode: redundant back-to-list button next to ✕ Close (user report) | done | P1 | — |
 | UI-023 | Reader-open column widening must cap at the content measure (user report) | done | P1 | — |
 | UI-024 | Selection context menu (comment on selection) + item menus win over stray selections (user reports) | done | P1 | UI-018, UI-008 |
-| UI-027 | Anchor highlights never render in the document body (eval finding, §11) | todo | P1 | UI-008 |
-| UI-028 | ↵ does not activate context-menu items (eval finding, §11) | todo | P2 | UI-018 |
-| CLI-022 | No CLI surface for anchored thread creation (CLI-018 finding, §7) | todo | P2 | CLI-003 |
+| UI-027 | Anchor highlights never render in the document body (eval finding, §11) | done | P1 | UI-008 |
+| UI-028 | ↵ does not activate context-menu items (eval finding, §11) | done | P2 | UI-018 |
+| CLI-022 | No CLI surface for anchored thread creation (CLI-018 finding, §7) | done | P2 | CLI-003 |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 

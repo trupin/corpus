@@ -4,7 +4,7 @@
 contract
 
 ## Status
-todo
+done
 
 ## Priority
 P2
