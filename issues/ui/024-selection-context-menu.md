@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -71,9 +71,12 @@ global selection guard; the selection hook stops propagation when it opens, so t
 never both fire. `useAnchorLayer` gained exactly two members for the seam — `editor`
 (it is already the only holder) and `captureComment()`, which returns the live
 selection as a bound action, so Comment on selection is 💬's own path and not a second
-one. Where the menu could offer nothing but Copy (a thread's conversation, a `view`, a
-foreign lock) it declines and the native menu appears — paying §11's Look-Up trade for
-nothing would be a straight downgrade.
+one. Where the selection menu could offer nothing but Copy (a `view`, a foreign lock)
+it declines — paying §11's Look-Up trade for nothing would be a straight downgrade.
+_Correction (2026-07-30 eval LEDGER-3): a selection in a thread's conversation does
+not fall through to the native menu — the reader's own item menu opens there, which
+is the correct §11 behavior (the open reader is an item); the original sentence
+overclaimed the decline list._
 
 ## Testing Strategy
 apps/ui scoped (VITEST_MAX_THREADS=4); e2e cases in the context-menu spec (selection menu, row-menu-despite-selection).

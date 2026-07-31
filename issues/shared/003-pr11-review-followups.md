@@ -142,6 +142,27 @@ Three SPEC.md amendments from the PR #12 review.
 
 **(c) Notes** — the endpoint shipped in CONTRACT-020 and is in the contract's endpoint inventory, whose own comment records the gap: "§9.2 does not list it yet — that amendment is routed with the rest of the §7 set" (`packages/contract/src/routes/inventory.ts:13-16`). Both prior SHARED passes missed this routing promise. Wording condensed from the route definition (`packages/contract/src/routes/skills.ts:65-95`).
 
+## Polish-eval ledger additions (2026-07-30, evaluator pass on UI-022/023/024)
+
+Promoted to issues (not ledgered): anchor highlights never render (UI-027, §11
+violation); ↵ never activates any Corpus menu item (UI-028, §11 violation).
+
+- **Reading-width ceiling is a constant while `62ch` is font-dependent** (UI-023
+  eval note 4): 560px carries ~13px slack over the strictly-measured 547.2px on the
+  reference font, and the body sits ~13px off-center (15px left vs 27.8px right
+  gutter). Runtime-measured ceiling would be exact; decide at triage whether the
+  polish is worth the moving part.
+- **`esc` goes dead after closing full screen when the parked pointer hovers a
+  different column** (UI-022 eval LEDGER-1): §11's hover-follows-active rule adopts
+  the column under the resting pointer on overlay close, so keyboard-only flow loses
+  `esc` until the mouse moves. Needs a design decision (suppress pointer adoption on
+  programmatic close, or restore the origin column as active) — not a one-liner.
+- **UI-024 issue prose corrected in place** (eval LEDGER-3): a selection in a thread
+  turn opens the reader's item menu (correct per §11), it does not fall through to
+  the native menu as the "As built" note claimed; behavior right, text fixed.
+- **§14 rider queued for the next spec sign-off round** (CONTRACT-025): one line —
+  doctor may carry report-only warnings; pass/fail semantics unchanged.
+
 ## Acceptance Criteria
 - [ ] Each finding above is either fixed, converted to a domain issue, or explicitly waived with a note here.
 

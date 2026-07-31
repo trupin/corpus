@@ -207,9 +207,11 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
 | CONTRACT-025 | Rider: doctor response gains report-only warnings (SERVER-038 seam) | todo | P2 | — |
-| UI-022 | Focus mode: redundant back-to-list button next to ✕ Close (user report) | todo | P1 | — |
-| UI-023 | Reader-open column widening must cap at the content measure (user report) | todo | P1 | — |
-| UI-024 | Selection context menu (comment on selection) + item menus win over stray selections (user reports) | todo | P1 | UI-018, UI-008 |
+| UI-022 | Focus mode: redundant back-to-list button next to ✕ Close (user report) | done | P1 | — |
+| UI-023 | Reader-open column widening must cap at the content measure (user report) | done | P1 | — |
+| UI-024 | Selection context menu (comment on selection) + item menus win over stray selections (user reports) | done | P1 | UI-018, UI-008 |
+| UI-027 | Anchor highlights never render in the document body (eval finding, §11) | todo | P1 | UI-008 |
+| UI-028 | ↵ does not activate context-menu items (eval finding, §11) | todo | P2 | UI-018 |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 
