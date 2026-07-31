@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-blocked
+todo
 
 ## Priority
 
@@ -44,17 +44,21 @@ navigation in the reader stacks). Bar: full unit + e2e suites green, no behavior
 
 ## Acceptance Criteria
 
-- [ ] `react-router@^8.3.0` (or later), `react-router-dom` removed; imports updated.
-      **BLOCKED** — every `8.x` release requires `react@>=19.2.7`; this repo is React 18.3.1.
-- [ ] `npm audit` reports zero known-vulnerable router findings.
-      **BLOCKED** — only `8.3.0` is audit-clean (measured, below), so this criterion is
-      unreachable without the React 19 upgrade.
-- [ ] Unit + e2e suites green; reader navigation stacks behave identically (Back, scroll
+- [x] `react-router@^8.3.0` (or later), `react-router-dom` removed; imports updated.
+      Done 2026-07-31: `apps/ui/package.json` declares `react-router: "^8.3.0"`, resolved
+      `8.3.0`; `react-router-dom` is gone from the manifest, the lockfile and every source file.
+      The 2026-07-31 **BLOCKED** annotation is history — UI-029 landed React 19.2.8 and the
+      `8.x` peer floor (`react >=19.2.7`) is satisfied.
+- [x] `npm audit` reports zero known-vulnerable router findings.
+      Done 2026-07-31: `metadata.vulnerabilities.total === 0` measured **in this tree**
+      (sprint-020 TEST-753), not in a scratch package. Full block in the log below.
+- [x] Unit + e2e suites green; reader navigation stacks behave identically (Back, scroll
       restoration, stack-empty exit).
-      **RESTATED by sprint-018 TEST-598** as a no-diff claim on `useNavStack.ts` /
-      `useBoardLocalState.ts` / `useReaderSurface.ts` — no react-router involvement. Held: no
-      file under `apps/ui/src/reader`, `apps/ui/src/board` or `apps/ui/src/shell` was opened for
-      writing in this session.
+      Done 2026-07-31: 1556 unit tests (104 files, `apps/ui`) and all 14 e2e specs (148 tests)
+      green with no assertion edited. The three nav-stack files carry **zero** react-router
+      involvement and were not opened for writing; the three behaviours were additionally driven
+      by hand against the real app (sprint-018 TEST-598 could only restate this claim — it is now
+      tested).
 
 ## E2E Verification Log
 
@@ -151,13 +155,182 @@ hoisted, no nested copies.
 `/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s018-ui/ui-016-yUX6yT/`. No vitest, Playwright or
 Vite process started; no `npm install` run in this tree. No git command run.
 
+### 2026-07-31 — ui-dev, model **opus** (claude-opus-5[1m]) — MIGRATED, all criteria met
+
+Blocker cleared upstream: UI-029 landed **React 19.2.8** (`node -p` on the installed
+`react`/`react-dom` manifests), and `react-router@8.3.0`'s peer floor is `react >=19.2.7`. The
+entry above is retained as history.
+
+**Install.** Plain `npm install` — **no `--legacy-peer-deps`, no `--force`, no `npm audit fix`**:
+
+```
+added 2 packages, removed 3 packages, and audited 559 packages in 2s
+found 0 vulnerabilities
+```
+
+Added: `react-router@8.3.0`, `cookie-es@3.1.1` (router 8's new transitive). Removed:
+`react-router-dom@6.30.4`, `react-router@6.30.4`, `@remix-run/router` — `/usr/bin/grep -c
+"@remix-run/router" package-lock.json` → **0**. Lockfile churn is router-scoped.
+
+**TEST-753 — `npm audit --json`, measured in THIS tree after the install:**
+
+```
+top-level keys: auditReportVersion,vulnerabilities,metadata
+metadata.vulnerabilities: {
+  "info": 0,
+  "low": 0,
+  "moderate": 0,
+  "high": 0,
+  "critical": 0,
+  "total": 0
+}
+vulnerabilities map keys: []
+```
+
+Contract-time was `{moderate:2, total:2}`, keyed `react-router`/`react-router-dom`. Both are gone
+and `cookie-es` added nothing. **TEST-754 does not trigger** — the total is zero, so INFRA-013's
+precondition is met and no stop condition was raised.
+
+**TEST-749 — `npm ls react-router react-router-dom`:**
+
+```
+corpus-monorepo@0.0.0 /Users/theophanerupin/code/corpus
+└─┬ @corpus/ui@0.0.0 -> ./apps/ui
+  └── react-router@8.3.0
+```
+
+One `react-router`, no `react-router-dom` at any depth.
+
+**TEST-750 — negative evidence.** `/usr/bin/grep -rn "react-router-dom" apps packages plugins
+scripts | /usr/bin/grep -v node_modules` → **zero hits** (exit 1). `/usr/bin/grep -c
+"react-router-dom" package-lock.json` → **0**. The four sites now read:
+
+```
+apps/ui/src/app/App.tsx:4:import { BrowserRouter, Route, Routes } from "react-router";
+apps/ui/src/dev/devRoutes.tsx:2:import { Route } from "react-router";
+apps/ui/src/dev/DataProbe.tsx:13:import { useSearchParams } from "react-router";
+apps/ui/src/dev/DataProbe.test.tsx:5:import { MemoryRouter } from "react-router";
+```
+
+All five exports confirmed present in `8.3.0`'s single top-level `export {…}`
+(`dist/production/index.d.ts:44`): `BrowserRouter`, `MemoryRouter`, `Route`, `Routes`,
+`useSearchParams`.
+
+**TEST-751 — v6 `future` flags removed.** `App.tsx` now opens `<BrowserRouter>` with no props,
+and the comment "Opt into the v7 behaviours now, while there is one route to migrate" — false on
+v8 — was deleted with it.
+
+**TEST-752 — route declaration style (sprint-018 Open Conflict 2, answered).** **v8 demanded
+nothing.** `<Route>` as a child of `<Routes>` is still the supported declarative form, and
+`devRoutes()`'s return type did **not** have to change: it still returns `ReactElement | null`
+and `App.tsx` still splices `{devRoutes()}` directly into `<Routes>`. `npm run typecheck` is
+green across all 7 workspaces with both files untouched beyond the import specifier. No
+`createBrowserRouter`/`RouterProvider` conversion was needed or made.
+
+**TEST-757 — the `useOptimistic` blocker, confirmed resolved rather than assumed.** The shipped
+bundle still statically imports it —
+`/usr/bin/grep -n "useOptimistic" apps/ui/node_modules/react-router/dist/production/lib/components.js`:
+
+```
+18:import { useOptimistic } from "react";
+123:	let [state, setOptimisticState] = useOptimistic(_state);
+```
+
+and `node -e "'useOptimistic' in require('react')"` → **yes**. The import resolves at runtime, not
+merely in a type-check: the declarative router rendered in a real browser in the walk below.
+
+**TEST-755 / TEST-747 — real app, hand-driven.** Workspace seeded by this agent
+(`corpus init --port 8805`), server on **8805** (pid 34958), Vite on **5283** proxying to it via
+`CORPUS_SERVER_ORIGIN`. `8765` never bound, never proxied into. Two documents created: `Long
+Source` (`doc_zazfgq6f`, 120 filler paragraphs with `[[doc_v673fxf2|Target Doc]]` below the fold)
+and `Target Doc` (`doc_v673fxf2`). Driven in headless Chromium:
+
+```
+STEP 1  GET /            → .topbar: true | .board: true
+        console strip: "agent: idle · queue 0 · 0 running · 0 done · 0 failed  corpus 0.0.0"
+        columns rendered: 3            ← <Route path="/"> matched against a LIVE server
+STEP 2  clicked 'Long Source' → .reader visible, data-reader-doc = doc_zazfgq6f
+        reader head id: doc_zazfgq6f · git ✓
+        back button label (depth 0): '‹ Inbox'      ← column name, stack empty
+STEP 3  scrolled reader to scrollTop = 3773
+STEP 4  refs in body: 1 | class: ref | text: 'Target Doc'
+        after clicking ref → data-reader-doc = doc_v673fxf2      ← PUSH
+        back button label (depth 1): '‹ Long Source'             ← previous doc's title
+STEP 5  Back → data-reader-doc = doc_zazfgq6f                    ← POP
+        scrollTop restored to: 3773 (was 3773)                   ← SCROLL RESTORATION
+STEP 6  back label at depth 0: '‹ Inbox'
+        after Back at depth 0 → .reader count = 0                ← STACK-EMPTY EXIT
+        board still visible: true
+STEP 7  GET /nope        → .topbar: true | .board: true          ← <Route path="*"> catch-all
+STEP 8  GET /__probe?doc=doc_v673fxf2 → dev <Route> matched; useSearchParams read the query.
+        probe body: "@corpus/kit data probe  connection: open  useDocs ok 11 rows
+                     useTree ok 3 folders  useJobs ok 0 jobs  useLocks ok 0 locks
+                     Long Source  Target Doc  Comment  Orchestrate"
+
+=== console errors/warnings ===  (none)
+=== uncaught page errors ===     (none)
+```
+
+All three behaviours the criterion names — **Back**, **scroll restoration on return**, and
+**stack-empty exit** — exercised and observed. Zero React errors or warnings.
+
+**The nav-stack no-diff claim, now verified rather than restated.** `/usr/bin/grep -n
+"react-router" apps/ui/src/reader/useNavStack.ts apps/ui/src/board/useBoardLocalState.ts
+apps/ui/src/reader/useReaderSurface.ts` → **zero hits**: they are localStorage state with no
+router involvement. mtimes confirm none was opened by this session (my six edits are all
+11:21:58–11:22:17): `useNavStack.ts` 2026-07-30 18:06:32, `useBoardLocalState.ts` 2026-07-28
+16:39:31, `useReaderSurface.ts` 2026-07-31 10:58:58 (UI-029's `RefObject` migration, before this
+session).
+
+**TEST-756 — suites, unmodified.**
+
+| Run | Result |
+| --- | ------ |
+| `vitest run apps/ui/src/dev/DataProbe.test.tsx apps/ui/src/dev/devRoutes.test.tsx apps/ui/src/app` | 5 files, **38 passed** |
+| `vitest run apps/ui` (`VITEST_MAX_THREADS=4`) | 104 files, **1556 passed** |
+| `CORPUS_UI_PORT=5283 CORPUS_SERVER_ORIGIN=http://127.0.0.1:8790 npm run e2e` | 14 specs, **148 passed** (50.5s) |
+
+`apps/ui/src/dev/DataProbe.test.tsx` — the only router-touching unit test — passes with its 7
+tests and only its import specifier changed. All 14 specs collected and green: `abandon` (6),
+`anchor-layer` (6), `anchors` (10), `board` (7), `column-width` (9), `compose-keyboard` (19),
+`console` (14), `context-menu` (20), `editor` (10), `reader` (6), `search` (11), `smoke` (13),
+`thread` (10), `todos` (7). **No assertion was edited.** `smoke.spec.ts:255` — the one spec that
+navigates off `/` — was additionally run on its own first and is green in both runs:
+
+```
+✓ 131 [chromium] › apps/ui/e2e/smoke.spec.ts:255:3 › server state ›
+      an unknown route renders the shell rather than a blank page (963ms)
+```
+
+`npm run build`, `npm run lint`, `npm run format:check` and `npm run typecheck` (7 workspaces) all
+green.
+
+**TEST-758 — the four-file claim held.** No git command was run (domain agents never do), so the
+diff is evidenced by mtime: exactly `apps/ui/package.json`, `apps/ui/src/app/App.tsx`,
+`apps/ui/src/dev/devRoutes.tsx`, `apps/ui/src/dev/DataProbe.tsx`,
+`apps/ui/src/dev/DataProbe.test.tsx` and `package-lock.json` were written, all between 11:21:58
+and 11:22:17, plus this issue file. Nothing else was reached. (`useAnchorLayer.ts` 11:03:01,
+`useAnchorLayer.test.tsx` 11:02:37 and `issues/ui/029-react-19-upgrade.md` 11:14:12 predate this
+session — UI-029's work, already on the branch.)
+
+**Hygiene.** Scratch confined to
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/s020-ui/ui-016-nC2SrS/`. Server pid 34958 stopped
+via `corpus server stop`; Vite pid 35915 killed by recorded pid. `lsof -nP -iTCP:<port>
+-sTCP:LISTEN` afterwards: **5283 → 0, 8805 → 0**. `5173` holds `ssh` pid 16094, exactly as the
+contract recorded — never mine, never touched. `8765` never bound, never killed, never proxied
+into. No `pkill`/`killall` used. No git command run.
+
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing — n/a, no code change made (blocked)
-- [ ] `/lint` passes — n/a, no code change made (blocked)
-- [x] E2E verification log filled — blocker, measurements and options recorded above
-- [x] Self-review — scope re-read against sprint-018 Out of Scope / Adjudication 6 before stopping
-- [ ] Acceptance criteria verified — 1 and 2 unreachable on React 18; 3 (as restated) held
+- [x] Tests written and passing — 38 targeted + 1556 workspace unit tests + 148 e2e, all green;
+      no new tests needed (a dependency swap with zero intended behavior delta — the bar is the
+      existing suites staying green unmodified, and they did)
+- [x] `/lint` passes — eslint, prettier and tsc (7 workspaces) all clean
+- [x] E2E verification log filled — audit metadata block, route walk incl. the catch-all and the
+      dev route, real-app boot on 8805 with the nav-stack walk
+- [x] Self-review — scope held to the contracted surface; sprint-018 Open Conflict 2 answered in
+      writing (TEST-752); no `packages/kit` file touched
+- [x] Acceptance criteria verified — all three met and evidenced above
 
 ## Completion Checklist (orchestrator)
 

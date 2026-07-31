@@ -10,7 +10,7 @@ import {
   type ConnectionState,
 } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import "./DataProbe.css";
 
 /**

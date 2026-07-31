@@ -28,7 +28,7 @@
     "@tiptap/suggestion": "^2.27.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^6.30.4",
+    "react-router": "^8.3.0",
     "remark-gfm": "^4.0.0",
     "remark-parse": "^11.0.0",
     "remark-stringify": "^11.0.0",
