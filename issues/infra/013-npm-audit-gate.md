@@ -4,7 +4,7 @@
 infra
 
 ## Status
-todo
+done
 
 ## Priority
 P1
