@@ -73,6 +73,44 @@ describe("useActiveColumn", () => {
     expect(result.current.id).toBe("a");
   });
 
+  /**
+   * UI-031. Closing full screen is a programmatic act whose pointer never
+   * moved: the overlay unmounts, whatever column is under the resting cursor
+   * fires `mouseover`, and without the latch the board adopts it.
+   */
+  it("holds the active column against a stationary pointer without moving it", () => {
+    const { result } = renderHook(() => useActiveColumn(columns));
+    act(() => {
+      result.current.activate("b");
+    });
+
+    act(() => {
+      result.current.hold();
+    });
+    // Held, not moved: `hold` is `pin` without the argument.
+    expect(result.current.id).toBe("b");
+
+    act(() => {
+      result.current.activate("c");
+    });
+    expect(result.current.id).toBe("b");
+  });
+
+  it("releases the hold on the very first real movement, with no second move needed", () => {
+    const { result } = renderHook(() => useActiveColumn(columns));
+    act(() => {
+      result.current.hold();
+    });
+
+    act(() => {
+      document.dispatchEvent(new MouseEvent("mousemove"));
+    });
+    act(() => {
+      result.current.activate("c");
+    });
+    expect(result.current.id).toBe("c");
+  });
+
   it("pins through `switchBy` too — an arrow press is the keyboard's authority", () => {
     const { result } = renderHook(() => useActiveColumn(columns));
     act(() => {

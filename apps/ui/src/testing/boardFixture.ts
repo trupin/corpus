@@ -105,6 +105,20 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
     if (/^\/api\/docs\/[^/]+\/(?:un)?archive$/.test(url.pathname)) {
       return json({ doc: created(url.pathname.split("/")[3] ?? ""), warnings: [] });
     }
+    /*
+     * `DELETE /api/docs/{id}` answers with the deletion *result*, not a
+     * document (`DeleteDocResultSchema`). Falling through to the read below
+     * gave the caller a doc, and reading `orphanedThreadIds` off it threw
+     * inside the mutation's own `then` — which surfaced as a refused delete
+     * and, in focus mode, as an excursion that never emptied (UI-031).
+     */
+    if (url.pathname.startsWith("/api/docs/") && request.method === "DELETE") {
+      return json({
+        deletedId: url.pathname.slice("/api/docs/".length),
+        orphanedThreadIds: [],
+        warnings: [],
+      });
+    }
     if (url.pathname.startsWith("/api/docs/")) return json(created(url.pathname));
     return json({});
   };

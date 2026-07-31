@@ -29,6 +29,20 @@ export interface ActiveColumn {
    */
   readonly pin: (columnId: string) => void;
   /**
+   * {@link pin}'s claim without its move: the column that is active stays
+   * active, and a pointer that has not moved cannot take it.
+   *
+   * What a **programmatic close** uses (UI-031). Closing full screen unmounts a
+   * full-viewport overlay, and the column that was underneath the resting cursor
+   * the whole time then fires `mouseover` and adopts the board — a gesture the
+   * user never made, which strands `esc` on a column with no reader until the
+   * mouse is physically moved. The signed rule is "keep the origin column active
+   * and ignore the pointer's position until it actually moves", and this is that
+   * one-shot latch: the same ref `pin` arms, released by the same real
+   * `mousemove`, so hover-follows-active itself is untouched.
+   */
+  readonly hold: () => void;
+  /**
    * `←`/`→` and `[`/`]`. Clamps at both ends — no wrap, because a board is a
    * strip the user is looking at, not a carousel. Returns the column that ends
    * up active so the caller can scroll it in, or `null` when nothing moved.
@@ -46,6 +60,10 @@ export function useActiveColumn(columns: readonly { readonly id: string }[]): Ac
    * `mouseover`, and the board hands the keyboard's own gesture to whichever
    * list the mouse happens to be resting on. `mousemove` is the honest
    * discriminator, because a re-render cannot forge one.
+   *
+   * Closing full screen is the same event with a different cause (UI-031), so it
+   * arms the same ref through {@link ActiveColumn.hold} rather than growing a
+   * second flag beside this one.
    */
   const keyboardOwns = useRef(false);
 
@@ -70,10 +88,17 @@ export function useActiveColumn(columns: readonly { readonly id: string }[]): Ac
     setWanted(columnId);
   }, []);
 
-  const pin = useCallback((columnId: string) => {
+  const hold = useCallback(() => {
     keyboardOwns.current = true;
-    setWanted(columnId);
   }, []);
+
+  const pin = useCallback(
+    (columnId: string) => {
+      hold();
+      setWanted(columnId);
+    },
+    [hold],
+  );
 
   const switchBy = useCallback(
     (delta: -1 | 1): string | null => {
@@ -88,5 +113,5 @@ export function useActiveColumn(columns: readonly { readonly id: string }[]): Ac
     [columns, id, pin],
   );
 
-  return { id, index, activate, pin, switchBy };
+  return { id, index, activate, pin, hold, switchBy };
 }

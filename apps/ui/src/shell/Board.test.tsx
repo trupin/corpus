@@ -8,6 +8,7 @@ import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { BOARD_STORAGE_KEY } from "../board/useBoardLocalState";
+import { DELETE_ARMED_LABEL, DELETE_LABEL } from "../reader/DocMenu";
 import { Board } from "./Board";
 import { ToastProvider } from "./Toasts";
 
@@ -702,6 +703,119 @@ describe("the board's keyboard", () => {
     fireEvent.keyDown(document, { key: "f" });
     await waitFor(() => {
       expect(document.querySelector(".focus.open")).toBeNull();
+    });
+  });
+
+  /**
+   * UI-031, from the UI-022 evaluation: seven dead `esc` presses that survived a
+   * reload and came back the moment the mouse was wiggled.
+   *
+   * Closing full screen unmounts a full-viewport overlay, and the column that
+   * was under the resting cursor the whole time fires `mouseover` on the way
+   * out. Hover-follows-active then handed the board to a column the user never
+   * pointed at — and `Reader`'s escape layer is live only on the *active*
+   * column, so `esc` had nothing left to close. The pointer's position is
+   * ignored until it actually moves.
+   */
+  describe("closing full screen with the pointer parked over another column", () => {
+    const activeColumn = (container: HTMLElement): string | null | undefined =>
+      container.querySelector(".col.kactive")?.getAttribute("data-col");
+
+    /** Open the first column's document, then take it full screen. */
+    async function focusFromFirst(): Promise<HTMLElement> {
+      const { container } = await withRows();
+      fireEvent.click(screen.getByRole("button", { name: /note: First note/ }));
+      await waitFor(() => {
+        expect(container.querySelector(".reader")).not.toBeNull();
+      });
+      expect(activeColumn(container)).toBe("doc_one");
+      fireEvent.keyDown(document, { key: "f" });
+      await waitFor(() => {
+        expect(document.querySelector(".focus.open")).not.toBeNull();
+      });
+      return container;
+    }
+
+    /**
+     * The `mouseover` an unmounting overlay produces under a cursor that never
+     * moved — `Column`'s handler is `onMouseOver`, which fires on re-entry and
+     * on every move between descendants, and no `mousemove` accompanies it.
+     */
+    function restingPointerOver(container: HTMLElement, columnId: string): void {
+      fireEvent.mouseOver(container.querySelector(`.col[data-col="${columnId}"]`) as Element);
+    }
+
+    it.each([
+      ["esc", (): void => void fireEvent.keyDown(document, { key: "Escape" })],
+      ["⌫", (): void => void fireEvent.keyDown(document, { key: "Backspace" })],
+      [
+        "the ✕ button",
+        (): void =>
+          void fireEvent.click(document.querySelector("[data-close-focus]") as HTMLElement),
+      ],
+      ["the f toggle", (): void => void fireEvent.keyDown(document, { key: "f" })],
+    ])("keeps the origin column active when %s closes it", async (_name, close) => {
+      const container = await focusFromFirst();
+
+      close();
+      await waitFor(() => {
+        expect(document.querySelector(".focus.open")).toBeNull();
+      });
+      restingPointerOver(container, "doc_two");
+
+      expect(activeColumn(container)).toBe("doc_one");
+    });
+
+    /**
+     * The fourth close: the document under the excursion goes away, the focus
+     * stack empties, and `FocusMode` closes itself. Nothing about it is a
+     * keystroke, which is exactly why it has to arm the latch too.
+     */
+    it("keeps it through the depth-0 auto-close, when the document itself goes", async () => {
+      const container = await focusFromFirst();
+
+      fireEvent.click(document.querySelector(".focus [data-doc-menu]") as HTMLElement);
+      fireEvent.click(screen.getByText(DELETE_LABEL));
+      fireEvent.click(screen.getByText(DELETE_ARMED_LABEL));
+      await waitFor(() => {
+        expect(document.querySelector(".focus.open")).toBeNull();
+      });
+      restingPointerOver(container, "doc_two");
+
+      expect(activeColumn(container)).toBe("doc_one");
+    });
+
+    /** The half that makes it a latch and not a behaviour change. */
+    it("resumes hover-follows-active on the first real movement, with no second move", async () => {
+      const container = await focusFromFirst();
+      fireEvent.keyDown(document, { key: "Escape" });
+      await waitFor(() => {
+        expect(document.querySelector(".focus.open")).toBeNull();
+      });
+      restingPointerOver(container, "doc_two");
+      expect(activeColumn(container)).toBe("doc_one");
+
+      fireEvent.mouseMove(document);
+      restingPointerOver(container, "doc_two");
+
+      expect(activeColumn(container)).toBe("doc_two");
+    });
+
+    /** The user-visible symptom: `esc` presses that did nothing at all. */
+    it("leaves esc working on the reader beneath", async () => {
+      const container = await focusFromFirst();
+      fireEvent.keyDown(document, { key: "Escape" });
+      await waitFor(() => {
+        expect(document.querySelector(".focus.open")).toBeNull();
+      });
+      restingPointerOver(container, "doc_two");
+      expect(container.querySelector(".reader")).not.toBeNull();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(container.querySelector(".reader")).toBeNull();
+      });
     });
   });
 
