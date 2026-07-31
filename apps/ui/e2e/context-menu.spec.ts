@@ -157,6 +157,64 @@ test.describe("the context menu", () => {
   });
 
   /**
+   * SPEC.md §11: "`esc` dismisses, arrows navigate, `↵` activates". UI-028 —
+   * the case above only ever exercised the arrows, and `↵` activated nothing in
+   * any menu in the app: the board's own `↵` (`rows.open`) matched first on the
+   * document listener and `preventDefault()` cancelled the focused button's
+   * default action. Only a real browser performs that default action, so only a
+   * real browser can prove the key now gets through — and the assertion is that
+   * the **action ran**, not that a key was pressed.
+   */
+  for (const key of ["Enter", "NumpadEnter"] as const) {
+    test(`activates the focused item on ${key}`, async ({ page }) => {
+      await stubCorpus(page, [INBOX_VIEW, NOTE]);
+      await page.goto("/");
+
+      await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+      const menu = page.getByRole("menu");
+      await page.keyboard.press("ArrowDown");
+      await expect(menu.locator('[data-act="open"]')).toBeFocused();
+
+      await page.keyboard.press(key);
+
+      await expect(menu).toBeHidden();
+      // Open ran: the row's reader is what the act produces.
+      await expect(page.locator('.reader[data-reader-doc="doc_note"]')).toBeVisible();
+    });
+  }
+
+  test("still activates on Space, and esc still runs nothing", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toBeHidden();
+    await expect(page.locator(".reader")).toHaveCount(0);
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Space");
+    await expect(page.getByRole("menu")).toBeHidden();
+    await expect(page.locator('.reader[data-reader-doc="doc_note"]')).toBeVisible();
+  });
+
+  test("takes the board's keys out of scope while it is open", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, NOTE]);
+    await page.goto("/");
+
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+
+    // `c` opens the compose overlay on the board; with a menu up it must not.
+    await page.keyboard.press("c");
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
+    await expect(menu).toBeVisible();
+  });
+
+  /**
    * PR #12 review, MINOR 16. Tab was neither trapped nor dismissing: focus left
    * a surface painted over the page while the menu stayed on screen. Only a real
    * browser moves focus on Tab, so only a real browser can prove this.

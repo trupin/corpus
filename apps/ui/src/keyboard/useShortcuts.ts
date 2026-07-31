@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { isOverlayOpen } from "../shell/overlays";
+import { isMenuOpen, isOverlayOpen } from "../shell/overlays";
 import {
   matchesShortcut,
   SHORTCUTS,
@@ -42,9 +42,17 @@ export function isWritingSurface(element: Element | null): boolean {
   return element.closest(EDITABLE) !== null;
 }
 
-/** The scope that owns the keyboard right now, from the DOM rather than from state. */
+/**
+ * The scope that owns the keyboard right now, from the DOM rather than from state.
+ *
+ * An open **menu** counts as one of those surfaces (UI-028). `overlay` is the
+ * scope's name for "a surface above the board is handling its own keys", and a
+ * menu is exactly that: its arrows and `esc` are its own, and `↵` is its
+ * items' — a `<button>`'s default action, which only survives if nothing at
+ * this level claims the key first.
+ */
 export function currentScope(): ShortcutScope {
-  return isOverlayOpen() ? "overlay" : "board";
+  return isOverlayOpen() || isMenuOpen() ? "overlay" : "board";
 }
 
 /** The entry a press resolves to, or `null`. Exported so a test can ask without a DOM event loop. */
