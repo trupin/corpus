@@ -72,9 +72,9 @@ export const formCommitSubject = (threadId: string, actor: Actor): string =>
  * Four separate ways to have no form, deliberately given one status and four
  * messages: the caller needs to know it cannot answer, and whoever reads the log
  * needs to know why. The author check is not incidental — §6 says a form is
- * something *an agent turn* carries, and `docs/needs.ts` keys `needs=form` on
- * `last_author = 'agent'`, so a user turn that happens to quote a form fence must
- * not become answerable here either.
+ * something *an agent turn* carries, and `docs/needs.ts` asks the same of the
+ * turn it counts (`tu.author = 'agent'`), so a user turn that happens to quote a
+ * form fence must not become answerable here either.
  */
 export function requireForm(
   thread: LoadedThread,
@@ -159,9 +159,11 @@ export function formRespondPayload(input: {
  * changes their mind reaches the agent the same way they would by replying; the
  * alternative would need an "answered" marker in the turn format, which §6
  * explicitly does not have ("no form id, no per-option types, no required
- * markers"). It is also self-limiting: the first answer moves `last_author` to
- * `user`, so the thread leaves `needs=form` and the UI stops offering the
- * controls.
+ * markers"). It is self-limiting from the *reader's* side rather than this
+ * route's: once a form is answered the UI stops offering its controls and
+ * `needs=form` stops counting it — but only that form. Answering it again is a
+ * turn nobody's badge is waiting on, and it leaves the thread's other forms
+ * exactly as unanswered as they were (SERVER-032).
  */
 export async function answerThreadForm(
   workspace: ThreadsWorkspace,

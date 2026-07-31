@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -136,6 +136,74 @@ describe("scaffoldWorkspace with a plugins root", () => {
     expect(Object.keys(templateEntry ?? {})).toEqual(["path", "sha256"]);
   });
 
+  it("copies a declared seed template into data/docs/templates/ with the same provenance", () => {
+    // CLI-012: the second asset kind through the same install path. The plugin
+    // ships `types.yaml` + the file it declares; the workspace gets a template
+    // document its projection indexes and `corpus doc create --type` pre-fills
+    // from.
+    const pluginsRoot = tempDir("proot-seeds");
+    mkdirSync(join(pluginsRoot, "fx", "seeds"), { recursive: true });
+    writeFileSync(
+      join(pluginsRoot, "fx", "types.yaml"),
+      "types:\n  - type: fixture\n    label: Fixture\n    seedTemplate: seeds/fixture-template.md\n",
+    );
+    writeFileSync(
+      join(pluginsRoot, "fx", "seeds", "fixture-template.md"),
+      "---\nid: doc_fixturetemplate\ntype: template\nfor: fixture\n---\n\nbody\n",
+    );
+
+    const root = tempDir("ws-seeds");
+    const result = scaffoldWorkspace({
+      root,
+      templateRoot: resolveTemplateRoot(),
+      pluginsRoot,
+      port: 9072,
+      token: generateToken(),
+      toolVersion: "0.0.0-test",
+    });
+
+    expect(result.installedPluginSeeds).toEqual(["data/docs/templates/fixture-template.md"]);
+    expect(result.pluginWarnings).toEqual([]);
+    const installed = join(root, "data", "docs", "templates", "fixture-template.md");
+    expect(readFileSync(installed)).toEqual(
+      readFileSync(join(pluginsRoot, "fx", "seeds", "fixture-template.md")),
+    );
+    // The core template document is still there beside it.
+    expect(existsSync(join(root, "data", "docs", "templates", "note.md"))).toBe(true);
+
+    const manifest = JSON.parse(
+      readFileSync(join(root, ".corpus", "template-manifest.json"), "utf8"),
+    ) as { files: { path: string; source?: string }[] };
+    expect(
+      manifest.files.find((file) => file.path === "data/docs/templates/fixture-template.md")
+        ?.source,
+    ).toBe("plugin:fx");
+  });
+
+  it("writes no manifest entry and no file for a declared seed template that is missing", () => {
+    const pluginsRoot = tempDir("proot-missing");
+    mkdirSync(join(pluginsRoot, "fx"), { recursive: true });
+    writeFileSync(
+      join(pluginsRoot, "fx", "types.yaml"),
+      "types:\n  - type: fixture\n    label: Fixture\n    seedTemplate: seeds/gone.md\n",
+    );
+
+    const root = tempDir("ws-missing");
+    const result = scaffoldWorkspace({
+      root,
+      templateRoot: resolveTemplateRoot(),
+      pluginsRoot,
+      port: 9072,
+      token: generateToken(),
+      toolVersion: "0.0.0-test",
+    });
+
+    expect(result.installedPluginSeeds).toEqual([]);
+    expect(result.pluginWarnings).toHaveLength(1);
+    expect(result.pluginWarnings[0]).toContain("seeds/gone.md");
+    expect(result.manifest.files.some((file) => file.path.includes("gone"))).toBe(false);
+  });
+
   it("without a plugins root, behaves exactly as before", () => {
     const root = tempDir("ws-none");
     const result = scaffoldWorkspace({
@@ -146,6 +214,7 @@ describe("scaffoldWorkspace with a plugins root", () => {
       toolVersion: "0.0.0-test",
     });
     expect(result.installedPluginSkills).toEqual([]);
+    expect(result.installedPluginSeeds).toEqual([]);
     expect(result.pluginWarnings).toEqual([]);
     expect(result.manifest.files.every((file) => file.source === undefined)).toBe(true);
   });

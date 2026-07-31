@@ -190,6 +190,17 @@
   background: var(--sepia);
 }
 
+/*
+ * Deferred — waiting on a lock, not broken (CONTRACT-021). The prototype drew
+ * no parked affordance, so this borrows pending's colour, which is already the
+ * "hasn't run yet" hue and therefore says nothing untrue. It keeps its own
+ * selector so SERVER-030's polish can restyle the state without touching the
+ * pending rule or the status→class mapping in `consoleModel.ts`.
+ */
+.job-dot.deferred {
+  background: var(--sepia);
+}
+
 .job-dot.done {
   background: var(--good);
 }
@@ -211,6 +222,52 @@
   color: var(--ink-3);
   margin-left: auto;
   white-space: nowrap;
+}
+
+/*
+ * What a deferred job is waiting for (SERVER-030 eval FAIL-1).
+ *
+ * `--sepia` ties it to the deferred dot rather than to the red the failed row
+ * wears — the state is waiting, and the colour has to agree with the dot, or
+ * the row says two things at once.
+ */
+.job-blocked {
+  color: var(--sepia);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * Two labels and a status word do not fit a 380 px row, so the row says which
+ * one gives way: the blocker's name holds (`flex: none`) and the job label
+ * ellipsizes, because the label is repeated in full one pane to the right while
+ * the blocker's name is the fact the row exists to add. `min-width: 0` is what
+ * lets a flex item ellipsize at all; the 50% cap stops a long document title
+ * from taking the row back, and the hover carries the whole sentence.
+ */
+.job-list .job-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.job-list .job-blocked {
+  flex: none;
+  max-width: 50%;
+}
+
+/*
+ * Same rule in the detail header, and for the same reason: the header is
+ * crowded enough to overflow at a narrow window, and when something has to give
+ * it is the job label — repeated verbatim in the row list — not the line naming
+ * the blocking document and its id, which appears nowhere else.
+ */
+.job-detail-head .job-blocked {
+  flex: none;
+}
+
+.job-detail-head .job-title {
+  min-width: 0;
 }
 
 .job-detail {

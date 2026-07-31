@@ -62,6 +62,86 @@ triage into domain issues — do not let them silently expire.
 - (infra) Manual `npm run e2e` outside the pre-push hook still targets a possibly-live 8765 — INFRA-011 pinned the origin in the hook only; decide whether playwright.config.ts should own the hermetic default (INFRA-011 AC 3).
 - (spec, needs user sign-off) SPEC §2.1's status bullet "Stale pidfiles (dead or reused pid) are detected and cleaned" no longer matches CLI-014's shipped conservative semantics: a live pid's pidfile is kept (a reused pid is indistinguishable from a re-pointed daemon). Surfaced at the PR alongside the §12 decision.
 
+**From the PR #12 review (2026-07-30, verdict REQUEST_CHANGES → fix round; MAJORs 1-3 and MINORs 6/13-16 fixed pre-merge, the rest queued here)**
+- (contract+cli, wording) DeferEventRequestSchema.reason + `queue defer --reason` help promise the reason is "shown in the console" — it never reaches the wire (Job carries no reason field). Fix wording (regen openapi.json + docs/cli.md) or ship the field (CONTRACT rider).
+- (server, TOCTOU) skills/create.ts:104-120 — create (CREATE_LANE) vs unarchive (doc lane) interleave lets create silently overwrite a just-unarchived skill; microsecond window, git preserves content; untested.
+- (server+contract) FormSchema accepts non-trim-stable/multi-line options; answeredOption compares first-line-trimmed → permanently unclearable needs=form badge. Pin options single-line trim-stable (rider) or match the composed line.
+- (agent-runtime) audit SPEC 35/36 remain open: the archived-collision 409 carries name not id while comment/SKILL.md instructs `doc unarchive <id>`; both skills' "reversible" clauses still name no verb. One skill-text pass.
+- (agent-runtime) orchestrate/SKILL.md:428 worked example labels a Haiku-criterion dispatch "(Sonnet …)" — trains mis-tiering.
+- (plugins) blockquoted task items (`> - [ ]`) render as live checkboxes but are invisible to the plugin (same family as audit FIX 7/8); ISO_DATE_PATTERN accepts non-calendar dates (2026-02-30) with lexicographic overdue compare; `list --open --json` lacks an index field for machine consumers.
+- (cli, NITs) template symlink install (v1-trusted, textual escapesPlugin); archived refusal drains a piped body before refusing.
+- (server/plugins, NITs) status-alongside-body-edit refusal untested; drifted half-state PUT {status:open} 200-no-ops; `\r\r\n` on an all-blank-CRLF body.
+- (ui, NIT residue) docActions Delete Esc-mid-flight notice; abandon registry pristine-map session leak (unless closed in the fix round).
+
+**From sprint-016 contracting (2026-07-30)**
+- (spec, phase-PR rider — RESOLVED by SHARED-005) SPEC §7's residual `deferred:`-prefix sentences were reworded with four coherence riders, user-signed-off, applied.
+- (contract/server/cli chain to file) `agent.done` has no producer — §7 makes it load-bearing for delegation wake-back but no route/verb enqueues it (sprint-016 OC1; AGENT-005 ships without it, reconciling at idle returns). File the chain when delegation's reconcile-at-idle proves insufficient in practice.
+
+**From the wave-3 audit fix round (2026-07-30)**
+- (contract, minor) `doctorDb` declares only 200/401, so the stamp-mismatch refusal (audit FIX 16) reaches the CLI as a bare `500 internal_error` (same shape as the pre-existing no-projection refusal). Surfacing the message needs a declared error response — small CONTRACT rider when the doctor surface is next touched.
+- (ui, filed) UI-021: renderer `mapFormAnswers` diverges from the server's both-answer-and-form detector (server FIX 10's docblock has the one-line change).
+
+**From sprint-015 implementation (2026-07-30)**
+- (server, flaky test) `apps/server/src/queue/service.test.ts:518` "requeueDeferredFor … wakes a parked poll" raced once in a commit gate (parked poll returned 1 of 2 re-entered events; green on retry and in adjacent gates). Deterministic-ize the interleaving (gate the poll on both writes) before it costs more gate retries.
+- (server, accepted design gap) an expired-but-unreaped lock lease does not re-enter deferred events on its own — no TTL sweeper; `corpus lock reap` and `job retry` are the escape hatches (SERVER-030's log has the reasoning: queue writes on a read path rejected). Revisit only if real usage shows deferrals stranded behind expired leases.
+- (agent-runtime) `assets/workspace/gitignore` says "these five directories" about the queue skeleton — now six with `deferred/` (CONTRACT-021). Comment-only fix; fold into the next agent-runtime issue (AGENT-005).
+- (server/cli, upgrade-path) `ensureLayoutSync` creates `.corpus/queue/deferred/` at boot but writes no tracked `.gitkeep`, so a pre-CONTRACT-021 workspace won't carry the directory through a clone until `corpus init`/`workspace upgrade` writes it — fold the `.gitkeep` into CLI-012 or the next upgrade-touching issue.
+- (kit) whether `ACTIVE_JOB_STATUSES` includes `deferred` was deliberately NOT decided by the UI consumption rider — SERVER-030 files or decides it. **DECIDED by SERVER-030 (2026-07-30): no — `ACTIVE_JOB_STATUSES` stays `["pending", "in-progress"]`, and `packages/kit` is untouched.** The constant's only consumer is `useAgentActivity`, whose only output is `WorkingDot` — "a pulsing dot and nothing else… it claims only that something is running" (`badges.tsx:106-112`, `animation: pulse 1.4s infinite`). A deferred job is *not* running: it is parked on a lease a human holds, for as long as that human keeps editing, which can be days — and a dot that pulses for days is the same lie the console's separate `deferred` dot was added to avoid. The counter-argument (the work is genuinely outstanding, `pending` is not "running" either) is real but weaker on duration: a pending job is seconds from being claimed by the loop, and a deferral is not. The deferral is not hidden either — three honest surfaces already carry it, none of which claims motion: the console row (its own dot, its own count, `blockedOn`/`blockedOnTitle`), the agent's reply in the waiting thread (§7's protocol replies *before* deferring), and the lock chip on the blocked document, which the user put there themselves. If a distinct *parked* signal on document rows is ever wanted, that is a new kit affordance to design and file — never a silent widening of the running dot.
+
+## PR #12 spec amendments — sign-off record
+
+Three SPEC.md amendments from the PR #12 review.
+
+- **Sign-off**: user, 2026-07-30 survey — verdict **"Approve all three"**.
+- **Applied**: 2026-07-30, all three applied to SPEC.md on branch `phase-5-followups`, exactly as drafted below (§12 CLI bullet, §7 wake-back sentence + §237 matching touch, §9.2 `POST /api/skills` bullet inserted before the rollback bullet).
+- The drafts below are retained verbatim as the record of what was signed and applied.
+
+### Draft 1 (APPLIED) — §12 (~line 405): the shipped `corpus todos migrate` verb
+
+**(a) Current text**
+
+> - **CLI**: `corpus todos add|check|list`, registered through the declarative registry (§2.3) so they document themselves like core verbs.
+
+**(b) Proposed text**
+
+> - **CLI**: `corpus todos add|check|list|migrate`, registered through the declarative registry (§2.3) so they document themselves like core verbs. `migrate` converges any todo document still storing items in the legacy `items` frontmatter key into body task-lists — idempotent (a converted document is reported unchanged), with per-document conflicts reported and skipped rather than failing the run, and `--dry-run` reporting the same answer without writing.
+
+**(c) Notes** — describes the shipped behavior verbatim from the verb's registry description (`plugins/todos/cli/commands/migrate.ts:22-30`) and `docs/cli.md` §`corpus todos migrate`: convergence half of the PLUGINS-005 migration policy (write-through verbs migrate lists on touch; this converts the untouched rest), archived lists included, dry-run predictions come from the same check a real write uses.
+
+### Draft 2 (APPLIED, incl. the §237 matching touch) — §7 delegation block: settlement at idle returns, not `agent.done` wake-back
+
+**(b1) — the false sentence (SPEC.md:248, "Outcomes are never assumed" bullet)**
+
+**(a) Current text**
+
+> The orchestrator parks while subagents run and is woken by their completion — the `agent.done` core event (above) exists for exactly this.
+
+**(b) Proposed text**
+
+> The orchestrator parks while subagents run and settles reported outcomes whenever parking returns — on a new event, or on `idle`'s ~8-minute rearm; the subagent's report itself is the signal, and settlement never depends on any queue event announcing it. (Wiring completion to wake parking immediately — a producer chain for the `agent.done` core event, above — is a named future improvement: sprint-016 OC1, tracked in this ledger's `agent.done` entry.)
+
+**(b2) — the matching touch on the earlier definition (SPEC.md:237)**
+
+**(a) Current text**
+
+> `agent.done` (background subagent wake-back)
+
+**(b) Proposed text**
+
+> `agent.done` (background subagent wake-back — reserved: nothing produces it yet, and an arriving one is settled like a report)
+
+**(c) Notes** — nothing in the shipped product enqueues `agent.done` (sprint-016 OC1; the producer chain is unfiled until reconcile-at-idle proves insufficient — see this ledger's "From sprint-016 contracting" entry). The proposed wording matches what actually ships and what the skill honestly states: orchestrate/SKILL.md:115 (routing row: "Nothing produces this event today … an arriving one is handled like a report") and :153-156 ("reports are waiting whenever parking returns … the report itself is the signal"). The §237 touch is needed because b1's "(above)" leans on that definition — without it, the definition would still imply an active wake-back mechanism.
+
+### Draft 3 (APPLIED) — §9.2 (~line 329): add `POST /api/skills` to the API-surface enumeration
+
+**(a) Current text** — no entry; the enumeration jumps from `POST /api/check` to `POST /api/skills/:name/rollback` (SPEC.md:328-329).
+
+**(b) Proposed text** — insert before the rollback bullet:
+
+> - `POST /api/skills` — creates `.claude/skills/<name>/SKILL.md` (§7 skill genesis, `corpus skill create`): body carries the name (which is also the traversal guard — no `/`, `.`, or whitespace), description, and optional title/tags; the created file carries both frontmatter vocabularies (Claude Code's `name`/`description` plus the server-assigned core document keys). `409` when the name is already installed. Lands as a normal auto-commit and carries the acting party like any mutation; the skill is edited afterwards through `PUT /api/docs/:id` like any document.
+
+**(c) Notes** — the endpoint shipped in CONTRACT-020 and is in the contract's endpoint inventory, whose own comment records the gap: "§9.2 does not list it yet — that amendment is routed with the rest of the §7 set" (`packages/contract/src/routes/inventory.ts:13-16`). Both prior SHARED passes missed this routing promise. Wording condensed from the route definition (`packages/contract/src/routes/skills.ts:65-95`).
+
 ## Acceptance Criteria
 - [ ] Each finding above is either fixed, converted to a domain issue, or explicitly waived with a note here.
 

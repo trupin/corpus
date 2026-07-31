@@ -3,59 +3,77 @@ import { z } from "zod";
 /**
  * **The one module that knows what a todo item is.**
  *
- * SPEC.md §12 leaves the item format to the builder ("frontmatter `items` … or
- * markdown checkboxes in the body"). PLUGINS-002 pins it to frontmatter:
- * `items: [{ text, done, ts, due? }]`, carried on the wire inside the
- * document's open `extra` object (`@corpus/contract`'s `ExtraFrontmatter` —
- * the server stores it verbatim and never interprets it).
+ * SPEC.md §12 (as amended 2026-07-30) settles the format: items are **checkbox
+ * lines in the document body** — standard GFM task-list items (`- [ ] text` /
+ * `- [x] text`), in body order, each optionally carrying `(due: YYYY-MM-DD)` at
+ * the **end** of its line. This module is that format's parser and serializer;
+ * every other file in the plugin goes through it and none of them knows what a
+ * line looks like.
  *
- * Every other file in this plugin goes through here. The routes mutate items
- * with the functions below; the manifest's `validate` calls {@link readItems};
- * the four React components read items with {@link readItems} too and never
- * write them directly; the CLI verbs never see the format at all, because they
- * are thin clients over the routes. One parser, one serializer, one set of
- * error messages — which is what makes the format decision enforceable rather
- * than aspirational.
+ * **Why the body and not frontmatter** (PLUGINS-003, Candidate 3): an item's
+ * text has to *be* body text for a comment on it to be an ordinary §6
+ * text-quote anchor. Nothing else about anchoring changes — there is simply
+ * nothing special about an item any more. PLUGINS-002's `extra.items` array is
+ * therefore reversed, and {@link planWrite} is the transition (see
+ * {@link LEGACY_ITEMS_KEY}).
  *
- * The issue's Technical Design named this module `server/items.ts`. It sits at
- * the plugin root instead because the **UI must read the same shape**: a
- * `server/` module imported by four React components reads as a layering
- * mistake, and a second reader written for the UI is exactly the drift the
- * single-owner rule exists to prevent. Nothing in here touches the filesystem,
- * the network or React — it is data, in and out.
+ * **The plugin now shares the body with the user, so this module edits lines,
+ * never documents.** A serializer that rewrote the body from a parsed model
+ * would reformat prose, re-wrap paragraphs and eat fenced code the first time
+ * anyone checked a box. Every mutation here therefore rebuilds exactly the one
+ * line it owns and splices it back: a toggle leaves the rest of the file
+ * byte-identical, including indentation, bullet character, inner spacing and
+ * the final newline. Content is only re-rendered when the item's own text or
+ * due date actually changed.
  *
- * **Absent `items` is an empty list** (sprint-014 Adjudication 17). Template
- * pre-fill is body-only (SPEC.md §11), so no seed can supply `items: []`; a
- * hand-written todo document, or one whose key was deleted, is the same state.
- * Treating absence as empty everywhere is strictly more robust than seeding,
- * and it is why no scoped-template-key mechanism is needed here.
+ * **What is not an item**: a line inside a fenced code block (a fence is
+ * tracked, so a `- [ ]` in an example is example text), a line inside an
+ * *indented* code block (four columns of indent with no list open above it), a
+ * checkbox with no content, and anything that is not a list bullet followed by
+ * `[ ]`/`[x]`. `*` and `+` bullets are *read* as items because GFM writes them;
+ * the plugin only ever *writes* `- `, which is also what the core editor's
+ * serializer emits, so a round trip through the editor does not rewrite these
+ * lines.
+ *
+ * **Nested task lists are read flat**, in body order. A child item is an item
+ * like any other: it is the third line in the document, so it is item 3 to
+ * `corpus todos check`, and the aggregate column counts it once. Nothing
+ * re-nests it either — every mutation rewrites exactly the one line it owns, so
+ * the indentation that made it a child survives a check, a rename and a delete
+ * untouched. The plugin has no model of a subtask and deliberately does not
+ * invent one (SPEC.md §12 describes a list of items, not a tree).
+ *
+ * Nothing in here touches the filesystem, the network or React — it is data,
+ * in and out. Per-item `ts` is gone (SHARED-005 A1(c)): body order is the
+ * order, and a toggle cannot move it because a toggle edits one character.
  */
 
-/** The frontmatter key this plugin owns, named once. */
-export const ITEMS_KEY = "items";
+/**
+ * The frontmatter key items lived in before PLUGINS-005.
+ *
+ * Read, never written: a document that still carries it is *unmigrated*, and
+ * the first write through this plugin (or `corpus todos migrate`) folds its
+ * items into the body and removes the key — a document with items in two
+ * places is a document where the two can disagree.
+ */
+export const LEGACY_ITEMS_KEY = "items";
 
 /** An ISO calendar date, `YYYY-MM-DD` — the only shape `due` may take. */
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-const IsoDateTimeSchema = z
-  .string()
-  .refine((value) => !Number.isNaN(Date.parse(value)), "must be an ISO-8601 instant");
-
 export const TodoItemSchema = z.object({
   text: z.string().min(1, "must be a non-empty string"),
   done: z.boolean(),
-  /**
-   * **Creation** time, never completion time. A toggle must leave it
-   * byte-identical, which is what lets a list keep a stable order across any
-   * number of check/uncheck cycles.
-   */
-  ts: IsoDateTimeSchema,
   /** Optional deadline; the only optional field in v1. */
   due: z.string().regex(ISO_DATE_PATTERN, "must be an ISO calendar date (YYYY-MM-DD)").optional(),
 });
 
 export type TodoItem = z.infer<typeof TodoItemSchema>;
 
+/**
+ * The legacy frontmatter array. `ts` is accepted and **dropped** — Zod objects
+ * strip unknown keys, and a pre-PLUGINS-005 document carries one on every item.
+ */
 export const TodoItemsSchema = z.array(TodoItemSchema);
 
 /** What {@link readItems} answers: the items, or why they could not be read. */
@@ -63,77 +81,355 @@ export type ItemsRead =
   | { readonly ok: true; readonly items: readonly TodoItem[] }
   | { readonly ok: false; readonly problems: readonly string[] };
 
+/**
+ * Where this module reads items from: the body, plus the legacy frontmatter a
+ * not-yet-migrated document may still carry.
+ *
+ * A list row satisfies it structurally through `extra` alone — which is exactly
+ * why the row surfaces cannot see body items and are re-sourced in PLUGINS-007.
+ */
+export interface ItemsSource {
+  readonly body?: string | undefined;
+  readonly extra?: Readonly<Record<string, unknown>> | undefined;
+}
+
+/** The shape of a `Doc` this module needs — stated structurally, never imported. */
+export interface TodoDocLike {
+  readonly body: string;
+  readonly frontmatter: { readonly extra?: Readonly<Record<string, unknown>> | undefined };
+}
+
+/** A whole document, as an {@link ItemsSource}: its body and its legacy key. */
+export function docSource(doc: TodoDocLike): ItemsSource {
+  return { body: doc.body, extra: doc.frontmatter.extra };
+}
+
+// ---------------------------------------------------------------------------
+// The line format
+// ---------------------------------------------------------------------------
+
+/**
+ * `- [ ] text` at any indent. `[^\n]` rather than `.` so a CRLF document's
+ * trailing `\r` is captured as trailing whitespace instead of failing to match.
+ */
+const TASK_LINE = /^([ \t]*)([-*+])([ \t]+)\[([ xX])\]([ \t]+)([^\n]*)$/;
+
+/** An opening or closing code fence — everything between two of them is text. */
+const FENCE = /^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$/;
+
+/**
+ * Any list marker — a bullet or an ordered number. What *opens a list context*,
+ * which is the difference between an indented item and indented code.
+ */
+const LIST_LINE = /^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/;
+
+/** A line's leading whitespace, measured by {@link indentWidth}. */
+const LEADING_SPACE = /^[ \t]*/;
+
+/** CommonMark's indented-code threshold, in columns. */
+const CODE_INDENT = 4;
+
+/** `(due: 2026-08-01)` at the very end of an item's text, after real content. */
+const DUE_MARKER = /^([^\n]*\S)[ \t]+\(due:[ \t]*(\d{4}-\d{2}-\d{2})\)$/;
+
+/** Trailing spaces, tabs and a CR — preserved verbatim across every edit. */
+const TRAILING_SPACE = /[ \t\r]*$/;
+
+/** The canonical bullet the plugin writes. Reads accept `*` and `+` too. */
+const BULLET = "- ";
+
+/** One parsed task line: the item, and the bytes needed to rewrite just it. */
+interface ItemLine {
+  /** Index into the body's `\n`-split lines. */
+  readonly at: number;
+  readonly indent: string;
+  readonly bullet: string;
+  readonly afterBullet: string;
+  readonly mark: string;
+  readonly afterMark: string;
+  /** The item's text and due marker exactly as written, trailing space removed. */
+  readonly content: string;
+  readonly trailing: string;
+  readonly item: TodoItem;
+}
+
+/** The item text a line should carry — the inline due marker lives here. */
+function contentFor(item: TodoItem): string {
+  return item.due === undefined ? item.text : `${item.text} (due: ${item.due})`;
+}
+
+/**
+ * Rewrites one line for a new item value.
+ *
+ * The mark is only replaced when `done` changed and the content only when the
+ * text or the date changed, so a check leaves every other byte of the line —
+ * including odd inner spacing a user typed — exactly where it was.
+ */
+function renderLine(line: ItemLine, next: TodoItem): string {
+  const mark = next.done === line.item.done ? line.mark : next.done ? "x" : " ";
+  const content =
+    next.text === line.item.text && next.due === line.item.due ? line.content : contentFor(next);
+  return `${line.indent}${line.bullet}${line.afterBullet}[${mark}]${line.afterMark}${content}${line.trailing}`;
+}
+
+/** A brand-new line, always canonical: `- [ ] text (due: …)`. */
+function newLine(item: TodoItem): string {
+  return `${BULLET}[${item.done ? "x" : " "}] ${contentFor(item)}`;
+}
+
+/**
+ * Splits an item's content into its text and its inline due date.
+ *
+ * Tolerant in both directions, per SPEC.md §12: the marker is recognised only
+ * at the very end of the line and only as a real ISO date, and anything that
+ * fails either test is ordinary item text — never an error, never rewritten.
+ */
+function parseContent(content: string): { readonly text: string; readonly due?: string } {
+  const marker = DUE_MARKER.exec(content);
+  if (marker === null) return { text: content };
+  return { text: String(marker[1]), due: String(marker[2]) };
+}
+
+/** A line's indent in columns; a tab advances to the next multiple of four. */
+function indentWidth(raw: string): number {
+  let width = 0;
+  for (const char of String(LEADING_SPACE.exec(raw)?.[0] ?? "")) {
+    width = char === "\t" ? width + CODE_INDENT - (width % CODE_INDENT) : width + 1;
+  }
+  return width;
+}
+
+/**
+ * The index of the line that closes the fence opened at `open`, or `null` when
+ * nothing in the rest of the document does.
+ *
+ * Looked **ahead** rather than tracked as state, because the answer changes what
+ * the opening line meant: a fence that never closes is a typo, and treating it
+ * as a code block would silently swallow every item below it for the rest of the
+ * document (FIX 7 — the editor still shows the checkboxes, and the panel says
+ * `0 open`). Bounded to its own line instead, the typo costs one line.
+ */
+function fenceEnd(lines: readonly string[], open: number, marker: string): number | null {
+  for (let at = open + 1; at < lines.length; at += 1) {
+    const fenced = FENCE.exec(String(lines[at]));
+    if (fenced === null) continue;
+    const closer = String(fenced[1]);
+    // A closing run is the same character, at least as long, and carries no
+    // info string — which is what makes ```` ``` ```` inside ```` ```` ```` text.
+    if (
+      closer.startsWith(marker.slice(0, 1)) &&
+      closer.length >= marker.length &&
+      String(fenced[2]).trim() === ""
+    ) {
+      return at;
+    }
+  }
+  return null;
+}
+
+/** One task line, or `null` for a line that is not one. */
+function parseTaskLine(raw: string, at: number): ItemLine | null {
+  const match = TASK_LINE.exec(raw);
+  if (match === null) return null;
+  const rest = String(match[6]);
+  const trailing = String(TRAILING_SPACE.exec(rest)?.[0] ?? "");
+  const content = rest.slice(0, rest.length - trailing.length);
+  // `- [ ]` with nothing after it is a checkbox the user is still typing, not
+  // an item: it has no text to name, to comment on, or to check off.
+  if (content === "") return null;
+  const mark = String(match[4]);
+  const parsed = parseContent(content);
+  return {
+    at,
+    indent: String(match[1]),
+    bullet: String(match[2]),
+    afterBullet: String(match[3]),
+    mark,
+    afterMark: String(match[5]),
+    content,
+    trailing,
+    // Field order is `text, done, due` everywhere — the same shape the CLI's
+    // `--json` prints, so a route response and a verb's output read alike.
+    item: {
+      text: parsed.text,
+      done: mark !== " ",
+      ...(parsed.due === undefined ? {} : { due: parsed.due }),
+    },
+  };
+}
+
+/**
+ * Every task line in a body, in body order, skipping both kinds of code block.
+ *
+ * **Fenced code** is CommonMark-shaped: a run of three or more backticks or
+ * tildes opens, and a run of the same character at least as long with nothing
+ * after it closes. That is what separates “an item” from “an example of an
+ * item” (TEST-477), and a regex without it would check off a line inside a code
+ * block. A fence that is never closed is bounded to its own line — see
+ * {@link fenceEnd}.
+ *
+ * **Indented code** needs the one piece of block context this parser keeps: a
+ * line indented four columns or more is a code line *unless a list is open
+ * above it*, in which case it is that list's nested item. Without the
+ * distinction, four-space-indented prose in a code block parses as an item
+ * (FIX 8) and four-space-nested subtasks stop being items — the tracked list
+ * indent is what lets both be right. A blank line does not close a list (a
+ * loose list is still a list); prose at or left of the list's own indent does.
+ */
+function taskLines(body: string): readonly ItemLine[] {
+  const lines = body.split("\n");
+  const found: ItemLine[] = [];
+  /** The indent of the shallowest open list, in columns; `null` outside one. */
+  let list: number | null = null;
+
+  for (let at = 0; at < lines.length; at += 1) {
+    const raw = String(lines[at]);
+
+    const fenced = FENCE.exec(raw);
+    if (fenced !== null) {
+      const end = fenceEnd(lines, at, String(fenced[1]));
+      if (end !== null) at = end;
+      continue;
+    }
+
+    if (raw.trim() === "") continue;
+
+    const indent = indentWidth(raw);
+    if (!LIST_LINE.test(raw)) {
+      if (list !== null && indent <= list) list = null;
+      continue;
+    }
+    if (list === null && indent >= CODE_INDENT) continue;
+    list = list === null ? indent : Math.min(list, indent);
+
+    const line = parseTaskLine(raw, at);
+    if (line !== null) found.push(line);
+  }
+  return found;
+}
+
+/** The items a body carries, in body order. */
+export function parseBodyItems(body: string): readonly TodoItem[] {
+  return taskLines(body).map((line) => line.item);
+}
+
+// ---------------------------------------------------------------------------
+// Reading — body first, legacy frontmatter while a workspace is mid-transition
+// ---------------------------------------------------------------------------
+
 /** `items[2].done: expected boolean` — a message that names the offending field. */
-function describeIssue(issue: z.core.$ZodIssue): string {
+function describeLegacyIssue(issue: z.core.$ZodIssue): string {
   const path = issue.path
     .map((segment) =>
       typeof segment === "number" ? `[${String(segment)}]` : `.${String(segment)}`,
     )
     .join("");
-  return `${ITEMS_KEY}${path}: ${issue.message}`;
+  return `${LEGACY_ITEMS_KEY}${path}: ${issue.message}`;
 }
 
-/** The document shape this module needs — a `Doc`'s frontmatter, or a list row's. */
-export interface ItemsCarrier {
-  readonly extra?: Readonly<Record<string, unknown>> | undefined;
+/** `item.text: must be a non-empty string` — the same, for a single item. */
+function describeItemIssue(issue: z.core.$ZodIssue): string {
+  return `item.${issue.path.join(".")}: ${issue.message}`;
+}
+
+/** True when the document still carries the pre-PLUGINS-005 frontmatter key. */
+export function hasLegacyItems(extra: Readonly<Record<string, unknown>> | undefined): boolean {
+  return extra !== undefined && Object.hasOwn(extra, LEGACY_ITEMS_KEY);
 }
 
 /**
- * Reads `items` off already-parsed extra frontmatter.
+ * The legacy array, or `null` when the document never carried the key.
  *
- * Absent, `null` and `[]` are the same answer: an empty list. Anything else
- * that is not a well-formed array of items is a *readable* failure, not a
- * throw — the View degrades to a notice plus the raw markdown, and a mutating
- * route refuses to write over a shape it cannot understand.
+ * `null` and `[]` are both an empty legacy list — the key is present, so it
+ * still has to be cleared, but there is nothing to fold into the body.
  */
-export function readItems(carrier: ItemsCarrier | undefined): ItemsRead {
-  const raw = carrier?.extra?.[ITEMS_KEY];
-  if (raw === undefined || raw === null) return { ok: true, items: [] };
+export function readLegacyItems(
+  extra: Readonly<Record<string, unknown>> | undefined,
+): ItemsRead | null {
+  if (!hasLegacyItems(extra)) return null;
+  const raw = extra?.[LEGACY_ITEMS_KEY];
+  if (raw === null || raw === undefined) return { ok: true, items: [] };
   if (!Array.isArray(raw)) {
     return {
       ok: false,
-      problems: [`${ITEMS_KEY}: must be a list of items; found ${typeof raw}`],
+      problems: [`${LEGACY_ITEMS_KEY}: must be a list of items; found ${typeof raw}`],
     };
   }
   const parsed = TodoItemsSchema.safeParse(raw);
   if (!parsed.success) {
-    return { ok: false, problems: parsed.error.issues.map(describeIssue) };
+    return { ok: false, problems: parsed.error.issues.map(describeLegacyIssue) };
   }
   return { ok: true, items: parsed.data };
 }
 
 /**
- * The items, or `[]` for a document whose `items` cannot be read.
+ * The document's items, or why they could not be read.
  *
- * The list-row surfaces (`ListItem`, the aggregate column) render across many
- * documents at once, where one malformed document must degrade to "no items"
- * rather than to a notice in someone else's row. The `View` and `DocPanel`,
- * which are *about* one document, use {@link readItems} and surface the
- * problems.
+ * Precedence, stated once and relied on everywhere: a legacy key that cannot be
+ * **parsed** is a problem regardless of the body — it is a hand-edit the user
+ * has to fix, and hiding it behind a well-formed body would let a write refuse
+ * for a reason nothing on screen explains. Otherwise the **body wins** whenever
+ * it carries task lines, and the legacy key answers only for a document that
+ * has not been migrated yet.
  */
-export function itemsOrEmpty(carrier: ItemsCarrier | undefined): readonly TodoItem[] {
-  const read = readItems(carrier);
+export function readItems(source: ItemsSource | undefined): ItemsRead {
+  const legacy = readLegacyItems(source?.extra);
+  if (legacy !== null && !legacy.ok) return legacy;
+  const items = parseBodyItems(source?.body ?? "");
+  if (items.length > 0) return { ok: true, items };
+  if (legacy !== null) return legacy;
+  return { ok: true, items: [] };
+}
+
+/**
+ * The items, or `[]` for a document whose items cannot be read.
+ *
+ * The list-row surfaces render across many documents at once, where one
+ * malformed document must degrade to "no items" rather than to a notice in
+ * someone else's row.
+ */
+export function itemsOrEmpty(source: ItemsSource | undefined): readonly TodoItem[] {
+  const read = readItems(source);
   return read.ok ? read.items : [];
 }
 
 /**
- * The manifest's `validate` answer: what is wrong with this document's items,
- * empty when nothing is (SPEC.md §10 — a plugin validates its own `extra`).
+ * The one clause the validator and the write refusal both say about a document
+ * storing its items in two places, so the two can never drift apart.
  */
-export function itemProblems(carrier: ItemsCarrier | undefined): readonly string[] {
-  const read = readItems(carrier);
-  return read.ok ? [] : read.problems;
+const DUAL_STORAGE = `carries items in its body *and* in its \`${LEGACY_ITEMS_KEY}\` frontmatter`;
+
+/** True when items are in the body *and* in a legacy key — nothing can write it. */
+function isDualStorage(source: ItemsSource | undefined): boolean {
+  const legacy = readLegacyItems(source?.extra);
+  if (legacy === null || !legacy.ok || legacy.items.length === 0) return false;
+  return parseBodyItems(source?.body ?? "").length > 0;
 }
 
-/** Serializes items back into an `extra` patch value — `due` omitted when absent. */
-export function serializeItems(items: readonly TodoItem[]): readonly Record<string, unknown>[] {
-  return items.map((item) => ({
-    text: item.text,
-    done: item.done,
-    ts: item.ts,
-    ...(item.due === undefined ? {} : { due: item.due }),
-  }));
+/**
+ * The manifest's `validate` answer: what is wrong with this document's items,
+ * empty when nothing is (SPEC.md §10 — a plugin validates its own document).
+ *
+ * Under body storage there is nothing a *body* can say that is malformed — a
+ * line either is a task item or is prose — so what is left is the two states a
+ * not-yet-migrated document can be in that {@link planWrite} refuses to write:
+ * a legacy key that cannot be parsed, and items in **both** places. Both are
+ * reported, because a document every write refuses and every surface calls
+ * valid is a document whose refusals nothing on screen explains (FIX 6).
+ */
+export function itemProblems(source: ItemsSource | undefined): readonly string[] {
+  const read = readItems(source);
+  if (!read.ok) return read.problems;
+  if (!isDualStorage(source)) return [];
+  return [
+    `this document ${DUAL_STORAGE} — remove whichever list is stale; ` +
+      "until then nothing can be written to it",
+  ];
 }
+
+// ---------------------------------------------------------------------------
+// Refusals
+// ---------------------------------------------------------------------------
 
 /**
  * A refusal to mutate, carrying the status a route should answer with.
@@ -151,24 +447,26 @@ export class TodoItemError extends Error {
   }
 }
 
-function requireIndex(items: readonly TodoItem[], index: number): TodoItem {
-  if (!Number.isInteger(index) || index < 0 || index >= items.length) {
+function requireLine(lines: readonly ItemLine[], index: number): ItemLine {
+  if (!Number.isInteger(index) || index < 0 || index >= lines.length) {
     throw new TodoItemError(
       400,
-      `item index ${String(index)} is out of range — this list has ${String(items.length)} item${
-        items.length === 1 ? "" : "s"
+      `item index ${String(index)} is out of range — this list has ${String(lines.length)} item${
+        lines.length === 1 ? "" : "s"
       }`,
     );
   }
   // Bounds are checked immediately above, so the element is present.
-  return items[index] as TodoItem;
+  return lines[index] as ItemLine;
 }
 
 /**
  * The optimistic-concurrency guard. Index addressing is cheap and stable for
  * the life of a render, but a concurrent `check` or `delete` shifts it — so
  * every write may carry the text it believes is at that index, and a mismatch
- * is refused rather than applied to whatever moved into place.
+ * is refused rather than applied to whatever moved into place. Body storage
+ * does not change that: a line number is no more an identity than an array
+ * index was.
  */
 function requireMatch(item: TodoItem, index: number, expectedText: string | undefined): void {
   if (expectedText === undefined || expectedText === item.text) return;
@@ -179,25 +477,79 @@ function requireMatch(item: TodoItem, index: number, expectedText: string | unde
   );
 }
 
+/** A validated item, or the 400 that says which field is wrong. */
+function checked(candidate: { text: string; done: boolean; due?: string | undefined }): TodoItem {
+  const parsed = TodoItemSchema.safeParse({
+    text: candidate.text,
+    done: candidate.done,
+    ...(candidate.due === undefined ? {} : { due: candidate.due }),
+  });
+  if (!parsed.success) {
+    throw new TodoItemError(400, parsed.error.issues.map(describeItemIssue).join("; "));
+  }
+  // An item is one line by definition: text carrying a newline would silently
+  // become two items — or one item plus a line of prose — on the next read.
+  if (/[\r\n]/.test(parsed.data.text)) {
+    throw new TodoItemError(400, "item.text: must be a single line");
+  }
+  return parsed.data;
+}
+
+// ---------------------------------------------------------------------------
+// Writing — every mutation returns a new body
+// ---------------------------------------------------------------------------
+
+/**
+ * The carriage return this document's lines already end with, or `""`.
+ *
+ * Bodies are split and rejoined on `\n` throughout, so a CRLF document's `\r`
+ * simply rides along at the end of every existing line — every mutation of an
+ * *existing* line therefore preserves it for free. A line the plugin **adds**
+ * has to be given one, or a CRLF document acquires mixed endings on its first
+ * append and every line the plugin ever wrote shows up as changed in a diff
+ * (FIX 14). The dominant ending wins, so a document already mixed is not made
+ * more so.
+ */
+function dominantReturn(body: string): string {
+  const crlf = (body.match(/\r\n/g) ?? []).length;
+  const lf = (body.match(/(?<!\r)\n/g) ?? []).length;
+  return crlf > lf ? "\r" : "";
+}
+
+/**
+ * Splices new lines into a body, in the body's own line ending.
+ *
+ * New items join the end of the **existing list** when there is one, so a
+ * document whose items sit between a heading and its notes keeps them there.
+ * With no list yet, they go after the body's last non-empty line with a blank
+ * line between, which is where a list may start without interrupting whatever
+ * precedes it.
+ */
+function insertLines(body: string, added: readonly string[]): string {
+  const cr = dominantReturn(body);
+  const written = added.map((line) => `${line}${cr}`);
+  const lines = body.split("\n");
+  const last = taskLines(body).at(-1);
+  if (last !== undefined) {
+    lines.splice(last.at + 1, 0, ...written);
+    return lines.join("\n");
+  }
+  let lastContent = -1;
+  for (const [at, raw] of lines.entries()) if (raw.trim() !== "") lastContent = at;
+  if (lastContent === -1) return `${written.join("\n")}${cr}\n`;
+  lines.splice(lastContent + 1, 0, cr, ...written);
+  return lines.join("\n");
+}
+
 export interface AppendInput {
   readonly text: string;
-  /** Creation instant, supplied by the caller's clock — never read from here. */
-  readonly ts: string;
   readonly due?: string | undefined;
 }
 
-/** Appends one item. New items are always open; `ts` is their creation time. */
-export function appendItem(items: readonly TodoItem[], input: AppendInput): readonly TodoItem[] {
-  const parsed = TodoItemSchema.safeParse({
-    text: input.text,
-    done: false,
-    ts: input.ts,
-    ...(input.due === undefined ? {} : { due: input.due }),
-  });
-  if (!parsed.success) {
-    throw new TodoItemError(400, parsed.error.issues.map(describeIssue).join("; "));
-  }
-  return [...items, parsed.data];
+/** Appends one open item to the body's list. New items are always open. */
+export function appendItemToBody(body: string, input: AppendInput): string {
+  const item = checked({ text: input.text, done: false, due: input.due });
+  return insertLines(body, [newLine(item)]);
 }
 
 export interface UpdateInput {
@@ -212,40 +564,102 @@ export interface UpdateInput {
 }
 
 /**
- * Updates one item in place. `ts` is copied through untouched — a toggle is not
- * a creation, and the ordering a list has depends on that staying true.
+ * Updates one item in place, rewriting exactly its line.
+ *
+ * Order is body order and this cannot move it — which is the guarantee the
+ * dropped per-item `ts` used to buy, now a property of editing a line rather
+ * than rebuilding a list.
  */
-export function updateItem(
-  items: readonly TodoItem[],
-  index: number,
-  input: UpdateInput,
-): readonly TodoItem[] {
-  const current = requireIndex(items, index);
-  requireMatch(current, index, input.expectedText);
-
-  const dueAfter = input.due === undefined ? current.due : (input.due ?? undefined);
-  const parsed = TodoItemSchema.safeParse({
-    text: input.text ?? current.text,
-    done: input.done ?? current.done,
-    ts: current.ts,
-    ...(dueAfter === undefined ? {} : { due: dueAfter }),
+export function updateItemInBody(body: string, index: number, input: UpdateInput): string {
+  const line = requireLine(taskLines(body), index);
+  requireMatch(line.item, index, input.expectedText);
+  const next = checked({
+    text: input.text ?? line.item.text,
+    done: input.done ?? line.item.done,
+    due: input.due === undefined ? line.item.due : (input.due ?? undefined),
   });
-  if (!parsed.success) {
-    throw new TodoItemError(400, parsed.error.issues.map(describeIssue).join("; "));
-  }
-  return items.map((item, at) => (at === index ? parsed.data : item));
+  const lines = body.split("\n");
+  lines[line.at] = renderLine(line, next);
+  return lines.join("\n");
 }
 
-/** Removes exactly one item; every other item survives byte-for-byte. */
-export function removeItem(
-  items: readonly TodoItem[],
-  index: number,
-  expectedText?: string,
-): readonly TodoItem[] {
-  const current = requireIndex(items, index);
-  requireMatch(current, index, expectedText);
-  return items.filter((_item, at) => at !== index);
+/** Removes exactly one item's line; every other byte of the body survives. */
+export function removeItemFromBody(body: string, index: number, expectedText?: string): string {
+  const line = requireLine(taskLines(body), index);
+  requireMatch(line.item, index, expectedText);
+  const lines = body.split("\n");
+  lines.splice(line.at, 1);
+  return lines.join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Migration
+// ---------------------------------------------------------------------------
+
+/** What a write must do about a document that may not be migrated yet. */
+export interface WritePlan {
+  /** The body the write starts from — legacy items folded in when needed. */
+  readonly body: string;
+  /** True when the write must also clear the legacy `items` frontmatter key. */
+  readonly clearLegacy: boolean;
+}
+
+/**
+ * Decides how a write should treat a document's storage state, and refuses the
+ * two states nobody can act on safely.
+ *
+ * A document that never carried the key is already body-backed and this is a
+ * no-op. One carrying an empty or absent-valued key just loses it. One carrying
+ * real legacy items and **no** body items is migrated in the same patch as the
+ * write that triggered it — one commit, never a half state.
+ *
+ * The refusals: a legacy key that cannot be parsed (writing a well-formed list
+ * over frontmatter we could not read would silently discard a hand-edit), and a
+ * document carrying items in **both** places, which nothing can merge without
+ * guessing which list the user meant. Both name what to do next.
+ */
+export function planWrite(source: ItemsSource, label: string): WritePlan {
+  const body = source.body ?? "";
+  const legacy = readLegacyItems(source.extra);
+  if (legacy === null) return { body, clearLegacy: false };
+  if (!legacy.ok) {
+    throw new TodoItemError(
+      400,
+      `${label} has malformed ${LEGACY_ITEMS_KEY} and was not written — ${legacy.problems.join("; ")}`,
+    );
+  }
+  if (legacy.items.length === 0) return { body, clearLegacy: true };
+  if (parseBodyItems(body).length > 0) {
+    throw new TodoItemError(
+      400,
+      `${label} ${DUAL_STORAGE}, and was not written — remove whichever list is stale before ` +
+        "writing to it",
+    );
+  }
+  return { body: migrateBody(body, legacy.items), clearLegacy: true };
+}
+
+/**
+ * Appends legacy frontmatter items to a body as task lines, in their order.
+ *
+ * Every item goes through {@link checked} on the way, so the *one* gate on what
+ * may become a line is the same one every other write uses. A legacy key is
+ * hand-editable YAML: an item whose text carries a newline would otherwise
+ * arrive here unvalidated and be written as one item plus a line of prose —
+ * silent corruption in the middle of a migration. Refused instead, it becomes
+ * that document's migration conflict, with the same message a `text` containing
+ * a newline gets at any other boundary.
+ */
+export function migrateBody(body: string, items: readonly TodoItem[]): string {
+  return insertLines(
+    body,
+    items.map((item) => newLine(checked(item))),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Derivations — unchanged by the storage move
+// ---------------------------------------------------------------------------
 
 /**
  * Resolves an index-or-text selector against a list — what `corpus todos check`

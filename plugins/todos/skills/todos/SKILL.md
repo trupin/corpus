@@ -12,9 +12,14 @@ thread request that falls in this plugin's domain here rather than editing
 
 ## The invariant you inherit
 
-Every write goes through the `corpus` CLI. Never edit a todo document's file,
-and never hand-write its `items` frontmatter — the plugin's verbs own that
-format, and a hand-edited list is one the checkbox view refuses to render.
+Every write goes through the `corpus` CLI. Never edit a todo document's file.
+
+A todo document's items are ordinary markdown task-list lines in its **body** —
+`- [ ] text`, `- [x] text`, with an optional `(due: 2026-08-01)` at the end of
+the line. `corpus todos add|check` own that format: they edit exactly the one
+line they mean and leave the rest of the document — prose, headings, code —
+byte-identical. Use them rather than rewriting the body with `corpus doc edit`,
+which cannot make that promise.
 
 ## Finding the list
 
@@ -40,8 +45,15 @@ If no todo list fits, create one first and then add to it:
 corpus doc create --type todo --title "House purchase — paperwork" --folder finance --from agent
 ```
 
-A new todo document starts empty; that is a valid list, not a broken one. Do
-not create a second list for something an existing one covers.
+A new todo document starts from the todo template's starter lines; a list with
+nothing on it is a valid list, not a broken one. Do not create a second list
+for something an existing one covers.
+
+If `corpus todos add` or `check` refuses with "has malformed `items`" or
+"carries items in its body _and_ in its `items` frontmatter", the document is a
+pre-migration one that needs a person: say so in the thread rather than editing
+the file. `corpus todos migrate` converts every remaining old-format list in
+one go and is safe to re-run, but run it only when asked.
 
 ## Checking items off
 

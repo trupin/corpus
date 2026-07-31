@@ -140,8 +140,8 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     key: () => [...QUEUE_KEY],
     parameterised: false,
     emittedBy:
-      "every queue transition: enqueue, claim, complete, fail, abandon, reap, halt/resume, and a " +
-      "lock break that re-enqueues a deferred event",
+      "every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, " +
+      "and any lock release, break or reap that re-enters a deferred event",
     refetchedBy: "`GET /api/queue/status` — the console strip's depth and halted state",
   },
   jobs: {

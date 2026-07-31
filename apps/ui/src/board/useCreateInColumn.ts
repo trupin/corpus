@@ -1,6 +1,7 @@
 import { DEFAULT_DOC_FOLDER, type Doc } from "@corpus/contract";
 import { useCreateDoc, type CreateDocInput } from "@corpus/kit";
 import { useCallback } from "react";
+import { publishPristineBody } from "../abandon/registry";
 import type { PluginColumnRef } from "./viewDoc";
 
 /**
@@ -71,6 +72,15 @@ export function useCreateInColumn(): CreateInColumn {
   const createDocument = useCallback(
     async (target: CreateTarget, title: string = UNTITLED_DOCUMENT_TITLE) => {
       const response = await mutateAsync(creationRequest(target, title));
+      /*
+       * The body the document was born with — a template's prefill (SPEC.md
+       * §11's "Templates are documents"), or nothing at all.
+       *
+       * The abandon rule needs it: a new `note` in a seeded workspace arrives
+       * holding `## Context / ## Notes / ## Open questions`, and a user who
+       * typed nothing has still written nothing.
+       */
+      publishPristineBody(response.doc.frontmatter.id, response.doc.body);
       return response.doc;
     },
     [mutateAsync],

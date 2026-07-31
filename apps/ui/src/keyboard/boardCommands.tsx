@@ -38,6 +38,8 @@ export interface BoardCommands {
   readonly archiveTarget: () => void;
   /** `r`: focuses the reply composer of the open document's visible thread. */
   readonly focusReply: () => void;
+  /** The menu key / `⇧F10`: opens the context menu on the keyboard highlight. */
+  readonly openContextMenu: () => void;
 }
 
 const NO_BOARD: BoardCommands = {
@@ -48,6 +50,7 @@ const NO_BOARD: BoardCommands = {
   toggleFocusMode: () => undefined,
   archiveTarget: () => undefined,
   focusReply: () => undefined,
+  openContextMenu: () => undefined,
 };
 
 interface CommandsContext {
@@ -85,6 +88,7 @@ export function BoardCommandsProvider({
       toggleFocusMode: () => registered.current?.toggleFocusMode(),
       archiveTarget: () => registered.current?.archiveTarget(),
       focusReply: () => registered.current?.focusReply(),
+      openContextMenu: () => registered.current?.openContextMenu(),
     }),
     [],
   );

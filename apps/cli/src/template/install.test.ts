@@ -14,7 +14,9 @@ import {
   INSTALL_RENAMES,
   installedPath,
   listTemplateFiles,
+  planPluginSeedInstall,
   planTemplateInstall,
+  templateSeedNames,
 } from "./install.js";
 
 /**
@@ -84,5 +86,222 @@ describe("planTemplateInstall", () => {
       { from: "claude/skills/orchestrate/SKILL.md", to: ".claude/skills/orchestrate/SKILL.md" },
       { from: "gitignore", to: ".gitignore" },
     ]);
+  });
+});
+
+/** A plugin tree: `types.yaml` plus whichever seed files the test wants on disk. */
+function makePluginTree(
+  plugins: Readonly<
+    Record<string, { readonly types?: string; readonly seeds?: readonly string[] }>
+  >,
+): string {
+  const root = makeTempDir("plugins");
+  for (const [dir, plugin] of Object.entries(plugins)) {
+    mkdirSync(join(root, dir), { recursive: true });
+    if (plugin.types !== undefined) writeFileSync(join(root, dir, "types.yaml"), plugin.types);
+    for (const seed of plugin.seeds ?? []) {
+      const absolute = join(root, dir, ...seed.split("/"));
+      mkdirSync(join(absolute, ".."), { recursive: true });
+      writeFileSync(absolute, `# ${dir} ${seed}\n`);
+    }
+  }
+  return root;
+}
+
+const declaring = (seedTemplate: string): string =>
+  `types:\n  - type: todo\n    label: Todo\n    seedTemplate: ${seedTemplate}\n`;
+
+describe("planPluginSeedInstall", () => {
+  it("installs a declared seed template beside the workspace's own templates", () => {
+    const root = makePluginTree({
+      todos: { types: declaring("seeds/todo-template.md"), seeds: ["seeds/todo-template.md"] },
+    });
+
+    expect(planPluginSeedInstall(root, new Set())).toEqual({
+      files: [
+        {
+          plugin: "todos",
+          from: "todos/seeds/todo-template.md",
+          to: "data/docs/templates/todo-template.md",
+        },
+      ],
+      warnings: [],
+    });
+  });
+
+  it("installs nothing for a plugin that declares no seedTemplate, whatever is in seeds/", () => {
+    const root = makePluginTree({
+      todos: { types: "types:\n  - type: todo\n    label: Todo\n", seeds: ["seeds/stray.md"] },
+    });
+
+    expect(planPluginSeedInstall(root, new Set())).toEqual({ files: [], warnings: [] });
+  });
+
+  it("is silent about a plugin with no types.yaml at all", () => {
+    const root = makePluginTree({ todos: { seeds: ["seeds/todo-template.md"] } });
+
+    expect(planPluginSeedInstall(root, new Set())).toEqual({ files: [], warnings: [] });
+  });
+
+  it("warns naming the plugin and the path when the declared file is missing", () => {
+    const root = makePluginTree({ todos: { types: declaring("seeds/does-not-exist.md") } });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files).toEqual([]);
+    expect(plan.warnings).toHaveLength(1);
+    expect(plan.warnings[0]).toContain("todos");
+    expect(plan.warnings[0]).toContain("seeds/does-not-exist.md");
+  });
+
+  it("lets a core template win a name collision", () => {
+    const root = makePluginTree({
+      todos: { types: declaring("seeds/note.md"), seeds: ["seeds/note.md"] },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set(["note.md"]));
+    expect(plan.files).toEqual([]);
+    expect(plan.warnings[0]).toContain("can never replace a core template");
+  });
+
+  it("warns rather than throwing when the declared path is a directory", () => {
+    // Wave-3 audit, FIX 13. `existsSync` said yes to a directory and the
+    // `copyFileSync` that followed threw `EISDIR` out of the middle of
+    // `corpus init`, unwinding a whole workspace over one plugin's typo. The
+    // message has to say which mistake it is: "does not exist" would send the
+    // author looking for a missing file that is sitting right there.
+    const root = makePluginTree({ todos: { types: declaring("seeds/todo-template.md") } });
+    mkdirSync(join(root, "todos", "seeds", "todo-template.md"), { recursive: true });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files).toEqual([]);
+    expect(plan.warnings).toHaveLength(1);
+    expect(plan.warnings[0]).toContain("todos");
+    expect(plan.warnings[0]).toContain("seeds/todo-template.md");
+    expect(plan.warnings[0]).toContain("is a directory, not a file");
+    expect(plan.warnings[0]).not.toContain("does not exist");
+  });
+
+  it("says nothing when one plugin declares the same seed for two of its own types", () => {
+    // Wave-3 audit, CLEAN 44. Two doc types sharing one starter document is a
+    // legitimate declaration, not a collision — and the warning it used to
+    // produce named the plugin as the loser of a race against itself.
+    const root = makePluginTree({
+      todos: {
+        types:
+          "types:\n" +
+          "  - type: todo\n    label: Todo\n    seedTemplate: seeds/shared.md\n" +
+          "  - type: chore\n    label: Chore\n    seedTemplate: seeds/shared.md\n",
+        seeds: ["seeds/shared.md"],
+      },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.warnings).toEqual([]);
+    expect(plan.files).toEqual([
+      { plugin: "todos", from: "todos/seeds/shared.md", to: "data/docs/templates/shared.md" },
+    ]);
+  });
+
+  it("names both paths when one plugin's two seeds would install as the same file", () => {
+    // A real conflict, unlike the case above: two different files, one
+    // installed name. The message says which two, and does not pretend some
+    // other plugin got there first.
+    const root = makePluginTree({
+      todos: {
+        types:
+          "types:\n" +
+          "  - type: todo\n    label: Todo\n    seedTemplate: seeds/a/shared.md\n" +
+          "  - type: chore\n    label: Chore\n    seedTemplate: seeds/b/shared.md\n",
+        seeds: ["seeds/a/shared.md", "seeds/b/shared.md"],
+      },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files.map((file) => file.from)).toEqual(["todos/seeds/a/shared.md"]);
+    expect(plan.warnings).toHaveLength(1);
+    expect(plan.warnings[0]).toContain("two different seed templates");
+    expect(plan.warnings[0]).toContain("seeds/a/shared.md");
+    expect(plan.warnings[0]).toContain("seeds/b/shared.md");
+    expect(plan.warnings[0]).not.toContain("already installed by plugin");
+  });
+
+  it("still blames the right plugin when two different plugins collide on one name", () => {
+    // The same-plugin carve-out must not silence the collision it exists beside.
+    const root = makePluginTree({
+      alpha: { types: declaring("seeds/shared.md"), seeds: ["seeds/shared.md"] },
+      beta: {
+        types:
+          "types:\n" +
+          "  - type: todo\n    label: Todo\n    seedTemplate: seeds/shared.md\n" +
+          "  - type: chore\n    label: Chore\n    seedTemplate: seeds/shared.md\n",
+        seeds: ["seeds/shared.md"],
+      },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files.map((file) => file.plugin)).toEqual(["alpha"]);
+    // One warning, not two: beta's second declaration lost to alpha, not to beta.
+    expect(plan.warnings).toEqual([
+      'plugin beta ships a seed template named "shared.md", already installed by plugin alpha — skipped',
+    ]);
+  });
+
+  it("gives a collision between two plugins to the first in directory order", () => {
+    const root = makePluginTree({
+      alpha: { types: declaring("seeds/shared.md"), seeds: ["seeds/shared.md"] },
+      beta: { types: declaring("seeds/shared.md"), seeds: ["seeds/shared.md"] },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files.map((file) => file.plugin)).toEqual(["alpha"]);
+    expect(plan.warnings[0]).toContain("already installed by plugin alpha");
+  });
+
+  it("refuses a declaration that points outside the plugin directory", () => {
+    const root = makePluginTree({ todos: { types: declaring("../../etc/passwd") } });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files).toEqual([]);
+    expect(plan.warnings[0]).toContain("outside the plugin directory");
+  });
+
+  it("warns rather than throwing on a types.yaml it cannot use", () => {
+    const root = makePluginTree({
+      broken: { types: "types:\n  - seedTemplate: seeds/x.md\n" },
+      unparseable: { types: "types: [\n" },
+    });
+
+    const plan = planPluginSeedInstall(root, new Set());
+    expect(plan.files).toEqual([]);
+    expect(plan.warnings).toHaveLength(2);
+  });
+
+  it("installs nothing when there is no plugins root", () => {
+    expect(planPluginSeedInstall(undefined, new Set())).toEqual({ files: [], warnings: [] });
+    expect(planPluginSeedInstall("/nowhere/at/all", new Set())).toEqual({
+      files: [],
+      warnings: [],
+    });
+  });
+
+  it("reserves exactly the template's own template documents", () => {
+    expect(
+      templateSeedNames([
+        { from: "data/docs/templates/note.md", to: "data/docs/templates/note.md" },
+        { from: "data/docs/views/inbox.md", to: "data/docs/views/inbox.md" },
+      ]),
+    ).toEqual(new Set(["note.md"]));
+  });
+
+  it("installs what the shipped todos plugin declares, whatever that file contains", () => {
+    // Deliberately no assertion about the template's *content*: this issue
+    // installs whatever the plugin ships (sprint-017 TEST-518), and pinning the
+    // body here would couple it to the plugin's own storage work.
+    const plan = planPluginSeedInstall(join(import.meta.dirname, "../../../../plugins"), new Set());
+    expect(plan.files).toContainEqual({
+      plugin: "todos",
+      from: "todos/seeds/todo-template.md",
+      to: "data/docs/templates/todo-template.md",
+    });
   });
 });

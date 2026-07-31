@@ -336,13 +336,46 @@ export function validateBeforeWrite(
 }
 
 /**
+ * A filename that stands for "any document written here" when asking
+ * {@link classifyPath} whether the projection would index a folder's contents.
+ *
+ * The question is about the *folder*, but `classifyPath` classifies whole paths,
+ * so the probe supplies the only other thing a path needs. It is deliberately an
+ * ordinary slug: `slugifyTitle` can never produce a leading dot (it strips
+ * everything but `a-z0-9-`), so no real filename can make the answer differ from
+ * this one.
+ */
+const FOLDER_PROBE_FILENAME = "document.md";
+
+/**
+ * Whether the projection would index a document written into `folder` — asked of
+ * {@link classifyPath} itself rather than of a copy of its rules (SERVER-037).
+ *
+ * `classifyPath` skips a path with any segment that `startsWith(".")` or that
+ * names an ignored directory (`projection/roots.ts`), and a folder made of such
+ * segments used to produce the worst outcome the write path has: the file was
+ * written, auto-committed, and then never indexed, so the create route answered
+ * `404 no document with id …` for a document that exists in git and on disk and
+ * on no read surface. Both halves of that skip condition reproduce it, so the
+ * refusal covers both — and it covers them by *calling the function*, so a name
+ * added to the projection's ignore list is refused here the same day without a
+ * second list to remember to update.
+ */
+const projectionIndexesFolder = (folder: string): boolean =>
+  classifyPath(`${folder}/${FOLDER_PROBE_FILENAME}`) !== null;
+
+/**
  * The folder a `folder` field names, as a workspace-relative path under
  * `data/docs/`, or a 400.
  *
  * The contract's grammar is "a bare name (`finance`) or the full prefix
  * (`data/docs/finance`)" — an absolute path is neither, so it is refused rather
  * than silently reinterpreted as a relative one. Everything that could escape
- * the document root is refused by the core normalizer.
+ * the document root is refused by the core normalizer, and everything the
+ * projection would refuse to index is refused by {@link projectionIndexesFolder}
+ * — here, at validation time, ahead of the write pipeline, because a document
+ * that is written and committed before anyone notices it is unreadable has
+ * already damaged the audit trail (SERVER-037).
  */
 export function resolveFolder(folder: string | undefined): string {
   const trimmed = folder?.trim();
@@ -351,8 +384,9 @@ export function resolveFolder(folder: string | undefined): string {
       { path: "folder", message: `${folder ?? ""} is an absolute path, not a folder name` },
     ]);
   }
+  let normalized: string;
   try {
-    return normalizeDocFolder(folder);
+    normalized = normalizeDocFolder(folder);
   } catch (error) {
     if (error instanceof PathTraversalError) {
       validationError("folder escapes the document root", [
@@ -361,6 +395,18 @@ export function resolveFolder(folder: string | undefined): string {
     }
     throw error;
   }
+  if (!projectionIndexesFolder(normalized)) {
+    validationError("folder is not a location documents are indexed from", [
+      {
+        path: "folder",
+        message:
+          `${folder ?? ""} contains a folder name the corpus never indexes ` +
+          "(a name starting with `.`, or an ignored directory such as `node_modules`), " +
+          "so a document filed there could never be read back",
+      },
+    ]);
+  }
+  return normalized;
 }
 
 /** Every path an operation touches, for the containment guard. */

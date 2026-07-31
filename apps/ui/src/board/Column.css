@@ -8,8 +8,11 @@
  */
 
 .col {
+  position: relative;
   scroll-snap-align: start;
   flex: none;
+  /* The default, and only the default: `Column.tsx` sets an inline width from
+     the view document's own `extra.width` (SPEC.md §11). */
   width: 336px;
   display: flex;
   flex-direction: column;
@@ -24,8 +27,36 @@
     border-color 0.3s ease;
 }
 
-.col.reading {
-  width: 560px;
+/* `width` is deliberately absent: the reader-open widening is computed from the
+   column's *chosen* base (`columnWidth.ts`'s `READING_WIDTH_RATIO`), so a
+   column the user made narrow does not jump to a fixed 560px on open. A column
+   with no chosen width still lands on exactly 560. */
+
+/* A drag has to track the pointer, not ease toward it. */
+.col.resizing {
+  transition: none;
+  user-select: none;
+}
+
+/* The right edge, dragged (SPEC.md §11) — the console resizer's twin, rotated.
+   It sits above the card's own content and outside the header, so the reorder
+   drag and the resize drag can never claim the same press. */
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+.col-resizer:hover,
+.col-resizer:focus-visible,
+.col.resizing .col-resizer {
+  background: var(--accent-wash);
+  outline: none;
 }
 
 /*

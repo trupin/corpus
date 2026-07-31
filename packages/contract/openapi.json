@@ -1971,6 +1971,11 @@
             "type": "integer",
             "minimum": 0
           },
+          "deferred": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Events waiting on a user-held edit lock (SPEC.md §7). Counted separately from `failed` because a deferral is not a failure — a non-zero count here is work that will resume by itself, and the console strip must not read it as breakage."
+          },
           "processed": {
             "type": "integer",
             "minimum": 0
@@ -1988,6 +1993,7 @@
           "halted",
           "pending",
           "inProgress",
+          "deferred",
           "processed",
           "failed",
           "abandoned"
@@ -2110,6 +2116,54 @@
             "description": "Human-readable failure reason, shown in the console."
           }
         },
+        "additionalProperties": false
+      },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "conflict"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "lock": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Lock"
+              },
+              {
+                "description": "Present when the conflict is a lock acquisition; identifies the existing holder."
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "DeferEventRequest": {
+        "type": "object",
+        "properties": {
+          "blockedOn": {
+            "type": "string",
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "The document whose edit lock the work is waiting for. Releasing, breaking or reaping that lock returns this event to `pending` automatically (SPEC.md §7), so a deferral that named the wrong document would wait forever.",
+            "example": "doc_a1b2c3"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable deferral note, shown in the console beside the blocking document. No `deferred:` prefix is needed or wanted — the status says that now."
+          }
+        },
+        "required": [
+          "blockedOn"
+        ],
         "additionalProperties": false
       },
       "LockList": {
@@ -2250,11 +2304,12 @@
             "enum": [
               "pending",
               "in-progress",
+              "deferred",
               "processed",
               "failed",
               "abandoned"
             ],
-            "description": "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in."
+            "description": "Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and could not proceed because the user holds the edit lock on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that lock is released, broken or reaped."
           },
           "started": {
             "type": "string",
@@ -2288,6 +2343,22 @@
               "null"
             ],
             "description": "**The current title of whatever `originId` names, or null.** Null exactly when `originId` is null, or when the document it names no longer exists. It rides along so the console can label a job row without a second fetch per row; it is a denormalised copy read at response time, never a stored field, so a renamed document shows its new title on the next read."
+          },
+          "blockedOn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "**The document whose edit lock this job is waiting for**, or null — non-null exactly when `status` is `deferred` (SPEC.md §7, CONTRACT-021). It is the document supplied at defer time, and the one whose release, break or reap returns the job to `pending` automatically. The console needs it to say what a waiting row is waiting *for*: a deferred job that names no document is indistinguishable from a stuck one.",
+            "example": "doc_a1b2c3"
+          },
+          "blockedOnTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "**The current title of whatever `blockedOn` names, or null** — the same denormalised copy `originTitle` is, read at response time rather than stored, so a renamed document shows its new title on the next read. Null exactly when `blockedOn` is null, or when the document it names no longer exists."
           }
         },
         "required": [
@@ -2298,7 +2369,9 @@
           "updated",
           "lastLine",
           "originId",
-          "originTitle"
+          "originTitle",
+          "blockedOn",
+          "blockedOnTitle"
         ]
       },
       "JobLog": {
@@ -2372,34 +2445,6 @@
           "line"
         ],
         "additionalProperties": false
-      },
-      "ConflictError": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "enum": [
-              "conflict"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "lock": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Lock"
-              },
-              {
-                "description": "Present when the conflict is a lock acquisition; identifies the existing holder."
-              }
-            ]
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ]
       },
       "RebuildResult": {
         "type": "object",
@@ -2693,13 +2738,52 @@
           "content"
         ]
       },
+      "SkillCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound.",
+            "example": "orchestrate"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One-line description of when to use the skill, written into the frontmatter `description` Claude Code discovers it by. Required: a skill without one is installed but never invoked."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Corpus document title, shown on the board (SPEC.md §5). Defaults to the skill's `name`."
+          },
+          "body": {
+            "type": "string",
+            "description": "Markdown body below the frontmatter — the skill's instructions. Omit it to pre-fill from the `skill` type's `template` document when the workspace defines one, the same rule `POST /api/docs` follows; a workspace with no skill template gets an empty body, which the agent then edits like any other document."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Defaults to no tags."
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "additionalProperties": false
+      },
       "SkillRollbackResult": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
+            "maxLength": 64,
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "description": "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens.",
+            "description": "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound.",
             "example": "orchestrate"
           },
           "docId": {
@@ -5037,6 +5121,107 @@
         }
       }
     },
+    "/api/queue/{id}/defer": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Defer a claimed event onto a document's lock",
+        "description": "Moves a claimed event to `deferred/` — waiting, not failed (SPEC.md §7). The agent calls it when the work it claimed needs a document the **user** holds the edit lock on: it replies to the waiting thread, defers the event, and moves on.\n\n**The event comes back on its own.** Releasing, force-breaking or reaping the lock on `blockedOn` returns it to `pending`, and `corpus queue idle` unparks — no retry call, no operator. Until then it is not claimable: `claim-all` skips deferred events, because handing back work whose lock is still held would spin the agent against it.\n\n**Nothing is ever silently dropped** (SPEC.md §7). A deferral whose lock is never released stays on disk, stays visible in the queue counts and the console, survives a restart, and stays retryable by hand through `POST /api/jobs/{id}/retry` — which is what §7's force-break bullet promises, now as the manual override rather than the only path.\n\n`409` when the event is not `in-progress`: only claimed work can be deferred, since nothing else has tried the edit yet, exactly as only a finished job can be retried. `404` when there is no such event.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^evt_[A-Za-z0-9]+$",
+              "description": "Identifier of a queue event.",
+              "example": "evt_7c1d"
+            },
+            "required": true,
+            "description": "Identifier of a queue event.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The document being waited on, and optionally why. A deferral that named no document could never re-enter, so the body is mandatory.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeferEventRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The event, now in `deferred/`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with state that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/queue/{id}": {
       "delete": {
         "tags": [
@@ -5713,8 +5898,8 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Retry a failed job",
-        "description": "Returns the event to `pending/` so the agent picks it up again — the retry action in the console's detail header (SPEC.md §11).",
+        "summary": "Retry a failed or deferred job",
+        "description": "Returns the event to `pending/` so the agent picks it up again — the retry action in the console's detail header (SPEC.md §11).\n\nIt works on a **deferred** job too, and stays the manual override once deferrals re-enter on their own (SPEC.md §7, CONTRACT-021): automatic re-entry handles the lock being released, broken or reaped, and this handles everything it did not reach — a lock released out of band, or a deferral an operator simply wants back now.",
         "parameters": [
           {
             "schema": {
@@ -6055,6 +6240,85 @@
         }
       }
     },
+    "/api/skills": {
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Create a skill",
+        "description": "Creates `.claude/skills/{name}/SKILL.md` through the server's ordinary mutation pipeline — the write path SPEC.md §7's skill genesis needs, since the agent reaches the workspace only through the CLI and the server is the sole writer (SPEC.md §9.1).\n\n**The created file carries both frontmatter vocabularies**, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for Claude Code's discovery, plus the core document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`.\n\n**The skill is named in the body rather than in the path** because the path names a resource that does not exist yet; this is `POST /api/docs`'s convention, not a departure from the rollback route's. The name doubles as the traversal guard: it is validated against the same pattern the rollback path parameter uses, which admits no `/`, `.` or whitespace, so a traversal attempt is a `400` naming `body.name` and never reaches the filesystem.\n\n**The creation lands as a normal auto-commit** (SPEC.md §9.2) and is projected and broadcast like any other write, so the new skill appears on the board and in `GET /api/docs?type=skill` without a restart. If the workspace's git hooks reject the commit, the file stands anyway and the rejection comes back in `warnings` (SPEC.md §14).\n\n`409` means the name is taken — a skill of that name is already installed. Whether a name held only by an *archived* skill (`.claude/skills-archived/{name}/`, where `corpus doc archive` moves one) is likewise taken is answered by the server, and both answers are already describable here: refusing it is this same `409`, allowing it is a plain `201`.\n\nThere is no `423`: an edit lock is held on a document, and this call's document does not exist until the call succeeds, so nothing can be holding it. A name that is already taken is a conflict, not a lock — and editing the skill afterwards goes through `PUT /api/docs/{id}`, which does refuse under the other party's lock.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "default": "user",
+              "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent."
+            },
+            "required": false,
+            "description": "Acting party, and therefore the git author of the auto-commit. Defaults to \"user\" when absent.",
+            "name": "x-corpus-author",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The skill to create. `name` and `description` are mandatory, so the body is.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created skill as an ordinary document — its frontmatter, body and workspace-relative path — plus any §14 warnings. The same shape `POST /api/docs` returns, because what was created is the same kind of thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocMutationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with state that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/skills/{name}/rollback": {
       "post": {
         "tags": [
@@ -6066,12 +6330,13 @@
           {
             "schema": {
               "type": "string",
+              "maxLength": 64,
               "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-              "description": "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens.",
+              "description": "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound.",
               "example": "orchestrate"
             },
             "required": true,
-            "description": "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens.",
+            "description": "The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound.",
             "name": "name",
             "in": "path"
           },
@@ -6162,7 +6427,7 @@
           "events"
         ],
         "summary": "Server-sent invalidation stream",
-        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these nine shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, abandon, reap, halt/resume, and a lock break that re-enqueues a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"locks\"]` — emitted by lock acquire, release, force-break and reap. Refetch: `GET /api/locks` — the console's held-locks list.\n- `[\"locks\", \"<docId>\"]` — emitted by acquire, release, force-break and reap of that one document's lock. Refetch: the open reader for that document, which renders read-only with a holder banner while held.",
+        "description": "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\nThe key vocabulary is **closed** — these nine shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:\n\n- `[\"docs\"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.\n- `[\"docs\", \"<docId|threadId>\"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.\n- `[\"tree\"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.\n- `[\"threads\", \"<threadId>\"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.\n- `[\"queue\"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and any lock release, break or reap that re-enters a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.\n- `[\"jobs\"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.\n- `[\"jobs\", \"<eventId>\"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.\n- `[\"locks\"]` — emitted by lock acquire, release, force-break and reap. Refetch: `GET /api/locks` — the console's held-locks list.\n- `[\"locks\", \"<docId>\"]` — emitted by acquire, release, force-break and reap of that one document's lock. Refetch: the open reader for that document, which renders read-only with a holder banner while held.",
         "security": [],
         "parameters": [
           {

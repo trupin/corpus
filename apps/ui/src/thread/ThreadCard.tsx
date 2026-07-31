@@ -72,7 +72,36 @@ export function ThreadCard({
   onNotify,
 }: ThreadCardProps): ReactElement {
   const thread = useThread(threadId);
-  const setStatus = useSetThreadStatus();
+  /**
+   * Resolve/reopen reports from the **hook**, not from the call (UI-015).
+   *
+   * A per-call callback is delivered through the mutation's observer and dropped
+   * the moment that observer has no listeners left, so a card that goes away
+   * mid-flight — the chip collapsing, the reader closing, the margin re-laying
+   * out — flips the thread on disk and says nothing about it. Hook-level
+   * callbacks ride on the mutation itself (`SettledCallbacks`).
+   *
+   * The direction is read off `variables.resolved`, which is what was **sent**,
+   * rather than off this render's `resolved`: the callbacks now outlive the
+   * render that started the write, so a captured value would be reporting the
+   * state the card was in rather than the flip it asked for.
+   */
+  const setStatus = useSetThreadStatus({
+    onSuccess: (_result, variables) => {
+      onNotify({
+        tone: "info",
+        message: variables.resolved
+          ? "Thread resolved — committed. Replying reopens it."
+          : "Thread reopened — committed.",
+      });
+    },
+    onError: (error, variables) => {
+      onNotify({
+        tone: "error",
+        message: `${variables.resolved ? "Resolve" : "Reopen"} failed — ${error.message}`,
+      });
+    },
+  });
   const deleteTurn = useDeleteTurn(threadId);
   const { markSeen } = useMarkSeenOnce();
   const card = useRef<HTMLDivElement>(null);
@@ -165,25 +194,7 @@ export function ThreadCard({
           data-resolve={threadId}
           disabled={setStatus.isPending}
           onClick={() => {
-            setStatus.mutate(
-              { id: threadId, resolved: !resolved },
-              {
-                onSuccess: () => {
-                  onNotify({
-                    tone: "info",
-                    message: resolved
-                      ? "Thread reopened — committed."
-                      : "Thread resolved — committed. Replying reopens it.",
-                  });
-                },
-                onError: (error) => {
-                  onNotify({
-                    tone: "error",
-                    message: `${resolved ? "Reopen" : "Resolve"} failed — ${error.message}`,
-                  });
-                },
-              },
-            );
+            setStatus.mutate({ id: threadId, resolved: !resolved });
           }}
         >
           {resolved ? "reopen" : "✓ resolve"}

@@ -13,4 +13,7 @@ for: todo
 
 ## What this list is for
 
+- [ ] First thing to do
+- [ ] Something with a deadline (due: 2026-12-31)
+
 ## Notes

@@ -23,7 +23,8 @@ import {
 import { AUTH, createWriteWorkspace, type WriteWorkspace } from "../docs/write-fixture.js";
 import { createAutoCommitter, createGit, REVISION_SEARCH_LIMIT } from "../git/index.js";
 import { silentLogger } from "../logger.js";
-import { rollbackSkill, skillDocumentPath, type SkillsWorkspace } from "./rollback.js";
+import { skillDocumentPath } from "./paths.js";
+import { rollbackSkill, type SkillsWorkspace } from "./rollback.js";
 
 let ws: WriteWorkspace;
 let keys: QueryKey[][];

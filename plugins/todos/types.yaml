@@ -3,9 +3,10 @@
 # declarations agree in both directions.
 #
 # `seedTemplate` names a BODY-only template (SPEC.md §11 — "template pre-fill is
-# body-only"): it contributes a heading and a hint, never frontmatter. A todo
-# document created with no `items` key renders as an empty list, which is why
-# nothing needs to seed one (sprint-014 Adjudication 17).
+# body-only"): it contributes headings and starter task-list lines, never
+# frontmatter. That works since PLUGINS-005 because items ARE body text
+# (SPEC.md §12), which is what "its type's template can ship starter items in
+# its body like any template pre-fill" means.
 types:
   - type: todo
     label: Todo

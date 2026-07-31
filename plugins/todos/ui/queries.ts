@@ -1,178 +1,151 @@
-import type { Doc } from "@corpus/contract";
-import { pluginKey, useCorpusClient, useDoc, useDocLock, type QueryKey } from "@corpus/kit";
-import { useState } from "react";
-import { itemsOrEmpty, readItems, type TodoItem } from "../items.js";
-import { TODOS_PLUGIN } from "../shared.js";
+import type { DocRow } from "@corpus/contract";
+import { pluginKey, useDocs, usePluginQuery, type QueryKey } from "@corpus/kit";
+import { z } from "zod";
+import { TodoItemSchema, type TodoItem } from "../items.js";
+import { TODO_DOC_TYPE, TODOS_PLUGIN } from "../shared.js";
 
 /**
- * The todo document's write path, and the optimistic overlay that makes a
- * checkbox feel like a checkbox.
+ * **Where the board's todo surfaces get their items** — the column and the list
+ * row, through one request, kept live by two different invalidations.
  *
- * **Reads come from the document itself.** `items` already arrived, parsed, in
- * the document's `extra` frontmatter — on the single read *and* on every list
- * row (`@corpus/contract`'s `extra` rides `docRowBaseShape`), which is what
- * lets the aggregate column be one query. Adding a second read of the same
- * state through the plugin's own routes would be a second source of truth that
- * could disagree with the list the user is looking at.
+ * Until PLUGINS-005 this file did not exist as a read path: `extra` rides every
+ * list row, so `itemsOrEmpty(row)` answered from the `useDocs` the board had
+ * already issued. Items are body task-list lines now (SPEC.md §12), and
+ * **bodies do not ride list rows** — only `excerpt` does. So the aggregate has
+ * to come from the plugin's own `GET /lists` route, which already reports every
+ * todo document with its items and its open/done counts.
  *
- * **Writes go to the plugin's routes** through the kit's `pluginRequest` — the
- * one transport a plugin is given, so the bearer token, the base URL and the
- * error type are the kit's rather than re-implemented here. Every write lands
- * on the core write path server-side (git auto-commit, projection, SSE), and
- * the core `["docs"]` invalidation it broadcasts is what refreshes this
- * document with no plugin machinery at all.
+ * ### The live-update hole, and the fingerprint that closes it
  *
- * The overlay in between is deliberately small: the mutated array, plus the
- * snapshot it was derived from. When the server's version arrives the snapshot
- * no longer matches and the overlay is dropped in the same render — so a
- * reconciliation can never be missed, and no effect has to remember to clear it.
+ * Two things can now change an item, and they announce themselves differently:
+ *
+ * - a **plugin write** (`corpus todos check`, a route call) broadcasts
+ *   `[["lists"]]` → `["x","todos","lists"]` on the wire;
+ * - a **core write** — which is the *ordinary* way to check a box since
+ *   PLUGINS-006, because the editor owns the body — broadcasts `["docs"]` and
+ *   never anything under `x/todos`.
+ *
+ * A query keyed only on `["x","todos","lists"]` therefore hears the first and
+ * is deaf to the second: the column would show stale counts until a reload,
+ * after the app's most ordinary interaction. The join is a **fingerprint** of
+ * `(id, updated)` over `useDocs({type: "todo"})` — a query core *does*
+ * invalidate — carried as a path segment, so:
+ *
+ * - a core body edit stamps `updated`, `["docs"]` refetches `useDocs`, the
+ *   fingerprint changes, the key changes, and this query refetches;
+ * - the key is still **prefixed** by `["x","todos","lists"]`, and TanStack's
+ *   invalidation matches by prefix, so the plugin's own broadcast keeps working
+ *   exactly as it did — the fingerprint is added beside the shipped path, never
+ *   instead of it.
+ *
+ * The segment is a short hash rather than the raw pairs: a workspace with a
+ * hundred todo documents would otherwise put kilobytes in a URL. The route
+ * ignores it — it exists to be *different*, and `server/routes.ts` documents
+ * that it is deliberately unread.
+ *
+ * Composed entirely at the call site through `usePluginQuery` and `useDocs`:
+ * `packages/kit` is untouched (sprint-017 TEST-515).
  */
 
-/** The plugin's own read key, `["x","todos","lists"]` — see {@link TODO_LISTS_KEY}. */
+/**
+ * The plugin's own read key, `["x","todos","lists"]` — the *only* one.
+ *
+ * There is deliberately no per-document key. The plugin publishes one query,
+ * the aggregate, and a `["x","todos","lists",<docId>]` broadcast would name a
+ * query nothing has ever registered: TanStack matches by prefix, and a document
+ * id is not a prefix of `["x","todos","lists","at",<fingerprint>]`. It looked
+ * like precision and invalidated nothing (CLEAN 43). One key, and every write
+ * to any list refetches the one read every surface shares.
+ */
 export const TODO_LISTS_KEY: QueryKey = pluginKey(TODOS_PLUGIN, "lists");
 
-/** `["x","todos","lists",<docId>]` — what a write on one list announces. */
-export function todoListKey(docId: string): QueryKey {
-  return pluginKey(TODOS_PLUGIN, "lists", docId);
-}
+/** One todo document, as `GET /api/x/todos/lists` reports it. */
+const TodoListSchema = z.object({
+  docId: z.string(),
+  title: z.string(),
+  open: z.number(),
+  done: z.number(),
+  items: z.array(TodoItemSchema),
+});
 
-/** A stable identity for a list of items — the overlay's reconciliation trigger. */
-function snapshot(items: readonly TodoItem[]): string {
-  return JSON.stringify(items);
-}
+const ListsSchema = z.object({ lists: z.array(TodoListSchema) });
 
-export interface TodoWriter {
-  /** The items to render: the optimistic overlay when one is live, else the document's. */
-  readonly items: readonly TodoItem[];
-  /** Problems reading `items`; empty when the frontmatter is well-formed. */
-  readonly problems: readonly string[];
-  /** True while a write is in flight — the list stays interactive, not frozen. */
-  readonly busy: boolean;
-  /** The last write failure, shown in place; cleared by the next attempt. */
-  readonly error: string | null;
-  /**
-   * True when the *other* party holds this document's edit lock (SPEC.md §7).
-   * The plugin renders read-only and does not attempt to bypass it; the core
-   * lock banner is already on screen above this view.
-   */
-  readonly locked: boolean;
-  readonly toggle: (index: number) => void;
-  readonly rename: (index: number, text: string) => void;
-  readonly add: (text: string) => void;
-  readonly remove: (index: number) => void;
-}
-
-interface Overlay {
-  readonly base: string;
-  readonly items: readonly TodoItem[];
-}
+export type TodoListView = z.infer<typeof TodoListSchema>;
 
 /**
- * The error text a failed write should show. A `409` is the one case the user
- * has to act on — someone else changed the item — so its message is the
- * server's own, verbatim.
+ * FNV-1a over the rows' `(id, updated)` pairs, base-36.
+ *
+ * Not a security boundary and not an identity — just a value that changes
+ * whenever any todo document is written, short enough to live in a URL. The
+ * plugin's own broadcast still covers writes through its routes, so even a
+ * collision could only delay a refresh that another path already triggers.
  */
-function failureText(error: unknown): string {
-  if (error instanceof Error && error.message !== "") return error.message;
-  return "The change could not be saved.";
+export function docsFingerprint(rows: readonly DocRow[]): string {
+  let hash = 0x811c9dc5;
+  for (const row of rows) {
+    for (const char of `${row.id}:${row.updated ?? ""};`) {
+      hash ^= char.codePointAt(0) ?? 0;
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+  }
+  return hash.toString(36);
 }
 
-export function useTodoWriter(doc: Doc): TodoWriter {
-  const client = useCorpusClient();
-  const lock = useDocLock(doc.frontmatter.id);
-  // The same cache entry the reader already holds (`["docs", id]`), so a
-  // refetch after a refused write puts the *server's* truth on screen rather
-  // than leaving the caller looking at what it hoped would happen.
-  const live = useDoc(doc.frontmatter.id);
-  const read = readItems(doc.frontmatter);
-  const stored = itemsOrEmpty(doc.frontmatter);
-  const [overlay, setOverlay] = useState<Overlay | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+/** The aggregate's request path — the fingerprint is a cache generation, not an argument. */
+export function listsPath(fingerprint: string): string {
+  return `lists/at/${fingerprint}`;
+}
 
-  const base = snapshot(stored);
-  // A stale overlay evaporates the moment the server's version differs from the
-  // one it was built on — no effect, no cleanup, no window where both are live.
-  const items = overlay !== null && overlay.base === base ? overlay.items : stored;
+export interface TodoLists {
+  /** Every todo document with items, keyed by document id. */
+  readonly byDoc: ReadonlyMap<string, TodoListView>;
+  /** In the order the collection query returned them — the board's own order. */
+  readonly all: readonly TodoListView[];
+  /** True until both halves have answered once. */
+  readonly loading: boolean;
+  readonly error: Error | null;
+}
 
-  const send = (
-    path: string,
-    method: "POST" | "PUT" | "DELETE",
-    body: Record<string, unknown>,
-    optimistic: readonly TodoItem[] | null,
-  ): void => {
-    if (optimistic !== null) setOverlay({ base, items: optimistic });
-    setBusy(true);
-    setError(null);
-    void client
-      .pluginRequest(TODOS_PLUGIN, path, { method, body })
-      .catch((failure: unknown) => {
-        // Never a silent overwrite: the optimistic state is dropped, the
-        // document is refetched, and the reason is shown where the user is
-        // looking. The refetch is what turns a 409 into the truth on screen.
-        setOverlay(null);
-        setError(failureText(failure));
-        void live.refetch();
-      })
-      .finally(() => {
-        setBusy(false);
-      });
-  };
+const EMPTY: readonly TodoListView[] = [];
 
-  const locked = lock !== null && lock.holder !== "user";
+/**
+ * The one read every todo board surface shares.
+ *
+ * Both callers use the same key, so TanStack dedupes them into a **single**
+ * request no matter how many todo rows the board is rendering — the one-query
+ * property the plugin had for free when items rode the list rows, bought back
+ * deliberately.
+ */
+export function useTodoLists(): TodoLists {
+  const docs = useDocs({ type: TODO_DOC_TYPE });
+  const rows = docs.data?.items;
+  const fingerprint = rows === undefined ? "" : docsFingerprint(rows);
+  // Not until the fingerprint is real: fetching with a placeholder would issue
+  // one request against a key nothing will ever invalidate, then another.
+  const lists = usePluginQuery(TODOS_PLUGIN, listsPath(fingerprint), {
+    enabled: rows !== undefined,
+  });
 
-  const guard = (run: () => void): void => {
-    if (locked) return;
-    run();
-  };
+  const parsed = lists.data === undefined ? null : ListsSchema.safeParse(lists.data);
+  const all = parsed?.success === true ? parsed.data.lists : EMPTY;
 
   return {
-    items,
-    problems: read.ok ? [] : read.problems,
-    busy,
-    error,
-    locked,
-    toggle: (index) =>
-      guard(() => {
-        const item = items[index];
-        if (item === undefined) return;
-        send(
-          `${doc.frontmatter.id}/items/${String(index)}`,
-          "PUT",
-          { done: !item.done, expectedText: item.text },
-          items.map((current, at) =>
-            at === index ? { ...current, done: !current.done } : current,
-          ),
-        );
-      }),
-    rename: (index, text) =>
-      guard(() => {
-        const item = items[index];
-        if (item === undefined || text.trim() === "" || text === item.text) return;
-        send(
-          `${doc.frontmatter.id}/items/${String(index)}`,
-          "PUT",
-          { text, expectedText: item.text },
-          items.map((current, at) => (at === index ? { ...current, text } : current)),
-        );
-      }),
-    add: (text) =>
-      guard(() => {
-        if (text.trim() === "") return;
-        // No optimistic append: `ts` is the server's clock, and inventing one
-        // here would show an item whose creation time is about to change.
-        send(`${doc.frontmatter.id}/items`, "POST", { text }, null);
-      }),
-    remove: (index) =>
-      guard(() => {
-        const item = items[index];
-        if (item === undefined) return;
-        send(
-          `${doc.frontmatter.id}/items/${String(index)}`,
-          "DELETE",
-          { expectedText: item.text },
-          items.filter((_current, at) => at !== index),
-        );
-      }),
+    byDoc: new Map(all.map((list) => [list.docId, list])),
+    all,
+    loading: rows === undefined || (lists.data === undefined && lists.error === null),
+    error:
+      docs.error ??
+      lists.error ??
+      (parsed !== null && !parsed.success
+        ? new Error(`the todos route answered a shape this plugin does not understand`)
+        : null),
   };
 }
+
+/** One document's items, or none while the aggregate is still loading. */
+export function useTodoItems(docId: string): readonly TodoItem[] {
+  const lists = useTodoLists();
+  return lists.byDoc.get(docId)?.items ?? EMPTY_ITEMS;
+}
+
+const EMPTY_ITEMS: readonly TodoItem[] = [];

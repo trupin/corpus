@@ -29,6 +29,7 @@ function boardSpy(): BoardCommands & { readonly calls: string[] } {
     toggleFocusMode: record("toggleFocusMode"),
     archiveTarget: record("archiveTarget"),
     focusReply: record("focusReply"),
+    openContextMenu: record("openContextMenu"),
   };
 }
 

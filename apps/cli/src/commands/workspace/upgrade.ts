@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { InternalError } from "../../errors.js";
 import { plural } from "../../input.js";
 import {
@@ -10,8 +11,10 @@ import {
 } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import {
+  planPluginSeedInstall,
   planPluginSkillInstall,
   planTemplateInstall,
+  templateSeedNames,
   templateSkillNames,
 } from "../../template/install.js";
 import {
@@ -104,6 +107,56 @@ export interface ReportedChange {
   readonly detail?: string;
 }
 
+/**
+ * Queue status directories whose `.gitkeep` is missing, workspace-relative.
+ *
+ * `corpus init` writes one marker per `QUEUE_EVENT_STATUSES` entry
+ * (`../init/scaffold.ts`) so the skeleton survives a clone — the event files
+ * inside are runtime state, the markers are what git tracks. A workspace
+ * initialized before a status was added therefore never gains its directory,
+ * and the state has nowhere to live on a fresh checkout: exactly what happened
+ * to `deferred` when CONTRACT-021 added it (SHARED-003 ledger, sprint-017
+ * Adjudication 10).
+ *
+ * Driven from the contract's enum, never a hardcoded list, so the next status
+ * added does not reopen this.
+ */
+export function missingQueueMarkers(root: string): readonly string[] {
+  return QUEUE_EVENT_STATUSES.map((status) => `${CONFIG_DIR}/queue/${status}/.gitkeep`).filter(
+    (relative) => !existsSync(join(root, ...relative.split("/"))),
+  );
+}
+
+/** Creates the missing markers, empty, and returns what it wrote. */
+function healQueueSkeleton(root: string, missing: readonly string[]): readonly string[] {
+  for (const relative of missing) {
+    const absolute = join(root, ...relative.split("/"));
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, "", "utf8");
+  }
+  return missing;
+}
+
+/**
+ * The markers git will accept. A workspace whose `.gitignore` predates the
+ * template's `!.corpus/queue/` negation ignores the whole directory, and
+ * `git add` of an ignored path **fails the command** — so an old workspace's
+ * ignore rules would turn a repair into a crash. The marker is still created;
+ * it simply is not staged, and {@link render} says so, because the operator's
+ * `.gitignore` is theirs to change and overriding it with `-f` is not this
+ * verb's call.
+ */
+async function trackableMarkers(
+  root: string,
+  markers: readonly string[],
+): Promise<readonly string[]> {
+  const kept: string[] = [];
+  for (const marker of markers) {
+    if (!(await isIgnoredByRules(root, marker))) kept.push(marker);
+  }
+  return kept;
+}
+
 export interface UpgradeReport {
   readonly workspace: string;
   /** Tool version the manifest recorded, or `null` when there is no manifest. */
@@ -113,6 +166,18 @@ export interface UpgradeReport {
   /** True when the workspace has no manifest: nothing is overwritten, whatever the plan says. */
   readonly withoutBaseline: boolean;
   readonly changes: readonly ReportedChange[];
+  /**
+   * Queue-skeleton markers this run created — empty in a workspace that already
+   * has all of them, which is every workspace `corpus init` made since the last
+   * status was added.
+   */
+  readonly queueSkeleton: readonly string[];
+  /**
+   * Markers the workspace's own `.gitignore` excludes, so they were **not**
+   * staged — and under `--dry-run`, would not be. Empty in a stock workspace,
+   * whose `.gitignore` carries the template's `!.corpus/queue/` negation.
+   */
+  readonly queueSkeletonIgnored: readonly string[];
   /** Paths this run actually wrote, workspace-relative. */
   readonly written: readonly string[];
   readonly manifestWritten: boolean;
@@ -155,6 +220,11 @@ export async function runWorkspaceUpgrade(
   const incoming = collectIncoming(dependencies);
   const decisions = planUpgrade(manifest?.files ?? [], incoming, (path) => shaOnDisk(root, path));
 
+  // Not a template file and not part of the three-way compare: a status
+  // directory is either there or it is not, so healing it needs no baseline and
+  // can overwrite nothing. It is reported and committed with the run's own work.
+  const queueSkeleton = missingQueueMarkers(root);
+
   const report: UpgradeReport = {
     workspace: root,
     fromVersion: manifest?.tool ?? null,
@@ -162,6 +232,8 @@ export async function runWorkspaceUpgrade(
     dryRun,
     withoutBaseline,
     changes: describe(decisions, root, incoming, withoutBaseline),
+    queueSkeleton,
+    queueSkeletonIgnored: [],
     written: [],
     manifestWritten: false,
     manifestCommitted: false,
@@ -169,7 +241,12 @@ export async function runWorkspaceUpgrade(
   };
 
   const pending = decisions.filter((decision) => writes(decision.action, restore));
-  if (report.changes.length === 0 && pending.length === 0 && !(withoutBaseline && adopt)) {
+  if (
+    report.changes.length === 0 &&
+    pending.length === 0 &&
+    queueSkeleton.length === 0 &&
+    !(withoutBaseline && adopt)
+  ) {
     // An empty commit every time somebody checks would be noise in the one
     // history that is supposed to mean something.
     context.out.emit(report);
@@ -177,13 +254,48 @@ export async function runWorkspaceUpgrade(
     return;
   }
 
-  if (dryRun || (withoutBaseline && !adopt)) {
-    context.out.emit(report);
-    render(context, report);
+  if (dryRun) {
+    // The plan has to predict the *whole* outcome, including the part a real run
+    // would refuse. `isIgnoredByRules` asks git about the rules rather than about
+    // the index, so it answers for a marker that does not exist yet — which is
+    // the only reason a dry run can tell the truth here at all (wave-3 audit,
+    // TEST 31: this was hard-coded empty, so `--dry-run` promised a repair the
+    // real run then declined to commit).
+    const trackable = await trackableMarkers(root, queueSkeleton);
+    const planned: UpgradeReport = {
+      ...report,
+      queueSkeletonIgnored: queueSkeleton.filter((marker) => !trackable.includes(marker)),
+    };
+    context.out.emit(planned);
+    render(context, planned);
     return;
   }
 
-  const written = withoutBaseline ? [] : applyPlan(root, pending, incoming);
+  if (withoutBaseline && !adopt) {
+    // No template file may be written here, but the skeleton is not a template
+    // file — so it is healed and committed on its own rather than waiting for a
+    // baseline the operator may never supply.
+    const healed = healQueueSkeleton(root, queueSkeleton);
+    const trackable = await trackableMarkers(root, healed);
+    const partial: UpgradeReport = {
+      ...report,
+      written: healed,
+      queueSkeletonIgnored: healed.filter((marker) => !trackable.includes(marker)),
+    };
+    const commit = trackable.length === 0 ? null : await commitUpgrade(context, trackable, partial);
+    const done: UpgradeReport = { ...partial, commit };
+    context.out.emit(done);
+    render(context, done);
+    return;
+  }
+
+  // The plan runs first so that a workspace whose `.gitignore` this run
+  // refreshes is judged by the **new** rules below: the shipped template is what
+  // carries the `!.corpus/queue/` negation the markers need to be trackable at
+  // all.
+  const applied = withoutBaseline ? [] : applyPlan(root, pending, incoming);
+  const healed = healQueueSkeleton(root, queueSkeleton);
+  const written = [...applied, ...healed];
   const nextManifest: TemplateManifest = {
     version: 1,
     tool: context.version,
@@ -203,11 +315,18 @@ export async function runWorkspaceUpgrade(
   // manifest in the same commit as the files it describes, with no code change
   // here, and neither case is achieved by overriding the operator's `.gitignore`.
   const manifestCommitted = !(await isIgnored(root, MANIFEST_RELATIVE_PATH));
-  const staged = manifestCommitted ? [...written, MANIFEST_RELATIVE_PATH] : written;
+  const trackable = await trackableMarkers(root, healed);
+  const staged = [...applied, ...trackable, ...(manifestCommitted ? [MANIFEST_RELATIVE_PATH] : [])];
 
-  const applied: UpgradeReport = { ...report, written, manifestWritten: true, manifestCommitted };
-  const commit = staged.length === 0 ? null : await commitUpgrade(context, staged, applied);
-  const finished: UpgradeReport = { ...applied, commit };
+  const result: UpgradeReport = {
+    ...report,
+    written,
+    queueSkeletonIgnored: healed.filter((marker) => !trackable.includes(marker)),
+    manifestWritten: true,
+    manifestCommitted,
+  };
+  const commit = staged.length === 0 ? null : await commitUpgrade(context, staged, result);
+  const finished: UpgradeReport = { ...result, commit };
 
   context.out.emit(finished);
   render(context, finished);
@@ -229,6 +348,26 @@ async function isIgnored(root: string, relative: string): Promise<boolean> {
 }
 
 /**
+ * Whether the workspace's ignore **rules** exclude a path, index or no index.
+ *
+ * Deliberately a second predicate rather than a flag on {@link isIgnored}: plain
+ * `check-ignore` answers "is this path ignored", and git's answer for anything
+ * already in the index is *no* — while `git add` still refuses it, and refusing
+ * fails the whole command. For a marker inside a directory an old `.gitignore`
+ * excludes, that difference is the difference between reporting a repair and
+ * crashing the upgrade, so the staging decision asks the rules directly.
+ */
+async function isIgnoredByRules(root: string, relative: string): Promise<boolean> {
+  try {
+    await runGit(["check-ignore", "--no-index", "--quiet", "--", relative], root);
+    return true;
+  } catch (cause) {
+    if (gitExitCode(cause) === 1) return false;
+    throw gitFailure("checking whether the workspace ignores its queue skeleton", cause);
+  }
+}
+
+/**
  * Every file the installed tool would put in a workspace today, hashed: the
  * bundled template, then the plugin skills, each carrying where it came from.
  * A plugin-sourced entry is refreshed from **its plugin**, not from the template
@@ -246,7 +385,14 @@ function collectIncoming(dependencies: UpgradeDependencies): readonly IncomingFi
 
   const pluginsRoot =
     "pluginsRoot" in dependencies ? dependencies.pluginsRoot : resolvePluginsRoot();
-  for (const file of planPluginSkillInstall(pluginsRoot, templateSkillNames(installed)).files) {
+  const pluginFiles = [
+    ...planPluginSkillInstall(pluginsRoot, templateSkillNames(installed)).files,
+    // Seed templates ride the same path as skills (CLI-012), which is what makes
+    // an installed plugin template refreshable from its plugin and protected by
+    // the same never-clobber compare — no special case anywhere in this file.
+    ...planPluginSeedInstall(pluginsRoot, templateSeedNames(installed)).files,
+  ];
+  for (const file of pluginFiles) {
     const from = join(pluginsRoot ?? "", ...file.from.split("/"));
     files.push({
       path: file.to,
@@ -413,6 +559,24 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
       `  ${labelFor(change.action, report.withoutBaseline).padEnd(7)} ${change.path}${provenance}${detail}`,
     );
   }
+  for (const marker of report.queueSkeleton) {
+    context.out.line(
+      `  ${(report.dryRun ? "pending" : "create").padEnd(7)} ${marker} — queue status directory ` +
+        "this workspace predates; it has to be tracked or a clone arrives without it",
+    );
+  }
+  if (report.queueSkeletonIgnored.length > 0) {
+    const one = report.queueSkeletonIgnored.length === 1;
+    context.out.line(
+      `  ${plural(report.queueSkeletonIgnored.length, "marker")} above ` +
+        `${one ? "is" : "are"} excluded by this workspace's .gitignore, so ` +
+        (report.dryRun
+          ? `${one ? "it would be" : "they would be"} created but not committed`
+          : `${one ? "it was" : "they were"} created but not committed`) +
+        " — allow `.corpus/queue/` through (the shipped template does, with " +
+        "`!.corpus/queue/`) and re-run.",
+    );
+  }
 
   if (report.dryRun) {
     context.out.line("nothing was written (--dry-run).");
@@ -421,7 +585,13 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
   if (report.withoutBaseline) {
     if (!report.manifestWritten) {
       context.out.line(
-        "nothing was written. Re-run with --adopt to record a baseline from the files that already match.",
+        (report.queueSkeleton.length === 0
+          ? "nothing was written"
+          : `${plural(report.queueSkeleton.length, "queue status directory", "queue status directories")} ` +
+            `${report.queueSkeleton.length === 1 ? "was" : "were"} created${
+              report.commit === null ? "" : ` in commit ${report.commit}`
+            }; no template file was written`) +
+          ". Re-run with --adopt to record a baseline from the files that already match.",
       );
       return;
     }
@@ -473,9 +643,15 @@ export const upgradeCommand: WorkspaceCommandSpec = {
     "and new tool versions, so `corpus skill rollback` undoes a bad upgrade like any other skill " +
     "change. A run with nothing to do prints `already up to date.` and makes no commit.\n\n" +
     "Only template-provenance paths are touched — `.claude/` skills and personas, the workspace " +
-    "`README.md` and `.gitignore` — never anything under `data/`, and nothing under `.corpus/` " +
-    "except the manifest itself. Plugin-installed skills are refreshed from **their plugin**, " +
-    "not from the template.\n\n" +
+    "`README.md` and `.gitignore`, the seed documents under `data/docs/` the template and " +
+    "plugins install — and nothing under `.corpus/` except the manifest itself and a missing " +
+    "queue status directory. Plugin-installed skills **and seed templates** are refreshed from " +
+    "**their plugin**, not from the template.\n\n" +
+    "One thing is repaired rather than compared: a workspace initialized before a queue status " +
+    "existed has no `.corpus/queue/<status>/.gitkeep` for it, so the directory does not survive " +
+    "a clone and that state has nowhere to live on a fresh checkout. Any missing marker is " +
+    "created and committed — it needs no baseline, because a directory is either there or it is " +
+    "not, and an empty marker overwrites nothing.\n\n" +
     "This command and `corpus init` are the only two that write workspace files directly and " +
     "commit directly (SPEC.md §2.2 rule 4): both are bootstrap-class and must work with the " +
     "server stopped, because a workspace whose skills are broken is exactly the one whose loop " +

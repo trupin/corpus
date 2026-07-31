@@ -7,18 +7,25 @@ import { resolveColumnType } from "../plugins/slots";
 import { Reader } from "../reader/Reader";
 import { ColumnHead } from "./ColumnHead";
 import { ColumnList } from "./ColumnList";
+import { renderedWidth } from "./columnWidth";
 import { openDocId, type ColumnLocalState, type NavEntry } from "./useBoardLocalState";
+import { useColumnWidth } from "./useColumnWidth";
 import type { BoardColumn, PluginColumnRef } from "./viewDoc";
 
 /**
  * One column card (`design/index.html`'s `.col`): a pinned view document,
  * rendered.
  *
- * The card is `336px`, snaps to the board's scroll axis, and carries the
- * `.kactive` cue while it is the keyboard's active column. Its header is the
- * drag handle; the drag itself belongs to the board, because reordering is
- * about the whole set and the `order` values written are the neighbours' as
- * much as this one's.
+ * The card snaps to the board's scroll axis and carries the `.kactive` cue
+ * while it is the keyboard's active column. Its header is the drag handle; the
+ * drag itself belongs to the board, because reordering is about the whole set
+ * and the `order` values written are the neighbours' as much as this one's.
+ *
+ * **Its width is the view document's** (SPEC.md §11), not a constant and not a
+ * browser-local preference: `336px` is only what a column with no chosen width
+ * renders at, and opening a reader widens it *relative to* whatever the user
+ * chose. The right edge is the handle; the two drags cannot fight, because the
+ * header arms the reorder and the edge stops the press from reaching it.
  */
 
 export interface ColumnProps {
@@ -55,6 +62,7 @@ interface ColumnBodyProps {
   readonly onHandle: (armed: boolean) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpen: (docId: string) => void;
+  readonly onOpenFocus: (docId: string) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -76,6 +84,7 @@ function ColumnBody({
   onHandle,
   onScroll,
   onOpen,
+  onOpenFocus,
   onAdd,
   onRename,
   onEditQuery,
@@ -111,6 +120,9 @@ function ColumnBody({
         cursorDocId={cursorDocId}
         onScroll={onScroll}
         onOpen={openRow}
+        onOpenFocus={(row: DocRow) => {
+          onOpenFocus(row.id);
+        }}
         onNotify={onNotify}
       />
     </>
@@ -186,6 +198,12 @@ export function Column(props: ColumnProps): ReactElement {
   const { column, isActive, isDragging, isFlashing, local, onActivate, onOpen } = props;
   const [draggable, setDraggable] = useState(false);
   const open = openDocId(local);
+  const size = useColumnWidth({
+    viewDocId: column.id,
+    title: column.title,
+    stored: column.width,
+    onNotify: props.onNotify,
+  });
 
   const className = [
     "col",
@@ -193,6 +211,7 @@ export function Column(props: ColumnProps): ReactElement {
     isActive ? "kactive" : "",
     isFlashing ? "flash" : "",
     open === null ? "" : "reading",
+    size.resizing ? "resizing" : "",
   ]
     .filter((part) => part !== "")
     .join(" ");
@@ -202,6 +221,15 @@ export function Column(props: ColumnProps): ReactElement {
       className={className}
       data-col={column.id}
       aria-label={`${column.title} list`}
+      style={{
+        width: `${String(
+          renderedWidth(
+            size.width,
+            open !== null,
+            typeof window === "undefined" ? 0 : window.innerWidth,
+          ),
+        )}px`,
+      }}
       draggable={draggable}
       onMouseOver={onActivate}
       onFocus={onActivate}
@@ -235,6 +263,12 @@ export function Column(props: ColumnProps): ReactElement {
           onHandle={setDraggable}
           onScroll={props.onScroll}
           onOpen={onOpen}
+          onOpenFocus={(docId) => {
+            // Same act as `⇧↵`: the document opens in its column *and* full
+            // screen, so closing focus leaves the reader where it belongs.
+            onOpen(docId);
+            props.onFocusMode(docId);
+          }}
           onAdd={props.onAdd}
           onRename={props.onRename}
           onEditQuery={props.onEditQuery}
@@ -271,6 +305,23 @@ export function Column(props: ColumnProps): ReactElement {
           </div>
         </>
       )}
+
+      <div
+        className="col-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${column.title}`}
+        aria-valuenow={Math.round(size.width)}
+        aria-valuemin={size.min}
+        aria-valuemax={size.max}
+        tabIndex={0}
+        onPointerDown={size.onPointerDown}
+        onKeyDown={size.onKeyDown}
+        onMouseDown={(event) => {
+          // The header arms `draggable` on mousedown; the edge must never do it.
+          event.stopPropagation();
+        }}
+      />
 
       {open === null ? null : (
         <Reader

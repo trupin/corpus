@@ -106,12 +106,30 @@ describe("retry", () => {
     expect((await jobs.readLog(id, 0)).lines.at(-1)?.line).toBe(RETRY_LOG_LINE);
   });
 
-  it("refuses a job that is not failed, naming its status", async () => {
+  it("puts a deferred job back in pending — the manual override §7 names", async () => {
+    // SERVER-030: automatic re-entry on lock release, break and reap
+    // supplements `job retry`, it does not delete it. The operator still needs
+    // a way to pull back a deferral automatic re-entry did not reach.
+    const id = await enqueue();
+    await queue.claimAll();
+    await queue.defer(id, { blockedOn: "doc_locked01", deferReason: "waiting" });
+
+    const job = await jobs.retry(id);
+
+    expect(job.status).toBe("pending");
+    // The deferral bookkeeping goes with the state that owned it.
+    expect(job.blockedOn).toBeNull();
+    expect(job.blockedOnTitle).toBeNull();
+    expect(await queue.store.locate(id)).toBe("pending");
+    expect((await jobs.readLog(id, 0)).lines.at(-1)?.line).toBe(RETRY_LOG_LINE);
+  });
+
+  it("refuses a job that is neither failed nor deferred, naming its status", async () => {
     const id = await enqueue();
 
     await expect(jobs.retry(id)).rejects.toMatchObject({
       status: 409,
-      message: `queue event ${id} is pending; only a failed job can be retried`,
+      message: `queue event ${id} is pending; only a failed or deferred job can be retried`,
     });
   });
 
@@ -141,7 +159,7 @@ describe("retry", () => {
     expect(outcome).toMatchObject({
       error: {
         status: 409,
-        message: `queue event ${id} is processed; only a failed job can be retried`,
+        message: `queue event ${id} is processed; only a failed or deferred job can be retried`,
       },
     });
     expect(await queue.store.locate(id)).toBe("processed");

@@ -117,6 +117,50 @@ describe("projectQueueDir", () => {
     expect(db.prepare("SELECT status FROM events").get()).toEqual({ status: "failed" });
   });
 
+  it("reads the blocking document off a deferred event file, and only that one", () => {
+    // SERVER-030: `blocked_on` is the one piece of on-disk bookkeeping the
+    // projection reads back, because `Job.blockedOn` is what the console shows
+    // a waiting row waiting *for*.
+    writeJson("queue/deferred/evt_abc123def456.json", {
+      ...EVENT,
+      status: "deferred",
+      blockedOn: "doc_locked01",
+      deferReason: "the user is editing it",
+    });
+    writeJson("queue/pending/evt_zzz999888777.json", { ...EVENT, id: "evt_zzz999888777" });
+
+    expect(projectQueueDir(db, corpusDir)).toBe(2);
+    expect(db.prepare("SELECT id, status, blocked_on FROM events ORDER BY id").all()).toEqual([
+      { id: "evt_abc123def456", status: "deferred", blocked_on: "doc_locked01" },
+      { id: "evt_zzz999888777", status: "pending", blocked_on: null },
+    ]);
+  });
+
+  it("projects an event whose blockedOn is unusable rather than losing it", () => {
+    // A field only a deferral reads must never be the reason an event vanishes
+    // from the console.
+    writeJson("queue/deferred/evt_abc123def456.json", { ...EVENT, blockedOn: "nonsense" });
+
+    expect(projectQueueDir(db, corpusDir)).toBe(1);
+    expect(db.prepare("SELECT id, blocked_on FROM events").get()).toEqual({
+      id: EVENT.id,
+      blocked_on: null,
+    });
+  });
+
+  it("clears the blocking document when the event is re-projected out of deferred/", () => {
+    projectEvent(db, EVENT, "deferred", "doc_locked01");
+    expect(db.prepare("SELECT blocked_on FROM events").get()).toEqual({
+      blocked_on: "doc_locked01",
+    });
+
+    projectEvent(db, EVENT, "pending");
+
+    // An `ON CONFLICT` clause that only ever *set* the column would leave a
+    // running job still claiming to be waiting for a lock.
+    expect(db.prepare("SELECT blocked_on FROM events").get()).toEqual({ blocked_on: null });
+  });
+
   it("skips unreadable and malformed event files without failing the pass", () => {
     writeFileSync(join(corpusDir, "queue", "pending", "evt_bad000000000.json"), "{oops", "utf8");
     writeJson("queue/pending/evt_shape00000.json", { id: "evt_shape00000" });

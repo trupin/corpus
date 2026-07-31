@@ -1,6 +1,8 @@
 import type { UpdateDocResponse } from "@corpus/contract";
 import { useUpdateDocById } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { onPageHide } from "../abandon/pagehide.js";
+import { isAbandoned, publishBodyDraft } from "../abandon/registry.js";
 import { beginEditing, endEditing } from "./editingRegistry.js";
 
 /**
@@ -260,11 +262,18 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
     clearTimer(debounce);
     const job = pending.current;
     if (job === null || inFlight.current || isLocked.current) return;
+    // The document is being removed for being empty (SPEC.md §11). Its buffer
+    // is by definition the emptiness that decided it, and sending it would be a
+    // `PUT` racing the `DELETE` that follows.
+    if (isAbandoned(job.docId)) return;
     send(job);
   }, [send]);
 
   const change = useCallback(
     (body: string): void => {
+      // The abandon rule is decided against the body the editor holds *now*,
+      // which for a fast typist is several keystrokes ahead of the corpus.
+      publishBodyDraft(docId, body);
       // The comparison is against the last SAVED body, never against "the
       // editor fired an update": typing a character and deleting it is not a
       // change, and must not cost a request (sprint-011 TEST-16).
@@ -348,12 +357,19 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
       event.preventDefault();
     };
     document.addEventListener("visibilitychange", onHide);
-    window.addEventListener("pagehide", flush);
     window.addEventListener("beforeunload", onLeave);
+    /*
+     * The tab-close flush joins the ordered sequence rather than adding a fourth
+     * `pagehide` listener: it declines for a document the abandon rule is
+     * removing, and a plain listener registered here — in a child of the reader
+     * — would run *before* that decision was taken and send a `PUT` chasing the
+     * `DELETE` behind it (PR #12 review, MINOR 14).
+     */
+    const offPageHide = onPageHide("flush", flush);
     return () => {
       document.removeEventListener("visibilitychange", onHide);
-      window.removeEventListener("pagehide", flush);
       window.removeEventListener("beforeunload", onLeave);
+      offPageHide();
     };
   }, [flush]);
 

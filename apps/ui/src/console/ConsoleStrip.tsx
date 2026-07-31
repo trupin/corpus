@@ -59,8 +59,8 @@ export function PluginWarnings(): ReactElement | null {
 }
 
 /**
- * `N running[· N queued] · N done · N failed`, with the failed count in
- * `--signal`.
+ * `N running[· N queued][· N deferred] · N done · N failed`, with the failed
+ * count in `--signal`.
  *
  * Its span is `.c-failed-jobs`, **not** the prototype's `.c-failed`: that class
  * is the reachability notice's, and `apps/ui/e2e/smoke.spec.ts` asserts on it in

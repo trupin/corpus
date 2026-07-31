@@ -35,6 +35,16 @@ const readLockFile = (docId: string): StoredLock =>
 const lockRows = (): unknown[] =>
   ws.db.prepare("SELECT doc_id, holder, acquired, ttl FROM locks ORDER BY doc_id").all();
 
+/**
+ * One claimed event, deferred on `docId` — the SERVER-030 shape of "the agent
+ * tried the edit, the user holds the lock, the work waits".
+ */
+const defer = async (docId: string): Promise<{ id: string }> => {
+  const event = await queue.enqueue({ type: "comment.created", source: "ui", payload: {} });
+  await queue.claimAll();
+  return queue.defer(event.id, { blockedOn: docId });
+};
+
 const expectHttpError = async (work: Promise<unknown>, status: number): Promise<HttpError> => {
   const error: unknown = await work.then(
     () => undefined,
@@ -58,6 +68,10 @@ beforeEach(() => {
   queue = createQueueService({
     corpusDir: ws.config.corpusDir,
     mirror: createProjectionQueueMirror(ws.db),
+    // The same sink the lock service writes to, as in `app.ts` where both hold
+    // the one invalidation bus: a lock release that re-enters deferred work has
+    // to produce the lock keys *and* the queue keys, in one observable stream.
+    invalidate: (invalidated) => keys.push(...invalidated),
     now: () => clock,
   });
   locks = createLockService({
@@ -155,22 +169,28 @@ describe("acquire", () => {
     }
   });
 
-  it("carries a deferred event across a renewal but not across a takeover", async () => {
-    await locks.acquire(DOC, "agent", 1);
-    const stored = readLockFile(DOC);
-    await locks.store.write({ ...stored, deferredEventId: "evt_deferred01" });
+  it("leaves work deferred on the document alone: a lock that is still held clears nothing", async () => {
+    // The predecessor of this test asserted that a lock *file* carried the
+    // deferred event across a renewal (`deferredEventId`, retired by
+    // SERVER-030). The deferral now lives on the event, so the property worth
+    // pinning is the one that matters: acquiring or renewing a lock — user or
+    // agent — never re-enters deferred work. Only clearing it does.
+    const event = await defer(DOC);
 
-    await locks.acquire(DOC, "agent");
-    expect(readLockFile(DOC).deferredEventId).toBe("evt_deferred01");
+    await locks.acquire(DOC, "user", 1);
+    expect(await queue.store.locate(event.id)).toBe("deferred");
+
+    await locks.acquire(DOC, "user");
+    expect(await queue.store.locate(event.id)).toBe("deferred");
 
     clock += 400_000;
-    await locks.acquire(DOC, "user");
-    expect(readLockFile(DOC).deferredEventId).toBeUndefined();
+    await locks.acquire(DOC, "agent");
+    expect(await queue.store.locate(event.id)).toBe("deferred");
   });
 });
 
 describe("list and liveLock", () => {
-  it("reports live locks only, and never the deferred event", async () => {
+  it("reports live locks only", async () => {
     await locks.acquire(DOC, "agent", 1);
     await locks.acquire(OTHER, "user");
     clock += 2000;
@@ -222,6 +242,32 @@ describe("release", () => {
     expect(await locks.release(DOC, "agent")).toBe("agent");
     expect(existsSync(lockFile(DOC))).toBe(false);
   });
+
+  it("re-enters the work deferred on the document, with no retry call", async () => {
+    // SPEC.md §7: deferred work "applies when the lock clears" — automatically,
+    // which is the property that retires the interim fail-and-retry protocol.
+    const event = await defer(DOC);
+    const elsewhere = await defer(OTHER);
+    await locks.acquire(DOC, "user");
+    keys.length = 0;
+
+    expect(await locks.release(DOC, "user")).toBe("user");
+
+    expect(await queue.store.locate(event.id)).toBe("pending");
+    expect(await queue.store.locate(elsewhere.id)).toBe("deferred");
+    // Both halves of the frame set: the lock keys the release itself touches,
+    // and the queue/jobs/docs keys the re-entry does.
+    expect(keys).toEqual([["locks"], ["locks", DOC], ["docs", DOC], ["queue"], ["jobs"], ["docs"]]);
+  });
+
+  it("announces nothing extra when there is no deferred work behind the lock", async () => {
+    await locks.acquire(DOC, "user");
+    keys.length = 0;
+
+    await locks.release(DOC, "user");
+
+    expect(keys).toEqual([["locks"], ["locks", DOC], ["docs", DOC]]);
+  });
 });
 
 describe("forceBreak", () => {
@@ -240,7 +286,7 @@ describe("forceBreak", () => {
 
     const result = await locks.forceBreak(DOC, "user");
 
-    expect(result).toEqual({ holder: "agent", requeuedEventId: undefined });
+    expect(result).toEqual({ holder: "agent", requeuedEventIds: [] });
     expect(existsSync(lockFile(DOC))).toBe(false);
     expect(lockRows()).toEqual([]);
     // `.corpus/` is gitignored, so the entry stages nothing and has to be an
@@ -267,27 +313,23 @@ describe("forceBreak", () => {
   });
 
   it("re-enqueues the deferred edit rather than losing it", async () => {
-    const event = await queue.enqueue({ type: "comment.created", source: "ui", payload: {} });
-    await queue.claimAll();
-    expect(await queue.store.locate(event.id)).toBe("in-progress");
-
+    const event = await defer(DOC);
+    expect(await queue.store.locate(event.id)).toBe("deferred");
     await locks.acquire(DOC, "agent");
-    await locks.store.write({ ...readLockFile(DOC), deferredEventId: event.id });
 
     const result = await locks.forceBreak(DOC, "user");
 
-    expect(result.requeuedEventId).toBe(event.id);
+    expect(result.requeuedEventIds).toEqual([event.id]);
     expect(await queue.store.locate(event.id)).toBe("pending");
     expect((await queue.status()).pending).toBe(1);
   });
 
-  it("still breaks when the deferred event has since gone", async () => {
+  it("still breaks when nothing was deferred behind the lock", async () => {
     await locks.acquire(DOC, "agent");
-    await locks.store.write({ ...readLockFile(DOC), deferredEventId: "evt_vanished01" });
 
     const result = await locks.forceBreak(DOC, "user");
 
-    expect(result).toEqual({ holder: "agent", requeuedEventId: undefined });
+    expect(result).toEqual({ holder: "agent", requeuedEventIds: [] });
     expect(existsSync(lockFile(DOC))).toBe(false);
   });
 
@@ -345,5 +387,35 @@ describe("reap", () => {
     keys.length = 0;
     expect(await locks.reap()).toEqual([]);
     expect(keys).toEqual([]);
+  });
+
+  it("re-enters work deferred on a lease it reaps — the crashed-editor path", async () => {
+    const event = await defer(DOC);
+    const elsewhere = await defer(OTHER);
+    await locks.acquire(DOC, "user", 1);
+    await locks.acquire(OTHER, "user", 600);
+    clock += 2000;
+
+    expect(await locks.reap()).toEqual([DOC]);
+
+    // Nobody released this lock and nobody broke it; it simply ran out. §7 asks
+    // for automatic re-entry on all three ways a lock can clear.
+    expect(await queue.store.locate(event.id)).toBe("pending");
+    expect(await queue.store.locate(elsewhere.id)).toBe("deferred");
+  });
+
+  it("re-enters each event exactly once across a release and a later reap", async () => {
+    const first = await defer(DOC);
+    const second = await defer(DOC);
+    await locks.acquire(DOC, "user", 1);
+
+    await locks.release(DOC, "user");
+    clock += 2000;
+    await locks.reap();
+
+    expect(await queue.store.listIds("pending")).toHaveLength(2);
+    expect(await queue.store.listIds("deferred")).toEqual([]);
+    expect(await queue.store.locate(first.id)).toBe("pending");
+    expect(await queue.store.locate(second.id)).toBe("pending");
   });
 });

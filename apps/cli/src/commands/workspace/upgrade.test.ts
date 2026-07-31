@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { createClient } from "../../client.js";
 import { templateManifestPath } from "../../paths.js";
@@ -14,7 +15,12 @@ import { readTemplateManifest } from "../../template/manifest.js";
 import { generateToken, scaffoldWorkspace } from "../init/scaffold.js";
 import { commitAll, initRepository } from "../init/git.js";
 import { workspaceTopic } from "./index.js";
-import { runWorkspaceUpgrade, upgradeCommand, type UpgradeReport } from "./upgrade.js";
+import {
+  missingQueueMarkers,
+  runWorkspaceUpgrade,
+  upgradeCommand,
+  type UpgradeReport,
+} from "./upgrade.js";
 
 /**
  * Real directories and a real git repository throughout. The decision matrix is
@@ -68,10 +74,18 @@ function makeTemplate(): string {
   write(root, "claude/skills/orchestrate/SKILL.md", "orchestrate v1\n");
   write(root, "claude/skills/comment/SKILL.md", "comment v1\n");
   write(root, "claude/agents/.gitkeep", "");
-  write(root, "gitignore", ".corpus/*\n!.corpus/template-manifest.json\n");
+  write(
+    root,
+    "gitignore",
+    ".corpus/*\n!.corpus/template-manifest.json\n!.corpus/queue/\n.corpus/queue/*/*.json\n",
+  );
   write(root, "README.md", "readme v1\n");
   return root;
 }
+
+/** A todos-shaped `types.yaml` declaring one seed template. */
+const TODOS_TYPES =
+  "types:\n  - type: todo\n    label: Todo\n    seedTemplate: seeds/todo-template.md\n";
 
 /** A plugin tree contributing one skill, the `source: "plugin:<dir>"` provenance. */
 function makePlugins(): string {
@@ -451,6 +465,184 @@ describe("corpus workspace upgrade", () => {
 
     expect(read(root, "data/docs/inbox/mine.md")).toBe("untouched\n");
     expect(read(root, ".corpus/config.json")).toBe(config);
+  });
+
+  it("refreshes a plugin seed template from its plugin, and never an edited one", async () => {
+    // CLI-012: a seed template is a plugin-provenance file like a plugin skill,
+    // so it rides the same three-way compare with no special case.
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    write(plugins, "todos/types.yaml", TODOS_TYPES);
+    write(plugins, "todos/seeds/todo-template.md", "todo template v1\n");
+    const root = await makeWorkspace(template, plugins);
+    expect(read(root, "data/docs/templates/todo-template.md")).toBe("todo template v1\n");
+
+    write(plugins, "todos/seeds/todo-template.md", "todo template v2\n");
+    const harness = harnessFor(root, { json: true });
+    await upgrade(harness, { template, plugins });
+
+    expect(read(root, "data/docs/templates/todo-template.md")).toBe("todo template v2\n");
+    expect(harness.report().changes).toContainEqual(
+      expect.objectContaining({
+        path: "data/docs/templates/todo-template.md",
+        action: "update",
+        source: "plugin:todos",
+      }),
+    );
+  });
+
+  it("keeps a seed template the user edited, and reports it", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    write(plugins, "todos/types.yaml", TODOS_TYPES);
+    write(plugins, "todos/seeds/todo-template.md", "todo template v1\n");
+    const root = await makeWorkspace(template, plugins);
+
+    write(root, "data/docs/templates/todo-template.md", "todo template v1\nmy own line\n");
+    await commitAll({ dir: root, message: "the user edited the todo template" });
+    write(plugins, "todos/seeds/todo-template.md", "todo template v2\n");
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template, plugins });
+
+    expect(read(root, "data/docs/templates/todo-template.md")).toBe(
+      "todo template v1\nmy own line\n",
+    );
+    expect(harness.stdout()).toContain("keep    data/docs/templates/todo-template.md");
+    expect(harness.stdout()).toContain("[plugin:todos]");
+  });
+
+  it("heals a queue skeleton that predates a status, and commits the marker", async () => {
+    // The SHARED-003 ledger item (sprint-017 Adjudication 10): `corpus init`
+    // writes one `.gitkeep` per status, but a workspace created before a status
+    // existed never gains its directory — so the state has nowhere to live on a
+    // fresh checkout.
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    rmSync(join(root, ".corpus", "queue", "deferred"), { recursive: true, force: true });
+    expect(existsSync(join(root, ".corpus", "queue", "deferred"))).toBe(false);
+
+    const harness = harnessFor(root, { json: true });
+    await upgrade(harness, { template, plugins });
+
+    expect(harness.report().queueSkeleton).toEqual([".corpus/queue/deferred/.gitkeep"]);
+    expect(existsSync(join(root, ".corpus", "queue", "deferred", ".gitkeep"))).toBe(true);
+    // Tracked, not merely present: the marker exists so a clone carries the directory.
+    expect(await git(root, "ls-files", "--", ".corpus/queue/deferred/.gitkeep")).toContain(
+      ".gitkeep",
+    );
+
+    // Idempotent: a second run has nothing to do at all.
+    const second = harnessFor(root);
+    await upgrade(second, { template, plugins });
+    expect(second.stdout()).toBe("already up to date.\n");
+  });
+
+  it("creates but does not stage a marker the workspace's own .gitignore excludes", async () => {
+    // An old workspace may ignore all of `.corpus/`. `git add` of an ignored
+    // path fails the whole command, so the repair must not turn into a crash —
+    // and the operator's ignore rules are theirs, not this verb's to override.
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    write(root, ".gitignore", ".corpus/*\n");
+    await commitAll({ dir: root, message: "the operator narrowed .gitignore" });
+    rmSync(join(root, ".corpus", "queue", "deferred"), { recursive: true, force: true });
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template, plugins });
+
+    // Created — the repair still happens — but kept out of the commit rather
+    // than forced past the operator's own ignore rules, and said out loud.
+    expect(existsSync(join(root, ".corpus", "queue", "deferred", ".gitkeep"))).toBe(true);
+    expect(await git(root, "show", "--name-only", "--format=", "HEAD")).not.toContain(
+      ".corpus/queue/deferred/.gitkeep",
+    );
+    expect(harness.stdout()).toContain("excluded by this workspace's .gitignore");
+  });
+
+  it("checks every status the contract declares, not a hardcoded list", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    for (const status of QUEUE_EVENT_STATUSES) {
+      rmSync(join(root, ".corpus", "queue", status), { recursive: true, force: true });
+    }
+
+    expect(missingQueueMarkers(root)).toEqual(
+      QUEUE_EVENT_STATUSES.map((status) => `.corpus/queue/${status}/.gitkeep`),
+    );
+
+    const harness = harnessFor(root, { json: true });
+    await upgrade(harness, { template, plugins });
+
+    for (const status of QUEUE_EVENT_STATUSES) {
+      expect(existsSync(join(root, ".corpus", "queue", status, ".gitkeep"))).toBe(true);
+    }
+    expect(harness.report().commit).not.toBeNull();
+  });
+
+  it("reports a missing marker under --dry-run and writes nothing", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    rmSync(join(root, ".corpus", "queue", "deferred"), { recursive: true, force: true });
+
+    const harness = harnessFor(root, { flags: { "dry-run": true } });
+    await upgrade(harness, { template, plugins });
+
+    expect(harness.stdout()).toContain("pending .corpus/queue/deferred/.gitkeep");
+    expect(existsSync(join(root, ".corpus", "queue", "deferred"))).toBe(false);
+    expect(harness.stdout()).not.toContain("excluded by this workspace's .gitignore");
+  });
+
+  it("predicts the marker it would create but not commit, instead of promising the repair", async () => {
+    // Wave-3 audit, TEST 31. `queueSkeletonIgnored` was hard-coded empty on the
+    // plan path, so `--dry-run` against an old `.gitignore` printed a repair the
+    // real run then declined to commit — the one thing a plan may not do.
+    // `check-ignore --no-index` answers about a path that does not exist yet,
+    // which is why the prediction can be made at all.
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    write(root, ".gitignore", ".corpus/*\n");
+    await commitAll({ dir: root, message: "the operator narrowed .gitignore" });
+    rmSync(join(root, ".corpus", "queue", "deferred"), { recursive: true, force: true });
+
+    const planned = harnessFor(root, { flags: { "dry-run": true }, json: true });
+    await upgrade(planned, { template, plugins });
+
+    expect(planned.report().queueSkeletonIgnored).toEqual([".corpus/queue/deferred/.gitkeep"]);
+    expect(existsSync(join(root, ".corpus", "queue", "deferred"))).toBe(false);
+
+    const spoken = harnessFor(root, { flags: { "dry-run": true } });
+    await upgrade(spoken, { template, plugins });
+    expect(spoken.stdout()).toContain("excluded by this workspace's .gitignore");
+    // A plan says "would be", never "was": nothing has happened yet.
+    expect(spoken.stdout()).toContain("would be created but not committed");
+
+    // And the real run agrees with the plan it printed.
+    const real = harnessFor(root, { json: true });
+    await upgrade(real, { template, plugins });
+    expect(real.report().queueSkeletonIgnored).toEqual([".corpus/queue/deferred/.gitkeep"]);
+  });
+
+  it("heals the skeleton even without a baseline, where no template file may be written", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+    rmSync(templateManifestPath(root));
+    rmSync(join(root, ".corpus", "queue", "deferred"), { recursive: true, force: true });
+
+    const harness = harnessFor(root);
+    await upgrade(harness, { template, plugins });
+
+    // A directory is either there or it is not — nothing about it needs a
+    // baseline, and an empty marker overwrites nothing.
+    expect(existsSync(join(root, ".corpus", "queue", "deferred", ".gitkeep"))).toBe(true);
+    expect(existsSync(templateManifestPath(root))).toBe(false);
+    expect(harness.stdout()).toContain("no template file was written");
   });
 });
 

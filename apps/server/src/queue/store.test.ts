@@ -10,6 +10,7 @@ import {
   QueueStore,
   salvageEvent,
   toWireEvent,
+  withoutDeferral,
   type StoredEvent,
 } from "./store.js";
 
@@ -37,9 +38,23 @@ afterEach(() => {
 });
 
 describe("ensureLayoutSync", () => {
-  it("creates the five status directories, and is idempotent", () => {
+  it("creates one directory per contract status, and is idempotent", () => {
     store.ensureLayoutSync();
     expect(readdirSync(store.queueDir).sort()).toEqual([...QUEUE_EVENT_STATUSES].sort());
+  });
+
+  // CONTRACT-021 added `deferred` to the status list, and a workspace scaffolded
+  // before it existed must not need an upgrade step to gain the directory: boot
+  // creates whatever is missing, and leaves the events already on disk alone.
+  it("adds a status directory a pre-existing workspace never had", async () => {
+    store.ensureLayoutSync();
+    await store.writeEvent("pending", event());
+    rmSync(store.dirFor("deferred"), { recursive: true, force: true });
+
+    store.ensureLayoutSync();
+
+    expect(readdirSync(store.queueDir).sort()).toEqual([...QUEUE_EVENT_STATUSES].sort());
+    expect(await store.listIds("pending")).toHaveLength(1);
   });
 });
 
@@ -172,6 +187,43 @@ describe("parseEventFile", () => {
       updated: "2026-07-19T11:00:00Z",
       status: "in-progress",
     });
+  });
+
+  it("keeps the deferral bookkeeping, and drops a blockedOn that is not a document id", () => {
+    const good = parseEventFile(
+      JSON.stringify({ ...event(), blockedOn: "doc_locked01", deferReason: "user is editing" }),
+      "evt_aaaaaaaaaaaa",
+      "deferred",
+    );
+    expect(good.ok === true && good.event).toMatchObject({
+      blockedOn: "doc_locked01",
+      deferReason: "user is editing",
+      status: "deferred",
+    });
+
+    // Strict, unlike the projection's reader: this is the copy the *transitions*
+    // read, and a deferral that named nothing addressable could never re-enter.
+    const bad = parseEventFile(
+      JSON.stringify({ ...event(), blockedOn: "nonsense" }),
+      "evt_aaaaaaaaaaaa",
+      "deferred",
+    );
+    expect(bad.ok).toBe(false);
+    expect(bad.ok === false && bad.reason).toMatch(/blockedOn/);
+  });
+});
+
+describe("withoutDeferral", () => {
+  it("removes both deferral fields and leaves everything else alone", () => {
+    const stripped = withoutDeferral(
+      event({ status: "deferred", blockedOn: "doc_locked01", deferReason: "waiting", attempts: 2 }),
+    );
+
+    expect(stripped).not.toHaveProperty("blockedOn");
+    expect(stripped).not.toHaveProperty("deferReason");
+    expect(stripped).toMatchObject({ id: "evt_aaaaaaaaaaaa", attempts: 2, status: "deferred" });
+    // A copy: the caller's event is what a failed transition would have to keep.
+    expect(event({ blockedOn: "doc_locked01" }).blockedOn).toBe("doc_locked01");
   });
 });
 

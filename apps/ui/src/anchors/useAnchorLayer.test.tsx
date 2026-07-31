@@ -297,6 +297,159 @@ describe("commenting on a selection", () => {
   });
 });
 
+/**
+ * The outcome of a comment the reader did not stay open for (UI-015).
+ *
+ * A per-call `onSuccess`/`onError` is delivered through the mutation's observer
+ * and skipped once that observer has no listeners left — pinned as library
+ * behaviour by the kit's own `writeHooks.test.tsx` → "callbacks and observer
+ * teardown". So the warnings and the failure notice ride on the **hook**, and
+ * clearing the optimistic highlight — the half that means nothing once the layer
+ * is gone — deliberately does not.
+ */
+describe("a comment whose reader closed before it settled", () => {
+  /** A write held open until the test lets it answer (UI-012's gate). */
+  function gate(): { readonly held: Promise<void>; readonly release: () => void } {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = () => {
+        resolve();
+      };
+    });
+    return { held, release: () => release() };
+  }
+
+  /** Submits a comment and waits for the request to be on the wire, unanswered. */
+  async function submitAndHold(app: Mounted): Promise<void> {
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("A note.", false);
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+  }
+
+  it("still surfaces the server's warnings, one toast each", async () => {
+    const { held, release } = gate();
+    const app = mount(
+      [],
+      [],
+      readerTransport({
+        holdWrites: held,
+        threadWarnings: [
+          { code: "unresolved_ref", detail: "[[missing]] names no document" },
+          { code: "commit_skipped", detail: "no git in this workspace" },
+        ],
+      }),
+    );
+    await submitAndHold(app);
+
+    cleanup();
+    release();
+
+    await waitFor(() => {
+      expect(app.notices).toHaveLength(2);
+    });
+    expect(app.notices).toEqual([
+      { tone: "error", message: "unresolved_ref — [[missing]] names no document" },
+      { tone: "error", message: "commit_skipped — no git in this workspace" },
+    ]);
+  });
+
+  it("still surfaces the failure, with the server's message intact", async () => {
+    const { held, release } = gate();
+    const app = mount(
+      [],
+      [],
+      readerTransport({ holdWrites: held, failing: { "POST /api/threads": 409 } }),
+    );
+    await submitAndHold(app);
+
+    cleanup();
+    release();
+
+    await waitFor(() => {
+      expect(app.notices).toHaveLength(1);
+    });
+    expect(app.notices[0]).toEqual({
+      tone: "error",
+      message: "Comment failed — POST /api/threads failed (HTTP 409): the server refused",
+    });
+  });
+
+  /**
+   * The other half of the split: the optimistic chip is local state, so clearing
+   * it after the layer has gone is meaningless work on a dead component. It
+   * stays on `mutate`, where being skipped is the correct outcome — and the
+   * decoration the layer painted is therefore still exactly where teardown left
+   * it, untouched by the response.
+   */
+  it("attempts no cleanup on the layer it no longer has", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { held, release } = gate();
+    const app = mount([], [], readerTransport({ holdWrites: held }));
+    await submitAndHold(app);
+    const painted = anchorState(app.editorState())?.anchors ?? [];
+    expect(painted).toHaveLength(1);
+
+    cleanup();
+    release();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(anchorState(app.editorState())?.anchors).toEqual(painted);
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  /**
+   * The mounted control for the pair above: nothing about the normal path
+   * moved. One request, the chip clears, and a successful comment with no
+   * warnings says nothing at all.
+   */
+  it("still clears the chip and stays silent while the reader is open", async () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("A note.", false);
+    });
+    await waitFor(() => {
+      expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+    });
+    expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    expect(app.notices).toEqual([]);
+  });
+
+  /** A warning reported once, not once per callback site. */
+  it("reports a warning exactly once while mounted", async () => {
+    const app = mount(
+      [],
+      [],
+      readerTransport({
+        threadWarnings: [{ code: "unresolved_ref", detail: "[[missing]] names no document" }],
+      }),
+    );
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("A note.", false);
+    });
+    await waitFor(() => {
+      expect(app.notices).toHaveLength(1);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(app.notices).toEqual([
+      { tone: "error", message: "unresolved_ref — [[missing]] names no document" },
+    ]);
+    expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+  });
+});
+
 describe("a comment submitted mid-save", () => {
   beforeEach(() => {
     resetEditingRegistry();

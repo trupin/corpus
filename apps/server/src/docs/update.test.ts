@@ -297,6 +297,118 @@ describe("PUT /api/docs/{id}", () => {
   });
 });
 
+// SERVER-039 (wave-3 audit FIX 5). `PUT` writes frontmatter and nothing else,
+// so `status: open` on an archived skill reported success while the folder sat
+// in `.claude/skills-archived/` — disabled, invisible to Claude Code, still
+// holding its name. `corpus doc edit` refused it (CLI-017); the UI's frontmatter
+// form and `curl` did not, and the server is the sole writer.
+describe("PUT /api/docs/{id} — leaving `archived` is the unarchive route's job", () => {
+  const SKILL = ["---", "name: demo", "description: A demo skill.", "---", "", "Do it.", ""].join(
+    "\n",
+  );
+
+  /** An archived skill: real folder, moved by the real route. */
+  async function archivedSkill(prefix: string): Promise<string> {
+    ws = createWriteWorkspace(prefix);
+    ws.write(".claude/skills/demo/SKILL.md", SKILL);
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the skill");
+    ws.reproject();
+    const row = ws.db.prepare("SELECT id FROM documents WHERE type = 'skill'").get() as {
+      id: string;
+    };
+    const archived = await ws.post(`/api/docs/${row.id}/archive`, {});
+    expect(archived.status).toBe(200);
+    expect(ws.exists(".claude/skills-archived/demo/SKILL.md")).toBe(true);
+    return row.id;
+  }
+
+  const issues = async (response: Response): Promise<{ path: string; message: string }[]> =>
+    ((await response.json()) as { issues: { path: string; message: string }[] }).issues;
+
+  it("refuses the status that would leave the document half-restored, and writes nothing", async () => {
+    const skillId = await archivedSkill("update-unarchive-put");
+    const before = ws.head();
+
+    const response = await ws.put(`/api/docs/${skillId}`, { status: "open" });
+    expect(response.status).toBe(400);
+    const [issue] = await issues(response);
+    expect(issue?.path).toBe("body.status");
+    expect(issue?.message).toContain(`/api/docs/${skillId}/unarchive`);
+
+    // Nothing moved: not the file, not the folder, not the history.
+    expect(ws.read(".claude/skills-archived/demo/SKILL.md")).toContain("status: archived");
+    expect(ws.exists(".claude/skills/demo")).toBe(false);
+    expect(ws.head()).toBe(before);
+  });
+
+  it("refuses every status that is not `archived`, not only `open`", async () => {
+    const skillId = await archivedSkill("update-unarchive-resolved");
+    const response = await ws.put(`/api/docs/${skillId}`, { status: "resolved" });
+    expect(response.status).toBe(400);
+    expect((await issues(response))[0]?.message).toContain("is archived");
+  });
+
+  it("leaves the archive route working, in both directions", async () => {
+    const skillId = await archivedSkill("update-unarchive-route");
+
+    const restored = await ws.post(`/api/docs/${skillId}/unarchive`, {});
+    expect(restored.status).toBe(200);
+    expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
+    expect(ws.read(".claude/skills/demo/SKILL.md")).toContain("status: open");
+
+    const rearchived = await ws.post(`/api/docs/${skillId}/archive`, {});
+    expect(rearchived.status).toBe(200);
+    expect(ws.exists(".claude/skills-archived/demo/SKILL.md")).toBe(true);
+  });
+
+  it("still lets a PUT archive a document, and lets an archived one be edited", async () => {
+    ws = createWriteWorkspace("update-archive-put");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Retiring" });
+
+    // Into `archived` is unchanged: for a note it is exactly what the archive
+    // route does, and it is the path SERVER-018's `mayChangeTree` is about.
+    const archived = await ws.put(`/api/docs/${created.id}`, { status: "archived" });
+    expect(archived.status).toBe(200);
+    expect(parseDocument(ws.read(created.path)).data["status"]).toBe("archived");
+
+    // Re-sending the same status is a no-op, not a refusal — it is what an
+    // autosave of an untouched frontmatter form does.
+    const again = await ws.put(`/api/docs/${created.id}`, { status: "archived" });
+    expect(again.status).toBe(200);
+
+    // And an archived document stays editable in every other respect.
+    const edited = await ws.put(`/api/docs/${created.id}`, {
+      title: "Retired",
+      body: "Still writable.",
+    });
+    expect(edited.status).toBe(200);
+    expect(ws.read(created.path)).toContain("Still writable.");
+    expect(parseDocument(ws.read(created.path)).data["status"]).toBe("archived");
+  });
+
+  it("refuses on the projected status of a skill whose frontmatter disagrees", async () => {
+    // A `SKILL.md` under `.claude/skills-archived/` is projected `archived`
+    // whatever its own frontmatter says (SPEC.md §7), and that row is what the
+    // client saw before it sent the patch.
+    ws = createWriteWorkspace("update-unarchive-row");
+    ws.write(".claude/skills-archived/demo/SKILL.md", SKILL);
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed an archived skill");
+    ws.reproject();
+    const row = ws.db.prepare("SELECT id, status FROM documents WHERE type = 'skill'").get() as {
+      id: string;
+      status: string;
+    };
+    expect(row.status).toBe("archived");
+
+    const response = await ws.put(`/api/docs/${row.id}`, { status: "resolved" });
+    expect(response.status).toBe(400);
+    expect((await issues(response))[0]?.path).toBe("body.status");
+  });
+});
+
 describe("squash-on-idle, through the API", () => {
   it("folds two rapid saves into one commit and starts a fresh one past the window", async () => {
     ws = createWriteWorkspace("squash-http");

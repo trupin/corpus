@@ -1,6 +1,6 @@
 // Integration: the real QueueService driving the real projection through the
 // mirror seam. No HTTP, no stubs — a temp workspace, `.corpus/cache.db`, and the
-// five status directories, which is everything the seam actually touches.
+// status directories, which is everything the seam actually touches.
 
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

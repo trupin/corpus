@@ -1914,6 +1914,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/queue/{id}/defer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Defer a claimed event onto a document's lock
+         * @description Moves a claimed event to `deferred/` — waiting, not failed (SPEC.md §7). The agent calls it when the work it claimed needs a document the **user** holds the edit lock on: it replies to the waiting thread, defers the event, and moves on.
+         *
+         *     **The event comes back on its own.** Releasing, force-breaking or reaping the lock on `blockedOn` returns it to `pending`, and `corpus queue idle` unparks — no retry call, no operator. Until then it is not claimable: `claim-all` skips deferred events, because handing back work whose lock is still held would spin the agent against it.
+         *
+         *     **Nothing is ever silently dropped** (SPEC.md §7). A deferral whose lock is never released stays on disk, stays visible in the queue counts and the console, survives a restart, and stays retryable by hand through `POST /api/jobs/{id}/retry` — which is what §7's force-break bullet promises, now as the manual override rather than the only path.
+         *
+         *     `409` when the event is not `in-progress`: only claimed work can be deferred, since nothing else has tried the edit yet, exactly as only a finished job can be retried. `404` when there is no such event.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a queue event. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The document being waited on, and optionally why. A deferral that named no document could never re-enter, so the body is mandatory. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DeferEventRequest"];
+                };
+            };
+            responses: {
+                /** @description The event, now in `deferred/`. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QueueEvent"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queue/{id}": {
         parameters: {
             query?: never;
@@ -2529,8 +2621,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Retry a failed job
+         * Retry a failed or deferred job
          * @description Returns the event to `pending/` so the agent picks it up again — the retry action in the console's detail header (SPEC.md §11).
+         *
+         *     It works on a **deferred** job too, and stays the manual override once deferrals re-enter on their own (SPEC.md §7, CONTRACT-021): automatic re-entry handles the lock being released, broken or reaped, and this handles everything it did not reach — a lock released out of band, or a deferral an operator simply wants back now.
          */
         post: {
             parameters: {
@@ -2856,6 +2950,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a skill
+         * @description Creates `.claude/skills/{name}/SKILL.md` through the server's ordinary mutation pipeline — the write path SPEC.md §7's skill genesis needs, since the agent reaches the workspace only through the CLI and the server is the sole writer (SPEC.md §9.1).
+         *
+         *     **The created file carries both frontmatter vocabularies**, which is what makes a skill simultaneously a Claude Code skill and a Corpus document: `name` (equal to the directory name) and `description` for Claude Code's discovery, plus the core document keys the server assigns — `id`, `type: skill`, `title`, `created`, `updated`, `tags`, `status`, `anchors`.
+         *
+         *     **The skill is named in the body rather than in the path** because the path names a resource that does not exist yet; this is `POST /api/docs`'s convention, not a departure from the rollback route's. The name doubles as the traversal guard: it is validated against the same pattern the rollback path parameter uses, which admits no `/`, `.` or whitespace, so a traversal attempt is a `400` naming `body.name` and never reaches the filesystem.
+         *
+         *     **The creation lands as a normal auto-commit** (SPEC.md §9.2) and is projected and broadcast like any other write, so the new skill appears on the board and in `GET /api/docs?type=skill` without a restart. If the workspace's git hooks reject the commit, the file stands anyway and the rejection comes back in `warnings` (SPEC.md §14).
+         *
+         *     `409` means the name is taken — a skill of that name is already installed. Whether a name held only by an *archived* skill (`.claude/skills-archived/{name}/`, where `corpus doc archive` moves one) is likewise taken is answered by the server, and both answers are already describable here: refusing it is this same `409`, allowing it is a plain `201`.
+         *
+         *     There is no `423`: an edit lock is held on a document, and this call's document does not exist until the call succeeds, so nothing can be holding it. A name that is already taken is a conflict, not a lock — and editing the skill afterwards goes through `PUT /api/docs/{id}`, which does refuse under the other party's lock.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The skill to create. `name` and `description` are mandatory, so the body is. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SkillCreateRequest"];
+                };
+            };
+            responses: {
+                /** @description The created skill as an ordinary document — its frontmatter, body and workspace-relative path — plus any §14 warnings. The same shape `POST /api/docs` returns, because what was created is the same kind of thing. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocMutationResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/{name}/rollback": {
         parameters: {
             query?: never;
@@ -2885,7 +3063,7 @@ export interface paths {
                     "x-corpus-author"?: "user" | "agent";
                 };
                 path: {
-                    /** @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens. */
+                    /** @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound. */
                     name: string;
                 };
                 cookie?: never;
@@ -2967,7 +3145,7 @@ export interface paths {
          *     - `["docs", "<docId|threadId>"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.
          *     - `["tree"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.
          *     - `["threads", "<threadId>"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.
-         *     - `["queue"]` — emitted by every queue transition: enqueue, claim, complete, fail, abandon, reap, halt/resume, and a lock break that re-enqueues a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.
+         *     - `["queue"]` — emitted by every queue transition: enqueue, claim, complete, fail, defer, abandon, reap, halt/resume, and any lock release, break or reap that re-enters a deferred event. Refetch: `GET /api/queue/status` — the console strip's depth and halted state.
          *     - `["jobs"]` — emitted by every queue transition, plus any job-log append (coalesced). Refetch: `GET /api/jobs` — the console's job list.
          *     - `["jobs", "<eventId>"]` — emitted by an append to that job's log — over HTTP or out of band — and its retry/abandon transitions. Refetch: `GET /api/jobs/{id}/log` — the console's live log panel for the selected job.
          *     - `["locks"]` — emitted by lock acquire, release, force-break and reap. Refetch: `GET /api/locks` — the console's held-locks list.
@@ -3792,6 +3970,8 @@ export interface components {
             halted: boolean;
             pending: number;
             inProgress: number;
+            /** @description Events waiting on a user-held edit lock (SPEC.md §7). Counted separately from `failed` because a deferral is not a failure — a non-zero count here is work that will resume by itself, and the console strip must not read it as breakage. */
+            deferred: number;
             processed: number;
             failed: number;
             abandoned: number;
@@ -3835,6 +4015,21 @@ export interface components {
         };
         FailEventRequest: {
             /** @description Human-readable failure reason, shown in the console. */
+            reason?: string;
+        };
+        ConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            lock?: components["schemas"]["Lock"] & unknown;
+        };
+        DeferEventRequest: {
+            /**
+             * @description The document whose edit lock the work is waiting for. Releasing, breaking or reaping that lock returns this event to `pending` automatically (SPEC.md §7), so a deferral that named the wrong document would wait forever.
+             * @example doc_a1b2c3
+             */
+            blockedOn: string;
+            /** @description Human-readable deferral note, shown in the console beside the blocking document. No `deferred:` prefix is needed or wanted — the status says that now. */
             reason?: string;
         };
         /** @description Every active lock, for hydrating lock banners on load (SPEC.md §7). */
@@ -3883,10 +4078,10 @@ export interface components {
             /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
             type: string;
             /**
-             * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in.
+             * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and could not proceed because the user holds the edit lock on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that lock is released, broken or reaped.
              * @enum {string}
              */
-            status: "pending" | "in-progress" | "processed" | "failed" | "abandoned";
+            status: "pending" | "in-progress" | "deferred" | "processed" | "failed" | "abandoned";
             /**
              * Format: date-time
              * @example 2026-07-19T10:05:00Z
@@ -3906,6 +4101,13 @@ export interface components {
             originId: string | null;
             /** @description **The current title of whatever `originId` names, or null.** Null exactly when `originId` is null, or when the document it names no longer exists. It rides along so the console can label a job row without a second fetch per row; it is a denormalised copy read at response time, never a stored field, so a renamed document shows its new title on the next read. */
             originTitle: string | null;
+            /**
+             * @description **The document whose edit lock this job is waiting for**, or null — non-null exactly when `status` is `deferred` (SPEC.md §7, CONTRACT-021). It is the document supplied at defer time, and the one whose release, break or reap returns the job to `pending` automatically. The console needs it to say what a waiting row is waiting *for*: a deferred job that names no document is indistinguishable from a stuck one.
+             * @example doc_a1b2c3
+             */
+            blockedOn: string | null;
+            /** @description **The current title of whatever `blockedOn` names, or null** — the same denormalised copy `originTitle` is, read at response time rather than stored, so a renamed document shows its new title on the next read. Null exactly when `blockedOn` is null, or when the document it names no longer exists. */
+            blockedOnTitle: string | null;
         };
         JobLog: {
             /** @description Log lines from `cursor` onwards, oldest first. */
@@ -3934,12 +4136,6 @@ export interface components {
         AppendLogRequest: {
             /** @description One progress line. Rendered as plain text and never interpreted; the server caps its length (SPEC.md §7). */
             line: string;
-        };
-        ConflictError: {
-            /** @enum {string} */
-            code: "conflict";
-            message: string;
-            lock?: components["schemas"]["Lock"] & unknown;
         };
         RebuildResult: {
             /** @description Absolute path of the database this rebuild produced — `.corpus/cache.db`, which the rebuild replaced atomically by rename. */
@@ -4036,9 +4232,24 @@ export interface components {
             /** @description The whole file, frontmatter and body, exactly as it would be written. Empty is legal and reports as unparseable frontmatter, which is what saving it would do. */
             content: string;
         };
+        SkillCreateRequest: {
+            /**
+             * @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound.
+             * @example orchestrate
+             */
+            name: string;
+            /** @description One-line description of when to use the skill, written into the frontmatter `description` Claude Code discovers it by. Required: a skill without one is installed but never invoked. */
+            description: string;
+            /** @description Corpus document title, shown on the board (SPEC.md §5). Defaults to the skill's `name`. */
+            title?: string;
+            /** @description Markdown body below the frontmatter — the skill's instructions. Omit it to pre-fill from the `skill` type's `template` document when the workspace defines one, the same rule `POST /api/docs` follows; a workspace with no skill template gets an empty body, which the agent then edits like any other document. */
+            body?: string;
+            /** @description Defaults to no tags. */
+            tags?: string[];
+        };
         SkillRollbackResult: {
             /**
-             * @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens.
+             * @description The skill's name, which is its directory name under `.claude/skills/` and the `name` in its frontmatter. Lowercase letters, digits and single hyphens, at most 64 characters — it becomes a directory name, and no real skill name comes close to the bound.
              * @example orchestrate
              */
             name: string;

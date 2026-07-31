@@ -20,6 +20,7 @@ const STATUS = {
   halted: false,
   pending: 0,
   inProgress: 0,
+  deferred: 0,
   processed: 0,
   failed: 0,
   abandoned: 0,
@@ -41,7 +42,11 @@ function queueResponder(): Parameters<typeof startStubServer>[0] {
     if (request.path === "/api/queue/idle") return sendNoContent(response);
     if (request.path === "/api/queue/claim-all") return sendJson(response, 200, { events: [] });
     if (request.path === "/api/queue/reap-stale") return sendJson(response, 200, { reaped: [] });
-    if (request.path.endsWith("/complete") || request.path.endsWith("/fail")) {
+    if (
+      request.path.endsWith("/complete") ||
+      request.path.endsWith("/fail") ||
+      request.path.endsWith("/defer")
+    ) {
       return sendJson(response, 200, EVENT);
     }
     if (request.method === "DELETE") return sendJson(response, 200, EVENT);
@@ -55,6 +60,7 @@ const EXPECTED_PATHS: Readonly<Record<string, string>> = {
   complete: "/api/queue/evt_1111/complete",
   fail: "/api/queue/evt_1111/fail",
   abandon: "/api/queue/evt_1111",
+  defer: "/api/queue/evt_1111/defer",
   "reap-stale": "/api/queue/reap-stale",
   halt: "/api/queue/halt",
   resume: "/api/queue/resume",
@@ -77,8 +83,9 @@ describe("the queue topic", () => {
       const stub = await startStubServer(queueResponder());
       const harness = stubContext(stub, {
         args: { "event-id": "evt_1111" },
-        // A zero window keeps `idle` to a single probe.
-        flags: { wait: 0 },
+        // A zero window keeps `idle` to a single probe; `defer` refuses to send
+        // anything without the document it is blocked on.
+        flags: { wait: 0, "blocked-on": "doc_a1b2c3" },
       });
 
       expect(command.requiresWorkspace).not.toBe(false);

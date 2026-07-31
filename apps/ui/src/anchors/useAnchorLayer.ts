@@ -122,7 +122,31 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const [optimistic, setOptimistic] = useState<Optimistic | null>(null);
   const [report, setReport] = useState<ReportedAgainst | null>(null);
 
-  const createThread = useCreateThread();
+  /**
+   * The comment's **outcome**, reported from the hook rather than from the call
+   * (UI-015).
+   *
+   * A per-call `onSuccess`/`onError` is delivered through the mutation's
+   * observer and skipped once that observer has no listeners left, so closing
+   * the reader while a comment is in flight used to swallow both the server's
+   * warnings and the failure notice — the user is told nothing about a comment
+   * that may or may not have landed. Hook-level callbacks ride on the mutation
+   * itself and fire wherever the layer went (`SettledCallbacks`).
+   *
+   * Only the telling moves. Clearing the optimistic highlight is a state update
+   * on this layer, it means nothing once the layer is gone, and it stays on the
+   * call in `post` where being skipped after unmount is the correct behaviour.
+   */
+  const createThread = useCreateThread({
+    onSuccess: (result) => {
+      for (const warning of result.warnings) {
+        onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
+      }
+    },
+    onError: (error) => {
+      onNotify({ tone: "error", message: `Comment failed — ${error.message}` });
+    },
+  });
   const editing = useIsEditing(docId);
 
   /* ── The plugin, and the two refs it reads through ─────────────────── */
@@ -424,6 +448,15 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   const post = useCallback(
     (input: { body: string; requestsAgent: boolean }, anchor: AnchorSelection, key: string) => {
+      // The temp highlight goes: on success the server's own anchor arrives with
+      // the refetched document and takes its place, and on a refusal there is
+      // nothing to take its place at all. Per-call on purpose — a highlight in a
+      // reader that has closed is not something anyone can see, and clearing it
+      // there would be a state update on a dead layer (UI-015). The notices ride
+      // on the hook above, which is what makes skipping this one safe.
+      const forget = (): void => {
+        setOptimistic((current) => (current?.key === key ? null : current));
+      };
       createThread.mutate(
         {
           parent: docId,
@@ -431,23 +464,10 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
           body: input.body,
           requestsAgent: input.requestsAgent,
         },
-        {
-          onSuccess: (result) => {
-            // The temp highlight goes; the server's own anchor arrives with the
-            // refetched document and takes its place.
-            setOptimistic((current) => (current?.key === key ? null : current));
-            for (const warning of result.warnings) {
-              onNotify({ tone: "error", message: `${warning.code} — ${warning.detail}` });
-            }
-          },
-          onError: (error) => {
-            setOptimistic((current) => (current?.key === key ? null : current));
-            onNotify({ tone: "error", message: `Comment failed — ${error.message}` });
-          },
-        },
+        { onSuccess: forget, onError: forget },
       );
     },
-    [createThread, docId, onNotify],
+    [createThread, docId],
   );
 
   const pendingAnchor = useRef<{ anchor: AnchorSelection; key: string } | null>(null);

@@ -216,6 +216,66 @@ describe("POST /api/docs", () => {
     expect(ws.exists("data/docs/inbox")).toBe(true);
   });
 
+  // SERVER-037. Pre-fix, each of these folders was accepted: the file was
+  // written, auto-committed, and then the read-back answered
+  // `404 no document with id doc_…` because the projection skips the path — a
+  // document in the audit trail that no read surface can ever show.
+  it("refuses a folder the projection would never index, before writing anything", async () => {
+    start("create-unindexable-folder");
+    const before = ws.git("status", "--porcelain");
+    const head = ws.head();
+
+    for (const folder of [".claude/skills", ".foo", "notes/.hidden/x", "node_modules"]) {
+      const response = await ws.post("/api/docs", { type: "note", title: "Invisible", folder });
+      expect(response.status, folder).toBe(400);
+      const body = (await response.json()) as {
+        code: string;
+        issues: { path: string; message: string }[];
+      };
+      expect(body.code, folder).toBe("bad_request");
+      expect(
+        body.issues.map((issue) => issue.path),
+        folder,
+      ).toContain("folder");
+    }
+
+    // Nothing written, nothing committed, nothing indexed: the refusal happens
+    // at validation, ahead of the write pipeline, so there is nothing to undo.
+    expect(ws.git("status", "--porcelain")).toBe(before);
+    expect(ws.head()).toBe(head);
+    expect(ws.exists("data/docs/.claude")).toBe(false);
+    expect(ws.exists("data/docs/node_modules")).toBe(false);
+    expect(ws.exists("data/docs/notes")).toBe(false);
+    expect(
+      ws.db.prepare("SELECT COUNT(*) AS n FROM documents WHERE title = ?").get("Invisible"),
+    ).toEqual({ n: 0 });
+  });
+
+  // The other half of SERVER-037: a dot that does not *lead* a segment is an
+  // ordinary character, and a folder carrying one must still walk the whole
+  // write → commit → project → read round trip.
+  it("accepts folders that merely resemble the refused shapes, end to end", async () => {
+    start("create-dotted-folders");
+
+    for (const folder of ["my.notes", "v1.2", "notes/2026.07", "a.b/c.d", "finance/2026"]) {
+      const created = await createDoc(ws, { type: "note", title: "Legal", folder });
+      expect(created.path.startsWith(`data/docs/${folder}/`), folder).toBe(true);
+      expect(ws.exists(created.path), folder).toBe(true);
+
+      const row = ws.db.prepare("SELECT path FROM documents WHERE id = ?").get(created.id) as
+        { path: string } | undefined;
+      expect(row?.path, folder).toBe(created.path);
+
+      const response = await ws.request(`/api/docs/${created.id}`);
+      expect(response.status, folder).toBe(200);
+      expect(DocSchema.parse(await response.json()).frontmatter.id, folder).toBe(created.id);
+      expect(
+        ws.log("%s").some((subject) => subject.includes(created.id)),
+        folder,
+      ).toBe(true);
+    }
+  });
+
   it("is readable immediately, with no polling", async () => {
     start("create-read-your-write");
     const created = await createDoc(ws, { type: "note", title: "Immediate" });

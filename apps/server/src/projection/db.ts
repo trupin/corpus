@@ -259,7 +259,23 @@ export function openProjection(
   return db;
 }
 
-/** Opens an existing `cache.db` read-only — the mode `doctor` uses (§9.1, WAL readers). */
+/**
+ * Opens an existing `cache.db` read-only — the mode `doctor` uses (§9.1, WAL
+ * readers).
+ *
+ * **The schema stamp is checked here too, and can only be refused** (wave-3
+ * audit FIX 16). {@link openProjectionDatabase} answers a stamp mismatch by
+ * wiping and rebuilding; a read-only handle cannot, and it must not pretend the
+ * question does not arise: `doctor` compares files against rows, and a database
+ * this version's queries only *partly* fit answers that comparison with garbage
+ * — a `v6` database has no `turns.form_answered` at all, yet every column
+ * `checkDocuments` reads is still there, so the report came back **clean** for a
+ * projection the server would have thrown away on sight. A wrong "projection is
+ * clean" is worse than no answer, because it is the answer somebody acts on. So
+ * the mismatch is a refusal naming the repair, in the same shape as the
+ * missing-file refusal above — and the repair is the same one the server
+ * performs for itself at boot.
+ */
 export function openProjectionReadonly(config: ProjectionConfig): ProjectionDb {
   const path = cacheDbPath(config);
   const open = (): SqliteDatabase => {
@@ -273,6 +289,17 @@ export function openProjectionReadonly(config: ProjectionConfig): ProjectionDb {
       );
     }
     sqlite.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
+
+    const version = readSchemaVersion(sqlite);
+    if (version !== SCHEMA_VERSION) {
+      sqlite.close();
+      throw new ProjectionError(
+        `the projection at ${path} was built by a different version of corpus ` +
+          `(schema ${version === null ? "unstamped" : String(version)}, this build reads ` +
+          `${String(SCHEMA_VERSION)}); run \`corpus db rebuild\` to rebuild it from the ` +
+          "workspace's files, or start the server, which rebuilds a stale projection at boot",
+      );
+    }
     return sqlite;
   };
   return createProjectionDb(open(), config, path, silentLogger, open);

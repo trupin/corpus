@@ -145,7 +145,11 @@ describe("the skill rollback command spec", () => {
     expect(machine?.description).toContain('"commit"');
   });
 
-  it("is the topic's only verb, reachable as `corpus skill rollback`", () => {
-    expect(skillTopic.commands.map((command) => command.name)).toEqual(["rollback"]);
+  it("is reachable as `corpus skill rollback`, beside the genesis verb", () => {
+    // Deliberately inverted by CLI-011: the topic carried one verb until
+    // `corpus skill create` shipped, and genesis and recovery are the two things
+    // a `corpus doc …` verb cannot express. The assertion stays exhaustive so a
+    // third verb still has to justify itself here.
+    expect(skillTopic.commands.map((command) => command.name)).toEqual(["create", "rollback"]);
   });
 });

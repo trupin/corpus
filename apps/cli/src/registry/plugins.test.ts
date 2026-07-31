@@ -62,11 +62,14 @@ describe("discoverPluginTopics", () => {
    * a fixture finally has a real subject — in the same scan that still excludes
    * `_fixture` in production, which is what proves the filter discriminates.
    */
-  it("discovers the shipped todos plugin's three verbs", async () => {
+  it("discovers every verb the shipped todos plugin ships", async () => {
+    // Exhaustive on purpose: a verb the plugin adds — `migrate` arrived with
+    // PLUGINS-005's storage change — shows up here as a failing diff rather
+    // than slipping into the registry unnoticed.
     const scan = await discoverPluginTopics({ pluginsRoot: join(REPO_ROOT, "plugins") });
     const todos = scan.topics.find((topic) => topic.name === "todos");
     expect(todos).toBeDefined();
-    expect(todos?.commands.map((verb) => verb.name)).toEqual(["add", "check", "list"]);
+    expect(todos?.commands.map((verb) => verb.name)).toEqual(["add", "check", "list", "migrate"]);
   });
 
   it("prefers a compiled dist command module over its source", async () => {

@@ -3,15 +3,22 @@ import { EMPTY_JOB_LOG, useAbandonJob, useJobLog, useRetryJob } from "@corpus/ki
 import type { ReactElement } from "react";
 import { useOpenInColumn } from "../board/openInColumn";
 import { useToast } from "../shell/Toasts";
-import { jobDotClass, jobLabel, jobStartedLabel } from "./consoleModel";
+import {
+  blockedOn,
+  blockedOnDetailLabel,
+  jobDotClass,
+  jobLabel,
+  jobStartedLabel,
+} from "./consoleModel";
 import { JobLog } from "./JobLog";
 
 /** The prototype's copy, verbatim. */
 export const NO_JOBS_MESSAGE = "No jobs yet — agent activity will stream here.";
 
 /**
- * The detail half of the master-detail (SPEC.md §11): a header naming the job
- * and what it came from, the failed-only actions, and the live log below.
+ * The detail half of the master-detail (SPEC.md §11): a header naming the job,
+ * what it came from, what it is blocked on when it is deferred, the actions a
+ * stalled job can take, and the live log below.
  *
  * `↗ open` reads `job.originId` — the wire carries no payload, and the origin id
  * is already resolved server-side against the projection, so a null one means
@@ -42,6 +49,18 @@ export function JobDetail({ job, enabled }: JobDetailProps): ReactElement {
 
   const canOpen = job.originId !== null;
   const meta = `${job.status} · started ${jobStartedLabel(job.started)} · ${job.eventId}`;
+  const blocker = blockedOn(job);
+
+  /*
+   * Retry/Abandon are offered on a deferred job as well as a failed one.
+   *
+   * §7 keeps `corpus job retry` as the *manual override* for a deferral that
+   * automatic re-entry did not reach — a lock released out of band, a stale
+   * deferral — and the contract widened the route to accept `deferred` for
+   * exactly that. A row a user can see but not act on would make the console
+   * read-only precisely where the queue is stuck.
+   */
+  const canAct = job.status === "failed" || job.status === "deferred";
 
   // The server refuses a job whose event was already reaped. Surface its own
   // message and let the refreshed list be the correction — an optimistic row
@@ -77,10 +96,18 @@ export function JobDetail({ job, enabled }: JobDetailProps): ReactElement {
           ↗ open
         </button>
         <span className="job-meta">{meta}</span>
-        {job.status === "failed" ? (
+        {blocker === null ? null : (
+          <span className="job-blocked">{blockedOnDetailLabel(blocker)}</span>
+        )}
+        {canAct ? (
           <>
             <button
               type="button"
+              title={
+                job.status === "deferred"
+                  ? "Re-queue this deferred job now — the manual override; it re-enters on its own when the lock clears"
+                  : "Re-queue this failed job"
+              }
               disabled={retry.isPending}
               onClick={() => {
                 retry.mutate(job.eventId, { onError: reportFailure("retry") });

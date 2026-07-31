@@ -169,6 +169,7 @@ function createServer() {
         halted: true,
         pending: reason?.length ?? 0,
         inProgress: 0,
+        deferred: 0,
         processed: 0,
         failed: 0,
         abandoned: 0,

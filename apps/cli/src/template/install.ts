@@ -1,5 +1,7 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import * as YAML from "yaml";
+import { z } from "zod";
 
 /**
  * The install contract for the bundled workspace template — **one**
@@ -190,4 +192,208 @@ export function templateSkillNames(installed: readonly PlannedTemplateFile[]): R
     if (match?.[1] !== undefined) names.add(match[1]);
   }
   return names;
+}
+
+/** Where template documents live in a workspace (SPEC.md §11 — template pre-fill). */
+export const WORKSPACE_TEMPLATES_DIR = "data/docs/templates";
+
+/** The template file names the workspace template itself installs — the reserved set. */
+export function templateSeedNames(installed: readonly PlannedTemplateFile[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const file of installed) {
+    const match = new RegExp(`^${WORKSPACE_TEMPLATES_DIR}/([^/]+)$`).exec(file.to);
+    if (match?.[1] !== undefined) names.add(match[1]);
+  }
+  return names;
+}
+
+/** One plugin seed template to install, both paths `/`-separated. */
+export interface PlannedPluginSeedFile {
+  /** The contributing plugin's directory name. */
+  readonly plugin: string;
+  /** Relative to the plugins root. */
+  readonly from: string;
+  /** Workspace-relative destination under `data/docs/templates/`. */
+  readonly to: string;
+}
+
+export interface PluginSeedPlan {
+  readonly files: readonly PlannedPluginSeedFile[];
+  readonly warnings: readonly string[];
+}
+
+/**
+ * The `types.yaml` shape this reader needs, mirroring
+ * `apps/server/src/plugins/discover.ts`'s schema. It is deliberately the same
+ * file with the same rules: a plugin declares its doc types once, and the
+ * server routing them and the CLI installing their templates must not disagree
+ * about what the declaration says.
+ */
+const TypesFileSchema = z.object({
+  types: z.array(
+    z.object({
+      type: z.string().min(1),
+      label: z.string().min(1),
+      seedTemplate: z.string().min(1).optional(),
+    }),
+  ),
+});
+
+/** `seedTemplate` paths declared by one plugin, in declaration order. */
+function declaredSeedTemplates(
+  pluginsRoot: string,
+  dir: string,
+  warnings: string[],
+): readonly string[] {
+  const typesPath = path.join(pluginsRoot, dir, "types.yaml");
+  if (!existsSync(typesPath)) return [];
+
+  let parsed;
+  try {
+    parsed = TypesFileSchema.safeParse(YAML.parse(readFileSync(typesPath, "utf8")));
+  } catch (error) {
+    warnings.push(
+      `plugin ${dir} has an unreadable types.yaml, so its seed templates were not installed: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+    return [];
+  }
+  if (!parsed.success) {
+    warnings.push(
+      `plugin ${dir} has a types.yaml that does not match the required shape ` +
+        `(types: [{type, label, seedTemplate?}]), so its seed templates were not installed`,
+    );
+    return [];
+  }
+  return parsed.data.types.flatMap((declaration) =>
+    declaration.seedTemplate === undefined ? [] : [declaration.seedTemplate],
+  );
+}
+
+/**
+ * What sits at a declared path: a copyable file, something else on disk, or
+ * nothing. `existsSync` conflates the first two and only the first can be
+ * copied, so the caller needs all three answers to say which mistake was made.
+ */
+function fileKind(absolute: string): "file" | "other" | "missing" {
+  try {
+    return statSync(absolute).isFile() ? "file" : "other";
+  } catch {
+    // ENOENT, or a broken symlink, or a path whose parent is not a directory —
+    // all of them "there is no file here to install", which is what matters.
+    return "missing";
+  }
+}
+
+/** A declared path that would copy from outside the plugin's own directory. */
+function escapesPlugin(declared: string): boolean {
+  return (
+    path.posix.isAbsolute(declared) ||
+    path.isAbsolute(declared) ||
+    declared.split(/[\\/]/).includes("..")
+  );
+}
+
+/**
+ * The plugin seed-template copy step, as data (SPEC.md §10 plugin assets, §11
+ * template pre-fill). A plugin's `types.yaml` may declare
+ * `seedTemplate: seeds/<file>.md` per doc type; the file lands beside the
+ * workspace's own templates in `data/docs/templates/`, which is where the
+ * projection indexes templates and where `corpus doc create --type <t>` looks
+ * for the pre-fill. Before CLI-012 the declaration was shipped and never
+ * installed.
+ *
+ * The rules mirror {@link planPluginSkillInstall} one for one, because the two
+ * are the same problem — a plugin contributing a file to a workspace directory
+ * core also owns:
+ *
+ * - **Opt-in by declaration.** A plugin that declares no `seedTemplate`
+ *   installs nothing, whatever is sitting in its `seeds/` directory.
+ * - **Core wins.** A file name colliding with one the workspace template itself
+ *   installs (`note.md`) is skipped with a warning.
+ * - **First plugin in directory order wins** a collision between two plugins;
+ *   the loser is a warning, never a silent overwrite.
+ * - **A declared-but-missing file is a warning naming the plugin and the path**,
+ *   not a silent skip and not a manifest entry for a file that is not there.
+ *   A declared path that is a **directory** is the same class of mistake and is
+ *   warned about the same way (wave-3 audit, FIX 13) — `existsSync` said yes to
+ *   it, and the `copyFileSync` that followed threw `EISDIR` out of the middle of
+ *   `corpus init`, unwinding a workspace over one plugin's typo.
+ */
+export function planPluginSeedInstall(
+  pluginsRoot: string | undefined,
+  reservedTemplates: ReadonlySet<string>,
+): PluginSeedPlan {
+  if (pluginsRoot === undefined || !existsSync(pluginsRoot)) return { files: [], warnings: [] };
+
+  const files: PlannedPluginSeedFile[] = [];
+  const warnings: string[] = [];
+  /** Installed name → the plugin that won it and the path it declared. */
+  const claimed = new Map<string, { readonly plugin: string; readonly declared: string }>();
+
+  const dirs = readdirSync(pluginsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => entry.name)
+    .sort();
+
+  for (const dir of dirs) {
+    // Declaring one `seedTemplate` against two of the plugin's own doc types is
+    // two types sharing a starter document — a legitimate declaration, and one
+    // instruction, not two. Saying it twice therefore has nothing to add,
+    // whether it went on to win a name or lose one (wave-3 audit, CLEAN 44).
+    const alreadyDeclared = new Set<string>();
+
+    for (const declared of declaredSeedTemplates(pluginsRoot, dir, warnings)) {
+      if (alreadyDeclared.has(declared)) continue;
+      alreadyDeclared.add(declared);
+
+      if (escapesPlugin(declared)) {
+        warnings.push(
+          `plugin ${dir} declares seedTemplate "${declared}", which points outside the plugin ` +
+            "directory — skipped",
+        );
+        continue;
+      }
+      const from = `${dir}/${declared.split(path.sep).join("/")}`;
+      const kind = fileKind(path.join(pluginsRoot, ...from.split("/")));
+      if (kind !== "file") {
+        warnings.push(
+          `plugin ${dir} declares seedTemplate "${declared}", which ` +
+            (kind === "missing" ? "does not exist" : "is a directory, not a file") +
+            " — skipped; no template was installed for it",
+        );
+        continue;
+      }
+
+      const name = path.posix.basename(from);
+      if (reservedTemplates.has(name)) {
+        warnings.push(
+          `plugin ${dir} ships a seed template named "${name}", which collides with a workspace ` +
+            `template document — skipped; a plugin can never replace a core template`,
+        );
+        continue;
+      }
+      const holder = claimed.get(name);
+      if (holder !== undefined) {
+        // Two *different* files landing on one installed name is a real
+        // conflict either way; only the sentence changes. Naming the losing
+        // plugin as the winner — which is what the old single message did when
+        // both were the same plugin — sent the author looking for a collision
+        // with somebody else (wave-3 audit, CLEAN 44).
+        warnings.push(
+          holder.plugin === dir
+            ? `plugin ${dir} declares two different seed templates that would install as ` +
+                `"${name}" ("${holder.declared}" and "${declared}") — skipped the second; only ` +
+                "one file can hold the name"
+            : `plugin ${dir} ships a seed template named "${name}", already installed by plugin ` +
+                `${holder.plugin} — skipped`,
+        );
+        continue;
+      }
+      claimed.set(name, { plugin: dir, declared });
+      files.push({ plugin: dir, from, to: `${WORKSPACE_TEMPLATES_DIR}/${name}` });
+    }
+  }
+
+  return { files, warnings };
 }

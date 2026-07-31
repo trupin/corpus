@@ -252,6 +252,69 @@ test.describe("the master-detail body", () => {
     await expect(page.locator(".job")).toHaveCount(0);
     await expect(page.locator(".job-list")).toHaveCSS("width", "380px");
   });
+
+  /**
+   * PR #12 review, MAJOR 2 — the one queue interaction that used to be silent.
+   *
+   * A job row's menu closes in the tick it acts, which unmounts the component
+   * that started the request; TanStack Query v5 then skips a per-call `onError`,
+   * so a **refused** retry said nothing at all and the row simply stayed failed.
+   * The queue this test needs is one failed job and one refusal, so it is served
+   * from inside the page (the technique `stubCorpus` exists for) — everything
+   * above `fetch` is the real application.
+   */
+  test("a refused retry says so, though the menu that asked has closed", async ({ page }) => {
+    const failedJob = {
+      eventId: "evt_e2e",
+      type: "comment.created",
+      status: "failed",
+      started: "2026-07-27T09:12:00Z",
+      updated: "2026-07-27T09:12:09Z",
+      lastLine: "the agent exited 1",
+      originId: null,
+      originTitle: null,
+      blockedOn: null,
+      blockedOnTitle: null,
+    };
+    await page.route("**/api/**", async (route) => {
+      const url = new URL(route.request().url());
+      const body = (payload: unknown, status = 200): Promise<void> =>
+        route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
+      if (url.pathname === "/api/jobs") return body({ jobs: [failedJob] });
+      if (url.pathname.endsWith("/retry")) {
+        // Still on the wire when the menu goes: the teardown this pins.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return body({ error: "queue is halted" }, 409);
+      }
+      if (url.pathname.endsWith("/log")) return body({ lines: [], nextCursor: 0 });
+      if (url.pathname === "/api/health") {
+        return body({ status: "ok", version: "1.2.3", uptimeSeconds: 4, workspace: "/tmp/ws" });
+      }
+      if (url.pathname === "/api/queue/status") {
+        return body({
+          halted: true,
+          pending: 0,
+          inProgress: 0,
+          deferred: 0,
+          processed: 0,
+          failed: 1,
+          abandoned: 0,
+        });
+      }
+      return body({});
+    });
+    await page.goto("/");
+    await expand(page);
+
+    await page.locator(".job-list .job").first().click({ button: "right" });
+    const menu = page.getByRole("menu");
+    await menu.locator('[data-act="retry"]').click();
+    // The surface that carried the observer is gone before the answer arrives.
+    await expect(menu).toBeHidden();
+
+    await expect(page.locator(".toast")).toContainText("Could not retry evt_e2e");
+    await expect(page.locator(".toast")).toHaveAttribute("data-tone", "error");
+  });
 });
 
 test.describe("keyboard", () => {

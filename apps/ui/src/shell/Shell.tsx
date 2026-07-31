@@ -4,6 +4,7 @@ import { ComposeOverlay } from "../compose/ComposeOverlay";
 import { Console } from "../console/Console";
 import { BoardCommandsProvider, useBoardCommands } from "../keyboard/boardCommands";
 import { CheatSheet } from "../keyboard/CheatSheet";
+import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import type { ShortcutContext } from "../keyboard/shortcuts";
 import { useShortcuts } from "../keyboard/useShortcuts";
 import { SearchOverlay } from "../search/SearchOverlay";
@@ -22,7 +23,9 @@ export { isOverlayOpen } from "./overlays";
  * layout the spec says has three. The board-navigation and board-command
  * providers wrap for a different reason — the overlays and the keyboard live
  * above all three regions and have to be able to act *on the board*, which is a
- * sibling.
+ * sibling. The context-menu host wraps for the third: there is at most one open
+ * menu in the app, and the shortcut registry opens one on the keyboard
+ * highlight from up here, three components above the row it acts on.
  *
  * **Which overlay is open is the shell's state**, because there is at most one:
  * search, the composer and the cheat sheet are the same layer, and opening one
@@ -38,7 +41,9 @@ export function Shell(): ReactElement {
     <ToastProvider>
       <BoardNavigationProvider>
         <BoardCommandsProvider>
-          <ShellSurfaces />
+          <ContextMenuProvider>
+            <ShellSurfaces />
+          </ContextMenuProvider>
         </BoardCommandsProvider>
       </BoardNavigationProvider>
     </ToastProvider>

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { boardTransport, viewRow, type BoardTransport } from "../testing/boardFixture";
+import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { KeyboardHarness } from "../testing/keyboardHarness";
 import { memoryStorage } from "../testing/memoryStorage";
 import { BOARD_STORAGE_KEY } from "../board/useBoardLocalState";
@@ -31,7 +32,9 @@ function renderBoard(wire: BoardTransport): ReturnType<typeof render> {
     return (
       <harness.Wrapper>
         <ToastProvider>
-          <KeyboardHarness>{children}</KeyboardHarness>
+          <ContextMenuProvider>
+            <KeyboardHarness>{children}</KeyboardHarness>
+          </ContextMenuProvider>
         </ToastProvider>
       </harness.Wrapper>
     );
@@ -474,7 +477,9 @@ describe("Board", () => {
     });
     const { container } = render(
       <ToastProvider>
-        <Board />
+        <ContextMenuProvider>
+          <Board />
+        </ContextMenuProvider>
       </ToastProvider>,
       { wrapper: harness.Wrapper },
     );

@@ -8,12 +8,19 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * halted, and resuming makes them visible again.
  */
 
+/**
+ * The depth line, in the lifecycle order `QUEUE_EVENT_STATUSES` declares.
+ * `deferred` sits between the live states and the terminal ones because that is
+ * what it is (SPEC.md §7, CONTRACT-021): work waiting on a user-held lock, which
+ * returns to `pending` by itself. Reading it next to `failed` is the misreading
+ * the separate count exists to prevent.
+ */
 function reportStatus(out: Output, status: QueueStatus, headline: string): void {
   out.emit(status);
   out.line(
     `${headline} — pending ${String(status.pending)}, in-progress ${String(status.inProgress)}, ` +
-      `processed ${String(status.processed)}, failed ${String(status.failed)}, ` +
-      `abandoned ${String(status.abandoned)}`,
+      `deferred ${String(status.deferred)}, processed ${String(status.processed)}, ` +
+      `failed ${String(status.failed)}, abandoned ${String(status.abandoned)}`,
   );
 }
 
@@ -95,7 +102,9 @@ export const statusCommand: WorkspaceCommandSpec = {
   summary: "Show the halt state and the queue depth.",
   description:
     "Reads `GET /api/queue/status`: whether the queue is halted, plus how many events sit in each " +
-    "of `pending`, `in-progress`, `processed`, `failed` and `abandoned`.",
+    "of `pending`, `in-progress`, `deferred`, `processed`, `failed` and `abandoned`. A non-zero " +
+    "`deferred` is **not** breakage — those events are waiting on a user-held edit lock and " +
+    "return to `pending` on their own when it is released, broken or reaped (SPEC.md §7).",
   args: [],
   flags: [],
   examples: [
@@ -103,7 +112,7 @@ export const statusCommand: WorkspaceCommandSpec = {
     {
       command: "corpus queue status --json",
       description:
-        'One JSON value: `{"halted":false,"pending":0,"inProgress":0,"processed":12,"failed":0,"abandoned":0}`.',
+        'One JSON value: `{"halted":false,"pending":0,"inProgress":0,"deferred":0,"processed":12,"failed":0,"abandoned":0}`.',
     },
   ],
   handler: (context) => runStatus(context),

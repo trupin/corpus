@@ -1,6 +1,8 @@
 import type { RowNotice } from "@corpus/kit";
 import { useCallback, useEffect, type ReactElement } from "react";
+import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import type { NavEntry } from "../board/useBoardLocalState";
+import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
@@ -66,6 +68,27 @@ export function Reader({
     setNav(dropMissing(nav, (id) => id === reader.docId));
   }, [nav, reader.docId, reader.isMissing, setNav, stack.depth]);
 
+  /**
+   * SPEC.md §11's "an empty document does not survive leaving it".
+   *
+   * The stack entry goes with the document, which is what keeps Back from
+   * landing on something that no longer exists after the user followed a
+   * `[[ref]]` out of a blank note (sprint-016 TEST-428).
+   */
+  useAbandonEmptyDoc({
+    docId,
+    doc: reader.doc,
+    threadCount: reader.threads.length,
+    onAbandoned: stack.drop,
+  });
+
+  const contextMenu = useReaderContextMenu({
+    doc: reader.doc,
+    threadStatus: reader.isThread ? (reader.doc?.frontmatter.status ?? null) : null,
+    onGone: stack.back,
+    onNotify,
+  });
+
   const navigate = useCallback(
     (next: string) => {
       stack.push(next, surface.currentScroll());
@@ -93,7 +116,12 @@ export function Reader({
      * they are siblings.
      */
     <SaveStatusProvider>
-      <div className="reader" data-reader-doc={docId} data-reader-column={columnId}>
+      <div
+        className="reader"
+        data-reader-doc={docId}
+        data-reader-column={columnId}
+        onContextMenu={contextMenu}
+      >
         <ReaderHead
           docId={docId}
           doc={reader.doc}

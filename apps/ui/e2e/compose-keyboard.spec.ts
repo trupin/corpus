@@ -327,7 +327,15 @@ test.describe("the top bar's way in", () => {
 });
 
 test.describe("the cheat sheet is generated from the registry", () => {
-  test("`?` toggles it, and it lists SPEC.md §11's twelve bindings in the prototype's order", async ({
+  /**
+   * Thirteen since UI-018. Twelve come from §11's "Keyboard scheme (v1)" bullet;
+   * the thirteenth is the same section's right-click bullet — "the menu key (or
+   * ⇧F10) opens the same menu on the current keyboard highlight" — which is a
+   * §11 binding wherever the sentence happens to sit, and therefore belongs in
+   * the legend the registry generates. It is listed with the row bindings
+   * because that is what it acts on.
+   */
+  test("`?` toggles it, and it lists SPEC.md §11's thirteen bindings in the prototype's order", async ({
     page,
   }) => {
     await page.locator(".topbar").click({ position: { x: 4, y: 4 } });
@@ -344,6 +352,7 @@ test.describe("the cheat sheet is generated from the registry", () => {
       "rows.move",
       "rows.open",
       "rows.openFullScreen",
+      "menu.open",
       "layers.close",
       "columns.switch",
       "columns.move",

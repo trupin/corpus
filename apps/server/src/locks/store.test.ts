@@ -71,12 +71,14 @@ describe("expiry", () => {
 });
 
 describe("toWireLock", () => {
-  it("drops the server-internal deferred event", () => {
-    const wire = toWireLock(lock({ deferredEventId: "evt_7c1d" }));
+  it("names the four contract fields, so nothing server-internal can ride out", () => {
+    // Spelled field by field rather than spread, which is what keeps a future
+    // runtime-only field off every response by construction — the property the
+    // retired `deferredEventId` used to exercise (SERVER-030).
+    const wire = toWireLock(lock());
 
     expect(Object.keys(wire).sort()).toEqual(["acquired", "docId", "holder", "ttl"]);
     expect(LockSchema.parse(wire)).toEqual(wire);
-    expect(JSON.stringify(wire)).not.toContain("deferredEventId");
   });
 });
 
@@ -89,12 +91,23 @@ describe("LockStore", () => {
     expect(readdirSync(join(corpusDir, "locks"))).toEqual(["doc_a1b2c3.json"]);
   });
 
-  it("keeps the deferred event on disk and out of the wire shape", async () => {
-    await store.write(lock({ deferredEventId: "evt_7c1d" }));
+  it("reads a lock file left behind by an older build, dropping the retired field", async () => {
+    // `deferredEventId` was the pre-SERVER-030 way of remembering a deferred
+    // edit; the deferral now lives on the event (`blockedOn`). A workspace that
+    // was running the old build still has such files on disk, and they must
+    // keep working: the key is dropped, never a reason to refuse the lock.
+    store.ensureLayoutSync();
+    writeFileSync(
+      join(corpusDir, "locks", "doc_a1b2c3.json"),
+      JSON.stringify({ ...lock(), deferredEventId: "evt_7c1d" }),
+      "utf8",
+    );
 
     const stored = await store.read("doc_a1b2c3");
-    expect(stored?.deferredEventId).toBe("evt_7c1d");
-    expect(LockSchema.parse(stored)).not.toHaveProperty("deferredEventId");
+
+    expect(stored).toEqual(lock());
+    expect(stored).not.toHaveProperty("deferredEventId");
+    expect(toWireLock(stored as StoredLock)).toEqual(lock());
   });
 
   it("reads an absent, unparseable or malformed lock as no lock at all", async () => {

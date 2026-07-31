@@ -1,5 +1,6 @@
 import {
   DOC_STATUSES,
+  RESERVED_FRONTMATTER_KEYS,
   type AnchorReconciliation,
   type Doc,
   type DocStatus,
@@ -42,9 +43,9 @@ export interface EditDependencies extends InputDependencies {
 
 /**
  * `--add-tag` / `--remove-tag` against a wire field that carries the whole list:
- * the current tags have to be read first. Only these two flags cost a read — a
- * plain body or title edit is exactly one request, which is what keeps a lock
- * conflict a single, un-retried failure.
+ * the current tags have to be read first. Only these two flags and `--status`
+ * cost a read — a plain body or title edit is exactly one request, which is what
+ * keeps a lock conflict a single, un-retried failure.
  *
  * **This read-then-write is an accepted race, not an oversight** (CLI-008 item
  * 3). Two concurrent `--add-tag` calls can each `GET` the same list and each
@@ -91,18 +92,197 @@ function parseStatus(value: string | undefined): DocStatus | undefined {
   return status;
 }
 
-async function resolveTags(
-  context: WorkspaceCommandContext,
-  id: string,
-): Promise<string[] | undefined> {
-  const added = context.flags.strings("add-tag");
-  const removed = context.flags.strings("remove-tag");
-  if (added.length === 0 && removed.length === 0) return undefined;
+/**
+ * The document as it stands, read at most once per invocation.
+ *
+ * Two things need it and neither should pay for the other: `--add-tag` needs the
+ * current list to merge against, and `--status` needs to know whether the
+ * document is archived (see {@link assertNotArchived}). Naming both flags is one
+ * `GET`, naming neither is none — which is what keeps the ordinary body or title
+ * edit a single request, and therefore a lock conflict a single un-retried
+ * failure.
+ */
+function currentDocument(context: WorkspaceCommandContext, id: string): () => Promise<Doc> {
+  let pending: Promise<Doc> | undefined;
+  return () => {
+    pending ??= context.client.request((api) =>
+      api.GET("/api/docs/{id}", { params: { path: { id } } }),
+    );
+    return pending;
+  };
+}
 
-  const current = await context.client.request((api) =>
-    api.GET("/api/docs/{id}", { params: { path: { id } } }),
+/**
+ * **A `--status` that would move an archived document off `archived` is refused**
+ * (CLI-017, sprint-017 Adjudication 13; the message made type-honest by the
+ * wave-3 audit, FIX 15).
+ *
+ * Since SERVER-039 this guard is **no longer the enforcement** — `PUT
+ * /api/docs/{id}` refuses the same write itself, for every type, because a rule
+ * only a client enforces is not enforced (the UI's frontmatter form and any
+ * `curl` walked straight past this function). What it still is, is the *better
+ * error*: it costs no round trip and, crucially, it names a **command**. The
+ * server's refusal can only name `POST /api/docs/{id}/unarchive`, and the agent
+ * this CLI exists for has no way to issue an HTTP request — it reads error
+ * messages as instructions and needs `corpus doc unarchive <id>`. Same
+ * relationship as {@link assertWritableExtraKey} and the contract's
+ * `ExtraFrontmatterSchema`.
+ *
+ * **The message is per type, because the consequence is.** For a `type: skill`
+ * document archiving is two facts — the status *and* which side of
+ * `.claude/skills-archived/` the folder is on — so `--status open` there leaves
+ * a skill disabled, invisible to Claude Code and still holding its name. For
+ * every other type archiving is the status alone, and the honest reason is
+ * simply that un-archiving is its own operation and a `PUT` may not do it. The
+ * single old message told every note a story about a folder that does not
+ * exist.
+ *
+ * The read this needs is one `GET`, and it carries the same accepted staleness
+ * as {@link mergeTags}: the document could be archived, or unarchived, between
+ * the read and the `PUT`. There is no conditional write to close that with (see
+ * `mergeTags` for why), so the exposure is the same bounded one — and here it
+ * costs nothing either way, because the server re-checks under its own lock: a
+ * document archived inside the window is refused there instead of here.
+ */
+function assertNotArchived(current: Doc, id: string, status: DocStatus): void {
+  if (current.frontmatter.status !== "archived" || status === "archived") return;
+
+  const isSkill = current.frontmatter.type === "skill";
+  throw new UsageError(
+    isSkill
+      ? `${id} is an archived skill; \`--status ${status}\` would set the frontmatter without bringing the skill back.`
+      : `${id} is archived; \`--status ${status}\` writes the frontmatter and nothing else, which is not how a document comes back.`,
+    {
+      hint: isSkill
+        ? `Run \`corpus doc unarchive ${id}\` — it restores the status *and* moves the folder back out of \`.claude/skills-archived/\`, which re-enables the skill and frees its name.`
+        : `Run \`corpus doc unarchive ${id}\` — the operation that un-archives a document. The server refuses this write too (SERVER-039); refusing it here is what lets the message name a command instead of a route.`,
+    },
   );
-  return mergeTags(current.frontmatter.tags, added, removed);
+}
+
+/**
+ * The `--extra` value grammar (CLI-016, sprint-017 Adjudication 12). Total by
+ * construction: every input maps to exactly one JSON value, and the rules are
+ * published in the flag's own description, which is what `docs/cli.md` carries.
+ *
+ * 1. `null` deletes the key — the server's `extra` patch is RFC 7386, so `null`
+ *    removes rather than stores (`apps/server/src/docs/update.ts`).
+ * 2. `true` / `false` are booleans.
+ * 3. A **canonical, finite** JSON number literal is a number. Canonical matters:
+ *    `007` and `1.` are not JSON numbers, so they stay strings and an identifier
+ *    that happens to be digits is not silently arithmetic.
+ * 4. A JSON **string literal** is its own contents — the escape hatch that lets
+ *    `--extra note='"520"'` store the characters `520`, and the only way to
+ *    store the literal text `null`.
+ * 5. Everything else is the string exactly as typed, including the empty one.
+ *
+ * Numbers are rule 3 rather than an opt-in because the one promise this flag
+ * exists to keep needs one: the board reads `extra.width` with
+ * `typeof raw !== "number"` and falls back to its default for anything else
+ * (`apps/ui/src/board/columnWidth.ts`), so `--extra width=520` storing `"520"`
+ * would be a passing unit test and a column that never widens.
+ *
+ * **Finiteness is the load-bearing half of rule 3** (wave-3 audit, FIX 1).
+ * `1e400` is a perfectly canonical JSON number literal whose double is
+ * `Infinity`, `JSON.stringify` writes `Infinity` as `null`, and the server's
+ * `extra` patch is RFC 7386 — so an overflowing number silently *deleted* the
+ * key it was meant to set. Gating on `Number.isFinite` and falling through to
+ * rule 5 is the `parse-args.ts` `readNumber` pattern, and it keeps the grammar
+ * total in the sense that matters: the value is stored, as the characters that
+ * were typed, rather than being turned into a deletion nobody asked for.
+ *
+ * A finite number too large to survive a `double` — `9007199254740993`, past
+ * `Number.MAX_SAFE_INTEGER` — **is** taken as a number and does lose precision
+ * on the way (it stores as `9007199254740992`). That is documented rather than
+ * refused: it is exactly what every JSON parser in the stack would do to the
+ * same literal, so refusing here would make the CLI stricter than the wire it
+ * writes to, and the escape hatch for an exact-digits value already exists —
+ * quote it (`--extra id='"9007199254740993"'`) and it stays a string.
+ */
+export function parseExtraValue(raw: string): unknown {
+  if (raw === "null") return null;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  if (JSON_NUMBER.test(raw)) {
+    const value = Number(raw);
+    if (Number.isFinite(value)) return value;
+    // `1e400` and friends: a canonical literal, an infinite double. Rule 5.
+  }
+  if (raw.startsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === "string") return parsed;
+    } catch {
+      // Not a JSON string literal after all — rule 5 takes it verbatim.
+    }
+  }
+  return raw;
+}
+
+const JSON_NUMBER = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/;
+
+/**
+ * Core keys that have a flag of their own. The **refusal** list is the
+ * contract's `RESERVED_FRONTMATTER_KEYS` and is never hand-copied — this map
+ * only makes the message actionable, so a key the contract adds tomorrow is
+ * still refused, just with the generic hint.
+ */
+const FLAG_FOR_RESERVED_KEY: Readonly<Record<string, string>> = {
+  title: "--title",
+  status: "--status",
+  due: "--due",
+  reviewed: "--reviewed",
+  evergreen: "--evergreen",
+  tags: "--add-tag`/`--remove-tag",
+};
+
+const RESERVED_KEYS: ReadonlySet<string> = new Set(RESERVED_FRONTMATTER_KEYS);
+
+/**
+ * `--extra` may never name a core field. The contract already refuses one with a
+ * `400` (`ExtraFrontmatterSchema`), and that backstop stays exactly where it is:
+ * this guard is a **better error message**, not the enforcement. An agent gets
+ * one chance to read a failure and act on it, and "use `--title`" is a next step
+ * where a round-tripped validation issue is a puzzle.
+ */
+function assertWritableExtraKey(key: string): void {
+  if (!RESERVED_KEYS.has(key)) return;
+  const flag = FLAG_FOR_RESERVED_KEY[key];
+  throw new UsageError(
+    `\`${key}\` is a core frontmatter key, not an \`extra\` key — \`--extra ${key}=…\` is refused.`,
+    {
+      hint:
+        flag === undefined
+          ? `Core keys are not user-writable through \`--extra\`; \`extra\` may never shadow one.`
+          : `Use \`${flag}\` instead.`,
+    },
+  );
+}
+
+/** `key=value` pairs into the merge patch the `PUT` carries, or nothing at all. */
+export function parseExtraFlags(entries: readonly string[]): Record<string, unknown> | undefined {
+  if (entries.length === 0) return undefined;
+
+  const extra: Record<string, unknown> = {};
+  for (const entry of entries) {
+    const separator = entry.indexOf("=");
+    if (separator === -1) {
+      throw new UsageError(`--extra takes \`key=value\` — got "${entry}", which has no \`=\`.`, {
+        hint: "For example: --extra width=520, or --extra width=null to remove the key.",
+      });
+    }
+    if (separator === 0) {
+      throw new UsageError(`--extra "${entry}" names no key.`, {
+        hint: "The key comes before the `=`: --extra width=520.",
+      });
+    }
+    const key = entry.slice(0, separator);
+    assertWritableExtraKey(key);
+    // Last one wins, like any repeated assignment; `--extra a=1 --extra a=2`
+    // sends `a: 2` rather than failing on a contradiction the caller can see.
+    extra[key] = parseExtraValue(entry.slice(separator + 1));
+  }
+  return extra;
 }
 
 export async function runDocEdit(
@@ -110,14 +290,31 @@ export async function runDocEdit(
   dependencies: EditDependencies = {},
 ): Promise<void> {
   const id = context.args.get("id");
-  const body = await resolveBody(context, dependencies);
 
+  // **Flags are parsed before stdin is touched.** Every check in this block is
+  // pure — an unknown `--status`, a core key in `--extra`, a non-boolean
+  // `--evergreen` — and each one ends the command. Draining the heredoc first
+  // meant the caller's body was consumed and thrown away by a failure that
+  // never needed to read it, which for an agent piping a long document is a
+  // silently lost payload rather than a retryable usage error.
   const title = context.flags.string("title");
   const status = parseStatus(context.flags.string("status"));
   const due = context.flags.string("due");
   const reviewed = context.flags.boolean("reviewed");
   const evergreen = parseTriStateBoolean("evergreen", context.flags.string("evergreen"));
-  const tags = await resolveTags(context, id);
+  const extra = parseExtraFlags(context.flags.strings("extra"));
+
+  const body = await resolveBody(context, dependencies);
+  const read = currentDocument(context, id);
+
+  if (status !== undefined) assertNotArchived(await read(), id, status);
+
+  const added = context.flags.strings("add-tag");
+  const removed = context.flags.strings("remove-tag");
+  const tags =
+    added.length === 0 && removed.length === 0
+      ? undefined
+      : mergeTags((await read()).frontmatter.tags, added, removed);
 
   // Deliberately un-annotated: the generated request type uses exact optional
   // properties, so a `Partial`-shaped annotation (`title?: string | undefined`)
@@ -130,11 +327,15 @@ export async function runDocEdit(
     ...(reviewed ? { reviewed: instantNow(dependencies.now) } : {}),
     ...(evergreen === undefined ? {} : { evergreen }),
     ...(tags === undefined ? {} : { tags }),
+    // Only the keys the caller named: `extra` is a merge patch, so sending the
+    // whole object back would race every other writer of a key this invocation
+    // never mentioned.
+    ...(extra === undefined ? {} : { extra }),
   };
 
   if (body === undefined && Object.keys(patch).length === 0) {
     throw new UsageError(`nothing to change on ${id}.`, {
-      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen.",
+      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra.",
     });
   }
 
@@ -180,9 +381,19 @@ export const editCommand: WorkspaceCommandSpec = {
     "remapped anchors moved with the text, orphaned ones name the threads that just became " +
     "detached. `--reviewed` records the current instant as a “still current” confirmation, which " +
     "is deliberately not an edit (SPEC.md §5). `--add-tag`/`--remove-tag` read the document's " +
-    "current tags first, so they cost one extra request; nothing else does — and because the API " +
+    "current tags first and `--status` reads the current document, so those flags cost one extra " +
+    "request; nothing else does — and because the API " +
     "offers no conditional write, two tag edits racing on one document can end with only the " +
-    "later one's tag. A `423` from the " +
+    "later one's tag, and the archived check below is read from the same one-round-trip-old " +
+    "snapshot. **`--status` refuses to move an archived document off `archived`** and names " +
+    "`corpus doc unarchive <id>` instead — for a `type: skill` document because the frontmatter " +
+    "would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its " +
+    "name stayed blocked, and for every other type because un-archiving is its own operation. " +
+    "The server refuses the same write (SERVER-039); refusing it here costs no round trip and " +
+    "names a **command** where the server can only name a route. `--extra` writes non-core " +
+    "frontmatter keys — the " +
+    "column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` " +
+    "removes, unnamed keys are untouched. A `423` from the " +
     "other party's edit lock is reported as a server error (exit 5) and is never retried — the " +
     "orchestrate skill defers instead. An edit that names no change at all is a usage error, not " +
     "an empty request.",
@@ -207,7 +418,12 @@ export const editCommand: WorkspaceCommandSpec = {
       name: "status",
       type: "string",
       valueName: "status",
-      description: "Set the lifecycle status: `open`, `resolved` or `archived`.",
+      description:
+        "Set the lifecycle status: `open`, `resolved` or `archived`. On an **archived " +
+        "document** anything but `archived` is refused, naming `corpus doc unarchive <id>` — " +
+        "the verb that un-archives, and for a `type: skill` document also moves the folder back " +
+        "and frees the name, which frontmatter alone cannot do. Re-archiving an archived " +
+        "document is still allowed.",
     },
     {
       name: "due",
@@ -230,6 +446,26 @@ export const editCommand: WorkspaceCommandSpec = {
         "Opt the document out of staleness, or back into it. Takes an explicit value: omitting " +
         "the flag leaves the field alone.",
     },
+    {
+      name: "extra",
+      type: "string",
+      valueName: "key=value",
+      repeated: true,
+      description:
+        "Set one non-core frontmatter key, repeatably — the agent's way to steward a column's " +
+        "`width` (SPEC.md §11) or any plugin key. **The value grammar is total**: `null` deletes " +
+        "the key (RFC 7386), `true`/`false` are booleans, a canonical **finite** JSON number " +
+        "(`520`, `-1.5`) is a number, a JSON string literal is its contents " +
+        "(`--extra note='\"520\"'` stores the characters), and **everything else is the string " +
+        'exactly as typed** — so `007` stays `"007"`, and so does an overflowing literal like ' +
+        "`1e400`, which is stored rather than being turned into the deletion `null` would mean. " +
+        "A finite integer past `2^53` is taken as a number and rounds the way JSON does " +
+        "everywhere else (`9007199254740993` stores as `9007199254740992`); quote it to keep the " +
+        "digits. Only the keys named are sent: the rest of `extra` is untouched " +
+        "byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, " +
+        "`due`, `tags`, `id`, …) is a usage error before any request, pointing at the real flag " +
+        "where there is one.",
+    },
     ...bodyFlags("The replacement document body"),
   ],
   examples: [
@@ -245,6 +481,16 @@ export const editCommand: WorkspaceCommandSpec = {
     {
       command: "corpus doc edit doc_a1b2c3 --add-tag housing --remove-tag draft --reviewed",
       description: 'Retag and mark the document "still current".',
+    },
+    {
+      command: "corpus doc edit doc_v1e2w3 --extra width=520 --from agent",
+      description:
+        "Widen a board column: the width lives in its `type: view` document's frontmatter, so the board picks it up over SSE with no reload.",
+    },
+    {
+      command: "corpus doc edit doc_v1e2w3 --extra width=null",
+      description:
+        "Remove the stored width and let the column render at the default; every other `extra` key is left alone.",
     },
     {
       command: "corpus doc edit doc_a1b2c3 --file revised.md --json",

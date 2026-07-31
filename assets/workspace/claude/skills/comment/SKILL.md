@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-29T00:00:00Z
+updated: 2026-07-30T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -172,14 +172,14 @@ corpus thread reply th_4b8e2c --from agent <<'EOF'
 You're editing [[doc_a1b2c3]] right now, so I haven't touched it. The change is
 ready and will land as soon as the document is free.
 EOF
-corpus job log evt_7c1d9a "deferred: doc_a1b2c3 is locked by user"
+corpus job log evt_7c1d9a "waiting on [[doc_a1b2c3]] — the user holds its edit lock"
 ```
 
 That reply changed nothing, so it carries no trace line. Then **hand the event back to the
-orchestrate skill**, which owns the terminal call and the
-`deferred:` accounting. The operator re-enters the work with `corpus job retry <eventId>` from
-the console's failed-job row once the lock clears. Reply *before* you defer: a pending
-indicator that goes quiet reads as the agent hanging.
+orchestrate skill**, naming the locked document: queue state belongs to that skill, and it
+is what parks the event on the document's lock. The work re-enters by itself the moment the
+lock clears — nobody retries anything by hand, so never tell the person to. Reply *before*
+you defer: a pending indicator that goes quiet reads as the agent hanging.
 
 ## Inbox filing
 
@@ -328,20 +328,38 @@ about behavior.
   `corpus doc edit <skillDocId> --from agent` with a heredoc body, keeping **both** frontmatter
   field sets intact — `name` and `description` for Claude Code, `id`/`type`/`title`/`tags`/
   `status` for Corpus — so both readers keep seeing it.
-- **Propose a genuinely new skill; do not fabricate one.** Documents are created under
-  `data/docs/` and nowhere else: `corpus doc create` cannot write into `.claude/`, and
-  `corpus doc move` cannot move a document there. So when no existing skill fits, write the
-  proposal up as a document —
-  `corpus doc create --type note --title "Proposed skill: weekly review" --folder inbox --from agent`
-  — stating the recurring pattern, the evidence for it and the rule you would write, and name
-  it in the reply so the operator can act on it.
+- **Create a genuinely new skill when nothing installed fits** —
+  `corpus skill create <name> --description "<one line>" --from agent` with a heredoc body:
+
+  ```bash
+  corpus skill create weekly-review --description "Run the weekly review over the corpus." --from agent <<'EOF'
+  # Weekly review
+
+  Survey what changed this week, update what drifted, and reply with the findings.
+  EOF
+  ```
+
+  The server owns the mechanics; do not pre-check them — know what comes back when one is
+  violated. The name is lowercase letters, digits and single hyphens, at most 64 characters
+  (anything else is a `400`). A name already installed **or archived** is a `409`; for an
+  archived skill that `409` means unarchive it with `corpus doc unarchive <id>` — never
+  create the same skill again under a different name. `--description` is required, not
+  decoration: Claude Code discovers a skill
+  by its `name` and `description`, so a skill without one is installed but never invoked.
+  The file lands at `.claude/skills/<name>/SKILL.md` with **both** frontmatter vocabularies
+  written by the server — `name`/`description` for Claude Code, `id`/`type`/`title`/`tags`/
+  `status` for Corpus — live immediately, findable on the board, and editable like any
+  document as long as a later `corpus doc edit` keeps both field sets intact. The ways back
+  are cheap: `corpus skill rollback <name>` undoes a genesis that misbehaves, and
+  `corpus doc archive` disables a skill that stopped earning its place.
 
 **The conflict rule.** A correction that contradicts an existing skill is an **edit to that
 skill**, never a second skill saying the opposite. Two rules in disagreement is worse than the
 wrong rule, because nothing tells you which one is current.
 
-**Announce it in the reply**, always, naming the skill you changed — codified behavior the
-person did not agree to is the one change they cannot see coming. Add that an edit to a skill
+**Announce it in the reply**, always, naming the skill you changed or created — codified
+behavior the person did not agree to is the one change they cannot see coming, and a genesis
+is a real, immediate write into `.claude/`. Add that a skill change — edit or genesis alike —
 takes effect on the **next** run of the loop, not in the session that is running.
 
 ## Edge cases

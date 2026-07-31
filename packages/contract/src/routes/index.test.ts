@@ -121,6 +121,7 @@ const queueStatus = {
   halted: false,
   pending: 0,
   inProgress: 0,
+  deferred: 0,
   processed: 0,
   failed: 0,
   abandoned: 0,
@@ -145,6 +146,8 @@ const job = {
   lastLine: null,
   originId: "th_x9y8",
   originTitle: "Re: 30-year fixed assumption",
+  blockedOn: null,
+  blockedOnTitle: null,
 };
 
 /** Shaped exactly as `apps/server`'s `rebuild()` returns it (SERVER-004). */
@@ -375,6 +378,13 @@ function createStubApp() {
   app.openapi(contractRoutes.resumeQueue, (c) => c.json(queueStatus, 200));
   app.openapi(contractRoutes.completeEvent, (c) => c.json(queueEvent, 200));
   app.openapi(contractRoutes.failEvent, (c) => c.json(queueEvent, 200));
+  // The deferral's blocking document is echoed through the event payload, which
+  // is the only field of the wire event a handler may shape: it proves the
+  // mandatory `blockedOn` reached the handler rather than being dropped.
+  app.openapi(contractRoutes.deferEvent, (c) => {
+    const { blockedOn, reason } = c.req.valid("json");
+    return c.json({ ...queueEvent, payload: { blockedOn, reason: reason ?? null } }, 200);
+  });
   app.openapi(contractRoutes.abandonEvent, (c) => c.json(queueEvent, 200));
 
   app.openapi(contractRoutes.listLocks, (c) => c.json({ locks: [lock] }, 200));
@@ -432,6 +442,22 @@ function createStubApp() {
         warnings: [],
       },
       200,
+    );
+  });
+  // A skill is an ordinary document, so its creation returns the ordinary
+  // mutation response — the same shape `POST /api/docs` answers with.
+  app.openapi(contractRoutes.createSkill, (c) => {
+    const { name, title } = c.req.valid("json");
+    return c.json(
+      {
+        doc: {
+          ...doc,
+          frontmatter: { ...frontmatter, type: "skill", title: title ?? name },
+          path: `.claude/skills/${name}/SKILL.md`,
+        },
+        warnings: [],
+      },
+      201,
     );
   });
   app.openapi(contractRoutes.rollbackSkill, (c) => {
@@ -897,6 +923,44 @@ describe("routes mounted on a Hono app", () => {
       body: JSON.stringify({ reason: "" }),
     });
     expect(response.status).toBe(400);
+  });
+
+  /**
+   * CONTRACT-021. The mandatory half of the defer body is what makes automatic
+   * re-entry possible at all, so the route is exercised from both sides: the
+   * blocking document reaches the handler, and a deferral without one never
+   * gets that far.
+   */
+  const defer = (body: unknown) =>
+    createStubApp().request("/api/queue/evt_7c1d/defer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("carries the blocking document and note through to the defer handler", async () => {
+    const response = await defer({ blockedOn: "doc_a1b2c3", reason: "user is editing" });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      payload: { blockedOn: "doc_a1b2c3", reason: "user is editing" },
+    });
+  });
+
+  it("defers with no note at all", async () => {
+    const response = await defer({ blockedOn: "th_x9y8" });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      payload: { blockedOn: "th_x9y8", reason: null },
+    });
+  });
+
+  it.each([
+    {},
+    { reason: "locked" },
+    { blockedOn: "evt_7c1d" },
+    { blockedOn: "doc_a1b2c3", docId: "doc_a1b2c3" },
+  ])("rejects the unusable defer body %j before any handler runs", async (body) => {
+    expect((await defer(body)).status).toBe(400);
   });
 
   /**

@@ -9,22 +9,32 @@ import type { Job, QueueEventStatus, QueueStatus } from "@corpus/contract";
  * and a decision embedded in JSX is one nobody can test or find again.
  */
 
-/** The prototype's four dot treatments, plus the neutral base for the fifth. */
-export type JobDotClass = "running" | "pending" | "done" | "failed" | "";
+/**
+ * The prototype's four dot treatments, the neutral base for `abandoned`, and
+ * `deferred`'s own class (styled as pending until SERVER-030 restyles it).
+ */
+export type JobDotClass = "running" | "pending" | "deferred" | "done" | "failed" | "";
 
 /**
  * Wire status → prototype dot, the whole mapping in one table.
  *
- * `QueueEventStatus` has five members and `design/index.html` drew four dots, so
- * this is a five-to-four mapping and the odd one out is named rather than
- * defaulted: **`abandoned` gets the neutral dot** (sprint-010 adjudication 8).
- * The prototype has no colour for it, and the three it does have are each
- * already a meaning — `--signal` is "needs you", `--accent` is agent activity,
- * `--good` is done — so borrowing one would say something untrue.
+ * `QueueEventStatus` has six members and `design/index.html` drew four dots, so
+ * two are named rather than defaulted:
+ *
+ * - **`abandoned` gets the neutral dot** (sprint-010 adjudication 8). The
+ *   prototype has no colour for it, and the three it does have are each already
+ *   a meaning — `--signal` is "needs you", `--accent` is agent activity,
+ *   `--good` is done — so borrowing one would say something untrue.
+ * - **`deferred` gets a class of its own** (CONTRACT-021). The prototype has no
+ *   parked/waiting affordance either, but the state *is* waiting-to-run, so it
+ *   takes pending's `--sepia` treatment under a distinct name — the honest
+ *   reading today, and one selector for SERVER-030's polish to restyle without
+ *   touching this mapping. Never `failed`: a deferred job is not broken.
  */
 export const JOB_DOT_CLASSES: Readonly<Record<QueueEventStatus, JobDotClass>> = {
   pending: "pending",
   "in-progress": "running",
+  deferred: "deferred",
   processed: "done",
   failed: "failed",
   abandoned: "",
@@ -44,6 +54,59 @@ export function jobDotClass(status: QueueEventStatus): JobDotClass {
  */
 export function jobLabel(job: Pick<Job, "type" | "originTitle">): string {
   return job.originTitle === null ? job.type : `${job.type} · ${job.originTitle}`;
+}
+
+/**
+ * What a deferred job is waiting for, or `null` when there is nothing true to
+ * say (SERVER-030 eval FAIL-1).
+ *
+ * The contract states the requirement on the field itself: *"a deferred job
+ * that names no document is indistinguishable from a stuck one"*. So the
+ * console names the blocking document, and the shape carries the id separately
+ * from the name because the two surfaces want different amounts of it — the row
+ * has 380 px, the detail pane can afford the id.
+ *
+ * Three honest readings, in the order the wire can produce them:
+ *
+ * - a title → that is the name, with the id alongside it;
+ * - a `blockedOn` with a null title → the document was deleted or is otherwise
+ *   unreadable (the contract's own rule for the denormalised copy), so the id
+ *   *is* the only true name and stands in as one;
+ * - no `blockedOn` at all → the contract says this cannot happen while
+ *   `status` is `deferred`, but a UI that renders `blocked on ` when it does is
+ *   worse than one that says so. It is never silently dropped.
+ */
+export interface BlockedOn {
+  /** The blocking document's title, or the id when the title is gone. */
+  readonly name: string;
+  /** Non-null only when it adds something the name does not already say. */
+  readonly id: string | null;
+}
+
+const UNNAMED_BLOCKER = "an unnamed document";
+
+export function blockedOn(
+  job: Pick<Job, "status" | "blockedOn" | "blockedOnTitle">,
+): BlockedOn | null {
+  if (job.status !== "deferred") return null;
+  if (job.blockedOn === null) return { name: UNNAMED_BLOCKER, id: null };
+  if (job.blockedOnTitle === null) return { name: job.blockedOn, id: null };
+  return { name: job.blockedOnTitle, id: job.blockedOn };
+}
+
+/** `blocked on 401k rollover` — the row's compact hint. */
+export function blockedOnLabel(blocker: BlockedOn): string {
+  return `blocked on ${blocker.name}`;
+}
+
+/**
+ * `blocked on 401k rollover · doc_401k` — the detail pane's line, which has the
+ * room the row does not and follows the meta line's `· `-joined convention.
+ */
+export function blockedOnDetailLabel(blocker: BlockedOn): string {
+  return blocker.id === null
+    ? blockedOnLabel(blocker)
+    : `${blockedOnLabel(blocker)} · ${blocker.id}`;
 }
 
 /**
@@ -80,8 +143,15 @@ export function agentPillText(status: QueueStatus): string {
 /**
  * The strip's counts, split so the failed one can carry its own span.
  *
- * `N running[· N queued] · N done · N failed` — the queued segment is omitted
- * when zero, exactly as the prototype's template omits it.
+ * `N running[· N queued][· N deferred] · N done · N failed` — the queued and
+ * deferred segments are omitted when zero, exactly as the prototype's template
+ * omits the queued one.
+ *
+ * `deferred` sits beside `queued` rather than being folded into it or into
+ * `failed`: it is work that has not run and is not broken, and hiding it in
+ * either neighbour would be the strip telling the user something untrue
+ * (CONTRACT-021). It stays inside `lead` — one plain segment — because nothing
+ * about it is red; SERVER-030 owns whatever affordance it eventually earns.
  */
 export interface ConsoleCounts {
   /** Everything before the failed count, already joined with ` · `. */
@@ -92,6 +162,7 @@ export interface ConsoleCounts {
 export function consoleCounts(status: QueueStatus): ConsoleCounts {
   const segments = [`${String(status.inProgress)} running`];
   if (status.pending > 0) segments.push(`${String(status.pending)} queued`);
+  if (status.deferred > 0) segments.push(`${String(status.deferred)} deferred`);
   segments.push(`${String(status.processed)} done`);
   return { lead: segments.join(" · "), failed: status.failed };
 }
@@ -105,6 +176,7 @@ export const UNKNOWN_QUEUE_STATUS: QueueStatus = {
   halted: false,
   pending: 0,
   inProgress: 0,
+  deferred: 0,
   processed: 0,
   failed: 0,
   abandoned: 0,

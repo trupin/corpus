@@ -62,6 +62,19 @@ export function mountQueueRoutes(app: OpenAPIHono, queue: QueueService): void {
     return c.json(toWireEvent(await queue.fail(id, reason)), 200);
   });
 
+  // `blockedOn` is required by the contract's body schema, so the handler never
+  // has to consider a deferral that names no document — one that did could never
+  // re-enter, which is the whole reason the body is mandatory (CONTRACT-021).
+  app.openapi(contractRoutes.deferEvent, async (c) => {
+    const { id } = c.req.valid("param");
+    const { blockedOn, reason } = c.req.valid("json");
+    const event = await queue.defer(id, {
+      blockedOn,
+      ...(reason === undefined ? {} : { deferReason: reason }),
+    });
+    return c.json(toWireEvent(event), 200);
+  });
+
   app.openapi(contractRoutes.abandonEvent, async (c) => {
     const { id } = c.req.valid("param");
     return c.json(toWireEvent(await queue.abandon(id)), 200);

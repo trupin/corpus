@@ -7,6 +7,7 @@ import {
   DEFAULT_BRANCH,
   USER_IDENTITY,
   commitAll,
+  enclosingRepositoryRoot,
   gitFailure,
   initRepository,
   isRepositoryRoot,
@@ -58,6 +59,28 @@ describe("isRepositoryRoot", () => {
     const nested = join(root, "nested");
     mkdirSync(nested);
     expect(isRepositoryRoot(nested)).toBe(false);
+  });
+});
+
+describe("enclosingRepositoryRoot", () => {
+  it("finds the nearest ancestor that is a repository root", async () => {
+    const root = makeTempDir("enclosing-root");
+    const deep = join(root, "a", "b");
+    mkdirSync(deep, { recursive: true });
+    expect(enclosingRepositoryRoot(deep)).toBeUndefined();
+
+    await initRepository(root);
+    expect(enclosingRepositoryRoot(deep)).toBe(root);
+    // The directory itself counts, which is what makes `init`'s target check and
+    // its ancestor check two separate questions rather than one.
+    expect(enclosingRepositoryRoot(root)).toBe(root);
+
+    await initRepository(join(root, "a"));
+    expect(enclosingRepositoryRoot(deep)).toBe(join(root, "a"));
+  });
+
+  it("gives up at the filesystem root rather than looping", () => {
+    expect(enclosingRepositoryRoot(makeTempDir("enclosing-none"))).toBeUndefined();
   });
 });
 

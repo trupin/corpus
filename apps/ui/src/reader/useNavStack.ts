@@ -43,6 +43,14 @@ export interface NavStackApi {
   readonly back: () => void;
   /** Shift-click Back / `⇧esc`: empties the stack in one act. */
   readonly toList: () => void;
+  /**
+   * Forgets every entry naming a document that no longer exists.
+   *
+   * The abandon rule (SPEC.md §11) removes an empty document the moment it
+   * stops being displayed, and an entry left behind would make Back land on a
+   * tombstone.
+   */
+  readonly drop: (docId: string) => void;
   /** Records the live scroll offset on the current entry, without navigating. */
   readonly captureScroll: (scrollY: number) => void;
 }
@@ -110,6 +118,14 @@ export function useNavStack(store: NavStackStore): NavStackApi {
     if (stack.length !== 0) setStack([]);
   }, [setStack, stack.length]);
 
+  const drop = useCallback(
+    (docId: string) => {
+      const next = dropMissing(stack, (id) => id === docId);
+      if (next !== stack) setStack(next);
+    },
+    [setStack, stack],
+  );
+
   const captureScroll = useCallback(
     (scrollY: number) => {
       const next = captureScrollAt(stack, scrollY);
@@ -129,9 +145,10 @@ export function useNavStack(store: NavStackStore): NavStackApi {
       push,
       back,
       toList,
+      drop,
       captureScroll,
     };
-  }, [back, captureScroll, push, stack, toList]);
+  }, [back, captureScroll, drop, push, stack, toList]);
 }
 
 /** An in-memory store, for a surface whose history is not persisted (focus mode). */

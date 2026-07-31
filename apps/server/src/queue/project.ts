@@ -48,7 +48,7 @@ export interface QueueScanResult {
   readonly malformed: string[];
 }
 
-/** Reads every event file across the five directories. Boot path, hence sync. */
+/** Reads every event file across every status directory. Boot path, hence sync. */
 export function scanQueueSync(store: QueueStore): QueueScanResult {
   const events: StoredEvent[] = [];
   const malformed: string[] = [];

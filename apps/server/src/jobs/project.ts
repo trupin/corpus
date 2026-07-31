@@ -41,6 +41,7 @@ interface JobJoinRow {
   readonly status: string;
   readonly created: string | null;
   readonly payload_json: string;
+  readonly blocked_on: string | null;
   readonly started: string | null;
   readonly updated: string | null;
   readonly last_line: string | null;
@@ -79,6 +80,22 @@ export function recordJobLine(db: ProjectionDb, eventId: string, line: JobLogLin
 export interface JobOrigin {
   readonly id: string;
   readonly title: string;
+}
+
+/**
+ * The current title of the document a job is blocked on, or `null` when the
+ * corpus no longer holds it.
+ *
+ * Read at response time from the same row that proves the document exists — the
+ * rule `originTitle` follows, so `blockedOnTitle` is null exactly when
+ * `blockedOn` is null or its document is gone, and a renamed document shows its
+ * new title on the next read (CONTRACT-021).
+ */
+function resolveBlockedOnTitle(db: ProjectionDb, blockedOn: string | null): string | null {
+  if (blockedOn === null) return null;
+  const row = db.prepare("SELECT title FROM documents WHERE id = ?").get(blockedOn) as
+    { title: string } | undefined;
+  return row?.title ?? null;
 }
 
 /**
@@ -132,12 +149,19 @@ function toJob(db: ProjectionDb, row: JobJoinRow): Job {
     lastLine: row.last_line,
     originId: origin?.id ?? null,
     originTitle: origin?.title ?? null,
+    // The document supplied at defer time (`DeferEventRequest.blockedOn`),
+    // projected from the event file (SERVER-030). Non-null exactly while the
+    // event sits in `deferred/`: every transition out of it strips the field
+    // (`queue/service.ts`'s `stamp`), so the console can never show a finished
+    // job still waiting for a lock.
+    blockedOn: row.blocked_on,
+    blockedOnTitle: resolveBlockedOnTitle(db, row.blocked_on),
   };
 }
 
 const SELECT_JOBS = `
   SELECT e.id AS event_id, e.type AS type, e.status AS status, e.created AS created,
-         e.payload_json AS payload_json,
+         e.payload_json AS payload_json, e.blocked_on AS blocked_on,
          j.started AS started, j.updated AS updated, j.last_line AS last_line
   FROM events e
   LEFT JOIN jobs j ON j.event_id = e.id`;
