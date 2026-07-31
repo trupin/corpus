@@ -1283,8 +1283,16 @@ describe("§14 warnings reach every mutation response", () => {
    * `[[refs]]` are warnings, not failures" — carrying `CheckFinding`s.
    * `/api/check` writes nothing and can produce no commit warning at all, so
    * there is no shape here for `Warning` to occupy.
+   *
+   * `DoctorReport.warnings` (CONTRACT-025) is the same story for the same
+   * reason: doctor opens the database read-only and mutates nothing, so a commit
+   * warning is not a thing it can produce. Its list carries `DoctorWarning`s —
+   * report-only findings about files the projection will never index — and it is
+   * the one carrier here that is optional, because it ships ahead of the server
+   * pass that fills it. Both entries are exceptions that had to be **declared**;
+   * the test below is what forces the declaration.
    */
-  const FOREIGN_WARNINGS = ["CheckReport"];
+  const FOREIGN_WARNINGS = ["CheckReport", "DoctorReport"];
 
   it.each(CARRIERS)("declares `warnings` required on %s", (component) => {
     const schema = componentSchemas?.[component];
@@ -1311,6 +1319,28 @@ describe("§14 warnings reach every mutation response", () => {
       type: "array",
       items: { $ref: "#/components/schemas/CheckFinding" },
     });
+  });
+
+  it("keeps the doctor report's warnings its own report-only list", () => {
+    expect(componentSchemas?.["DoctorReport"]?.properties?.["warnings"]).toMatchObject({
+      type: "array",
+      items: { $ref: "#/components/schemas/DoctorWarning" },
+    });
+  });
+
+  /**
+   * The three vocabularies must stay distinguishable by shape alone, so a
+   * consumer that gets the wrong one gets a parse error rather than a silently
+   * mis-rendered list. `Warning` is keyed by `code`; the other two by `kind`
+   * and `severity`/`kind` respectively.
+   */
+  it("gives each warning vocabulary a shape the others cannot pass for", () => {
+    expect(Object.keys(componentSchemas?.["Warning"]?.properties ?? {})).toEqual([
+      "code",
+      "detail",
+    ]);
+    expect(componentSchemas?.["DoctorWarning"]?.properties?.["code"]).toBeUndefined();
+    expect(componentSchemas?.["Warning"]?.properties?.["kind"]).toBeUndefined();
   });
 });
 
@@ -1508,10 +1538,102 @@ describe("the projection maintenance routes", () => {
     expect(drift?.required).toEqual(["kind", "path", "detail"]);
   });
 
-  it("neither route claims to warn, because neither writes a workspace file", () => {
-    for (const component of ["RebuildResult", "DoctorReport"]) {
-      expect(componentSchemas?.[component]?.properties?.["warnings"]).toBeUndefined();
-    }
+  /**
+   * Unchanged by CONTRACT-025 and worth keeping pinned: neither route writes a
+   * workspace file, so neither can produce a §14 commit warning. `RebuildResult`
+   * carries no warnings field of any kind — a rebuild already reports what it
+   * could not use, in `skipped`.
+   */
+  it("keeps the §14 mutation warning carrier off both db responses", () => {
+    expect(componentSchemas?.["RebuildResult"]?.properties?.["warnings"]).toBeUndefined();
+    expect(
+      JSON.stringify(componentSchemas?.["DoctorReport"]?.properties?.["warnings"]),
+    ).not.toContain("#/components/schemas/Warning");
+  });
+
+  /**
+   * CONTRACT-025. The doctor report's `warnings` is a separate vocabulary for
+   * report-only findings (SERVER-038's unindexable files). Pinned from the side
+   * that matters: **not** in `required`, because the whole rider is that an
+   * A-era client and the shipped handler both stay valid.
+   */
+  describe("the report-only warnings surface", () => {
+    it("hangs report-only findings off the doctor report, not off drift", () => {
+      expect(componentSchemas?.["DoctorReport"]?.properties?.["warnings"]).toMatchObject({
+        type: "array",
+        items: { $ref: "#/components/schemas/DoctorWarning" },
+      });
+    });
+
+    it("leaves `warnings` out of `required`, which is what makes the rider additive", () => {
+      expect(componentSchemas?.["DoctorReport"]?.required).toEqual(["ok", "drift", "stats"]);
+    });
+
+    it("appends the field rather than reordering what a reader already knows", () => {
+      expect(Object.keys(componentSchemas?.["DoctorReport"]?.properties ?? {})).toEqual([
+        "ok",
+        "drift",
+        "stats",
+        "warnings",
+      ]);
+    });
+
+    /**
+     * The asymmetry with `ProjectionDrift.kind` two tests up is the design.
+     * A drift kind is the pass/fail vocabulary `ok` is derived from, so it stays
+     * closed; a warning kind carries no verdict, so the server can add one
+     * without a contract release.
+     */
+    it("keeps the warning kind an open token, unlike the closed drift enum", () => {
+      const kind = componentSchemas?.["DoctorWarning"]?.properties?.["kind"];
+      expect(kind?.type).toBe("string");
+      expect(kind?.enum).toBeUndefined();
+      expect(kind).toMatchObject({ pattern: "^[a-z][a-z0-9_]*$", minLength: 1, maxLength: 64 });
+      expect(kind?.description).toContain("Core values: unindexable_file");
+      expect(kind?.description).toContain("without a contract release");
+    });
+
+    it("names the path, the human detail and the creating commit", () => {
+      const warning = componentSchemas?.["DoctorWarning"];
+      expect(Object.keys(warning?.properties ?? {})).toEqual(["kind", "path", "detail", "commit"]);
+      for (const field of ["kind", "path", "detail", "commit"] as const) {
+        expect(warning?.properties?.[field]?.description, field).toBeTruthy();
+      }
+    });
+
+    /** Nullable, not optional — `ProjectionDrift`'s convention, entry-level. */
+    it("keeps every warning key required, with null carrying the absent cases", () => {
+      const warning = componentSchemas?.["DoctorWarning"];
+      expect(warning?.required).toEqual(["kind", "path", "detail", "commit"]);
+      expect(warning?.properties?.["path"]?.type).toEqual(["string", "null"]);
+      expect(warning?.properties?.["commit"]).toMatchObject({
+        type: ["string", "null"],
+        pattern: "^[0-9a-f]{7,64}$",
+      });
+    });
+
+    /**
+     * SERVER-038's TEST-609 requires the human output, the `--json` output and
+     * the exit code to agree. The wire's half of that is saying, in the document
+     * a client author reads, that a warning is not a verdict.
+     */
+    it("states in the document that a warning never moves `ok` or the exit code", () => {
+      expect(componentSchemas?.["DoctorReport"]?.properties?.["ok"]?.description).toContain(
+        "`warnings` never moves it",
+      );
+      expect(componentSchemas?.["DoctorReport"]?.properties?.["warnings"]?.description).toContain(
+        "Never moves `ok` and never changes the exit code",
+      );
+      expect(operation("/api/db/doctor", "get").description).toContain(
+        "arrive separately in `warnings`, which never moves `ok`",
+      );
+    });
+
+    it("tells a consumer that an absent array and an empty one say the same thing", () => {
+      expect(componentSchemas?.["DoctorReport"]?.properties?.["warnings"]?.description).toContain(
+        "Absent and empty mean the same thing",
+      );
+    });
   });
 });
 

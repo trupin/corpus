@@ -13,9 +13,22 @@ import { jsonContent, UNAUTHORIZED_RESPONSE, VALIDATION_RESPONSE } from "./respo
  * running server reading a replaced inode.
  *
  * Neither route touches workspace files, so neither produces a git commit and
- * neither can warn under §14 — `warnings` is deliberately absent from both
- * responses. `doctor` is read-only in the strictest sense: it opens the database
- * read-only and mutates nothing at all.
+ * neither can warn under §14 — the `Warning` carrier every mutation response
+ * spreads is deliberately absent from both responses, and stays absent.
+ * `doctor` is read-only in the strictest sense: it opens the database read-only
+ * and mutates nothing at all.
+ *
+ * **What CONTRACT-025 changed, and what it did not.** `DoctorReport` now carries
+ * an optional `warnings` array of `DoctorWarning` — a *different* vocabulary
+ * that happens to share the word, for report-only findings a person should see
+ * and the projection is nonetheless correct about (SERVER-038's unindexable
+ * files). The paragraph above still holds as written: doctor cannot produce a
+ * §14 commit warning, because it performs no write. What was wrong was reading
+ * "no §14 warnings" as "no findings beyond drift", which left a recovery surface
+ * with nowhere to land except `drift` — where it would have flipped `ok` and the
+ * exit code, breaking §14's `rebuild && doctor` clean invariant for the exact
+ * workspaces that most need the report. `RebuildResult` gains nothing: a rebuild
+ * already reports what it could not use, in `skipped`.
  */
 
 export const rebuildDb = createRoute({
@@ -53,12 +66,14 @@ export const doctorDb = createRoute({
     "re-read, and a file that already has a row is never re-parsed. Nothing is mutated and no " +
     "rebuild is triggered — a drifted projection is reported, never quietly repaired, because the " +
     "point of the check is that drift is visible. `ok` is the verdict `corpus db doctor` turns " +
-    "into its exit code.",
+    "into its exit code. Findings that are worth reporting but are not disagreements arrive " +
+    "separately in `warnings`, which never moves `ok`.",
   responses: {
     200: jsonContent(
       DoctorReportSchema,
       "The drift report. `ok` is true exactly when `drift` is empty; a drifted projection is a " +
-        "`200` carrying the findings, not an error status.",
+        "`200` carrying the findings, not an error status. `warnings`, when present, is " +
+        "report-only and leaves `ok` alone.",
     ),
     401: UNAUTHORIZED_RESPONSE,
   },

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  CoreDoctorWarningKindSchema,
+  DOCTOR_WARNING_KINDS,
   DoctorReportSchema,
+  DoctorWarningSchema,
   DRIFT_KINDS,
   PROJECTION_COUNT_FIELDS,
   ProjectionDriftSchema,
@@ -112,6 +115,79 @@ describe("ProjectionDrift", () => {
   });
 });
 
+describe("DoctorWarning", () => {
+  const warning = {
+    kind: "unindexable_file" as const,
+    path: "data/docs/.claude/skills/invisible-doc.md",
+    detail: "the projection will never index this file; move it out of `.claude/` to recover it",
+    commit: "a1b2c3d",
+  };
+
+  it("round-trips a finding through JSON, which is the only way it travels", () => {
+    expect(DoctorWarningSchema.parse(JSON.parse(JSON.stringify(warning)))).toEqual(warning);
+  });
+
+  it.each(DOCTOR_WARNING_KINDS)("recognises the shipped %s kind", (kind) => {
+    expect(DoctorWarningSchema.parse({ ...warning, kind }).kind).toBe(kind);
+  });
+
+  /**
+   * The whole point of the open kind space: SERVER-038 adds a report-only pass,
+   * a later one adds another, and neither costs a contract release. A closed
+   * enum here would make this test the thing that has to be edited each time.
+   */
+  it("accepts a kind this file has never heard of", () => {
+    const future = { ...warning, kind: "orphaned_attachment" };
+    expect(DoctorWarningSchema.parse(future)).toEqual(future);
+  });
+
+  it.each(["Unindexable_File", "unindexable-file", "9lives", "_leading", "unindexable file", ""])(
+    "rejects %o, which is not a token a consumer can switch on",
+    (kind) => {
+      expect(DoctorWarningSchema.safeParse({ ...warning, kind }).success).toBe(false);
+    },
+  );
+
+  it("rejects a kind long enough to be prose rather than a key", () => {
+    expect(DoctorWarningSchema.safeParse({ ...warning, kind: "a".repeat(65) }).success).toBe(false);
+    expect(DoctorWarningSchema.safeParse({ ...warning, kind: "a".repeat(64) }).success).toBe(true);
+  });
+
+  /** Openness is on the wire; the narrowing helper stays closed for consumers that switch. */
+  it("offers a closed narrowing schema over the kinds the product ships", () => {
+    expect(CoreDoctorWarningKindSchema.safeParse("unindexable_file").success).toBe(true);
+    expect(CoreDoctorWarningKindSchema.safeParse("orphaned_attachment").success).toBe(false);
+  });
+
+  /**
+   * Nullable, not optional — `ProjectionDrift.path`'s convention, and the reason
+   * a future kind concerning no single file needs no contract edit.
+   */
+  it("carries a null path for a finding that concerns no single file", () => {
+    const entry = { ...warning, path: null };
+    expect(DoctorWarningSchema.parse(entry)).toEqual(entry);
+  });
+
+  it.each(["path", "commit"] as const)("demands the %s key even when there is none", (field) => {
+    const { [field]: _omitted, ...missing } = warning;
+    expect(DoctorWarningSchema.safeParse(missing).success).toBe(false);
+  });
+
+  it("carries a null commit when nothing committed the file it names", () => {
+    const entry = { ...warning, commit: null };
+    expect(DoctorWarningSchema.parse(entry)).toEqual(entry);
+  });
+
+  it("rejects a commit that is not a sha, so the audit-trail field stays usable", () => {
+    expect(DoctorWarningSchema.safeParse({ ...warning, commit: "HEAD~1" }).success).toBe(false);
+  });
+
+  it("requires a detail, since a kind and a path alone tell nobody what to do", () => {
+    const { detail: _omitted, ...missing } = warning;
+    expect(DoctorWarningSchema.safeParse(missing).success).toBe(false);
+  });
+});
+
 describe("DoctorReport", () => {
   it("round-trips a clean projection", () => {
     const clean = { ok: true, drift: [], stats };
@@ -143,5 +219,88 @@ describe("DoctorReport", () => {
     expect(DoctorReportSchema.safeParse({ ok: true, drift: [], stats: partial }).success).toBe(
       false,
     );
+  });
+
+  /**
+   * CONTRACT-025. The pass/fail half of the rider: a clean projection carrying
+   * report-only findings is still clean, because §14's standing `rebuild &&
+   * doctor` invariant is about drift. A warning that moved `ok` would fail a
+   * routine check on precisely the workspaces that need the report.
+   */
+  it("stays `ok` while carrying warnings, because a warning is not drift", () => {
+    const reported = {
+      ok: true,
+      drift: [],
+      stats,
+      warnings: [
+        {
+          kind: "unindexable_file" as const,
+          path: "data/docs/node_modules/ignored-dir-doc.md",
+          detail: "under `node_modules/`, which the document walk skips",
+          commit: "0f1e2d3",
+        },
+      ],
+    };
+    const parsed = DoctorReportSchema.parse(reported);
+    expect(parsed).toEqual(reported);
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("carries several findings at once, alongside real drift", () => {
+    const both = {
+      ok: false,
+      drift: [{ kind: "orphan_row" as const, path: "data/docs/gone.md", detail: "no file" }],
+      stats,
+      warnings: [
+        {
+          kind: "unindexable_file" as const,
+          path: "data/docs/.hidden/a.md",
+          detail: "…",
+          commit: null,
+        },
+        {
+          kind: "unindexable_file" as const,
+          path: "data/docs/node_modules/b.md",
+          detail: "…",
+          commit: "abcdef1",
+        },
+      ],
+    };
+    expect(DoctorReportSchema.parse(both)).toEqual(both);
+  });
+
+  /**
+   * Optional, unlike `warningsField` on every mutation response: this field is
+   * ahead of its producer by construction, so a report built before SERVER-038
+   * exists must still validate. Absence and emptiness are the same statement.
+   */
+  it("omits the key entirely when the server runs no warning pass", () => {
+    const parsed = DoctorReportSchema.parse({ ok: true, drift: [], stats });
+    expect("warnings" in parsed).toBe(false);
+  });
+
+  it("accepts an explicitly empty warnings array as the same statement", () => {
+    expect(DoctorReportSchema.parse({ ok: true, drift: [], stats, warnings: [] })).toEqual({
+      ok: true,
+      drift: [],
+      stats,
+      warnings: [],
+    });
+  });
+
+  it("rejects a malformed warning rather than passing it through unvalidated", () => {
+    const bad = { ok: true, drift: [], stats, warnings: [{ kind: "unindexable_file" }] };
+    expect(DoctorReportSchema.safeParse(bad).success).toBe(false);
+  });
+
+  /** The two families are separate vocabularies; a §14 mutation warning is not one of these. */
+  it("does not accept a §14 mutation warning in the doctor warnings list", () => {
+    const wrongFamily = {
+      ok: true,
+      drift: [],
+      stats,
+      warnings: [{ code: "commit_failed", detail: "hook rejected" }],
+    };
+    expect(DoctorReportSchema.safeParse(wrongFamily).success).toBe(false);
   });
 });
