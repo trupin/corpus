@@ -13,7 +13,7 @@ P2
 opus
 
 ## Dependencies
-- Depends on: SERVER-037
+- Depends on: SERVER-037, CONTRACT-025 (doctor warnings surface — sprint-018 Open Conflict 1)
 - Blocks: —
 
 ## Spec References

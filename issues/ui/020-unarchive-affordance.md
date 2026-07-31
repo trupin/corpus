@@ -27,6 +27,17 @@ source (menu/docActions.ts — one declaration, both presentations pick it up) f
 archived documents, calling the existing unarchive route. Availability mirrors
 Archive's; no confirm (reversible act).
 
+**Scope correction (sprint-018 diligence, 2026-07-30 — Adjudications 6 and 7).** The
+UI has no archive/unarchive client calls at all: it archives via
+`PUT {status:"archived"}` (`useRowActions.ts`), which never runs the server's folder
+move — the mirror image of the half-state SERVER-039 closed, live in the archive
+direction for skills. This issue therefore (a) moves the UI's **Archive** onto
+`POST /api/docs/{id}/archive` and adds **Unarchive** on `POST …/unarchive` (both
+routes already in the contract inventory — no contract change), and (b) adds the two
+typed-client call sites in `packages/kit` — a named exception to the UI-only file
+scope, kit being this domain's second workspace. Sprint-018 TEST-615–626 are the
+binding criteria.
+
 ## Acceptance Criteria
 - [ ] Archived doc's ⋯ menu and context menu offer Unarchive; non-archived docs don't
 - [ ] Skill docs: folder moves back, name freed (the SERVER-036 409 case recoverable from the UI)

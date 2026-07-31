@@ -197,6 +197,59 @@ carries the §12 + §2.1 wording reconciliation held over from the PR.
 
 Deferred beyond Phase 5 unless capacity allows: UI-016 (react-router v8), SERVER-033 (@hono/node-server v2).
 
+## Phase 6 — Dogfood feedback + remaining backlog
+
+Phase 5 landed 2026-07-30 (PR #12, squash `ffc9ea8`). The user is dogfooding; this
+phase collects their live UX reports plus the ready backlog carried in the Phase 5
+table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
+(UI-016, SERVER-033).
+
+| ID | Title | Status | Priority | Dependencies |
+| --- | --- | --- | --- | --- |
+| CONTRACT-025 | Rider: doctor response gains report-only warnings (SERVER-038 seam) | todo | P2 | — |
+| UI-022 | Focus mode: redundant back-to-list button next to ✕ Close (user report) | todo | P1 | — |
+| UI-023 | Reader-open column widening must cap at the content measure (user report) | todo | P1 | — |
+| UI-024 | Selection context menu (comment on selection) + item menus win over stray selections (user reports) | todo | P1 | UI-018, UI-008 |
+
+## Phase 7 — Retrieval A: retrieval discipline (lexical)
+
+The retrieval track (SHARED-006, spec signed 2026-07-30; scheduling decision: after the
+Phase 6 backlog). Phase A: the agent retrieves, never enumerates — over the existing
+FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff commit.
+
+| ID | Title | Status | Priority | Dependencies |
+| --- | --- | --- | --- | --- |
+| SHARED-006 | Spec pass: retrieval (signed; apply amendment at phase kickoff) | todo | P0 | — |
+| CONTRACT-022 | Routes: GET /api/search + GET /api/docs/{id}/related (frozen shapes) | todo | P0 | SHARED-006 |
+| SERVER-040 | /api/search: lexical ranked retrieval with heading-path hits | todo | P1 | CONTRACT-022 |
+| SERVER-041 | /api/docs/:id/related: links-graph expansion | todo | P1 | CONTRACT-022 |
+| CLI-019 | `corpus search` + `corpus doc related` token-frugal verbs | todo | P1 | CONTRACT-022, SERVER-040, SERVER-041 |
+| AGENT-008 | Retrieval-first stewardship rules in the product skills | todo | P1 | CLI-019 |
+
+## Phase 8 — Retrieval B: semantic index
+
+| ID | Title | Status | Priority | Dependencies |
+| --- | --- | --- | --- | --- |
+| SERVER-042 | Deterministic heading-path chunker, content-addressed identity | todo | P0 | SERVER-040 |
+| SERVER-043 | Embedding provider seam: local-first, sticky identity | todo | P0 | SERVER-042 |
+| SERVER-044 | Async embed worker: never blocks writes, visible staleness | todo | P0 | SERVER-042, SERVER-043 |
+| CONTRACT-023 | Routes: index status/rebuild; search staleness flag; similar rows | todo | P0 | CONTRACT-022 |
+| SERVER-045 | Vector storage + hybrid ranking; related gains `similar` | todo | P1 | SERVER-044, CONTRACT-023 |
+| SERVER-046 | Index endpoints; rebuild queueing; doctor drift-vs-staleness | todo | P1 | SERVER-044, CONTRACT-023 |
+| CLI-020 | `corpus index status` / `rebuild`; search degrade note | todo | P1 | CONTRACT-023, SERVER-046, CLI-019 |
+| INFRA-012 | Package the bundled model + native vector extension | todo | P1 | SERVER-043, SERVER-045 |
+
+## Phase 9 — Retrieval C: auto-context
+
+| ID | Title | Status | Priority | Dependencies |
+| --- | --- | --- | --- | --- |
+| CONTRACT-024 | Route: GET /api/threads/{id}/context (bounded pack) | todo | P0 | CONTRACT-022 |
+| SERVER-047 | Context pack assembly | todo | P1 | CONTRACT-024, SERVER-041, SERVER-045 |
+| CLI-021 | `corpus thread context <id>` | todo | P1 | CONTRACT-024, SERVER-047 |
+| AGENT-009 | Comment skill starts from the context pack | todo | P1 | CLI-021, AGENT-008 |
+| UI-025 | Related-documents panel beside backlinks | todo | P2 | CONTRACT-022, SERVER-041 |
+| UI-026 | ⌘K overlay adopts GET /api/search | todo | P2 | SERVER-045 |
+
 ---
 
 <!-- Additional phases will be added as the project grows -->
