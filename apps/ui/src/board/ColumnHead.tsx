@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { ColumnMenuItems } from "../menu/ColumnMenuItems";
 import { useContextMenu } from "../menu/ContextMenuHost";
-import { keepsNativeMenu, selectionText } from "../menu/nativeMenu";
+import { keepsNativeMenu } from "../menu/nativeMenu";
 import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from "./viewDoc";
 
 /**
@@ -119,8 +119,9 @@ export function ColumnHead({
       }}
       onContextMenu={(event) => {
         // The rename and edit-query fields are inputs: the browser's own menu is
-        // the useful one there, and inside a text selection anywhere.
-        if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+        // the useful one there. A selection elsewhere does not suppress the
+        // header's menu (SPEC.md §11, user report 2026-07-30).
+        if (keepsNativeMenu({ target: event.target })) return;
         event.preventDefault();
         openMenu(event.clientX, event.clientY, false);
       }}

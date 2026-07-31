@@ -3,7 +3,7 @@ import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 import type { RowNotice } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { Node as PmModelNode } from "@tiptap/pm/model";
-import { EditorState, type Plugin } from "@tiptap/pm/state";
+import { EditorState, TextSelection, type Plugin } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
@@ -294,6 +294,51 @@ describe("commenting on a selection", () => {
       expect(app.notices.some((notice) => notice.message.startsWith("Comment failed"))).toBe(true);
     });
     expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+  });
+});
+
+/**
+ * The seam the right-click menu comments through (UI-024, SPEC.md §11).
+ *
+ * "Comment on selection" is 💬's own act reached by another gesture, so it goes
+ * through this layer rather than beside it. What has to hold is that the range
+ * is read when the **menu opens**: opening one moves focus out of the body and
+ * collapses the caret, and a composer anchored to wherever the selection ended
+ * up would quote the wrong words.
+ */
+describe("capturing the live selection as a comment", () => {
+  function select(layer: AnchorLayer, from: number, to: number): void {
+    const editor = layer.editor;
+    if (editor === null) throw new Error("no editor");
+    act(() => {
+      editor.view.dispatch(
+        editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, to)),
+      );
+    });
+  }
+
+  it("comments on the range the menu opened over, not on the caret at activation", () => {
+    const app = mount();
+    select(app.layer(), RATE_FROM, RATE_TO);
+    const comment = app.layer().captureComment();
+    expect(comment).not.toBeNull();
+
+    // The menu takes focus: the selection collapses somewhere else entirely.
+    select(app.layer(), 4, 4);
+    act(() => {
+      comment?.();
+    });
+
+    expect(app.layer().draft?.selection.selector.exact).toBe("6.1%");
+  });
+
+  it.each([
+    ["nothing is selected", 4, 4],
+    ["the selection is whitespace", BODY.indexOf("6.1%") + 5, BODY.indexOf("6.1%") + 6],
+  ])("offers nothing to comment on when %s", (_case, from, to) => {
+    const app = mount();
+    select(app.layer(), from, to);
+    expect(app.layer().captureComment()).toBeNull();
   });
 });
 

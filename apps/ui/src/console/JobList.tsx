@@ -2,7 +2,7 @@ import type { Job } from "@corpus/contract";
 import type { ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { JobMenuItems } from "../menu/JobMenuItems";
-import { keepsNativeMenu, selectionText } from "../menu/nativeMenu";
+import { keepsNativeMenu } from "../menu/nativeMenu";
 import { blockedOn, blockedOnDetailLabel, jobDotClass, jobLabel } from "./consoleModel";
 
 /**
@@ -45,7 +45,9 @@ export function JobList({ jobs, selectedId, onSelect }: JobListProps): ReactElem
               onSelect(job.eventId);
             }}
             onContextMenu={(event) => {
-              if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+              // A selection anywhere on the page does not suppress a job row's
+              // own menu (SPEC.md §11, user report 2026-07-30).
+              if (keepsNativeMenu({ target: event.target })) return;
               event.preventDefault();
               // The menu acts on the row under the cursor, which is not
               // necessarily the selected job (sprint-016 TEST-433).

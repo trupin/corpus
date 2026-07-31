@@ -3,7 +3,7 @@ import type { RowNotice } from "@corpus/kit";
 import { useCallback, type MouseEvent } from "react";
 import { DocMenuItems } from "./DocMenuItems";
 import { useContextMenu } from "./ContextMenuHost";
-import { keepsNativeMenu, selectionText } from "./nativeMenu";
+import { keepsNativeMenu } from "./nativeMenu";
 
 /**
  * The open reader's right-click (SPEC.md §11): the same set its ⋯ menu offers.
@@ -12,10 +12,15 @@ import { keepsNativeMenu, selectionText } from "./nativeMenu";
  * and must not differ here either.
  *
  * **What it declines is as much of the contract as what it opens.** Inside the
- * editor, inside the title field, on a text selection, and over a plugin
+ * editor with nothing selected, inside the title field, and over a plugin
  * `View`'s surface, the browser's own menu is the useful one and survives
- * untouched: spellcheck and Copy are the concrete cases, and losing either is a
- * regression a user notices immediately.
+ * untouched: spellcheck is the concrete case, and losing it is a regression a
+ * user notices immediately.
+ *
+ * A **selection** in the document body is handled before this ever runs, by
+ * `useSelectionContextMenu` on the document view, which stops the event when it
+ * opens its own menu (SPEC.md §11). What reaches here is therefore the reader's
+ * chrome — and a selection elsewhere on the page never suppresses it.
  */
 
 export interface ReaderContextMenuOptions {
@@ -37,7 +42,7 @@ export function useReaderContextMenu({
   return useCallback(
     (event: MouseEvent<HTMLElement>) => {
       if (doc === undefined) return;
-      if (keepsNativeMenu({ target: event.target, selection: selectionText() })) return;
+      if (keepsNativeMenu({ target: event.target })) return;
       event.preventDefault();
       menu.open({
         label: `Actions for ${doc.frontmatter.title}`,

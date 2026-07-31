@@ -6,6 +6,7 @@ import { CommentPopover } from "../anchors/CommentPopover";
 import { useAnchorLayer } from "../anchors/useAnchorLayer";
 import { useMarginLayout } from "../anchors/useMarginLayout";
 import { DocEditor, editorHandlesType } from "../editor/DocEditor";
+import { useSelectionContextMenu } from "../menu/useSelectionContextMenu";
 import { usePluginRegistry } from "../plugins/registry";
 import { resolveDocPanel, resolveDocView } from "../plugins/slots";
 import { ThreadCard } from "../thread/ThreadCard";
@@ -114,6 +115,19 @@ export function DocView({
     onNotify,
   });
 
+  /**
+   * SPEC.md §11's selection menu, hosted here rather than on the reader: this
+   * is the component both hosts render, and it is where the editor and the
+   * commenting flow already meet. It declines every event it does not own, so
+   * the reader's own right-click (the document's ⋯ set) still reaches every
+   * other part of the surface.
+   */
+  const selectionMenu = useSelectionContextMenu({
+    editor: anchors.editor,
+    captureComment: anchors.captureComment,
+    onNotify,
+  });
+
   useMarginLayout({
     main: anchors.mainRef,
     margin: anchors.marginRef,
@@ -151,6 +165,7 @@ export function DocView({
       <div
         className="doc-main"
         ref={anchors.mainRef}
+        onContextMenu={selectionMenu}
         /*
          * A plugin `View` owns its whole body surface (SPEC.md §10), and
          * plugin-rendered surfaces are out of the context menu's v1 scope
