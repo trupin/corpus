@@ -46,6 +46,18 @@ export {
   EMBEDDED_PROVIDER,
   createStaticEmbeddedEngine,
 } from "./embedded-engine.js";
+export {
+  EMBEDDED_MODEL,
+  MODEL_CACHE_DIR_ENV,
+  MODEL_RETRY_COOLDOWN_MS,
+  attachEmbeddedEngine,
+  createEmbeddedEngine,
+} from "./engine/index.js";
+export type {
+  CorpusEmbeddedEngine,
+  EmbeddedEngineOptions,
+  EmbeddedModelManifest,
+} from "./engine/index.js";
 export type {
   EmbeddedEngine,
   EmbeddedEngineAvailability,

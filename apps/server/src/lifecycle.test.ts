@@ -596,8 +596,61 @@ describe("runServerProcess — boot", () => {
     await server.close();
 
     const line = h.lines.find((entry) => entry.includes("semantic index disabled"));
-    expect(line).toContain("this build has no embedded engine");
+    // The build ships an embedded engine (SERVER-048), so the reason is no
+    // longer "there is no engine": this environment names no per-user cache
+    // directory, which is what a server booted with `env: {}` looks like.
+    expect(line).toContain("no per-user cache directory");
     expect(line).toContain('"level":"info"');
+  });
+
+  it("says the model is not downloaded yet, rather than that nothing is configured", async () => {
+    const workspace = makeWorkspace("ws-semantic-model-absent");
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: { ...EPHEMERAL, HOME: join(root, "home"), CORPUS_MODEL_CACHE_DIR: join(root, "models") },
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      createServerFn: (config, deps) => createServer(config, { ...deps, logger: h.logger }),
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+    await server.close();
+
+    const line = h.lines.find((entry) => entry.includes("semantic index disabled"));
+    // SPEC.md §9.1's honest distinction: "not downloaded yet" is not "nothing
+    // configured", and search says which one it is.
+    expect(line).toContain("has not been downloaded yet");
+  });
+
+  it("makes no network request while booting, however much there is to index", async () => {
+    const workspace = makeWorkspace("ws-semantic-no-boot-download");
+    const h = harness();
+    const original = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (input) => {
+      calls.push(input instanceof URL ? input.href : JSON.stringify(input));
+      return Promise.reject(new Error("no network at boot"));
+    };
+
+    try {
+      const server = await runServerProcess({
+        argv: ["--workspace", workspace],
+        env: { ...EPHEMERAL, CORPUS_MODEL_CACHE_DIR: join(root, "models") },
+        cwd: root,
+        hooks: h.hooks,
+        logger: h.logger,
+      });
+      if (server === undefined) throw new Error("server failed to boot");
+      await server.close();
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    // "Lazily on first index need" and "none at server boot" are the same rule.
+    expect(calls).toEqual([]);
+    expect(existsSync(join(root, "models"))).toBe(false);
   });
 });
 

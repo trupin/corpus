@@ -13,7 +13,11 @@ import {
   openWorkspaceProjection,
   type ProjectionDb,
 } from "./projection/index.js";
-import { attachSemanticIndex } from "./semantic/index.js";
+import {
+  attachEmbeddedEngine,
+  attachSemanticIndex,
+  type AttachSemanticIndexDeps,
+} from "./semantic/index.js";
 import { attachWatcher } from "./watcher/index.js";
 
 export const SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"] as const;
@@ -125,7 +129,16 @@ export interface RunServerOptions {
    * (SERVER-043). Injected so a test — and the seam's own E2E — can register an
    * embedded engine, which is otherwise absent until SERVER-048.
    */
-  readonly attachSemanticFn?: (server: CorpusServer) => void;
+  readonly attachSemanticFn?: (server: CorpusServer, deps: AttachSemanticIndexDeps) => void;
+  /**
+   * Builds the in-process embedding engine and registers its disposer
+   * (SERVER-048). Injected so a test can boot without one; the default is
+   * inert until something asks it to embed.
+   */
+  readonly attachEmbeddedEngineFn?: (
+    server: CorpusServer,
+    env: Readonly<Record<string, string | undefined>>,
+  ) => AttachSemanticIndexDeps["embeddedEngine"];
   readonly gracePeriodMs?: number;
 }
 
@@ -167,11 +180,18 @@ export async function runServerProcess(
     // The watcher is filesystem-bound and lifecycle-scoped, so it attaches here
     // alongside the projection; its disposer runs before the database closes.
     (options.attachWatcherFn ?? attachWatcher)(server);
+    // The engine registers its disposer before the seam registers its own, so
+    // shutdown aborts the resolution first and only then releases the model.
+    // Building one touches nothing: it downloads on demand and loads on `open`.
+    const embeddedEngine = (options.attachEmbeddedEngineFn ?? attachEmbeddedEngine)(server, env);
     // Last, so its disposer runs first: it reads the projection, and a resolution
     // still in flight must be aborted and awaited before the database closes. It
     // resolves in the background — a configured endpoint that never answers must
     // not hold the socket shut on a server whose documents are all readable.
-    (options.attachSemanticFn ?? attachSemanticIndex)(server);
+    (options.attachSemanticFn ?? attachSemanticIndex)(
+      server,
+      embeddedEngine === undefined ? {} : { embeddedEngine },
+    );
   } catch (error) {
     // A handle opened before the failure would otherwise outlive the process's
     // attempt to start.
