@@ -69,21 +69,28 @@ const THREAD_ONLY =
 const queryParam = (name: string) => ({ param: { name, in: "query" as const, required: false } });
 
 /**
- * The full §9.2 grammar. Values OR within a comma-separated parameter and AND
- * across parameters, so `type=note,view&tag=finance` reads "notes or views that
- * are tagged finance".
+ * The structured filters, and **the only definition of them**. `GET /api/docs`
+ * and `GET /api/search` share this shape rather than each spelling the grammar
+ * out, because SHARED-006 Edit 7 makes that sharing a promise: `/api/search`'s
+ * "structured filters are the same set, with the same semantics (including the
+ * archived default), as `GET /api/docs`". Two hand-maintained lists that have to
+ * agree is exactly the drift the promise forbids, so a filter added here appears
+ * on both endpoints with no second edit — `openapi.test.ts` walks this shape and
+ * asserts the two published parameter sets are identical, filter by filter.
+ *
+ * Three parameters `GET /api/docs` carries are deliberately **not** here:
+ *
+ * - `q` is the query, not a filter, and its optionality is the one thing the two
+ *   endpoints genuinely disagree about — optional on the collection query (which
+ *   is a list first), required on ranked retrieval (which is nothing without it).
+ *   Each endpoint therefore declares its own, with its own description.
+ * - `pinned` and `sort` are board and list concerns, and the signed
+ *   `/api/search` parameter list omits them: ranked retrieval has one order, its
+ *   ranking.
+ * - `offset` rides on {@link PaginationQuerySchema}, which `/api/search` does not
+ *   compose: a ranked result set is a top-k, not a page.
  */
-export const DocsQuerySchema = PaginationQuerySchema.extend({
-  q: z
-    .string()
-    .min(1)
-    .optional()
-    .openapi({
-      ...queryParam("q"),
-      description:
-        "Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry " +
-        "`snippets`; without `q` every row's `snippets` array is empty.",
-    }),
+export const docFilterShape = {
   type: z
     .string()
     .min(1)
@@ -193,6 +200,42 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
       type: "boolean",
       description: `Threads whose last turn is newer than your last-seen mark (SPEC.md §7).${THREAD_ONLY}`,
     }),
+  needs: NeedsFilterSchema.optional().openapi({
+    ...queryParam("needs"),
+    description:
+      "The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons " +
+      `(${NEEDS_REASONS.join(", ")}) back the per-reason chips. Composes with the other filters by ` +
+      "intersection — `needs=me&folder=finance` is Attention within that folder.",
+  }),
+} as const;
+
+/**
+ * Published parameter order is `…, unread, pinned, needs, sort`, so the shared
+ * filters are spread in two runs with the board-only `pinned` between them.
+ * Order is not cosmetic here: `openapi.test.ts` pins the parameter list, and
+ * it is what keeps `openapi.json` byte-stable across regenerations. A filter
+ * added to {@link docFilterShape} still lands on both endpoints untouched by
+ * this split — it joins the first run.
+ */
+const { needs: needsFilter, ...filtersBeforePinned } = docFilterShape;
+
+/**
+ * The full §9.2 grammar. Values OR within a comma-separated parameter and AND
+ * across parameters, so `type=note,view&tag=finance` reads "notes or views that
+ * are tagged finance".
+ */
+export const DocsQuerySchema = PaginationQuerySchema.extend({
+  q: z
+    .string()
+    .min(1)
+    .optional()
+    .openapi({
+      ...queryParam("q"),
+      description:
+        "Full-text query (FTS5) across document titles, bodies and turn bodies. Matching rows carry " +
+        "`snippets`; without `q` every row's `snippets` array is empty.",
+    }),
+  ...filtersBeforePinned,
   pinned: z
     .stringbool()
     .optional()
@@ -206,13 +249,7 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
         "on the rows, so no per-column follow-up read is ever needed (SPEC.md §11). Not " +
         "thread-only: any type may carry the key, though only views render as columns.",
     }),
-  needs: NeedsFilterSchema.optional().openapi({
-    ...queryParam("needs"),
-    description:
-      "The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons " +
-      `(${NEEDS_REASONS.join(", ")}) back the per-reason chips. Composes with the other filters by ` +
-      "intersection — `needs=me&folder=finance` is Attention within that folder.",
-  }),
+  needs: needsFilter,
   sort: DocSortSchema.default(DEFAULT_DOC_SORT).openapi({
     ...queryParam("sort"),
     description:

@@ -15,38 +15,42 @@
 // - **Thread-only filters no-op for non-thread rows** (SPEC.md §9.2). Each is
 //   written `t.id IS NULL OR <condition>`, so `?parent=…` narrows the threads in
 //   a mixed list and leaves the documents alone rather than emptying it.
+//
+// The predicates themselves live in `./filters.ts` — the WHERE clause, the FROM
+// its aliases name and the FTS hit materialization are shared with ranked
+// retrieval (`GET /api/search`), which §9.2 requires to filter identically.
+// This module is what the *list* additionally needs: its row columns, its
+// ordering, its paging and its wire mapping.
 
 import {
   DEFAULT_DOC_SORT,
   NEEDS_REASONS,
-  STALE_TIERS,
   type DocList,
   type DocRow,
   type DocSort,
   type DocsQuery,
 } from "@corpus/contract";
-import { normalizeInstant } from "../core/time.js";
 import { bodyExcerpt, type ProjectionDb } from "../projection/index.js";
 import {
-  parseSnippets,
-  SNIPPET_CLOSE,
-  SNIPPET_ELLIPSIS,
-  SNIPPET_OPEN,
-  SNIPPET_TOKENS,
-  toFtsMatchExpression,
-} from "./fts.js";
+  compileFilters,
+  FROM_SQL,
+  FTS_HITS_CTE,
+  notArchivedSql,
+  paramsFor,
+  RELEVANCE_ORDER_BY,
+  whereClause,
+} from "./filters.js";
+import { parseSnippets } from "./fts.js";
 import {
-  ANY_REASON_SQL,
   AWAITING_AGENT_SQL,
   NEEDS_REASON_SQL,
   reasonColumn,
   rowAttention,
   UNREAD_SQL,
 } from "./needs.js";
-import { atOrBeyondSql, stalenessCutoffs, STALE_TIER_SQL, tierParam } from "./staleness.js";
+import { STALE_TIER_SQL } from "./staleness.js";
 
-/** Where documents live, and therefore what `folder` is relative to (SPEC.md §4). */
-export const DOCS_ROOT = "data/docs";
+export { DOCS_ROOT, folderPathPrefix } from "./filters.js";
 
 // Undated documents carry `created: null` / `updated: null` straight through
 // (CONTRACT-005): the projection stores NULL for a hand-written `SKILL.md` that
@@ -55,219 +59,6 @@ export const DOCS_ROOT = "data/docs";
 // not "1970", and a sentinel is a lie every consumer then has to special-case.
 // Staleness already read it that way: an unknown age is not an old one, so an
 // undated row is fresh (`stale: null`), never very-stale.
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const DUE_WEEK_DAYS = 7;
-
-/**
- * Collects bind values under stable names. `paramsFor` then hands each prepared
- * statement exactly the subset it mentions — better-sqlite3 rejects a bound name
- * the SQL does not use, and the row query and the count query never mention the
- * same set.
- */
-class Binder {
-  private readonly values: Record<string, unknown> = {};
-  private sequence = 0;
-
-  /** Binds under a generated name; returns the `@placeholder` to splice into SQL. */
-  next(prefix: string, value: unknown): string {
-    const name = `${prefix}_${String(this.sequence)}`;
-    this.sequence += 1;
-    this.values[name] = value;
-    return `@${name}`;
-  }
-
-  /** Binds under a fixed name, for fragments that spell the placeholder themselves. */
-  fixed(name: string, value: unknown): void {
-    this.values[name] = value;
-  }
-
-  all(): Readonly<Record<string, unknown>> {
-    return this.values;
-  }
-}
-
-const PLACEHOLDER = /@[A-Za-z_][A-Za-z0-9_]*/g;
-
-function paramsFor(sql: string, bound: Readonly<Record<string, unknown>>): Record<string, unknown> {
-  const used = new Set((sql.match(PLACEHOLDER) ?? []).map((name) => name.slice(1)));
-  return Object.fromEntries(Object.entries(bound).filter(([name]) => used.has(name)));
-}
-
-/** Comma-separated values OR within one parameter (SPEC.md §9.2's grammar). */
-function csv(value: string): string[] {
-  return value
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
-}
-
-const LIKE_SPECIAL = /[\\%_]/g;
-
-/** Escapes a LIKE prefix so a folder named `q_1` cannot match `q11`. */
-function likePrefix(value: string): string {
-  return `${value.replace(LIKE_SPECIAL, (char) => `\\${char}`)}%`;
-}
-
-/**
- * `folder` is accepted as a bare name (`finance`), with the root spelled out
- * (`data/docs/finance`), with a trailing slash, or as `/` for the root itself.
- * Returns the workspace-relative path prefix every match must start with.
- */
-export function folderPathPrefix(folder: string): string {
-  let relative = folder.trim().replace(/^\/+|\/+$/g, "");
-  if (relative === DOCS_ROOT) relative = "";
-  else if (relative.startsWith(`${DOCS_ROOT}/`)) relative = relative.slice(DOCS_ROOT.length + 1);
-  return relative === "" ? `${DOCS_ROOT}/` : `${DOCS_ROOT}/${relative}/`;
-}
-
-/** Calendar date `days` from now, in UTC — never string arithmetic on the ISO text. */
-const calendarDate = (nowMs: number, days = 0): string =>
-  new Date(nowMs + days * MS_PER_DAY).toISOString().slice(0, 10);
-
-/**
- * §11's default lifecycle rule — "archived documents are organizational, not
- * deleted, and drop out of the default set" — as one fragment parameterized by
- * the row it judges. Written once because it is applied in two places that must
- * agree: the collection query's own WHERE clause, and the `unreadThreads`
- * aggregate, whose contract is to equal the count that clause returns.
- */
-const notArchivedSql = (alias: string): string => `${alias}.status <> 'archived'`;
-
-interface Compiled {
-  readonly conditions: string[];
-  readonly binder: Binder;
-  /** The FTS5 expression, or `null` when `q` was absent or carried no token. */
-  readonly match: string | null;
-  /** True when `q` was present but unsearchable — the result set is empty by construction. */
-  readonly emptyByQuery: boolean;
-}
-
-function compileFilters(query: DocsQuery, nowMs: number): Compiled {
-  const binder = new Binder();
-  const conditions: string[] = [];
-  const today = calendarDate(nowMs);
-  const cutoffs = stalenessCutoffs(nowMs);
-
-  // Referenced by the Attention columns and the staleness tier every response
-  // carries, so always bound. `paramsFor` then hands each statement only the
-  // cutoffs its own SQL spells — the COUNT query mentions none of them unless a
-  // filter put one in the WHERE clause.
-  binder.fixed("today", today);
-  for (const tier of STALE_TIERS) binder.fixed(`cutoff_${tierParam(tier)}`, cutoffs[tier]);
-
-  if (query.type !== undefined) {
-    const types = csv(query.type).map((type) => binder.next("type", type));
-    conditions.push(types.length === 0 ? "0" : `d.type IN (${types.join(", ")})`);
-  }
-
-  // SPEC.md §11: archived documents are organizational, not deleted — they drop
-  // out of the default set and come back only when they are asked for. There are
-  // two ways to ask and they mean different things (CONTRACT-012): `status`
-  // *narrows* to one lifecycle state, so `status=archived` is archived and
-  // nothing else, while `includeArchived` *widens* the default into the union the
-  // board's "include archived" chip promises. `status` replaces the default
-  // outright, which is why `includeArchived` alongside it is a documented no-op
-  // rather than a second filter — nothing below reads it in that case.
-  //
-  // The union is spelled `1` rather than by pushing nothing, so this rule always
-  // contributes a condition: `conditions` is never empty and the WHERE clause
-  // always parses, whatever else the caller asked for.
-  conditions.push(
-    query.status !== undefined
-      ? `d.status = ${binder.next("status", query.status)}`
-      : query.includeArchived === true
-        ? "1"
-        : notArchivedSql("d"),
-  );
-
-  if (query.tag !== undefined) {
-    const tags = csv(query.tag).map((tag) => binder.next("tag", tag.toLowerCase()));
-    conditions.push(
-      tags.length === 0
-        ? "0"
-        : `EXISTS (SELECT 1 FROM json_each(d.tags_json) tg WHERE lower(tg.value) IN (${tags.join(", ")}))`,
-    );
-  }
-
-  if (query.folder !== undefined) {
-    // §11 folder scoping: a folder column shows the documents filed there *and*
-    // the conversations about them, so a thread inherits its parent's folder.
-    const prefix = binder.next("folder", likePrefix(folderPathPrefix(query.folder)));
-    conditions.push(
-      `(d.path LIKE ${prefix} ESCAPE '\\' OR EXISTS (
-         SELECT 1 FROM documents p WHERE p.id = t.parent_id AND p.path LIKE ${prefix} ESCAPE '\\'))`,
-    );
-  }
-
-  if (query.parent !== undefined) {
-    conditions.push(`(t.id IS NULL OR t.parent_id = ${binder.next("parent", query.parent)})`);
-  }
-
-  if (query.references !== undefined) {
-    conditions.push(
-      `EXISTS (SELECT 1 FROM links l WHERE l.from_id = d.id AND l.to_id = ${binder.next("ref", query.references)})`,
-    );
-  }
-
-  if (query.agent !== undefined) {
-    conditions.push(`(t.id IS NULL OR t.agent = ${binder.next("agent", query.agent)})`);
-  }
-
-  if (query.author !== undefined) {
-    conditions.push(`(t.id IS NULL OR t.last_author = ${binder.next("author", query.author)})`);
-  }
-
-  if (query.since !== undefined) {
-    // Normalized because the column holds canonical second-precision instants
-    // and the comparison is lexicographic: `…T00:00:00.000Z` would sort after
-    // its own second and silently drop a matching row.
-    const since = normalizeInstant(query.since) ?? query.since;
-    conditions.push(`(d.updated IS NOT NULL AND d.updated > ${binder.next("since", since)})`);
-  }
-
-  if (query.due !== undefined) {
-    // A non-keyword `due` is already a bare `YYYY-MM-DD` — `IsoDateSchema` pins
-    // exactly the shape the column holds, so there is nothing to normalize.
-    const bound =
-      query.due === "overdue"
-        ? undefined
-        : query.due === "today"
-          ? today
-          : query.due === "week"
-            ? calendarDate(nowMs, DUE_WEEK_DAYS)
-            : query.due;
-    conditions.push(
-      bound === undefined
-        ? `(d.due IS NOT NULL AND d.due < ${binder.next("due", today)})`
-        : `(d.due IS NOT NULL AND d.due <= ${binder.next("due", bound)})`,
-    );
-  }
-
-  if (query.stale !== undefined) conditions.push(atOrBeyondSql(query.stale));
-
-  if (query.unread !== undefined) {
-    conditions.push(
-      `(t.id IS NULL OR ${UNREAD_SQL} = ${binder.next("unread", query.unread ? 1 : 0)})`,
-    );
-  }
-
-  // Not thread-only: any document may carry `pinned`, though only a view
-  // renders as a column (SPEC.md §11). `pinned=true&type=view&sort=order` is
-  // the board's entire column set, in one bounded query.
-  if (query.pinned !== undefined) {
-    conditions.push(`d.pinned = ${binder.next("pinned", query.pinned ? 1 : 0)}`);
-  }
-
-  if (query.needs !== undefined) {
-    conditions.push(query.needs === "me" ? ANY_REASON_SQL : NEEDS_REASON_SQL[query.needs]);
-  }
-
-  const match = query.q === undefined ? null : toFtsMatchExpression(query.q);
-  if (match !== null) binder.fixed("q", match);
-
-  return { conditions, binder, match, emptyByQuery: query.q !== undefined && match === null };
-}
 
 /** Every ordering ends in `d.id` so paging over ties is stable (TEST-49). */
 const ORDER_BY: Readonly<Record<DocSort, string>> = {
@@ -284,13 +75,10 @@ const ORDER_BY: Readonly<Record<DocSort, string>> = {
   // numbers; the title rung matches the `title` sort's collation so two ways of
   // asking for alphabetical never disagree.
   order: "d.sort_order IS NULL, d.sort_order ASC, d.title COLLATE NOCASE ASC, d.id ASC",
-  // FTS5 `rank` is a bm25 score: more negative is a better match.
-  relevance: "m.rank ASC, d.id ASC",
+  // FTS5 `rank` is a bm25 score: more negative is a better match. Shared with
+  // ranked retrieval rather than restated, so the product has one ranking.
+  relevance: RELEVANCE_ORDER_BY,
 };
-
-const FROM_SQL = `FROM documents d
-  LEFT JOIN threads t ON t.id = d.id
-  LEFT JOIN seen s ON s.thread_id = d.id`;
 
 /**
  * Three more joins the *page* needs and the COUNT does not: the anchor a thread
@@ -373,17 +161,13 @@ const ROW_COLUMNS = `${STALE_TIER_SQL} AS stale,
          ${UNREAD_THREADS_SQL} AS unread_threads`;
 
 /**
- * `snippet()` is an FTS5 auxiliary function and refuses to run in an aggregate
- * or correlated context, so the hits are materialized first — the `MATERIALIZED`
- * hint is load-bearing, not a performance note: without it SQLite flattens the
- * subquery into the aggregate and the statement fails to run at all.
+ * The list's aggregate over {@link FTS_HITS_CTE}: one row per document, ranked
+ * by its best-matching passage, carrying every matching row's snippets as JSON
+ * for the row's `snippets` array. Ranked retrieval aggregates the same hits
+ * differently (it wants the best passage, not all of them) — the shared half is
+ * the materialization and the bm25 `rank` it selects.
  */
-const HITS_CTE = `hits AS MATERIALIZED (
-    SELECT doc_id, kind, ref, rank,
-           snippet(search, 3, '${SNIPPET_OPEN}', '${SNIPPET_CLOSE}', '${SNIPPET_ELLIPSIS}', ${String(SNIPPET_TOKENS)}) AS title,
-           snippet(search, 4, '${SNIPPET_OPEN}', '${SNIPPET_CLOSE}', '${SNIPPET_ELLIPSIS}', ${String(SNIPPET_TOKENS)}) AS body
-      FROM search WHERE search MATCH @q
-  ),
+const HITS_CTE = `${FTS_HITS_CTE},
   m AS (
     SELECT doc_id AS id, MIN(rank) AS rank,
            json_group_array(json_object('kind', kind, 'ref', ref, 'title', title, 'body', body)) AS snippets
@@ -530,12 +314,7 @@ const sortOf = (sort: DocSort, searching: boolean): DocSort =>
  */
 export function queryDocs(db: ProjectionDb, query: DocsQuery, nowMs: number): DocList {
   const compiled = compileFilters(query, nowMs);
-
-  // Never empty: the archived rule contributes a condition whatever else the
-  // caller asked for.
-  const conditions = [...compiled.conditions];
-  if (compiled.emptyByQuery) conditions.push("0");
-  const where = `WHERE ${conditions.join("\n    AND ")}`;
+  const where = whereClause(compiled);
 
   // `sort=relevance` without `q` is a 400 from the contract's own refinement, so
   // the only way to reach it here is a `q` that carried no indexable token —

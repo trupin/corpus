@@ -2,6 +2,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { contractRoutes } from "@corpus/contract";
 import type { ProjectionDb } from "../projection/index.js";
 import { queryDocs } from "./query.js";
+import { relatedDocs } from "./related.js";
 import { folderTree } from "./tree.js";
 import { mountDocWriteRoutes } from "./write-routes.js";
 import { createDocumentMutex, type DocsWorkspace, type DocumentMutex } from "./write.js";
@@ -45,6 +46,14 @@ export function mountDocsRoutes(
   );
 
   app.openapi(contractRoutes.getTree, (c) => c.json(folderTree(projection), 200));
+
+  // The third pure projection read (SPEC.md §7 Retrieval discipline, §9.2):
+  // expansion from a known document through the `links` graph. Reads `links`
+  // and `documents`, writes nothing, takes no lock — so it mounts here and not
+  // with the file-backed surface below.
+  app.openapi(contractRoutes.relatedDocs, (c) =>
+    c.json(relatedDocs(projection, c.req.valid("param").id, c.req.valid("query")), 200),
+  );
 
   if (options.workspace !== undefined) {
     mountDocWriteRoutes(app, options.workspace, options.mutex ?? createDocumentMutex());

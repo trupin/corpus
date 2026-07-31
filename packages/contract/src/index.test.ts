@@ -17,6 +17,8 @@ describe("@corpus/contract entry point", () => {
     "QueueEventSchema",
     "LockSchema",
     "JobSchema",
+    "SearchResultsSchema",
+    "RelatedDocsSchema",
     "ApiErrorSchema",
     "InvalidatePayloadSchema",
     "WarningSchema",

@@ -51,6 +51,7 @@ import { mountPluginRoutes, type DiscoveredPlugin } from "./plugins/index.js";
 import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
 import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
+import { mountSearchRoutes } from "./search/index.js";
 import {
   createQueueService,
   mountQueueRoutes,
@@ -350,6 +351,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // against the other (SERVER-006).
     const mutex = createDocumentMutex();
     mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace });
+
+    // Ranked retrieval (SPEC.md §7, §9.2). A pure projection read like the
+    // collection query it filters identically to, so it mounts here rather than
+    // with the file-backed surface — and inside this block, because a server
+    // built without a database has no index to rank.
+    mountSearchRoutes(app, deps.projection, { now });
 
     const threadsWorkspace: ThreadsWorkspace = {
       ...docsWorkspace,

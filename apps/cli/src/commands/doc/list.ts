@@ -1,17 +1,13 @@
-import {
-  ACTORS,
-  DOC_SORTS,
-  DOC_STATUSES,
-  NEEDS_FILTERS,
-  STALE_TIERS,
-  THREAD_AGENT_STATES,
-  type DocList,
-  type DocRow,
-} from "@corpus/contract";
+import { DOC_SORTS, type DocList, type DocRow } from "@corpus/contract";
 import type { paths } from "@corpus/contract/client";
-import { UsageError } from "../../errors.js";
 import { plural } from "../../input.js";
-import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import type {
+  FlagSpec,
+  WorkspaceCommandContext,
+  WorkspaceCommandSpec,
+} from "../../registry/types.js";
+import { oneLine, renderColumns } from "../columns.js";
+import { collectDocFilters, DOC_FILTER_FLAGS, insertFlagAfter, oneOf } from "../filters.js";
 
 /**
  * `corpus doc list` — the enumeration verb (SPEC.md §9.2, §11). Until it
@@ -42,6 +38,15 @@ const MAX_TITLE = 60;
  */
 type DocsListQuery = NonNullable<paths["/api/docs"]["get"]["parameters"]["query"]>;
 
+/** The board's own filter, which ranked retrieval has no use for and does not accept. */
+const PINNED_FLAG: FlagSpec = {
+  name: "pinned",
+  type: "boolean",
+  description:
+    "Only documents pinned to the board as columns (SPEC.md §11) — in practice `type: view` " +
+    "documents. Selects the pinned side only.",
+};
+
 export async function runDocList(context: WorkspaceCommandContext): Promise<void> {
   const query = collectQuery(context);
 
@@ -67,30 +72,16 @@ export async function runDocList(context: WorkspaceCommandContext): Promise<void
  * the route is here — a filter the agent cannot reach from the CLI is a filter
  * it has to re-implement by reading every row.
  *
- * The enumerated values are checked against the contract's own lists rather than
- * sent for the server to reject: `--from`'s precedent (`input.ts`) is that a
- * misspelled enum is a usage error naming the alternatives, not a `400` the
- * server had to be asked for. Open-valued parameters — `type`, `tag`, `folder`,
- * `due`, ids — are passed through verbatim, because the CLI does not know the
- * plugin types, the workspace's tags or its folders, and pretending otherwise
- * would refuse valid queries.
+ * The fourteen structured filters come from the shared module `corpus search`
+ * also uses (`../filters.ts`), because the two endpoints are contracted to take
+ * the same set. What is collected here is what is genuinely this verb's: the
+ * optional `q`, the board's `--pinned`, and the ordering and paging a ranked
+ * top-k has no use for.
  */
 function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
   const { flags } = context;
 
   const q = flags.string("q");
-  const type = flags.string("type");
-  const tag = flags.string("tag");
-  const folder = flags.string("folder");
-  const status = oneOf(context, "status", DOC_STATUSES);
-  const parent = flags.string("parent");
-  const references = flags.string("references");
-  const agent = oneOf(context, "agent", THREAD_AGENT_STATES);
-  const author = oneOf(context, "author", ACTORS);
-  const since = flags.string("since");
-  const due = flags.string("due");
-  const stale = oneOf(context, "stale", STALE_TIERS);
-  const needs = oneOf(context, "needs", NEEDS_FILTERS);
   const sort = oneOf(context, "sort", DOC_SORTS);
   const limit = flags.number("limit");
   const offset = flags.number("offset");
@@ -100,68 +91,25 @@ function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
   // and an absent key is exactly what "no such filter" means on the wire.
   return {
     ...(q === undefined ? {} : { q }),
-    ...(type === undefined ? {} : { type }),
-    ...(tag === undefined ? {} : { tag }),
-    ...(folder === undefined ? {} : { folder }),
-    ...(status === undefined ? {} : { status }),
-    ...(parent === undefined ? {} : { parent }),
-    ...(references === undefined ? {} : { references }),
-    ...(agent === undefined ? {} : { agent }),
-    ...(author === undefined ? {} : { author }),
-    ...(since === undefined ? {} : { since }),
-    ...(due === undefined ? {} : { due }),
-    ...(stale === undefined ? {} : { stale }),
-    ...(needs === undefined ? {} : { needs }),
+    ...collectDocFilters(context),
     ...(sort === undefined ? {} : { sort }),
     ...(limit === undefined ? {} : { limit }),
     ...(offset === undefined ? {} : { offset }),
-    // These select only their true side: absent means "no such filter", and the
-    // false side is a query the board's chips do not offer either.
-    ...(flags.boolean("include-archived") ? { includeArchived: true } : {}),
-    ...(flags.boolean("unread") ? { unread: true } : {}),
+    // Selects only its true side: absent means "no such filter", and the false
+    // side is a query the board's chips do not offer either.
     ...(flags.boolean("pinned") ? { pinned: true } : {}),
   };
 }
 
-function oneOf<T extends string>(
-  context: WorkspaceCommandContext,
-  name: string,
-  allowed: readonly T[],
-): T | undefined {
-  const value = context.flags.string(name);
-  if (value === undefined) return undefined;
-
-  const match = allowed.find((candidate) => candidate === value);
-  if (match === undefined) {
-    throw new UsageError(`--${name} must be one of: ${allowed.join(", ")} — got "${value}".`);
-  }
-  return match;
-}
-
 /** One row per document, columns padded to the widest value in the page. */
 function renderRows(items: readonly DocRow[]): readonly string[] {
-  const cells = items.map((item) => [item.id, item.type, item.status, title(item), item.path]);
-  // The last column is left ragged: padding a path to the widest one in the
-  // page adds trailing spaces to every line and buys nothing.
-  const widths = cells[0]?.slice(0, -1).map((_, column) => widest(cells, column)) ?? [];
-
-  return cells.map((row) =>
-    row
-      .map((cell, column) => (column < widths.length ? pad(cell, widths[column]) : cell))
-      .join("  "),
+  return renderColumns(
+    items.map((item) => [item.id, item.type, item.status, title(item), item.path]),
   );
 }
 
-function widest(cells: readonly (readonly string[])[], column: number): number {
-  return cells.reduce((max, row) => Math.max(max, row[column]?.length ?? 0), 0);
-}
-
-function pad(cell: string, width = 0): string {
-  return cell.padEnd(width);
-}
-
 function title(item: DocRow): string {
-  const collapsed = item.title.replace(/\s+/g, " ").trim();
+  const collapsed = oneLine(item.title);
   if (collapsed === "") return "(untitled)";
   return collapsed.length <= MAX_TITLE ? collapsed : `${collapsed.slice(0, MAX_TITLE - 1)}…`;
 }
@@ -212,105 +160,10 @@ export const listCommand: WorkspaceCommandSpec = {
         "Full-text query across titles, bodies and turn bodies. Matching rows carry `snippets`, " +
         "which `--json` includes; `--sort relevance` needs this flag and is refused without it.",
     },
-    {
-      name: "type",
-      type: "string",
-      valueName: "a,b",
-      description:
-        "Comma-separated document types; values OR together. Core types: `note`, `thread`, " +
-        "`view`, `template`, `skill`, `agent-def`, plus whatever a plugin defines.",
-    },
-    {
-      name: "tag",
-      type: "string",
-      valueName: "a,b",
-      description: "Comma-separated tags; values OR together.",
-    },
-    {
-      name: "folder",
-      type: "string",
-      valueName: "path",
-      description:
-        "Path prefix under `data/docs/`, matching the folder and its descendants. Threads inherit " +
-        "their parent's folder.",
-    },
-    {
-      name: "status",
-      type: "string",
-      valueName: "status",
-      description: `Lifecycle status: ${DOC_STATUSES.join(", ")}. Passing it replaces the default archived exclusion.`,
-    },
-    {
-      name: "include-archived",
-      type: "boolean",
-      description:
-        "Include archived documents **alongside** the rest, rather than excluding them — the " +
-        "board's archived chip. A no-op next to an explicit `--status`.",
-    },
-    {
-      name: "needs",
-      type: "string",
-      valueName: "reason",
-      description: `The Attention filter (SPEC.md §11): ${NEEDS_FILTERS.join(", ")}. \`me\` is the union of every reason.`,
-    },
-    {
-      name: "parent",
-      type: "string",
-      valueName: "doc-id",
-      description: "Threads whose parent is this document. Thread-only.",
-    },
-    {
-      name: "references",
-      type: "string",
-      valueName: "doc-id",
-      description: "Documents whose body contains `[[<doc-id>]]` — the backlinks of that document.",
-    },
-    {
-      name: "agent",
-      type: "string",
-      valueName: "state",
-      description: `Agent participation state: ${THREAD_AGENT_STATES.join(", ")}. Thread-only.`,
-    },
-    {
-      name: "author",
-      type: "string",
-      valueName: "user|agent",
-      description: "Author of the thread's last turn. Thread-only.",
-    },
-    {
-      name: "unread",
-      type: "boolean",
-      description:
-        "Only threads whose last turn is newer than your last-seen mark. Thread-only, and it " +
-        "selects the unread side only — there is no flag for the read side.",
-    },
-    {
-      name: "pinned",
-      type: "boolean",
-      description:
-        "Only documents pinned to the board as columns (SPEC.md §11) — in practice `type: view` " +
-        "documents. Selects the pinned side only.",
-    },
-    {
-      name: "due",
-      type: "string",
-      valueName: "date|keyword",
-      description:
-        "An ISO date (due on or before it) or one of `overdue`, `today`, `week`, resolved against " +
-        "the workspace's clock.",
-    },
-    {
-      name: "since",
-      type: "string",
-      valueName: "iso",
-      description: "Documents updated strictly after this ISO 8601 instant.",
-    },
-    {
-      name: "stale",
-      type: "string",
-      valueName: "tier",
-      description: `Staleness tier (SPEC.md §5) and beyond: ${STALE_TIERS.join(", ")}. Evergreen documents never match.`,
-    },
+    // The structured filters, from the one definition `corpus search` shares.
+    // `--pinned` is this verb's alone and has always sat between `--unread` and
+    // `--due`, so it is spliced back in rather than the shared list being cut.
+    ...insertFlagAfter(DOC_FILTER_FLAGS, "unread", PINNED_FLAG),
     {
       name: "sort",
       type: "string",

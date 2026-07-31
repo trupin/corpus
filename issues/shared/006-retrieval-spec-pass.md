@@ -4,7 +4,7 @@
 shared (spec)
 
 ## Status
-todo
+done
 
 ## Priority
 P0
@@ -49,11 +49,11 @@ The spec-writer drafts the full behavioral amendment **in this file** (section b
 working tree currently carries an unrelated in-flight UI PR).
 
 ## Acceptance Criteria
-- [ ] Amendment draft covers Phases A/B/C behaviorally (WHAT, not HOW), placed against concrete SPEC sections with exact insertion points
-- [ ] §9.2 endpoint list additions enumerated (inventory test will pin them)
-- [ ] §7 stewardship rules amended for retrieval-first agent behavior
-- [ ] Local-first embedder default + provider-switch-forces-rebuild semantics stated
-- [x] User sign-off recorded here; amendments applied to SPEC.md afterwards (application pending — first commit of the retrieval phase branch)
+- [x] Amendment draft covers Phases A/B/C behaviorally (WHAT, not HOW), placed against concrete SPEC sections with exact insertion points
+- [x] §9.2 endpoint list additions enumerated (inventory test will pin them)
+- [x] §7 stewardship rules amended for retrieval-first agent behavior
+- [x] Local-first embedder default + provider-switch-forces-rebuild semantics stated
+- [x] User sign-off recorded here; amendments applied to SPEC.md afterwards (applied 2026-07-31 on `phase-7-retrieval-a`)
 
 ## Amendment Draft
 
@@ -253,6 +253,7 @@ zero-config model choice; doctor drift-vs-staleness split; ranked-search-vs-list
 classification. Scheduling decision, same round: **retrieval Phases A/B/C slot after
 the existing Phase 6 backlog** (the 7 ready issues land first).
 
-Amendments are applied to SPEC.md as the first commit of the retrieval phase branch —
-not before (the working tree carried an unrelated in-flight UI PR at sign-off time).
-This issue closes when the applied text matches the draft.
+**Applied 2026-07-31 on `phase-7-retrieval-a`** — all 13 edits transcribed verbatim into
+SPEC.md (§1, §2.2 rule 1, §7, §9.1, §9.2, §11, §14). Edit 13's replacement retains the
+later-added report-only-warnings sentence as its final sentence. The applied text matches
+the draft; this issue is closed.

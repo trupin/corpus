@@ -50,6 +50,12 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
     tags: [
       { name: "health", description: "Liveness and readiness." },
       { name: "docs", description: "The document collection and individual documents." },
+      {
+        name: "search",
+        description:
+          "Retrieval: ranked search and related-document expansion (SPEC.md §7). Frugal by " +
+          "contract — addresses and single lines, never bodies.",
+      },
       { name: "tree", description: "The `data/docs/` folder hierarchy." },
       { name: "capture", description: "The composer's Capture action." },
       { name: "threads", description: "Threads and their turns." },

@@ -180,6 +180,7 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "doc/index.ts",
       "doc/list.ts",
       "doc/move.ts",
+      "doc/related.ts",
       "doc/show.ts",
       "doc/unarchive.ts",
       "thread/create.ts",
@@ -254,6 +255,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
     // an unguarded module.
     const modules = await commandModules();
     expect(modules.map((module) => module.path)).toEqual([
+      "columns.ts",
       "db/doctor.ts",
       "db/index.ts",
       "db/rebuild.ts",
@@ -267,8 +269,10 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "doc/index.ts",
       "doc/list.ts",
       "doc/move.ts",
+      "doc/related.ts",
       "doc/show.ts",
       "doc/unarchive.ts",
+      "filters.ts",
       "health.ts",
       "init/git.ts",
       "init/index.ts",
@@ -287,6 +291,8 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "queue/index.ts",
       "queue/poll.ts",
       "queue/transitions.ts",
+      "retrieval.ts",
+      "search.ts",
       "server/daemon.ts",
       "server/index.ts",
       "server/logs.ts",

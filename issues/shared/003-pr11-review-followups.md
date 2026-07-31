@@ -217,3 +217,15 @@ _n/a until triage._
 
 ## Completion Checklist (orchestrator)
 - [ ] All findings dispositioned
+
+## Phase 7 eval ledger additions (2026-07-31)
+
+- **`/openapi.json` and `/doc` fall through to the SPA shell** — a 200 with HTML
+  (carrying the runtime-config bearer token, by SERVER-024 design) answers what a
+  tool meant as an API request; the real document lives at `/api/openapi.json`.
+  Consider a 404 or redirect for well-known API-ish paths at triage. Localhost-only;
+  not urgent.
+- **`docs/cli.md`'s `doc related --json` example shows `"semanticIndex":"current"`**,
+  which Phase A servers never emit (contract-legal, illustrative of Phase B) —
+  recorded so it isn't re-litigated as drift.
+- EPIPE on piped output → filed as CLI-024.

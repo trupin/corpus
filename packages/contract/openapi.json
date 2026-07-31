@@ -26,6 +26,10 @@
       "description": "The document collection and individual documents."
     },
     {
+      "name": "search",
+      "description": "Retrieval: ranked search and related-document expansion (SPEC.md §7). Frugal by contract — addresses and single lines, never bodies."
+    },
+    {
       "name": "tree",
       "description": "The `data/docs/` folder hierarchy."
     },
@@ -991,6 +995,65 @@
           "message"
         ]
       },
+      "RelatedDocs": {
+        "type": "object",
+        "properties": {
+          "related": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RelatedDoc"
+            },
+            "description": "Most related first, ties broken deterministically. Never contains the document itself, and empty when nothing relates to it."
+          },
+          "semanticIndex": {
+            "type": "string",
+            "enum": [
+              "current",
+              "indexing",
+              "stale",
+              "disabled"
+            ],
+            "description": "Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer."
+          }
+        },
+        "required": [
+          "related"
+        ]
+      },
+      "RelatedDoc": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "The related document. Always a document that exists: the `links` table deliberately stores references to documents that have not been created yet (SPEC.md §9.1), and handing the agent an id it cannot then read would be worse than omitting the row.",
+            "example": "doc_a1b2c3"
+          },
+          "title": {
+            "type": "string",
+            "description": "The related document's current title."
+          },
+          "excerpt": {
+            "type": "string",
+            "description": "A single plain-text line from the start of the document — enough to recognise it, never enough to read it. Distinct from a list row's `excerpt`, which is a multi-line leading slice: this one is collapsed to one line so a client prints one row per line."
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "linked",
+              "similar",
+              "both"
+            ],
+            "description": "How this document is related: `linked` — the reference graph connects them (an outgoing `[[ref]]`, a backlink, or both directions); `similar` — semantic similarity only; `both` — linked *and* semantically similar. **Retrieval Phase A emits only `linked`**; the other two arrive with the semantic index (SPEC.md §9.1) and are in the vocabulary now so their arrival changes no shape."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "excerpt",
+          "relation"
+        ]
+      },
       "UpdateDocResponse": {
         "type": "object",
         "properties": {
@@ -1271,6 +1334,60 @@
           "folder"
         ],
         "additionalProperties": false
+      },
+      "SearchResults": {
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "description": "Best match first, ties broken deterministically so the same query twice returns the same order. Empty when nothing matched — an empty ranking, never an error."
+          },
+          "semanticIndex": {
+            "type": "string",
+            "enum": [
+              "current",
+              "indexing",
+              "stale",
+              "disabled"
+            ],
+            "description": "Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer."
+          }
+        },
+        "required": [
+          "hits"
+        ]
+      },
+      "SearchHit": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "The document the passage lives in — a thread id for a hit inside a thread, since threads are documents (SPEC.md §6). One hit per document: a document matching in several places is ranked by its best passage and reported once.",
+            "example": "doc_a1b2c3"
+          },
+          "title": {
+            "type": "string",
+            "description": "The document's current title, for a line the agent can read."
+          },
+          "headingPath": {
+            "type": "string",
+            "description": "Where inside the document the best-matching passage sits — its address, rendered as the enclosing headings from outermost to innermost joined by ` › ` (`HEADING_PATH_SEPARATOR`). A passage with no heading above it reports the document's title, so a hit always has an address. For a hit inside a thread turn it is that turn's heading (SPEC.md §6, §9.2). A **display join**: print it, never split it."
+          },
+          "snippet": {
+            "type": "string",
+            "description": "One line of context around the match, in plain text: a single line — no newline, and none of the delimiters the full-text index marks matches with — short enough that a client prints one hit per row. It is a *taste* of the passage and never the passage: no client should try to reconstruct content from it, and no server should widen it into one."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "headingPath",
+          "snippet"
+        ]
       },
       "FolderTree": {
         "type": "object",
@@ -3532,6 +3649,94 @@
         }
       }
     },
+    "/api/docs/{id}/related": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Documents most related to this one",
+        "description": "The documents most related to this one, ranked, in retrieval's frugal shape: id, title, a one-line excerpt, and **why** each is related — never bodies. Retrieval Phase A relates through the reference graph only (outgoing `[[refs]]` and backlinks, via the projection's `links` table), so every row is `linked`; from Phase B, semantically similar documents join the same ranked list and rows are labelled `linked` / `similar` / `both` without the shape moving (SPEC.md §9.1). Archived documents are excluded unless `includeArchived` lifts the default, like every list. A reference to a document that does not exist is not a row: the `links` table stores dangling references on purpose, and an id the caller cannot read is worse than no row. `404` when the document itself is unknown. Read-only; no acting party.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Identifier of any document; threads are documents too.",
+              "example": "doc_a1b2c3"
+            },
+            "required": true,
+            "description": "Identifier of any document; threads are documents too.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10,
+              "description": "How many related documents to return (1–50, default 10) — the same frugal cap ranked search uses, for the same reason."
+            },
+            "required": false,
+            "description": "How many related documents to return (1–50, default 10) — the same frugal cap ranked search uses, for the same reason.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "description": "Lift the default archived exclusion. Archived documents are left out of the related set by default, like every list (SPEC.md §11); `true` widens it into the **union**. Archiving is organizational rather than deletion, so an archived neighbour is still a real relation — it is just not what an agent expanding from a live document usually wants first."
+            },
+            "required": false,
+            "description": "Lift the default archived exclusion. Archived documents are left out of the related set by default, like every list (SPEC.md §11); `true` widens it into the **union**. Archiving is organizational rather than deletion, so an archived neighbour is still a real relation — it is just not what an agent expanding from a live document usually wants first.",
+            "name": "includeArchived",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Related documents, most related first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelatedDocs"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/docs/{id}/move": {
       "post": {
         "tags": [
@@ -3806,6 +4011,263 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LockedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Ranked retrieval across the corpus",
+        "description": "Ranked retrieval over documents, threads and turns. `q` is required — a ranked list with nothing to rank is `GET /api/docs`, not a degraded search. The structured filters are the same set with the same semantics as `GET /api/docs`, archived default included, and are declared from the same schema so the two cannot drift; `pinned`, `sort` and `offset` are not among them and are ignored if sent (a ranked set has one order and no pages). Each hit is an **address plus a line of context** — the document id, its title, the heading path of the best-matching passage (for a hit inside a thread turn, that turn's heading), and a one-line snippet — and **never a body**: reading one is a separate, deliberate `GET /api/docs/{id}` on a retrieved id. Phase A ranks lexically (FTS5); from Retrieval Phase B, lexical and semantic relevance combine into one list with this exact response shape, and `semanticIndex` reports when that half is not caught up (SPEC.md §9.1) — the response's one Phase B seam, inert today. Read-only; no acting party.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The query, and the only required parameter. Phase A matches it lexically (FTS5) across document titles, bodies and turn bodies, exactly as `GET /api/docs`'s `q` does; from Phase B the same string is also matched semantically and the two relevances combine into one ranked list (SPEC.md §9.1). Missing or empty is a `400`, never an unranked everything."
+            },
+            "required": true,
+            "description": "The query, and the only required parameter. Phase A matches it lexically (FTS5) across document titles, bodies and turn bodies, exactly as `GET /api/docs`'s `q` does; from Phase B the same string is also matched semantically and the two relevances combine into one ranked list (SPEC.md §9.1). Missing or empty is a `400`, never an unranked everything.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because plugins define their own types (SPEC.md §5, §10)."
+            },
+            "required": false,
+            "description": "Comma-separated document types; values OR together. Core values: note, thread, view, template, skill, agent-def. Open rather than enumerated because plugins define their own types (SPEC.md §5, §10).",
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved",
+                "archived"
+              ],
+              "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter."
+            },
+            "required": false,
+            "description": "Restrict to a lifecycle status. Omitted, the default result set **excludes** `status: archived` (SPEC.md §11); passing `status` explicitly overrides that default, so `status=archived` selects archived documents *only*. To see archived documents **alongside** the rest, use `includeArchived=true` — that is the archived chip, not this parameter.",
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "description": "Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's \"include archived\" reading (SPEC.md §11) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`."
+            },
+            "required": false,
+            "description": "Lift the default archived exclusion. `true` widens the default result set into the **union** of archived and non-archived documents — the archived chip's \"include archived\" reading (SPEC.md §11) — where `status=archived` selects archived documents *only*. Absent or `false` keeps today's behaviour. It modifies the **default** and nothing else, so it is a no-op alongside an explicit `status`: `status` already replaces the default filter, and `status=open&includeArchived=true` is just `status=open`.",
+            "name": "includeArchived",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme."
+            },
+            "required": false,
+            "description": "Comma-separated tags; values OR together. Tags are validated comma-free on write, so the separator needs no escaping scheme.",
+            "name": "tag",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §11)."
+            },
+            "required": false,
+            "description": "Path prefix relative to `data/docs/`, matching the folder and its descendants. Threads inherit their parent document's folder (SPEC.md §11).",
+            "name": "folder",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+              "example": "doc_a1b2c3"
+            },
+            "required": false,
+            "description": "Threads whose `parent` is this document id. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "parent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "Documents whose body contains `[[<id>]]`, read from the projection's `links` table (SPEC.md §9.1). Powers the backlinks panel and the `references:` filter chip.",
+              "example": "doc_a1b2c3"
+            },
+            "required": false,
+            "description": "Documents whose body contains `[[<id>]]`, read from the projection's `links` table (SPEC.md §9.1). Powers the backlinks panel and the `references:` filter chip.",
+            "name": "references",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "none",
+                "requested",
+                "engaged"
+              ],
+              "description": "Agent participation state from the thread's frontmatter (SPEC.md §6). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2)."
+            },
+            "required": false,
+            "description": "Agent participation state from the thread's frontmatter (SPEC.md §6). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "agent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent"
+              ],
+              "description": "Author of the thread's last turn — the \"awaiting your answer\" half of Attention. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2)."
+            },
+            "required": false,
+            "description": "Author of the thread's last turn — the \"awaiting your answer\" half of Attention. Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "author",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-07-19T10:05:00Z",
+              "description": "ISO 8601 instant; matches documents whose `updated` is strictly after it. Distinct from `due`, which is a calendar date or a keyword."
+            },
+            "required": false,
+            "description": "ISO 8601 instant; matches documents whose `updated` is strictly after it. Distinct from `due`, which is a calendar date or a keyword.",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date",
+                  "example": "2026-08-01"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "overdue",
+                    "today",
+                    "week"
+                  ]
+                }
+              ],
+              "description": "Either an ISO calendar date (due on or before that date) or one of overdue, today, week. Keywords are resolved server-side against the workspace's clock."
+            },
+            "required": false,
+            "description": "Either an ISO calendar date (due on or before that date) or one of overdue, today, week. Keywords are resolved server-side against the workspace's clock.",
+            "name": "due",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "aging",
+                "stale",
+                "very-stale"
+              ],
+              "description": "Staleness tier (SPEC.md §5), selecting documents at or beyond it — `aging` includes stale and very-stale. Documents with `evergreen: true` never match."
+            },
+            "required": false,
+            "description": "Staleness tier (SPEC.md §5), selecting documents at or beyond it — `aging` includes stale and very-stale. Documents with `evergreen: true` never match.",
+            "name": "stale",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "description": "Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2)."
+            },
+            "required": false,
+            "description": "Threads whose last turn is newer than your last-seen mark (SPEC.md §7). Thread-only: it no-ops for non-thread types rather than erroring (SPEC.md §9.2).",
+            "name": "unread",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "me",
+                "unread-reply",
+                "form",
+                "due",
+                "stale",
+                "failed-job"
+              ],
+              "description": "The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder."
+            },
+            "required": false,
+            "description": "The Attention filter (SPEC.md §11). `me` is the union of every reason; the individual reasons (unread-reply, form, due, stale, failed-job) back the per-reason chips. Composes with the other filters by intersection — `needs=me&folder=finance` is Attention within that folder.",
+            "name": "needs",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10,
+              "description": "How many hits to return (1–50, default 10). Lower than the list endpoints' cap on purpose: retrieval is read by an agent that pays for every line, and a top-ten is what a ranked list is for. There is no `offset` — a ranked result set is a top-k, not a page; widen `limit` or narrow the filters."
+            },
+            "required": false,
+            "description": "How many hits to return (1–50, default 10). Lower than the list endpoints' cap on purpose: retrieval is read by an agent that pays for every line, and a top-ten is what a ranked list is for. There is no `offset` — a ranked result set is a top-k, not a page; widen `limit` or narrow the filters.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hits, best match first; an empty list when nothing matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request failed schema validation; `issues` names the offending fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
                 }
               }
             }
