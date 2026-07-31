@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-30T00:00:00Z
+updated: 2026-07-31T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -62,6 +62,12 @@ authority. Read them as binding, and go there when a detail is missing.
 5. **Progress is logged.** Append a line with `corpus job log <eventId> "<line>"` at each
    notable step — what you read, what you changed, what you deferred. The console tails it
    live while the person waits.
+6. **You retrieve; you never enumerate.** Locating something is `corpus search "<query>"` or
+   `corpus doc related <id>` — one frugal line per hit and never a body — never a folder
+   listing and never a sweep over the corpus to see what is in it. Reading a body is the
+   separate, deliberate next step on an id retrieval returned: `corpus doc show <id>`. When
+   you hand work to a subagent it receives those anchors — ids, heading paths, snippets —
+   and never a document body; it retrieves what it needs itself.
 
 ## Gather context
 
@@ -72,10 +78,13 @@ Read before you act, and read in this order. Two rules govern where a read comes
   come from `corpus doc show <id>` — anchors resolve against the current body server-side, so
   the file on disk cannot answer that question. Lock state and job state are CLI reads too.
   Never parse anything under `.corpus/`; it is runtime state, not a source.
-- **Content may be read from the tree.** Reading `data/docs/` markdown directly — to survey
-  which folders exist, or to skim a neighbouring document — is a read, not a mutation, and it
-  is allowed. Anything anchored, anything about a thread, and anything you are about to change
-  still comes from `corpus doc show` first.
+- **Locating goes through retrieval.** Finding *where* something is said is
+  `corpus search "<query>"` — one line per hit: the document id, the heading path of the
+  matching passage, a snippet, never a body — and `corpus doc related <id>` expands from a
+  document you already hold. Never list `data/docs/`, never open files to find out what they
+  are about: what it costs you to find something must not grow with the corpus. Reading
+  follows retrieval, one id at a time and only where the ranking pointed — and it is
+  `corpus doc show <id>`, never the markdown on disk.
 
 Which reads you need is set by the thread's shape, which `corpus thread show` names on its
 anchoring line:
@@ -154,9 +163,12 @@ Pick the smallest shape that actually answers the request.
   it a folder, tag it, and reference it from the reply.
 - **Spawn a subagent** when the work is long enough that a person should not sit on a pending
   indicator waiting for it. **Reply first**, saying what you are doing and that you will come
-  back; then hand off. The subagent works through the CLI like you do and never touches queue
-  accounting. When it finishes, the server's `agent.done` event wakes the orchestrate skill,
-  which routes the result back so the thread gets its closing reply.
+  back; then hand off. Its prompt carries the task and the anchors it starts from — the ids,
+  heading paths and snippets `corpus search` printed, pasted as they printed — and never a
+  document body: it retrieves and reads through the same verbs you do. The subagent works
+  through the CLI like you do and never touches queue accounting. When it finishes, the
+  server's `agent.done` event wakes the orchestrate skill, which routes the result back so
+  the thread gets its closing reply.
 - **Route into a plugin** when the request belongs to a plugin's domain. Invoke the skill
   installed at `.claude/skills/<plugin>/` and let it own its document types; never edit a
   plugin's documents field by field from here. The plugin's skill knows the shape; you know
@@ -195,11 +207,14 @@ capture's id is the event's `parentId`. File it end to end:
    **Expansion adds structure, never content** — do not invent a number, a date, a name or a
    decision the capture did not contain. When the intent itself is unclear, ask instead of
    guessing, and leave the document where it is until you have the answer.
-4. **Choose a destination.** Survey the folders that already exist by reading `data/docs/` and
+4. **Choose a destination by finding its neighbours.** Search for the documents this capture
+   belongs beside — `corpus search "<what the capture is about>" --limit 5` — then
+   `corpus doc show <id>` on the closest hit, whose path names the folder it lives in, and
    prefer one that already holds similar documents — an existing `finance/` beats a new
-   `money/` every time. Create a new folder only when the document is a genuine category the
-   corpus does not have yet; the folder comes into being on the move, so there is no separate
-   step.
+   `money/` every time. Never go looking through the tree for folder names. When the search
+   comes back with nothing related, the document is a genuine category the corpus does not
+   have yet: name the new folder from its subject. The folder comes into being on the move,
+   so there is no separate step.
 5. **Move it out of `inbox/`** — `corpus doc move <id> --folder finance --from agent`.
 6. **Tag it** — `corpus doc edit <id> --add-tag finance --add-tag housing --from agent`.
 7. **Reply with what it became and where it lives**, naming the document by `[[id]]`.
@@ -322,8 +337,9 @@ about behavior.
 
 **Where it goes.**
 
-- **Extend an existing skill when one fits.** Read what is installed under `.claude/skills/`,
-  pick the skill whose job the pattern belongs to, and edit it — including this one, whose
+- **Extend an existing skill when one fits.** Find the skill whose job the pattern belongs to
+  the way you find anything else — `corpus search "<the pattern>" --type skill`, since a
+  skill is indexed like every other document — and edit it, including this one, whose
   subject is exactly how threads are handled. A skill is a document:
   `corpus doc edit <skillDocId> --from agent` with a heredoc body, keeping **both** frontmatter
   field sets intact — `name` and `description` for Claude Code, `id`/`type`/`title`/`tags`/
@@ -445,6 +461,10 @@ Check the home and auto policies against current replacement costs each quarter.
 
 - Which quarter does the current policy renew in?
 EOF
+corpus search "home and auto insurance policies" --limit 5
+doc_3f9a01  Home policy renewal › Replacement cost  …the home policy's replacement cost was last checked in March…
+doc_c14be7  Auto policy notes › Premiums            …the auto premium rose 8% at the last renewal…
+corpus doc show doc_3f9a01  # its path is data/docs/finance/home-policy-renewal.md — that is the folder
 corpus doc move doc_5c8b2f --folder finance --from agent
 corpus doc edit doc_5c8b2f --add-tag insurance --add-tag review --from agent
 corpus job log evt_2e4f8b "filed [[doc_5c8b2f]] into finance/"

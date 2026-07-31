@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-30T00:00:00Z
+updated: 2026-07-31T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -50,6 +50,14 @@ everything after depends on them.
 5. **`corpus queue idle` is the only wait.** Never `sleep`, never poll the queue, never
    busy-wait: `idle` parks you on a held response, so waiting costs zero tokens and ends the
    instant work arrives.
+6. **You retrieve; you never enumerate.** Locating something is always
+   `corpus search "<query>"` — ranked, one line per hit: a document id, the heading path of
+   the matching passage, a snippet, and never a body — or `corpus doc related <id>` to expand
+   from a document you already hold. Never list a folder, never sweep the tree, never read
+   documents to find out what is in them: what it costs you to find something must not grow
+   with the corpus. Reading a body is a separate, deliberate act on an id retrieval handed
+   you: `corpus doc show <id>`. The rule crosses the subagent boundary intact — a dispatch
+   carries anchors, never documents (Delegation).
 
 ## The loop
 
@@ -149,11 +157,21 @@ Dispatch through Claude Code's subagent mechanism — the Task (Agent) tool — 
 the background**, one subagent per event. A subagent inherits nothing, so its prompt
 carries everything: the event id and type, the payload's ids (thread, parent, the
 documents named), which skill to apply (the routing row, or the `@<subagent>` persona the
-payload directs to), and the binding rules below. Its report comes back as the task's
-final message. You park on `corpus queue idle` — never on a subagent — and reports are
-waiting whenever parking returns: on a new event, or on the ~8-minute rearm. On every
-return, settle what has reported, then claim. Settlement never depends on any queue event
-announcing the subagent; the report itself is the signal.
+payload directs to), the anchors it should start from, and the binding rules below. Its
+report comes back as the task's final message. You park on `corpus queue idle` — never on a
+subagent — and reports are waiting whenever parking returns: on a new event, or on the
+~8-minute rearm. On every return, settle what has reported, then claim.
+Settlement never depends on any queue event announcing the subagent; the report itself is
+the signal.
+
+**A dispatch carries anchors, not documents.** The payload's ids are anchors already; when
+the work plainly needs context the payload does not name, retrieve it before dispatching —
+`corpus search "<the request's subject>" --limit 5`, or `corpus doc related <id>` from a
+document you already hold — and paste the top few lines back verbatim, ids and heading
+paths and snippets as they printed. That is the whole context transfer: never paste a
+document body into a prompt, never hand over a file, and never ask a subagent to report the
+corpus's contents back to you. The subagent reads what it decides it needs —
+`corpus doc show <id>` on one of those ids — through the same verbs you used to find them.
 
 **Pick the subagent's model by the task's weight** — small, mechanical work goes to a
 smaller, faster model; judgment goes to the strongest:
@@ -176,6 +194,10 @@ than assuming them:
 - `export CORPUS_FROM=agent` before the first mutation and `--from agent` on mutating
   commands — a subagent inherits no environment, and a change attributed to the wrong
   party is a corrupted audit trail.
+- Retrieval discipline binds inside the subagent exactly as it binds you: it locates with
+  `corpus search` and `corpus doc related`, opens a body only with `corpus doc show` on an
+  id one of them returned, and never lists or sweeps the corpus. It works from the anchors
+  the dispatch gave it and is never handed — and never asks for — a corpus dump.
 - Locks are respected exactly as the edit verbs enforce them: a refused write is reported
   back, never retried blind, never broken.
 - Progress lines go to **the dispatching event's job** — `corpus job log <eventId>
@@ -361,6 +383,11 @@ applying the comment skill; delegation dilutes none of it. The charter:
   one.
 - **Overgrown documents are split**: create the new document, connect the two with a
   `[[ref]]`, trim the original.
+- **What you steward, you found by retrieving.** The near-duplicate worth folding in and the
+  better home for a misfiled document are both one `corpus search` on the subject away, and
+  `corpus doc related <id>` walks out from the document already in front of you. Neither is
+  ever a reason to list the tree or read documents to see what they hold: retrieve, then open
+  the one id that earned it.
 - **Every change is stated in the reply that occasioned it** — one line per change, naming
   the document. Nothing you do is silent.
 - **Every turn that wrote closes with a trace line.** When a turn's work changed the corpus,
@@ -425,20 +452,25 @@ the rate assumption to be updated.
 corpus queue claim-all
 {"events":[{"id":"evt_7c1d9a","type":"comment.created","created":"2026-07-28T09:14:02Z","source":"ui","payload":{"threadId":"th_4b8e2c","parentId":"doc_a1b2c3"}}]}
 corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c"
+corpus search "rate assumption" --limit 5
+doc_a1b2c3  Mortgage options › Rates  …the working rate assumption is 6.1% as of 2026-05-02…
+doc_7e3a91  Refinance plan › Costs    …every projection here assumes 6.1% for the whole term…
 corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — one document, prescribed change)"
 ```
 
-Launch the subagent in the background — its prompt carries `evt_7c1d9a`, `th_4b8e2c`,
-`doc_a1b2c3`, the comment skill, and the binding rules from Delegation — and go straight
-back to parking:
+Two ranked lines, no bodies: that is the whole cost of finding out where the rate
+assumption lives. Launch the subagent in the background — its prompt carries `evt_7c1d9a`,
+`th_4b8e2c`, `doc_a1b2c3`, those two retrieved lines as the anchors to start from, the
+comment skill, and the binding rules from Delegation — and go straight back to parking:
 
 ```bash
 corpus queue idle
 ```
 
-Inside the subagent, the comment skill reads `th_4b8e2c` and its parent `doc_a1b2c3`,
-finds the request, and does the work — every mutation through the CLI, every progress line
-on the dispatched event's id:
+Inside the subagent, the comment skill reads `th_4b8e2c` with `corpus thread show` and
+opens the one anchor that matters — `corpus doc show doc_a1b2c3`, the second line never
+read at all — finds the request, and does the work: every mutation through the CLI, every
+progress line on the dispatched event's id.
 
 ```bash
 export CORPUS_FROM=agent
