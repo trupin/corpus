@@ -217,6 +217,8 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-030 | Reader ⋯ popover: no keyboard navigation (eval finding) | todo | P2 | UI-005 |
 | UI-031 | Focus close must not adopt the column under the resting pointer (signed rule) | todo | P2 | UI-005 |
 | CLI-023 | corpus tree: expose GET /api/tree to the agent (sprint-019 OC2) | todo | P2 | CLI-003 |
+| INFRA-013 | npm-audit gate: zero findings at pre-commit and CI (user request; strict after router 8) | todo | P1 | UI-016 |
+| INFRA-014 | CI packaging: tarball on every PR, prerelease on every main merge (user request) | todo | P1 | — |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 
@@ -227,11 +229,11 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
 | SHARED-006 | Spec pass: retrieval (signed; apply amendment at phase kickoff) | done | P0 | — |
-| CONTRACT-022 | Routes: GET /api/search + GET /api/docs/{id}/related (frozen shapes) | todo | P0 | SHARED-006 |
-| SERVER-040 | /api/search: lexical ranked retrieval with heading-path hits | todo | P1 | CONTRACT-022 |
-| SERVER-041 | /api/docs/:id/related: links-graph expansion | todo | P1 | CONTRACT-022 |
-| CLI-019 | `corpus search` + `corpus doc related` token-frugal verbs | todo | P1 | CONTRACT-022, SERVER-040, SERVER-041 |
-| AGENT-008 | Retrieval-first stewardship rules in the product skills | todo | P1 | CLI-019 |
+| CONTRACT-022 | Routes: GET /api/search + GET /api/docs/{id}/related (frozen shapes) | done | P0 | SHARED-006 |
+| SERVER-040 | /api/search: lexical ranked retrieval with heading-path hits | done | P1 | CONTRACT-022 |
+| SERVER-041 | /api/docs/:id/related: links-graph expansion | done | P1 | CONTRACT-022 |
+| CLI-019 | `corpus search` + `corpus doc related` token-frugal verbs | done | P1 | CONTRACT-022, SERVER-040, SERVER-041 |
+| AGENT-008 | Retrieval-first stewardship rules in the product skills | done | P1 | CLI-019 |
 
 ## Phase 8 — Retrieval B: semantic index
 
