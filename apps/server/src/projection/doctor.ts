@@ -13,6 +13,7 @@ import { openProjectionReadonly, type ProjectionConfig, type ProjectionDb } from
 import { hashContent, readDocumentIdentity } from "./project-document.js";
 import { listQueueEventFiles } from "./project-runtime.js";
 import { enumerateDocuments, type EnumeratedFile } from "./roots.js";
+import { collectUnindexableFiles, type DoctorWarning } from "./unindexable.js";
 
 export const DRIFT_KINDS = [
   /** A document file exists but the projection has no row for it. */
@@ -41,6 +42,13 @@ export type Drift = {
 export type DoctorReport = {
   readonly ok: boolean;
   readonly drift: readonly Drift[];
+  /**
+   * Report-only findings that are not drift, and that never move {@link ok}
+   * (SERVER-038). Absent when the caller asked only the drift question:
+   * {@link inspectProjection} is the boot catch-up's, and it must stay exactly
+   * as cheap as it was.
+   */
+  readonly warnings?: readonly DoctorWarning[];
   readonly stats: {
     /** Document files found under the roots. */
     readonly files: number;
@@ -216,12 +224,28 @@ export function inspectProjection(db: ProjectionDb): DoctorReport {
 /**
  * Compare the projection against the files. Returns a structured report;
  * turning it into output and an exit code belongs to the CLI (CLI-004).
+ *
+ * This is also where the recovery pass runs (SERVER-038): the files
+ * `classifyPath` refuses are invisible to the drift check by construction, so
+ * they are collected separately and reported as `warnings`, which never move
+ * `ok` and never change the exit code. It runs here rather than inside
+ * {@link inspectProjection} because the other caller of that function is the
+ * boot catch-up, which asks a narrower question on the boot path and must keep
+ * paying only for that one. `durationMs` covers both passes — a stat that
+ * excluded half the work would be the wrong number to watch.
  */
 export function doctor(config: ProjectionConfig): DoctorReport {
+  const startedAt = Date.now();
   const db = openProjectionReadonly(config);
+  let report: DoctorReport;
   try {
-    return inspectProjection(db);
+    report = inspectProjection(db);
   } finally {
     db.close();
   }
+  return {
+    ...report,
+    warnings: collectUnindexableFiles(config.workspaceRoot),
+    stats: { ...report.stats, durationMs: Date.now() - startedAt },
+  };
 }

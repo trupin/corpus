@@ -39,6 +39,12 @@ export type {
 } from "./db.js";
 export { DRIFT_KINDS, doctor, inspectProjection } from "./doctor.js";
 export type { Drift, DoctorReport, DriftKind } from "./doctor.js";
+export {
+  DOCTOR_WARNING_KINDS,
+  UNINDEXABLE_WARNING_LIMIT,
+  collectUnindexableFiles,
+} from "./unindexable.js";
+export type { DoctorWarning, DoctorWarningKind } from "./unindexable.js";
 export { clearProjection, populateFromFiles } from "./populate.js";
 export type { PopulateReport, SkippedFile } from "./populate.js";
 export {

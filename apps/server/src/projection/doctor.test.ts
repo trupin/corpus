@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProjectionError, cacheDbPath, openProjection, type ProjectionConfig } from "./db.js";
-import { DRIFT_KINDS, doctor } from "./doctor.js";
+import { DRIFT_KINDS, doctor, inspectProjection } from "./doctor.js";
 import { projectDocument, removeDocument } from "./project-document.js";
 import { rebuild } from "./rebuild.js";
 
@@ -210,6 +210,48 @@ describe("doctor", () => {
   it("says what to run when there is no projection at all", () => {
     mkdirSync(config.corpusDir, { recursive: true });
     expect(() => doctor(config)).toThrow(ProjectionError);
+  });
+
+  it("reports a file it can never index as a warning, and the verdict stays clean", () => {
+    cleanWorkspace();
+    write("data/docs/.claude/skills/invisible-doc.md", doc("doc_invisible001"));
+
+    const report = doctor(config);
+
+    // Warnings are not drift: `ok` is the exit code `corpus db doctor` returns,
+    // and §14's `rebuild && doctor` clean invariant may not break on a workspace
+    // whose projection is right (sprint-018 TEST-609).
+    expect(report.ok).toBe(true);
+    expect(report.drift).toEqual([]);
+    expect(report.warnings?.map((warning) => warning.path)).toEqual([
+      "data/docs/.claude/skills/invisible-doc.md",
+    ]);
+    expect(report.warnings?.[0]?.kind).toBe("unindexable_file");
+
+    rebuild(config);
+    const after = doctor(config);
+    expect(after.ok).toBe(true);
+    expect(after.warnings).toHaveLength(1);
+  });
+
+  it("runs the recovery pass on a healthy workspace and finds nothing", () => {
+    cleanWorkspace();
+
+    expect(doctor(config).warnings).toEqual([]);
+  });
+
+  it("leaves the boot catch-up's narrower question exactly as it was", () => {
+    cleanWorkspace();
+    write("data/docs/node_modules/ignored-dir-doc.md", doc("doc_invisible002"));
+
+    const db = openProjection(config, { populate: false });
+    const report = inspectProjection(db);
+    db.close();
+
+    // `watcher/catch-up.ts` asks only whether files and rows agree, on the boot
+    // path; it must not pay for a second walk it does not read.
+    expect(report.warnings).toBeUndefined();
+    expect(report.ok).toBe(true);
   });
 
   it("declares every drift kind it can produce", () => {

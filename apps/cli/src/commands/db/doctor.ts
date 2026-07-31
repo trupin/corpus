@@ -18,6 +18,14 @@ export async function runDbDoctor(context: WorkspaceCommandContext): Promise<voi
   const report = await context.client.request((api) => api.GET("/api/db/doctor"));
   context.out.emit(report);
 
+  // Report-only findings, printed before the verdict and never part of it: a
+  // warning says something is worth a person's attention and the projection is
+  // nonetheless right about it, so it moves neither `ok` nor the exit code
+  // (SERVER-038). One line per finding, in the drift lines' voice.
+  for (const warning of report.warnings ?? []) {
+    context.out.line(`${warning.kind} ${warning.path ?? "(no file)"}: ${warning.detail}`);
+  }
+
   if (report.ok) {
     const { stats } = report;
     context.out.line(

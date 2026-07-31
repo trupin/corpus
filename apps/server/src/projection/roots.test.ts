@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  DOCS_ROOT,
   DOCUMENT_ROOTS,
   classifyPath,
   enumerateDocuments,
@@ -76,6 +77,13 @@ describe("classifyPath", () => {
       ".claude/skills-archived",
       ".claude/agents",
     ]);
+  });
+
+  it("names the corpus root itself, and it is the one in the list", () => {
+    // `projection/unindexable.ts` walks this root and classifies against it; a
+    // second declaration of `data/docs` is a split-brain waiting to happen.
+    expect(DOCS_ROOT.path).toBe("data/docs");
+    expect(DOCUMENT_ROOTS[0]).toBe(DOCS_ROOT);
   });
 });
 
