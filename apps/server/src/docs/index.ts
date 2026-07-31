@@ -64,11 +64,27 @@ export {
   MAX_QUERY_TOKENS,
   MAX_SNIPPETS_PER_ROW,
   SNIPPET_CLOSE,
+  SNIPPET_ELLIPSIS,
   SNIPPET_OPEN,
   parseSnippets,
   toFtsMatchExpression,
   toSegments,
 } from "./fts.js";
+// The shared read primitives (SERVER-040): ranked retrieval (`GET /api/search`)
+// filters through the *same* builder as the collection query, which is what
+// makes §9.2's "the same set, with the same semantics" true by construction
+// rather than by review.
+export {
+  Binder,
+  FROM_SQL,
+  FTS_HITS_CTE,
+  RELEVANCE_ORDER_BY,
+  compileFilters,
+  notArchivedSql,
+  paramsFor,
+  whereClause,
+} from "./filters.js";
+export type { Compiled, FilterQuery } from "./filters.js";
 export {
   AWAITING_AGENT_SQL,
   NEEDS_REASON_SQL,
@@ -77,6 +93,7 @@ export {
   rowAttention,
 } from "./needs.js";
 export { DOCS_ROOT, folderPathPrefix, queryDocs } from "./query.js";
+export { relatedDocs } from "./related.js";
 export { mountDocsRoutes } from "./routes.js";
 export type { DocsRoutesOptions } from "./routes.js";
 export { STALENESS_THRESHOLD_DAYS, STALE_TIER_SQL, stalenessCutoffs } from "./staleness.js";
