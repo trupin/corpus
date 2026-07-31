@@ -2,6 +2,7 @@ import {
   archivedMessage,
   useCreateDoc,
   useDoc,
+  useSetDocArchived,
   useUpdateDocById,
   type RowNotice,
 } from "@corpus/kit";
@@ -64,6 +65,11 @@ export function Board(): ReactElement {
   const createDoc = useCreateDoc();
   const createInColumn = useCreateInColumn();
   const updateDoc = useUpdateDocById();
+  // `e` archives through the route that owns the transition, not through a
+  // status patch: only `POST …/archive` moves a skill's folder out of
+  // `.claude/skills/` (UI-020). `updateDoc` stays for the column reorder, which
+  // really is a frontmatter write.
+  const setArchived = useSetDocArchived();
   const toast = useToast();
   const contextMenu = useContextMenu();
 
@@ -329,13 +335,13 @@ export function Board(): ReactElement {
     }
     void (async () => {
       try {
-        await updateDoc.mutateAsync({ id: target.id, changes: { status: "archived" } });
+        await setArchived.mutateAsync({ id: target.id, archived: true });
         toast({ tone: "info", message: archivedMessage(target.title) });
       } catch (cause) {
         toast({ tone: "error", message: `Archive failed — ${(cause as Error).message}` });
       }
     })();
-  }, [cursor, openDoc.data, openInActive, toast, updateDoc]);
+  }, [cursor, openDoc.data, openInActive, setArchived, toast]);
 
   /**
    * The menu key / `⇧F10` (SPEC.md §11): the same menu the pointer opens, on the

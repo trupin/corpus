@@ -333,7 +333,23 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     }
 
     if (url.pathname.startsWith("/api/docs/")) {
-      const id = decodeURIComponent(url.pathname.slice("/api/docs/".length));
+      const rest = url.pathname.slice("/api/docs/".length);
+      /*
+       * `POST …/archive` and `POST …/unarchive` — the routes that own SPEC.md
+       * §7's reversible act. The stub cannot show the half of it that matters
+       * most (a skill's folder moving on disk); that is the real-app drill's.
+       * What it can pin is that the UI calls the route at all, in both
+       * directions, rather than patching `status` through `PUT` (UI-020).
+       */
+      const [rawDocId = "", verb] = rest.split("/");
+      if (verb === "archive" || verb === "unarchive") {
+        const subject = store.get(decodeURIComponent(rawDocId));
+        if (subject === undefined) return json(route, { code: "not_found", message: rest }, 404);
+        subject.status = verb === "archive" ? "archived" : "open";
+        stampUpdated(subject);
+        return json(route, { doc: asDoc(subject), warnings: [] });
+      }
+      const id = decodeURIComponent(rest);
       if (method === "DELETE") {
         store.delete(id);
         return json(route, { deletedId: id, orphanedThreadIds: [], warnings: [] });

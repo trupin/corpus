@@ -29,8 +29,15 @@ import type { SettledCallbacks } from "./settledCallbacks.js";
  * stays in the component — a CSS class, not cache state.
  */
 
-/** Shared so the two bindings cannot drift about what a doc write invalidates. */
-function invalidateDoc(queryClient: QueryClient, docId: string): void {
+/**
+ * Shared so the bindings cannot drift about what a doc write invalidates.
+ *
+ * Exported (module-internally — it is not on the kit's public surface) so
+ * `useSetDocArchived` answers the same question the same way: archiving is a
+ * different *route*, not a different kind of write, and two invalidation lists
+ * that agree on the day they were written is how a board column stops updating.
+ */
+export function invalidateDoc(queryClient: QueryClient, docId: string): void {
   // The server's own `invalidate` frame covers a connected client; doing it
   // here too keeps the mutation correct when the stream is down, which is
   // exactly when a user is most likely to be retrying.

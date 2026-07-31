@@ -635,19 +635,22 @@ describe("the board's keyboard", () => {
     expect(container.querySelectorAll(".col.kactive")).toHaveLength(1);
   });
 
-  it("e archives the row under the cursor, through the document write", async () => {
+  /**
+   * UI-020, Adjudication 7: every surface that archives goes through the one
+   * route. This used to send `PUT {status: "archived"}`, which for a skill sets
+   * the frontmatter key and leaves the folder in `.claude/skills/`.
+   */
+  it("e archives the row under the cursor, through the route that owns the transition", async () => {
     const { wire, container } = await withRows();
     fireEvent.keyDown(document, { key: "ArrowDown" });
     expect(cursorRow(container)).toBe("doc_r1");
     fireEvent.keyDown(document, { key: "e" });
 
     await waitFor(() => {
-      expect(wire.writes("PUT")).toHaveLength(1);
+      expect(wire.writes("POST")).toHaveLength(1);
     });
-    expect(wire.writes("PUT")[0]).toMatchObject({
-      path: "/api/docs/doc_r1",
-      body: { status: "archived" },
-    });
+    expect(wire.writes("POST")[0]?.path).toBe("/api/docs/doc_r1/archive");
+    expect(wire.writes("PUT")).toHaveLength(0);
     expect(screen.getByText(/Archived/)).toBeDefined();
   });
 
@@ -668,9 +671,9 @@ describe("the board's keyboard", () => {
     });
     fireEvent.keyDown(document, { key: "e" });
     await waitFor(() => {
-      expect(wire.writes("PUT")).toHaveLength(1);
+      expect(wire.writes("POST")).toHaveLength(1);
     });
-    expect(wire.writes("PUT")[0]?.path).toBe("/api/docs/doc_r2");
+    expect(wire.writes("POST")[0]?.path).toBe("/api/docs/doc_r2/archive");
   });
 
   it("e says so rather than writing when there is nothing to archive", async () => {
@@ -680,6 +683,7 @@ describe("the board's keyboard", () => {
       expect(screen.getByText(/Nothing to archive/)).toBeDefined();
     });
     expect(wire.writes("PUT")).toHaveLength(0);
+    expect(wire.writes("POST")).toHaveLength(0);
   });
 
   it("f toggles focus mode on the open document, and is a no-op on nothing", async () => {

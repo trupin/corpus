@@ -76,12 +76,30 @@ function draftOf(doc: Doc): Draft {
   };
 }
 
+/** SPEC.md §7's reversible act, which this form is deliberately not a door to. */
+const ARCHIVED: DocStatus = "archived";
+
+/** The statuses this form may write; archiving is a route, not a status flip. */
+export const EDITABLE_STATUSES: readonly DocStatus[] = DOC_STATUSES.filter(
+  (status) => status !== ARCHIVED,
+);
+
 /**
  * The `PUT` body: only what the user changed.
  *
  * `due` is cleared with `null` rather than by omission, because omission means
  * "leave it alone" on this route — the two have to be distinguishable or a
  * deadline can never be removed.
+ *
+ * **`status` never crosses the archive boundary from here** (UI-020). Both
+ * directions belong to routes this form does not call: `POST …/archive` is the
+ * only thing that moves a skill's folder to `.claude/skills-archived/`, and
+ * `PUT` with a non-archived `status` on an archived document is refused outright
+ * with a `400` naming `POST …/unarchive` (SERVER-039). The guard lives *here*
+ * rather than only on the `<select>` because the select is not the only path to
+ * the wire: leaving the document, rebinding the reader and `pagehide` all flush
+ * through this function, and guarding the button alone would ship a refusal the
+ * user could not connect to anything they did.
  */
 export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
   const current = draftOf(doc);
@@ -89,7 +107,9 @@ export function changedFields(doc: Doc, draft: Draft): UpdateDocRequest {
   const title = draft.title.trim();
   if (title !== "" && title !== current.title) changes.title = title;
   if (draft.tags.trim() !== current.tags) changes.tags = textToTags(draft.tags);
-  if (draft.status !== current.status) changes.status = draft.status;
+  if (draft.status !== current.status && draft.status !== ARCHIVED && current.status !== ARCHIVED) {
+    changes.status = draft.status;
+  }
   if (draft.due !== current.due) changes.due = draft.due === "" ? null : draft.due;
   return changes;
 }
@@ -232,6 +252,7 @@ export function FrontmatterForm({
     setDraft({ ...value, ...change });
   };
 
+  const isArchived = doc.frontmatter.status === ARCHIVED;
   const folder = folderOf(doc.path);
 
   return (
@@ -304,17 +325,29 @@ export function FrontmatterForm({
             <select
               className="fm-input"
               value={value.status}
-              disabled={locked}
+              disabled={locked || isArchived}
               onChange={(event) => {
                 patch({ status: event.target.value as DocStatus });
               }}
             >
-              {DOC_STATUSES.map((status) => (
+              {/*
+               * `archived` is offered only as the *current* value of a document
+               * that already is, so the control has something to show — never as
+               * a destination. Picking it here would set the frontmatter key and
+               * leave a skill's folder in `.claude/skills/`, which is §7's
+               * promise with the only part that mattered missing (UI-020).
+               */}
+              {(isArchived ? DOC_STATUSES : EDITABLE_STATUSES).map((status) => (
                 <option key={status} value={status}>
                   {status}
                 </option>
               ))}
             </select>
+            <span className="fm-hint">
+              {isArchived
+                ? "archived — Unarchive in the ⋯ menu brings it back"
+                : "archive from the ⋯ menu — a status flip would not move a skill’s folder"}
+            </span>
           </label>
           <label className="fm-field">
             <span>due</span>

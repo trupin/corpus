@@ -118,6 +118,24 @@ describe("the operations map onto the contract's routes", () => {
     expect(await recorder.requests[0]?.json()).toEqual({ body: "hello" });
   });
 
+  /**
+   * UI-020. Archiving is a route, not a `PUT {status}`: only the route runs the
+   * server's folder move, and the inverse `PUT` is refused outright
+   * (SERVER-039). Asserted on the wire because "which request went out" is the
+   * entire content of the fix.
+   */
+  it.each([
+    ["archiveDoc" as const, "/api/docs/doc_a/archive"],
+    ["unarchiveDoc" as const, "/api/docs/doc_a/unarchive"],
+  ])("%s POSTs to %s with the id in the path and no body", async (method, path) => {
+    const recorder = recording({ doc: {}, warnings: [] });
+    await client(recorder)[method]("doc_a");
+    const request = recorder.requests[0];
+    expect(request?.method).toBe("POST");
+    expect(new URL(request?.url ?? "").pathname).toBe(path);
+    expect(await request?.text()).toBe("");
+  });
+
   it("authenticates every call with the configured bearer token", async () => {
     const recorder = recording({ folders: [] });
     await client(recorder).getTree();

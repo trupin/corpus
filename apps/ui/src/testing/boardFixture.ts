@@ -95,6 +95,16 @@ export function boardTransport(options: BoardTransportOptions = {}): BoardTransp
         warnings: [],
       });
     }
+    /*
+     * `POST …/archive` and `POST …/unarchive` — SPEC.md §7's reversible act, and
+     * the only routes that move a skill's folder. Answered with the mutation
+     * shape rather than falling through to the document read below, so a test
+     * asserting the wire is asserting a request the server would recognise
+     * (UI-020).
+     */
+    if (/^\/api\/docs\/[^/]+\/(?:un)?archive$/.test(url.pathname)) {
+      return json({ doc: created(url.pathname.split("/")[3] ?? ""), warnings: [] });
+    }
     if (url.pathname.startsWith("/api/docs/")) return json(created(url.pathname));
     return json({});
   };
