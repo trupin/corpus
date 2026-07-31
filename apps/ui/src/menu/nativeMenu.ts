@@ -72,7 +72,13 @@ export interface SelectionSource {
   readonly isCollapsed: boolean;
   readonly rangeCount: number;
   toString(): string;
-  getRangeAt(index: number): { readonly commonAncestorContainer: Node };
+  getRangeAt(index: number): SelectionRange;
+}
+
+/** The one range question that decides whether the pointer is on the selection. */
+export interface SelectionRange {
+  readonly commonAncestorContainer: Node;
+  intersectsNode(node: Node): boolean;
 }
 
 export interface SelectionMenuTarget {
@@ -94,6 +100,13 @@ export interface SelectionMenuTarget {
  * right-click five paragraphs down into a selection menu — and what makes the
  * auto-selected word under the cursor behave like the deliberate selection it
  * visually is.
+ *
+ * "On it" is asked of the **range**, not of the range's enclosing block (PR #13
+ * review, MINOR). A selection spanning two paragraphs has the whole body as its
+ * common ancestor, so an ancestor test answers yes for every paragraph in the
+ * document — including ones the selection does not touch at all.
+ * `intersectsNode` answers about the selected span itself, across every range a
+ * multi-range selection carries.
  */
 export function selectionMenuTarget(
   target: EventTarget | null,
@@ -106,16 +119,19 @@ export function selectionMenuTarget(
   // what someone meant to select.
   if (text.trim() === "") return null;
 
-  const container = selection.getRangeAt(0).commonAncestorContainer;
+  const ranges = Array.from({ length: selection.rangeCount }, (_unused, index) =>
+    selection.getRangeAt(index),
+  );
+  const first = ranges[0];
+  if (first === undefined) return null;
+  const container = first.commonAncestorContainer;
   const host = container instanceof Element ? container : container.parentElement;
   if (host === null) return null;
 
   const body = host.closest(BODY_HOST);
   if (body === null || body.closest(PLUGIN_SURFACE) !== null) return null;
   if (!body.contains(target)) return null;
-  // The selection's own subtree, against the pointer's: either may contain the
-  // other (the target is an element, the range is often inside one text node).
-  if (!host.contains(target) && !target.contains(host)) return null;
+  if (!ranges.some((range) => range.intersectsNode(target))) return null;
 
   return { text, editable: body.closest(EDITABLE_HOSTS) !== null };
 }

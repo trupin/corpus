@@ -71,12 +71,31 @@ global selection guard; the selection hook stops propagation when it opens, so t
 never both fire. `useAnchorLayer` gained exactly two members for the seam — `editor`
 (it is already the only holder) and `captureComment()`, which returns the live
 selection as a bound action, so Comment on selection is 💬's own path and not a second
-one. Where the selection menu could offer nothing but Copy (a `view`, a foreign lock)
-it declines — paying §11's Look-Up trade for nothing would be a straight downgrade.
-_Correction (2026-07-30 eval LEDGER-3): a selection in a thread's conversation does
-not fall through to the native menu — the reader's own item menu opens there, which
-is the correct §11 behavior (the open reader is an item); the original sentence
-overclaimed the decline list._
+one.
+
+**The rule, final (PR #13 review, MAJOR — supersedes the decline described above and
+the LEDGER-3 correction to it).** The selection menu opens on **every** document-body
+selection; the items thin out instead. Copy always; Comment where `captureComment()`
+answers (the editor's body, unlocked, with quotable text); Cut and Paste where
+`captureReplace()` answers (editable content). The first pass declined when only Copy
+was left, reasoning that the browser's menu was richer — but declining drops the event
+on the reader's handler, so a selection in a thread's conversation opened the
+**document's item menu**: neither Copy nor the native menu, and against the signed §11
+("Copy always"). Two configurations are reachable, and both are pinned by tests:
+`[comment, copy, cut, paste]` in the editor's body, and `[copy]` alone in a thread's
+conversation, a `view`, or a document under a foreign lock. Nothing in between is
+reachable — a body is editable in the DOM exactly when the editor renders it unlocked,
+which is exactly when commenting is on offer.
+
+**Two further review fixes.** (a) "The pointer is on the selection" is asked of the
+**range** (`Range.intersectsNode` across every range), not of its enclosing block: a
+multi-block selection has the whole body as its common ancestor, so the ancestor test
+answered yes for paragraphs the selection never touched. (b) Positions captured when
+the menu opens are **verified before use** — `rangeStillReads(doc, from, to, text)` in
+`editor/selection.ts`, shared by `captureReplace` and `captureComment`. A menu can sit
+open across an SSE-driven adoption of a new body; on mismatch (or a document that shrank
+past `to`, which throws out of `textBetween`) both refuse with
+`STALE_SELECTION_NOTICE` instead of cutting the wrong sentence or quoting one.
 
 ## Testing Strategy
 apps/ui scoped (VITEST_MAX_THREADS=4); e2e cases in the context-menu spec (selection menu, row-menu-despite-selection).
@@ -148,6 +167,28 @@ Board at `:5274` against the workspace server on `:8791`, driven with a real Chr
 The stubbed e2e does **not** assert the highlight after `POST /api/threads`: the stub
 pushes no invalidation, so the parent never refetches its anchors — the same split
 `anchors.spec.ts` documents. That half is proved above against the real server instead.
+
+### 5. Delta — PR #13 review fixes (same model, opus; 2026-07-30)
+
+Three findings addressed: the decline path (MAJOR), the over-approximating containment
+test (MINOR), and stale captured positions (MINOR). Same ports, same scratch workspace,
+server restarted on `:8791` (pid 46926) and Vite on `:5274`; both stopped, ports free.
+
+| Case | Evidence |
+| --- | --- |
+| MAJOR — thread conversation, real app | selection inside a turn → menu `Actions for the selection`, items `["copy"]`; the reader's `Actions for Re: …` item menu opened **0** times; `.doc-body[contenteditable='true']` count 0 (the body really is the non-editable one) |
+| MAJOR — Copy there actually copies | system clipboard read back = `Is that the 30-year or the 15?`, the turn's exact text |
+| MINOR — range precision | new unit cases: a selection spanning blocks 1–2 yields `null` for targets in blocks 3 and 5, and a target for blocks 1, 2 and the enclosing `.doc-body`. The old ancestor test answered "yes" for every block, which is what this pins |
+| MINOR — stale positions, real SSE | menu opened over a selection; `PUT /api/docs/doc_yljiks3z` issued from **outside the browser** (200) while it sat open; the editor adopted `Rewritten by the agent while the menu was open.`; activating **Cut** produced toast `The document changed under the menu — reselect and try again.` (`data-tone="error"`) and **no transaction** — the body is still the agent's text |
+| MINOR — stale positions, unit | both paths tested with a document mutated between open and activate, including one shrunk below `to` (no `RangeError`, no transaction, notice raised), plus the negative case: a change elsewhere that leaves the captured words in place still acts |
+
+Gates after the delta: `vitest run --root apps/ui src` → **103 files / 1525 tests**;
+`apps/ui/e2e/context-menu.spec.ts` → **14/14**; typecheck, lint, format clean.
+
+The Copy-only configuration has **no stubbed e2e**: `stubCorpus` answers no
+`GET /api/threads/{id}` and no locks, so neither a thread conversation nor a foreign
+lock can be mounted there. It is covered by the hook and component unit tests and by the
+real-app pass above.
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

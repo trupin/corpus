@@ -10,6 +10,7 @@ import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { beginEditing, endEditing, resetEditingRegistry } from "../editor/editingRegistry.js";
 import { parseMarkdown } from "../editor/markdown/parse.js";
+import { STALE_SELECTION_NOTICE } from "../editor/selection.js";
 import { corpusSchema } from "../editor/markdown/schema.js";
 import {
   readerTransport,
@@ -339,6 +340,63 @@ describe("capturing the live selection as a comment", () => {
     const app = mount();
     select(app.layer(), from, to);
     expect(app.layer().captureComment()).toBeNull();
+  });
+
+  /**
+   * PR #13 review, MINOR. The menu can sit open while the agent's write arrives
+   * and `DocEditor` adopts a new body; the captured positions then quote other
+   * words — the one failure this layer exists to prevent — or point past the end
+   * of a document that shrank, which throws out of `textBetween`.
+   */
+  it("refuses when the words at those positions changed under the open menu", () => {
+    const app = mount();
+    select(app.layer(), RATE_FROM, RATE_TO);
+    const comment = app.layer().captureComment();
+
+    act(() => {
+      app.replaceDocument("The rate assumption is 9.9% today.\n\nA second paragraph follows it.\n");
+    });
+    act(() => {
+      comment?.();
+    });
+
+    expect(app.layer().draft).toBeNull();
+    expect(app.notices.at(-1)).toEqual({
+      tone: "error",
+      message: STALE_SELECTION_NOTICE,
+    });
+  });
+
+  it("refuses on a document that shrank past the captured range", () => {
+    const app = mount();
+    select(app.layer(), RATE_FROM, RATE_TO);
+    const comment = app.layer().captureComment();
+
+    act(() => {
+      app.replaceDocument("Hi.\n");
+    });
+    // No throw, and no draft opened on positions the document no longer has.
+    act(() => {
+      comment?.();
+    });
+
+    expect(app.layer().draft).toBeNull();
+    expect(app.notices.at(-1)?.message).toBe(STALE_SELECTION_NOTICE);
+  });
+
+  it("still comments when the change left those words where they were", () => {
+    const app = mount();
+    select(app.layer(), RATE_FROM, RATE_TO);
+    const comment = app.layer().captureComment();
+
+    act(() => {
+      app.replaceDocument("The rate assumption is 6.1% today.\n\nA rewritten second paragraph.\n");
+    });
+    act(() => {
+      comment?.();
+    });
+
+    expect(app.layer().draft?.selection.selector.exact).toBe("6.1%");
   });
 });
 

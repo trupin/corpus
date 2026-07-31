@@ -41,6 +41,25 @@ function selectionOver(node: Node, text = node.textContent ?? ""): SelectionSour
   };
 }
 
+/** A selection running from the start of `from` to the end of `to`. */
+function selectionSpanning(from: Node, to: Node, text: string): SelectionSource {
+  const range = document.createRange();
+  range.setStartBefore(from);
+  range.setEndAfter(to);
+  return {
+    isCollapsed: false,
+    rangeCount: 1,
+    toString: () => text,
+    getRangeAt: () => range,
+  };
+}
+
+function requireElement(selector: string): Element {
+  const element = document.querySelector(selector);
+  if (element === null) throw new Error(`fixture has no ${selector}`);
+  return element;
+}
+
 const NONE: SelectionSource = {
   isCollapsed: true,
   rangeCount: 0,
@@ -106,14 +125,45 @@ describe("selectionMenuTarget", () => {
     expect(selectionMenuTarget(clicked, selectionOver(selected))).toBeNull();
   });
 
-  it("answers when the selection spans the blocks the pointer is inside", () => {
-    const body = mount('<div class="doc-body"><p id="p1">rates</p><p id="p2">other</p></div>');
-    const clicked = body.querySelector("#p2");
-    if (clicked === null) throw new Error("fixture did not render");
-
-    expect(selectionMenuTarget(clicked, selectionOver(body, "rates other"))?.text).toBe(
-      "rates other",
+  /**
+   * PR #13 review, MINOR. The ancestor test this replaced answered "yes" for
+   * every block in the body once a selection spanned two of them, because their
+   * common ancestor *is* the body — so a right-click five paragraphs down
+   * opened a selection menu for words nowhere near the pointer.
+   */
+  it("declines a block the multi-block selection does not touch", () => {
+    mount(
+      `<div class="doc-body">
+         <p id="p1">first</p><p id="p2">second</p><p id="p3">third</p>
+         <p id="p4">fourth</p><p id="p5">fifth</p>
+       </div>`,
     );
+    const spanning = selectionSpanning(
+      requireElement("#p1"),
+      requireElement("#p2"),
+      "first second",
+    );
+
+    expect(selectionMenuTarget(requireElement("#p5"), spanning)).toBeNull();
+    expect(selectionMenuTarget(requireElement("#p3"), spanning)).toBeNull();
+  });
+
+  it("answers for the blocks a multi-block selection does touch", () => {
+    mount(
+      `<div class="doc-body">
+         <p id="p1">first</p><p id="p2">second</p><p id="p3">third</p>
+       </div>`,
+    );
+    const spanning = selectionSpanning(
+      requireElement("#p1"),
+      requireElement("#p2"),
+      "first second",
+    );
+
+    expect(selectionMenuTarget(requireElement("#p1"), spanning)?.text).toBe("first second");
+    expect(selectionMenuTarget(requireElement("#p2"), spanning)?.text).toBe("first second");
+    // The body encloses the selection: a click on it is a click on the words.
+    expect(selectionMenuTarget(requireElement(".doc-body"), spanning)?.text).toBe("first second");
   });
 
   it("declines outside the document body — a row's selection belongs to the row", () => {

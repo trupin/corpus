@@ -1,6 +1,7 @@
 import type { RowNotice } from "@corpus/kit";
 import type { Editor } from "@tiptap/react";
 import { useCallback, type MouseEvent } from "react";
+import { rangeStillReads, STALE_SELECTION_NOTICE } from "../editor/selection";
 import { useContextMenu } from "./ContextMenuHost";
 import { selectionMenuTarget } from "./nativeMenu";
 import { SelectionMenuItems } from "./SelectionMenuItems";
@@ -11,18 +12,19 @@ import { SelectionMenuItems } from "./SelectionMenuItems";
  * Hosted on the document view, so the column reader and focus mode get the same
  * menu from the same code — as they do for everything else the view renders.
  *
- * **It declines rather than opens a poorer menu.** With no comment action and
- * no editing (a thread's conversation, a `view`'s query, a document held under
- * someone else's lock), all this could offer is Copy — strictly less than the
- * browser's own menu, which also has Look Up and Translate. So it lets the
- * event through, and the native menu appears. The trade §11 accepts is losing
- * those *in exchange for* Comment on selection; paying it for nothing would be
- * a straight downgrade.
+ * **It opens on every document-body selection**, and lets the items thin out:
+ * §11 says Copy always, Comment where there is something to anchor to, Cut and
+ * Paste in editable content. A thread's conversation, a `view`, and a document
+ * under someone else's lock therefore get a Copy-only menu rather than falling
+ * back to the browser's. Declining there — which is what this hook did until
+ * PR #13's review — dropped the event on the reader's handler, and the *item*
+ * menu opened on a text selection: neither Copy nor the native menu.
  *
  * Everything is captured **at open time**: the selected text, the comment
  * action's range, and the range Cut and Paste act on. Opening a menu moves
  * focus out of the body, and an action that re-read the selection when it was
- * activated would act on a selection that no longer exists.
+ * activated would act on a selection that no longer exists. Captured positions
+ * are **verified before they are used** — see {@link captureReplace}.
  */
 
 export interface SelectionContextMenuOptions {
@@ -42,14 +44,30 @@ export const SELECTION_MENU_LABEL = "Actions for the selection";
  * A plain-text transaction rather than TipTap's `insertContentAt`, which parses
  * its string as HTML: pasting `a <b` into a document must paste those four
  * characters, not open an element.
+ *
+ * **The captured positions are checked before they are used** (PR #13 review,
+ * MINOR). A menu can sit open while the agent's write arrives over SSE and
+ * `DocEditor` adopts a new body; the positions then index into a document that
+ * no longer has that text at them — or, on a shrunken document, into nothing at
+ * all, which is a `RangeError` out of `textBetween`. Re-reading the captured
+ * text is the cheap proof that the range still means what it meant, and a
+ * refusal the user can act on beats a Cut that deletes the wrong sentence.
  */
-export function captureReplace(editor: Editor | null): ((text: string) => void) | null {
+export function captureReplace(
+  editor: Editor | null,
+  onStale: () => void,
+): ((text: string) => void) | null {
   if (editor === null || editor.isDestroyed || !editor.isEditable) return null;
   const { from, to, empty } = editor.state.selection;
   if (empty) return null;
+  const captured = editor.state.doc.textBetween(from, to, "\n", "");
   return (text: string) => {
     if (editor.isDestroyed) return;
     const { state, view } = editor;
+    if (!rangeStillReads(state.doc, from, to, captured)) {
+      onStale();
+      return;
+    }
     view.dispatch(text === "" ? state.tr.delete(from, to) : state.tr.insertText(text, from, to));
     view.focus();
   };
@@ -67,8 +85,10 @@ export function useSelectionContextMenu({
       const found = selectionMenuTarget(event.target);
       if (found === null) return;
       const comment = captureComment();
-      const replace = found.editable ? captureReplace(editor) : null;
-      if (comment === null && replace === null) return;
+      const stale = (): void => {
+        onNotify({ tone: "error", message: STALE_SELECTION_NOTICE });
+      };
+      const replace = found.editable ? captureReplace(editor, stale) : null;
 
       event.preventDefault();
       // The reader's own handler sits on an ancestor and would open the

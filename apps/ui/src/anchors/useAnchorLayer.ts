@@ -3,7 +3,7 @@ import { useCreateThread, type RowNotice } from "@corpus/kit";
 import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useIsEditing } from "../editor/editingRegistry";
-import type { EditorSelection } from "../editor/selection";
+import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
 import {
   anchorDecorationPlugin,
@@ -456,11 +456,22 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const captureComment = useCallback((): (() => void) | null => {
     if (editor === null || editor.isDestroyed || locked || !editable) return null;
     const { from, to, empty } = editor.state.selection;
-    if (empty || editor.state.doc.textBetween(from, to, "\n", "").trim() === "") return null;
+    if (empty) return null;
+    const quoted = editor.state.doc.textBetween(from, to, "\n", "");
+    if (quoted.trim() === "") return null;
     return () => {
+      if (editor.isDestroyed) return;
+      // The menu can sit open across an SSE-driven adoption of a new body, and
+      // the captured positions then point at other words — or, on a shrunken
+      // document, past its end (PR #13 review, MINOR). Quoting the wrong
+      // sentence is the one failure the anchor layer exists to prevent.
+      if (!rangeStillReads(editor.state.doc, from, to, quoted)) {
+        onNotify({ tone: "error", message: STALE_SELECTION_NOTICE });
+        return;
+      }
       openDraft(from, to);
     };
-  }, [editable, editor, locked, openDraft]);
+  }, [editable, editor, locked, onNotify, openDraft]);
 
   const onAnchors = useCallback((incoming: AnchorReport): void => {
     setReport((current) => {

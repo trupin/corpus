@@ -75,23 +75,27 @@ function items(): string[] {
   return screen.getAllByRole("menuitem").map((item) => item.dataset["act"] ?? "");
 }
 
+/**
+ * The two shapes the app actually mounts (PR #13 review, NIT 4 + MAJOR).
+ *
+ * The document body is either the editor's — unlocked, so commentable *and*
+ * editable — or it is not the editor's at all: a thread's conversation, a
+ * `view`'s query, or a document under someone else's lock, where neither
+ * commenting nor editing is on offer and §11's "Copy always" is the whole menu.
+ * There is no reachable state in between, which is why only these two are
+ * pinned here.
+ */
 describe("the selection menu's item set", () => {
-  it("puts Comment first and offers the clipboard basics in editable content", () => {
+  it("puts Comment first and offers the clipboard basics in the editor's body", () => {
     stubClipboard({ writeText: vi.fn() });
     mount({ editable: true });
     expect(items()).toEqual(["comment", "copy", "cut", "paste"]);
   });
 
-  it("offers Copy alone where the selection cannot be edited", () => {
+  it("is Copy alone where the body is neither commentable nor editable", () => {
     stubClipboard({ writeText: vi.fn() });
-    mount({ editable: false });
-    expect(items()).toEqual(["comment", "copy"]);
-  });
-
-  it("drops Comment where there is nothing to anchor to", () => {
-    stubClipboard({ writeText: vi.fn() });
-    mount({ editable: true, commentable: false });
-    expect(items()).toEqual(["copy", "cut", "paste"]);
+    mount({ editable: false, commentable: false });
+    expect(items()).toEqual(["copy"]);
   });
 });
 

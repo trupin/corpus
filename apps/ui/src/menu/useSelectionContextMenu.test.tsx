@@ -111,16 +111,21 @@ describe("the document body's selection menu", () => {
     expect(host.readerMenu()).toBe(1);
   });
 
-  it("lets the native menu through when all it could offer is Copy", () => {
-    // No comment action and no editing: a thread's conversation, a `view`, or a
-    // document under someone else's lock. The browser's menu is richer.
+  /**
+   * PR #13 review, MAJOR. Declining here dropped the event on the reader's
+   * handler, so a selection in a thread's conversation opened the **document's**
+   * menu — neither Copy nor the browser's own. §11 says Copy always.
+   */
+  it("opens a Copy-only menu where nothing else is on offer", () => {
+    // A thread's conversation, a `view`, or a document under someone else's lock.
     const host = mount({ comment: null });
     selectQuote();
 
     rightClick("#quote");
 
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(host.readerMenu()).toBe(1);
+    expect(screen.getByRole("menu", { name: SELECTION_MENU_LABEL })).toBeTruthy();
+    expect(screen.getAllByRole("menuitem").map((item) => item.dataset["act"])).toEqual(["copy"]);
+    expect(host.readerMenu()).toBe(0);
   });
 
   it("does nothing without a selection", () => {
@@ -142,10 +147,14 @@ describe("captureReplace", () => {
     });
   }
 
+  const never = (): void => {
+    throw new Error("the range was reported stale");
+  };
+
   it("replaces exactly the range that was selected when the menu opened", () => {
     const editor = editorWith("rates moved");
     editor.commands.setTextSelection({ from: 1, to: 6 });
-    const replace = captureReplace(editor);
+    const replace = captureReplace(editor, never);
 
     // The menu takes focus and the caret collapses: the captured range is what
     // the act must still use.
@@ -159,7 +168,7 @@ describe("captureReplace", () => {
   it("deletes the range for a cut, without parsing anything", () => {
     const editor = editorWith("rates moved");
     editor.commands.setTextSelection({ from: 1, to: 7 });
-    captureReplace(editor)?.("");
+    captureReplace(editor, never)?.("");
 
     expect(editor.state.doc.textContent).toBe("moved");
     editor.destroy();
@@ -168,7 +177,7 @@ describe("captureReplace", () => {
   it("pastes markup as the literal text it is", () => {
     const editor = editorWith("rates");
     editor.commands.setTextSelection({ from: 1, to: 6 });
-    captureReplace(editor)?.("a <b> c");
+    captureReplace(editor, never)?.("a <b> c");
 
     expect(editor.state.doc.textContent).toBe("a <b> c");
     editor.destroy();
@@ -180,14 +189,73 @@ describe("captureReplace", () => {
   ])("declines when %s", (_case, make) => {
     const editor = make();
     editor?.commands.setTextSelection({ from: 1, to: 6 });
-    expect(captureReplace(editor)).toBeNull();
+    expect(captureReplace(editor, never)).toBeNull();
     editor?.destroy();
   });
 
   it("declines when nothing is selected", () => {
     const editor = editorWith("rates");
     editor.commands.setTextSelection({ from: 3, to: 3 });
-    expect(captureReplace(editor)).toBeNull();
+    expect(captureReplace(editor, never)).toBeNull();
+    editor.destroy();
+  });
+});
+
+/**
+ * PR #13 review, MINOR: a menu can sit open across an SSE-driven adoption of a
+ * new body, and the positions it captured then index into other words — or past
+ * the end of a document that shrank, which is a `RangeError` out of
+ * `textBetween` rather than a refusal.
+ */
+describe("captureReplace on a document that moved underneath it", () => {
+  function adopt(editor: Editor, html: string): void {
+    // What `DocEditor` dispatches when the server's copy arrives.
+    editor.commands.setContent(html, false);
+  }
+
+  it("refuses rather than replacing other words at the same positions", () => {
+    const editor = new Editor({ extensions: corpusExtensions(), content: "<p>rates moved</p>" });
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+    const stale = vi.fn();
+    const replace = captureReplace(editor, stale);
+
+    adopt(editor, "<p>PRICE moved</p>");
+    replace?.("prices");
+
+    expect(stale).toHaveBeenCalledOnce();
+    expect(editor.state.doc.textContent).toBe("PRICE moved");
+    editor.destroy();
+  });
+
+  it("refuses on a document that shrank past the captured range", () => {
+    const editor = new Editor({ extensions: corpusExtensions(), content: "<p>rates moved</p>" });
+    editor.commands.setTextSelection({ from: 7, to: 12 });
+    const stale = vi.fn();
+    const replace = captureReplace(editor, stale);
+
+    adopt(editor, "<p>hi</p>");
+    // No throw, no transaction: the positions are past the end of the document.
+    replace?.("prices");
+
+    expect(stale).toHaveBeenCalledOnce();
+    expect(editor.state.doc.textContent).toBe("hi");
+    editor.destroy();
+  });
+
+  it("still acts when the document changed elsewhere and the range reads the same", () => {
+    const editor = new Editor({
+      extensions: corpusExtensions(),
+      content: "<p>rates moved</p><p>later</p>",
+    });
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+    const stale = vi.fn();
+    const replace = captureReplace(editor, stale);
+
+    adopt(editor, "<p>rates moved</p><p>a different second paragraph</p>");
+    replace?.("prices");
+
+    expect(stale).not.toHaveBeenCalled();
+    expect(editor.state.doc.textContent).toBe("prices moveda different second paragraph");
     editor.destroy();
   });
 });
