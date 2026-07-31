@@ -1,6 +1,5 @@
 import {
   DOC_STATUSES,
-  RESERVED_FRONTMATTER_KEYS,
   type AnchorReconciliation,
   type Doc,
   type DocStatus,
@@ -15,6 +14,20 @@ import {
   type InputDependencies,
 } from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import {
+  combineExtraPatches,
+  parseExtraFlags,
+  parseExtraJsonFlags,
+  parseViewFlags,
+  VIEW_KEY_FLAGS,
+} from "./frontmatter.js";
+
+/**
+ * The value grammar and the `--extra` parser moved to `./frontmatter.js` when
+ * `doc create` grew the same flags (CLI-018); they are re-exported because this
+ * verb is where they are documented and where their tests live.
+ */
+export { parseExtraFlags, parseExtraValue } from "./frontmatter.js";
 
 /**
  * `corpus doc edit` — the save path, and the one place anchor reconciliation is
@@ -160,131 +173,6 @@ function assertNotArchived(current: Doc, id: string, status: DocStatus): void {
   );
 }
 
-/**
- * The `--extra` value grammar (CLI-016, sprint-017 Adjudication 12). Total by
- * construction: every input maps to exactly one JSON value, and the rules are
- * published in the flag's own description, which is what `docs/cli.md` carries.
- *
- * 1. `null` deletes the key — the server's `extra` patch is RFC 7386, so `null`
- *    removes rather than stores (`apps/server/src/docs/update.ts`).
- * 2. `true` / `false` are booleans.
- * 3. A **canonical, finite** JSON number literal is a number. Canonical matters:
- *    `007` and `1.` are not JSON numbers, so they stay strings and an identifier
- *    that happens to be digits is not silently arithmetic.
- * 4. A JSON **string literal** is its own contents — the escape hatch that lets
- *    `--extra note='"520"'` store the characters `520`, and the only way to
- *    store the literal text `null`.
- * 5. Everything else is the string exactly as typed, including the empty one.
- *
- * Numbers are rule 3 rather than an opt-in because the one promise this flag
- * exists to keep needs one: the board reads `extra.width` with
- * `typeof raw !== "number"` and falls back to its default for anything else
- * (`apps/ui/src/board/columnWidth.ts`), so `--extra width=520` storing `"520"`
- * would be a passing unit test and a column that never widens.
- *
- * **Finiteness is the load-bearing half of rule 3** (wave-3 audit, FIX 1).
- * `1e400` is a perfectly canonical JSON number literal whose double is
- * `Infinity`, `JSON.stringify` writes `Infinity` as `null`, and the server's
- * `extra` patch is RFC 7386 — so an overflowing number silently *deleted* the
- * key it was meant to set. Gating on `Number.isFinite` and falling through to
- * rule 5 is the `parse-args.ts` `readNumber` pattern, and it keeps the grammar
- * total in the sense that matters: the value is stored, as the characters that
- * were typed, rather than being turned into a deletion nobody asked for.
- *
- * A finite number too large to survive a `double` — `9007199254740993`, past
- * `Number.MAX_SAFE_INTEGER` — **is** taken as a number and does lose precision
- * on the way (it stores as `9007199254740992`). That is documented rather than
- * refused: it is exactly what every JSON parser in the stack would do to the
- * same literal, so refusing here would make the CLI stricter than the wire it
- * writes to, and the escape hatch for an exact-digits value already exists —
- * quote it (`--extra id='"9007199254740993"'`) and it stays a string.
- */
-export function parseExtraValue(raw: string): unknown {
-  if (raw === "null") return null;
-  if (raw === "true") return true;
-  if (raw === "false") return false;
-  if (JSON_NUMBER.test(raw)) {
-    const value = Number(raw);
-    if (Number.isFinite(value)) return value;
-    // `1e400` and friends: a canonical literal, an infinite double. Rule 5.
-  }
-  if (raw.startsWith('"')) {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === "string") return parsed;
-    } catch {
-      // Not a JSON string literal after all — rule 5 takes it verbatim.
-    }
-  }
-  return raw;
-}
-
-const JSON_NUMBER = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/;
-
-/**
- * Core keys that have a flag of their own. The **refusal** list is the
- * contract's `RESERVED_FRONTMATTER_KEYS` and is never hand-copied — this map
- * only makes the message actionable, so a key the contract adds tomorrow is
- * still refused, just with the generic hint.
- */
-const FLAG_FOR_RESERVED_KEY: Readonly<Record<string, string>> = {
-  title: "--title",
-  status: "--status",
-  due: "--due",
-  reviewed: "--reviewed",
-  evergreen: "--evergreen",
-  tags: "--add-tag`/`--remove-tag",
-};
-
-const RESERVED_KEYS: ReadonlySet<string> = new Set(RESERVED_FRONTMATTER_KEYS);
-
-/**
- * `--extra` may never name a core field. The contract already refuses one with a
- * `400` (`ExtraFrontmatterSchema`), and that backstop stays exactly where it is:
- * this guard is a **better error message**, not the enforcement. An agent gets
- * one chance to read a failure and act on it, and "use `--title`" is a next step
- * where a round-tripped validation issue is a puzzle.
- */
-function assertWritableExtraKey(key: string): void {
-  if (!RESERVED_KEYS.has(key)) return;
-  const flag = FLAG_FOR_RESERVED_KEY[key];
-  throw new UsageError(
-    `\`${key}\` is a core frontmatter key, not an \`extra\` key — \`--extra ${key}=…\` is refused.`,
-    {
-      hint:
-        flag === undefined
-          ? `Core keys are not user-writable through \`--extra\`; \`extra\` may never shadow one.`
-          : `Use \`${flag}\` instead.`,
-    },
-  );
-}
-
-/** `key=value` pairs into the merge patch the `PUT` carries, or nothing at all. */
-export function parseExtraFlags(entries: readonly string[]): Record<string, unknown> | undefined {
-  if (entries.length === 0) return undefined;
-
-  const extra: Record<string, unknown> = {};
-  for (const entry of entries) {
-    const separator = entry.indexOf("=");
-    if (separator === -1) {
-      throw new UsageError(`--extra takes \`key=value\` — got "${entry}", which has no \`=\`.`, {
-        hint: "For example: --extra width=520, or --extra width=null to remove the key.",
-      });
-    }
-    if (separator === 0) {
-      throw new UsageError(`--extra "${entry}" names no key.`, {
-        hint: "The key comes before the `=`: --extra width=520.",
-      });
-    }
-    const key = entry.slice(0, separator);
-    assertWritableExtraKey(key);
-    // Last one wins, like any repeated assignment; `--extra a=1 --extra a=2`
-    // sends `a: 2` rather than failing on a contradiction the caller can see.
-    extra[key] = parseExtraValue(entry.slice(separator + 1));
-  }
-  return extra;
-}
-
 export async function runDocEdit(
   context: WorkspaceCommandContext,
   dependencies: EditDependencies = {},
@@ -302,7 +190,11 @@ export async function runDocEdit(
   const due = context.flags.string("due");
   const reviewed = context.flags.boolean("reviewed");
   const evergreen = parseTriStateBoolean("evergreen", context.flags.string("evergreen"));
-  const extra = parseExtraFlags(context.flags.strings("extra"));
+  const extra = combineExtraPatches(
+    parseExtraFlags(context.flags.strings("extra")),
+    parseExtraJsonFlags(context.flags.strings("extra-json")),
+  );
+  const view = parseViewFlags(context.flags);
 
   const body = await resolveBody(context, dependencies);
   const read = currentDocument(context, id);
@@ -331,11 +223,14 @@ export async function runDocEdit(
     // whole object back would race every other writer of a key this invocation
     // never mentioned.
     ...(extra === undefined ? {} : { extra }),
+    // The §11 view keys are *not* a merge patch — each is one core field, and
+    // an unnamed one is simply absent here.
+    ...view,
   };
 
   if (body === undefined && Object.keys(patch).length === 0) {
     throw new UsageError(`nothing to change on ${id}.`, {
-      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra.",
+      hint: "Pipe a body in, or name a field: --title, --add-tag, --remove-tag, --status, --due, --reviewed, --evergreen, --extra, --extra-json, --pinned, --order, --query, --column.",
     });
   }
 
@@ -390,10 +285,13 @@ export const editCommand: WorkspaceCommandSpec = {
     "would say `open` while the folder stayed disabled in `.claude/skills-archived/` and its " +
     "name stayed blocked, and for every other type because un-archiving is its own operation. " +
     "The server refuses the same write (SERVER-039); refusing it here costs no round trip and " +
-    "names a **command** where the server can only name a route. `--extra` writes non-core " +
-    "frontmatter keys — the " +
+    "names a **command** where the server can only name a route. `--extra` and `--extra-json` " +
+    "write non-core frontmatter keys — the " +
     "column `width` of SPEC.md §11 among them — as a merge patch: named keys replace, `null` " +
-    "removes, unnamed keys are untouched. A `423` from the " +
+    "removes, unnamed keys are untouched. `--pinned`, `--order`, `--query` and `--column` write " +
+    "the four **view keys** of SPEC.md §11, which are core fields rather than `extra` ones: a " +
+    "board column IS a `type: view` document with `pinned: true`, so pinning, reordering and " +
+    "reconfiguring one is this verb, and the board follows over SSE with no reload. A `423` from the " +
     "other party's edit lock is reported as a server error (exit 5) and is never retried — the " +
     "orchestrate skill defers instead. An edit that names no change at all is a usage error, not " +
     "an empty request.",
@@ -453,7 +351,9 @@ export const editCommand: WorkspaceCommandSpec = {
       repeated: true,
       description:
         "Set one non-core frontmatter key, repeatably — the agent's way to steward a column's " +
-        "`width` (SPEC.md §11) or any plugin key. **The value grammar is total**: `null` deletes " +
+        "`width` (SPEC.md §11) or any plugin key. **The value grammar is total over scalars** — " +
+        "every input maps to exactly one JSON scalar, and `--extra-json` is the flag for an " +
+        "object or an array: `null` deletes " +
         "the key (RFC 7386), `true`/`false` are booleans, a canonical **finite** JSON number " +
         "(`520`, `-1.5`) is a number, a JSON string literal is its contents " +
         "(`--extra note='\"520\"'` stores the characters), and **everything else is the string " +
@@ -463,9 +363,28 @@ export const editCommand: WorkspaceCommandSpec = {
         "everywhere else (`9007199254740993` stores as `9007199254740992`); quote it to keep the " +
         "digits. Only the keys named are sent: the rest of `extra` is untouched " +
         "byte-for-byte, never read-modify-written. Naming a **core** key (`title`, `status`, " +
-        "`due`, `tags`, `id`, …) is a usage error before any request, pointing at the real flag " +
-        "where there is one.",
+        "`due`, `tags`, `pinned`, `order`, `query`, `column`, `id`, …) is a usage error before " +
+        "any request, pointing at the real flag where there is one.",
     },
+    {
+      name: "extra-json",
+      type: "string",
+      valueName: "key=json",
+      repeated: true,
+      description:
+        "Set one non-core frontmatter key to a **JSON value**, repeatably — the escape hatch " +
+        "`--extra`'s scalar grammar deliberately does not have. The value is parsed as JSON, so " +
+        "an object or an array reaches the file as YAML structure: " +
+        '`--extra-json publish=\'{"target":"blog","draft":true}\'`, or ' +
+        '`--extra-json items=\'[{"text":"Ship it","done":false}]\'` for a plugin key shaped ' +
+        "like SPEC.md §12's. Same merge-patch semantics as `--extra` — named keys replace, " +
+        "`null` deletes, unnamed keys are untouched — and the same core-key refusal. Depth and " +
+        "size are the contract's (`EXTRA_MAX_DEPTH`, `EXTRA_MAX_BYTES`), checked server-side " +
+        "over the whole object; the CLI only insists the text is JSON, so a shell-quoting slip " +
+        "is a usage error rather than a key that stores a string that looks like an object. A " +
+        "key named by both flags is refused rather than silently resolved.",
+    },
+    ...VIEW_KEY_FLAGS,
     ...bodyFlags("The replacement document body"),
   ],
   examples: [
@@ -491,6 +410,27 @@ export const editCommand: WorkspaceCommandSpec = {
       command: "corpus doc edit doc_v1e2w3 --extra width=null",
       description:
         "Remove the stored width and let the column render at the default; every other `extra` key is left alone.",
+    },
+    {
+      command:
+        "corpus doc edit doc_v1e2w3 --query type=thread --query status=open --query tag=finance --from agent",
+      description:
+        "Reconfigure a column's query: naming any key replaces the whole map, so this is the view's query in full — the board re-renders the column's rows over SSE.",
+    },
+    {
+      command: "corpus doc edit doc_v1e2w3 --pinned false --from agent",
+      description:
+        "Unpin a view: the column leaves the board live, and the document stays exactly where it is, re-pinnable with `--pinned true`.",
+    },
+    {
+      command: "corpus doc edit doc_v1e2w3 --order 1.5 --from agent",
+      description:
+        "Reorder: a midpoint lands the column between the first and second without renumbering the rest of the board.",
+    },
+    {
+      command: 'corpus doc edit doc_t0d0s1 --extra-json publish=\'{"target":"blog"}\'',
+      description:
+        "Store a plugin key whose value is an object; `--extra` stores scalars, and this is how the same merge patch carries structure.",
     },
     {
       command: "corpus doc edit doc_a1b2c3 --file revised.md --json",

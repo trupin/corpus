@@ -698,6 +698,183 @@ describe("the --extra value grammar", () => {
   });
 });
 
+describe("corpus doc edit — the §11 view keys (CLI-018)", () => {
+  it("pins, positions and reconfigures a column in one request", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: {
+        pinned: "true",
+        order: "1.5",
+        query: ["type=thread", "status=open", "tag=finance"],
+      },
+      actor: "agent",
+    });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(stub.requests[0]?.method).toBe("PUT");
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({
+      pinned: true,
+      order: 1.5,
+      query: { type: "thread", status: "open", tag: "finance" },
+    });
+    // No read: the view keys cost no round trip, unlike `--add-tag`/`--status`.
+    expect(stub.requests).toHaveLength(1);
+  });
+
+  it("unpins without touching anything else", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { pinned: "false" } });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(stub.requests[0]?.body).toBe('{"pinned":false}');
+  });
+
+  it("clears each key with the `null` the update schema gives a meaning to", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { order: "null", query: ["null"], column: "null" },
+    });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({ order: null, query: null, column: null });
+  });
+
+  it("replaces the whole query rather than merging into it", async () => {
+    // `query` is one core field, not an RFC 7386 sub-object like `extra`: the
+    // server stores what it is sent, so a key left out of the command is gone.
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { query: ["type=view"] } });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({ query: { type: "view" } });
+  });
+
+  it("composes with the extra merge patch, the body and the other flags", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { title: "Finance", extra: ["width=640"], pinned: "true", column: "todos/todos" },
+    });
+
+    await runDocEdit(harness.context, { stdin: pipe("body\n"), stdinIsBodySource: true });
+
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({
+      title: "Finance",
+      extra: { width: 640 },
+      pinned: true,
+      column: "todos/todos",
+      body: "body\n",
+    });
+  });
+
+  it("is refused on an archived document exactly as before — CLI-017 still holds", async () => {
+    const stub = await startStubServer((request, response) => {
+      if (request.method === "GET") return sendJson(response, 200, archived(DOC));
+      sendJson(response, 200, UPDATED);
+    });
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { status: "open", pinned: "true" },
+    });
+
+    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(String(error)).toContain("is archived");
+    expect(stub.requests.map((request) => request.method)).toEqual(["GET"]);
+  });
+
+  it.each([
+    { order: "1e400" },
+    { order: '"4"' },
+    { column: "nonsense" },
+    { pinned: "maybe" },
+    { query: ["filters={}"] },
+    { query: ["null", "type=note"] },
+  ])("refuses %o before any request", async (flags) => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags });
+
+    const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+      (cause: unknown) => cause,
+    );
+
+    expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("counts a view flag as a change, so it is not the empty edit", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, { args: ARGS, flags: { order: "2" } });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(stub.requests).toHaveLength(1);
+  });
+});
+
+describe("corpus doc edit --extra-json (SPEC 38)", () => {
+  it("writes an object into the same merge patch --extra writes scalars into", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { "extra-json": ['publish={"target":"blog","draft":true}'] },
+    });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({
+      extra: { publish: { target: "blog", draft: true } },
+    });
+  });
+
+  it("combines with --extra when the keys are disjoint", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    const harness = stubContext(stub, {
+      args: ARGS,
+      flags: { extra: ["width=520"], "extra-json": ['publish={"target":"blog"}'] },
+    });
+
+    await runDocEdit(harness.context, { stdinIsBodySource: false });
+
+    expect(bodyOf(stub.requests[0]?.body)).toEqual({
+      extra: { width: 520, publish: { target: "blog" } },
+    });
+  });
+
+  it("refuses a key both flags name, and a value that is not JSON", async () => {
+    const stub = await startStubServer(jsonResponder(200, UPDATED));
+    for (const flags of [
+      { extra: ["publish=x"], "extra-json": ["publish={}"] },
+      { "extra-json": ["publish={oops}"] },
+      { "extra-json": ['title={"x":1}'] },
+    ]) {
+      const harness = stubContext(stub, { args: ARGS, flags });
+      const error: unknown = await runDocEdit(harness.context, { stdinIsBodySource: false }).catch(
+        (cause: unknown) => cause,
+      );
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+    }
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it("stops claiming a totality it does not have, and names the escape hatch", () => {
+    // SPEC 38: `--extra` is total *over scalars*; the object case is a flag of
+    // its own, and the description says so rather than implying otherwise.
+    const extra = editCommand.flags.find((flag) => flag.name === "extra")?.description ?? "";
+    expect(extra).toContain("total over scalars");
+    expect(extra).toContain("--extra-json");
+  });
+});
+
 describe("edit helpers", () => {
   it("merges tags with removal winning over addition", () => {
     expect(mergeTags(["a", "b"], ["c"], ["a"])).toEqual(["b", "c"]);
