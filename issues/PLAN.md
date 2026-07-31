@@ -134,7 +134,7 @@ The board, editor, threads, console. design/index.html is authoritative for look
 | PLUGINS-003 | Item-level anchored commenting on plugin-rendered docs (design closed; impl = PLUGINS-005/006/007) | done | P1 | UI-014 |
 | INFRA-010 | npm audit cleanup: scoped overrides, eslint 10, phantom deps | done | P2 | INFRA-001 |
 | SERVER-033 | @hono/node-server v2 migration (serve-static traversal advisory) | done | P1 | SERVER-003 |
-| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | todo | P2 | UI-005 |
+| UI-016 | Migrate to react-router v8 (audit advisory; RSC-CSRF not applicable) | blocked | P2 | UI-029 |
 | CLI-013 | corpus init ignores --workspace; guard misses repo-like dirs | done | P1 | CLI-002 |
 | AGENT-004 | Emit trace lines in agent turns | done | P2 | AGENT-002 |
 | PLUGINS-001 | Plugin extension points: discovery across UI, server, CLI | done | P1 | UI-003, CLI-001, SERVER-003 |
@@ -213,6 +213,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-027 | Anchor highlights never render in the document body (eval finding, §11) | done | P1 | UI-008 |
 | UI-028 | ↵ does not activate context-menu items (eval finding, §11) | done | P2 | UI-018 |
 | CLI-022 | No CLI surface for anchored thread creation (CLI-018 finding, §7) | done | P2 | CLI-003 |
+| UI-029 | React 18 → 19 across apps/ui, packages/kit, plugins (UI-016 prerequisite) | todo | P1 | — |
 
 ## Phase 7 — Retrieval A: retrieval discipline (lexical)
 
