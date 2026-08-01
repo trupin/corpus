@@ -85,6 +85,23 @@ export type { EmbeddingModelRef, IndexIdentityCheck } from "./identity.js";
 export { EmbeddingError, createEmbeddingProvider, redactSecrets } from "./provider.js";
 export type { EmbedBatchFn, EmbeddingProvider } from "./provider.js";
 export { PROBE_TEXT, describeResolution, resolveEmbeddingProvider } from "./resolve.js";
+export {
+  EMBED_BACKOFF_MS,
+  EMBED_BATCH_SIZE,
+  EMBED_CLAIM_SIZE,
+  EMBED_DEBOUNCE_MS,
+  EMBED_INTERVAL_MS,
+  EMBED_MAX_DEFER_MS,
+  EMBED_MODEL_POLL_MS,
+  MAX_CHUNK_FAILURES,
+  chunkEmbedInput,
+  embedBackoffMs,
+  indexCounts,
+  startEmbedWorker,
+} from "./worker.js";
+export type { EmbedWorkerHandle, EmbedWorkerOptions, IndexCounts } from "./worker.js";
+export { attachEmbedWorker } from "./worker-attach.js";
+export type { AttachEmbedWorkerDeps } from "./worker-attach.js";
 export type {
   DisabledReason,
   ProviderResolution,

@@ -14,9 +14,12 @@ import {
   type ProjectionDb,
 } from "./projection/index.js";
 import {
+  attachEmbedWorker,
   attachEmbeddedEngine,
   attachSemanticIndex,
+  type AttachEmbedWorkerDeps,
   type AttachSemanticIndexDeps,
+  type CorpusEmbeddedEngine,
 } from "./semantic/index.js";
 import { attachWatcher } from "./watcher/index.js";
 
@@ -138,7 +141,13 @@ export interface RunServerOptions {
   readonly attachEmbeddedEngineFn?: (
     server: CorpusServer,
     env: Readonly<Record<string, string | undefined>>,
-  ) => AttachSemanticIndexDeps["embeddedEngine"];
+  ) => CorpusEmbeddedEngine | undefined;
+  /**
+   * Starts the background embed worker and registers its disposer (SERVER-044).
+   * Registered **last**, so its disposer runs first — it writes to the
+   * projection and drives the engine's model session, and both must outlive it.
+   */
+  readonly attachEmbedWorkerFn?: (server: CorpusServer, deps: AttachEmbedWorkerDeps) => void;
   readonly gracePeriodMs?: number;
 }
 
@@ -191,6 +200,14 @@ export async function runServerProcess(
     (options.attachSemanticFn ?? attachSemanticIndex)(
       server,
       embeddedEngine === undefined ? {} : { embeddedEngine },
+    );
+    // Last of all, so its disposer runs before every one of theirs: it writes to
+    // the projection, reads the config's embedding block through the seam, and
+    // drives the engine's model session. Starting it costs one query — it
+    // resolves a provider only once there is something to index.
+    (options.attachEmbedWorkerFn ?? attachEmbedWorker)(
+      server,
+      embeddedEngine === undefined ? {} : { engine: embeddedEngine },
     );
   } catch (error) {
     // A handle opened before the failure would otherwise outlive the process's

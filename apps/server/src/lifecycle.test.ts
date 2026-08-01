@@ -551,11 +551,13 @@ describe("runServerProcess — boot", () => {
   });
 
   /**
-   * SERVER-043. The seam attaches last so its disposer runs first: it reads the
-   * projection, and an aborted resolution must be awaited before the database
-   * closes.
+   * SERVER-043/044. The seam attaches after the watcher so its disposer runs
+   * first: it reads the projection, and an aborted resolution must be awaited
+   * before the database closes. The embed worker attaches after *that*, because
+   * it writes to the projection and drives the engine's model session — both of
+   * which have to outlive it.
    */
-  it("attaches the embedding seam after the watcher", async () => {
+  it("attaches the embedding seam after the watcher, and the worker last of all", async () => {
     const workspace = makeWorkspace("ws-semantic-order");
     const h = harness();
     const order: string[] = [];
@@ -568,10 +570,11 @@ describe("runServerProcess — boot", () => {
       logger: h.logger,
       attachWatcherFn: () => order.push("watcher"),
       attachSemanticFn: () => order.push("semantic"),
+      attachEmbedWorkerFn: () => order.push("embed-worker"),
     });
     if (server === undefined) throw new Error("server failed to boot");
 
-    expect(order).toEqual(["watcher", "semantic"]);
+    expect(order).toEqual(["watcher", "semantic", "embed-worker"]);
     await server.close();
   });
 
