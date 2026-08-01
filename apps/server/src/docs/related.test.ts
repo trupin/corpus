@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ApiErrorSchema,
@@ -41,8 +42,11 @@ const config = (workspaceRoot: string): ServerConfig => ({
   warnings: [],
 });
 
-const related = (id: string, params: Readonly<Record<string, string>> = {}): RelatedDoc[] =>
-  relatedDocs(ws.db, id, RelatedQuerySchema.parse(params)).related;
+const related = async (
+  id: string,
+  params: Readonly<Record<string, string>> = {},
+): Promise<RelatedDoc[]> =>
+  (await relatedDocs(ws.db, id, RelatedQuerySchema.parse(params))).related;
 
 const ids = (rows: readonly RelatedDoc[]): string[] => rows.map((row) => row.id);
 
@@ -111,70 +115,74 @@ afterAll(async () => {
 });
 
 describe("relatedDocs", () => {
-  it("surfaces outgoing, incoming and mutual neighbours, and nothing else", () => {
-    const rows = related("doc_a");
+  it("surfaces outgoing, incoming and mutual neighbours, and nothing else", async () => {
+    const rows = await related("doc_a");
     expect(ids(rows)).toContain("doc_b");
     expect(ids(rows)).toContain("doc_c");
     expect(ids(rows)).toContain("doc_d");
     expect(ids(rows)).not.toContain("doc_e");
   });
 
-  it("ranks a mutual link above a one-directional one, deterministically", () => {
-    const rows = related("doc_a");
+  it("ranks a mutual link above a one-directional one, deterministically", async () => {
+    const rows = await related("doc_a");
     // `doc_d` is mutual and the *least* recently updated of the three, so it can
     // only be first because reciprocity outranks recency.
     expect(ids(rows)[0]).toBe("doc_d");
     // The rest fall back to recency, then id.
     expect(ids(rows)).toEqual(["doc_d", "doc_b", "doc_c", "th_ref"]);
-    expect(ids(related("doc_a"))).toEqual(ids(related("doc_a")));
+    expect(ids(await related("doc_a"))).toEqual(ids(await related("doc_a")));
   });
 
-  it("never hands back a dangling reference", () => {
+  it("never hands back a dangling reference", async () => {
     // `links` stores `doc_a → doc_nope` by design (SPEC.md §5); an id the agent
     // cannot then read is worse than no row.
     expect(
       ws.db.prepare("SELECT 1 FROM links WHERE from_id = 'doc_a' AND to_id = 'doc_nope'").get(),
     ).toBeDefined();
-    expect(ids(related("doc_a"))).not.toContain("doc_nope");
+    expect(ids(await related("doc_a"))).not.toContain("doc_nope");
   });
 
-  it("never relates a document to itself", () => {
+  it("never relates a document to itself", async () => {
     expect(
       ws.db.prepare("SELECT 1 FROM links WHERE from_id = 'doc_a' AND to_id = 'doc_a'").get(),
     ).toBeDefined();
-    expect(ids(related("doc_a"))).not.toContain("doc_a");
+    expect(ids(await related("doc_a"))).not.toContain("doc_a");
   });
 
-  it("includes a thread whose turn wrote the reference — a decision, not an accident", () => {
+  it("includes a thread whose turn wrote the reference — a decision, not an accident", async () => {
     // `insertLinks` scans the body *plus every turn body*, so a `[[ref]]` typed
     // in a reply is a row keyed on the thread's own document id. A thread is a
     // document (SPEC.md §6) and is readable by the same `corpus doc show`, so
     // it is a row.
-    expect(ids(related("doc_a"))).toContain("th_ref");
+    expect(ids(await related("doc_a"))).toContain("th_ref");
     expect(
       ws.db.prepare("SELECT 1 FROM links WHERE from_id = 'th_ref' AND to_id = 'doc_a'").get(),
     ).toBeDefined();
   });
 
-  it("excludes an archived neighbour by default and includes it with the flag", () => {
-    expect(ids(related("doc_a"))).not.toContain("doc_arch");
-    expect(ids(related("doc_a", { includeArchived: "true" }))).toContain("doc_arch");
+  it("excludes an archived neighbour by default and includes it with the flag", async () => {
+    expect(ids(await related("doc_a"))).not.toContain("doc_arch");
+    expect(ids(await related("doc_a", { includeArchived: "true" }))).toContain("doc_arch");
   });
 
-  it("labels every Phase A row `linked`, and only `linked`", () => {
-    for (const row of related("doc_a", { includeArchived: "true" })) {
+  // Still `linked` and only `linked` here, and for a stronger reason than in
+  // Phase A: this workspace has no semantic index, so the `similar` half
+  // contributes nothing and every row is a reference-graph row. `both` and
+  // `similar` are proved in `related-semantic.test.ts`, where there are vectors.
+  it("labels every row of a lexical-only workspace `linked`, and only `linked`", async () => {
+    for (const row of await related("doc_a", { includeArchived: "true" })) {
       expect(row.relation).toBe("linked");
     }
   });
 
-  it("answers an empty set for a document nothing links to", () => {
-    expect(related("doc_e")).toEqual([]);
+  it("answers an empty set for a document nothing links to", async () => {
+    expect(await related("doc_e")).toEqual([]);
   });
 
-  it("throws the shipped 404 for an unknown id", () => {
-    expect(() => related("doc_missing")).toThrow(HttpError);
+  it("throws the shipped 404 for an unknown id", async () => {
+    await expect(related("doc_missing")).rejects.toThrow(HttpError);
     try {
-      related("doc_missing");
+      await related("doc_missing");
     } catch (error) {
       expect(error).toBeInstanceOf(HttpError);
       expect((error as HttpError).status).toBe(404);
@@ -185,20 +193,20 @@ describe("relatedDocs", () => {
     }
   });
 
-  it("caps the result set, and defaults the cap to the frugal ten", () => {
-    expect(related("doc_a", { limit: "1" })).toHaveLength(1);
+  it("caps the result set, and defaults the cap to the frugal ten", async () => {
+    expect(await related("doc_a", { limit: "1" })).toHaveLength(1);
     expect(RelatedQuerySchema.parse({}).limit).toBe(RETRIEVAL_DEFAULT_LIMIT);
   });
 });
 
 describe("excerpts", () => {
-  it("is one line derived from the projection, never the stored multi-line slice", () => {
+  it("is one line derived from the projection, never the stored multi-line slice", async () => {
     const stored = (
       ws.db.prepare("SELECT body_excerpt FROM documents WHERE id = 'doc_b'").get() as {
         body_excerpt: string;
       }
     ).body_excerpt;
-    const row = related("doc_a").find((candidate) => candidate.id === "doc_b");
+    const row = (await related("doc_a")).find((candidate) => candidate.id === "doc_b");
 
     // The stored column spans lines and starts at the first non-blank
     // character; the row's excerpt is that text folded onto one line.
@@ -209,7 +217,7 @@ describe("excerpts", () => {
     );
   });
 
-  it("never carries a body, however long the neighbour is", () => {
+  it("never carries a body, however long the neighbour is", async () => {
     const big = createWorkspace("related-large");
     try {
       big.doc({ id: "doc_from", body: "Points at [[doc_big]]." });
@@ -220,7 +228,7 @@ describe("excerpts", () => {
       });
       big.reproject();
 
-      const results = relatedDocs(big.db, "doc_from", RelatedQuerySchema.parse({}));
+      const results = await relatedDocs(big.db, "doc_from", RelatedQuerySchema.parse({}));
       const serialized = JSON.stringify(results);
       expect(RelatedDocsSchema.parse(results)).toEqual(results);
       expect(results.related[0]?.excerpt.length).toBeLessThanOrEqual(ONE_LINE_MAX_CHARS + 1);
@@ -234,6 +242,35 @@ describe("excerpts", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// TEST-883 / TEST-930, related's half. `phase-a-related.snapshot.json` was
+// captured from the shipped Phase A `relatedDocs` over this exact fixture graph
+// before SERVER-045 touched it: every row, every position, every relation, every
+// one-line excerpt. The only permitted delta is the newly-present
+// `semanticIndex`, stripped before comparison and asserted to be `disabled`.
+// ---------------------------------------------------------------------------
+
+describe("Phase A byte-stability", () => {
+  const snapshot = JSON.parse(
+    readFileSync(new URL("./phase-a-related.snapshot.json", import.meta.url), "utf8"),
+  ) as Record<string, { related: RelatedDoc[] }>;
+
+  it.each(Object.keys(snapshot))("answers %s exactly as Phase A did", async (key) => {
+    const [id = "", queryString = ""] = key.split("?");
+    const params = Object.fromEntries(new URLSearchParams(queryString));
+    const results = await relatedDocs(ws.db, id, RelatedQuerySchema.parse(params));
+
+    const { semanticIndex, ...rest } = results;
+    expect(semanticIndex).toBe("disabled");
+    expect(JSON.stringify(rest)).toBe(JSON.stringify(snapshot[key]));
+  });
+
+  it("covers the whole fixture graph, not a lucky subset", () => {
+    expect(Object.keys(snapshot).length).toBeGreaterThanOrEqual(5);
+    expect(Object.values(snapshot).some((entry) => entry.related.length > 2)).toBe(true);
+  });
+});
+
 describe("GET /api/docs/{id}/related", () => {
   const get = async (path: string, init: RequestInit = { headers: AUTH }): Promise<Response> =>
     server.app.request(path, init);
@@ -243,7 +280,12 @@ describe("GET /api/docs/{id}/related", () => {
     expect(response.status).toBe(200);
     const body = RelatedDocsSchema.parse(await response.json());
     expect(body.related.map((row) => row.id)).toEqual(["doc_d", "doc_b", "doc_c", "th_ref"]);
-    expect(body.semanticIndex).toBeUndefined();
+    // Phase A pinned this field's *absence* here (`toBeUndefined`), deliberately:
+    // emitting a value would have been Phase B leaking early. SERVER-045 is
+    // Phase B, so the assertion inverts (sprint-021 premise correction C4) — the
+    // related envelope now carries the same one-word claim the search envelope
+    // does, and `disabled` is the honest claim for a workspace with no index.
+    expect(body.semanticIndex).toBe("disabled");
   });
 
   it("answers the shipped 404 shape for an unknown document", async () => {

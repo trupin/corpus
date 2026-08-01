@@ -193,6 +193,11 @@ export async function runServerProcess(
     // shutdown aborts the resolution first and only then releases the model.
     // Building one touches nothing: it downloads on demand and loads on `open`.
     const embeddedEngine = (options.attachEmbeddedEngineFn ?? attachEmbeddedEngine)(server, env);
+    // Retrieval's semantic half was built with the routes, before the engine
+    // existed; this is where it learns about one. Binding it costs nothing — the
+    // engine is not asked anything until the first search needs a query
+    // embedded, which is what keeps a model load off the boot path.
+    if (embeddedEngine !== undefined) server.semantic?.useEngine(embeddedEngine);
     // Last, so its disposer runs first: it reads the projection, and a resolution
     // still in flight must be aborted and awaited before the database closes. It
     // resolves in the background — a configured endpoint that never answers must

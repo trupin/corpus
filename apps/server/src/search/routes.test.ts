@@ -103,4 +103,29 @@ describe("GET /api/search", () => {
   it("requires the bearer token like every other route", async () => {
     expect((await get("/api/search?q=escrow", {})).status).toBe(401);
   });
+
+  it("carries the semantic-index state over the wire", async () => {
+    // The service is built by `createServer` inside the projection block, so a
+    // server with a database always has one to ask — and a workspace with no
+    // provider and no vectors answers `disabled`, which is a claim rather than
+    // a silence. Phase A pinned this field's absence here; SERVER-045 is the
+    // issue that makes it present (sprint-021 premise correction C4).
+    expect(server.semantic).toBeDefined();
+    const results = SearchResultsSchema.parse(await (await get("/api/search?q=escrow")).json());
+    expect(results.semanticIndex).toBe("disabled");
+  });
+
+  it("reports `indexing` on the wire while the rebuild flag is raised", async () => {
+    // The seam SERVER-046's `POST /api/index/rebuild` raises. It is on the
+    // server object rather than inside the route module because the same bit has
+    // to reach `/api/search`, `/api/docs/{id}/related` and `/api/index/status`.
+    server.semantic?.rebuild.begin();
+    try {
+      const results = SearchResultsSchema.parse(await (await get("/api/search?q=escrow")).json());
+      expect(results.semanticIndex).toBe("indexing");
+      expect(results.hits.map((hit) => hit.id)).toEqual(["doc_rates"]);
+    } finally {
+      server.semantic?.rebuild.end();
+    }
+  });
 });

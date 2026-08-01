@@ -85,6 +85,26 @@ export type { EmbeddingModelRef, IndexIdentityCheck } from "./identity.js";
 export { EmbeddingError, createEmbeddingProvider, redactSecrets } from "./provider.js";
 export type { EmbedBatchFn, EmbeddingProvider } from "./provider.js";
 export { PROBE_TEXT, describeResolution, resolveEmbeddingProvider } from "./resolve.js";
+export { RESOLVE_COOLDOWN_MS, createSemanticRetrieval } from "./retrieval.js";
+export type { SemanticOutcome, SemanticRetrieval, SemanticRetrievalOptions } from "./retrieval.js";
+export { createIndexRebuildFlag, semanticIndexState } from "./state.js";
+export type { IndexRebuildFlag, SemanticIndexFacts } from "./state.js";
+export {
+  SEMANTIC_MIN_SIMILARITY,
+  UNFILTERED_SCOPE,
+  cosineSimilarity,
+  documentCentroid,
+  nearestDocuments,
+  normalizeVector,
+  vectorCensus,
+  vectorFromBlob,
+} from "./vectors.js";
+export type {
+  DocumentVectorMatch,
+  SemanticScope,
+  VectorCensus,
+  VectorScanOptions,
+} from "./vectors.js";
 export {
   EMBED_BACKOFF_MS,
   EMBED_BATCH_SIZE,

@@ -76,6 +76,7 @@ export {
 // rather than by review.
 export {
   Binder,
+  DOC_FILTER_JOINS,
   FROM_SQL,
   FTS_HITS_CTE,
   RELEVANCE_ORDER_BY,
@@ -94,6 +95,7 @@ export {
 } from "./needs.js";
 export { DOCS_ROOT, folderPathPrefix, queryDocs } from "./query.js";
 export { relatedDocs } from "./related.js";
+export type { RelatedDeps } from "./related.js";
 export { mountDocsRoutes } from "./routes.js";
 export type { DocsRoutesOptions } from "./routes.js";
 export { STALENESS_THRESHOLD_DAYS, STALE_TIER_SQL, stalenessCutoffs } from "./staleness.js";

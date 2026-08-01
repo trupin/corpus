@@ -1,0 +1,93 @@
+{
+  "doc_a?": {
+    "related": [
+      {
+        "id": "doc_d",
+        "title": "Mutual partner",
+        "excerpt": "Points back at [[doc_a]].",
+        "relation": "linked"
+      },
+      {
+        "id": "doc_b",
+        "title": "Outgoing target",
+        "excerpt": "First line of the outgoing target. Second line, which a one-line excerpt must fold in.",
+        "relation": "linked"
+      },
+      {
+        "id": "doc_c",
+        "title": "Incoming source",
+        "excerpt": "Points at [[doc_a]].",
+        "relation": "linked"
+      },
+      {
+        "id": "th_ref",
+        "title": "Thread that refers",
+        "excerpt": "## user · 2026-07-21T12:00:00Z See [[doc_a]] for the reserve rules.",
+        "relation": "linked"
+      }
+    ]
+  },
+  "doc_a?includeArchived=true": {
+    "related": [
+      {
+        "id": "doc_d",
+        "title": "Mutual partner",
+        "excerpt": "Points back at [[doc_a]].",
+        "relation": "linked"
+      },
+      {
+        "id": "doc_b",
+        "title": "Outgoing target",
+        "excerpt": "First line of the outgoing target. Second line, which a one-line excerpt must fold in.",
+        "relation": "linked"
+      },
+      {
+        "id": "doc_c",
+        "title": "Incoming source",
+        "excerpt": "Points at [[doc_a]].",
+        "relation": "linked"
+      },
+      {
+        "id": "doc_arch",
+        "title": "Archived neighbour",
+        "excerpt": "Archived, but still a real relation.",
+        "relation": "linked"
+      },
+      {
+        "id": "th_ref",
+        "title": "Thread that refers",
+        "excerpt": "## user · 2026-07-21T12:00:00Z See [[doc_a]] for the reserve rules.",
+        "relation": "linked"
+      }
+    ]
+  },
+  "doc_a?limit=2": {
+    "related": [
+      {
+        "id": "doc_d",
+        "title": "Mutual partner",
+        "excerpt": "Points back at [[doc_a]].",
+        "relation": "linked"
+      },
+      {
+        "id": "doc_b",
+        "title": "Outgoing target",
+        "excerpt": "First line of the outgoing target. Second line, which a one-line excerpt must fold in.",
+        "relation": "linked"
+      }
+    ]
+  },
+  "doc_e?": {
+    "related": []
+  },
+  "doc_b?": {
+    "related": [
+      {
+        "id": "doc_a",
+        "title": "Anchor document",
+        "excerpt": "Refers to [[doc_b]], [[doc_d]], [[doc_nope]], [[doc_arch]] and itself [[doc_a]].",
+        "relation": "linked"
+      }
+    ]
+  }
+}

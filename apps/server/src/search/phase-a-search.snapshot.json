@@ -1,0 +1,310 @@
+{
+  "q=escrow": {
+    "hits": [
+      {
+        "id": "doc_view",
+        "title": "Escrow view",
+        "headingPath": "Escrow view",
+        "snippet": "Escrow saved view."
+      },
+      {
+        "id": "doc_stale",
+        "title": "Stale escrow note",
+        "headingPath": "Stale escrow note",
+        "snippet": "Escrow, long untouched."
+      },
+      {
+        "id": "th_anchored",
+        "title": "Escrow thread",
+        "headingPath": "Escrow thread",
+        "snippet": "Escrow preamble before the first turn."
+      },
+      {
+        "id": "th_standalone",
+        "title": "Standalone escrow thread",
+        "headingPath": "Standalone escrow thread",
+        "snippet": "Standalone escrow thread"
+      },
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Sectioned escrow guide",
+        "snippet": "Escrow overview paragraph. # Mortgage Escrow intro under the top-level heading. ## Rates…"
+      },
+      {
+        "id": "doc_ref",
+        "title": "Referencing note",
+        "headingPath": "Referencing note",
+        "snippet": "Escrow, see [[doc_sectioned]]."
+      },
+      {
+        "id": "doc_flat",
+        "title": "Flat note",
+        "headingPath": "Flat note",
+        "snippet": "Escrow with no heading above it at all."
+      },
+      {
+        "id": "doc_fenced",
+        "title": "Fenced note",
+        "headingPath": "Rates",
+        "snippet": "```md # Fake heading ## Also fake ``` ## Rates The escrow ladder is documented here."
+      }
+    ]
+  },
+  "q=escrow+rates": {
+    "hits": [
+      {
+        "id": "doc_fenced",
+        "title": "Fenced note",
+        "headingPath": "Rates",
+        "snippet": "```md # Fake heading ## Also fake ``` ## Rates The escrow ladder is documented here."
+      },
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Mortgage › Rates",
+        "snippet": "Escrow overview paragraph. # Mortgage Escrow intro under the top-level heading. ## Rates…"
+      }
+    ]
+  },
+  "q=escrow&limit=3": {
+    "hits": [
+      {
+        "id": "doc_view",
+        "title": "Escrow view",
+        "headingPath": "Escrow view",
+        "snippet": "Escrow saved view."
+      },
+      {
+        "id": "doc_stale",
+        "title": "Stale escrow note",
+        "headingPath": "Stale escrow note",
+        "snippet": "Escrow, long untouched."
+      },
+      {
+        "id": "th_anchored",
+        "title": "Escrow thread",
+        "headingPath": "Escrow thread",
+        "snippet": "Escrow preamble before the first turn."
+      }
+    ]
+  },
+  "q=escrow&includeArchived=true": {
+    "hits": [
+      {
+        "id": "doc_archived",
+        "title": "Archived escrow note",
+        "headingPath": "Archived escrow note",
+        "snippet": "Escrow, archived."
+      },
+      {
+        "id": "doc_view",
+        "title": "Escrow view",
+        "headingPath": "Escrow view",
+        "snippet": "Escrow saved view."
+      },
+      {
+        "id": "doc_stale",
+        "title": "Stale escrow note",
+        "headingPath": "Stale escrow note",
+        "snippet": "Escrow, long untouched."
+      },
+      {
+        "id": "th_anchored",
+        "title": "Escrow thread",
+        "headingPath": "Escrow thread",
+        "snippet": "Escrow preamble before the first turn."
+      },
+      {
+        "id": "th_standalone",
+        "title": "Standalone escrow thread",
+        "headingPath": "Standalone escrow thread",
+        "snippet": "Standalone escrow thread"
+      },
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Sectioned escrow guide",
+        "snippet": "Escrow overview paragraph. # Mortgage Escrow intro under the top-level heading. ## Rates…"
+      },
+      {
+        "id": "doc_ref",
+        "title": "Referencing note",
+        "headingPath": "Referencing note",
+        "snippet": "Escrow, see [[doc_sectioned]]."
+      },
+      {
+        "id": "doc_flat",
+        "title": "Flat note",
+        "headingPath": "Flat note",
+        "snippet": "Escrow with no heading above it at all."
+      },
+      {
+        "id": "doc_fenced",
+        "title": "Fenced note",
+        "headingPath": "Rates",
+        "snippet": "```md # Fake heading ## Also fake ``` ## Rates The escrow ladder is documented here."
+      }
+    ]
+  },
+  "q=escrow&type=note": {
+    "hits": [
+      {
+        "id": "doc_stale",
+        "title": "Stale escrow note",
+        "headingPath": "Stale escrow note",
+        "snippet": "Escrow, long untouched."
+      },
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Sectioned escrow guide",
+        "snippet": "Escrow overview paragraph. # Mortgage Escrow intro under the top-level heading. ## Rates…"
+      },
+      {
+        "id": "doc_ref",
+        "title": "Referencing note",
+        "headingPath": "Referencing note",
+        "snippet": "Escrow, see [[doc_sectioned]]."
+      },
+      {
+        "id": "doc_flat",
+        "title": "Flat note",
+        "headingPath": "Flat note",
+        "snippet": "Escrow with no heading above it at all."
+      },
+      {
+        "id": "doc_fenced",
+        "title": "Fenced note",
+        "headingPath": "Rates",
+        "snippet": "```md # Fake heading ## Also fake ``` ## Rates The escrow ladder is documented here."
+      }
+    ]
+  },
+  "q=escrow&folder=finance": {
+    "hits": [
+      {
+        "id": "doc_stale",
+        "title": "Stale escrow note",
+        "headingPath": "Stale escrow note",
+        "snippet": "Escrow, long untouched."
+      },
+      {
+        "id": "th_anchored",
+        "title": "Escrow thread",
+        "headingPath": "Escrow thread",
+        "snippet": "Escrow preamble before the first turn."
+      },
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Sectioned escrow guide",
+        "snippet": "Escrow overview paragraph. # Mortgage Escrow intro under the top-level heading. ## Rates…"
+      },
+      {
+        "id": "doc_flat",
+        "title": "Flat note",
+        "headingPath": "Flat note",
+        "snippet": "Escrow with no heading above it at all."
+      },
+      {
+        "id": "doc_fenced",
+        "title": "Fenced note",
+        "headingPath": "Rates",
+        "snippet": "```md # Fake heading ## Also fake ``` ## Rates The escrow ladder is documented here."
+      }
+    ]
+  },
+  "q=escrow&tag=finance": {
+    "hits": [
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Sectioned escrow guide",
+        "snippet": "Escrow overview paragraph. # Mortgage Escrow intro under the top-level heading. ## Rates…"
+      },
+      {
+        "id": "doc_flat",
+        "title": "Flat note",
+        "headingPath": "Flat note",
+        "snippet": "Escrow with no heading above it at all."
+      }
+    ]
+  },
+  "q=recalculated+annually": {
+    "hits": [
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Mortgage › Rates › Fixed",
+        "snippet": "…Fixed The escrow reserve is recalculated annually under fixed terms. ## Fees Escrow…"
+      }
+    ]
+  },
+  "q=billed+quarterly": {
+    "hits": [
+      {
+        "id": "doc_sectioned",
+        "title": "Sectioned escrow guide",
+        "headingPath": "Mortgage › Fees",
+        "snippet": "…is recalculated annually under fixed terms. ## Fees Escrow fees are billed quarterly."
+      }
+    ]
+  },
+  "q=taxes+and+insurance": {
+    "hits": [
+      {
+        "id": "th_anchored",
+        "title": "Escrow thread",
+        "headingPath": "agent · 2026-07-18T12:00:00Z",
+        "snippet": "Escrow covers taxes and insurance."
+      }
+    ]
+  },
+  "q=preamble+before": {
+    "hits": [
+      {
+        "id": "th_anchored",
+        "title": "Escrow thread",
+        "headingPath": "Escrow thread",
+        "snippet": "Escrow preamble before the first turn."
+      }
+    ]
+  },
+  "q=Referencing": {
+    "hits": [
+      {
+        "id": "doc_ref",
+        "title": "Referencing note",
+        "headingPath": "Referencing note",
+        "snippet": "Referencing note"
+      }
+    ]
+  },
+  "q=escrow+ladder": {
+    "hits": [
+      {
+        "id": "doc_fenced",
+        "title": "Fenced note",
+        "headingPath": "Rates",
+        "snippet": "```md # Fake heading ## Also fake ``` ## Rates The escrow ladder is documented here."
+      }
+    ]
+  },
+  "q=no+heading+above": {
+    "hits": [
+      {
+        "id": "doc_flat",
+        "title": "Flat note",
+        "headingPath": "Flat note",
+        "snippet": "Escrow with no heading above it at all."
+      }
+    ]
+  },
+  "q=zzzznothingmatchesthis": {
+    "hits": []
+  },
+  "q=***": {
+    "hits": []
+  }
+}

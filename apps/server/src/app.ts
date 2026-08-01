@@ -52,6 +52,7 @@ import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
 import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
 import { mountSearchRoutes } from "./search/index.js";
+import { createSemanticRetrieval, type SemanticRetrieval } from "./semantic/index.js";
 import {
   createQueueService,
   mountQueueRoutes,
@@ -116,6 +117,19 @@ export interface CorpusServer {
    */
   readonly locks: LockService | undefined;
   readonly lockGuard: LockGuard | undefined;
+  /**
+   * Retrieval's semantic half (SERVER-045): hybrid ranking for `/api/search`,
+   * `similar` neighbours for `/api/docs/{id}/related`, and the one
+   * `semanticIndex` word both envelopes carry. `undefined` when the server was
+   * built without a projection — there are no chunk vectors to rank against.
+   *
+   * Exposed because two things bind to it *after* the routes are mounted:
+   * `lifecycle.ts` hands it the embedded engine once it exists (a search is the
+   * first thing that may need a model loaded), and SERVER-046's
+   * `POST /api/index/rebuild` raises its rebuild flag, which is what makes
+   * `indexing` outrank `stale` on all three surfaces at once.
+   */
+  readonly semantic: SemanticRetrieval | undefined;
   /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
@@ -296,6 +310,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
   let locks: LockService | undefined;
   let lockGuard: LockGuard | undefined;
+  let semantic: SemanticRetrieval | undefined;
   if (deps.projection !== undefined) {
     // Everything the write path needs is already reachable here (sprint-005
     // Open Conflict 12: "no new deps"): the workspace root is on the config, the
@@ -350,13 +365,27 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // two mutexes would serialize each surface against itself and neither
     // against the other (SERVER-006).
     const mutex = createDocumentMutex();
-    mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace });
+
+    // Retrieval's semantic half, built before the two endpoints that read it.
+    // Constructing it costs nothing — no query, no resolution, no model — and it
+    // is deliberately *not* handed the embedded engine here: the engine is built
+    // by `lifecycle.ts` after this function returns, and `useEngine` is how it
+    // arrives. A server that never gets one resolves `engine-not-installed` and
+    // answers `disabled`, which is the complete, honest lexical-only product.
+    semantic = createSemanticRetrieval({
+      db: deps.projection,
+      settings: config.embedding,
+      logger,
+      now,
+    });
+
+    mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace, semantic });
 
     // Ranked retrieval (SPEC.md §7, §9.2). A pure projection read like the
     // collection query it filters identically to, so it mounts here rather than
     // with the file-backed surface — and inside this block, because a server
     // built without a database has no index to rank.
-    mountSearchRoutes(app, deps.projection, { now });
+    mountSearchRoutes(app, deps.projection, { now, semantic });
 
     const threadsWorkspace: ThreadsWorkspace = {
       ...docsWorkspace,
@@ -529,6 +558,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     selfWrites,
     locks,
     lockGuard,
+    semantic,
     registerDisposer(dispose) {
       disposers.push(dispose);
     },
