@@ -2942,6 +2942,11 @@
               "disabled"
             ],
             "description": "How caught-up the semantic half of ranking is — the same value, from the same schema, that `GET /api/search` and `GET /api/docs/{id}/related` report as `semanticIndex`, so no two surfaces can describe one workspace differently. **Derived from the fields above rather than stored**, by exactly this mapping: `current` — an identity is recorded and `pending` is 0 with no rebuild in flight; `indexing` — `rebuilding` is true, which outranks `stale` even though both have work pending; `stale` — an incremental backlog only (`pending > 0`, no rebuild in flight); `disabled` — no provider resolved, no recorded identity, or no usable vectors, which means lexical ranking only and is an honest answer rather than an error (SPEC.md §9.1's local-first default). Required here, unlike the optional `semanticIndex` on the retrieval envelopes: this response *is* the claim, so there is nothing for its absence to mean."
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One human sentence explaining the state, when there is something to explain — a model still downloading (`downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of 22.6 MiB, 46%) — semantic ranking starts once it is cached`), a model that has not been downloaded yet, a configured endpoint that did not answer, or an index whose vectors were produced by a model that is not the one resolving now. Without it a workspace whose model is 46% downloaded and one that will never have a model both read as a bare `disabled`, which is the same word for a wait and for a dead end. **Rendered, never parsed**: the wording is the server's, it changes with the reason, and nothing may branch on it — `state` is the field a client decides with. **Absent when there is nothing to add**, which is why it is optional rather than an empty string: a caught-up index explains itself through the counts, and a field that is always present has to invent something to say."
           }
         },
         "required": [

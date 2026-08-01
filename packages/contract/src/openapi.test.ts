@@ -737,7 +737,14 @@ describe("the semantic-index surface (CONTRACT-023)", () => {
     expect(description).toContain("carries no acting party");
   });
 
-  it("is counts, identity, a flag and the state word — all required", () => {
+  /**
+   * The 2026-08-01 rider added a seventh property and made none of it required:
+   * `detail` is a sentence for a person, absent whenever there is nothing to
+   * say. The `required` list below is the assertion that matters — a generated
+   * client compiles against it, and a field arriving required would be a build
+   * break rather than a runtime surprise.
+   */
+  it("is counts, identity, a flag and the state word — all required — plus an optional sentence", () => {
     const status = componentSchemas?.["IndexStatus"];
     expect(Object.keys(status?.properties ?? {})).toEqual([
       "indexed",
@@ -746,6 +753,7 @@ describe("the semantic-index surface (CONTRACT-023)", () => {
       "identity",
       "rebuilding",
       "state",
+      "detail",
     ]);
     expect(status?.required).toEqual([
       "indexed",

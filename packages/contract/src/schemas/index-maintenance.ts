@@ -24,6 +24,15 @@ import { SemanticIndexStateSchema } from "./retrieval.js";
  * not, and a number that will never drain by itself. A progress fraction would
  * lose the third, which is the only one that needs a person.
  *
+ * **A sentence beside the word, never a fifth state.** `state` answers what a
+ * client should do; `detail` answers what a person should know, and it is
+ * optional because most of the time there is nothing to add. It was added
+ * (2026-08-01) because the flagship first run is a 22.6 MiB model download during
+ * which the honest state word is `disabled` — correct, and indistinguishable from
+ * a workspace that will never have a model. The enum did not move for it: a
+ * `downloading` value would be a migration for every client, and would still not
+ * carry the percentage.
+ *
  * **Derived state only.** Nothing here is in git and nothing here is a workspace
  * file: the semantic index is the projection's third search structure, beside the
  * full-text index and the links graph (SPEC.md §2.2 rule 1, §9.1). That is why
@@ -90,6 +99,24 @@ export const IndexStatusSchema = z
         "`semanticIndex` on the retrieval envelopes: this response *is* the claim, so there is " +
         "nothing for its absence to mean.",
     ),
+    detail: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "One human sentence explaining the state, when there is something to explain — a model " +
+          "still downloading (`downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of " +
+          "22.6 MiB, 46%) — semantic ranking starts once it is cached`), a model that has not " +
+          "been downloaded yet, a configured endpoint that did not answer, or an index whose " +
+          "vectors were produced by a model that is not the one resolving now. Without it a " +
+          "workspace whose model is 46% downloaded and one that will never have a model both " +
+          "read as a bare `disabled`, which is the same word for a wait and for a dead end. " +
+          "**Rendered, never parsed**: the wording is the server's, it changes with the reason, " +
+          "and nothing may branch on it — `state` is the field a client decides with. **Absent " +
+          "when there is nothing to add**, which is why it is optional rather than an empty " +
+          "string: a caught-up index explains itself through the counts, and a field that is " +
+          "always present has to invent something to say.",
+      ),
   })
   .openapi("IndexStatus");
 

@@ -70,24 +70,45 @@ const WITH_FAILURES: IndexStatus = {
   state: "current",
 };
 
+/**
+ * A first run, mid-download. The state word is `disabled` and that is honest —
+ * nothing can embed yet — so the sentence is the only thing separating this
+ * workspace from one that will never have a model.
+ */
+const DOWNLOADING: IndexStatus = {
+  indexed: 0,
+  pending: 81,
+  failed: 0,
+  identity: null,
+  rebuilding: false,
+  state: "disabled",
+  detail:
+    "downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of 22.6 MiB, 46%) — " +
+    "semantic ranking starts once it is cached",
+};
+
 const FIXTURES: ReadonlyArray<readonly [string, IndexStatus]> = [
   ["a fresh workspace", FRESH],
   ["a draining backlog", DRAINING],
   ["a full rebuild in flight", REBUILDING],
   ["a caught-up index", CAUGHT_UP],
   ["an index with permanent failures", WITH_FAILURES],
+  ["a model still downloading", DOWNLOADING],
 ];
 
+/** The six fields every payload carries; `detail` is the seventh and is optional. */
+const REQUIRED_FIELDS = [
+  "indexed",
+  "pending",
+  "failed",
+  "identity",
+  "rebuilding",
+  "state",
+] as const;
+
 describe("the index status shape", () => {
-  it("is counts, identity, the rebuild flag and one derived word — in that order", () => {
-    expect(Object.keys(IndexStatusSchema.shape)).toEqual([
-      "indexed",
-      "pending",
-      "failed",
-      "identity",
-      "rebuilding",
-      "state",
-    ]);
+  it("is counts, identity, the rebuild flag, one derived word and the sentence beside it", () => {
+    expect(Object.keys(IndexStatusSchema.shape)).toEqual([...REQUIRED_FIELDS, "detail"]);
   });
 
   it.each(FIXTURES)("round-trips %s", (_name, fixture) => {
@@ -97,8 +118,8 @@ describe("the index status shape", () => {
     expect(IndexStatusSchema.parse(JSON.parse(JSON.stringify(fixture)))).toEqual(fixture);
   });
 
-  it("requires every field, since an absent count is not a smaller number", () => {
-    for (const key of Object.keys(IndexStatusSchema.shape)) {
+  it("requires every counted field, since an absent count is not a smaller number", () => {
+    for (const key of REQUIRED_FIELDS) {
       const partial: Record<string, unknown> = { ...CAUGHT_UP };
       delete partial[key];
       expect(IndexStatusSchema.safeParse(partial).success, key).toBe(false);
@@ -181,5 +202,46 @@ describe("the published mapping from facts to the state word", () => {
 
   it("says a backlog is staleness and not drift, which is what keeps doctor clean", () => {
     expect(IndexStatusSchema.shape.pending.description).toContain("staleness, not drift");
+  });
+});
+
+/**
+ * The 2026-08-01 rider. SERVER-048 promised "downloads happen lazily on first
+ * index need, with progress visible in `index status`" and the payload had no
+ * field that could carry it, so a 22.6 MiB first-run download rendered as a bare
+ * `disabled` — the same six fields, byte-identical, from 0% to 100% (the
+ * SERVER-048 evaluation, FAIL-1). One optional string closes that, and the
+ * constraint it is written under is that it closes *only* that: the state enum
+ * is frozen (C3), so the sentence sits beside the word instead of becoming one.
+ */
+describe("the `detail` sentence", () => {
+  it("is omissible, and parsing never invents one", () => {
+    const parsed = IndexStatusSchema.parse(CAUGHT_UP);
+    expect("detail" in parsed).toBe(false);
+    expect(IndexStatusSchema.safeParse({ ...CAUGHT_UP, detail: undefined }).success).toBe(true);
+  });
+
+  it("carries the download sentence through the wire unchanged", () => {
+    const parsed = IndexStatusSchema.parse(JSON.parse(JSON.stringify(DOWNLOADING)));
+    expect(parsed.detail).toBe(DOWNLOADING.detail);
+    expect(parsed.state).toBe("disabled");
+  });
+
+  it("refuses an empty sentence, because absence already means nothing to say", () => {
+    expect(IndexStatusSchema.safeParse({ ...CAUGHT_UP, detail: "" }).success).toBe(false);
+    expect(IndexStatusSchema.safeParse({ ...CAUGHT_UP, detail: 42 }).success).toBe(false);
+  });
+
+  it("does not touch the state enum, which stays the four signed values", () => {
+    expect([...SEMANTIC_INDEX_STATES]).toEqual(["current", "indexing", "stale", "disabled"]);
+    expect(IndexStatusSchema.safeParse({ ...DOWNLOADING, state: "downloading" }).success).toBe(
+      false,
+    );
+  });
+
+  it("tells a client to render it and decide on `state` instead", () => {
+    const description = IndexStatusSchema.shape.detail.description ?? "";
+    expect(description).toContain("Rendered, never parsed");
+    expect(description).toContain("Absent when there is nothing to add");
   });
 });

@@ -869,7 +869,9 @@ Reads `GET /api/index/status` and prints one block: the provider/model **identit
 
 **A backlog is normal.** Indexing is asynchronous and no save ever waits on it, so `pending` is non-zero right after an edit, an import or a rebuild, and watching it fall is what this verb is for. That is staleness rather than drift: `corpus db doctor` stays clean while it drains (SPEC.md §14). `failed` is the number that does _not_ drain by itself — those chunks are re-queued by `corpus index rebuild`, once whatever made them fail is fixed.
 
-`state` is the same value, from the same schema, that `corpus search` and `corpus doc related` report as `semanticIndex` and warn about when it is anything but `current`. A workspace with no semantic index answers `disabled` with no identity and zero counts — an honest answer about lexical-only ranking, never an error, and the exit code is 0 in every state. `--json` emits the server's report untouched.
+`state` is the same value, from the same schema, that `corpus search` and `corpus doc related` report as `semanticIndex` and warn about when it is anything but `current`. A workspace with no semantic index answers `disabled` with no identity and zero counts — an honest answer about lexical-only ranking, never an error, and the exit code is 0 in every state.
+
+**One sentence may follow the block.** When the server has something to explain it sends a `detail` and it is printed unlabelled under `state`: a model still downloading and how far along it is, a model that has not been downloaded yet, a configured endpoint that did not answer, or an index whose vectors were produced by a model that is not the one resolving now. Without it, a first run — during which the ~23 MiB embedding model downloads — reads as a bare `disabled` and looks permanently off. It is absent whenever there is nothing to add, and it is for reading rather than parsing: `state` is the field to branch on. `--json` emits the server's report untouched.
 
 ```
 corpus index status [flags]
@@ -877,7 +879,7 @@ corpus index status [flags]
 
 **Examples**
 
-The block: identity, indexed/pending/failed chunks, whether a rebuild is running, and the state word.
+The block: identity, indexed/pending/failed chunks, whether a rebuild is running, and the state word — followed, on a first run, by `downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of 22.6 MiB, 46%) — semantic ranking starts once it is cached`.
 
 ```
 corpus index status

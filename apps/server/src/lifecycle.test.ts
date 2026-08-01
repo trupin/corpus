@@ -13,6 +13,9 @@ import {
   runServerProcess,
   type ProcessHooks,
 } from "./lifecycle.js";
+import type { CorpusEmbeddedEngine } from "./semantic/engine/index.js";
+import { createEmbeddingProvider } from "./semantic/provider.js";
+import { UNFILTERED_SCOPE } from "./semantic/vectors.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 
@@ -575,6 +578,75 @@ describe("runServerProcess — boot", () => {
     if (server === undefined) throw new Error("server failed to boot");
 
     expect(order).toEqual(["watcher", "semantic", "embed-worker"]);
+    await server.close();
+  });
+
+  /**
+   * The 2026-08-01 rider's push, wired here and nowhere else. Resolution caches
+   * "no provider" for 30 s, which is right for an endpoint that is down and
+   * wrong for a 22.6 MiB model download that just finished — a first run kept
+   * answering `disabled` for half a minute after the bytes landed (the
+   * SERVER-048 evaluation, LEDGER-1).
+   *
+   * `forQuery` is the probe on purpose: it is the one path that never re-reads
+   * the engine's availability itself, so a provider appearing on it inside the
+   * cooldown can only be the engine's announcement arriving.
+   */
+  it("lets a completed model download end the resolution cooldown immediately", async () => {
+    const workspace = makeWorkspace("ws-model-ready");
+    const h = harness();
+
+    let available = false;
+    let opens = 0;
+    const listeners: (() => void)[] = [];
+    const ref = { provider: "local", model: "fake" };
+    const engine: CorpusEmbeddedEngine = {
+      ref,
+      availability: () =>
+        Promise.resolve(
+          available
+            ? { available: true }
+            : { available: false, reason: "model-not-downloaded", detail: "downloading (3%)" },
+        ),
+      open: () => {
+        opens += 1;
+        return Promise.resolve(
+          createEmbeddingProvider(ref, (texts) => Promise.resolve(texts.map(() => [1, 0, 0, 0]))),
+        );
+      },
+      requestModel: () => undefined,
+      onModelReady: (listener) => listeners.push(listener),
+      whenSettled: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+    };
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      attachEmbeddedEngineFn: () => engine,
+      // The boot resolution is the seam's, not the cache's; leaving it out keeps
+      // this test about the one resolution `forQuery` uses.
+      attachSemanticFn: () => undefined,
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+    const semantic = server.semantic;
+    if (semantic === undefined) throw new Error("no semantic retrieval");
+
+    await semantic.forQuery("anything", UNFILTERED_SCOPE, 5);
+    await semantic.forQuery("anything", UNFILTERED_SCOPE, 5);
+    expect(opens).toBe(0);
+    expect(listeners).toHaveLength(1);
+
+    // The download completes: the cache is warm, and the engine says so.
+    available = true;
+    for (const listener of listeners) listener();
+
+    await semantic.forQuery("anything", UNFILTERED_SCOPE, 5);
+    expect(opens).toBe(1);
+
     await server.close();
   });
 

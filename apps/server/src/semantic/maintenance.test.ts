@@ -221,6 +221,61 @@ describe("GET /api/index/status", () => {
   });
 });
 
+/**
+ * The rider's wire half (2026-08-01). Six fields could not distinguish a model
+ * that is 46% downloaded from a machine that will never have one — the
+ * SERVER-048 evaluation sampled a live download three times and got byte-
+ * identical payloads saying `disabled` (FAIL-1). The seventh field is optional,
+ * it is the resolution's or the engine's own words, and nothing here composes it.
+ */
+describe("GET /api/index/status — the detail sentence", () => {
+  it("carries the engine's download sentence onto the wire", async () => {
+    seedCorpus();
+    build(
+      createStaticEmbeddedEngine({
+        model: "fixture",
+        availability: {
+          available: false,
+          reason: "model-not-downloaded",
+          detail:
+            "downloading the fixture embedding model (10.4 MiB of 22.6 MiB, 46%) — " +
+            "semantic ranking starts once it is cached",
+        },
+        embedBatch: (texts) => Promise.resolve(texts.map((text) => vectorFor(text))),
+      }),
+    );
+
+    const status = await maintenance.status();
+    expect(status.state).toBe("disabled");
+    expect(status.detail).toContain("46%");
+    // The state word did not move to carry it, and the counts are unchanged.
+    expect(status.identity).toBeNull();
+    expect(status.indexed).toBe(0);
+  });
+
+  it("omits the key entirely once the index is caught up", async () => {
+    seedCorpus();
+    build(engineFor());
+    await worker.tick();
+
+    const status = await maintenance.status();
+    expect(status.state).toBe("current");
+    expect("detail" in status).toBe(false);
+    // Through JSON too: the endpoint's answer must not grow a `null`.
+    expect(JSON.parse(JSON.stringify(status))).toEqual(status);
+  });
+
+  it("explains a fresh workspace whose provider is fine and whose index is empty", async () => {
+    seedCorpus();
+    build(engineFor());
+
+    const status = await maintenance.status();
+    expect(status.state).toBe("disabled");
+    expect(status.detail).toContain(identityOf("fixture"));
+    expect(status.pending).toBeGreaterThan(0);
+  });
+});
+
 describe("POST /api/index/rebuild", () => {
   it("returns the post-queue snapshot before anything is embedded", async () => {
     seedCorpus(6);

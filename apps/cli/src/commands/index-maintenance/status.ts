@@ -1,5 +1,5 @@
 import type { IndexStatus } from "@corpus/contract";
-import { renderColumns } from "../columns.js";
+import { oneLine, renderColumns } from "../columns.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
 /**
@@ -16,9 +16,16 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * The rendering is a label/value block through the shared {@link renderColumns},
  * so it lines up like every other tabular verb, and the field order is fixed:
  * identity, indexed, pending, failed, rebuilding, state. Fixed because an agent
- * reads these positionally, and because the last line is the one word the two
- * retrieval envelopes report as `semanticIndex` — the same value from the same
- * schema, so no two surfaces can describe one workspace differently.
+ * reads these positionally, and because the block's last line is the one word
+ * the two retrieval envelopes report as `semanticIndex` — the same value from
+ * the same schema, so no two surfaces can describe one workspace differently.
+ *
+ * **One sentence may follow the block**, unlabelled, when the server sends a
+ * `detail`: a model still downloading and its percentage, a model absent, a
+ * configured endpoint that did not answer, an index built by another model. It
+ * is appended rather than woven in, so the six positions above never move, and
+ * it is silently absent when there is nothing to add — which is most of the
+ * time, because a caught-up index explains itself through the counts.
  *
  * Nothing here is an error. A workspace with no semantic index answers
  * `disabled` with a null identity and zero counts; that is an honest report of
@@ -31,7 +38,7 @@ export const NO_IDENTITY = "none recorded yet";
 
 /** The block, in the one order every caller may rely on. */
 export function renderIndexStatus(status: IndexStatus): readonly string[] {
-  return renderColumns([
+  const block = renderColumns([
     ["identity", status.identity ?? NO_IDENTITY],
     ["indexed", String(status.indexed)],
     ["pending", String(status.pending)],
@@ -39,6 +46,11 @@ export function renderIndexStatus(status: IndexStatus): readonly string[] {
     ["rebuilding", status.rebuilding ? "yes" : "no"],
     ["state", status.state],
   ]);
+
+  // Appended, never interleaved: the six labelled lines keep their positions,
+  // and a reader that stops at `state` reads exactly what it read before. Server
+  // text, so `oneLine` guarantees the one-line promise the block makes.
+  return status.detail === undefined ? block : [...block, oneLine(status.detail)];
 }
 
 export async function runIndexStatus(context: WorkspaceCommandContext): Promise<void> {
@@ -66,14 +78,24 @@ export const statusCommand: WorkspaceCommandSpec = {
     "related` report as `semanticIndex` and warn about when it is anything but `current`. A " +
     "workspace with no semantic index answers `disabled` with no identity and zero counts — an " +
     "honest answer about lexical-only ranking, never an error, and the exit code is 0 in every " +
-    "state. `--json` emits the server's report untouched.",
+    "state.\n\n" +
+    "**One sentence may follow the block.** When the server has something to explain it sends a " +
+    "`detail` and it is printed unlabelled under `state`: a model still downloading and how far " +
+    "along it is, a model that has not been downloaded yet, a configured endpoint that did not " +
+    "answer, or an index whose vectors were produced by a model that is not the one resolving " +
+    "now. Without it, a first run — during which the ~23 MiB embedding model downloads — reads " +
+    "as a bare `disabled` and looks permanently off. It is absent whenever there is nothing to " +
+    "add, and it is for reading rather than parsing: `state` is the field to branch on. " +
+    "`--json` emits the server's report untouched.",
   args: [],
   flags: [],
   examples: [
     {
       command: "corpus index status",
       description:
-        "The block: identity, indexed/pending/failed chunks, whether a rebuild is running, and the state word.",
+        "The block: identity, indexed/pending/failed chunks, whether a rebuild is running, and " +
+        "the state word — followed, on a first run, by `downloading the all-MiniLM-L6-v2 " +
+        "embedding model (10.4 MiB of 22.6 MiB, 46%) — semantic ranking starts once it is cached`.",
     },
     {
       command: "corpus index status --json",

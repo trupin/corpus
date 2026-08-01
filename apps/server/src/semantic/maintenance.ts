@@ -10,9 +10,11 @@
  * late binding, and it is the same shape `SemanticRetrieval.useEngine` already
  * uses for the embedded engine.
  *
- * **Nothing here derives the state word.** `semanticIndexState` in `state.ts` is
- * the single mapping from countable facts to CONTRACT-022's frozen enum, and
- * `SemanticRetrieval.state()` is the single caller a request path uses — so
+ * **Nothing here derives the state word, and nothing here writes the sentence
+ * beside it.** `semanticIndexState` in `state.ts` is the single mapping from
+ * countable facts to CONTRACT-022's frozen enum, `SemanticRetrieval.status()` is
+ * the single caller a request path uses, and the `detail` string is the
+ * resolution's or the engine's own words carried through unchanged — so
  * `GET /api/index/status`, `GET /api/search` and `GET /api/docs/{id}/related`
  * cannot describe one workspace differently. Re-deriving it here would be the
  * second copy the contract reuses one schema to prevent.
@@ -106,8 +108,20 @@ export function createIndexMaintenance(options: IndexMaintenanceOptions): IndexM
       // only observable skew "state says `stale`, pending already reached 0",
       // which reads as a drain that just finished. The other order produces
       // "state says `current`, pending is 5", which reads as a bug.
-      const state = await semantic.state();
-      return { ...facts(indexCounts(db), semantic.rebuild.active), state };
+      //
+      // `detail` comes from the same reading as `state`, never from a second
+      // question: the sentence has to explain *this* word, and a workspace whose
+      // model finished downloading between the two calls would otherwise report
+      // `current` beside "downloading … 98%".
+      const { state, detail } = await semantic.status();
+      return {
+        ...facts(indexCounts(db), semantic.rebuild.active),
+        state,
+        // Omitted rather than `undefined`: the contract's field is optional, and
+        // `exactOptionalPropertyTypes` makes the difference a type error rather
+        // than a review note.
+        ...(detail === undefined ? {} : { detail }),
+      };
     },
 
     rebuild() {

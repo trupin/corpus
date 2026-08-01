@@ -136,3 +136,71 @@ describe("corpus index status", () => {
     expect(statusCommand.args).toEqual([]);
   });
 });
+
+/**
+ * The 2026-08-01 rider. The block alone could not tell a first run apart from a
+ * dead end: a 22.6 MiB model download rendered as six fields saying `disabled`,
+ * byte-identical from 0% to 100% (the SERVER-048 evaluation, FAIL-1). The
+ * server now sends a sentence and this is where a person reads it.
+ */
+describe("corpus index status — the detail sentence", () => {
+  const DOWNLOADING = status({
+    indexed: 0,
+    pending: 81,
+    identity: null,
+    state: "disabled",
+    detail:
+      "downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of 22.6 MiB, 46%) — " +
+      "semantic ranking starts once it is cached",
+  });
+
+  it("prints it under the block, without disturbing a single position above it", () => {
+    const block = renderIndexStatus(DOWNLOADING);
+
+    expect(block).toHaveLength(7);
+    expect(labels(block).slice(0, 6)).toEqual([
+      "identity",
+      "indexed",
+      "pending",
+      "failed",
+      "rebuilding",
+      "state",
+    ]);
+    expect(block.at(5)).toBe("state       disabled");
+    expect(block.at(-1)).toBe(DOWNLOADING.detail);
+  });
+
+  it("is absent, silently, whenever the server sends none", () => {
+    expect(renderIndexStatus(FIXTURES.current)).toHaveLength(6);
+    expect(renderIndexStatus(FIXTURES.current).join("\n")).not.toContain("undefined");
+  });
+
+  it("stays one line even if the server's sentence is not", () => {
+    const wrapped = renderIndexStatus(
+      status({ detail: "configured provider unreachable:\n  http://127.0.0.1:11434" }),
+    );
+
+    expect(wrapped).toHaveLength(7);
+    expect(wrapped.at(-1)).toBe("configured provider unreachable: http://127.0.0.1:11434");
+  });
+
+  it("reaches stdout through the real command, below the six lines", async () => {
+    const stub = await startStubServer(jsonResponder(200, DOWNLOADING));
+    const harness = stubContext(stub, {});
+
+    await runIndexStatus(harness.context);
+
+    const lines = harness.stdout().trimEnd().split("\n");
+    expect(lines).toHaveLength(7);
+    expect(lines.at(-1)).toContain("46%");
+  });
+
+  it("does not touch --json, which stays the server's report verbatim", async () => {
+    const stub = await startStubServer(jsonResponder(200, DOWNLOADING));
+    const harness = stubContext(stub, { json: true });
+
+    await runIndexStatus(harness.context);
+
+    expect(harness.stdout()).toBe(`${JSON.stringify(DOWNLOADING)}\n`);
+  });
+});

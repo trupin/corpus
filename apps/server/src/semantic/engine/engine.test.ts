@@ -254,6 +254,84 @@ describe("createEmbeddedEngine — nothing downloads by itself", () => {
   });
 });
 
+/**
+ * The push half of the 2026-08-01 rider. Everything downstream caches "the model
+ * is not here" — resolution for 30 s (`retrieval.ts`) — and the engine is the
+ * only party that knows the wait is over, so it says so. Without it a first run
+ * kept answering `disabled` for half a minute after the bytes had landed (the
+ * SERVER-048 evaluation, LEDGER-1).
+ */
+describe("createEmbeddedEngine — announcing a completed download", () => {
+  it("notifies every listener once the artifacts are cached, and only then", async () => {
+    const { fetchFn } = serveManifest();
+    const engine = engineWith({ fetchFn });
+    const seen: string[] = [];
+    engine.onModelReady(() => seen.push("first"));
+    engine.onModelReady(() => seen.push("second"));
+
+    engine.requestModel();
+    expect(seen).toEqual([]);
+
+    await engine.whenSettled();
+    expect(seen).toEqual(["first", "second"]);
+    // What a listener is told is true by the time it is told: the availability
+    // it will go and re-read has already flipped.
+    await expect(engine.availability()).resolves.toEqual({ available: true });
+    await engine.close();
+  });
+
+  it("stays silent when there was nothing to download", async () => {
+    const { fetchFn } = serveManifest();
+    await seedCache();
+    const engine = engineWith({ fetchFn });
+    let announced = 0;
+    engine.onModelReady(() => {
+      announced += 1;
+    });
+
+    engine.requestModel();
+    await engine.whenSettled();
+    // Nothing transitioned, so nothing downstream needs invalidating: the cached
+    // resolution over a warm cache is already the right one.
+    expect(announced).toBe(0);
+  });
+
+  it("stays silent when the download failed", async () => {
+    const engine = engineWith({
+      fetchFn: () => Promise.resolve(new Response(null, { status: 500 })),
+    });
+    let announced = 0;
+    engine.onModelReady(() => {
+      announced += 1;
+    });
+
+    engine.requestModel();
+    await engine.whenSettled();
+    expect(announced).toBe(0);
+  });
+
+  it("contains a listener that throws instead of failing the download over it", async () => {
+    const { fetchFn } = serveManifest();
+    const reports: EngineReport[] = [];
+    const engine = engineWith({ fetchFn, report: (report) => reports.push(report) });
+    const after: string[] = [];
+    engine.onModelReady(() => {
+      throw new Error("listener exploded");
+    });
+    engine.onModelReady(() => after.push("still called"));
+
+    engine.requestModel();
+    await engine.whenSettled();
+
+    // The download succeeded, the later listener still ran, and the throw is a
+    // report rather than a retry cooldown over a download that worked.
+    await expect(engine.availability()).resolves.toEqual({ available: true });
+    expect(after).toEqual(["still called"]);
+    expect(reports.some((report) => report.message.includes("listener exploded"))).toBe(true);
+    await engine.close();
+  });
+});
+
 describe("createEmbeddedEngine — failure, progress and retry", () => {
   it("surfaces progress through the availability detail while downloading", async () => {
     let release = (): void => undefined;

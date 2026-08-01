@@ -11,6 +11,8 @@
  * - `state` — the {@link import("@corpus/contract").SemanticIndexState} both
  *   envelopes carry, computed from the same facts either answer was computed
  *   from, so a single request cannot report a state its own ranking contradicts.
+ *   `status` is the same word plus the sentence explaining it, which is the one
+ *   extra thing `GET /api/index/status` publishes (`IndexStatus.detail`).
  *
  * **Both halves are gated on one usability predicate**, and that is a decision.
  * `forDocument` could technically produce neighbours with no provider resolved —
@@ -30,6 +32,15 @@
  * {@link RESOLVE_COOLDOWN_MS}, so an unreachable configured endpoint costs one
  * timeout per cooldown rather than one per request.
  *
+ * **The cooldown is ended by the event, not by the clock.** It exists for
+ * endpoints that stay down; a model artifact finishing its download is the one
+ * unavailability that resolves itself, and waiting out 30 s of `disabled` after
+ * the bytes have landed is a first-run experience that reads as "permanently
+ * off" (the SERVER-048 evaluation, LEDGER-1). So the engine calls
+ * {@link SemanticRetrieval.invalidateResolution} when the download completes,
+ * and a status read asks the engine's `availability()` — a `stat`, not a
+ * network call — while the cache says the model is missing.
+ *
  * **A failure degrades the request, never the response code.** A provider that
  * throws while embedding *this* query yields lexical-only results with an honest
  * state word and a 200 — SPEC.md §9.1's promise is that ranking degrades, and a
@@ -43,7 +54,12 @@ import type { ProjectionDb } from "../projection/db.js";
 import { countPendingChunks } from "./chunks.js";
 import type { EmbeddedEngine } from "./embedded-engine.js";
 import type { EmbeddingProvider } from "./provider.js";
-import { resolveEmbeddingProvider, type ProviderResolution } from "./resolve.js";
+import {
+  resolveEmbeddingProvider,
+  type DisabledReason,
+  type ProviderResolution,
+  type ResolutionErrorReason,
+} from "./resolve.js";
 import { recordedIdentities } from "./embeddings.js";
 import type { EmbeddingSettings } from "./settings.js";
 import {
@@ -71,6 +87,20 @@ import {
  */
 export const RESOLVE_COOLDOWN_MS = 30_000;
 
+/**
+ * The state word plus the sentence beside it — `GET /api/index/status`'s two
+ * derived fields (`IndexStatus.state` and the 2026-08-01 rider's `detail`).
+ *
+ * `detail` is present only when the word alone is not the whole story: a model
+ * downloading, a model absent, a configured endpoint that did not answer, an
+ * index built by another model. A caught-up index explains itself through the
+ * counts, and inventing a sentence for it would be noise on every render.
+ */
+export interface SemanticStatus {
+  readonly state: SemanticIndexState;
+  readonly detail?: string | undefined;
+}
+
 /** What a semantic half answered, and how caught-up it claims to be. */
 export interface SemanticOutcome {
   readonly state: SemanticIndexState;
@@ -86,10 +116,29 @@ export interface SemanticRetrieval {
    * on a build without one, resolution simply reports `engine-not-installed`.
    */
   useEngine(engine: EmbeddedEngine): void;
+  /**
+   * Drops the resolution cooldown, so the next question re-resolves instead of
+   * repeating the last "nothing resolved" answer.
+   *
+   * The cooldown exists for endpoints that stay down: an unreachable configured
+   * provider must cost one timeout per cooldown rather than one per request. A
+   * model finishing its download is the opposite event — the machine changed,
+   * and the cached answer is now about a machine that no longer exists — so the
+   * engine calls this the moment the bytes land (`lifecycle.ts` wires
+   * `onModelReady` to it). Explicit invalidation rather than a shorter cooldown
+   * globally, for `wake()`'s reason (SERVER-046): the caller that knows the wait
+   * is over is the one that should end it.
+   *
+   * It clears only the *timer*. A provider that resolved stays resolved; there
+   * is nothing here to invalidate about a working answer.
+   */
+  invalidateResolution(): void;
   /** SERVER-046's rebuild flag — the bit that makes `indexing` outrank `stale`. */
   readonly rebuild: IndexRebuildFlag;
   /** The state word alone, for a path with no ranking to do. */
   state(): Promise<SemanticIndexState>;
+  /** The state word and the sentence that explains it — `GET /api/index/status`. */
+  status(): Promise<SemanticStatus>;
   /**
    * What this server can embed with right now (SERVER-046's `db doctor` half).
    *
@@ -127,6 +176,12 @@ interface ActiveProvider {
 interface Readiness {
   readonly active: ActiveProvider | undefined;
   readonly facts: SemanticIndexFacts;
+  /**
+   * Why the semantic half is not ranking, when it is not — the sentence
+   * {@link SemanticStatus.detail} publishes. `undefined` whenever `active` is
+   * set: a working index needs no explanation.
+   */
+  readonly detail?: string | undefined;
 }
 
 export function createSemanticRetrieval(options: SemanticRetrievalOptions): SemanticRetrieval {
@@ -148,6 +203,12 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
    */
   let lastIdentity: string | null = null;
   let lastUnavailable = "no embedding provider has resolved yet";
+  /**
+   * Why the last resolution produced nothing, kept because exactly one of those
+   * reasons expires by itself: a model that has not been downloaded *yet*. See
+   * {@link modelWatch}.
+   */
+  let lastReason: DisabledReason | ResolutionErrorReason | undefined;
 
   const resolveProvider =
     options.resolve ??
@@ -161,9 +222,25 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
         ...(engine === undefined ? {} : { embeddedEngine: engine }),
       }));
 
-  const forget = (): void => {
+  /**
+   * Drops the cached provider and starts a cooldown.
+   *
+   * `cause` is what the cooled-down answers that follow will say. Without it
+   * they would repeat the last *resolution* failure — and both callers here drop
+   * a provider that resolved perfectly well, so that sentence would be about an
+   * event that did not happen. `lastIdentity` is deliberately left alone: a
+   * cooldown is a reason to stop dialling, never a reason to forget what
+   * answered (see {@link SemanticRetrieval.effectiveModel}).
+   */
+  const forget = (cause?: {
+    readonly detail: string;
+    readonly reason: DisabledReason | ResolutionErrorReason;
+  }): void => {
     active = undefined;
     retryAfterMs = now() + cooldownMs;
+    if (cause === undefined) return;
+    lastUnavailable = cause.detail;
+    lastReason = cause.reason;
   };
 
   async function ensureProvider(): Promise<ActiveProvider | undefined> {
@@ -175,11 +252,13 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
       if (resolution.kind === "provider") {
         active = { provider: resolution.provider, identity: resolution.identity };
         lastIdentity = resolution.identity;
+        lastReason = undefined;
         retryAfterMs = 0;
         return active;
       }
       lastIdentity = null;
       lastUnavailable = resolution.detail;
+      lastReason = resolution.reason;
       retryAfterMs = now() + cooldownMs;
       logger.debug("semantic ranking is lexical-only", {
         reason: resolution.reason,
@@ -217,20 +296,39 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
           pending,
           rebuilding: rebuild.active,
         },
+        detail: lastUnavailable,
       };
     }
 
     const census = vectorCensus(db, resolved.identity);
-    if (census.atIdentity === 0 && census.total > 0) forget();
+    const foreign = census.atIdentity === 0 && census.total > 0;
+    if (foreign) {
+      forget({
+        detail:
+          `the index's ${String(census.total)} vector(s) were produced by ` +
+          `${recordedIdentities(db).join(", ")}, and ${resolved.identity} is what resolves now; ` +
+          "`corpus index rebuild` re-picks",
+        reason: "sticky-model-unavailable",
+      });
+    }
 
+    const facts: SemanticIndexFacts = {
+      providerResolved: true,
+      usableVectors: census.atIdentity,
+      pending,
+      rebuilding: rebuild.active,
+    };
+
+    if (census.atIdentity > 0) return { active: resolved, facts };
     return {
-      active: census.atIdentity === 0 ? undefined : resolved,
-      facts: {
-        providerResolved: true,
-        usableVectors: census.atIdentity,
-        pending,
-        rebuilding: rebuild.active,
-      },
+      active: undefined,
+      facts,
+      // Two different silences, and the operator's next move differs: one needs
+      // a rebuild, the other needs nothing but time.
+      detail: foreign
+        ? lastUnavailable
+        : `${resolved.identity} is ready; the index has no vectors yet, so ranking is ` +
+          "lexical until the first ones land",
     };
   }
 
@@ -248,12 +346,70 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
       if (vector === undefined || vector.length === 0) return null;
       return vector;
     } catch (error) {
-      logger.info("query embedding failed; this search is lexical only", {
-        detail: error instanceof Error ? error.message : String(error),
+      const detail = error instanceof Error ? error.message : String(error);
+      logger.info("query embedding failed; this search is lexical only", { detail });
+      forget({
+        detail: `${provider.ref.provider}/${provider.ref.model} failed while embedding: ${detail}`,
+        reason: "provider-unreachable",
       });
-      forget();
       return null;
     }
+  }
+
+  /**
+   * The engine's answer *right now*, when the cached one is a download that may
+   * have moved.
+   *
+   * Exactly one unavailability reason expires on its own: `model-not-downloaded`
+   * stops being true when the bytes land. So while that is what the cache holds,
+   * a status read asks the engine again — which is a `stat` of two files, no
+   * network and no model load — and gets back the live sentence, progress
+   * percentage and all (`engine/engine.ts` puts it in `availability().detail`
+   * precisely so it can be read here). Without this, a first-run download
+   * renders as one frozen sentence for the whole cooldown, or as nothing at all.
+   *
+   * Finding the model *present* also ends the cooldown, which covers the
+   * download this process did not perform — another workspace's server, or a
+   * hand-primed cache. The download this process did perform is handled by
+   * {@link SemanticRetrieval.invalidateResolution}, which the engine calls
+   * without waiting for anybody to ask.
+   *
+   * Returns the sentence while the model is still missing, `undefined`
+   * otherwise — including when the engine throws, which is resolution's problem
+   * to report, not a status read's.
+   */
+  async function modelWatch(): Promise<string | undefined> {
+    if (engine === undefined || active !== undefined) return undefined;
+    if (lastReason !== "model-not-downloaded") return undefined;
+
+    let availability;
+    try {
+      availability = await engine.availability();
+    } catch {
+      return undefined;
+    }
+    if (!availability.available) return availability.detail;
+
+    retryAfterMs = 0;
+    return undefined;
+  }
+
+  /** The state word and its sentence, from one reading of the same facts. */
+  async function currentStatus(): Promise<SemanticStatus> {
+    // The engine first, because it can end the cooldown: a model that finished
+    // downloading between two reads must be adopted by *this* read rather than
+    // by the next one, which is the half-minute of "disabled" a first run
+    // otherwise ends with (the SERVER-048 evaluation, LEDGER-1).
+    const downloading = await modelWatch();
+    const { facts, detail } = await readiness();
+    // The live sentence outranks the cached one: `readiness` answers from the
+    // resolution that was cooled down, and that detail is a snapshot of a
+    // percentage which has moved since.
+    const sentence = downloading ?? detail;
+    return {
+      state: semanticIndexState(facts),
+      ...(sentence === undefined ? {} : { detail: sentence }),
+    };
   }
 
   const lexicalOnly = (facts: SemanticIndexFacts): SemanticOutcome => ({
@@ -265,11 +421,14 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
     useEngine(next) {
       engine = next;
     },
+    invalidateResolution() {
+      retryAfterMs = 0;
+    },
     rebuild,
     async state() {
-      const { facts } = await readiness();
-      return semanticIndexState(facts);
+      return (await currentStatus()).state;
     },
+    status: currentStatus,
     async effectiveModel() {
       const resolved = await ensureProvider();
       if (resolved !== undefined) return { kind: "identity", identity: resolved.identity };

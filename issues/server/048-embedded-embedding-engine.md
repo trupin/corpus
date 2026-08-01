@@ -46,7 +46,7 @@ engine behind SERVER-043's `EmbeddedEngine` interface:
 
 ## Acceptance Criteria
 - [x] Zero-config on a machine with the model cached: embeddings compute in-process, no network syscalls during embed (prove with a network-disabled run)
-- [x] First run without the cache: model downloads with progress surfaced in index status, hash-verified; corrupted download discarded + reported, never loaded
+- [x] First run without the cache: model downloads with progress surfaced in index status, hash-verified; corrupted download discarded + reported, never loaded — *hash verification was met at the time; the progress half was **not**, and was fixed on 2026-08-01 (see "AC 2, second half" below)*
 - [x] No model-server, no daemon, no exec of downloaded code — the artifact is data loaded by the in-process library (state the proof)
 - [x] node_modules delta recorded; wasm-vs-native choice justified with measurements at corpus scale (embed throughput for ~10k chunks)
 - [x] Engine reports availability()/identity per SERVER-043's interface; SERVER-044 consumes it unchanged
@@ -300,6 +300,95 @@ Nothing downloaded is executable, and the argument does not rest on trust:
    listens, nothing is spawned, nothing is installed. `lsof` above shows the process holding
    exactly one socket: its own.
 6. **No install-time or boot-time network at all** (legs D and the install-script audit above).
+
+### AC 2, second half — progress in `index status` (fixed 2026-08-01)
+
+Implemented on: opus (Opus 5, 1M context).
+
+The SERVER-048 evaluation refuted this criterion (FAIL-1): `availability().detail` carried the
+percentage, but nothing carried it to the wire — `IndexStatus` was six fields and none of them
+was a reason. Its LEDGER-1 added the other half: after the download *and* the drain finished, a
+first run still reported `disabled` for the remainder of the 30 s resolution cooldown. Fixed
+across three layers, under an orchestrator-granted contract rider (additive, 2026-08-01):
+
+- **Contract** — `IndexStatus` gains one **optional** `detail?: string`
+  (`packages/contract/src/schemas/index-maintenance.ts`). The four-value state enum did not
+  move. A-compat is asserted, not reviewed: `index-maintenance.compat.test.ts` transcribes the
+  pre-rider component by hand and pins assignability in both directions plus the field's
+  optionality on the generated type. Artifacts regenerated; drift check clean.
+- **Server** — `SemanticRetrieval.status()` publishes the word and the sentence from **one**
+  reading of the facts, so a workspace cannot report `current` beside "downloading … 98%".
+  While the cached resolution says `model-not-downloaded` — the only unavailability that
+  expires by itself — a status read re-asks `engine.availability()` (two `stat`s, no network,
+  no model load), which is where the live percentage lives. Finding the model *present* there
+  ends the cooldown; and the engine's new `onModelReady` push (wired in `lifecycle.ts`) ends it
+  for the search path too, without waiting for anybody to poll. The cooldown itself is
+  unchanged for the cases it exists for — an unreachable configured endpoint still costs one
+  timeout per cooldown.
+- **CLI** — one unlabelled line under the block when the server sends a `detail`; the six
+  labelled positions never move, and it is silently absent otherwise.
+
+**Measured, on a real server, cold `CORPUS_MODEL_CACHE_DIR`, 60 chunks, 250 ms sampling.**
+"Before" is the same build with the three new behaviours switched off at their seams
+(`CORPUS_RIDER_OFF=1`, a temporary flag removed afterwards; no `CORPUS_RIDER_OFF` remains in
+the tree). Times are relative to the sampler's first request.
+
+| | before (port 8804) | after (port 8805) |
+| --- | --- | --- |
+| samples during the download | `state: disabled`, no detail, byte-identical | `3%` → `4%` → `15%` → `63%`, moving |
+| download completed | 3.11 s | 13.47 s |
+| index complete (`indexed == total`, identity recorded) | 9.24 s | 20.23 s |
+| first `state: current` | **never within the 30.6 s observation** (confirmed `current` only after the cooldown) | **20.23 s — the same sample** |
+| blind window after the index completed | **≥ 21.3 s** (bounded by `RESOLVE_COOLDOWN_MS`) | **0.00 s** |
+
+The after-run's transitions, verbatim from the sampler (`--json` payloads, unedited):
+
+```
+11.44s  cache= 0.0MiB  …"state":"disabled","detail":"the all-MiniLM-L6-v2 embedding model (22.6 MiB) has not been downloaded yet; …"
+11.96s  cache= 0.7MiB  …"state":"disabled","detail":"downloading … (0.7 MiB of 22.6 MiB, 3%) — semantic ranking starts once it is cached"
+12.96s  cache= 3.5MiB  …"state":"disabled","detail":"downloading … (3.5 MiB of 22.6 MiB, 15%) …"
+13.22s  cache=14.4MiB  …"state":"disabled","detail":"downloading … (14.4 MiB of 22.6 MiB, 63%) …"
+13.47s  cache=22.6MiB  …"state":"disabled","detail":"local/all-MiniLM-L6-v2@384 is ready; the index has no vectors yet, …"
+17.44s  indexed 16/60  …"state":"stale"                     ← draining, honestly, not `disabled`
+20.23s  indexed 60/60  …"state":"current"                   ← same sample as pending → 0
+```
+
+Line 5 is the fix's load-bearing moment: the cache reached 22.6 MiB and the *same* 250 ms
+sample already reports a resolved model, with no cooldown wait anywhere.
+
+`corpus index status` during the same download, real CLI against the real server (the renders
+the evaluator asked for, `--- <epoch ms>` headers elided):
+
+```
+identity    none recorded yet          identity    none recorded yet
+indexed     0                          indexed     0
+pending     60                         pending     60
+failed      0                          failed      0
+rebuilding  no                         rebuilding  no
+state       disabled                   state       disabled
+downloading … (0.7 MiB of 22.6 MiB, 3%) — …    downloading … (21.4 MiB of 22.6 MiB, 94%) — …
+```
+
+Distinct sentences that reached a terminal across the run: 3%, 10%, 49%, 94%, then
+`local/all-MiniLM-L6-v2@384 is ready; the index has no vectors yet, so ranking is lexical until
+the first ones land`. Caught up, the render is exactly six lines again and `--json` is
+byte-identical to the pre-rider payload:
+
+```
+$ corpus index status --json
+{"indexed":60,"pending":0,"failed":0,"identity":"local/all-MiniLM-L6-v2@384","rebuilding":false,"state":"current"}
+```
+
+The third detail class, on a real server with a configured endpoint nothing is listening on —
+including on the second render, i.e. from inside the cooldown, where the pre-fix code would
+have had nothing to say:
+
+```
+state       disabled
+ollama endpoint http://127.0.0.1:19999/api/embed is unreachable: fetch failed
+```
+
+Ports 8804/8805 released at the end (`lsof` silent); 8765 never touched.
 
 ### Checks
 

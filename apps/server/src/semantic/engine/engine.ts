@@ -35,7 +35,11 @@
  * Progress lives in `availability().detail` because the seam's reason vocabulary
  * is closed and deliberately narrow: "the model has not been downloaded yet" is
  * still the honest reason while it is at 40%, and the sentence a person reads in
- * `corpus index status` is the detail beside it.
+ * `corpus index status` is the detail beside it. Since the 2026-08-01 rider that
+ * sentence actually reaches them — `IndexStatus.detail` is the wire field, and
+ * `retrieval.ts` re-reads `availability()` while it is waiting on this model, so
+ * the percentage a person sees is the current one rather than the one cached
+ * when they first asked.
  */
 
 import { mkdir } from "node:fs/promises";
@@ -106,6 +110,23 @@ export interface CorpusEmbeddedEngine extends EmbeddedEngine {
   /** Idempotent, single-flight, cooldown-guarded. Returns immediately; never throws. */
   requestModel(): void;
   /**
+   * Registers a listener for the one moment `availability()` flips from absent
+   * to present: a download this engine performed has just completed.
+   *
+   * It exists because everything downstream caches the *old* answer. Resolution
+   * is cooled down for 30 s after reporting `disabled` (`retrieval.ts`), which
+   * is right for an endpoint that is down and wrong for a wait that just ended —
+   * so a first run reported `disabled` for the whole download and then for
+   * another half minute after it finished (the SERVER-048 evaluation, LEDGER-1).
+   * A push from the side that *knows* beats shortening the cooldown for
+   * everyone, which is `wake()`'s reasoning in SERVER-046.
+   *
+   * Listeners are called once per completed download, synchronously, and a
+   * throwing listener is contained: it must not turn a successful download into
+   * a failed one.
+   */
+  onModelReady(listener: () => void): void;
+  /**
    * Settles when no download attempt is in flight, and never rejects.
    *
    * Deliberately separate from `requestModel`, which returns nothing: a worker
@@ -151,6 +172,7 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
   const report = options.report ?? (() => undefined);
 
   const controller = new AbortController();
+  const readyListeners: (() => void)[] = [];
   let state: DownloadState = { kind: "idle" };
   let inFlight: Promise<void> | undefined;
   let loading: Promise<EmbeddingProvider> | undefined;
@@ -255,6 +277,26 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
     });
   }
 
+  /**
+   * Tells whoever cached "the model is not here" that it now is.
+   *
+   * Each listener is isolated: one that throws must not reach the `catch` below,
+   * where it would be recorded as a download failure and start a retry cooldown
+   * over a download that succeeded.
+   */
+  function announceReady(): void {
+    for (const listener of readyListeners) {
+      try {
+        listener();
+      } catch (error) {
+        report({
+          level: "error",
+          message: `a model-ready listener threw: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    }
+  }
+
   function requestModel(): void {
     const cacheDir = dir;
     if (closed || !supported || cacheDir === undefined || inFlight !== undefined) return;
@@ -262,8 +304,12 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
 
     const attempt = (async () => {
       const missing = await missingArtifacts(cacheDir);
+      // Nothing was missing, so nothing flipped: the listeners are for the
+      // transition, and firing on a cache that was already warm would invalidate
+      // a resolution that is already correct.
       if (missing.length === 0) return;
       await download(cacheDir);
+      announceReady();
     })()
       .catch((error: unknown) => {
         const detail = error instanceof Error ? error.message : String(error);
@@ -374,6 +420,9 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
     availability,
     open,
     requestModel,
+    onModelReady(listener) {
+      readyListeners.push(listener);
+    },
     whenSettled: async () => {
       // A loop rather than a single await: one attempt's `finally` can be
       // followed by a retry the caller started while this was pending.

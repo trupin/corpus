@@ -63,6 +63,9 @@ function engineStub(options: { slow?: boolean; hang?: boolean } = {}): EngineStu
       requestModel: () => {
         requested += 1;
       },
+      // The worker never subscribes; the download-completion push is
+      // `lifecycle.ts`'s wiring to the retrieval cache.
+      onModelReady: () => undefined,
       whenSettled: () => Promise.resolve(),
       close: () => Promise.resolve(),
     },

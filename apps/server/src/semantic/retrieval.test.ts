@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { silentLogger } from "../logger.js";
+import type { EmbeddedEngine, EmbeddedEngineAvailability } from "./embedded-engine.js";
 import { createSemanticRetrieval, RESOLVE_COOLDOWN_MS } from "./retrieval.js";
 import type { ProviderResolution } from "./resolve.js";
 import { UNFILTERED_SCOPE } from "./vectors.js";
@@ -282,5 +283,225 @@ describe("forDocument", () => {
       state: "disabled",
       docs: [],
     });
+  });
+});
+
+/**
+ * The 2026-08-01 rider: `GET /api/index/status` carries a sentence beside the
+ * word, and the flagship first run is what it exists for.
+ *
+ * The SERVER-048 evaluation sampled `index status` three times across a live
+ * 22.6 MiB model download and got six byte-identical fields saying `disabled`
+ * (FAIL-1), then another ~30 s of `disabled` after the download and the drain
+ * had both finished (LEDGER-1) — a first run that reads as "permanently off"
+ * from end to end. Both halves are properties of this file: the sentence comes
+ * from here, and the cooldown that outlived the wait is here too.
+ */
+describe("status — the sentence beside the word", () => {
+  const DOWNLOADING_AT = (percent: number): string =>
+    `downloading the fixture embedding model (${String(percent)}%) — ` +
+    "semantic ranking starts once it is cached";
+
+  /** An engine whose availability answer moves, which is what a download is. */
+  function downloadingEngine(): {
+    readonly engine: EmbeddedEngine;
+    set(next: EmbeddedEngineAvailability): void;
+    asked(): number;
+  } {
+    let availability: EmbeddedEngineAvailability = {
+      available: false,
+      reason: "model-not-downloaded",
+      detail: DOWNLOADING_AT(3),
+    };
+    let asked = 0;
+    return {
+      engine: {
+        ref: { provider: "local", model: "fixture" },
+        availability: () => {
+          asked += 1;
+          return Promise.resolve(availability);
+        },
+        open: () => Promise.reject(new Error("the test never loads a model")),
+      },
+      set: (next) => {
+        availability = next;
+      },
+      asked: () => asked,
+    };
+  }
+
+  it("reports the download's *current* percentage, not the one it cached", async () => {
+    // The evaluator's exact observation: three samples across a live download,
+    // all identical. Resolution is cooled down after the first, so the sentence
+    // can only move if something re-reads the engine.
+    const model = downloadingEngine();
+    let resolutions = 0;
+    const retrieval = build(() => {
+      resolutions += 1;
+      return Promise.resolve({
+        kind: "disabled",
+        reason: "model-not-downloaded",
+        detail: DOWNLOADING_AT(3),
+      });
+    });
+    retrieval.useEngine(model.engine);
+
+    const first = await retrieval.status();
+    expect(first.state).toBe("disabled");
+    expect(first.detail).toBe(DOWNLOADING_AT(3));
+
+    model.set({ available: false, reason: "model-not-downloaded", detail: DOWNLOADING_AT(46) });
+    const second = await retrieval.status();
+    model.set({ available: false, reason: "model-not-downloaded", detail: DOWNLOADING_AT(91) });
+    const third = await retrieval.status();
+
+    expect([second.detail, third.detail]).toEqual([DOWNLOADING_AT(46), DOWNLOADING_AT(91)]);
+    // And none of that cost a re-resolution, which is what the cooldown buys.
+    expect(resolutions).toBe(1);
+  });
+
+  it("adopts the model the instant the download lands, without waiting out the cooldown", async () => {
+    // LEDGER-1: the cooldown is 30 s and the clock below never moves.
+    embedDocuments(ws.db, IDENTITY, { doc_north: [1, 0], doc_south: [0, 1] });
+    const model = downloadingEngine();
+    let cached = false;
+    const retrieval = build(() =>
+      Promise.resolve(
+        cached
+          ? stubResolution(IDENTITY, { embed: directionOf })
+          : { kind: "disabled", reason: "model-not-downloaded", detail: DOWNLOADING_AT(3) },
+      ),
+    );
+    retrieval.useEngine(model.engine);
+
+    expect((await retrieval.status()).state).toBe("disabled");
+
+    const before = clock;
+    model.set({ available: true });
+    cached = true;
+
+    const after = await retrieval.status();
+    expect(after.state).toBe("current");
+    expect(after.detail).toBeUndefined();
+    expect(clock).toBe(before);
+  });
+
+  it("lets the engine end the cooldown for the search path too", async () => {
+    // The push half: `lifecycle.ts` wires `engine.onModelReady` to this, so a
+    // download completing while nobody is polling still heals the next search.
+    embedDocuments(ws.db, IDENTITY, { doc_north: [1, 0], doc_south: [0, 1] });
+    let cached = false;
+    let resolutions = 0;
+    const retrieval = build(() => {
+      resolutions += 1;
+      return Promise.resolve(
+        cached
+          ? stubResolution(IDENTITY, { embed: directionOf })
+          : { kind: "disabled", reason: "model-not-downloaded", detail: DOWNLOADING_AT(3) },
+      );
+    });
+
+    expect((await retrieval.forQuery("north", UNFILTERED_SCOPE, 10)).docs).toEqual([]);
+    expect((await retrieval.forQuery("north", UNFILTERED_SCOPE, 10)).docs).toEqual([]);
+    expect(resolutions).toBe(1);
+
+    cached = true;
+    retrieval.invalidateResolution();
+
+    const outcome = await retrieval.forQuery("north", UNFILTERED_SCOPE, 10);
+    expect(outcome.docs.map((match) => match.id)).toEqual(["doc_north"]);
+    expect(resolutions).toBe(2);
+  });
+
+  it("asks the engine nothing when the reason is not a download that can finish", async () => {
+    // A cooldown exists for endpoints that stay down, and `off-by-config` never
+    // stops being true by itself. Re-reading an engine over either would be a
+    // syscall per status render for an answer that cannot have changed.
+    const model = downloadingEngine();
+    const retrieval = build(() =>
+      Promise.resolve({
+        kind: "disabled",
+        reason: "off-by-config",
+        detail: 'semantic indexing is turned off by `"provider": "none"`; search is lexical only',
+      }),
+    );
+    retrieval.useEngine(model.engine);
+
+    const first = await retrieval.status();
+    const second = await retrieval.status();
+    expect(first.detail).toContain('"provider": "none"');
+    // The sentence survives the cooldown: a second render must not degrade to
+    // "no embedding provider has resolved yet".
+    expect(second.detail).toBe(first.detail);
+    expect(model.asked()).toBe(0);
+  });
+
+  it("falls back to the cached sentence when the engine cannot answer at all", async () => {
+    // An engine that throws is resolution's problem to report, not a status
+    // read's to crash on: the endpoint still answers, with what it last knew.
+    const retrieval = build(() =>
+      Promise.resolve({
+        kind: "disabled",
+        reason: "model-not-downloaded",
+        detail: DOWNLOADING_AT(3),
+      }),
+    );
+    retrieval.useEngine({
+      ref: { provider: "local", model: "fixture" },
+      availability: () => Promise.reject(new Error("the cache directory vanished")),
+      open: () => Promise.reject(new Error("the test never loads a model")),
+    });
+
+    expect((await retrieval.status()).detail).toBe(DOWNLOADING_AT(3));
+    const second = await retrieval.status();
+    expect(second.state).toBe("disabled");
+    expect(second.detail).toBe(DOWNLOADING_AT(3));
+  });
+
+  it("says nothing at all when the index is caught up", async () => {
+    embedDocuments(ws.db, IDENTITY, { doc_north: [1, 0], doc_south: [0, 1] });
+    const retrieval = build(() =>
+      Promise.resolve(stubResolution(IDENTITY, { embed: directionOf })),
+    );
+
+    const status = await retrieval.status();
+    expect(status.state).toBe("current");
+    expect("detail" in status).toBe(false);
+  });
+
+  it("explains an index built by another model, and keeps explaining it", async () => {
+    embedDocuments(ws.db, OTHER_IDENTITY, { doc_north: [1, 0], doc_south: [0, 1] });
+    const retrieval = build(() =>
+      Promise.resolve(stubResolution(IDENTITY, { embed: directionOf })),
+    );
+
+    const first = await retrieval.status();
+    expect(first.state).toBe("disabled");
+    expect(first.detail).toContain(OTHER_IDENTITY);
+    expect(first.detail).toContain("index rebuild");
+    // The dropped provider starts a cooldown, and the next render answers from
+    // it — with the same sentence, not with the never-resolved placeholder.
+    expect((await retrieval.status()).detail).toBe(first.detail);
+  });
+
+  it("explains an empty index behind a provider that is perfectly fine", async () => {
+    const retrieval = build(() =>
+      Promise.resolve(stubResolution(IDENTITY, { embed: directionOf })),
+    );
+
+    const status = await retrieval.status();
+    expect(status.state).toBe("disabled");
+    expect(status.detail).toContain(IDENTITY);
+    expect(status.detail).toContain("no vectors yet");
+  });
+
+  it("publishes the same word `state()` does, from one reading", async () => {
+    embedDocuments(ws.db, IDENTITY, { doc_north: [1, 0] });
+    const retrieval = build(() =>
+      Promise.resolve(stubResolution(IDENTITY, { embed: directionOf })),
+    );
+
+    expect((await retrieval.status()).state).toBe(await retrieval.state());
+    expect(await retrieval.state()).toBe("stale");
   });
 });

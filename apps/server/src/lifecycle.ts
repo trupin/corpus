@@ -197,7 +197,20 @@ export async function runServerProcess(
     // existed; this is where it learns about one. Binding it costs nothing — the
     // engine is not asked anything until the first search needs a query
     // embedded, which is what keeps a model load off the boot path.
-    if (embeddedEngine !== undefined) server.semantic?.useEngine(embeddedEngine);
+    const semantic = server.semantic;
+    if (embeddedEngine !== undefined && semantic !== undefined) {
+      semantic.useEngine(embeddedEngine);
+      // The other direction, and the reason it is a push: resolution caches
+      // "nothing resolved" for a cooldown, which is right for an endpoint that
+      // is down and wrong for a 22.6 MiB download that just finished — a first
+      // run reported `disabled` for the whole download and then for another half
+      // minute afterwards (the SERVER-048 evaluation, LEDGER-1). The engine is
+      // the only party that knows the wait is over, so it is the one that ends
+      // it.
+      embeddedEngine.onModelReady(() => {
+        semantic.invalidateResolution();
+      });
+    }
     // Last, so its disposer runs first: it reads the projection, and a resolution
     // still in flight must be aborted and awaited before the database closes. It
     // resolves in the background — a configured endpoint that never answers must
