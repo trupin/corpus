@@ -195,6 +195,53 @@ export function assertNoDevDependencyLeak(dependencies: Readonly<Record<string, 
   }
 }
 
+/**
+ * The other direction of INFRA-012's proof. The tarball must contain no model
+ * and no inference runtime — but the *manifest* must then carry the runtime as a
+ * dependency, or an install has a semantic stack with nothing to run it on.
+ *
+ * Both entries are derived, never written: they appear because a bundle imports
+ * them. The assertion exists because for `onnxruntime-web` that derivation is
+ * unusually thin — `apps/server/src/semantic/engine/runtime.ts` reaches it
+ * through a *dynamic* `await import("onnxruntime-web")`, so its presence in
+ * `dependencies` rests entirely on esbuild reporting a dynamic external in the
+ * metafile. If that ever stopped, nothing would fail: the package would build,
+ * pack, install, boot, and report `semanticIndex: "disabled"` forever. That is
+ * the quietest failure this repository can produce, so it gets the loudest check.
+ */
+export const REQUIRED_RUNTIME_DEPENDENCIES: readonly { name: string; reason: string }[] = [
+  {
+    name: "onnxruntime-web",
+    reason:
+      "the embedding runtime (sprint-021 OC1-REVISED: wasm in-process, 137.4 MiB in " +
+      "node_modules, nothing staged into the tarball) — imported dynamically, so its " +
+      "absence here would be silent",
+  },
+  {
+    name: "better-sqlite3",
+    reason: "the projection database — a native module npm installs and the pack never carries",
+  },
+];
+
+/**
+ * Fails the build when a dependency the installed tool cannot work without went
+ * missing from the derived list.
+ */
+export function assertRequiredRuntimeDependencies(
+  dependencies: Readonly<Record<string, string>>,
+): void {
+  const missing = REQUIRED_RUNTIME_DEPENDENCIES.filter(
+    (entry) => dependencies[entry.name] === undefined,
+  );
+  if (missing.length > 0) {
+    throw new PackagingError(
+      `the published dependencies are missing ${missing
+        .map((entry) => `"${entry.name}" (${entry.reason})`)
+        .join(", ")} — the bundles no longer import it, or esbuild stopped reporting it`,
+    );
+  }
+}
+
 export interface PublishManifestOptions {
   readonly version: string;
   readonly dependencies: Readonly<Record<string, string>>;
@@ -218,6 +265,7 @@ export interface PublishManifest {
 
 export function buildPublishManifest(options: PublishManifestOptions): PublishManifest {
   assertNoDevDependencyLeak(options.dependencies);
+  assertRequiredRuntimeDependencies(options.dependencies);
   return {
     name: PACKAGE_NAME,
     version: options.version,

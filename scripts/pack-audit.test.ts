@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   auditPackedFiles,
   FORBIDDEN_PACK_PATTERNS,
+  MAXIMUM_PACKED_BYTES,
   MINIMUM_PACKED_FILES,
   REQUIRED_PACK_ENTRIES,
   type PackedFile,
@@ -159,6 +160,52 @@ describe("the bin's executable bit", () => {
       file.path === "dist/corpus.js" ? { path: file.path } : file,
     );
     expect(auditPackedFiles(files).join("\n")).toContain("executable bit is unproven");
+  });
+});
+
+/**
+ * INFRA-012, sprint-021 OC1-REVISED + OC2. The semantic stack ships as *absence*
+ * — no weights, no tokenizer, no wasm, no native vector extension — and the
+ * thing that makes that checkable is this table plus the byte ceiling. Each case
+ * below is a real path from the artifacts the sprint measured and refused.
+ */
+describe("the semantic absence proof", () => {
+  it.each([
+    ["the embedding model itself", "assets/models/all-MiniLM-L6-v2/model_quantized.onnx"],
+    ["fp32 weights under any name", "server/model.onnx"],
+    ["external tensor data", "server/model.onnx_data"],
+    ["a GGUF checkpoint", "assets/models/model.gguf"],
+    ["safetensors weights", "assets/models/model.safetensors"],
+    ["an opaque weights blob", "assets/models/pytorch_model.bin"],
+    ["the tokenizer that downloads beside the weights", "assets/models/tokenizer.json"],
+    ["a tokenizer config sidecar", "assets/models/tokenizer_config.json"],
+    ["a special-tokens sidecar", "assets/models/special_tokens_map.json"],
+    ["a model vocabulary", "assets/models/vocab.txt"],
+    ["a populated model cache", "models/all-MiniLM-L6-v2@751bff37/model_quantized.onnx"],
+    ["a dev cache directory", ".cache/corpus/models/tokenizer.json"],
+    ["a native addon", "server/better_sqlite3.node"],
+    ["a sqlite-vec extension, macOS", "server/vec0.dylib"],
+    ["a sqlite-vec extension, Linux", "server/vec0.so"],
+    ["a versioned shared object", "server/libonnxruntime.so.1.27.0"],
+    ["a Windows DLL", "server/onnxruntime.dll"],
+    ["a vendored wasm runtime", "server/ort-wasm-simd-threaded.wasm"],
+  ])("rejects %s", (_label, offending) => {
+    const violations = auditPackedFiles(cleanListing([{ path: offending, mode: READ_ONLY }]));
+    expect(violations.join("\n")).toContain(offending);
+  });
+
+  it("catches an artifact renamed out of every pattern, by weight alone", () => {
+    // 21.9 MiB — the int8 MiniLM, disguised. The named rules all miss it.
+    const violations = auditPackedFiles(
+      cleanListing([{ path: "assets/workspace/data/blob", mode: READ_ONLY, size: 22_972_370 }]),
+    );
+    expect(violations.join("\n")).toContain("ceiling");
+  });
+
+  it("leaves a real-sized tarball alone", () => {
+    const files = cleanListing().map((file) => ({ ...file, size: 200_000 }));
+    expect(files.reduce((total, file) => total + file.size, 0)).toBeLessThan(MAXIMUM_PACKED_BYTES);
+    expect(auditPackedFiles(files)).toEqual([]);
   });
 });
 

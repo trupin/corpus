@@ -24,7 +24,13 @@ const PackReportSchema = z.array(
     version: z.string(),
     size: z.number(),
     unpackedSize: z.number(),
-    files: z.array(z.looseObject({ path: z.string(), mode: z.number().optional() })),
+    files: z.array(
+      z.looseObject({
+        path: z.string(),
+        mode: z.number().optional(),
+        size: z.number().optional(),
+      }),
+    ),
   }),
 );
 
@@ -56,9 +62,13 @@ if (parsed.data.length !== 1 || report === undefined) {
   fail(`expected exactly one packed package, got ${String(parsed.data.length)}`);
 }
 
-const files: PackedFile[] = report.files.map((file) =>
-  file.mode === undefined ? { path: file.path } : { path: file.path, mode: file.mode },
-);
+// Sizes feed `MAXIMUM_PACKED_BYTES`, the extension-independent guard that a
+// model or an inference runtime never gets staged (INFRA-012).
+const files: PackedFile[] = report.files.map((file) => ({
+  path: file.path,
+  ...(file.mode === undefined ? {} : { mode: file.mode }),
+  ...(file.size === undefined ? {} : { size: file.size }),
+}));
 const violations = auditPackedFiles(files);
 
 if (violations.length > 0) {
