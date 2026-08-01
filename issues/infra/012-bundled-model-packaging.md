@@ -7,7 +7,7 @@ native extension are both rejected. This issue is now the negative proof.
 infra
 
 ## Status
-todo
+done
 
 ## Priority
 P1

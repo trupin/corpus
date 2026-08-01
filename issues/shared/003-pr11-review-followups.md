@@ -259,3 +259,10 @@ _n/a until triage._
   signed pointer rule spec text ("the active column ignores a stationary pointer
   across programmatic closes; hover re-adopts on real movement") — queue for the
   next sign-off round.
+
+## Phase 8 harvest note (2026-07-31)
+
+- **worker-host.test.ts crash-drill test flaked once under full-suite load** (an
+  EmbeddingError rejection surfaced unhandled; green scoped and on retry). Harden at
+  triage: default catch on the host's ready promise inside createWorkerHost, or the
+  test attaches its rejection handler before the worker can die.
