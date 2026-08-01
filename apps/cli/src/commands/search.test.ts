@@ -1,4 +1,4 @@
-import type { SearchHit, SearchResults } from "@corpus/contract";
+import { SEMANTIC_INDEX_STATES, type SearchHit, type SearchResults } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { ExitCode, exitCodeFor } from "../errors.js";
 import { collectRegistryProblems } from "../registry/validate.js";
@@ -199,6 +199,24 @@ describe("corpus search", () => {
     expect(lines).toHaveLength(2);
     expect(lines[1]?.startsWith("doc_a1b2c3")).toBe(true);
   });
+
+  // Phase B produces these three for real — a rebuild in flight, an incremental
+  // backlog, and no usable index at all — and the wording stays one generic line
+  // for all of them on purpose (`retrieval.ts`): an unknown state must read as
+  // degraded too, so nothing here matches the value exhaustively.
+  it.each(SEMANTIC_INDEX_STATES.filter((state) => state !== "current"))(
+    "warns on the wire value %s, and names it",
+    async (state) => {
+      const stub = await startStubServer(jsonResponder(200, results([hit()], state)));
+      const harness = stubContext(stub, { args: { query: "rate" } });
+
+      await runSearch(harness.context);
+
+      const [first] = harness.stdout().split("\n");
+      expect(first).toContain("# ranking is degraded");
+      expect(first).toContain(state);
+    },
+  );
 
   it("keeps the note out of --json, where the state is already a field", async () => {
     const body = results([hit()], "stale");

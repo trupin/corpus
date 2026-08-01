@@ -1,6 +1,7 @@
 import { dbTopic } from "../commands/db/index.js";
 import { docTopic } from "../commands/doc/index.js";
 import { healthCommand } from "../commands/health.js";
+import { indexTopic } from "../commands/index-maintenance/index.js";
 import { initCommand } from "../commands/init/index.js";
 import { jobTopic } from "../commands/job/index.js";
 import { lockTopic } from "../commands/lock/index.js";
@@ -53,6 +54,7 @@ export const registry: Registry = validateRegistry({
     lockTopic,
     jobTopic,
     dbTopic,
+    indexTopic,
     ...pluginScan.topics,
   ],
 });

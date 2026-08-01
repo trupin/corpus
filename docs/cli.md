@@ -30,6 +30,9 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus doc related`](#corpus-doc-related)
   - [`corpus doc show`](#corpus-doc-show)
   - [`corpus doc unarchive`](#corpus-doc-unarchive)
+- [`corpus index`](#corpus-index)
+  - [`corpus index rebuild`](#corpus-index-rebuild)
+  - [`corpus index status`](#corpus-index-status)
 - [`corpus job`](#corpus-job)
   - [`corpus job abandon`](#corpus-job-abandon)
   - [`corpus job list`](#corpus-job-list)
@@ -814,6 +817,76 @@ Re-enable an archived skill and free its name, attributed to the agent. One JSON
 
 ```
 corpus doc unarchive doc_a1b2c3 --from agent --json
+```
+
+## `corpus index`
+
+Inspect and rebuild the semantic index.
+
+The semantic index is derived runtime state — the projection's third search structure, beside the full-text index and the links graph (SPEC.md §2.2 rule 1, §9.1). Neither verb touches a workspace file, so neither produces a commit and neither carries an acting party.
+
+Embedding is asynchronous and **no save ever waits on it**, which is what makes these two verbs necessary: `status` is where a backlog is visible instead of hidden, and `rebuild` is how the whole corpus is re-embedded — after an embedding model changes, or to retry chunks that failed. A backlog is staleness, not drift: `corpus db doctor` stays clean while it drains, and ranked search stays available on its lexical half, saying so (SPEC.md §14).
+
+### `corpus index rebuild`
+
+Discard the semantic index and re-queue every chunk; returns immediately.
+
+Posts `POST /api/index/rebuild`: the server discards the semantic index's vectors, re-picks the current default provider and model — the one place the sticky identity resets — and queues the whole corpus for embedding (SPEC.md §9.1). It is the narrow counterpart of `corpus db rebuild`, which reconstructs the entire projection.
+
+**It returns as soon as the work is queued, not when it is done.** The two lines it prints are an acknowledgment — how many chunks are now queued, the identity that was just re-picked and the resulting state — and never a claim of completion. There is deliberately **no watch loop**: ask again with `corpus index status` to see the backlog drain. Ranked search stays available throughout on its lexical half and says `indexing` while it waits.
+
+This is also how a `failed` chunk gets another attempt: failures do not drain on their own. Nothing here touches a workspace file, so there is no commit and no acting party. `--json` emits the queued-moment snapshot untouched.
+
+```
+corpus index rebuild [flags]
+```
+
+**Examples**
+
+Re-embed the whole corpus after changing the embedding model, or to retry failed chunks.
+
+```
+corpus index rebuild
+```
+
+Fire the rebuild, then look at the backlog it just queued.
+
+```
+corpus index rebuild && corpus index status
+```
+
+One JSON value, true at the moment of the call: `{"indexed":0,"pending":660,"failed":0,"identity":"local/all-MiniLM-L6-v2@384","rebuilding":true,"state":"indexing"}`.
+
+```
+corpus index rebuild --json
+```
+
+### `corpus index status`
+
+Report the semantic index's coverage, identity and state.
+
+Reads `GET /api/index/status` and prints one block: the provider/model **identity** the index's vectors were produced under, the `indexed` / `pending` / `failed` chunk counts, whether a full rebuild is in flight, and the single `state` word those facts derive to (SPEC.md §9.1). The three counts account for every chunk in the corpus, so there is no separate total.
+
+**A backlog is normal.** Indexing is asynchronous and no save ever waits on it, so `pending` is non-zero right after an edit, an import or a rebuild, and watching it fall is what this verb is for. That is staleness rather than drift: `corpus db doctor` stays clean while it drains (SPEC.md §14). `failed` is the number that does _not_ drain by itself — those chunks are re-queued by `corpus index rebuild`, once whatever made them fail is fixed.
+
+`state` is the same value, from the same schema, that `corpus search` and `corpus doc related` report as `semanticIndex` and warn about when it is anything but `current`. A workspace with no semantic index answers `disabled` with no identity and zero counts — an honest answer about lexical-only ranking, never an error, and the exit code is 0 in every state. `--json` emits the server's report untouched.
+
+```
+corpus index status [flags]
+```
+
+**Examples**
+
+The block: identity, indexed/pending/failed chunks, whether a rebuild is running, and the state word.
+
+```
+corpus index status
+```
+
+One JSON value: `{"indexed":660,"pending":0,"failed":0,"identity":"local/all-MiniLM-L6-v2@384","rebuilding":false,"state":"current"}`.
+
+```
+corpus index status --json
 ```
 
 ## `corpus job`

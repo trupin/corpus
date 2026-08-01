@@ -1,4 +1,4 @@
-import type { RelatedDoc, RelatedDocs } from "@corpus/contract";
+import { SEMANTIC_INDEX_STATES, type RelatedDoc, type RelatedDocs } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { ExitCode, exitCodeFor } from "../../errors.js";
 import { collectRegistryProblems } from "../../registry/validate.js";
@@ -137,6 +137,22 @@ describe("corpus doc related", () => {
     await runDocRelated(loudHarness.context);
     expect(loudHarness.stdout().split("\n")[0]).toContain("# ranking is degraded");
   });
+
+  // Both rankings degrade together, so `related` has to say so for the same
+  // wire values `search` does — one generic line, never a per-state wording.
+  it.each(SEMANTIC_INDEX_STATES.filter((state) => state !== "current"))(
+    "warns on the wire value %s, and names it",
+    async (state) => {
+      const stub = await startStubServer(jsonResponder(200, envelope([related()], state)));
+      const harness = stubContext(stub, { args: { id: "doc_a1b2c3" } });
+
+      await runDocRelated(harness.context);
+
+      const [first] = harness.stdout().split("\n");
+      expect(first).toContain("# ranking is degraded");
+      expect(first).toContain(state);
+    },
+  );
 
   it("treats an unknown id as the shipped 404 — exit 5, message verbatim", async () => {
     const stub = await startStubServer(
