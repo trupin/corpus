@@ -63,6 +63,14 @@ export function attachEmbedWorker(
     ...(engine === undefined ? {} : { requestModel: () => engine.requestModel() }),
   });
 
+  // `POST /api/index/rebuild` discards the vectors synchronously and then has to
+  // restart a worker that may have *correctly* stopped asking — stickiness kept
+  // the recorded model, so resolution parked at the backoff ceiling, and the
+  // rows that made it sticky are the ones just deleted. The routes were mounted
+  // before this worker existed, so the binding goes the other way, exactly as
+  // `semantic.useEngine` does for the embedded engine.
+  server.indexMaintenance?.useWorker(worker);
+
   server.registerDisposer(() => worker.close());
   return worker;
 }

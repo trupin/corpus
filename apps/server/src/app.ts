@@ -52,7 +52,13 @@ import { createBearerAuth } from "./middleware/auth.js";
 import { createRequestLogger } from "./middleware/logging.js";
 import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
 import { mountSearchRoutes } from "./search/index.js";
-import { createSemanticRetrieval, type SemanticRetrieval } from "./semantic/index.js";
+import {
+  createIndexMaintenance,
+  createSemanticRetrieval,
+  mountIndexRoutes,
+  type IndexMaintenance,
+  type SemanticRetrieval,
+} from "./semantic/index.js";
 import {
   createQueueService,
   mountQueueRoutes,
@@ -130,6 +136,17 @@ export interface CorpusServer {
    * `indexing` outrank `stale` on all three surfaces at once.
    */
   readonly semantic: SemanticRetrieval | undefined;
+  /**
+   * The semantic index's operational surface (SERVER-046): `GET /api/index/status`,
+   * `POST /api/index/rebuild`, and the effective-model question `db doctor`
+   * asks. `undefined` alongside {@link semantic}, for the same reason.
+   *
+   * Exposed for the same late binding {@link semantic} is: the embed worker is
+   * started by `lifecycle.ts` after the routes are mounted, and `useWorker` is
+   * how a rebuild reaches it — without one, a rebuild still discards and
+   * re-queues, there is simply nothing to drain it.
+   */
+  readonly indexMaintenance: IndexMaintenance | undefined;
   /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
@@ -311,6 +328,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
   let locks: LockService | undefined;
   let lockGuard: LockGuard | undefined;
   let semantic: SemanticRetrieval | undefined;
+  let indexMaintenance: IndexMaintenance | undefined;
   if (deps.projection !== undefined) {
     // Everything the write path needs is already reachable here (sprint-005
     // Open Conflict 12: "no new deps"): the workspace root is on the config, the
@@ -379,6 +397,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       now,
     });
 
+    // The index's maintenance verbs share the retrieval half's rebuild flag and
+    // its provider resolution — one bit and one cached answer, so `indexing`
+    // cannot outrank `stale` on one endpoint and not on another.
+    indexMaintenance = createIndexMaintenance({ db: deps.projection, semantic, logger });
+    mountIndexRoutes(app, indexMaintenance);
+
     mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace, semantic });
 
     // Ranked retrieval (SPEC.md §7, §9.2). A pure projection read like the
@@ -419,6 +443,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       queue,
       logger,
       invalidate: deps.invalidate ?? invalidate,
+      index: indexMaintenance,
     });
 
     // §14's validator over HTTP, and §7's skill rollback. Both need the
@@ -559,6 +584,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     locks,
     lockGuard,
     semantic,
+    indexMaintenance,
     registerDisposer(dispose) {
       disposers.push(dispose);
     },

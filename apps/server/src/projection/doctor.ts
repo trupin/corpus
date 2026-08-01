@@ -9,11 +9,13 @@
 // concurrency makes it safe while one is.
 
 import { readFileSync } from "node:fs";
+import type { EffectiveModel } from "../semantic/state.js";
 import { openProjectionReadonly, type ProjectionConfig, type ProjectionDb } from "./db.js";
 import { hashContent, readDocumentIdentity } from "./project-document.js";
 import { listQueueEventFiles } from "./project-runtime.js";
 import { enumerateDocuments, type EnumeratedFile } from "./roots.js";
-import { collectUnindexableFiles, type DoctorWarning } from "./unindexable.js";
+import { checkSemanticIndex } from "./semantic-integrity.js";
+import { collectUnindexableFiles } from "./unindexable.js";
 
 export const DRIFT_KINDS = [
   /** A document file exists but the projection has no row for it. */
@@ -37,6 +39,28 @@ export type Drift = {
   /** Workspace-relative path the drift concerns, when it concerns one. */
   readonly path?: string;
   readonly detail: string;
+};
+
+/**
+ * A report-only finding: true, actionable, and not a disagreement with the
+ * projection. It never moves {@link DoctorReport.ok} and never changes
+ * `corpus db doctor`'s exit code (SERVER-038).
+ *
+ * `kind` is a **plain string**, matching the wire (`packages/contract`'s
+ * `DoctorWarningKindSchema`, an open lowercase snake_case token): a warning
+ * carries no verdict, so the only thing a consumer must do with an unrecognised
+ * kind is print its `detail`. That openness is what lets a new report-only pass
+ * — the unindexable-file walk, and now the semantic index's
+ * (`semantic-integrity.ts`) — be a server change rather than a contract release.
+ * Each pass still names its own kinds as a narrow constant for its own tests.
+ */
+export type DoctorWarning = {
+  readonly kind: string;
+  /** Workspace-relative path, absent on a finding that concerns no single file. */
+  readonly path?: string | undefined;
+  readonly detail: string;
+  /** Short sha of the commit that introduced the file, absent when there is none. */
+  readonly commit?: string | undefined;
 };
 
 export type DoctorReport = {
@@ -234,18 +258,39 @@ export function inspectProjection(db: ProjectionDb): DoctorReport {
  * paying only for that one. `durationMs` covers both passes — a stat that
  * excluded half the work would be the wrong number to watch.
  */
-export function doctor(config: ProjectionConfig): DoctorReport {
+export interface DoctorOptions {
+  /**
+   * What the caller can embed with right now, for the semantic index's identity
+   * check (`semantic-integrity.ts`). Defaults to `unknown`, which skips the
+   * comparison entirely: `doctor` must stay runnable with no server — a
+   * pre-commit hook, a workspace whose server is stopped — and a read-only file
+   * check has no standing to resolve a provider or to claim that nothing could.
+   */
+  readonly effectiveModel?: EffectiveModel | undefined;
+}
+
+export function doctor(config: ProjectionConfig, options: DoctorOptions = {}): DoctorReport {
   const startedAt = Date.now();
   const db = openProjectionReadonly(config);
   let report: DoctorReport;
+  let semantic: ReturnType<typeof checkSemanticIndex>;
   try {
     report = inspectProjection(db);
+    // Inside this connection's lifetime, and deliberately **not** inside
+    // `inspectProjection`: the other caller of that function is the boot
+    // catch-up, which asks a narrower question on the boot path and must keep
+    // paying only for that one (SERVER-025). A semantic pass there would run on
+    // every boot, and a chunk finding would trigger a full repopulation.
+    semantic = checkSemanticIndex(db, options.effectiveModel ?? { kind: "unknown" });
   } finally {
     db.close();
   }
+  const drift = [...report.drift, ...semantic.drift];
   return {
     ...report,
-    warnings: collectUnindexableFiles(config.workspaceRoot),
+    ok: drift.length === 0,
+    drift,
+    warnings: [...collectUnindexableFiles(config.workspaceRoot), ...semantic.warnings],
     stats: { ...report.stats, durationMs: Date.now() - startedAt },
   };
 }

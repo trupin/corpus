@@ -49,6 +49,7 @@ import type { EmbeddingSettings } from "./settings.js";
 import {
   createIndexRebuildFlag,
   semanticIndexState,
+  type EffectiveModel,
   type IndexRebuildFlag,
   type SemanticIndexFacts,
 } from "./state.js";
@@ -89,6 +90,15 @@ export interface SemanticRetrieval {
   readonly rebuild: IndexRebuildFlag;
   /** The state word alone, for a path with no ranking to do. */
   state(): Promise<SemanticIndexState>;
+  /**
+   * What this server can embed with right now (SERVER-046's `db doctor` half).
+   *
+   * Deliberately **not** `readiness().active`: that one is filtered by what the
+   * index holds, and reports "no provider" in exactly the case the doctor needs
+   * to see — an index whose vectors all carry a foreign identity. This answers
+   * the narrower question resolution alone decides.
+   */
+  effectiveModel(): Promise<EffectiveModel>;
   forQuery(text: string, scope: SemanticScope, limit: number): Promise<SemanticOutcome>;
   forDocument(docId: string, scope: SemanticScope, limit: number): Promise<SemanticOutcome>;
 }
@@ -129,6 +139,15 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
   let active: ActiveProvider | undefined;
   let inFlight: Promise<ActiveProvider | undefined> | undefined;
   let retryAfterMs = 0;
+  /**
+   * The last two answers resolution gave, kept for {@link SemanticRetrieval.effectiveModel}
+   * alone. `active` is cleared both by a genuine failure and by `forget()`'s
+   * cooldown — and `forget()` fires precisely on the foreign-identity case the
+   * doctor exists to catch, so a doctor reading `active` would see "nothing
+   * resolved" exactly when something did.
+   */
+  let lastIdentity: string | null = null;
+  let lastUnavailable = "no embedding provider has resolved yet";
 
   const resolveProvider =
     options.resolve ??
@@ -155,9 +174,12 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
       const resolution = await resolveProvider();
       if (resolution.kind === "provider") {
         active = { provider: resolution.provider, identity: resolution.identity };
+        lastIdentity = resolution.identity;
         retryAfterMs = 0;
         return active;
       }
+      lastIdentity = null;
+      lastUnavailable = resolution.detail;
       retryAfterMs = now() + cooldownMs;
       logger.debug("semantic ranking is lexical-only", {
         reason: resolution.reason,
@@ -247,6 +269,16 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
     async state() {
       const { facts } = await readiness();
       return semanticIndexState(facts);
+    },
+    async effectiveModel() {
+      const resolved = await ensureProvider();
+      if (resolved !== undefined) return { kind: "identity", identity: resolved.identity };
+      // A cooldown is a reason to stop *dialling*, never a reason to forget what
+      // answered last: the identity a provider reported does not expire, and
+      // reporting `none` here would make the doctor's verdict depend on how
+      // recently somebody searched.
+      if (lastIdentity !== null) return { kind: "identity", identity: lastIdentity };
+      return { kind: "none", detail: lastUnavailable };
     },
     async forQuery(text, scope, limit) {
       const { active: resolved, facts } = await readiness();

@@ -19,6 +19,7 @@ import { actorOf } from "../docs/actor.js";
 import { DOCS_KEY, JOBS_KEY, LOCKS_KEY, QUEUE_KEY, TREE_KEY } from "../events/index.js";
 import type { Logger } from "../logger.js";
 import type { QueueService } from "../queue/index.js";
+import type { IndexMaintenance } from "../semantic/maintenance.js";
 import type { ProjectionConfig, ProjectionDb } from "./db.js";
 import { doctor, type DoctorReport } from "./doctor.js";
 import { createProjectionQueueMirror } from "./queue-mirror.js";
@@ -59,6 +60,15 @@ export const REBUILD_QUERY_KEYS: readonly QueryKey[] = [
 export interface DbRoutesDeps {
   /** Where the workspace and its `.corpus` directory are; `ServerConfig` satisfies it. */
   readonly config: ProjectionConfig;
+  /**
+   * The semantic index's operational service (SERVER-046). `doctor` needs one
+   * fact only a live process has — which model this server can embed with —
+   * because an index whose every vector was produced by some *other* model
+   * reports itself fully covered and is entirely unusable (§9.1, §14). Optional
+   * because a server can be built without a semantic half at all, and because
+   * `doctor` run standalone has no provider to ask.
+   */
+  readonly index?: IndexMaintenance | undefined;
   /** The server's own handle — the one every other subsystem captured. */
   readonly projection: ProjectionDb;
   /** Rebound after a rebuild, because the queue's reader owns the `events` table. */
@@ -140,5 +150,18 @@ export function mountDbRoutes(app: OpenAPIHono, deps: DbRoutesDeps): void {
   // Read-only in the strictest sense: `doctor` opens its own read-only
   // connection and mutates nothing, so a drifted projection is reported and
   // never quietly repaired — the point of the check is that drift is visible.
-  app.openapi(contractRoutes.doctorDb, (c) => c.json(toDoctorReport(doctor(deps.config)), 200));
+  //
+  // The one live question it asks first — which model this server can embed with
+  // — reuses `/api/search`'s own resolution, which is cached, single-flight and
+  // cooled down, so a run costs at most one probe per cooldown and usually none
+  // at all (the worker resolves at boot). Handled here rather than inside
+  // `doctor` so the function stays a pure, synchronous check a pre-commit hook
+  // can call with no server in sight.
+  app.openapi(contractRoutes.doctorDb, async (c) => {
+    const effectiveModel = await deps.index?.effectiveModel();
+    return c.json(
+      toDoctorReport(doctor(deps.config, effectiveModel === undefined ? {} : { effectiveModel })),
+      200,
+    );
+  });
 }

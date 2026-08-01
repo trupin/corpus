@@ -255,6 +255,7 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 | CONTRACT-023 | Routes: index status/rebuild; search staleness flag; similar rows | todo | P0 | CONTRACT-022 |
 | SERVER-045 | Vector storage + hybrid ranking; related gains `similar` | todo | P1 | SERVER-044, CONTRACT-023 |
 | SERVER-046 | Index endpoints; rebuild queueing; doctor drift-vs-staleness | todo | P1 | SERVER-044, CONTRACT-023 |
+| SERVER-049 | Embedded inference off the main thread (SERVER-046 finding; blocks the phase PR) | todo | P0 | SERVER-048, SERVER-044 |
 | CLI-020 | `corpus index status` / `rebuild`; search degrade note | todo | P1 | CONTRACT-023, SERVER-046, CLI-019 |
 | INFRA-012 | Pack stays lean: negative proof — no model/runtime/extension ships (rescoped, OC1/OC2) | todo | P1 | SERVER-043, SERVER-045 |
 

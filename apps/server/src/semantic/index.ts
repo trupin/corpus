@@ -87,8 +87,11 @@ export type { EmbedBatchFn, EmbeddingProvider } from "./provider.js";
 export { PROBE_TEXT, describeResolution, resolveEmbeddingProvider } from "./resolve.js";
 export { RESOLVE_COOLDOWN_MS, createSemanticRetrieval } from "./retrieval.js";
 export type { SemanticOutcome, SemanticRetrieval, SemanticRetrievalOptions } from "./retrieval.js";
+export { createIndexMaintenance } from "./maintenance.js";
+export type { IndexMaintenance, IndexMaintenanceOptions } from "./maintenance.js";
+export { mountIndexRoutes } from "./routes.js";
 export { createIndexRebuildFlag, semanticIndexState } from "./state.js";
-export type { IndexRebuildFlag, SemanticIndexFacts } from "./state.js";
+export type { EffectiveModel, IndexRebuildFlag, SemanticIndexFacts } from "./state.js";
 export {
   SEMANTIC_MIN_SIMILARITY,
   UNFILTERED_SCOPE,

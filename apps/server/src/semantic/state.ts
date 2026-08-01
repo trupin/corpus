@@ -75,6 +75,33 @@ export interface IndexRebuildFlag {
   end(): void;
 }
 
+/**
+ * The model this server can embed with **right now**, independent of what the
+ * index already holds.
+ *
+ * It exists because two questions look alike and are not: "what produced these
+ * vectors?" is answered by the rows (`recordedIdentities`), while "what would
+ * produce a vector if we asked?" is answered only by resolution. `db doctor`
+ * needs both to tell an index that is merely idle from one whose every vector
+ * was produced by a model that is no longer the effective one — the second is
+ * §14's drift, the first is not (SERVER-046).
+ *
+ * The third case is not a fact about the workspace at all: **nobody asked**.
+ * `doctor(config)` run standalone — a pre-commit hook, a workspace whose server
+ * is not running — has no provider to resolve and must not invent one, so it
+ * reports `unknown` and the identity comparison is simply not made. Collapsing
+ * `unknown` into `none` would turn "this check did not run" into "nothing can
+ * embed", which is a claim about the machine that a read-only file check has no
+ * standing to make.
+ */
+export type EffectiveModel =
+  /** No resolution was attempted; the identity comparison is skipped entirely. */
+  | { readonly kind: "unknown" }
+  /** Resolution ran and produced nothing. `detail` is the operator-facing reason. */
+  | { readonly kind: "none"; readonly detail: string }
+  /** Resolution produced a provider, and this is the identity it writes. */
+  | { readonly kind: "identity"; readonly identity: string };
+
 export function createIndexRebuildFlag(): IndexRebuildFlag {
   // Counted rather than boolean: two overlapping rebuild requests must not have
   // the first one's completion clear the second one's claim.

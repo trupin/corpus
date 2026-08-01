@@ -219,6 +219,26 @@ export interface EmbedWorkerHandle {
    * Concurrent calls share the pass in flight. Never rejects.
    */
   tick(): Promise<void>;
+  /**
+   * Drops the cached provider and every backoff, then runs a pass to
+   * completion — `POST /api/index/rebuild`'s half of the verb (SERVER-046).
+   *
+   * It exists because {@link tick} alone cannot restart a worker that has
+   * *correctly* stopped asking. A rebuild's whole point is that the answers the
+   * worker cached are no longer the ones it should get: stickiness kept the
+   * recorded model, so resolution parked at the ladder's ceiling for ten
+   * minutes, and the vectors that made it sticky have just been discarded. The
+   * bus cannot say this — an invalidation means "something was written", and
+   * clearing a backoff on every write is how a busy workspace hammers a dead
+   * endpoint.
+   *
+   * Any pass already in flight is awaited first rather than cancelled: it holds
+   * a provider it resolved before the discard, and letting it finish is both
+   * simpler and self-healing — the next resolution's
+   * {@link invalidateForeignIdentities} drops whatever it wrote under an
+   * identity the re-pick did not choose.
+   */
+  wake(): Promise<void>;
   /** The derived counts, read fresh. */
   counts(): IndexCounts;
   close(): Promise<void>;
@@ -778,6 +798,21 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
 
   return {
     tick: () => run(),
+    async wake() {
+      if (stopped) return;
+      await pass;
+      if (stopped) return;
+      active = undefined;
+      providerFailures = 0;
+      waitUntil = 0;
+      // The complaint and the adoption announcement both reset: a rebuild is
+      // news, and the operator who asked for one is owed the line saying which
+      // model it picked, even when it picks the same one again.
+      notice = "";
+      announced = "";
+      identityChecked = false;
+      await run();
+    },
     counts: () => indexCounts(db),
     async close() {
       stopped = true;

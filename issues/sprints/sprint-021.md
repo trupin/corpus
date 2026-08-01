@@ -1665,3 +1665,15 @@ engine; TEST-841/842-class probe criteria are VOID → OC1-REVISED; SERVER-044/0
 consume the seam unchanged. §9.1 re-amended (third revision). INFRA-012's negative
 proof adjusts: no MODEL artifact in the pack (the runtime dep is now legitimate,
 size recorded); download path exercised.
+
+## Post-046 adjudications (2026-07-31)
+
+- Doctor deviation ACCEPTED: sticky-foreign-identity (checkIndexIdentity
+  `unresolved`) is a warning + visible status, not drift — failing it would be
+  permanently unclearable because rebuilds carry embeddings over (OC5). Known
+  foreign identity still fails exit 6.
+- SERVER-049 filed (P0, blocks the phase PR): synchronous wasm inference starves
+  the event loop (13.8s health stall measured during a 660-chunk drain) — engine
+  moves to a worker thread behind the unchanged seam.
+- Harness: rtk-proxied typecheck printed success over two real TS errors — all
+  agent briefs and harvest gates use node_modules/.bin/tsc --noEmit henceforth.
