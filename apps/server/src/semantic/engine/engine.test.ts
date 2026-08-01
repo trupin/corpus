@@ -8,6 +8,7 @@ import type { FetchLike } from "../http-provider.js";
 import { createEmbeddedEngine, type EngineReport } from "./engine.js";
 import type { EmbeddedModelManifest } from "./manifest.js";
 import type { ModelSession, SessionFactory } from "./runtime.js";
+import type { InferenceHost, InferenceHostFactory } from "./worker-host.js";
 
 const TOKENIZER = JSON.stringify({
   model: {
@@ -550,5 +551,137 @@ describe("createEmbeddedEngine — shutdown", () => {
     await expect(opening).rejects.toThrow(/aborted/);
     await closing;
     expect(released()).toBe(1);
+  });
+});
+
+/**
+ * SERVER-049 put the model on a worker thread, and the only thing the engine
+ * itself learned is what to do when that thread dies: forget it, so the next
+ * resolution builds another. The thread boundary is `worker-host.test.ts`'s;
+ * these are the engine's own consequences of it.
+ */
+describe("createEmbeddedEngine — a host that dies", () => {
+  interface Recorded {
+    readonly hosts: { closed: boolean }[];
+    readonly lost: ((detail: string) => void)[];
+    readonly factory: InferenceHostFactory;
+  }
+
+  function recordingHosts(): Recorded {
+    const hosts: { closed: boolean }[] = [];
+    const lost: ((detail: string) => void)[] = [];
+    const factory: InferenceHostFactory = (_spec, options) => {
+      const state = { closed: false };
+      hosts.push(state);
+      if (options.onLost !== undefined) lost.push(options.onLost);
+      const host: InferenceHost = {
+        embed: (texts) => Promise.resolve(texts.map(() => Float32Array.from([1, 0]))),
+        close: () => {
+          state.closed = true;
+          return Promise.resolve();
+        },
+      };
+      return Promise.resolve(host);
+    };
+    return { hosts, lost, factory };
+  }
+
+  it("starts a fresh host on the next open, and says so once", async () => {
+    await seedCache();
+    const recorded = recordingHosts();
+    const reports: EngineReport[] = [];
+    const engine = engineWith({ hostFactory: recorded.factory, report: (r) => reports.push(r) });
+
+    const first = await engine.open();
+    await expect(first.embed(["a"])).resolves.toHaveLength(1);
+    expect(recorded.hosts).toHaveLength(1);
+
+    recorded.lost[0]?.("the embedding worker exited unexpectedly (code 9)");
+
+    const second = await engine.open();
+    expect(second).not.toBe(first);
+    expect(recorded.hosts).toHaveLength(2);
+    // The one nobody will hold again was released, not left behind.
+    expect(recorded.hosts.map((host) => host.closed)).toEqual([true, false]);
+    expect(reports.filter((report) => report.level === "error")).toEqual([
+      {
+        level: "error",
+        message:
+          "the tiny-test-model embedding worker stopped: the embedding worker exited " +
+          "unexpectedly (code 9); it will be started again on the next index pass",
+      },
+    ]);
+
+    await engine.close();
+  });
+
+  it("ignores a death report from a host it has already replaced", async () => {
+    await seedCache();
+    const recorded = recordingHosts();
+    const reports: EngineReport[] = [];
+    const engine = engineWith({ hostFactory: recorded.factory, report: (r) => reports.push(r) });
+
+    await engine.open();
+    recorded.lost[0]?.("first died");
+    const second = await engine.open();
+    // The first host's late report must not throw away the live one.
+    recorded.lost[0]?.("first died again");
+
+    expect(await engine.open()).toBe(second);
+    expect(recorded.hosts).toHaveLength(2);
+    expect(reports.filter((report) => report.level === "error")).toHaveLength(1);
+
+    await engine.close();
+  });
+
+  it("says nothing, and starts nothing, when a host dies during shutdown", async () => {
+    await seedCache();
+    const recorded = recordingHosts();
+    const reports: EngineReport[] = [];
+    const engine = engineWith({ hostFactory: recorded.factory, report: (r) => reports.push(r) });
+
+    await engine.open();
+    await engine.close();
+    recorded.lost[0]?.("terminated");
+
+    expect(reports.filter((report) => report.level === "error")).toEqual([]);
+    expect(recorded.hosts).toHaveLength(1);
+  });
+
+  it("closes the host it holds, exactly once", async () => {
+    await seedCache();
+    const recorded = recordingHosts();
+    const engine = engineWith({ hostFactory: recorded.factory });
+
+    await engine.open();
+    await engine.close();
+
+    expect(recorded.hosts.map((host) => host.closed)).toEqual([true]);
+  });
+
+  it("closes a host that finished loading during shutdown rather than leaking it", async () => {
+    await seedCache();
+    const recorded = recordingHosts();
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = false;
+    const engine = engineWith({
+      hostFactory: async (spec, options) => {
+        entered = true;
+        await gate;
+        return recorded.factory(spec, options);
+      },
+    });
+
+    const opening = engine.open();
+    await waitFor(() => entered);
+    const closing = engine.close();
+    release();
+
+    await expect(opening).rejects.toThrow(/aborted/);
+    await closing;
+    expect(recorded.hosts.map((host) => host.closed)).toEqual([true]);
   });
 });

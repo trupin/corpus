@@ -23,6 +23,7 @@ import { modelCacheDir, modelCacheRoot } from "./cache.js";
 import { artifactPath } from "./download.js";
 import { createEmbeddedEngine } from "./engine.js";
 import { EMBEDDED_MODEL, modelArtifacts } from "./manifest.js";
+import { createOnnxSession } from "./runtime.js";
 
 const location = { env: process.env, platform: process.platform };
 const root = modelCacheRoot(location);
@@ -39,12 +40,30 @@ const REFERENCE_CAT_POSTGRES = -0.0119;
 const dot = (a: Float32Array, b: Float32Array): number =>
   a.reduce((sum, value, index) => sum + value * (b[index] ?? 0), 0);
 
+/**
+ * Inference on **this** thread (SERVER-049).
+ *
+ * Production hosts the model in a `worker_threads` Worker, whose entry is a
+ * module URL the running process must be able to load — `tsx` in a source
+ * checkout, the bundle in an installed tool. Vitest transforms TypeScript
+ * itself and hands a raw Worker no loader, so the shipped entry cannot be
+ * spawned from here; the thread boundary is covered by `worker-host.test.ts`
+ * against real Workers and by the issue's E2E against the real server.
+ *
+ * What this file is for is unaffected either way: the arithmetic — tokenizer,
+ * pooling, normalisation — is the same `loadInferenceRuntime` in both hosts,
+ * and comparing it against transformers.js is better done with no transport in
+ * between.
+ */
+const IN_PROCESS = { sessionFactory: createOnnxSession } as const;
+
 describe.skipIf(!cached)("embedded engine over the real model", () => {
   it("embeds in process and agrees with the reference implementation", async () => {
     const engine = createEmbeddedEngine({
       location,
       // No transport at all: a network call would fail loudly, not silently fetch.
       fetchFn: () => Promise.reject(new Error("the cached path must not touch the network")),
+      ...IN_PROCESS,
     });
 
     await expect(engine.availability()).resolves.toEqual({ available: true });
@@ -74,7 +93,7 @@ describe.skipIf(!cached)("embedded engine over the real model", () => {
   }, 60_000);
 
   it("truncates a chunk far longer than the model's window instead of failing", async () => {
-    const engine = createEmbeddedEngine({ location });
+    const engine = createEmbeddedEngine({ location, ...IN_PROCESS });
     const provider = await engine.open();
 
     const [vector] = await provider.embed(["the corpus grows. ".repeat(1000)]);

@@ -1,6 +1,15 @@
 /**
  * The embedded engine: SERVER-043's `EmbeddedEngine`, implemented over a
- * hash-pinned model in a per-user cache and an in-process WebAssembly runtime.
+ * hash-pinned model in a per-user cache and a WebAssembly runtime this process
+ * hosts — on a worker thread, since SERVER-049.
+ *
+ * What is left here is policy: what may be downloaded and when, what may be
+ * loaded, what the seam is told. The model itself lives behind an
+ * {@link InferenceHost} (`worker-host.ts`), and the arithmetic behind
+ * `inference.ts`; this file no longer touches a tensor. That split is
+ * SERVER-049's: wasm inference is synchronous and blocked the event loop for
+ * 13.8 s on a 660-chunk drain, and the fix is a thread boundary that the seam
+ * above cannot see.
  *
  * Three rules from the 2026-07-31 ruling shape every branch below.
  *
@@ -40,37 +49,26 @@ import type { FetchLike } from "../http-provider.js";
 import type { EmbeddingModelRef } from "../identity.js";
 import { createEmbeddingProvider, EmbeddingError, type EmbeddingProvider } from "../provider.js";
 import { modelCacheDir, modelCacheRoot, type CacheLocation } from "./cache.js";
-import {
-  downloadArtifact,
-  inspectArtifact,
-  readVerifiedArtifact,
-  type CachedArtifactState,
-} from "./download.js";
+import { downloadArtifact, inspectArtifact, type CachedArtifactState } from "./download.js";
+import type { InferenceSpec } from "./inference.js";
 import {
   EMBEDDED_MODEL,
   manifestBytes,
   modelArtifacts,
   type EmbeddedModelManifest,
 } from "./manifest.js";
+import { defaultThreadCount, wasmAvailable, type SessionFactory } from "./runtime.js";
 import {
-  createOnnxSession,
-  defaultThreadCount,
-  meanPoolNormalize,
-  wasmAvailable,
-  type ModelSession,
-  type SessionFactory,
-} from "./runtime.js";
-import { createTokenizer, type Tokenizer } from "./tokenizer.js";
+  createWorkerHost,
+  inProcessHostFactory,
+  type InferenceHost,
+  type InferenceHostFactory,
+} from "./worker-host.js";
+
+export { EMBED_BATCH_ROWS } from "./inference.js";
 
 /** Long enough that a flapping network cannot become a request loop, short enough to self-heal. */
 export const MODEL_RETRY_COOLDOWN_MS = 5 * 60_000;
-
-/**
- * Rows per forward pass. Throughput was flat across 1, 8 and 16 in the
- * benchmark, so this is chosen for bounded peak memory
- * (`rows × 256 × 384 × 4` bytes) rather than for speed.
- */
-export const EMBED_BATCH_ROWS = 8;
 
 export interface EngineReport {
   readonly level: "info" | "error";
@@ -83,7 +81,15 @@ export interface EmbeddedEngineOptions {
   readonly location?: CacheLocation | undefined;
   readonly cacheDir?: string | undefined;
   readonly fetchFn?: FetchLike | undefined;
+  /**
+   * Runs inference **on this thread**, with this factory. A function cannot
+   * cross a `postMessage`, so supplying one is by construction a request for
+   * in-process inference; production supplies none and gets a worker thread
+   * (SERVER-049). See `inProcessHostFactory`.
+   */
   readonly sessionFactory?: SessionFactory | undefined;
+  /** Overrides both of the above outright — the seam `worker-host.test.ts` reaches through. */
+  readonly hostFactory?: InferenceHostFactory | undefined;
   readonly threads?: number | undefined;
   readonly wasmSupported?: boolean | undefined;
   readonly retryCooldownMs?: number | undefined;
@@ -134,7 +140,11 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
         : root;
 
   const fetchFn = options.fetchFn ?? ((input, init) => fetch(input, init));
-  const sessionFactory = options.sessionFactory ?? createOnnxSession;
+  const hostFactory: InferenceHostFactory =
+    options.hostFactory ??
+    (options.sessionFactory === undefined
+      ? createWorkerHost
+      : inProcessHostFactory(options.sessionFactory));
   const supported = options.wasmSupported ?? wasmAvailable();
   const cooldownMs = options.retryCooldownMs ?? MODEL_RETRY_COOLDOWN_MS;
   const now = options.now ?? Date.now;
@@ -144,7 +154,7 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
   let state: DownloadState = { kind: "idle" };
   let inFlight: Promise<void> | undefined;
   let loading: Promise<EmbeddingProvider> | undefined;
-  let session: ModelSession | undefined;
+  let host: InferenceHost | undefined;
   let closed = false;
 
   async function missingArtifacts(
@@ -274,48 +284,68 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
     void attempt;
   }
 
+  /**
+   * Forgets a host that died on its own, so the next `open()` builds a fresh
+   * one.
+   *
+   * This is all of SERVER-049's crash story on this side. The provider the dead
+   * host backs rejects every later `embed()`, which SERVER-044's worker already
+   * reads as an outage: it drops the provider, backs off, and re-resolves — and
+   * re-resolution calls `open()`, which now finds nothing memoised and starts a
+   * fresh thread. The server itself never learns that anything died, because
+   * from up there nothing did.
+   */
+  function forgetHost(dead: InferenceHost, detail: string): void {
+    if (closed || host !== dead) return;
+    host = undefined;
+    loading = undefined;
+    // Nothing will hold it after this, and `close()` only reaches the *current*
+    // host. For the worker host this is a `terminate()` on a thread that has
+    // already exited, which costs nothing and cannot fail; it is here so that a
+    // host which reports itself lost without dying is still released.
+    void dead.close().catch(() => undefined);
+    report({
+      level: "error",
+      message:
+        `the ${manifest.model} embedding worker stopped: ${detail}; ` +
+        "it will be started again on the next index pass",
+    });
+  }
+
   async function load(signal: AbortSignal | undefined): Promise<EmbeddingProvider> {
     if (dir === undefined) throw new EmbeddingError("the embedded engine has no model cache");
 
-    // A call, not a comparison: the flags it reads are mutated by `close()` and
-    // by an abort during the `await`s below, which narrowing would rule out.
-    const aborted = (): boolean => closed || signal?.aborted === true;
-
-    const tokenizerBytes = await readVerifiedArtifact(dir, manifest.tokenizer);
-    const weights = await readVerifiedArtifact(dir, manifest.weights);
-    if (aborted()) throw new EmbeddingError("model load aborted");
-
-    const tokenizer: Tokenizer = createTokenizer(new TextDecoder().decode(tokenizerBytes));
-    const opened = await sessionFactory(weights, options.threads ?? defaultThreadCount());
-    if (aborted()) {
-      await opened.release();
+    const spec: InferenceSpec = {
+      cacheDir: dir,
+      manifest,
+      threads: options.threads ?? defaultThreadCount(),
+    };
+    // `controller` is aborted by `close()`; `signal` is the resolution above
+    // being torn down. Either one ends the load, wherever it is running.
+    // A host has to be able to name itself in its own death report, and it does
+    // not exist until the factory resolves; the box is what closes that circle.
+    // A death before the assignment below is a host `open()` is about to reject
+    // over anyway, and `forgetHost` would decline it for the same reason.
+    const box: { current?: InferenceHost } = {};
+    const created = await hostFactory(spec, {
+      signal:
+        signal === undefined ? controller.signal : AbortSignal.any([controller.signal, signal]),
+      onLost: (detail) => {
+        const dead = box.current;
+        if (dead !== undefined) forgetHost(dead, detail);
+      },
+    });
+    box.current = created;
+    // A call, not a comparison: `closed` is mutated by `close()` during the
+    // `await` above, which narrowing would rule out.
+    if (closed || signal?.aborted === true) {
+      await created.close();
       throw new EmbeddingError("model load aborted");
     }
-    session = opened;
+    host = created;
 
     return createEmbeddingProvider(ref, async (texts) => {
-      const vectors: Float32Array[] = [];
-      for (let offset = 0; offset < texts.length; offset += EMBED_BATCH_ROWS) {
-        const slice = texts.slice(offset, offset + EMBED_BATCH_ROWS);
-        const encoded = slice.map((text) => tokenizer.encode(text, manifest.maxTokens));
-        const cols = Math.max(1, ...encoded.map((row) => row.length));
-        const ids = new BigInt64Array(slice.length * cols);
-        const mask = new BigInt64Array(slice.length * cols);
-        encoded.forEach((row, index) => {
-          row.forEach((id, column) => {
-            ids[index * cols + column] = BigInt(id);
-            mask[index * cols + column] = 1n;
-          });
-        });
-        const output = await opened.run({ ids, mask, rows: slice.length, cols });
-        for (const vector of meanPoolNormalize(
-          output,
-          encoded.map((row) => row.length),
-          cols,
-        )) {
-          vectors.push(vector);
-        }
-      }
+      const vectors = await created.embed(texts);
       return vectors.map((vector) => Array.from(vector));
     });
   }
@@ -353,13 +383,16 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
       closed = true;
       controller.abort();
       await inFlight;
-      // `loading` may still be resolving into a session nobody will hold.
+      // `loading` may still be resolving into a host nobody will hold.
       const pending = loading;
       loading = undefined;
       if (pending !== undefined) await pending.catch(() => undefined);
-      const owned = session;
-      session = undefined;
-      if (owned !== undefined) await owned.release();
+      // Awaited, not fired and forgotten: for the worker host this is
+      // `Worker.terminate()`, and the point of awaiting it is that no inference
+      // thread outlives the server process (SERVER-049).
+      const owned = host;
+      host = undefined;
+      if (owned !== undefined) await owned.close();
     },
   };
 }
