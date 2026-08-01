@@ -249,8 +249,9 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
 | SERVER-042 | Deterministic heading-path chunker, content-addressed identity | todo | P0 | SERVER-040 |
-| SERVER-043 | Embedding provider seam: local-first, sticky identity | todo | P0 | SERVER-042 |
-| SERVER-044 | Async embed worker: never blocks writes, visible staleness | todo | P0 | SERVER-042, SERVER-043 |
+| SERVER-043 | Embedding provider seam: configured > embedded > disabled (OC1-REVISED) | todo | P0 | SERVER-042 |
+| SERVER-048 | Embedded embedding engine: in-process model, downloaded once, no model server | todo | P0 | SERVER-043 |
+| SERVER-044 | Async embed worker: never blocks writes, visible staleness | todo | P0 | SERVER-042, SERVER-043, SERVER-048 |
 | CONTRACT-023 | Routes: index status/rebuild; search staleness flag; similar rows | todo | P0 | CONTRACT-022 |
 | SERVER-045 | Vector storage + hybrid ranking; related gains `similar` | todo | P1 | SERVER-044, CONTRACT-023 |
 | SERVER-046 | Index endpoints; rebuild queueing; doctor drift-vs-staleness | todo | P1 | SERVER-044, CONTRACT-023 |

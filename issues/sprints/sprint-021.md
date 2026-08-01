@@ -1649,3 +1649,19 @@ This sprint is complete when:
   IndexStatus snapshot; failed>0 yields a report-only doctor warning.
 - C15 honored: CLI-020 must NOT introduce per-state wording — CLI-019's generic
   semanticIndexNote stands.
+
+## OC1 — REVISED BY USER, 2026-07-31 (supersedes the earlier ruling)
+
+No Ollama and no model-server equivalent, ever: such software fetches arbitrary
+third-party models online and is frequently unapprovable in corporate environments;
+a bare model file executed in-process is inert data and raises no such concern
+(user's words). New posture: **embedded in-process engine** — model downloaded once
+to a per-user cache (hash-pinned, HTTPS, lazy, progress in status), inference via an
+in-process library chosen under a size budget (wasm acceptable; onnxruntime-node's
+258 MiB is the ceiling to beat). Resolution: configured > embedded-when-model-present
+> disabled. NO runtime probe of any kind. SERVER-043 redirected mid-flight to build
+the seam + EmbeddedEngine interface with a stub; SERVER-048 filed to implement the
+engine; TEST-841/842-class probe criteria are VOID → OC1-REVISED; SERVER-044/045/046
+consume the seam unchanged. §9.1 re-amended (third revision). INFRA-012's negative
+proof adjusts: no MODEL artifact in the pack (the runtime dep is now legitimate,
+size recorded); download path exercised.
