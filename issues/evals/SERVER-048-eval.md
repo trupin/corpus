@@ -1,9 +1,20 @@
 # Evaluation: SERVER-048
 
-**Date**: 2026-08-01
+**Date**: 2026-08-01 (original) · **re-verdict 2026-08-01** against `ed07f54`
 **Sprint**: sprint-021
 **Evaluator model**: Opus 5 (1M context)
-**Verdict**: FAIL — one acceptance criterion is checked `[x]` and is provably false
+**Verdict**: **PASS** (5/5) — superseding the original FAIL; see the re-verdict section at the end
+
+> The original FAIL text is retained below as history. It was issued against `a806469`; the fix
+> landed as `ed07f54 [SERVER-048] Eval-FAIL fix: download progress on the wire; zero blind window`
+> and the failing scenario was re-run from scratch. FAIL-1 is closed, and LEDGER-1 (the ~30 s
+> "disabled while fully indexed" window) is closed with it — **measured at 0 ms**.
+
+---
+
+# Original evaluation (2026-08-01, against `a806469`) — HISTORY
+
+**Verdict at the time**: FAIL — one acceptance criterion is checked `[x]` and is provably false
 
 Four of five criteria are met, several of them impressively. One is not: **download progress is not
 surfaced in `index status`**, and cannot be, because the status payload carries no field that could
@@ -213,3 +224,150 @@ strings in the shipped bundle. AC 2 is half-met — hash verification yes, progr
 is checked `[x]` in the issue file. The issue should not carry a completed AC that the shipped status
 endpoint structurally cannot satisfy: either the criterion is amended (with the ruling recorded, as
 this batch has done elsewhere) or the field is added across contract → server → CLI.
+
+---
+
+# RE-VERDICT — 2026-08-01, against `ed07f54`
+
+**Verdict**: **PASS** — 5 of 5 criteria. FAIL-1 closed, LEDGER-1 closed.
+
+Re-run from a clean slate, not a patched-up rig: `npm run build` on `ed07f54`, a **new** workspace
+`…/eval-p8/ws2` from `corpus init`, a **new** cold cache `…/eval-p8/cache2`
+(`/usr/bin/find … -type f | wc -l` → **0**), 16 seeded documents / 92 chunks, port 8808, 8765 never
+bound. Sampled two ways at once: `GET /api/index/status` every 250 ms from a separate process
+(351 samples) and `corpus index status` through the real bin every ~3 s, with `du -sk` on the cache
+beside each human sample so the download is provably in flight.
+
+## FAIL-1 — closed
+
+The `detail` field is on the wire and it moves. Every distinct value, in order:
+
+```
++  1291ms  disabled  the all-MiniLM-L6-v2 embedding model (22.6 MiB) has not been downloaded yet;
+                     it downloads on the first index run and search is lexical until then
++  1808ms  disabled  downloading the all-MiniLM-L6-v2 embedding model (0.7 MiB of 22.6 MiB, 3%) — semantic ranking starts once it is cached
++  2577ms  disabled  downloading … (1.5 MiB of 22.6 MiB, 6%) …
++  2829ms  disabled  downloading … (6.2 MiB of 22.6 MiB, 27%) …
++  3080ms  disabled  downloading … (13.6 MiB of 22.6 MiB, 60%) …
++  3334ms  disabled  downloading … (21.7 MiB of 22.6 MiB, 96%) …
++  3592ms  disabled  local/all-MiniLM-L6-v2@384 is ready; the index has no vectors yet, so ranking is lexical until the first ones land
++  7127ms  stale     (detail absent)
+```
+
+Monotone percentages tracking the real transfer, then a distinct ready-but-no-vectors sentence — the
+state the old build could not distinguish at all. Rendered by the CLI too, with the cache size
+measured in the same breath:
+
+```
+--- human sample 2 (t≈6s, cache=1056KiB) ---        --- human sample 3 (t≈9s, cache=23280KiB) ---
+identity    none recorded yet                        identity    none recorded yet
+indexed     0                                        indexed     0
+pending     92                                       pending     92
+failed      0                                        failed      0
+rebuilding  no                                       rebuilding  no
+state       disabled                                 state       disabled
+downloading the all-MiniLM-L6-v2 embedding           local/all-MiniLM-L6-v2@384 is ready; the index
+model (6.9 MiB of 22.6 MiB, 30%) — semantic          has no vectors yet, so ranking is lexical
+ranking starts once it is cached                     until the first ones land
+```
+
+Compare the original FAIL-1: three samples, byte-identical, cache growing 696 KiB → 23,132 KiB,
+nothing on either surface. The blind window is gone.
+
+## LEDGER-1 — closed, measured at 0 ms
+
+```
+first sample with indexed==total & identity recorded : +10669ms  (state=current)
+first sample reporting state=current                 : +10669ms
+MEASURED WINDOW = 0 ms
+samples that were caught-up-with-identity but NOT current: 0   (was 12+ consecutive before the fix)
+```
+
+The whole cold-start trajectory is now continuous — no dead interval anywhere:
+
+```
++  1291ms disabled  indexed=0  pending=92  identity=None                        ← model absent, detail explains
++  7127ms stale     indexed=16 pending=76  identity=local/all-MiniLM-L6-v2@384  ← first vectors land
++  7636ms stale     indexed=32 pending=60
++  8648ms stale     indexed=48 pending=44
++  9406ms stale     indexed=64 pending=28
++ 10163ms stale     indexed=80 pending=12
++ 10669ms current   indexed=92 pending=0
+```
+
+`disabled → stale → current`, with `stale` correctly appearing the moment the identity is recorded —
+where the old build reported `disabled` for ~30 s with a complete index behind it.
+
+## Byte-compatibility — `detail` is present only when it has something to say
+
+| state | samples | with `detail` | without |
+| --- | --- | --- | --- |
+| `disabled` | 21 | 21 | 0 |
+| `stale` | 14 | 0 | 14 |
+| `current` | 311 | 0 | 311 |
+
+The caught-up payload is byte-identical to the pre-fix contract — the original six keys, nothing
+added:
+
+```
+$ corpus index status --json
+{"indexed":92,"pending":0,"failed":0,"identity":"local/all-MiniLM-L6-v2@384","rebuilding":false,"state":"current"}
+keys: ['failed', 'identity', 'indexed', 'pending', 'rebuilding', 'state']
+```
+
+Optional and absent-by-default, so CONTRACT-023's Phase A compatibility is untouched. The retrieval
+envelopes did not gain the field either: `search keys: ['hits','semanticIndex']`,
+`related keys: ['related','semanticIndex']`.
+
+## Configured-dead-port — the detail names the endpoint
+
+Nothing listening on 8899, against a complete 92-vector index:
+
+```
+$ corpus index status
+identity    local/all-MiniLM-L6-v2@384      ← preserved
+indexed     92                              ← preserved
+pending     0
+failed      0
+rebuilding  no
+state       disabled
+ollama endpoint http://127.0.0.1:8899/api/embed is unreachable: fetch failed
+
+$ corpus index status --json
+{"indexed":92,"pending":0,"failed":0,"identity":"local/all-MiniLM-L6-v2@384","rebuilding":false,
+ "state":"disabled","detail":"ollama endpoint http://127.0.0.1:8899/api/embed is unreachable: fetch failed"}
+
+detail present: True   names 127.0.0.1:8899: True   leaks the api key: False
+$ /usr/bin/grep -c "sk-eval-SECRET-xyz789" .corpus/server.log   → 0
+```
+
+The operator now gets the endpoint from `corpus index status` itself rather than only from
+`db doctor`'s warning, and the API key still never reaches a log line or the wire.
+
+## Regression check
+
+The fix touched three workspaces, so the payoff was re-verified on the new workspace:
+
+```
+corpus search "physician prescribed antibiotics" → ['doc_evalphys01','doc_evaldoct01']  current
+corpus search "doctor gave medicine illness"     → ['doc_evaldoct01','doc_evalphys01']  current
+corpus doc related doc_evalphys01                → top: doc_evaldoct01 similar | current
+corpus db doctor                                 → projection is clean — 25 documents from 25 files, exit=0
+```
+
+Both directions of the keyword-disjoint paraphrase pair still resolve; envelopes unchanged; doctor
+clean.
+
+## Re-verdict criteria table
+
+| # | Criterion | Result |
+| --- | --- | --- |
+| 1 | Zero-config with the model cached: in-process, no network during embed | PASS (unchanged) |
+| 2 | First run without the cache: downloads with **progress surfaced in index status**, hash-verified | **PASS** — moving percentages on wire and CLI; hashes unchanged and still pinned |
+| 3 | No model-server, no daemon, no exec of downloaded code | PASS (unchanged) |
+| 4 | node_modules delta recorded; wasm-vs-native justified | PASS (unchanged) |
+| 5 | availability()/identity per SERVER-043's interface; SERVER-044 consumes unchanged | PASS (unchanged) |
+
+**5 of 5.** The fix does the honest thing rather than the cheap one: an optional field that is absent
+whenever there is nothing to report, so the caught-up payload stays byte-identical, and a state
+machine that no longer has a blind interval between "model ready" and "ranking semantic".

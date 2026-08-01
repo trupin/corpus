@@ -266,3 +266,19 @@ _n/a until triage._
   EmbeddingError rejection surfaced unhandled; green scoped and on retry). Harden at
   triage: default catch on the host's ready promise inside createWorkerHost, or the
   test attaches its rejection handler before the worker can die.
+
+## Phase 8 eval ledger additions (2026-08-01)
+
+- FAIL SERVER-048 AC2 → fixed in-phase (download progress + cooldown window; see the
+  fix commit). Remaining ledger items:
+- **`related`'s `similar` label is uninformative at the tail on small corpora** (gate
+  0.15 admits "Bicycle brake pads" as similar to a physician note; ordering correct).
+  Options at triage: raise gate / cap similar rows / carry the score.
+- **`corpus index rebuild` has no guard against discarding an index it cannot
+  rebuild** (unreachable configured provider → 561 valid vectors gone, spec-correct
+  but unrecoverable-by-waiting). Consider a refusal or --force when resolution is
+  currently error/disabled.
+- **`failed > 0` remains unverified end-to-end by anyone** (needs ~12 min of ladder;
+  unit substitutes only). Candidate for a long-run soak eval someday.
+- **TEST-930's literal two-build diff** still unrun (evaluator can't git); substitute
+  evidence strong. Optional orchestrator follow-up.
