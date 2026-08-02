@@ -547,3 +547,59 @@
   padding: 4px 0;
   font-size: 12.5px;
 }
+
+/* ── Related (SPEC.md §11) ── */
+
+/*
+ * The pair. "Related" sits beside "Referenced by" below the body and shares its
+ * anatomy — same rule, same measure, same mono uppercase heading — because they
+ * are two readings of one question and a second visual language between them
+ * would imply a distinction that is not there. Their *contents* differ honestly:
+ * a backlink is a fact and carries its type glyph; a related row is a ranking
+ * and carries the server's reason instead.
+ */
+.related {
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-family: var(--sans);
+  max-width: 62ch;
+}
+
+/* Stacked directly under backlinks they read as one pair, not two sections. */
+.backlinks + .related {
+  margin-top: 12px;
+}
+
+.related h3 {
+  font-size: 11px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin: 0 0 8px;
+}
+
+.related-doc {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 12.5px;
+}
+
+/*
+ * Why the row is related, in the server's own word. Set in the mono face at the
+ * chip scale so it reads as metadata rather than as part of the title, and
+ * pushed to the trailing edge so a column of reasons lines up and the eye can
+ * skim linked from similar without reading either.
+ */
+.related-doc .relation {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}

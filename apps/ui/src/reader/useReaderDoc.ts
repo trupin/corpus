@@ -1,10 +1,11 @@
-import type { Doc, DocRow, Lock } from "@corpus/contract";
+import type { Doc, DocRow, Lock, RelatedDoc } from "@corpus/contract";
 import {
   CorpusRequestError,
   THREAD_DOC_TYPE,
   useDoc,
   useDocLock,
   useDocs,
+  useRelatedDocs,
   useThread,
   type ThreadView,
 } from "@corpus/kit";
@@ -22,7 +23,9 @@ import {
  * `useDocs({parent})` is the document's threads, `useDocs({references})` is its
  * backlinks (SPEC.md §9.2's `references=` filter, the `links` table), and
  * `useLocks()` is the whole lock set shared by every row and reader on the
- * board.
+ * board. `useRelatedDocs` is the fifth, and the one read that is a *ranking*
+ * rather than a filter (SPEC.md §9.2) — which is why it has its own endpoint
+ * and cannot ride on the collection query the way backlinks do.
  */
 
 export interface ReaderDoc {
@@ -41,6 +44,11 @@ export interface ReaderDoc {
   readonly threads: readonly DocRow[];
   /** Documents referencing this one — the "Referenced by" panel. */
   readonly backlinks: readonly DocRow[];
+  /**
+   * The ranked related set — the "Related" panel (SPEC.md §11), in the server's
+   * order with the server's relation labels, neither re-sorted nor filtered.
+   */
+  readonly related: readonly RelatedDoc[];
   /** The edit lock, live over SSE (SPEC.md §7). */
   readonly lock: Lock | null;
 }
@@ -57,6 +65,12 @@ export function useReaderDoc(docId: string): ReaderDoc {
   const thread = useThread(isThread ? docId : undefined);
   const threads = useDocs({ parent: docId, type: THREAD_DOC_TYPE });
   const backlinks = useDocs({ references: docId });
+  // A stack entry may name a document the agent deleted, and there is nothing
+  // to relate to a document that is not there. Disabled by passing `undefined`
+  // rather than by an ad-hoc flag, exactly as `useThread` above — otherwise
+  // every `["docs"]` frame the server emits would earn a second 404 for as long
+  // as the reader sits on the missing card.
+  const related = useRelatedDocs(isNotFound(doc.error) ? undefined : docId);
   const lock = useDocLock(docId);
 
   return {
@@ -70,6 +84,7 @@ export function useReaderDoc(docId: string): ReaderDoc {
     thread: thread.data,
     threads: threads.data?.items ?? [],
     backlinks: backlinks.data?.items ?? [],
+    related: related.data?.related ?? [],
     lock,
   };
 }

@@ -29,6 +29,8 @@ const RUNTIME_SURFACE = [
   "useDoc",
   "useThread",
   "useTree",
+  "useRelatedDocs",
+  "useCorpusSearch",
   "useJobs",
   "useJobLog",
   "capLogLines",
@@ -81,6 +83,8 @@ const RUNTIME_SURFACE = [
   "PLUGIN_KEY_PREFIX",
   "pluginKey",
   "QUEUE_KEY",
+  "relatedKey",
+  "searchKey",
   "threadKey",
   "TREE_KEY",
   // live updates

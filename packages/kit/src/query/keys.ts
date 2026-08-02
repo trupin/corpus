@@ -136,6 +136,37 @@ export function docsListKey(filter: Readonly<Record<string, unknown>> = {}): Que
   return [...DOCS_KEY, canonicalFilter(filter)];
 }
 
+/**
+ * One document's related set: `["docs", <id>, "related"]`.
+ *
+ * **Under `docKey(id)`, on purpose** (sprint-022 Open Conflict 7). The contract's
+ * key vocabulary is closed at nine names and pinned by a test, so a tenth shape
+ * — `["related", id]` — would be a contract change plus an artifact
+ * regeneration, for a query the server already announces. TanStack matches
+ * prefixes, and the server emits `["docs"]` on every document and thread
+ * mutation and every watcher-projected change out of band, so this key is
+ * invalidated by frames that already exist: a `[[ref]]` appearing anywhere in
+ * the workspace refreshes the panel with no new vocabulary. The `"related"` tail
+ * is what keeps it distinct from the reader's own `["docs", id]`.
+ */
+export function relatedKey(id: string): QueryKey {
+  return [...docKey(id), "related"];
+}
+
+/**
+ * A ranked search: `["docs", "search", { …canonical params }]`.
+ *
+ * Under the `["docs"]` prefix for {@link relatedKey}'s reason — ranked hits go
+ * stale on exactly the mutations the server already names. `"search"` cannot
+ * collide with `docKey(<id>)`: a document id carries a `<prefix>_<suffix>`
+ * shape, so no document is ever addressed as `["docs", "search"]`, and the
+ * canonical params object keeps two spellings of one query on one cache entry
+ * exactly as {@link docsListKey} does.
+ */
+export function searchKey(params: Readonly<Record<string, unknown>> = {}): QueryKey {
+  return [...DOCS_KEY, "search", canonicalFilter(params)];
+}
+
 /** The console's job-list key: `["jobs", { …canonical params }]`. */
 export function jobsListKey(params: Readonly<Record<string, unknown>> = {}): QueryKey {
   return [...JOBS_KEY, canonicalFilter(params)];

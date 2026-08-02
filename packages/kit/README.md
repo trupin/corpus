@@ -49,21 +49,23 @@ Keys are hierarchical arrays, and invalidation is **prefix-matched**: a frame
 naming `["docs"]` invalidates every entry whose key starts with `"docs"`. Build
 keys with the exported builders; never write a literal.
 
-| Key                             | Builder                | Emitted by                                                                                | Refetched by                         |
-| ------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ |
-| `["docs"]`                      | `DOCS_KEY`             | every document or thread mutation, and every out-of-band file change the watcher projects | every `useDocs` variant              |
-| `["docs", <canonical>]`         | `docsListKey(filter)`  | — (a client-side collection variant; reached through the `["docs"]` prefix)               | that `useDocs` call                  |
-| `["docs", "<docId\|threadId>"]` | `docKey(id)`           | a mutation of that one document; a thread mutation for both the thread and its parent     | `useDoc(id)`                         |
-| `["threads", "<threadId>"]`     | `threadKey(id)`        | thread creation, turn append, turn deletion, resolve/reopen, mark-seen                    | `useThread(id)`                      |
-| `["tree"]`                      | `TREE_KEY`             | anything that changes the folder hierarchy                                                | `useTree()`                          |
-| `["queue"]`                     | `QUEUE_KEY`            | every queue transition (SPEC.md §7)                                                       | the console's depth and halted state |
-| `["jobs"]`                      | `JOBS_KEY`             | every queue transition, plus any job-log append (coalesced)                               | every `useJobs` variant              |
-| `["jobs", <canonical>]`         | `jobsListKey(params)`  | — (a client-side variant under the `["jobs"]` prefix)                                     | that `useJobs` call                  |
-| `["jobs", "<eventId>"]`         | `jobKey(eventId)`      | an append to that job's log, and its retry/abandon transitions                            | the console's live log panel         |
-| `["locks"]`                     | `LOCKS_KEY`            | lock acquire, release, force-break, reap                                                  | `useLocks()`                         |
-| `["locks", "<docId>"]`          | `lockKey(docId)`       | acquire/release/force-break/reap of that one document's lock                              | the open reader's holder banner      |
-| `["health"]`                    | `HEALTH_KEY`           | **nothing server-side.** The SSE bridge invalidates it on every drop and every reconnect  | `useHealth()` — the console strip    |
-| `["x", "<plugin>", …]`          | `pluginKey(plugin, …)` | whatever the plugin's server routes emit                                                  | the plugin's own queries             |
+| Key                               | Builder                | Emitted by                                                                                | Refetched by                         |
+| --------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ |
+| `["docs"]`                        | `DOCS_KEY`             | every document or thread mutation, and every out-of-band file change the watcher projects | every `useDocs` variant              |
+| `["docs", <canonical>]`           | `docsListKey(filter)`  | — (a client-side collection variant; reached through the `["docs"]` prefix)               | that `useDocs` call                  |
+| `["docs", "<docId\|threadId>"]`   | `docKey(id)`           | a mutation of that one document; a thread mutation for both the thread and its parent     | `useDoc(id)`                         |
+| `["docs", "<docId>", "related"]`  | `relatedKey(id)`       | — (under `docKey(id)`, so both that document's frames and bare `["docs"]` reach it)       | `useRelatedDocs(id)`                 |
+| `["docs", "search", <canonical>]` | `searchKey(params)`    | — (a client-side variant under the `["docs"]` prefix)                                     | `useCorpusSearch(params)`            |
+| `["threads", "<threadId>"]`       | `threadKey(id)`        | thread creation, turn append, turn deletion, resolve/reopen, mark-seen                    | `useThread(id)`                      |
+| `["tree"]`                        | `TREE_KEY`             | anything that changes the folder hierarchy                                                | `useTree()`                          |
+| `["queue"]`                       | `QUEUE_KEY`            | every queue transition (SPEC.md §7)                                                       | the console's depth and halted state |
+| `["jobs"]`                        | `JOBS_KEY`             | every queue transition, plus any job-log append (coalesced)                               | every `useJobs` variant              |
+| `["jobs", <canonical>]`           | `jobsListKey(params)`  | — (a client-side variant under the `["jobs"]` prefix)                                     | that `useJobs` call                  |
+| `["jobs", "<eventId>"]`           | `jobKey(eventId)`      | an append to that job's log, and its retry/abandon transitions                            | the console's live log panel         |
+| `["locks"]`                       | `LOCKS_KEY`            | lock acquire, release, force-break, reap                                                  | `useLocks()`                         |
+| `["locks", "<docId>"]`            | `lockKey(docId)`       | acquire/release/force-break/reap of that one document's lock                              | the open reader's holder banner      |
+| `["health"]`                      | `HEALTH_KEY`           | **nothing server-side.** The SSE bridge invalidates it on every drop and every reconnect  | `useHealth()` — the console strip    |
+| `["x", "<plugin>", …]`            | `pluginKey(plugin, …)` | whatever the plugin's server routes emit                                                  | the plugin's own queries             |
 
 The first eleven core shapes come from `@corpus/contract`'s published
 vocabulary, whose set is closed and pinned by a test upstream, and are
@@ -71,6 +73,13 @@ re-exported here rather than restated — a rename there is a compile error here
 not a cache that silently stops updating. `["health"]` and the `x/` namespace
 are the kit's own, because the contract publishes what the _server_ emits and
 the server emits neither.
+
+The two retrieval shapes are the kit's own for a different reason: the contract's
+vocabulary is closed at nine names, and ranked search and a related set need no
+tenth one. Both hang **under the `["docs"]` prefix** the server already emits on
+every mutation, so prefix matching invalidates them for free — a `[[ref]]`
+appearing anywhere refreshes an open related panel with no new frame, no contract
+change and no artifact regeneration (sprint-022 Open Conflict 7).
 
 ### Two spellings that matter
 

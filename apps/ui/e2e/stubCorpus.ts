@@ -42,6 +42,24 @@ export interface StubRow {
    * a seeded anchor orphans the moment its quote leaves the body.
    */
   readonly anchors?: readonly SeedAnchor[];
+  /**
+   * The ranked answer `GET /api/docs/{id}/related` gives for this document
+   * (UI-025), in the server's order.
+   *
+   * Seeded rather than derived whenever a spec needs a **`similar`** or `both`
+   * row: semantic neighbours come out of an index no browser stub can hold, and
+   * a spec that could only assert `linked` would pin half the vocabulary. With
+   * no seed the stub derives the `linked` set from the `[[ref]]` graph in both
+   * directions, which is what the projection's `links` table does.
+   */
+  readonly related?: readonly SeedRelated[];
+}
+
+/** One row of a seeded related set: which document, and why it is related. */
+export interface SeedRelated {
+  readonly id: string;
+  /** `linked`, `similar` or `both` — the wire's vocabulary, unabridged. */
+  readonly relation: string;
 }
 
 /** A seeded anchor: the selector, and the thread it belongs to. */
@@ -78,6 +96,8 @@ interface StoredDoc {
   updated: string;
   /** Resolved anchors, as `GET /api/docs/{id}` reports them. */
   anchors: StoredAnchor[];
+  /** A seeded related answer, or `null` to derive one from the ref graph. */
+  related: readonly SeedRelated[] | null;
 }
 
 /**
@@ -128,6 +148,7 @@ function seeded(row: StubRow): StoredDoc {
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
     updated: SEEDED_AT,
+    related: row.related ?? null,
     anchors: (row.anchors ?? []).map((anchor) => ({
       anchorId: anchor.anchorId,
       threadId: anchor.threadId,
@@ -156,6 +177,29 @@ function resolveAnchor(doc: StoredDoc, anchor: StoredAnchor): unknown {
     range: unique < 0 ? null : { start: unique, end: unique + anchor.selector.exact.length },
     orphaned: unique < 0,
   };
+}
+
+/**
+ * The `[[ref]]` grammar, as `packages/kit/src/markdown/refs.ts` spells it — the
+ * stub's stand-in for the projection's `links` table.
+ *
+ * Kept as its own regex rather than imported: this module is the *transport*,
+ * and a stub that shared the application's parser would stop being able to catch
+ * the application misreading its own grammar.
+ */
+const STUB_REF_PATTERN = /\[\[([A-Za-z][A-Za-z0-9]*_[A-Za-z0-9]+)(?:\|[^\]\n]*)?\]\]/g;
+
+/** Every document id this body references, deduplicated. */
+function refIdsIn(body: string): readonly string[] {
+  return [...new Set([...body.matchAll(STUB_REF_PATTERN)].map((match) => match[1] ?? ""))];
+}
+
+/**
+ * `includeArchived=true` on a related request — the archived exclusion every
+ * list applies by default (SPEC.md §11), lifted into the union.
+ */
+function subjectWantsArchived(url: URL): boolean {
+  return url.searchParams.get("includeArchived") === "true";
 }
 
 /** The instant a write stamps: monotonic, so two saves never collide. */
@@ -245,9 +289,25 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     if (type !== null && !type.split(",").includes(doc.type)) return false;
     const parent = params.get("parent");
     if (parent !== null && doc.parent !== parent) return false;
-    // Nothing in these specs links documents, so a backlinks query is empty by
-    // construction rather than by filter.
-    if (params.get("references") !== null) return false;
+    /*
+     * `references=<id>` — the backlinks filter, over the same `[[ref]]` graph the
+     * projection's `links` table holds (UI-025). It used to short-circuit to
+     * empty on the grounds that nothing in these specs linked documents; a spec
+     * that seeds a link now gets the panel the server would give it.
+     */
+    const references = params.get("references");
+    if (references !== null && !refIdsIn(doc.body).includes(references)) return false;
+    /*
+     * `q` — lexical matching over the title and the body, which is as much as a
+     * stub can honestly claim (the server's is FTS5). Shared with `/api/search`
+     * so the two surfaces cannot disagree about which documents match.
+     */
+    const q = params.get("q");
+    if (q !== null && q !== "") {
+      const needle = q.toLowerCase();
+      const haystack = `${doc.title}\n${doc.body}`.toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
     const folder = params.get("folder");
     if (folder !== null && !doc.path.includes(`/${folder.replace(/\/+$/, "")}/`)) return false;
     const status = params.get("status");
@@ -356,6 +416,88 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
         },
         201,
       );
+    }
+
+    /*
+     * `GET /api/search` — ranked retrieval (SPEC.md §9.2), UI-026's endpoint.
+     *
+     * A hit is an address plus a line: id, title, the heading path of the
+     * best-matching passage, one snippet line. The stub's ranking is the store's
+     * own order, which is honest — a browser stub has no index and inventing a
+     * score would pin a fiction — and its address is the document's first
+     * heading, or its title where it has none, exactly as the contract says a
+     * passage with no heading above it reports.
+     */
+    if (url.pathname === "/api/search" && method === "GET") {
+      const q = url.searchParams.get("q") ?? "";
+      if (q === "") {
+        return json(route, { code: "bad_request", message: "q is required", issues: [] }, 400);
+      }
+      const limit = Number(url.searchParams.get("limit") ?? "10");
+      const hits = [...store.values()]
+        .filter((doc) => matches(doc, url.searchParams))
+        .slice(0, Number.isFinite(limit) && limit > 0 ? limit : 10)
+        .map((doc) => ({
+          id: doc.id,
+          title: doc.title,
+          headingPath: /^#{1,6} (.+)$/m.exec(doc.body)?.[1] ?? doc.title,
+          snippet: (doc.body.split("\n").find((line) => line.trim() !== "") ?? "").slice(0, 120),
+        }));
+      return json(route, { hits, semanticIndex: "current" });
+    }
+
+    /*
+     * `GET /api/docs/{id}/related` — UI-025's endpoint, and it must be matched
+     * **before** the `/api/docs/` block below: `rest` would otherwise be
+     * `"<id>/related"`, miss the store, and 404.
+     */
+    const related = /^\/api\/docs\/([^/]+)\/related$/.exec(url.pathname);
+    if (related !== null && method === "GET") {
+      const subject = store.get(decodeURIComponent(related[1] ?? ""));
+      if (subject === undefined) {
+        return json(route, { code: "not_found", message: url.pathname }, 404);
+      }
+      /*
+       * Seeded when a spec needs a `similar` or `both` row (no browser stub
+       * holds a semantic index); otherwise derived from the `[[ref]]` graph in
+       * both directions, which is what Phase A's `linked` set is.
+       */
+      const rows =
+        subject.related ??
+        [
+          ...new Set([
+            ...refIdsIn(subject.body),
+            ...[...store.values()]
+              .filter((doc) => doc.id !== subject.id && refIdsIn(doc.body).includes(subject.id))
+              .map((doc) => doc.id),
+          ]),
+        ]
+          .filter((id) => id !== subject.id)
+          .map((id) => ({ id, relation: "linked" }));
+
+      return json(route, {
+        related: rows.flatMap((row) => {
+          // Never a row the caller cannot then read: the links table stores
+          // references to documents that do not exist yet, and the route omits
+          // them rather than handing out an unreadable id.
+          const doc = store.get(row.id);
+          if (doc === undefined || (doc.status === "archived" && !subjectWantsArchived(url))) {
+            return [];
+          }
+          return [
+            {
+              id: doc.id,
+              title: doc.title,
+              excerpt: (doc.body.split("\n").find((line) => line.trim() !== "") ?? "").slice(
+                0,
+                120,
+              ),
+              relation: row.relation,
+            },
+          ];
+        }),
+        semanticIndex: "current",
+      });
     }
 
     if (url.pathname.startsWith("/api/docs/")) {

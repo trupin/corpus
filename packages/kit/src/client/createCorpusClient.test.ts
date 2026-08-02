@@ -72,6 +72,37 @@ describe("the operations map onto the contract's routes", () => {
     expect(urlOf(recorder).pathname).toBe("/api/docs/doc_a");
   });
 
+  // TEST-1032. Ranked retrieval is its own route, not `listDocs` with a `q`.
+  it("searches through GET /api/search, carrying the shared filters", async () => {
+    const recorder = recording({ hits: [] });
+    await client(recorder).searchCorpus({ q: "budget", type: ["note", "view"], limit: 5 });
+    const url = urlOf(recorder);
+    expect(recorder.requests[0]?.method).toBe("GET");
+    expect(url.pathname).toBe("/api/search");
+    expect(url.searchParams.get("q")).toBe("budget");
+    expect(url.searchParams.get("type")).toBe("note,view");
+    expect(url.searchParams.get("limit")).toBe("5");
+  });
+
+  // TEST-1009. The route the related panel reads, with its own narrow grammar.
+  it("reads a related set from GET /api/docs/{id}/related", async () => {
+    const recorder = recording({ related: [] });
+    await client(recorder).relatedDocs("doc_a", { limit: 3, includeArchived: true });
+    const url = urlOf(recorder);
+    expect(recorder.requests[0]?.method).toBe("GET");
+    expect(url.pathname).toBe("/api/docs/doc_a/related");
+    expect(url.searchParams.get("limit")).toBe("3");
+    expect(url.searchParams.get("includeArchived")).toBe("true");
+  });
+
+  it("reads a related set with no parameters at all", async () => {
+    const recorder = recording({ related: [] });
+    await client(recorder).relatedDocs("doc_a");
+    const url = urlOf(recorder);
+    expect(url.pathname).toBe("/api/docs/doc_a/related");
+    expect(url.search).toBe("");
+  });
+
   it("reads one thread from GET /api/threads/{id}", async () => {
     const recorder = recording({ id: "th_a", turns: [] });
     await client(recorder).getThread("th_a");
