@@ -1,15 +1,19 @@
-import type { DocRow, FolderTree } from "@corpus/contract";
+import type { FolderTree, SearchHit } from "@corpus/contract";
 import { folderChoices } from "../board/newList";
+import { resultKind } from "./results";
 import type { SearchQuery } from "./searchQuery";
 
 /**
  * The chip row's vocabulary and its arithmetic, apart from its rendering.
  *
- * Every chip is a `GET /api/docs` parameter (SPEC.md §9.2) and every click sets
- * one — there is no chip whose effect is applied client-side, and no chip that
- * means two parameters. Cycling rather than popping a menu open is the
- * prototype's shape: the chip *is* the current value, and clicking it moves to
- * the next one, so the row reads as the query it will send.
+ * Every chip is one of the fourteen structured filters `GET /api/search` and
+ * `GET /api/docs` share (SPEC.md §9.2 — they are spread from the contract's
+ * single `docFilterShape`, which is what makes "the same set, with the same
+ * semantics" true by construction). Every click sets exactly one: there is no
+ * chip whose effect is applied client-side, and no chip that means two
+ * parameters. Cycling rather than popping a menu open is the prototype's shape:
+ * the chip *is* the current value, and clicking it moves to the next one, so the
+ * row reads as the query it will send.
  */
 
 /** A chip whose click walks a fixed list of values, `null` meaning "any". */
@@ -91,23 +95,32 @@ export function folderOptions(tree: FolderTree | undefined): readonly (string | 
 }
 
 /**
- * Tag options taken from the rows already on screen.
+ * Tag options, and why there are none to offer any more.
  *
- * There is no tag-collection route in the §9.2 grammar, and inventing one for a
- * chip would be a contract change; the tags of what the search just returned are
- * the tags worth narrowing to anyway, and they cost nothing to compute.
+ * They used to be read off the rows on screen: `GET /api/docs` returns document
+ * rows, and a row carries its `tags`. `GET /api/search` returns **hits** — id,
+ * title, heading path, snippet — and that frugality is the endpoint's whole
+ * reason to exist, so there is no tag anywhere in the response to collect.
+ *
+ * The three alternatives were all worse than an honest gap. A tag-collection
+ * route does not exist in the §9.2 grammar and inventing one for a chip is a
+ * contract change. Keeping a second `GET /api/docs` request alive purely to
+ * stock a dropdown reintroduces exactly the per-query second request the
+ * overlay's data path is built to prevent. Guessing a vocabulary is a lie.
+ *
+ * So the `tag:` chip stays in the row — it still displays a tag set from a
+ * restored query, and still clears it — but it can no longer *offer* one. A
+ * source for the workspace's tag vocabulary is a contract question, escalated
+ * rather than improvised (sprint-022 TEST-1027).
  */
-export function tagOptions(items: readonly DocRow[]): readonly (string | null)[] {
-  const tags = new Set<string>();
-  for (const row of items) for (const tag of row.tags) tags.add(tag);
-  return [null, ...[...tags].sort()];
+export function tagOptions(): readonly (string | null)[] {
+  return [null];
 }
 
 /** A document the `references:` / `parent:` pickers can point at. */
 export interface DocumentChoice {
   readonly id: string;
   readonly title: string;
-  readonly type: string;
 }
 
 /**
@@ -118,17 +131,20 @@ export interface DocumentChoice {
  * references *that*" is a refinement of the search in progress. It also means
  * neither picker issues a request of its own, so the overlay's request count
  * stays one per query.
+ *
+ * Threads are excluded, as before — a thread is not something you reference by
+ * id here — using the id-prefix discriminant a hit does carry (`resultKind`).
  */
-export function documentChoices(items: readonly DocRow[]): readonly DocumentChoice[] {
-  return items
-    .filter((row) => row.type !== "thread")
-    .map((row) => ({ id: row.id, title: row.title, type: row.type }));
+export function documentChoices(hits: readonly SearchHit[]): readonly DocumentChoice[] {
+  return hits
+    .filter((hit) => resultKind(hit) === "doc")
+    .map((hit) => ({ id: hit.id, title: hit.title }));
 }
 
 /** Titles for an id already on screen, so a set chip names a document. */
-export function titleOf(items: readonly DocRow[], id: string | null): string | null {
+export function titleOf(hits: readonly SearchHit[], id: string | null): string | null {
   if (id === null) return null;
-  return items.find((row) => row.id === id)?.title ?? id;
+  return hits.find((hit) => hit.id === id)?.title ?? id;
 }
 
 /** Count of chips currently narrowing the search — the "clear" affordance's cue. */

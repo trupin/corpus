@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./coverage";
+import { stubCorpus } from "./stubCorpus";
 import { LIGHT_ACCENT } from "./tokens";
 
 /**
@@ -14,9 +15,11 @@ import { LIGHT_ACCENT } from "./tokens";
  * legend, and the create row — which is the *only* row a search with zero
  * results produces, and therefore fully exercisable.
  *
- * Result grouping, `<mark>` highlights, `↵`-into-a-column with the flash, and
- * save-as-view writing a view document to disk are verified against a real
- * `corpus` server and a real browser in the issue's E2E Verification Log.
+ * `↵`-into-a-column with the flash, and save-as-view writing a view document to
+ * disk, are verified against a real `corpus` server and a real browser in the
+ * issue's E2E Verification Log. Result grouping, the ranked payload and the
+ * `<mark>` highlights get their own stubbed describe at the bottom of this file
+ * (UI-026), because those need rows and the suite's default has none.
  */
 
 /**
@@ -210,5 +213,154 @@ test.describe("the search overlay", () => {
     await page.keyboard.press("Shift+ArrowLeft");
     await expect(page.locator(".overlay.open")).toBeVisible();
     expect(uncaught).toEqual([]);
+  });
+});
+
+/**
+ * UI-026: the ranked result list, against the hermetic stub.
+ *
+ * The describe above deliberately runs with nothing answering `/api`, which is
+ * why it verifies only what needs no rows. Ranked retrieval is precisely the
+ * part that needs them, so this block seeds a corpus and asserts the payload
+ * that reaches the DOM: the request goes to `GET /api/search` and carries no
+ * `sort`, each row wears the passage's heading path, and "save as view" still
+ * writes the `GET /api/docs` query it always did — `sort: relevance` included.
+ */
+const VIEW = {
+  id: "doc_view_inbox",
+  type: "view",
+  title: "Inbox",
+  path: "data/docs/views/inbox.md",
+  pinned: true,
+  order: 1,
+  query: { folder: "inbox" },
+};
+
+/*
+ * The stub addresses a hit by the body's first heading and snippets its first
+ * non-blank line, so the heading is what both are cut from — which is why the
+ * word under test lives in it.
+ */
+const MORTGAGE = {
+  id: "doc_mortgage",
+  title: "Mortgage options",
+  path: "data/docs/finance/housing/mortgage.md",
+  body: "## Mortgage rate assumptions\n\nthe base case assumes a 30-year fixed",
+};
+
+const THREAD = {
+  id: "th_rate",
+  type: "thread",
+  title: "Rate assumption",
+  path: "data/threads/th_rate.md",
+  body: "## user\n\nis 6.1% the right base case for a mortgage?",
+};
+
+test.describe("the ranked result list", () => {
+  test("comes from `GET /api/search`, grouped, with heading-path subtitles", async ({ page }) => {
+    const uncaught: string[] = [];
+    page.on("pageerror", (error) => uncaught.push(error.message));
+    const corpus = await stubCorpus(page, [VIEW, MORTGAGE, THREAD]);
+
+    await openOverlay(page);
+    await page.locator(".search-input-row input").fill("mortgage");
+
+    await expect(page.locator(".sr[data-sr]")).toHaveCount(2);
+    await expect(page.locator(".sr-group")).toHaveText(["Documents · 1", "Threads · 1"]);
+
+    const row = page.locator(".sr[data-sr='doc_mortgage']");
+    await expect(row.locator(".sr-path")).toHaveText("Mortgage rate assumptions");
+    await expect(row.locator(".sr-snippet mark").first()).toHaveText("Mortgage");
+    await expect(row.locator(".type-glyph")).toHaveText("doc");
+    await expect(page.locator(".sr[data-sr='th_rate'] .type-glyph")).toHaveText("thread");
+
+    // One ranked request, on the ranked endpoint, with no list grammar on it.
+    const searches = await corpus.of("GET", "/api/search");
+    expect(searches.length).toBeGreaterThan(0);
+    for (const call of searches) {
+      const params = new URLSearchParams(call.search);
+      expect(params.has("sort")).toBe(false);
+      expect(params.has("offset")).toBe(false);
+      expect(params.has("pinned")).toBe(false);
+    }
+    // …and nothing asked `GET /api/docs` for the results.
+    const lists = await corpus.of("GET", "/api/docs");
+    for (const call of lists) expect(new URLSearchParams(call.search).has("q")).toBe(false);
+    expect(uncaught).toEqual([]);
+  });
+
+  test("no ranked request is issued before anything is typed", async ({ page }) => {
+    const corpus = await stubCorpus(page, [VIEW, MORTGAGE]);
+    await openOverlay(page);
+    await expect(page.locator(".sr-empty")).toHaveText(
+      "Type to search — documents, threads and turns, ranked.",
+    );
+    expect(await corpus.of("GET", "/api/search")).toEqual([]);
+  });
+
+  test("the archived chip sends `includeArchived`, never a status", async ({ page }) => {
+    const corpus = await stubCorpus(page, [VIEW, MORTGAGE]);
+    await openOverlay(page);
+    await page.locator(".search-input-row input").fill("mortgage");
+    await expect(page.locator(".sr[data-sr]")).toHaveCount(1);
+
+    await page.locator(".search-filters .chip.warn").click();
+    await expect(page.locator(".search-filters .chip.warn.on")).toHaveCount(1);
+
+    await expect
+      .poll(async () => {
+        const calls = await corpus.of("GET", "/api/search");
+        return calls.some((call) => call.search.includes("includeArchived=true"));
+      })
+      .toBe(true);
+    for (const call of await corpus.of("GET", "/api/search")) {
+      expect(new URLSearchParams(call.search).has("status")).toBe(false);
+    }
+  });
+
+  test("save as view still writes the `GET /api/docs` query, `sort: relevance` included", async ({
+    page,
+  }) => {
+    const corpus = await stubCorpus(page, [VIEW, MORTGAGE]);
+    await openOverlay(page);
+    await page.locator(".search-input-row input").fill("mortgage");
+    await expect(page.locator(".sr[data-sr]")).toHaveCount(1);
+
+    await page.locator(".search-input-row .chip.ghost").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/docs")).length).toBe(1);
+    const [write] = await corpus.of("POST", "/api/docs");
+    expect(write?.body).toMatchObject({
+      type: "view",
+      pinned: true,
+      title: "mortgage",
+      query: { q: "mortgage", sort: "relevance" },
+    });
+  });
+
+  test("↵ opens the hit in its home column, resolved from the document it names", async ({
+    page,
+  }) => {
+    const corpus = await stubCorpus(page, [
+      { ...VIEW, title: "Housing", query: { folder: "finance" } },
+      MORTGAGE,
+    ]);
+    await openOverlay(page);
+    // The document's exact title, so the create row is not offered and the
+    // first cursor stop is the hit itself.
+    await page.locator(".search-input-row input").fill("mortgage options");
+    await expect(page.locator(".sr[data-sr]")).toHaveCount(1);
+    await expect(page.locator(".sr-create")).toHaveCount(0);
+
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+
+    await expect(page.locator(".overlay.open")).toHaveCount(0);
+    // The hit carries no placement, so the overlay reads the document for one —
+    // the same `["docs", id]` entry the reader it is opening will read.
+    await expect
+      .poll(async () => (await corpus.of("GET", "/api/docs/doc_mortgage")).length)
+      .toBeGreaterThan(0);
+    await expect(page.locator(".reader")).toBeVisible();
   });
 });

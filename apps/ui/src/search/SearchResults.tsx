@@ -1,76 +1,91 @@
-import type { DocRow } from "@corpus/contract";
+import type { SearchHit } from "@corpus/contract";
 import { useEffect, useRef, type ReactElement } from "react";
 import { CreateRow } from "./CreateRow";
-import { groupResults, resultPath, type ResultGroup } from "./results";
-import { primarySnippet, Snippet } from "./Snippet";
+import { groupResults, resultKind, type ResultGroup } from "./results";
+import { Snippet } from "./Snippet";
 
 /**
  * The result list: `.sr-group` headers over `.sr` rows, exactly one of which
  * carries the keyboard cursor.
  *
- * It renders `items` and nothing else — no sort, no filter, no second query.
- * The groups are a partition of the array it was handed, so what is on screen is
- * what `GET /api/docs` returned, in the order the server chose.
+ * It renders `hits` and nothing else — no sort, no filter, no second query. The
+ * groups are a partition of the array it was handed, so what is on screen is
+ * what `GET /api/search` ranked, in the order the server ranked it.
+ *
+ * A row is the hit: its title, its one-line snippet, and — on the prototype's
+ * mono `.sr-path` line — the **heading path** of the passage that matched. That
+ * subtitle is the point of the endpoint change: a result now says *where inside*
+ * the document the match sits ("Mortgage options › Rate assumptions"), which is
+ * the address an agent or a reader jumps to, rather than where the file lives.
+ * The contract guarantees it is never empty — "a passage with no heading above
+ * it reports the document's title, so a hit always has an address".
  */
 
 export interface SearchResultsProps {
-  readonly items: readonly DocRow[];
-  /** The create row's label; rendered only when `offersCreate` is true. */
+  readonly hits: readonly SearchHit[];
+  /** The create row's label, and the terms the snippets highlight. */
   readonly query: string;
   readonly offersCreate: boolean;
   /** Index into the cursor targets (create row first when offered), or -1. */
   readonly cursor: number;
   readonly isPending: boolean;
+  /** True when nothing has been typed: `q` is required, so nothing was asked. */
+  readonly isIdle: boolean;
   readonly error: Error | null;
-  readonly onOpen: (row: DocRow) => void;
+  readonly onOpen: (hit: SearchHit) => void;
   readonly onCreate: () => void;
 }
 
 function ResultRow({
-  row,
+  hit,
+  query,
   isCursor,
   onOpen,
 }: {
-  readonly row: DocRow;
+  readonly hit: SearchHit;
+  readonly query: string;
   readonly isCursor: boolean;
-  readonly onOpen: (row: DocRow) => void;
+  readonly onOpen: (hit: SearchHit) => void;
 }): ReactElement {
-  const snippet = primarySnippet(row.snippets);
   return (
     <button
       type="button"
       className={isCursor ? "sr kbd" : "sr"}
-      data-sr={row.id}
+      data-sr={hit.id}
       onClick={() => {
-        onOpen(row);
+        onOpen(hit);
       }}
     >
       <div className="sr-title">
-        <span className="type-glyph">{row.type}</span>
-        {row.title}
+        {/*
+         * The prototype's glyph says what kind of thing the row is. A hit knows
+         * only what its id says (see `resultKind`), so it says that — `doc` or
+         * `thread` — rather than the document type `GET /api/docs` used to
+         * carry.
+         */}
+        <span className="type-glyph">{resultKind(hit)}</span>
+        {hit.title}
       </div>
-      {snippet === null ? null : <Snippet snippet={snippet} />}
-      <div className="sr-path">{resultPath(row)}</div>
+      <Snippet snippet={hit.snippet} query={query} />
+      <div className="sr-path">{hit.headingPath}</div>
     </button>
   );
 }
 
 export function SearchResults({
-  items,
+  hits,
   query,
   offersCreate,
   cursor,
   isPending,
+  isIdle,
   error,
   onOpen,
   onCreate,
 }: SearchResultsProps): ReactElement {
-  const groups: readonly ResultGroup[] = groupResults(items);
+  const groups: readonly ResultGroup[] = groupResults(hits);
   const list = useRef<HTMLDivElement>(null);
 
-  // The cursor is followed, not scrolled to imperatively on every render: only
-  // a change of position moves the list, so hovering or re-rendering never
-  // yanks it. jsdom implements no layout and therefore no `scrollIntoView`.
   useEffect(() => {
     if (cursor < 0) return;
     const element = list.current?.querySelector<HTMLElement>(".sr.kbd");
@@ -94,16 +109,36 @@ export function SearchResults({
       {groups.map((group) => (
         <div key={group.key}>
           <div className="sr-group">{group.heading}</div>
-          {group.rows.map((row) => {
+          {group.rows.map((hit) => {
             index += 1;
-            return <ResultRow key={row.id} row={row} isCursor={cursor === index} onOpen={onOpen} />;
+            return (
+              <ResultRow
+                key={hit.id}
+                hit={hit}
+                query={query}
+                isCursor={cursor === index}
+                onOpen={onOpen}
+              />
+            );
           })}
         </div>
       ))}
 
       {error === null && groups.length === 0 && !offersCreate ? (
-        <p className="sr-empty">{isPending ? "Searching…" : "Nothing matches this search yet."}</p>
+        <p className="sr-empty">{emptyMessage(isIdle, isPending)}</p>
       ) : null}
     </div>
   );
+}
+
+/**
+ * Three empty states, and they say different things.
+ *
+ * An idle overlay has asked nothing: `q` is required by `GET /api/search`, so a
+ * panel with chips set but no text has issued no request, and "nothing matches"
+ * would be a claim about a search that never ran.
+ */
+function emptyMessage(isIdle: boolean, isPending: boolean): string {
+  if (isIdle) return "Type to search — documents, threads and turns, ranked.";
+  return isPending ? "Searching…" : "Nothing matches this search yet.";
 }

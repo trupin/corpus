@@ -1,4 +1,4 @@
-import type { DocRow, FolderTree } from "@corpus/contract";
+import type { FolderTree, SearchHit } from "@corpus/contract";
 import { useState, type ReactElement } from "react";
 import {
   AGENT_OPTIONS,
@@ -29,8 +29,8 @@ export interface FilterChipsProps {
   readonly onChange: (next: SearchQuery) => void;
   /** `GET /api/tree` — the folder chip's real options. */
   readonly tree: FolderTree | undefined;
-  /** The current result set: the tag options and the two title pickers. */
-  readonly items: readonly DocRow[];
+  /** The current ranking: the two title pickers' candidates. */
+  readonly hits: readonly SearchHit[];
 }
 
 interface ChipProps {
@@ -56,9 +56,9 @@ function chipLabel(key: string, value: string | null): string {
   return `${key}: ${value ?? "any"}`;
 }
 
-export function FilterChips({ query, onChange, tree, items }: FilterChipsProps): ReactElement {
+export function FilterChips({ query, onChange, tree, hits }: FilterChipsProps): ReactElement {
   const [picker, setPicker] = useState<"references" | "parent" | null>(null);
-  const candidates = documentChoices(items);
+  const candidates = documentChoices(hits);
 
   const set = (change: Partial<SearchQuery>): void => {
     onChange({ ...query, ...change });
@@ -93,7 +93,7 @@ export function FilterChips({ query, onChange, tree, items }: FilterChipsProps):
         label={chipLabel("tag", query.tag)}
         active={query.tag !== null}
         onClick={() => {
-          set({ tag: cycle(tagOptions(items), query.tag) });
+          set({ tag: cycle(tagOptions(), query.tag) });
         }}
       />
       <Chip
@@ -135,7 +135,7 @@ export function FilterChips({ query, onChange, tree, items }: FilterChipsProps):
 
       <DocumentChip
         field="references"
-        value={titleOf(items, query.references)}
+        value={titleOf(hits, query.references)}
         open={picker === "references"}
         candidates={candidates}
         onToggle={() => {
@@ -148,7 +148,7 @@ export function FilterChips({ query, onChange, tree, items }: FilterChipsProps):
       />
       <DocumentChip
         field="parent"
-        value={titleOf(items, query.parent)}
+        value={titleOf(hits, query.parent)}
         open={picker === "parent"}
         candidates={candidates}
         onToggle={() => {

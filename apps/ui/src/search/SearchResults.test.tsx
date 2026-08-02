@@ -1,47 +1,33 @@
 /** @vitest-environment jsdom */
-import { docRowFixture } from "@corpus/kit/testing";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CreateRow } from "./CreateRow";
 import { SearchResults } from "./SearchResults";
+import { hitFixture } from "./searchTransport";
 
 afterEach(cleanup);
 
-const ITEMS = [
-  docRowFixture({
+const HITS = [
+  hitFixture({
     id: "doc_mortgage",
     title: "Mortgage options",
-    path: "data/docs/finance/housing/mortgage.md",
-    snippets: [
-      {
-        field: "body",
-        segments: [
-          { text: "…the ", match: false },
-          { text: "mortgage", match: true },
-          { text: " insurance question…", match: false },
-        ],
-      },
-    ],
+    headingPath: "Mortgage options › Rate assumptions",
+    snippet: "the base case assumes a 30-year fixed; the mortgage insurance question",
   }),
-  docRowFixture({ id: "doc_payoff", title: "Payoff maths" }),
-  docRowFixture({ id: "doc_criteria", title: "House criteria" }),
-  docRowFixture({
+  hitFixture({ id: "doc_payoff", title: "Payoff maths", headingPath: "Payoff maths" }),
+  hitFixture({
+    id: "doc_criteria",
+    title: "House criteria",
+    headingPath: "House criteria › Musts",
+  }),
+  hitFixture({
     id: "th_rate",
-    type: "thread",
     title: "Rate assumption",
-    path: "data/threads/th_rate.md",
-    parent: "doc_mortgage",
-    parentTitle: "Mortgage options",
-    turnCount: 4,
+    headingPath: "user · 2026-07-19T10:05:00Z",
+    snippet: "is 6.1% the right base case?",
   }),
-  docRowFixture({
-    id: "th_rent",
-    type: "thread",
-    title: "Rent vs buy",
-    path: "data/threads/th_rent.md",
-    turnCount: 3,
-  }),
+  hitFixture({ id: "th_rent", title: "Rent vs buy", headingPath: "agent · 2026-07-19T10:07:12Z" }),
 ];
 
 function renderResults(overrides: Partial<Parameters<typeof SearchResults>[0]> = {}) {
@@ -49,11 +35,12 @@ function renderResults(overrides: Partial<Parameters<typeof SearchResults>[0]> =
   const onCreate = vi.fn();
   const view = render(
     <SearchResults
-      items={ITEMS}
+      hits={HITS}
       query="mortgage"
       offersCreate={false}
       cursor={-1}
       isPending={false}
+      isIdle={false}
       error={null}
       onOpen={onOpen}
       onCreate={onCreate}
@@ -72,7 +59,7 @@ describe("SearchResults", () => {
     ]);
   });
 
-  it("renders exactly the rows it was handed — no filtering, no re-sorting", () => {
+  it("renders exactly the ranking it was handed — no filtering, no re-sorting", () => {
     const { container } = renderResults();
     expect(
       [...container.querySelectorAll<HTMLElement>(".sr[data-sr]")].map(
@@ -81,22 +68,24 @@ describe("SearchResults", () => {
     ).toEqual(["doc_mortgage", "doc_payoff", "doc_criteria", "th_rate", "th_rent"]);
   });
 
-  it("gives each row a type glyph, a serif title, its snippet and a mono path", () => {
+  it("gives each row a kind glyph, a serif title, its snippet and the passage's address", () => {
     const { container } = renderResults();
     const row = container.querySelector<HTMLElement>(".sr[data-sr='doc_mortgage']");
-    expect(row?.querySelector(".type-glyph")?.textContent).toBe("note");
+    expect(row?.querySelector(".type-glyph")?.textContent).toBe("doc");
     expect(row?.querySelector(".sr-title")?.textContent).toContain("Mortgage options");
     expect(row?.querySelector(".sr-snippet mark")?.textContent).toBe("mortgage");
-    expect(row?.querySelector(".sr-path")?.textContent).toContain("finance/housing/");
+    expect(row?.querySelector(".sr-path")?.textContent).toBe("Mortgage options › Rate assumptions");
 
     const thread = container.querySelector<HTMLElement>(".sr[data-sr='th_rate']");
-    expect(thread?.querySelector(".sr-path")?.textContent).toBe("on Mortgage options · open");
+    expect(thread?.querySelector(".type-glyph")?.textContent).toBe("thread");
+    expect(thread?.querySelector(".sr-path")?.textContent).toBe("user · 2026-07-19T10:05:00Z");
   });
 
-  it("renders no snippet element for a row the query did not highlight", () => {
+  it("gives every row an address — the contract never sends an empty one", () => {
     const { container } = renderResults();
-    const row = container.querySelector<HTMLElement>(".sr[data-sr='doc_payoff']");
-    expect(row?.querySelector(".sr-snippet")).toBeNull();
+    const paths = [...container.querySelectorAll(".sr-path")].map((node) => node.textContent);
+    expect(paths.length).toBe(HITS.length);
+    expect(paths.every((path) => path !== "")).toBe(true);
   });
 
   it("marks exactly one row with the keyboard cursor", () => {
@@ -118,7 +107,7 @@ describe("SearchResults", () => {
     );
   });
 
-  it("opens the row that was clicked", async () => {
+  it("opens the hit that was clicked", async () => {
     const user = userEvent.setup();
     const { container, onOpen } = renderResults();
     await user.click(container.querySelector<HTMLElement>(".sr[data-sr='doc_payoff']")!);
@@ -126,14 +115,24 @@ describe("SearchResults", () => {
     expect(onOpen.mock.calls[0]?.[0]).toMatchObject({ id: "doc_payoff" });
   });
 
-  it("says so when a search comes back empty, and when it fails", () => {
-    const { container } = renderResults({ items: [] });
+  it("distinguishes an unasked search from an empty one, and both from a failure", () => {
+    const { container } = renderResults({ hits: [], isIdle: true });
     expect(container.querySelector(".sr-empty")?.textContent).toBe(
+      "Type to search — documents, threads and turns, ranked.",
+    );
+
+    cleanup();
+    const empty = renderResults({ hits: [] });
+    expect(empty.container.querySelector(".sr-empty")?.textContent).toBe(
       "Nothing matches this search yet.",
     );
 
     cleanup();
-    renderResults({ items: [], error: new Error("no such filter") });
+    const pending = renderResults({ hits: [], isPending: true });
+    expect(pending.container.querySelector(".sr-empty")?.textContent).toBe("Searching…");
+
+    cleanup();
+    renderResults({ hits: [], error: new Error("no such filter") });
     expect(screen.getByRole("alert").textContent).toContain("no such filter");
   });
 });
@@ -159,7 +158,6 @@ describe("CreateRow", () => {
     );
     const row = container.querySelector<HTMLElement>(".sr-create");
     expect(row?.textContent).toContain("<b>bold</b>");
-    // One `<b>` — the prototype's serif wrapper — and no injected second one.
     expect(row?.querySelectorAll("b").length).toBe(1);
   });
 });
