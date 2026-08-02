@@ -12,8 +12,8 @@ import { measureColumns, previewOrder } from "../board/columnDrag";
 import { nextOrder, reinsert } from "../board/columnOrder";
 import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
 import { useContextMenu } from "../menu/ContextMenuHost";
+import { isPluginRendered } from "../menu/nativeMenu";
 import { RowMenuItems, subjectFromElement } from "../menu/RowMenuItems";
-import { resolveListItem } from "../plugins/slots";
 import { focusReplyComposer, replyRoot } from "../keyboard/focusReply";
 import { useActiveColumn } from "../keyboard/useActiveColumn";
 import { useRowCursor } from "../keyboard/useRowCursor";
@@ -376,9 +376,13 @@ export function Board(): ReactElement {
   const openRowMenu = useCallback(() => {
     const element = cursor.element();
     if (element === null) return;
+    // A plugin **column body** owns its surface; v1 leaves it alone (sign-off
+    // item 4). Asked of the painted element, not of the row's type — a `todo`
+    // document row in an ordinary column is a core row with the core action set
+    // however it is painted (UI-036).
+    if (isPluginRendered(element)) return;
     const subject = subjectFromElement(element);
-    // A plugin `ListItem` owns its surface; v1 leaves it alone (sign-off item 4).
-    if (subject === null || resolveListItem(subject.type) !== null) return;
+    if (subject === null) return;
     const rect = element.getBoundingClientRect();
     contextMenu.open({
       label: `Actions for ${subject.title}`,

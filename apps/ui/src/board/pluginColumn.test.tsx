@@ -98,6 +98,26 @@ describe("a plugin column on the board", () => {
     expect(document.querySelector(".col[data-col='doc_pluginview'] .col-head")).toBeTruthy();
   });
 
+  /**
+   * UI-036. `data-plugin-surface` is how core says "everything below here is
+   * the plugin's" — the same stamp a plugin `View` carries — and it is the
+   * **only** thing the menu rules read. Without it the exclusion had nowhere to
+   * live but a document's type, which took the core row menu away from every
+   * `todo` document on the board.
+   */
+  it("stamps the plugin body as a plugin-rendered surface", async () => {
+    installFx();
+    renderBoard(boardTransport({ views: [pluginView] }));
+    await waitFor(() => {
+      expect(screen.getByText(/plugin body/)).toBeTruthy();
+    });
+    // The stamp sits on the body container itself, so it covers everything the
+    // registered Component renders and nothing the board's chrome does.
+    const surface = screen.getByText(/plugin body/).closest("[data-plugin-surface]");
+    expect(surface).toBe(document.querySelector(".col[data-col='doc_pluginview'] .col-list"));
+    expect(document.querySelector(".col-head[data-plugin-surface]")).toBeNull();
+  });
+
   it("issues no GET /api/docs for the plugin column body", async () => {
     installFx();
     const wire = boardTransport({ views: [pluginView] });

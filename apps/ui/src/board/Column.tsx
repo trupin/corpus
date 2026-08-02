@@ -179,7 +179,17 @@ function PluginColumnBody({
       {Body === null ? (
         <PluginMissingCard plugin={pluginRef} />
       ) : (
-        <div className="col-list">
+        <div className="col-list" data-plugin-surface="">
+          {/*
+           * The surface below this node is the plugin's, and `data-plugin-surface`
+           * is how every menu rule says so (SPEC.md §10, sign-off item 4) — the
+           * same stamp `DocView` puts on a plugin `View`. Marking the *surface*
+           * is what lets core stop guessing from a document's **type**, which is
+           * what suppressed the row menu on every `todo` document anywhere on
+           * the board (UI-036). Rows a plugin column body invents still get the
+           * browser's menu; a core row painted by a plugin `ListItem` does not
+           * live under this node and keeps its own.
+           */}
           {/*
            * `onOpen` is the board's own "push onto this column's navigation
            * stack" — the same callback a core row gets. Handing it to the
