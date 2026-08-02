@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertNoDevDependencyLeak,
+  assertRequiredRuntimeDependencies,
   buildPublishManifest,
   CLI_BUNDLE_PATH,
   NODE_ENGINE_RANGE,
@@ -10,9 +11,20 @@ import {
   PACKAGE_NAME,
   packageNameFromSpecifier,
   PackagingError,
+  REQUIRED_RUNTIME_DEPENDENCIES,
   resolveRuntimeDependencies,
   type DeclaredDependencies,
 } from "./package-manifest.js";
+
+/**
+ * The smallest dependency set a real manifest can carry: the two the installed
+ * tool cannot run without (INFRA-012) plus one ordinary package.
+ */
+const RUNTIME_DEPENDENCIES: Readonly<Record<string, string>> = {
+  "better-sqlite3": "^12.4.1",
+  "onnxruntime-web": "^1.27.0",
+  zod: "^4.4.3",
+};
 
 const declared: readonly DeclaredDependencies[] = [
   {
@@ -97,8 +109,41 @@ describe("the dev-dependency leak guard", () => {
   });
 });
 
+/**
+ * INFRA-012's manifest-direction proof: the tarball carries no model and no
+ * inference runtime, so the *dependency* on the runtime is what makes an install
+ * able to embed anything at all.
+ */
+describe("the required-runtime-dependency guard", () => {
+  it.each(REQUIRED_RUNTIME_DEPENDENCIES.map((entry) => entry.name))(
+    "fails when %s is missing, naming why the tool needs it",
+    (name) => {
+      const withoutIt = Object.fromEntries(
+        Object.entries(RUNTIME_DEPENDENCIES).filter(([key]) => key !== name),
+      );
+      expect(() => assertRequiredRuntimeDependencies(withoutIt)).toThrow(
+        new RegExp(`"${name}"`, "u"),
+      );
+    },
+  );
+
+  it("names the wasm runtime, whose dynamic import makes its absence silent", () => {
+    expect(REQUIRED_RUNTIME_DEPENDENCIES.map((entry) => entry.name)).toContain("onnxruntime-web");
+    for (const entry of REQUIRED_RUNTIME_DEPENDENCIES) {
+      expect(entry.reason.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("passes the real set", () => {
+    expect(() => assertRequiredRuntimeDependencies(RUNTIME_DEPENDENCIES)).not.toThrow();
+  });
+});
+
 describe("buildPublishManifest", () => {
-  const manifest = buildPublishManifest({ version: "1.2.3", dependencies: { zod: "^4.4.3" } });
+  const manifest = buildPublishManifest({
+    version: "1.2.3",
+    dependencies: RUNTIME_DEPENDENCIES,
+  });
 
   it("carries every field a published package needs", () => {
     expect(manifest.name).toBe(PACKAGE_NAME);
@@ -122,8 +167,17 @@ describe("buildPublishManifest", () => {
   });
 
   it("refuses to build a manifest carrying a dev dependency", () => {
-    expect(() => buildPublishManifest({ version: "1.0.0", dependencies: { tsx: "^4" } })).toThrow(
-      PackagingError,
-    );
+    expect(() =>
+      buildPublishManifest({
+        version: "1.0.0",
+        dependencies: { ...RUNTIME_DEPENDENCIES, tsx: "^4" },
+      }),
+    ).toThrow(PackagingError);
+  });
+
+  it("refuses to build a manifest that lost the embedding runtime", () => {
+    expect(() =>
+      buildPublishManifest({ version: "1.0.0", dependencies: { "better-sqlite3": "^12.4.1" } }),
+    ).toThrow(/onnxruntime-web/);
   });
 });

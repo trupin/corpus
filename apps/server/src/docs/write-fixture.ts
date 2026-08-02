@@ -83,6 +83,7 @@ const serverConfig = (workspaceRoot: string, attachments: AttachmentLimits): Ser
   version: "9.9.9",
   logLevel: "silent",
   uiDistDir: undefined,
+  embedding: { kind: "absent" },
   warnings: [],
 });
 

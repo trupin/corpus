@@ -10,7 +10,9 @@ import { describe, expect, it } from "vitest";
  * verb that touched a document file, or ran a state-changing git command, would
  * fork the one write path every guarantee in SPEC.md §14 rests on — and the
  * result on disk looks the same until two writers race. That scan covers the
- * topics the rule is about: `doc`, `thread`, `db`. The lifecycle and scaffolding
+ * topics the rule is about: `doc`, `thread`, `db`, and `index-maintenance` —
+ * the `corpus index` verbs, whose directory is named for the barrel collision it
+ * avoids. The lifecycle and scaffolding
  * topics (`server`, `init`) legitimately write the CLI's own two files — the
  * pidfile and the log (SPEC.md §2.2 rule 4) — and create the workspace itself.
  *
@@ -38,7 +40,7 @@ import { describe, expect, it } from "vitest";
  */
 
 /** Topics whose verbs are pure API clients: they may not touch the filesystem at all. */
-const WRITE_RESTRICTED_TOPICS = ["doc", "thread", "db"];
+const WRITE_RESTRICTED_TOPICS = ["doc", "thread", "db", "index-maintenance"];
 
 /** Write APIs, their sync twins, and the stream that bypasses both. */
 const FORBIDDEN_FS = [
@@ -183,6 +185,9 @@ describe("the doc, thread and db verbs never write to the filesystem", () => {
       "doc/related.ts",
       "doc/show.ts",
       "doc/unarchive.ts",
+      "index-maintenance/index.ts",
+      "index-maintenance/rebuild.ts",
+      "index-maintenance/status.ts",
       "thread/create.ts",
       "thread/index.ts",
       "thread/reply.ts",
@@ -274,6 +279,9 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "doc/unarchive.ts",
       "filters.ts",
       "health.ts",
+      "index-maintenance/index.ts",
+      "index-maintenance/rebuild.ts",
+      "index-maintenance/status.ts",
       "init/git.ts",
       "init/index.ts",
       "init/port.ts",

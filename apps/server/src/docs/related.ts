@@ -29,11 +29,29 @@
 //
 // Reads two tables, writes nothing, takes no lock: a pure projection read like
 // the collection query it sits beside.
+//
+// **Retrieval Phase B adds the second graph** (SPEC.md §9.1, §9.2). Beside the
+// `[[ref]]` edges above, a document's chunk vectors name the documents that
+// *read* like it without citing it — which is the half of "what else bears on
+// this" a reference graph structurally cannot answer. The two ranked lists are
+// fused the way ranked search fuses its own (`search/fusion.ts`), and the
+// `relation` field, carried in the frozen enum since CONTRACT-022, finally
+// distinguishes them: `linked`, `similar`, or `both`.
+//
+// The Phase A guarantees survive the addition unchanged, and each is enforced in
+// the same place it was before: never itself (`id <> @id` in the CTE, and the
+// scan's own `excludeDocId`), never a dangling reference (the INNER join), never
+// an archived neighbour by default (the shared `notArchivedSql` fragment, handed
+// to the scan as its scope so both halves exclude the same rows). With no usable
+// semantic index there is one list, fusing one list re-derives it, and the
+// answer is byte-identical to Phase A's.
 
-import type { RelatedDoc, RelatedDocs, RelatedQuery } from "@corpus/contract";
+import type { RelatedDoc, RelatedDocs, RelatedQuery, Relation } from "@corpus/contract";
 import { toOneLine } from "../core/one-line.js";
 import { notFound } from "../errors.js";
 import type { ProjectionDb } from "../projection/index.js";
+import { fuseRankings, overFetchLimit } from "../search/fusion.js";
+import type { SemanticOutcome, SemanticRetrieval } from "../semantic/index.js";
 import { notArchivedSql } from "./filters.js";
 import { findDocumentRow } from "./read.js";
 
@@ -78,39 +96,121 @@ interface RawRelated {
   readonly strength: number;
 }
 
+export interface RelatedDeps {
+  /**
+   * Retrieval's semantic half. Absent, the answer is the reference graph alone
+   * and the state word is `disabled` — the honest claim for a server with no
+   * semantic index wired.
+   */
+  readonly semantic?: SemanticRetrieval | undefined;
+}
+
+const DISABLED: SemanticOutcome = { state: "disabled", docs: [] };
+
+/**
+ * The projection's stored `body_excerpt` is 280 characters from the first
+ * non-blank one — a multi-line slice, which is what a *list row* wants.
+ * Retrieval's row is printed one per line, so it is collapsed and bounded here
+ * rather than re-derived from the file: no disk read, and the same one-line rule
+ * a search hit's snippet obeys.
+ */
+const rowOf = (raw: RawRelated, relation: Relation): RelatedDoc => ({
+  id: raw.id,
+  title: raw.title,
+  excerpt: toOneLine(raw.excerpt),
+  relation,
+});
+
 /**
  * The documents `id` is connected to, ranked. Throws the contract's 404 when
  * `id` names no document — the same shape `GET /api/docs/{id}` produces, since
  * the question is about a document that does not exist either way.
  */
-export function relatedDocs(db: ProjectionDb, id: string, query: RelatedQuery): RelatedDocs {
+export async function relatedDocs(
+  db: ProjectionDb,
+  id: string,
+  query: RelatedQuery,
+  deps: RelatedDeps = {},
+): Promise<RelatedDocs> {
   if (findDocumentRow(db, id) === null) throw notFound(`no document with id ${id}`);
 
   // §11's archived default, through the *same* fragment the collection query
   // and the unread aggregate use: archiving is organizational, so an archived
   // neighbour is a real relation that is simply not what an agent expanding
-  // from a live document usually wants first.
-  const sql = RELATED_SQL(query.includeArchived === true ? "" : `WHERE ${notArchivedSql("d")}`);
-  const rows = db.prepare(sql).all({ id, limit: query.limit }) as RawRelated[];
+  // from a live document usually wants first. The semantic half is scoped by
+  // the same fragment, so one flag governs both graphs.
+  const archived = query.includeArchived === true;
+  const semantic =
+    deps.semantic === undefined
+      ? DISABLED
+      : await deps.semantic.forDocument(
+          id,
+          { where: archived ? "1" : notArchivedSql("d"), params: {} },
+          overFetchLimit(query.limit),
+        );
 
-  // `semanticIndex` is absent in Phase A for the same reason it is absent from
-  // a search response: there is no semantic index, so the server makes no claim
-  // about one (SPEC.md §9.1 — Retrieval Phase B's seam).
+  const fetchLimit = semantic.docs.length === 0 ? query.limit : overFetchLimit(query.limit);
+  const sql = RELATED_SQL(archived ? "" : `WHERE ${notArchivedSql("d")}`);
+  const linked = db.prepare(sql).all({ id, limit: fetchLimit }) as RawRelated[];
+  const byId = new Map(linked.map((row) => [row.id, row]));
+
+  // One list means the list itself: fusing a single ranking re-derives its own
+  // order, so a workspace with no semantic index answers exactly what Phase A
+  // answered — mutual first, then recency, then id.
+  const ranked =
+    semantic.docs.length === 0
+      ? linked.slice(0, query.limit).map((row) => row.id)
+      : fuseRankings(
+          [linked.map((row) => row.id), semantic.docs.map((match) => match.id)],
+          query.limit,
+        ).map((entry) => entry.id);
+
+  const similar = new Set(semantic.docs.map((match) => match.id));
+  const unlinked = ranked.filter((rowId) => !byId.has(rowId));
+  const rows = loadRelatedRows(db, unlinked);
+  for (const [rowId, row] of rows) byId.set(rowId, row);
+
   return {
-    related: rows.map((row): RelatedDoc => ({
-      id: row.id,
-      title: row.title,
-      // The projection's stored `body_excerpt` is 280 characters from the
-      // first non-blank one — a multi-line slice, which is what a *list row*
-      // wants. Retrieval's row is printed one per line, so it is collapsed and
-      // bounded here rather than re-derived from the file: no disk read, and
-      // the same one-line rule a search hit's snippet obeys.
-      excerpt: toOneLine(row.excerpt),
-      // Phase A relates through the reference graph and nothing else. The
-      // enum carries `similar` and `both` so Phase B adds semantic neighbours
-      // without moving the shape; emitting either today would be Phase B
-      // leaking early.
-      relation: "linked",
-    })),
+    related: ranked.flatMap((rowId): RelatedDoc[] => {
+      const raw = byId.get(rowId);
+      if (raw === undefined) return [];
+      const isLinked = raw.strength > 0;
+      // `both` is the interesting one: a document that cites this one *and*
+      // reads like it is a stronger relation than either alone, and Phase A's
+      // hardcoded `linked` could never say so.
+      return [
+        rowOf(raw, isLinked && similar.has(rowId) ? "both" : isLinked ? "linked" : "similar"),
+      ];
+    }),
+    // Present from Retrieval Phase B onwards, and identical to the word
+    // `/api/search` reports for the same workspace: both endpoints degrade
+    // together, so both compute it from one service against one predicate.
+    semanticIndex: semantic.state,
   };
+}
+
+/**
+ * The row fields for neighbours the reference graph never produced — the
+ * `similar`-only half. One statement over the primary key for the whole page:
+ * these documents are already known to exist and to have passed the scan's
+ * scope, so nothing here re-filters them.
+ */
+function loadRelatedRows(db: ProjectionDb, ids: readonly string[]): Map<string, RawRelated> {
+  const found = new Map<string, RawRelated>();
+  if (ids.length === 0) return found;
+
+  const placeholders = ids.map((_, index) => `@i${String(index)}`).join(", ");
+  const params: Record<string, string> = {};
+  ids.forEach((id, index) => {
+    params[`i${String(index)}`] = id;
+  });
+
+  const rows = db
+    .prepare(
+      `SELECT id, title, body_excerpt AS excerpt, 0 AS strength
+         FROM documents WHERE id IN (${placeholders})`,
+    )
+    .all(params) as RawRelated[];
+  for (const row of rows) found.set(row.id, row);
+  return found;
 }

@@ -23,6 +23,14 @@
  * discipline: the parameter lists were walked item by item against the applied
  * text in CONTRACT-022's E2E log, the way the amendments above were.
  *
+ * `GET /api/index/status` and `POST /api/index/rebuild` (CONTRACT-023) are
+ * §9.1's two semantic-index verbs, and §9.2 lists both in a single bullet whose
+ * spellings these two entries reproduce. They sit between `POST /api/check` and
+ * `POST /api/skills` because that is where §9.2's own bullet order puts them.
+ * The same review discipline applies as to the retrieval pair above: the bullet
+ * was quoted verbatim into CONTRACT-023's E2E log and walked against these
+ * entries by hand, because nothing here parses `SPEC.md`.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -90,6 +98,10 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/db/doctor",
 
   "POST /api/check",
+
+  "GET /api/index/status",
+  "POST /api/index/rebuild",
+
   "POST /api/skills",
   "POST /api/skills/{name}/rollback",
 

@@ -16,6 +16,7 @@ import {
 import { streamEvents } from "./events.js";
 import { respondToForm } from "./forms.js";
 import { getHealth } from "./health.js";
+import { getIndexStatus, rebuildIndex } from "./index-maintenance.js";
 import { abandonJob, appendJobLog, getJobLog, listJobs, retryJob } from "./jobs.js";
 import { acquireLock, breakLock, listLocks, reapLocks, releaseLock } from "./locks.js";
 import {
@@ -45,6 +46,7 @@ export * from "./docs.js";
 export * from "./events.js";
 export * from "./forms.js";
 export * from "./health.js";
+export * from "./index-maintenance.js";
 export * from "./inventory.js";
 export * from "./jobs.js";
 export * from "./locks.js";
@@ -132,6 +134,10 @@ export const contractRoutes = {
   doctorDb,
 
   checkDocuments,
+
+  getIndexStatus,
+  rebuildIndex,
+
   createSkill,
   rollbackSkill,
 

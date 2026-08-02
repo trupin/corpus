@@ -14,6 +14,11 @@ import {
 } from "./attachments/index.js";
 import { ConfigError } from "./errors.js";
 import { LogLevelSchema, type LogLevel } from "./logger.js";
+import {
+  EmbeddingConfigSchema,
+  resolveEmbeddingSettings,
+  type EmbeddingSettings,
+} from "./semantic/index.js";
 
 export const CORPUS_DIR = ".corpus";
 export const CONFIG_FILE = "config.json";
@@ -90,6 +95,16 @@ export const WorkspaceConfigSchema = z.object({
     maxFileBytes: DEFAULT_MAX_FILE_BYTES,
     maxRequestBytes: DEFAULT_MAX_REQUEST_BYTES,
   }),
+  /**
+   * The semantic index's provider (SPEC.md §9.1, SERVER-043). Optional — the
+   * `attachments` precedent — because zero config is the *designed* case: with
+   * no block at all the server uses the embedded engine when its model has been
+   * downloaded and reports `disabled` otherwise, which is an answer rather than
+   * an error. What the block names is judged at boot, not here
+   * ({@link resolveEmbeddingSettings}), so a workspace an older or newer build
+   * wrote stays readable.
+   */
+  embedding: EmbeddingConfigSchema.optional(),
 });
 
 /**
@@ -147,6 +162,13 @@ export interface ServerConfig {
   readonly logLevel: LogLevel;
   /** Absolute path of the pre-built UI, or `undefined` when none was resolvable. */
   readonly uiDistDir: string | undefined;
+  /**
+   * The `embedding` block, already judged against what this build can serve
+   * (SERVER-043). Never carries an unusable provider: a block naming one
+   * resolves to `invalid` here and to an explicit error state at the seam, with
+   * a boot warning in {@link warnings} naming the file and the key.
+   */
+  readonly embedding: EmbeddingSettings;
   /** Warnings worth surfacing at boot that are not fatal (e.g. a weak token). */
   readonly warnings: readonly string[];
 }
@@ -331,6 +353,9 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
     );
   }
 
+  const embedding = resolveEmbeddingSettings(config.embedding, configPath);
+  if (embedding.warning !== undefined) warnings.push(embedding.warning);
+
   return {
     workspaceRoot: workspace.root,
     corpusDir: join(workspace.root, CORPUS_DIR),
@@ -343,6 +368,7 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
     version: readToolVersion(packageRoot),
     logLevel: resolveLogLevel(options.env),
     uiDistDir: resolveUiDistDir(options.env, packageRoot),
+    embedding: embedding.settings,
     warnings,
   };
 }

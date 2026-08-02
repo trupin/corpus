@@ -53,6 +53,13 @@ import { createRequestLogger } from "./middleware/logging.js";
 import { mountDbRoutes, type ProjectionDb } from "./projection/index.js";
 import { mountSearchRoutes } from "./search/index.js";
 import {
+  createIndexMaintenance,
+  createSemanticRetrieval,
+  mountIndexRoutes,
+  type IndexMaintenance,
+  type SemanticRetrieval,
+} from "./semantic/index.js";
+import {
   createQueueService,
   mountQueueRoutes,
   type QueueInvalidate,
@@ -116,6 +123,30 @@ export interface CorpusServer {
    */
   readonly locks: LockService | undefined;
   readonly lockGuard: LockGuard | undefined;
+  /**
+   * Retrieval's semantic half (SERVER-045): hybrid ranking for `/api/search`,
+   * `similar` neighbours for `/api/docs/{id}/related`, and the one
+   * `semanticIndex` word both envelopes carry. `undefined` when the server was
+   * built without a projection — there are no chunk vectors to rank against.
+   *
+   * Exposed because two things bind to it *after* the routes are mounted:
+   * `lifecycle.ts` hands it the embedded engine once it exists (a search is the
+   * first thing that may need a model loaded), and SERVER-046's
+   * `POST /api/index/rebuild` raises its rebuild flag, which is what makes
+   * `indexing` outrank `stale` on all three surfaces at once.
+   */
+  readonly semantic: SemanticRetrieval | undefined;
+  /**
+   * The semantic index's operational surface (SERVER-046): `GET /api/index/status`,
+   * `POST /api/index/rebuild`, and the effective-model question `db doctor`
+   * asks. `undefined` alongside {@link semantic}, for the same reason.
+   *
+   * Exposed for the same late binding {@link semantic} is: the embed worker is
+   * started by `lifecycle.ts` after the routes are mounted, and `useWorker` is
+   * how a rebuild reaches it — without one, a rebuild still discards and
+   * re-queues, there is simply nothing to drain it.
+   */
+  readonly indexMaintenance: IndexMaintenance | undefined;
   /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
@@ -296,6 +327,8 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
   let locks: LockService | undefined;
   let lockGuard: LockGuard | undefined;
+  let semantic: SemanticRetrieval | undefined;
+  let indexMaintenance: IndexMaintenance | undefined;
   if (deps.projection !== undefined) {
     // Everything the write path needs is already reachable here (sprint-005
     // Open Conflict 12: "no new deps"): the workspace root is on the config, the
@@ -350,13 +383,33 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // two mutexes would serialize each surface against itself and neither
     // against the other (SERVER-006).
     const mutex = createDocumentMutex();
-    mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace });
+
+    // Retrieval's semantic half, built before the two endpoints that read it.
+    // Constructing it costs nothing — no query, no resolution, no model — and it
+    // is deliberately *not* handed the embedded engine here: the engine is built
+    // by `lifecycle.ts` after this function returns, and `useEngine` is how it
+    // arrives. A server that never gets one resolves `engine-not-installed` and
+    // answers `disabled`, which is the complete, honest lexical-only product.
+    semantic = createSemanticRetrieval({
+      db: deps.projection,
+      settings: config.embedding,
+      logger,
+      now,
+    });
+
+    // The index's maintenance verbs share the retrieval half's rebuild flag and
+    // its provider resolution — one bit and one cached answer, so `indexing`
+    // cannot outrank `stale` on one endpoint and not on another.
+    indexMaintenance = createIndexMaintenance({ db: deps.projection, semantic, logger });
+    mountIndexRoutes(app, indexMaintenance);
+
+    mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace, semantic });
 
     // Ranked retrieval (SPEC.md §7, §9.2). A pure projection read like the
     // collection query it filters identically to, so it mounts here rather than
     // with the file-backed surface — and inside this block, because a server
     // built without a database has no index to rank.
-    mountSearchRoutes(app, deps.projection, { now });
+    mountSearchRoutes(app, deps.projection, { now, semantic });
 
     const threadsWorkspace: ThreadsWorkspace = {
       ...docsWorkspace,
@@ -390,6 +443,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       queue,
       logger,
       invalidate: deps.invalidate ?? invalidate,
+      index: indexMaintenance,
     });
 
     // §14's validator over HTTP, and §7's skill rollback. Both need the
@@ -529,6 +583,8 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     selfWrites,
     locks,
     lockGuard,
+    semantic,
+    indexMaintenance,
     registerDisposer(dispose) {
       disposers.push(dispose);
     },

@@ -12,14 +12,34 @@
 // "retrieves; it never enumerates" is a claim about that cost.
 //
 // **Everything derived on read is bounded by `limit`.** The ranked statement
-// returns at most `limit` rows, and the address derivation runs over those rows
-// alone: one lookup of the indexed text for the document hits that matched in
-// their body, one `turns` row per turn hit. A corpus of fifty thousand
-// documents and a corpus of fifty cost the same after the ranking.
+// returns at most `limit` rows — `RETRIEVAL_OVERFETCH_FACTOR × limit` when there
+// is a semantic list to fuse with — and the address derivation runs over the
+// *answered* page alone: one lookup of the indexed text for the document hits
+// that matched in their body, one `turns` row per turn hit. A corpus of fifty
+// thousand documents and a corpus of fifty cost the same after the ranking.
+//
+// **Retrieval Phase B fuses two rankings into this one shape** (SPEC.md §9.1,
+// §9.2). The lexical half above is untouched — same statement, same bm25, same
+// filters — and a semantic half ranks the same documents by cosine distance
+// between the query's embedding and the corpus's chunk vectors. The two ordered
+// id lists go through reciprocal-rank fusion (`fusion.ts`) and the result is
+// materialized into the *same* four-field hit. Three consequences worth naming:
+//
+// - **The response shape did not move.** `semanticIndex` is the one addition,
+//   and it is a field the contract has carried since CONTRACT-022 precisely so
+//   this issue would not have to widen anything.
+// - **A workspace with no semantic index answers byte-identically to Phase A.**
+//   With no semantic candidates there is one list, RRF over one list re-derives
+//   that list, and the lexical statement is bound to the caller's own `limit` —
+//   so the disabled path issues the same SQL with the same value and assembles
+//   the same rows (TEST-883).
+// - **A semantic-only hit is a real hit.** It has no FTS row to take a snippet
+//   from, so its address and its line of context come from the chunk that
+//   matched — which is the same chunk-granular table the lexical half addresses
+//   through, so both halves name a passage the same way.
 
 import type { ProjectionDb } from "../projection/index.js";
 import type { SearchHit, SearchQuery, SearchResults } from "@corpus/contract";
-import { HEADING_PATH_SEPARATOR } from "@corpus/contract";
 import { toOneLine } from "../core/one-line.js";
 import { TURN_SEPARATOR } from "../core/turns.js";
 import {
@@ -29,9 +49,17 @@ import {
   paramsFor,
   RELEVANCE_ORDER_BY,
   whereClause,
+  type Compiled,
 } from "../docs/index.js";
-import { enclosingHeadings, hasMatch, locatePassage, unmarkSnippet } from "./heading-path.js";
-import type { UnmarkedSnippet } from "./heading-path.js";
+import {
+  loadChunkAddresses,
+  type ChunkAddressLoader,
+  type SemanticRetrieval,
+  type SemanticOutcome,
+} from "../semantic/index.js";
+import { fuseRankings, overFetchLimit } from "./fusion.js";
+import { hasMatch, unmarkSnippet } from "./snippet.js";
+import type { UnmarkedSnippet } from "./snippet.js";
 
 /**
  * One document per hit, ranked by its best-matching passage, and that passage
@@ -73,52 +101,6 @@ interface RawHit {
   readonly body_snippet: string;
 }
 
-/**
- * Reads the text a hit's address is derived from, keyed by `search.ref`.
- *
- * **The projection's own copy of the text is the source, not the file on disk**
- * — the decision SERVER-040 was required to make and state. Three reasons:
- *
- * 1. *It is the text the hit is about.* The snippet, the rank and the heading
- *    path then describe one string. Reading the file instead would address a
- *    passage in whatever the document says **now** while quoting the passage the
- *    index matched, and the two disagree during exactly the window that matters
- *    — the seconds after a save, when the watcher has not caught up.
- * 2. *It is already the right slice.* A thread's `kind='doc'` row indexes only
- *    its preamble (`projection/project-document.ts`), so the scan cannot walk
- *    into a turn and claim its heading; the file would need that boundary
- *    reconstructed here, in a second place.
- * 3. *It costs no filesystem.* No `readFileSync`, no frontmatter parse, no
- *    ENOENT race against a document deleted since it was projected — one
- *    indexed `ref IN (…)` lookup for the whole page.
- *
- * The cost is that the indexed copy is lossy by exactly two characters: U+0002
- * and U+0003, stripped at index time because they are `snippet()`'s own markup
- * (`docs/fts.ts`). Neither can appear in a heading's *name* after stripping, and
- * neither is a line terminator or a `#`, so heading structure is identical in
- * both copies. That is the whole of the difference, and it is invisible in an
- * address.
- *
- * Injectable so a test can count what a request actually read (the `readHead`
- * seam's precedent, SERVER-022).
- */
-export type PassageTextLoader = (
-  db: ProjectionDb,
-  refs: readonly string[],
-) => ReadonlyMap<string, string>;
-
-export const loadPassageTexts: PassageTextLoader = (db, refs) => {
-  const texts = new Map<string, string>();
-  if (refs.length === 0) return texts;
-  const placeholders = refs.map((_, index) => `@r${String(index)}`).join(", ");
-  const params = Object.fromEntries(refs.map((ref, index) => [`r${String(index)}`, ref]));
-  const rows = db
-    .prepare(`SELECT ref, body FROM search WHERE ref IN (${placeholders})`)
-    .all(params) as { ref: string; body: string }[];
-  for (const row of rows) texts.set(row.ref, row.body);
-  return texts;
-};
-
 /** A turn row's identity, as `search.ref` encodes it: `<threadId>#<ts>`. */
 const splitTurnRef = (ref: string): { readonly threadId: string; readonly ts: string } | null => {
   const hash = ref.indexOf("#");
@@ -154,83 +136,254 @@ function snippetOf(body: UnmarkedSnippet, title: UnmarkedSnippet): string {
   return toOneLine(hasMatch(body) || !hasMatch(title) ? body.text : title.text);
 }
 
+/** One lexical row, with its two snippet columns already unmarked. */
+interface FoundHit {
+  readonly row: RawHit;
+  readonly body: UnmarkedSnippet;
+  readonly title: UnmarkedSnippet;
+}
+
+/** A document the semantic half found and the lexical half did not. */
+interface SemanticOnlyHit {
+  readonly id: string;
+  readonly title: string;
+  readonly headingPath: string;
+  readonly snippet: string;
+}
+
+export interface SearchDeps {
+  /**
+   * Injectable so a test can count what a request actually read — the seam the
+   * chunk address lookup has held since SERVER-042.
+   */
+  readonly loadAddresses?: ChunkAddressLoader | undefined;
+  /**
+   * Retrieval's semantic half. Absent, ranking is lexical and the response says
+   * `disabled` — the honest word for a server with no semantic index wired,
+   * which is what a unit test constructing this function directly has.
+   */
+  readonly semantic?: SemanticRetrieval | undefined;
+}
+
+/** The answer when there is nothing to rank; the state word is still owed. */
+const emptyResults = (outcome: SemanticOutcome): SearchResults => ({
+  hits: [],
+  semanticIndex: outcome.state,
+});
+
+const DISABLED: SemanticOutcome = { state: "disabled", docs: [] };
+
 /**
- * Runs ranked retrieval. Two statements at most beyond the ranking: one text
- * lookup for the document hits that matched in their body, one `turns` seek per
- * turn hit — both bounded by `limit`, never by the corpus.
+ * Runs ranked retrieval.
+ *
+ * Beyond the ranking statement and the semantic scan: one chunk address lookup
+ * for the document hits that matched in their body, one `turns` seek per turn
+ * hit, and — only when the semantic half promoted a document the lexical half
+ * never saw — one lookup of those chunks' text. Every one of them is bounded by
+ * the answered page, never by the corpus.
  */
-export function searchCorpus(
+export async function searchCorpus(
   db: ProjectionDb,
   query: SearchQuery,
   nowMs: number,
-  loadTexts: PassageTextLoader = loadPassageTexts,
-): SearchResults {
+  deps: SearchDeps = {},
+): Promise<SearchResults> {
+  const loadAddresses = deps.loadAddresses ?? loadChunkAddresses;
   const compiled = compileFilters(query, nowMs);
+
   // `q` is required and non-empty by the schema, so the only way here is a
   // query that carried no indexable token (`***`). There is nothing to rank and
   // nothing to bind — an empty ranking, exactly as the collection query answers
-  // the same input, and never a 500.
-  if (compiled.match === null) return { hits: [] };
+  // the same input, and never a 500. The semantic half is not consulted either:
+  // a string with no searchable token is not a question the index can answer,
+  // and embedding punctuation would return the corpus in an arbitrary order.
+  if (compiled.match === null) {
+    return emptyResults(
+      deps.semantic === undefined ? DISABLED : { state: await deps.semantic.state(), docs: [] },
+    );
+  }
 
-  compiled.binder.fixed("limit", query.limit);
+  // Before the lexical statement, because its `LIMIT` depends on the answer:
+  // fusion needs candidates past `limit` (premise correction C6), and a
+  // workspace with no semantic index must issue the Phase A statement with the
+  // Phase A value.
+  const semantic =
+    deps.semantic === undefined
+      ? DISABLED
+      : await deps.semantic.forQuery(query.q, scopeOf(compiled), overFetchLimit(query.limit));
+
+  const fetchLimit = semantic.docs.length === 0 ? query.limit : overFetchLimit(query.limit);
+  compiled.binder.fixed("limit", fetchLimit);
   const sql = rankedHitsSql(whereClause(compiled));
   const raw = db.prepare(sql).all(paramsFor(sql, compiled.binder.all())) as RawHit[];
 
-  const found = raw.map((row) => ({
-    row,
-    body: unmarkSnippet(row.body_snippet),
-    title: unmarkSnippet(row.title_snippet),
-  }));
-  // Only the hits whose address actually depends on the text: a turn's heading
+  const found = new Map<string, FoundHit>();
+  for (const row of raw) {
+    found.set(row.id, {
+      row,
+      body: unmarkSnippet(row.body_snippet),
+      title: unmarkSnippet(row.title_snippet),
+    });
+  }
+
+  // One list means the list itself: RRF over a single ranking re-derives its
+  // order exactly, so this is the same sequence Phase A returned.
+  const ranked =
+    semantic.docs.length === 0
+      ? raw.slice(0, query.limit).map((row) => row.id)
+      : fuseRankings(
+          [raw.map((row) => row.id), semantic.docs.map((match) => match.id)],
+          query.limit,
+        ).map((entry) => entry.id);
+
+  const lexical = ranked.flatMap((id) => {
+    const hit = found.get(id);
+    return hit === undefined ? [] : [hit];
+  });
+  // Only the hits whose address actually depends on a chunk: a turn's heading
   // comes from its `turns` row, and a document that matched in its title alone
   // is addressed by that title.
-  const texts = loadTexts(
+  const addresses = loadAddresses(
     db,
-    found.filter((hit) => hit.row.kind !== "turn" && hasMatch(hit.body)).map((hit) => hit.row.ref),
+    lexical
+      .filter((hit) => hit.row.kind !== "turn" && hasMatch(hit.body))
+      .map((hit) => hit.row.ref),
+    compiled.match,
+  );
+  const semanticOnly = loadSemanticOnlyHits(
+    db,
+    semantic.docs.filter((match) => !found.has(match.id) && ranked.includes(match.id)),
   );
 
-  const hits = found.map((hit): SearchHit => ({
-    id: hit.row.id,
-    title: hit.row.title,
-    headingPath: headingPathFor(db, hit.row, hit.body, texts),
-    snippet: snippetOf(hit.body, hit.title),
-  }));
+  const hits = ranked.flatMap((id): SearchHit[] => {
+    const hit = found.get(id);
+    if (hit !== undefined) {
+      return [
+        {
+          id: hit.row.id,
+          title: hit.row.title,
+          headingPath: headingPathFor(db, hit.row, addresses),
+          snippet: snippetOf(hit.body, hit.title),
+        },
+      ];
+    }
+    const only = semanticOnly.get(id);
+    return only === undefined ? [] : [only];
+  });
 
-  // `semanticIndex` is Retrieval Phase B's seam and is **absent** in Phase A:
-  // the contract reads an absent field as "the server makes no claim", which is
-  // the truth here, where no semantic index exists to be current. Emitting
-  // `current` would assert that one is caught up (SPEC.md §9.1) and would be
-  // the first line of Phase B machinery written under a Phase A issue.
-  return { hits };
+  // Present from Retrieval Phase B onwards, on both envelopes, always: the
+  // contract reads an *absent* field as "the server makes no claim", and this
+  // server now has one to make — including `disabled`, which is a claim rather
+  // than a silence (SPEC.md §9.1's local-first default is an honest state, not
+  // an error). The Phase A tests that pinned the absence flip here deliberately.
+  return { hits, semanticIndex: semantic.state };
+}
+
+/**
+ * The filter predicate handed to the semantic scan.
+ *
+ * It is the *same* compiled clause the lexical statement is about to run, so
+ * §9.2's "the same set, with the same semantics (including the archived
+ * default)" holds across both halves by construction — an archived document
+ * cannot be a semantic hit on an endpoint that excludes it lexically, and a new
+ * filter reaches both halves without a second edit. The bound values are handed
+ * over whole; each statement's own `paramsFor` keeps the subset it names.
+ */
+function scopeOf(compiled: Compiled): { where: string; params: Record<string, unknown> } {
+  // `whereClause` prefixes `WHERE `, which the scan supplies itself.
+  const clause = whereClause(compiled);
+  return { where: clause.slice("WHERE ".length), params: { ...compiled.binder.all() } };
+}
+
+/**
+ * Title, address and line of context for the documents only the semantic half
+ * found.
+ *
+ * `chunk_search` holds the chunk's indexable text, which is the passage that
+ * matched — so a semantic-only hit's snippet is a taste of the *matching*
+ * passage rather than the document's opening line, and its `headingPath` is that
+ * chunk's, from the same table the lexical half is addressed through. One
+ * statement for the whole page, and only when there is such a hit at all: the
+ * common case, where the semantic half re-ranks documents the lexical half also
+ * found, reads nothing here.
+ */
+function loadSemanticOnlyHits(
+  db: ProjectionDb,
+  matches: readonly { readonly id: string; readonly chunkId: string }[],
+): ReadonlyMap<string, SemanticOnlyHit> {
+  const hits = new Map<string, SemanticOnlyHit>();
+  if (matches.length === 0) return hits;
+
+  const placeholders = matches.map((_, index) => `@c${String(index)}`).join(", ");
+  const params: Record<string, string> = {};
+  matches.forEach((match, index) => {
+    params[`c${String(index)}`] = match.chunkId;
+  });
+
+  const rows = db
+    .prepare(
+      `SELECT s.chunk_id AS chunk_id, s.doc_id AS doc_id, s.heading_path AS heading_path,
+              s.body AS body, d.title AS title
+         FROM chunk_search s JOIN documents d ON d.id = s.doc_id
+        WHERE s.chunk_id IN (${placeholders})
+        ORDER BY s.ord`,
+    )
+    .all(params) as {
+    chunk_id: string;
+    doc_id: string;
+    heading_path: string;
+    body: string;
+    title: string;
+  }[];
+
+  // First `ord` wins, not last. A chunk id can address more than one row —
+  // `chunkId` hashes (document, heading path, text), so a document repeating a
+  // paragraph verbatim under one heading stores it once and points at it twice —
+  // and `new Map(rows.map(…))` would silently keep the *last* position, i.e. the
+  // one furthest from the top of the document. The rows arrive `ORDER BY s.ord`,
+  // so the first sighting is the earliest occurrence, which is the one a reader
+  // sent to that hit expects to land on.
+  const byChunk = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) if (!byChunk.has(row.chunk_id)) byChunk.set(row.chunk_id, row);
+  for (const match of matches) {
+    const row = byChunk.get(match.chunkId);
+    if (row === undefined) continue;
+    hits.set(match.id, {
+      id: match.id,
+      title: row.title,
+      headingPath: row.heading_path,
+      snippet: toOneLine(row.body),
+    });
+  }
+  return hits;
 }
 
 /**
  * A hit's address, in the three shapes there are (SPEC.md §9.2):
  *
- * - **A turn hit** — the turn's own heading, from the `turns` row.
- * - **A document hit** — the enclosing headings of the matched passage, joined
- *   by the contract's `HEADING_PATH_SEPARATOR`, which is a *display* join: a
- *   heading may contain the separator, so a client prints this and never splits
- *   it.
+ * - **A turn hit** — the turn's own heading, from the `turns` row. §9.2 says
+ *   "for a hit in a thread turn, the turn's heading", full stop: a turn's
+ *   chunks nest under that heading, but the address a turn hit reports is the
+ *   heading itself, and it is built from the `ref` plus one row seek.
+ * - **A document hit** — the heading path of the chunk that matched, recorded
+ *   at projection time and joined by the contract's `HEADING_PATH_SEPARATOR`,
+ *   which is a *display* join: a heading may contain the separator, so a client
+ *   prints this and never splits it.
  * - **Anything with no heading above it** — the document's title, so a hit
  *   always has an address. This covers three real cases at once: a document
  *   whose body opens without a heading, a match in a *title* (there is no
- *   passage in the body to enclose), and a hit on a **thread's preamble** —
+ *   passage in the body to address), and a hit on a **thread's preamble** —
  *   the text a thread carries before its first turn, which conventionally has
- *   no headings at all. The preamble case is the one worth naming: it is
- *   neither a turn nor a sectioned document body, and it comes out right here
- *   without a special case because the indexed text for a thread's document row
- *   *is* its preamble, so the scan is bounded to it and finds nothing above.
+ *   no headings at all. The first case the chunker itself answers, since a
+ *   chunk with no heading above it records the document's title as its path;
+ *   the other two arrive here as a ref the address lookup found nothing for,
+ *   because there was no body match to find a chunk with.
  */
 function headingPathFor(
   db: ProjectionDb,
   row: RawHit,
-  body: UnmarkedSnippet,
-  texts: ReadonlyMap<string, string>,
+  addresses: ReadonlyMap<string, string>,
 ): string {
   if (row.kind === "turn") return turnHeading(db, row.ref) ?? row.title;
-  const text = texts.get(row.ref);
-  if (text === undefined) return row.title;
-  const headings = enclosingHeadings(text, locatePassage(text, body));
-  return headings.length === 0 ? row.title : headings.join(HEADING_PATH_SEPARATOR);
+  return addresses.get(row.ref) ?? row.title;
 }

@@ -474,4 +474,75 @@ describe("loadServerConfig", () => {
     const workspace = makeWorkspace("ws");
     expect(loadServerConfig({ workspace, env: {}, cwd: root }).version).toMatch(/^\d+\.\d+\.\d+/);
   });
+
+  // SERVER-043 / sprint-021 TEST-850. The block is optional on the schema and
+  // judged at boot: a workspace that predates it must load unchanged, and a
+  // block this build cannot serve must warn rather than refuse to start.
+  describe("the embedding block", () => {
+    it("loads a workspace with no block as the zero-config case", () => {
+      const workspace = makeWorkspace("ws");
+      const config = loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root });
+      expect(config.embedding).toEqual({ kind: "absent" });
+      expect(config.warnings).toEqual([]);
+    });
+
+    it("carries a configured provider through, judged and complete", () => {
+      const workspace = makeWorkspace("configured", {
+        version: 1,
+        token: LONG_TOKEN,
+        embedding: {
+          provider: "ollama",
+          endpoint: "http://127.0.0.1:11434",
+          model: "nomic-embed-text",
+        },
+      });
+      const config = loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root });
+      expect(config.embedding).toEqual({
+        kind: "configured",
+        provider: {
+          kind: "ollama",
+          endpoint: "http://127.0.0.1:11434",
+          model: "nomic-embed-text",
+        },
+      });
+      expect(config.warnings).toEqual([]);
+    });
+
+    it("warns at boot — and still starts — on a provider this build cannot serve", () => {
+      const workspace = makeWorkspace("unknown-provider", {
+        version: 1,
+        token: LONG_TOKEN,
+        embedding: { provider: "magic-embed" },
+      });
+      const config = loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root });
+
+      expect(config.embedding).toMatchObject({ kind: "invalid" });
+      expect(config.warnings).toEqual([expect.stringContaining('"magic-embed"')]);
+      expect(config.warnings[0]).toContain(join(workspace, ".corpus", "config.json"));
+    });
+
+    it("never fails the whole file over the embedding block", () => {
+      const workspace = makeWorkspace("half-block", {
+        version: 1,
+        token: LONG_TOKEN,
+        embedding: { provider: "openai" },
+      });
+      // The parse succeeds — refusing here would break every other reader of a
+      // file whose only problem is a key none of them use.
+      expect(readWorkspaceConfig(workspace).embedding).toEqual({ provider: "openai" });
+      expect(() =>
+        loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root }),
+      ).not.toThrow();
+    });
+
+    it("keeps the key out of the warnings it produces", () => {
+      const workspace = makeWorkspace("keyed", {
+        version: 1,
+        token: LONG_TOKEN,
+        embedding: { provider: "nope", apiKey: "sk-live-config-1" },
+      });
+      const config = loadServerConfig({ workspace, env: {}, cwd: root, packageRoot: root });
+      expect(config.warnings.join("\n")).not.toContain("sk-live-config-1");
+    });
+  });
 });

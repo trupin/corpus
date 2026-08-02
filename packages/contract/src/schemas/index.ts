@@ -50,6 +50,7 @@ export * from "./extra.js";
 export * from "./form.js";
 export * from "./health.js";
 export * from "./id.js";
+export * from "./index-maintenance.js";
 export * from "./job.js";
 export * from "./lock.js";
 export * from "./pagination.js";

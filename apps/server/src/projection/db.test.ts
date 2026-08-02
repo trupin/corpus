@@ -80,9 +80,28 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
   jobs: ["event_id", "status", "started", "updated", "last_line"],
   locks: ["doc_id", "holder", "acquired", "ttl"],
   links: ["from_id", "to_id"],
+  // §9.1's "semantic index" bullet, in three tables (SERVER-042): the chunks a
+  // document splits into, their chunk-granular FTS copy — used to address a
+  // hit, never to rank one — and the embeddings, keyed by content-addressed
+  // chunk id so they outlive the document projector and a `db rebuild` alike.
+  chunks: [
+    "ref",
+    "ord",
+    "chunk_id",
+    "doc_id",
+    "kind",
+    "heading_path",
+    "start_offset",
+    "end_offset",
+    "char_length",
+  ],
+  chunk_embeddings: ["chunk_id", "identity", "dim", "vec", "state", "failures", "updated_ms"],
   meta: ["key", "value"],
   file_hashes: ["path", "hash", "size", "mtime_ms"],
 };
+
+/** Virtual tables, whose FTS5 shadow tables are the only extras the schema creates. */
+const FTS_TABLES = ["search", "chunk_search"] as const;
 
 let root: string;
 
@@ -265,9 +284,13 @@ describe("openProjection", () => {
       ).map((row) => row.name);
 
       for (const table of PROJECTION_TABLES) expect(tables).toContain(table);
-      // FTS5's own shadow tables are the only extras the projection creates.
+      // FTS5's own shadow tables are the only extras the projection creates —
+      // one set per virtual table, so the prefixes track the declared ones.
+      const shadowPrefixes = FTS_TABLES.map((table) => `${table}_`);
       const unexpected = tables.filter(
-        (name) => !PROJECTION_TABLES.includes(name as never) && !name.startsWith("search_"),
+        (name) =>
+          !PROJECTION_TABLES.includes(name as never) &&
+          !shadowPrefixes.some((prefix) => name.startsWith(prefix)),
       );
       expect(unexpected).toEqual([]);
 
@@ -282,6 +305,18 @@ describe("openProjection", () => {
         db.prepare("PRAGMA table_info(search)").all() as { name: string }[]
       ).map((row) => row.name);
       expect(searchColumns).toEqual(["ref", "kind", "doc_id", "title", "body"]);
+
+      const chunkSearchColumns = (
+        db.prepare("PRAGMA table_info(chunk_search)").all() as { name: string }[]
+      ).map((row) => row.name);
+      expect(chunkSearchColumns).toEqual([
+        "chunk_id",
+        "ref",
+        "doc_id",
+        "ord",
+        "heading_path",
+        "body",
+      ]);
     } finally {
       db.close();
     }

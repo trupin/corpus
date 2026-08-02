@@ -36,8 +36,18 @@
  * only reaches a database at `CREATE`, so without it every workspace built
  * before this version would keep paying the full turn-row scan `needs=form`
  * used to force.
+ *
+ * 8 → 9 (SERVER-042): the semantic index's first three tables — `chunks`,
+ * `chunk_search` and `chunk_embeddings` (§9.1's "Semantic index" block). New
+ * tables, so an existing projection has none of them; there is, as always, no
+ * migration — the stamp mismatch wipes and rebuilds, and every chunk row is
+ * re-derived from the files by the same projector that writes it incrementally.
+ * `chunk_embeddings` is the one table a rebuild *carries over* rather than
+ * re-derives (see {@link REPOPULATED_TABLES}), and that carry-over is keyed by
+ * content-addressed chunk id, so it survives this bump too — a v8 database has
+ * no such table, and the copy is skipped.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -55,6 +65,9 @@ export const PROJECTION_TABLES = [
   "locks",
   "links",
   "search",
+  "chunks",
+  "chunk_search",
+  "chunk_embeddings",
   "meta",
   "file_hashes",
 ] as const;
@@ -65,8 +78,20 @@ export type ProjectionTable = (typeof PROJECTION_TABLES)[number];
  * Tables cleared by a full repopulation, in an order that would still be valid
  * if foreign keys were ever declared (children first). `meta` survives — it
  * carries the schema stamp the wipe decision is made from.
+ *
+ * **`chunk_embeddings` is deliberately absent** (sprint-021, Open Conflict 5).
+ * Every other table here is re-derivable from the files in milliseconds; an
+ * embedding is not — it costs a model inference, and a 40k-chunk corpus is
+ * minutes of CPU. Because a chunk's id is a hash of its document, heading path
+ * and content (`semantic/chunker.ts`), an embedding computed before a rebuild
+ * re-attaches to the identical chunk after it: a `corpus db rebuild` on an
+ * unchanged corpus therefore queues *nothing*. `corpus index rebuild` stays the
+ * verb that genuinely discards them, and orphaned rows — embeddings whose chunk
+ * no longer exists — are collected separately rather than by this wipe.
  */
 export const REPOPULATED_TABLES = [
+  "chunk_search",
+  "chunks",
   "search",
   "links",
   "turns",
@@ -135,6 +160,36 @@ export const REPOPULATED_TABLES = [
  * costs a handful of pages because almost no turn qualifies. Its `WHERE` must
  * stay a syntactic match for `docs/needs.ts`'s conjuncts — SQLite only uses a
  * partial index whose condition the query provably implies.
+ *
+ * **The semantic index is three tables, not one** (SERVER-042, §9.1's "Semantic
+ * index" block), and the split is what makes the spec's observable promise —
+ * "saving a small change to a large document recomputes only the edited
+ * sections" — measurable rather than aspirational:
+ *
+ * - `chunks` is *projection state*. It is deleted and reinserted wholesale with
+ *   its document, exactly like `search`, because {@link projectDocument} maps a
+ *   file to rows and a diffing projector would be a second implementation of
+ *   that mapping. Its churn is nobody's concern.
+ * - `chunk_search` is the same rows' text, chunk-granular, in FTS5 — used
+ *   **only to address a hit**, never to rank one. Ranking stays the whole-
+ *   document `search` table, bm25 unchanged, so Phase A's ordering, hits and
+ *   snippets are byte-identical (sprint-021, Open Conflict 3). What it buys is
+ *   the thing document-granular matching cannot answer: which of two
+ *   byte-identical passages a query actually matched.
+ * - `chunk_embeddings` is *computed state*, keyed by the content-addressed
+ *   chunk id and **never touched by the document projector**. An edit three
+ *   sections away rewrites every `chunks` row and leaves every embedding
+ *   attached, because the untouched sections hash to the same ids. "Pending" is
+ *   therefore not a flag anybody writes: it is `chunks` left-joined against
+ *   this table, which is a fact about content rather than a record of what some
+ *   projector remembered to mark.
+ *
+ * `chunks` is keyed by `(ref, ord)` rather than by `chunk_id`, because two
+ * sections of one document can legitimately hold byte-identical text under the
+ * same heading path and therefore share an id — one address, one embedding, two
+ * positions. `ref` matches `search.ref` (`<id>` for a document or thread
+ * preamble, `<id>#<ts>` for a turn) so both index structures name a passage the
+ * same way.
  */
 export const PROJECTION_DDL = `
 CREATE TABLE documents (
@@ -248,6 +303,39 @@ CREATE VIRTUAL TABLE search USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'
 );
 
+CREATE TABLE chunks (
+  ref TEXT NOT NULL,
+  ord INTEGER NOT NULL,
+  chunk_id TEXT NOT NULL,
+  doc_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  heading_path TEXT NOT NULL,
+  start_offset INTEGER NOT NULL,
+  end_offset INTEGER NOT NULL,
+  char_length INTEGER NOT NULL,
+  PRIMARY KEY (ref, ord)
+);
+
+CREATE TABLE chunk_embeddings (
+  chunk_id TEXT PRIMARY KEY,
+  identity TEXT NOT NULL,
+  dim INTEGER NOT NULL,
+  vec BLOB,
+  state TEXT NOT NULL,
+  failures INTEGER NOT NULL,
+  updated_ms INTEGER NOT NULL
+);
+
+CREATE VIRTUAL TABLE chunk_search USING fts5(
+  chunk_id UNINDEXED,
+  ref UNINDEXED,
+  doc_id UNINDEXED,
+  ord UNINDEXED,
+  heading_path UNINDEXED,
+  body,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+
 CREATE INDEX documents_type ON documents (type);
 CREATE INDEX documents_status ON documents (status);
 CREATE INDEX documents_updated ON documents (updated);
@@ -261,4 +349,6 @@ CREATE INDEX turns_unanswered_form ON turns (thread_id) WHERE has_form = 1 AND f
 CREATE INDEX links_to_id ON links (to_id);
 CREATE INDEX anchors_doc_id ON anchors (doc_id);
 CREATE INDEX events_status ON events (status);
+CREATE INDEX chunks_doc_id ON chunks (doc_id);
+CREATE INDEX chunks_chunk_id ON chunks (chunk_id);
 `;

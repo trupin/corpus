@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { contractRoutes } from "@corpus/contract";
 import type { ProjectionDb } from "../projection/index.js";
+import type { SemanticRetrieval } from "../semantic/index.js";
 import { queryDocs } from "./query.js";
 import { relatedDocs } from "./related.js";
 import { folderTree } from "./tree.js";
@@ -22,6 +23,11 @@ export interface DocsRoutesOptions {
    * (SERVER-006). Omitted, the document surface gets a private one.
    */
   readonly mutex?: DocumentMutex | undefined;
+  /**
+   * Retrieval's semantic half (SERVER-045), for `related`'s `similar` rows and
+   * the `semanticIndex` word its envelope carries.
+   */
+  readonly semantic?: SemanticRetrieval | undefined;
 }
 
 /**
@@ -51,8 +57,13 @@ export function mountDocsRoutes(
   // expansion from a known document through the `links` graph. Reads `links`
   // and `documents`, writes nothing, takes no lock — so it mounts here and not
   // with the file-backed surface below.
-  app.openapi(contractRoutes.relatedDocs, (c) =>
-    c.json(relatedDocs(projection, c.req.valid("param").id, c.req.valid("query")), 200),
+  app.openapi(contractRoutes.relatedDocs, async (c) =>
+    c.json(
+      await relatedDocs(projection, c.req.valid("param").id, c.req.valid("query"), {
+        semantic: options.semantic,
+      }),
+      200,
+    ),
   );
 
   if (options.workspace !== undefined) {

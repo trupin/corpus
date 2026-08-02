@@ -29,6 +29,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, type Dirent } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { sanitizeGitEnv } from "../git/env.js";
+import type { DoctorWarning } from "./doctor.js";
 import { readDocumentIdentity } from "./project-document.js";
 import { DOCS_ROOT, classifyPath, workspaceRelativePath } from "./roots.js";
 
@@ -42,16 +43,6 @@ import { DOCS_ROOT, classifyPath, workspaceRelativePath } from "./roots.js";
 export const DOCTOR_WARNING_KINDS = ["unindexable_file", "unindexable_files_truncated"] as const;
 
 export type DoctorWarningKind = (typeof DOCTOR_WARNING_KINDS)[number];
-
-/** A report-only finding: true, actionable, and not a disagreement with the projection. */
-export type DoctorWarning = {
-  readonly kind: DoctorWarningKind;
-  /** Workspace-relative path, absent on a finding that concerns no single file. */
-  readonly path?: string | undefined;
-  readonly detail: string;
-  /** Short sha of the commit that introduced the file, absent when there is none. */
-  readonly commit?: string | undefined;
-};
 
 /**
  * How many findings one report lists. Each costs a `git log` child process, so

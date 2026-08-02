@@ -31,6 +31,15 @@ import { docFilterShape } from "./query.js";
  * Widening either later would be precisely the migration the freeze was signed
  * to avoid.
  *
+ * **CONTRACT-023 kept that promise and changed nothing here.** Phase B's contract
+ * surface is two new endpoints (`./index-maintenance.ts`, `../routes/index-maintenance.ts`)
+ * plus a server that starts producing values this file has always published:
+ * `SEMANTIC_INDEX_STATES` and {@link RELATIONS} are byte-identical to their
+ * CONTRACT-022 form, and the only edits below are prose. In particular the three
+ * non-`current` states get their *meanings* — which fact maps to which value —
+ * written down in one place, `IndexStatus.state`, rather than being restated
+ * here where the counts behind them are not available.
+ *
  * **Tolerant queries, like every other read.** These are query schemas, so an
  * unknown parameter is stripped rather than rejected (the strict-bodies,
  * tolerant-reads policy in `./index.ts`). Concretely: a request to
@@ -94,7 +103,9 @@ const semanticIndexField = SemanticIndexStateSchema.optional().describe(
     "value other than `current` as degraded ranking worth telling the caller about, rather than " +
     "matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` " +
     "(documents are still pending), `disabled` (no semantic index is configured — lexical ranking " +
-    "only). Absent means the server makes no claim, which is Phase A's normal answer.",
+    "only). Absent means the server makes no claim, which is Phase A's normal answer. " +
+    "`GET /api/index/status` is the detailed surface behind this one word — the same value with " +
+    "the counts, the recorded provider/model identity and the rebuild flag it derives from.",
 );
 
 /**

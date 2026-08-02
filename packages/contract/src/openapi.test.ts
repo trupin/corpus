@@ -664,6 +664,155 @@ describe("the retrieval surface (CONTRACT-022)", () => {
 });
 
 /**
+ * CONTRACT-023: the semantic index's maintenance pair. Everything here is
+ * additive against the frozen retrieval shapes above — the enum does not widen,
+ * the envelopes do not move, and the two new operations reuse one component.
+ */
+describe("the semantic-index surface (CONTRACT-023)", () => {
+  const STATUS_PATH = "/api/index/status";
+  const REBUILD_PATH = "/api/index/rebuild";
+
+  it("adds exactly two endpoints to the inventory, spelled as §9.2 spells them", () => {
+    expect(ENDPOINT_INVENTORY).toContain("GET /api/index/status");
+    expect(ENDPOINT_INVENTORY).toContain("POST /api/index/rebuild");
+  });
+
+  it.each([
+    [STATUS_PATH, "get"],
+    [REBUILD_PATH, "post"],
+  ])("requires the workspace bearer token on %s %s", (path, method) => {
+    expect(operation(path, method).security).toBeUndefined();
+    expect(operation(path, method).responses?.["401"]).toBeDefined();
+  });
+
+  /**
+   * SPEC.md §9.2's index bullet: "Both touch only derived runtime state — no
+   * workspace file changes, no git commit, **no acting party**." A route names
+   * the acting party with a header parameter, so its absence is the assertion —
+   * and the deliberate divergence from `POST /api/db/rebuild`, which declares
+   * one, is asserted from the other side in the same breath.
+   */
+  it.each([
+    [STATUS_PATH, "get"],
+    [REBUILD_PATH, "post"],
+  ])("names no acting party and takes no body on %s %s", (path, method) => {
+    const op = operation(path, method);
+    expect(op.parameters ?? []).toEqual([]);
+    expect(op.requestBody).toBeUndefined();
+  });
+
+  it("keeps the projection rebuild's acting party, so the divergence is visible", () => {
+    const header = operation("/api/db/rebuild", "post").parameters?.find(
+      (entry) => entry.in === "header",
+    );
+    expect(header?.name).toBe(ACTOR_HEADER);
+  });
+
+  it("declares only the codes each can produce, and no 400 with nothing to validate", () => {
+    expect(Object.keys(operation(STATUS_PATH, "get").responses ?? {})).toEqual(["200", "401"]);
+    expect(Object.keys(operation(REBUILD_PATH, "post").responses ?? {})).toEqual(["202", "401"]);
+  });
+
+  /**
+   * Open Conflict 8, ruled: the rebuild returns before the work is done, so the
+   * only honest response is what is already true. It answers with the same
+   * `IndexStatus` component `status` returns — a snapshot taken after queueing,
+   * not an outcome — under `202`, which is the status code for exactly that.
+   */
+  it("answers both operations with the one status component", () => {
+    for (const [path, method, code] of [
+      [STATUS_PATH, "get", "200"],
+      [REBUILD_PATH, "post", "202"],
+    ] as const) {
+      const content = operation(path, method).responses?.[code]?.content ?? {};
+      const schema = (content["application/json"] as { schema?: SchemaNode } | undefined)?.schema;
+      expect(schema?.$ref).toBe("#/components/schemas/IndexStatus");
+    }
+  });
+
+  it("says in the rebuild's own description that it returned before finishing", () => {
+    const description = operation(REBUILD_PATH, "post").description ?? "";
+    expect(description).toContain("**Returns immediately, before the work is done**");
+    expect(description).toContain("never a claim of completion");
+    expect(description).toContain("carries no acting party");
+  });
+
+  /**
+   * The 2026-08-01 rider added a seventh property and made none of it required:
+   * `detail` is a sentence for a person, absent whenever there is nothing to
+   * say. The `required` list below is the assertion that matters — a generated
+   * client compiles against it, and a field arriving required would be a build
+   * break rather than a runtime surprise.
+   */
+  it("is counts, identity, a flag and the state word — all required — plus an optional sentence", () => {
+    const status = componentSchemas?.["IndexStatus"];
+    expect(Object.keys(status?.properties ?? {})).toEqual([
+      "indexed",
+      "pending",
+      "failed",
+      "identity",
+      "rebuilding",
+      "state",
+      "detail",
+    ]);
+    expect(status?.required).toEqual([
+      "indexed",
+      "pending",
+      "failed",
+      "identity",
+      "rebuilding",
+      "state",
+    ]);
+  });
+
+  /**
+   * The one-vocabulary invariant, at the document level: the status endpoint's
+   * `state` publishes the identical enum the two retrieval envelopes publish as
+   * `semanticIndex`, so no client can be handed two different descriptions of
+   * one workspace. A fifth value invented for this endpoint fails here.
+   */
+  it("reuses the frozen retrieval enum rather than declaring a second one", () => {
+    expect(componentSchemas?.["IndexStatus"]?.properties?.["state"]?.enum).toEqual([
+      ...SEMANTIC_INDEX_STATES,
+    ]);
+    for (const envelope of ["SearchResults", "RelatedDocs"]) {
+      expect(componentSchemas?.[envelope]?.properties?.["semanticIndex"]?.enum).toEqual(
+        componentSchemas?.["IndexStatus"]?.properties?.["state"]?.enum,
+      );
+    }
+  });
+
+  it("publishes the fact-to-word mapping where an implementer and a client both read it", () => {
+    const description = componentSchemas?.["IndexStatus"]?.properties?.["state"]?.description ?? "";
+    expect(description).toContain("Derived from the fields above rather than stored");
+    expect(description).toContain("`indexing` — `rebuilding` is true, which outranks `stale`");
+    expect(description).toContain("`disabled` — no provider resolved");
+  });
+
+  it("keeps the recorded identity nullable, since a fresh workspace has none", () => {
+    const identity = componentSchemas?.["IndexStatus"]?.properties?.["identity"];
+    expect(identity?.type).toEqual(["string", "null"]);
+    expect(identity?.description).toContain("never parsed");
+  });
+
+  it("points the retrieval envelopes' one-word field at this endpoint for the detail", () => {
+    const description =
+      componentSchemas?.["SearchResults"]?.properties?.["semanticIndex"]?.description ?? "";
+    expect(description).toContain("`GET /api/index/status` is the detailed surface");
+  });
+
+  it("adds no drift kind and no doctor warning kind, since neither is index business", () => {
+    expect(componentSchemas?.["ProjectionDrift"]?.properties?.["kind"]?.enum).toEqual([
+      ...DRIFT_KINDS,
+    ]);
+    // A stuck index's doctor warning (Open Conflict 9) rides the **open** kind
+    // space `DoctorWarningKind` already publishes, so it costs no contract
+    // change and no literal is added here. See `routes/index-maintenance.test.ts`.
+    expect(componentSchemas?.["DoctorWarning"]?.properties?.["kind"]?.type).toBe("string");
+  });
+});
+
+/**
  * CONTRACT-011: the extra-frontmatter surface and the first-class §11 view
  * keys. The schema descriptions here ARE the plugin contract — a plugin author
  * reads only the generated document — so these invariants pin the published
@@ -801,19 +950,32 @@ describe("DocRow.unreadThreads (CONTRACT-012)", () => {
 
 describe("author attribution", () => {
   /**
-   * `POST` because a request body is the only way to say what to check, not
-   * because anything is written: `/api/check` runs the validator and mutates
-   * nothing, so there is no git author to attribute and no header to carry one
-   * (SPEC.md §14). Declaring one would advertise a write that never happens.
+   * The two `POST`s with no git author to attribute, and they are unattributed
+   * for two different reasons — which is why this is a named set rather than a
+   * predicate over the path.
+   *
+   * - `POST /api/check` is a `POST` because a request body is the only way to
+   *   say what to check, not because anything is written: it runs the validator
+   *   and mutates nothing (SPEC.md §14).
+   * - `POST /api/index/rebuild` genuinely mutates — but only **derived runtime
+   *   state**, the semantic index inside the projection, which is not a
+   *   workspace file and never reaches git (SPEC.md §9.2: "Both touch only
+   *   derived runtime state — no workspace file changes, no git commit, no
+   *   acting party"). Its projection-wide counterpart `POST /api/db/rebuild`
+   *   *does* carry the header, and the pair is the clearest statement of what
+   *   the header is for.
+   *
+   * In both cases declaring the header would advertise a commit that never
+   * happens.
    */
-  const READ_ONLY_POSTS = new Set(["POST /api/check"]);
+  const UNATTRIBUTED_POSTS = new Set(["POST /api/check", "POST /api/index/rebuild"]);
 
   it("declares the optional actor header on every mutating operation", () => {
     const problems: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
       for (const method of MUTATING_METHODS) {
         const op = (item as Record<string, Operation> | undefined)?.[method];
-        if (!op || READ_ONLY_POSTS.has(endpointSignature(method, path))) continue;
+        if (!op || UNATTRIBUTED_POSTS.has(endpointSignature(method, path))) continue;
         const header = op.parameters?.find(
           (entry) => entry.in === "header" && entry.name === ACTOR_HEADER,
         );
@@ -828,6 +990,18 @@ describe("author attribution", () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  /**
+   * The exemption list is the interesting half of the rule, so it is asserted
+   * from the other side too: an exempt operation must genuinely declare no
+   * header at all, rather than the set becoming a place to park a route that
+   * merely forgot one.
+   */
+  it.each([...UNATTRIBUTED_POSTS])("exempts %s by declaring no header at all", (entry) => {
+    const [, path] = entry.split(" ");
+    const op = operation(path ?? "", "post");
+    expect(op.parameters?.some((parameter) => parameter.in === "header")).toBeFalsy();
   });
 
   /**

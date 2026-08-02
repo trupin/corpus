@@ -21,6 +21,8 @@ export interface PackedFile {
   readonly path: string;
   /** Unix mode as reported by npm (420 = 0o644, 493 = 0o755). */
   readonly mode?: number;
+  /** Unpacked bytes as reported by npm. Absent only in hand-written listings. */
+  readonly size?: number;
 }
 
 export interface RequiredEntry {
@@ -81,6 +83,78 @@ export interface ForbiddenEntry {
 }
 
 /**
+ * The semantic stack's **negative proof** (INFRA-012, sprint-021 OC1-REVISED +
+ * OC2). Corpus embeds documents in-process, and the two obvious ways to make
+ * that "just work" — vendoring the model, vendoring the runtime — are both
+ * refused. What ships instead is: nothing. The model downloads once into a
+ * per-user cache (`apps/server/src/semantic/engine/cache.ts`, hash-pinned in
+ * `manifest.ts`), the tokenizer downloads beside it rather than being packed
+ * (SERVER-048 Decision 2, chosen precisely so this proof stays trivially true),
+ * the inference runtime is `onnxruntime-web` installed by npm as a normal
+ * dependency, and the vector search is the pure-JS cosine scan (OC2 — no
+ * `sqlite-vec`, no native extension, nothing to `db.loadExtension`).
+ *
+ * That posture is invisible in a green build, so it is asserted here. The
+ * numbers behind the refusal, all measured (sprint-021 C10, SERVER-048
+ * Decision 1):
+ *
+ * | artifact | size | verdict |
+ * | --- | --- | --- |
+ * | the tarball itself | ~3.0 MiB unpacked, 30 files | what we defend |
+ * | MiniLM int8 `model_quantized.onnx` | 21.9 MiB | downloaded, not packed |
+ * | its `tokenizer.json` | 0.7 MiB | downloaded, not packed |
+ * | MiniLM fp32 `model.onnx` | 86.2 MiB | never considered further |
+ * | `onnxruntime-web@1.27` in `node_modules` | 137.4 MiB | installed dependency — recorded, not fought |
+ * | `onnxruntime-node@1.27` | 258.3 MiB + a downloading `postinstall` | rejected |
+ *
+ * The last row is why the `.wasm` and native-binary rules are not paranoia: the
+ * runtime's own npm tarball is two orders of magnitude larger than the whole
+ * tool, and a single vendored copy of it inside `dist-package/` would turn a
+ * 3 MiB package into a 140 MiB one without any other rule noticing.
+ */
+const SEMANTIC_ABSENCE_PATTERNS: readonly ForbiddenEntry[] = [
+  {
+    reason:
+      "model weights are downloaded once into a per-user cache, never packed " +
+      "(sprint-021 OC1-REVISED; 21.9 MiB int8 against a 3 MiB package)",
+    pattern: "**/*.{onnx,onnx_data,gguf,safetensors,bin}",
+  },
+  {
+    reason:
+      "the tokenizer downloads beside the weights, under the same hash pin " +
+      "(SERVER-048 Decision 2) — one mechanism, and no model-adjacent file in the tarball",
+    pattern: "**/{tokenizer,tokenizer_config,special_tokens_map}.json",
+  },
+  {
+    reason: "a model vocabulary is model-adjacent data, not tool content",
+    pattern: "**/vocab.txt",
+  },
+  {
+    reason:
+      "a populated model cache is a developer's machine state; the installed tool " +
+      "fills its own from `CORPUS_MODEL_CACHE_DIR` or the per-user cache directory",
+    pattern: "{models,model-cache,.cache}/**",
+  },
+  {
+    reason:
+      "the tool ships no native code: OC2 rejected `sqlite-vec` and every native " +
+      "vector extension in favour of the pure-JS cosine scan, and the one native " +
+      "dependency it does have (`better-sqlite3`) is installed by npm, not vendored",
+    pattern: "**/*.{node,dylib,dll,a,lib}",
+  },
+  // Two patterns rather than `*.so*`, which would also match a `.solution.md`.
+  { reason: "a shared object is native code by another name", pattern: "**/*.so" },
+  { reason: "a versioned shared object is one too", pattern: "**/*.so.[0-9]*" },
+  {
+    reason:
+      "`onnxruntime-web`'s WebAssembly arrives inside its own npm tarball as a " +
+      "declared dependency (137.4 MiB in `node_modules`, recorded in INFRA-012); a " +
+      "`.wasm` inside *this* tarball means the runtime was vendored",
+    pattern: "**/*.wasm",
+  },
+];
+
+/**
  * `data/**` and `.corpus/**` are anchored at the package root on purpose: the
  * *workspace* directories must never ship, while the **template's** `data/`
  * (`assets/workspace/data/**`) is exactly what `corpus init` installs. Prefixing
@@ -112,6 +186,7 @@ export const FORBIDDEN_PACK_PATTERNS: readonly ForbiddenEntry[] = [
   },
   { reason: "TypeScript sources are bundled, never shipped", pattern: "**/*.{ts,tsx}" },
   { reason: "incremental build state is not tool content", pattern: "**/*.tsbuildinfo" },
+  ...SEMANTIC_ABSENCE_PATTERNS,
 ];
 
 /** The bin has to be executable, or `npx corpus` fails with EACCES. */
@@ -127,6 +202,21 @@ const EXECUTABLE_BITS = 0o111;
 export const MINIMUM_PACKED_FILES = 15;
 
 /**
+ * The ceiling on unpacked bytes — the extension-independent half of the absence
+ * proof above (INFRA-012). Every named pattern can be walked around by renaming
+ * a file; a 21.9 MiB model cannot be walked around at all.
+ *
+ * Measured, this machine, 2026-08-01: **3,229,917 bytes across 30 files** after
+ * Phase 8, against the 3,084,162 bytes / 30 files sprint-021 C10 recorded before
+ * it — the whole semantic stack cost the tarball **+145,755 bytes (+4.7%)**,
+ * almost all of it the server bundle (492 KiB → 584 KiB) carrying the embedding
+ * engine's own code. Same 30 files: nothing new was staged. The ceiling is ~2.6×
+ * that, which leaves ordinary UI and plugin growth alone and still trips on the
+ * smallest artifact anyone proposed shipping.
+ */
+export const MAXIMUM_PACKED_BYTES = 8 * 1024 * 1024;
+
+/**
  * Returns one human-readable violation per broken rule; empty means the tarball
  * is well-formed. Never throws — the runner decides what a violation costs.
  */
@@ -139,6 +229,19 @@ export function auditPackedFiles(files: readonly PackedFile[]): readonly string[
       `the tarball holds ${String(files.length)} files, fewer than the ${String(
         MINIMUM_PACKED_FILES,
       )} a staged package must have — nothing was staged`,
+    );
+  }
+
+  // Entries without a size contribute nothing: `check-pack.ts` always passes
+  // npm's sizes through, and this is the backstop behind the named patterns
+  // rather than the primary rule, so a hand-written listing need not carry them.
+  const unpackedBytes = files.reduce((total, file) => total + (file.size ?? 0), 0);
+  if (unpackedBytes > MAXIMUM_PACKED_BYTES) {
+    const mib = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+    violations.push(
+      `the tarball unpacks to ${mib(unpackedBytes)}, over the ${mib(MAXIMUM_PACKED_BYTES)} ` +
+        "ceiling — the tool ships neither an embedding model nor an inference runtime " +
+        "(sprint-021 OC1-REVISED), so something large was staged that should not have been",
     );
   }
 

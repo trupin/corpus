@@ -3114,6 +3114,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/index/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Semantic-index health
+         * @description Reports the semantic index's coverage — indexed, pending and failed chunk counts — the recorded provider/model identity, whether a full rebuild is in progress, and the single `state` those facts derive to (SPEC.md §9.1). It is the surface that makes asynchronous indexing honest rather than hidden: indexing never blocks a save, so a backlog is normal, and this is where a person sees it draining. A backlog is **staleness, not drift** — `corpus db doctor` stays clean while indexing is in flight (SPEC.md §14), and the two checks answer different questions on purpose. `state` is the same value, from the same schema, that `GET /api/search` reports as `semanticIndex`. Read-only; no acting party.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The index's current health. A workspace with no semantic index answers `disabled` with a null identity and zero counts — an honest answer, never an error. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IndexStatus"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/index/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard and asynchronously rebuild the semantic index
+         * @description Discards the semantic index and re-queues every chunk — the narrow counterpart of `POST /api/db/rebuild`, which reconstructs the whole projection and likewise queues semantic re-indexing (SPEC.md §9.1). Discarding the vectors is also what frees the **sticky** provider and model: resolution is sticky to the identities the index already records, so an index holding none leaves the next resolution free to pick the current default (SPEC.md §9.1). That re-pick happens when the indexing worker next resolves — *after* this call has returned. **Takes no request body at all**, and carries no acting party: it touches only derived runtime state, so there is no workspace file change and no git commit to attribute (SPEC.md §9.2). **Returns immediately, before the work is done** — hence `202`, and hence a response that reports only what is already true: the `IndexStatus` snapshot taken the moment everything was queued, which is a caller's acknowledgement (`rebuilding` true, `pending` at the full corpus, `indexed` and `identity` emptied by the discard) and never a claim of completion. In particular `identity` is `null` here **always** — it reports what the index's vectors record, and the call just deleted every one of them; the newly picked identity appears in `GET /api/index/status` once the first chunk is embedded. Progress is observed by polling that endpoint; meanwhile ranked search stays fully available on its lexical half and says `indexing` while it waits. This is also how a `failed` chunk gets another attempt: failures do not drain on their own.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Accepted and queued, not completed. The snapshot is true at the moment of the call: `rebuilding` is true, `pending` counts what was just queued, `state` is `indexing`, and `identity` is `null` because the vectors that recorded one were just discarded. */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["IndexStatus"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills": {
         parameters: {
             query?: never;
@@ -3761,7 +3857,7 @@ export interface components {
             /** @description Most related first, ties broken deterministically. Never contains the document itself, and empty when nothing relates to it. */
             related: components["schemas"]["RelatedDoc"][];
             /**
-             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer.
+             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer. `GET /api/index/status` is the detailed surface behind this one word — the same value with the counts, the recorded provider/model identity and the rebuild flag it derives from.
              * @enum {string}
              */
             semanticIndex?: "current" | "indexing" | "stale" | "disabled";
@@ -3877,7 +3973,7 @@ export interface components {
             /** @description Best match first, ties broken deterministically so the same query twice returns the same order. Empty when nothing matched — an empty ranking, never an error. */
             hits: components["schemas"]["SearchHit"][];
             /**
-             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer.
+             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer. `GET /api/index/status` is the detailed surface behind this one word — the same value with the counts, the recorded provider/model identity and the rebuild flag it derives from.
              * @enum {string}
              */
             semanticIndex?: "current" | "indexing" | "stale" | "disabled";
@@ -4454,6 +4550,25 @@ export interface components {
             path: string;
             /** @description The whole file, frontmatter and body, exactly as it would be written. Empty is legal and reports as unparseable frontmatter, which is what saving it would do. */
             content: string;
+        };
+        IndexStatus: {
+            /** @description Content chunks that have a usable vector recorded under `identity`. With `pending` and `failed` it accounts for every chunk in the corpus, so there is no separate total: a fourth number that must equal the sum of three others is a number that can be wrong. */
+            indexed: number;
+            /** @description Chunks queued for embedding and not yet embedded — the backlog. Indexing is asynchronous and never blocks a write (SPEC.md §9.1: **no save ever waits on indexing**), so a non-zero backlog is the normal state right after an edit, an import or a rebuild. It is staleness, not drift: `corpus db doctor` stays clean while this drains, and this is the surface that makes it visible instead of hidden. */
+            pending: number;
+            /** @description Chunks whose embedding failed and that the server has stopped retrying. Counted rather than dropped: a chunk that vanished quietly would leave a corpus that is silently less searchable than it looks. Unlike `pending`, this number does not drain on its own — `POST /api/index/rebuild` is what re-queues them, after whatever made them fail is fixed. */
+            failed: number;
+            /** @description The provider and model that produced this index's vectors, recorded on the first write and **sticky** thereafter (SPEC.md §9.1: one index, one model — results from different models are never mixed, and the effective model changes only through an explicit act). Rendered verbatim and compared for equality, never parsed: the server writes it as `provider/model@dim` (e.g. `ollama/nomic-embed-text@768`), with the dimension read from the provider's own first response rather than assumed from a table. `null` when nothing has been indexed yet — a fresh workspace has no identity, which is not the same claim as `disabled`. */
+            identity: string | null;
+            /** @description Whether a **full** rebuild is in flight — `POST /api/index/rebuild`, or the invalidation a changed provider/model identity forces. It is what separates `indexing` from `stale`: both have work pending, but only one of them is starting over, and an operator watching a backlog wants to know which. False during ordinary incremental catch-up, however large the backlog. */
+            rebuilding: boolean;
+            /**
+             * @description How caught-up the semantic half of ranking is — the same value, from the same schema, that `GET /api/search` and `GET /api/docs/{id}/related` report as `semanticIndex`, so no two surfaces can describe one workspace differently. **Derived from the fields above rather than stored**, by exactly this mapping: `current` — an identity is recorded and `pending` is 0 with no rebuild in flight; `indexing` — `rebuilding` is true, which outranks `stale` even though both have work pending; `stale` — an incremental backlog only (`pending > 0`, no rebuild in flight); `disabled` — no provider resolved, no recorded identity, or no usable vectors, which means lexical ranking only and is an honest answer rather than an error (SPEC.md §9.1's local-first default). Required here, unlike the optional `semanticIndex` on the retrieval envelopes: this response *is* the claim, so there is nothing for its absence to mean.
+             * @enum {string}
+             */
+            state: "current" | "indexing" | "stale" | "disabled";
+            /** @description One human sentence explaining the state, when there is something to explain — a model still downloading (`downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of 22.6 MiB, 46%) — semantic ranking starts once it is cached`), a model that has not been downloaded yet, a configured endpoint that did not answer, or an index whose vectors were produced by a model that is not the one resolving now. Without it a workspace whose model is 46% downloaded and one that will never have a model both read as a bare `disabled`, which is the same word for a wait and for a dead end. **Rendered, never parsed**: the wording is the server's, it changes with the reason, and nothing may branch on it — `state` is the field a client decides with. **Absent when there is nothing to add**, which is why it is optional rather than an empty string: a caught-up index explains itself through the counts, and a field that is always present has to invent something to say. */
+            detail?: string;
         };
         SkillCreateRequest: {
             /**

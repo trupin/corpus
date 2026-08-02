@@ -112,14 +112,26 @@ const calendarDate = (nowMs: number, days = 0): string =>
 export const notArchivedSql = (alias: string): string => `${alias}.status <> 'archived'`;
 
 /**
+ * The two optional rows every filter fragment may name beside `d`, as joins a
+ * statement can append to a `documents` alias it reached its own way.
+ *
+ * Split out of {@link FROM_SQL} for the semantic scan (SERVER-045), which starts
+ * from `chunk_embeddings` and reaches `documents` through the chunk rather than
+ * selecting from it: it still has to end up with the same `t` and `s` in scope,
+ * or a thread-only filter would be a SQL error on one endpoint and a predicate
+ * on the other.
+ */
+export const DOC_FILTER_JOINS = `LEFT JOIN threads t ON t.id = d.id
+  LEFT JOIN seen s ON s.thread_id = d.id`;
+
+/**
  * What every filtered read selects from. The WHERE clause the builder returns
  * names `d`, `t` and `s` and nothing else, which is what lets three different
  * statements — the page, its COUNT, and ranked retrieval — share one set of
  * conditions while joining whatever their own rows additionally need.
  */
 export const FROM_SQL = `FROM documents d
-  LEFT JOIN threads t ON t.id = d.id
-  LEFT JOIN seen s ON s.thread_id = d.id`;
+  ${DOC_FILTER_JOINS}`;
 
 /**
  * The FTS5 hits, materialized once per statement.

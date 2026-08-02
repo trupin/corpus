@@ -13,6 +13,14 @@ import {
   openWorkspaceProjection,
   type ProjectionDb,
 } from "./projection/index.js";
+import {
+  attachEmbedWorker,
+  attachEmbeddedEngine,
+  attachSemanticIndex,
+  type AttachEmbedWorkerDeps,
+  type AttachSemanticIndexDeps,
+  type CorpusEmbeddedEngine,
+} from "./semantic/index.js";
 import { attachWatcher } from "./watcher/index.js";
 
 export const SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"] as const;
@@ -119,6 +127,27 @@ export interface RunServerOptions {
   readonly attachProjectionFn?: (server: CorpusServer) => void;
   /** Starts the chokidar watcher and registers its disposer (SERVER-007). */
   readonly attachWatcherFn?: (server: CorpusServer) => void;
+  /**
+   * Resolves the embedding provider and checks the index's recorded identity
+   * (SERVER-043). Injected so a test — and the seam's own E2E — can register an
+   * embedded engine, which is otherwise absent until SERVER-048.
+   */
+  readonly attachSemanticFn?: (server: CorpusServer, deps: AttachSemanticIndexDeps) => void;
+  /**
+   * Builds the in-process embedding engine and registers its disposer
+   * (SERVER-048). Injected so a test can boot without one; the default is
+   * inert until something asks it to embed.
+   */
+  readonly attachEmbeddedEngineFn?: (
+    server: CorpusServer,
+    env: Readonly<Record<string, string | undefined>>,
+  ) => CorpusEmbeddedEngine | undefined;
+  /**
+   * Starts the background embed worker and registers its disposer (SERVER-044).
+   * Registered **last**, so its disposer runs first — it writes to the
+   * projection and drives the engine's model session, and both must outlive it.
+   */
+  readonly attachEmbedWorkerFn?: (server: CorpusServer, deps: AttachEmbedWorkerDeps) => void;
   readonly gracePeriodMs?: number;
 }
 
@@ -160,6 +189,44 @@ export async function runServerProcess(
     // The watcher is filesystem-bound and lifecycle-scoped, so it attaches here
     // alongside the projection; its disposer runs before the database closes.
     (options.attachWatcherFn ?? attachWatcher)(server);
+    // The engine registers its disposer before the seam registers its own, so
+    // shutdown aborts the resolution first and only then releases the model.
+    // Building one touches nothing: it downloads on demand and loads on `open`.
+    const embeddedEngine = (options.attachEmbeddedEngineFn ?? attachEmbeddedEngine)(server, env);
+    // Retrieval's semantic half was built with the routes, before the engine
+    // existed; this is where it learns about one. Binding it costs nothing — the
+    // engine is not asked anything until the first search needs a query
+    // embedded, which is what keeps a model load off the boot path.
+    const semantic = server.semantic;
+    if (embeddedEngine !== undefined && semantic !== undefined) {
+      semantic.useEngine(embeddedEngine);
+      // The other direction, and the reason it is a push: resolution caches
+      // "nothing resolved" for a cooldown, which is right for an endpoint that
+      // is down and wrong for a 22.6 MiB download that just finished — a first
+      // run reported `disabled` for the whole download and then for another half
+      // minute afterwards (the SERVER-048 evaluation, LEDGER-1). The engine is
+      // the only party that knows the wait is over, so it is the one that ends
+      // it.
+      embeddedEngine.onModelReady(() => {
+        semantic.invalidateResolution();
+      });
+    }
+    // Last, so its disposer runs first: it reads the projection, and a resolution
+    // still in flight must be aborted and awaited before the database closes. It
+    // resolves in the background — a configured endpoint that never answers must
+    // not hold the socket shut on a server whose documents are all readable.
+    (options.attachSemanticFn ?? attachSemanticIndex)(
+      server,
+      embeddedEngine === undefined ? {} : { embeddedEngine },
+    );
+    // Last of all, so its disposer runs before every one of theirs: it writes to
+    // the projection, reads the config's embedding block through the seam, and
+    // drives the engine's model session. Starting it costs one query — it
+    // resolves a provider only once there is something to index.
+    (options.attachEmbedWorkerFn ?? attachEmbedWorker)(
+      server,
+      embeddedEngine === undefined ? {} : { engine: embeddedEngine },
+    );
   } catch (error) {
     // A handle opened before the failure would otherwise outlive the process's
     // attempt to start.

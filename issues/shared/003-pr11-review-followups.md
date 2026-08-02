@@ -259,3 +259,32 @@ _n/a until triage._
   signed pointer rule spec text ("the active column ignores a stationary pointer
   across programmatic closes; hover re-adopts on real movement") — queue for the
   next sign-off round.
+
+## Phase 8 harvest note (2026-07-31)
+
+- **worker-host.test.ts crash-drill test flaked once under full-suite load** (an
+  EmbeddingError rejection surfaced unhandled; green scoped and on retry). Harden at
+  triage: default catch on the host's ready promise inside createWorkerHost, or the
+  test attaches its rejection handler before the worker can die.
+
+## Phase 8 eval ledger additions (2026-08-01)
+
+- FAIL SERVER-048 AC2 → fixed in-phase (download progress + cooldown window; see the
+  fix commit). Remaining ledger items:
+- **`related`'s `similar` label is uninformative at the tail on small corpora** (gate
+  0.15 admits "Bicycle brake pads" as similar to a physician note; ordering correct).
+  Options at triage: raise gate / cap similar rows / carry the score.
+- **`corpus index rebuild` has no guard against discarding an index it cannot
+  rebuild** (unreachable configured provider → 561 valid vectors gone, spec-correct
+  but unrecoverable-by-waiting). Consider a refusal or --force when resolution is
+  currently error/disabled.
+- **`failed > 0` remains unverified end-to-end by anyone** (needs ~12 min of ladder;
+  unit substitutes only). Candidate for a long-run soak eval someday.
+- **TEST-930's literal two-build diff** still unrun (evaluator can't git); substitute
+  evidence strong. Optional orchestrator follow-up.
+
+- **SEMANTIC_MIN_SIMILARITY fails open for configured providers** (PR #17 review
+  MINOR 5): 0.15 is measured for MiniLM; OpenAI-family cosine scales score unrelated
+  pairs ~0.6-0.8, so the gate excludes nothing and `similar` becomes a false claim.
+  Design follow-up at triage: per-identity gate, score-carrying rows, or a documented
+  caveat. (Compounds the small-corpus tail item above.)

@@ -248,14 +248,16 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| SERVER-042 | Deterministic heading-path chunker, content-addressed identity | todo | P0 | SERVER-040 |
-| SERVER-043 | Embedding provider seam: local-first, sticky identity | todo | P0 | SERVER-042 |
-| SERVER-044 | Async embed worker: never blocks writes, visible staleness | todo | P0 | SERVER-042, SERVER-043 |
-| CONTRACT-023 | Routes: index status/rebuild; search staleness flag; similar rows | todo | P0 | CONTRACT-022 |
-| SERVER-045 | Vector storage + hybrid ranking; related gains `similar` | todo | P1 | SERVER-044, CONTRACT-023 |
-| SERVER-046 | Index endpoints; rebuild queueing; doctor drift-vs-staleness | todo | P1 | SERVER-044, CONTRACT-023 |
-| CLI-020 | `corpus index status` / `rebuild`; search degrade note | todo | P1 | CONTRACT-023, SERVER-046, CLI-019 |
-| INFRA-012 | Package the bundled model + native vector extension | todo | P1 | SERVER-043, SERVER-045 |
+| SERVER-042 | Deterministic heading-path chunker, content-addressed identity | done | P0 | SERVER-040 |
+| SERVER-043 | Embedding provider seam: configured > embedded > disabled (OC1-REVISED) | done | P0 | SERVER-042 |
+| SERVER-048 | Embedded embedding engine: in-process model, downloaded once, no model server | done | P0 | SERVER-043 |
+| SERVER-044 | Async embed worker: never blocks writes, visible staleness | done | P0 | SERVER-042, SERVER-043, SERVER-048 |
+| CONTRACT-023 | Routes: index status/rebuild; search staleness flag; similar rows | done | P0 | CONTRACT-022 |
+| SERVER-045 | Vector storage + hybrid ranking; related gains `similar` | done | P1 | SERVER-044, CONTRACT-023 |
+| SERVER-046 | Index endpoints; rebuild queueing; doctor drift-vs-staleness | done | P1 | SERVER-044, CONTRACT-023 |
+| SERVER-049 | Embedded inference off the main thread (SERVER-046 finding; blocks the phase PR) | done | P0 | SERVER-048, SERVER-044 |
+| CLI-020 | `corpus index status` / `rebuild`; search degrade note | done | P1 | CONTRACT-023, SERVER-046, CLI-019 |
+| INFRA-012 | Pack stays lean: negative proof — no model/runtime/extension ships (rescoped, OC1/OC2) | done | P1 | SERVER-043, SERVER-045 |
 
 ## Phase 9 — Retrieval C: auto-context
 

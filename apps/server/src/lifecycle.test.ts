@@ -13,6 +13,9 @@ import {
   runServerProcess,
   type ProcessHooks,
 } from "./lifecycle.js";
+import type { CorpusEmbeddedEngine } from "./semantic/engine/index.js";
+import { createEmbeddingProvider } from "./semantic/provider.js";
+import { UNFILTERED_SCOPE } from "./semantic/vectors.js";
 
 const TOKEN = "tkn_0123456789abcdef0123456789abcdef";
 
@@ -549,6 +552,181 @@ describe("runServerProcess — boot", () => {
     expect(h.exits).toEqual([1]);
     expect(h.lines.join("\n")).toContain("cache.db is unreadable");
   });
+
+  /**
+   * SERVER-043/044. The seam attaches after the watcher so its disposer runs
+   * first: it reads the projection, and an aborted resolution must be awaited
+   * before the database closes. The embed worker attaches after *that*, because
+   * it writes to the projection and drives the engine's model session — both of
+   * which have to outlive it.
+   */
+  it("attaches the embedding seam after the watcher, and the worker last of all", async () => {
+    const workspace = makeWorkspace("ws-semantic-order");
+    const h = harness();
+    const order: string[] = [];
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      attachWatcherFn: () => order.push("watcher"),
+      attachSemanticFn: () => order.push("semantic"),
+      attachEmbedWorkerFn: () => order.push("embed-worker"),
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+
+    expect(order).toEqual(["watcher", "semantic", "embed-worker"]);
+    await server.close();
+  });
+
+  /**
+   * The 2026-08-01 rider's push, wired here and nowhere else. Resolution caches
+   * "no provider" for 30 s, which is right for an endpoint that is down and
+   * wrong for a 22.6 MiB model download that just finished — a first run kept
+   * answering `disabled` for half a minute after the bytes landed (the
+   * SERVER-048 evaluation, LEDGER-1).
+   *
+   * `forQuery` is the probe on purpose: it is the one path that never re-reads
+   * the engine's availability itself, so a provider appearing on it inside the
+   * cooldown can only be the engine's announcement arriving.
+   */
+  it("lets a completed model download end the resolution cooldown immediately", async () => {
+    const workspace = makeWorkspace("ws-model-ready");
+    const h = harness();
+
+    let available = false;
+    let opens = 0;
+    const listeners: (() => void)[] = [];
+    const ref = { provider: "local", model: "fake" };
+    const engine: CorpusEmbeddedEngine = {
+      ref,
+      availability: () =>
+        Promise.resolve(
+          available
+            ? { available: true }
+            : { available: false, reason: "model-not-downloaded", detail: "downloading (3%)" },
+        ),
+      open: () => {
+        opens += 1;
+        return Promise.resolve(
+          createEmbeddingProvider(ref, (texts) => Promise.resolve(texts.map(() => [1, 0, 0, 0]))),
+        );
+      },
+      requestModel: () => undefined,
+      onModelReady: (listener) => listeners.push(listener),
+      whenSettled: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+    };
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      attachEmbeddedEngineFn: () => engine,
+      // The boot resolution is the seam's, not the cache's; leaving it out keeps
+      // this test about the one resolution `forQuery` uses.
+      attachSemanticFn: () => undefined,
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+    const semantic = server.semantic;
+    if (semantic === undefined) throw new Error("no semantic retrieval");
+
+    await semantic.forQuery("anything", UNFILTERED_SCOPE, 5);
+    await semantic.forQuery("anything", UNFILTERED_SCOPE, 5);
+    expect(opens).toBe(0);
+    expect(listeners).toHaveLength(1);
+
+    // The download completes: the cache is warm, and the engine says so.
+    available = true;
+    for (const listener of listeners) listener();
+
+    await semantic.forQuery("anything", UNFILTERED_SCOPE, 5);
+    expect(opens).toBe(1);
+
+    await server.close();
+  });
+
+  it("says in the boot log that a zero-config workspace has no semantic index", async () => {
+    const workspace = makeWorkspace("ws-semantic-disabled");
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: EPHEMERAL,
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      // `runServerProcess` deliberately does not hand its logger to
+      // `createServer` (the server builds one from `config.logLevel`), so the
+      // seam's line goes to stdout in production; this is how a test reads it.
+      createServerFn: (config, deps) => createServer(config, { ...deps, logger: h.logger }),
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+
+    // The resolution runs beside the boot; the seam's disposer is what awaits it.
+    await server.close();
+
+    const line = h.lines.find((entry) => entry.includes("semantic index disabled"));
+    // The build ships an embedded engine (SERVER-048), so the reason is no
+    // longer "there is no engine": this environment names no per-user cache
+    // directory, which is what a server booted with `env: {}` looks like.
+    expect(line).toContain("no per-user cache directory");
+    expect(line).toContain('"level":"info"');
+  });
+
+  it("says the model is not downloaded yet, rather than that nothing is configured", async () => {
+    const workspace = makeWorkspace("ws-semantic-model-absent");
+    const h = harness();
+
+    const server = await runServerProcess({
+      argv: ["--workspace", workspace],
+      env: { ...EPHEMERAL, HOME: join(root, "home"), CORPUS_MODEL_CACHE_DIR: join(root, "models") },
+      cwd: root,
+      hooks: h.hooks,
+      logger: h.logger,
+      createServerFn: (config, deps) => createServer(config, { ...deps, logger: h.logger }),
+    });
+    if (server === undefined) throw new Error("server failed to boot");
+    await server.close();
+
+    const line = h.lines.find((entry) => entry.includes("semantic index disabled"));
+    // SPEC.md §9.1's honest distinction: "not downloaded yet" is not "nothing
+    // configured", and search says which one it is.
+    expect(line).toContain("has not been downloaded yet");
+  });
+
+  it("makes no network request while booting, however much there is to index", async () => {
+    const workspace = makeWorkspace("ws-semantic-no-boot-download");
+    const h = harness();
+    const original = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (input) => {
+      calls.push(input instanceof URL ? input.href : JSON.stringify(input));
+      return Promise.reject(new Error("no network at boot"));
+    };
+
+    try {
+      const server = await runServerProcess({
+        argv: ["--workspace", workspace],
+        env: { ...EPHEMERAL, CORPUS_MODEL_CACHE_DIR: join(root, "models") },
+        cwd: root,
+        hooks: h.hooks,
+        logger: h.logger,
+      });
+      if (server === undefined) throw new Error("server failed to boot");
+      await server.close();
+    } finally {
+      globalThis.fetch = original;
+    }
+
+    // "Lazily on first index need" and "none at server boot" are the same rule.
+    expect(calls).toEqual([]);
+    expect(existsSync(join(root, "models"))).toBe(false);
+  });
 });
 
 describe("runServerProcess — shutdown", () => {
@@ -657,6 +835,7 @@ describe("runServerProcess — shutdown", () => {
       // workspace to open; what is under test here is the shutdown path.
       openProjectionFn: () => undefined,
       attachProjectionFn: () => undefined,
+      attachSemanticFn: () => undefined,
     });
 
     h.raise("SIGTERM");

@@ -1,0 +1,371 @@
+import { describe, expect, it } from "vitest";
+import { createTokenizer, normalizeText, preTokenize, TokenizerError } from "./tokenizer.js";
+
+/**
+ * A real vocabulary, trimmed to the 114 entries the cases below actually match,
+ * with the ids `Xenova/all-MiniLM-L6-v2` gives them.
+ *
+ * Trimming is sound rather than convenient: WordPiece is greedy longest-match,
+ * so a run over a *subset* of the vocabulary can only differ from a run over the
+ * whole thing by failing to find a longer piece — and every piece the full
+ * vocabulary matched is present here. Any longer candidate the real run rejected
+ * is absent from both. The ids are therefore the real model's, not a fixture's,
+ * without carrying 695 KiB into the repository.
+ */
+const VOCAB: Record<string, number> = {
+  "5": 1019,
+  "100": 2531,
+  "[PAD]": 0,
+  "[UNK]": 100,
+  "[CLS]": 101,
+  "[SEP]": 102,
+  "#": 1001,
+  $: 1002,
+  "%": 1003,
+  "'": 1005,
+  "(": 1006,
+  ")": 1007,
+  "-": 1011,
+  ".": 1012,
+  ";": 1025,
+  "@": 1030,
+  "[": 1031,
+  "]": 1033,
+  a: 1037,
+  e: 1041,
+  g: 1043,
+  h: 1044,
+  p: 1052,
+  t: 1056,
+  "{": 1063,
+  "}": 1065,
+  "±": 1081,
+  "—": 1517,
+  中: 1746,
+  文: 1861,
+  the: 1996,
+  on: 2006,
+  with: 2007,
+  "##s": 2015,
+  "##i": 2072,
+  don: 2123,
+  "##l": 2140,
+  "##u": 2226,
+  "##g": 2290,
+  english: 2394,
+  la: 2474,
+  "##is": 2483,
+  "##ic": 2594,
+  "##ne": 2638,
+  post: 2695,
+  "##um": 2819,
+  "##ism": 2964,
+  test: 3231,
+  anti: 3424,
+  super: 3565,
+  "##ment": 3672,
+  "##io": 3695,
+  text: 3793,
+  mixed: 3816,
+  split: 3975,
+  "00": 4002,
+  storm: 4040,
+  "##q": 4160,
+  "##est": 4355,
+  "##tic": 4588,
+  cat: 4937,
+  user: 5310,
+  "##ens": 6132,
+  "##ious": 6313,
+  tag: 6415,
+  "##ram": 6444,
+  "##ano": 6761,
+  "##vo": 6767,
+  "##ros": 7352,
+  cafe: 7668,
+  sits: 7719,
+  em: 7861,
+  "##ab": 7875,
+  "##con": 8663,
+  monitoring: 8822,
+  symbols: 9255,
+  "##cal": 9289,
+  "##oc": 10085,
+  "##if": 10128,
+  "##hen": 10222,
+  "##ex": 10288,
+  "##dis": 10521,
+  "##ios": 10735,
+  "##ico": 11261,
+  "##ult": 11314,
+  par: 11968,
+  "##arian": 12199,
+  whites: 12461,
+  mat: 13523,
+  "##lish": 13602,
+  resume: 13746,
+  "##pace": 15327,
+  "##lc": 15472,
+  naive: 15743,
+  rests: 16626,
+  "##ono": 17175,
+  brace: 17180,
+  "##gre": 17603,
+  kitten: 18401,
+  "##pia": 19312,
+  brackets: 19719,
+  rug: 20452,
+  "##lid": 21273,
+  replication: 21647,
+  "##yp": 22571,
+  "##ilis": 24411,
+  "##×": 26306,
+  "##copic": 26461,
+  unicode: 27260,
+  "##sil": 27572,
+  "##oj": 29147,
+  "##rag": 29181,
+  ae: 29347,
+  "##÷": 29669,
+};
+
+function tokenizerFile(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    version: "1.0",
+    truncation: { max_length: 128 },
+    normalizer: {
+      type: "BertNormalizer",
+      clean_text: true,
+      handle_chinese_chars: true,
+      strip_accents: null,
+      lowercase: true,
+    },
+    pre_tokenizer: { type: "BertPreTokenizer" },
+    model: {
+      type: "WordPiece",
+      unk_token: "[UNK]",
+      continuing_subword_prefix: "##",
+      max_input_chars_per_word: 100,
+      vocab: VOCAB,
+    },
+    ...overrides,
+  });
+}
+
+/**
+ * Token ids captured from `@huggingface/transformers@4.2.0`'s
+ * `AutoTokenizer.from_pretrained("Xenova/all-MiniLM-L6-v2")` — the reference
+ * implementation, not this one. Embeddings computed from these ids on the same
+ * runtime agree with that library's to 1e-8 (see `engine.integration.test.ts`).
+ */
+const GOLDEN: readonly { text: string; ids: number[] }[] = [
+  { text: "The cat sits on the mat.", ids: [101, 1996, 4937, 7719, 2006, 1996, 13523, 1012, 102] },
+  {
+    text: "A kitten rests on a rug.",
+    ids: [101, 1037, 18401, 16626, 2006, 1037, 20452, 1012, 102],
+  },
+  {
+    text: "PostgreSQL replication lag monitoring",
+    ids: [101, 2695, 17603, 2015, 4160, 2140, 21647, 2474, 2290, 8822, 102],
+  },
+  {
+    text: "Café naïve résumé — Ünicode ÀÉÎÕÜ",
+    ids: [101, 7668, 15743, 13746, 1517, 27260, 29347, 3695, 2226, 102],
+  },
+  {
+    text: "中文测试 mixed with English text",
+    ids: [101, 1746, 1861, 100, 100, 3816, 2007, 2394, 3793, 102],
+  },
+  {
+    text: "Don't split-hyphens; e.g. (parens) [brackets] {braces} @user #tag 100% $5.00",
+    ids: [
+      101, 2123, 1005, 1056, 3975, 1011, 1044, 22571, 10222, 2015, 1025, 1041, 1012, 1043, 1012,
+      1006, 11968, 6132, 1007, 1031, 19719, 1033, 1063, 17180, 2015, 1065, 1030, 5310, 1001, 6415,
+      2531, 1003, 1002, 1019, 1012, 4002, 102,
+    ],
+  },
+  { text: "   \t\n  whitespace     storm \r\n ", ids: [101, 12461, 15327, 4040, 102] },
+  {
+    text: "emoji 🎉 test 🚀 with symbols ±×÷",
+    ids: [101, 7861, 29147, 2072, 100, 3231, 100, 2007, 9255, 1081, 26306, 29669, 102],
+  },
+  { text: "a".repeat(114), ids: [101, 100, 102] },
+  {
+    text: "supercalifragilisticexpialidocious antidisestablishmentarianism pneumonoultramicroscopicsilicovolcanoconiosis",
+    ids: [
+      101, 3565, 9289, 10128, 29181, 24411, 4588, 10288, 19312, 21273, 10085, 6313, 3424, 10521,
+      4355, 7875, 13602, 3672, 12199, 2964, 1052, 2638, 2819, 17175, 11314, 6444, 2594, 7352, 26461,
+      27572, 11261, 6767, 15472, 6761, 8663, 10735, 2483, 102,
+    ],
+  },
+];
+
+describe("createTokenizer", () => {
+  const tokenizer = createTokenizer(tokenizerFile());
+
+  it.each(GOLDEN)(
+    "reproduces the reference token ids for $text",
+    ({ text, ids }: { text: string; ids: number[] }) => {
+      expect(tokenizer.encode(text, 256)).toEqual(ids);
+    },
+  );
+
+  it("truncates to the token budget and still closes with [SEP]", () => {
+    const long = "the cat sits on the mat. ".repeat(200);
+    const ids = tokenizer.encode(long, 16);
+
+    expect(ids).toHaveLength(16);
+    expect(ids[0]).toBe(VOCAB["[CLS]"]);
+    expect(ids.at(-1)).toBe(VOCAB["[SEP]"]);
+  });
+
+  it("never emits fewer than the two special tokens, whatever the budget", () => {
+    expect(tokenizer.encode("the cat", 0)).toEqual([VOCAB["[CLS]"], VOCAB["[SEP]"]]);
+    expect(tokenizer.encode("", 256)).toEqual([VOCAB["[CLS]"], VOCAB["[SEP]"]]);
+  });
+
+  it("emits one [UNK] for a word with no valid split, not a partial decomposition", () => {
+    // `zzz` is in no vocabulary entry, so the greedy walk fails at the first
+    // character and the whole word collapses.
+    expect(tokenizer.encode("catzzz", 256)).toEqual([101, 100, 102]);
+  });
+
+  it("honours a tokenizer that asks for no lowercasing and no accent stripping", () => {
+    const cased = createTokenizer(
+      tokenizerFile({
+        normalizer: { lowercase: false, strip_accents: false, handle_chinese_chars: false },
+      }),
+    );
+    // `Café` no longer folds onto `cafe`, and CJK is no longer spaced apart.
+    expect(cased.encode("Café", 256)).toEqual([101, 100, 102]);
+    expect(cased.encode("中文", 256)).toEqual([101, 100, 102]);
+  });
+
+  it("strips accents when a tokenizer lowercases and says nothing about accents", () => {
+    const implied = createTokenizer(tokenizerFile({ normalizer: { lowercase: true } }));
+    expect(implied.encode("Café", 256)).toEqual([101, 7668, 102]);
+  });
+
+  it("keeps control characters when clean_text is off", () => {
+    const raw = createTokenizer(
+      tokenizerFile({ normalizer: { lowercase: true, clean_text: false } }),
+    );
+    expect(raw.encode("cat\0", 256)).toEqual([101, 100, 102]);
+  });
+
+  it("defaults every normalizer option when a tokenizer declares no normalizer", () => {
+    const bare = createTokenizer(tokenizerFile({ normalizer: null }));
+    expect(bare.encode("Café", 256)).toEqual([101, 7668, 102]);
+  });
+
+  /**
+   * The vocabulary is looked up by a string the *corpus* supplies, so every name
+   * `Object.prototype` carries is a word somebody writes. A plain-object
+   * vocabulary answers `vocab["constructor"]` with a function, the greedy walk's
+   * `match !== undefined` test accepts it, and a function reaches `BigInt(id)` in
+   * `inference.ts` — where it throws. The chunk then fails permanently and a
+   * *query* holding the word drops the provider for the whole cooldown, so the
+   * blast radius is the index and the search box at once (PR #17, CRITICAL).
+   *
+   * Greedy longest-match-first means the hazard is not the bare word: the walk
+   * starts at the full word and shortens, so `constructors` finds `constructor`
+   * on its second try. Any word *starting* with one of these names is affected.
+   */
+  const INHERITED = [
+    "constructor",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toLocaleString",
+    "__proto__",
+    "__defineGetter__",
+  ];
+
+  it.each(INHERITED)("never yields Object.prototype's %s as a token id", (name) => {
+    for (const text of [name, `the ${name} pattern`, `${name}s`, `${name.toUpperCase()}!`]) {
+      const ids = tokenizer.encode(text, 256);
+
+      for (const id of ids) expect(typeof id).toBe("number");
+      // The consequence path, not just the lookup: this is the exact call
+      // `inference.ts` makes on every row of every batch.
+      expect(() => ids.map((id) => BigInt(id))).not.toThrow();
+    }
+  });
+
+  it("encodes a word beginning with an inherited member as [UNK]", () => {
+    // `the` is in the vocabulary; neither `constructor` nor `pattern` is, and
+    // neither has a valid split, so each collapses to one [UNK].
+    expect(tokenizer.encode("the constructor pattern", 256)).toEqual([101, 1996, 100, 100, 102]);
+  });
+
+  it("still finds a vocabulary entry that happens to be named after one", () => {
+    // The fix must not make these names *unreachable* — a vocabulary is free to
+    // contain `constructor` as an ordinary piece, and then it is an ordinary id.
+    const withEntry = createTokenizer(
+      tokenizerFile({
+        model: {
+          type: "WordPiece",
+          unk_token: "[UNK]",
+          continuing_subword_prefix: "##",
+          max_input_chars_per_word: 100,
+          vocab: { ...VOCAB, constructor: 31337, "##constructor": 31338 },
+        },
+      }),
+    );
+
+    expect(withEntry.encode("constructor", 256)).toEqual([101, 31337, 102]);
+    expect(withEntry.encode("theconstructor", 256)).toEqual([101, 1996, 31338, 102]);
+  });
+});
+
+describe("createTokenizer — refusals", () => {
+  it("refuses a file that is not JSON", () => {
+    expect(() => createTokenizer("{not json")).toThrow(TokenizerError);
+  });
+
+  it("refuses a tokenizer of a kind this build cannot run", () => {
+    expect(() => createTokenizer(JSON.stringify({ model: { type: "BPE", vocab: {} } }))).toThrow(
+      /not a WordPiece tokenizer/,
+    );
+  });
+
+  it("refuses a WordPiece vocabulary missing its special tokens", () => {
+    const withoutSpecials = tokenizerFile();
+    const parsed = JSON.parse(withoutSpecials) as {
+      model: { vocab: Record<string, number> };
+    };
+    delete parsed.model.vocab["[CLS]"];
+    expect(() => createTokenizer(JSON.stringify(parsed))).toThrow(/missing one of/);
+  });
+});
+
+describe("normalizeText / preTokenize", () => {
+  const options = {
+    lowercase: true,
+    stripAccents: true,
+    handleChineseChars: true,
+    cleanText: true,
+  };
+
+  it("collapses every whitespace kind to a plain space", () => {
+    expect(normalizeText("a\tb\nc d", options)).toBe("a b c d");
+  });
+
+  it("drops replacement characters and control codes", () => {
+    expect(normalizeText("a\0b\ufffdc\x07d", options)).toBe("abcd");
+  });
+
+  it("spaces CJK apart so each ideograph is its own word", () => {
+    expect(preTokenize(normalizeText("中文x", options))).toEqual(["中", "文", "x"]);
+  });
+
+  it("peels ASCII symbols off as punctuation even when Unicode files them elsewhere", () => {
+    expect(preTokenize("a$b^c|d")).toEqual(["a", "$", "b", "^", "c", "|", "d"]);
+  });
+
+  it("leaves non-ASCII maths symbols attached, as BERT does", () => {
+    expect(preTokenize("±×÷")).toEqual(["±×÷"]);
+  });
+});
