@@ -17,7 +17,9 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { contractRoutes, mountAppendTurn, mountCreateThread } from "@corpus/contract";
 import { actorOf, reportWarnings, serializeWarnings, type DocumentMutex } from "../docs/index.js";
+import type { SemanticRetrieval } from "../semantic/index.js";
 import { deleteThreadTurn } from "./cascade.js";
+import { threadContextPack } from "./context.js";
 import { createThread, threadRequestBody } from "./create.js";
 import { answerThreadForm } from "./forms.js";
 import { loadThread, toWireThread } from "./read.js";
@@ -25,6 +27,17 @@ import { markThreadSeen } from "./seen.js";
 import { setThreadStatus } from "./status.js";
 import { appendThreadTurn, turnRequestBody } from "./turns.js";
 import type { ThreadsWorkspace } from "./workspace.js";
+
+export interface ThreadRoutesOptions {
+  /**
+   * Retrieval's semantic half (SERVER-045), for the context pack's related
+   * excerpts. Handed over at mount time and read **per request**, so the
+   * embedded engine `lifecycle.ts` binds *after* the routes are mounted still
+   * reaches this handler — a handler that captured a resolved provider here
+   * would answer `disabled` forever on the first run that downloads a model.
+   */
+  readonly semantic?: SemanticRetrieval | undefined;
+}
 
 /**
  * `mutex` is shared with the document surface, not private to this one: anchored
@@ -37,10 +50,20 @@ export function mountThreadRoutes(
   app: OpenAPIHono,
   workspace: ThreadsWorkspace,
   mutex: DocumentMutex,
+  options: ThreadRoutesOptions = {},
 ): void {
   app.openapi(contractRoutes.getThread, (c) => {
     const { id } = c.req.valid("param");
     return c.json(toWireThread(loadThread(workspace, id)), 200);
+  });
+
+  // A pure read like `search` and `related`: no lock, no mutation, no commit,
+  // no invalidation. It answers about a *locked* document too — a lease governs
+  // writes, and refusing to brief an agent on a conversation somebody else is
+  // editing would be the opposite of useful.
+  app.openapi(contractRoutes.getThreadContext, async (c) => {
+    const { id } = c.req.valid("param");
+    return c.json(await threadContextPack(workspace, id, { semantic: options.semantic }), 200);
   });
 
   mountCreateThread(app, async (c) => {

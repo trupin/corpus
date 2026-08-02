@@ -1,4 +1,5 @@
 import type { TopicSpec } from "../../registry/types.js";
+import { contextCommand } from "./context.js";
 import { createCommand } from "./create.js";
 import { replyCommand } from "./reply.js";
 import { showCommand } from "./show.js";
@@ -24,7 +25,16 @@ export const threadTopic: TopicSpec = {
     "A comment opens a thread anchored to the text it is about; every later turn appends to that " +
     "thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, " +
     "or standalone — `show` is the read §7's comment skill starts from (status, anchoring and " +
-    "every turn), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control " +
+    "every turn), `context` is the bounded briefing around it (the anchored passage plus the " +
+    "excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the " +
+    "conversation, and `resolve`/`reopen` control " +
     "whether later turns keep waking it (SPEC.md §8).",
-  commands: [createCommand, showCommand, replyCommand, resolveCommand, reopenCommand],
+  commands: [
+    createCommand,
+    showCommand,
+    contextCommand,
+    replyCommand,
+    resolveCommand,
+    reopenCommand,
+  ],
 };

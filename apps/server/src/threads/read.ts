@@ -28,7 +28,24 @@ import {
 } from "../core/index.js";
 import { loadDocument, type LoadedDocument } from "../docs/index.js";
 import { notFound } from "../errors.js";
-import type { ThreadsWorkspace } from "./workspace.js";
+import type { ProjectionDb } from "../projection/index.js";
+
+/**
+ * What *reading* a thread needs, which is strictly less than what writing one
+ * does: where the files are, what is indexed, and a clock for the one field a
+ * hand-written file can omit entirely.
+ *
+ * Declared here rather than taking a whole {@link import("./workspace.js").ThreadsWorkspace}
+ * because a read touches no git repository, no invalidation bus and no queue —
+ * and a read-only surface (the context pack, SERVER-047) should be constructible
+ * in a test without standing up a write path it never uses. Every
+ * `ThreadsWorkspace` satisfies it, so no caller changes.
+ */
+export interface ThreadReader {
+  readonly workspaceRoot: string;
+  readonly projection: ProjectionDb;
+  readonly now: () => number;
+}
 
 export interface LoadedThread {
   readonly loaded: LoadedDocument;
@@ -64,14 +81,14 @@ const asId = (value: unknown, isValid: (candidate: string) => boolean): string |
  * than a 400: `GET /api/threads/{id}` addresses threads, and "there is no thread
  * with that id" is exactly true of a note.
  */
-export function loadThread(workspace: ThreadsWorkspace, id: string): LoadedThread {
+export function loadThread(workspace: ThreadReader, id: string): LoadedThread {
   const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
   if (loaded.row.type !== "thread") throw notFound(`no thread with id ${id}`);
   return readThread(workspace, loaded);
 }
 
 /** The same shaping, for a {@link LoadedDocument} the caller already has in hand. */
-export function readThread(workspace: ThreadsWorkspace, loaded: LoadedDocument): LoadedThread {
+export function readThread(workspace: ThreadReader, loaded: LoadedDocument): LoadedThread {
   const data = loaded.parsed.data;
   const turns = parseTurns(loaded.parsed.body);
   const tags: unknown = data["tags"];

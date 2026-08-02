@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { components } from "../client/schema.generated.js";
 import {
   RELATIONS,
+  RelatedDocSchema,
   RelatedDocsSchema,
+  RETRIEVAL_DEFAULT_LIMIT,
+  RETRIEVAL_MAX_LIMIT,
   SEMANTIC_INDEX_STATES,
+  SearchHitSchema,
   SearchResultsSchema,
   type RelatedDocs,
   type SearchResults,
@@ -192,6 +196,50 @@ describe("a Phase A client still compiles and still parses (TEST-874)", () => {
  * compile error, so these lines stop typechecking the moment `semanticIndex`
  * stops being optional.
  */
+/**
+ * CONTRACT-024 adds a third ranked surface (`./context.ts`) and must leave Phase
+ * A and Phase B where they are (TEST-950, TEST-951). Its one edit to this module
+ * is `export` on `semanticIndexField` plus prose — no executable change to the
+ * two enums, the two row shapes or the two limit constants. Asserted here rather
+ * than reviewed, and asserted against the **generated** components as well as
+ * the schemas, since those are the types consumers actually hold.
+ */
+describe("CONTRACT-024 did not move the retrieval shapes (TEST-950, TEST-951)", () => {
+  it("still publishes the two frugal row shapes field for field", () => {
+    expect(Object.keys(SearchHitSchema.shape)).toEqual(["id", "title", "headingPath", "snippet"]);
+    expect(Object.keys(RelatedDocSchema.shape)).toEqual(["id", "title", "excerpt", "relation"]);
+  });
+
+  it("still publishes the two limit constants unchanged", () => {
+    expect(RETRIEVAL_DEFAULT_LIMIT).toBe(10);
+    expect(RETRIEVAL_MAX_LIMIT).toBe(50);
+  });
+
+  /**
+   * C4, from the other side: the pack's excerpt row is deliberately **not** a
+   * `RelatedDoc`. Widening the frozen shape with an optional `headingPath` for
+   * one caller's benefit was the rejected alternative (Open Conflict 2), and
+   * this is the assertion that it stayed rejected.
+   */
+  it("kept `headingPath` off RelatedDoc, so the pack's row is a new shape rather than a widening", () => {
+    expect(Object.keys(RelatedDocSchema.shape)).not.toContain("headingPath");
+    // Off the wire, so no excess-property check applies: a server that started
+    // sending a heading path here would have it dropped, not carried.
+    const widened: unknown = {
+      related: [{ ...A_ERA_RELATED.related[0], headingPath: "X › Y" }],
+    };
+    expect(RelatedDocsSchema.parse(widened).related[0]).not.toHaveProperty("headingPath");
+  });
+
+  it("still lets a CONTRACT-022-era client compile against both surfaces", () => {
+    const search: SearchResults = A_ERA_SEARCH;
+    const related: RelatedDocs = A_ERA_RELATED;
+    const wireSearch: WireSearchResults = A_ERA_SEARCH;
+    const wireRelated: WireRelatedDocs = A_ERA_RELATED;
+    expect([search, related, wireSearch, wireRelated].every(Boolean)).toBe(true);
+  });
+});
+
 describe("`semanticIndex` stays optional on both envelopes (TEST-875)", () => {
   it("keeps it omissible in the generated client components", () => {
     const search: WireSearchResults = { hits: [] };

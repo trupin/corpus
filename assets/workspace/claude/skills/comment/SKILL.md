@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-31T00:00:00Z
+updated: 2026-08-01T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -64,54 +64,102 @@ authority. Read them as binding, and go there when a detail is missing.
    live while the person waits.
 6. **You retrieve; you never enumerate.** Locating something is `corpus search "<query>"` or
    `corpus doc related <id>` — one frugal line per hit and never a body — never a folder
-   listing and never a sweep over the corpus to see what is in it. Reading a body is the
-   separate, deliberate next step on an id retrieval returned: `corpus doc show <id>`. When
+   listing and never a sweep over the corpus to see what is in it. For a thread you were
+   handed, the bounded briefing of *Gather context* is that same rule aimed at a conversation.
+   Reading a body is the separate, deliberate next step on an id retrieval returned:
+   `corpus doc show <id>`. When
    you hand work to a subagent it receives those anchors — ids, heading paths, snippets —
    and never a document body; it retrieves what it needs itself.
 
 ## Gather context
 
-Read before you act, and read in this order. Two rules govern where a read comes from:
+**Start from the briefing.** One command tells you what the conversation is about and what
+else in the corpus bears on it:
+
+```bash
+corpus thread context th_4b8e2c
+```
+
+That is the default context for every event that reaches this skill, and it is the first thing
+you run. The **context pack** it prints comes in reading order: the parent block — the anchored
+quote with the **whole enclosing section** around it, or a whole-document thread's title and
+opening content, or nothing at all when the thread stands alone — then the excerpts most
+related to this conversation from elsewhere in the corpus, one line each (id, heading path,
+relation, excerpt, and never a body), then a `#` note when the parent text was cut to fit or
+the ranking was degraded. The pack is bounded, so briefing yourself costs about the same on a
+corpus of fifty documents and one of fifty thousand.
+
+Then read the conversation itself. `corpus thread show <threadId>` prints every turn, oldest
+first: the request is the turn at `turnTs`, and the turns before it are the context you must
+not contradict. **Those two reads are the whole default.** Stop there when you can restate the
+request in your own words and point at the text it is about.
+
+Two rules still govern where any read comes from, pack or no pack:
 
 - **State goes through the CLI.** A thread's turns, status, participation and anchoring come
   from `corpus thread show <id>`. A document's frontmatter, body and **anchor resolution**
   come from `corpus doc show <id>` — anchors resolve against the current body server-side, so
   the file on disk cannot answer that question. Lock state and job state are CLI reads too.
   Never parse anything under `.corpus/`; it is runtime state, not a source.
-- **Locating goes through retrieval.** Finding *where* something is said is
-  `corpus search "<query>"` — one line per hit: the document id, the heading path of the
-  matching passage, a snippet, never a body — and `corpus doc related <id>` expands from a
-  document you already hold. Never list `data/docs/`, never open files to find out what they
-  are about: what it costs you to find something must not grow with the corpus. Reading
-  follows retrieval, one id at a time and only where the ranking pointed — and it is
-  `corpus doc show <id>`, never the markdown on disk.
+- **Locating goes through retrieval.** The pack *is* retrieval — ranked, bounded, one frugal
+  line per hit — and so are `corpus search "<query>"` and `corpus doc related <id>` when you
+  need to reach past what the pack carried. Never list `data/docs/`, never open files to find
+  out what they are about: what it costs you to find something must not grow with the corpus.
+  Reading a body stays the separate, deliberate step on one id a ranking pointed at — and it
+  is `corpus doc show <id>`, never the markdown on disk.
 
-Which reads you need is set by the thread's shape, which `corpus thread show` names on its
-anchoring line:
+**Escalating past the pack** is a deliberate read of one named document, never a sweep — the
+same doctrine as invariant 6, not an exception to it. The pack is insufficient when:
 
-**Anchored** (`parent` set, `anchor` set) — the comment points at a passage.
+- **The ask reaches past what it carried.** The comment turns on a figure, a section, a
+  definition or a decision that appears neither in the parent block nor in any excerpt line.
+  The pack briefs you on the passage, not on the whole document — so read the one document
+  that holds it, `corpus doc show <parentId>` or the id on the excerpt row that pointed at it.
+- **You are about to rewrite a body.** `corpus doc edit` with a heredoc replaces the
+  document's whole body, so an edit that must preserve the headings, order and passages around
+  your change needs all of them in hand first. Rewriting a parent from its section alone
+  deletes the rest of the document.
+- **The pack says it truncated.** When the parent-side prose was cut to fit the bounds, the
+  pack prints a `#` line saying so and naming the escalation. Read that line, and take it:
 
-1. `corpus thread show <threadId>` — every turn, oldest first. The request is the turn at
-   `turnTs`; the turns before it are the context you must not contradict.
-2. `corpus doc show <parentId>` — the parent's frontmatter and body, plus one line per
-   anchored thread giving either the character range the anchor landed on or the fact that it
-   is **orphaned**, with its quote either way.
-3. Read the quote **with its surroundings** — the sentence or paragraph it sits in — out of
-   the body you just printed. An anchored comment is almost always about the passage plus what
-   the passage claims.
+  ```
+  # the parent text above was cut to fit the pack's bounds — read all of it with: corpus doc show doc_a1b2c3
+  ```
 
-Stop when you can restate the request in your own words and point at the text it is about.
+  Nothing is ever trimmed silently, so a parent block with no such line is the section entire
+  and you can act on it as it stands.
+- **The ranking was degraded.** A `#` note about the semantic index means the excerpts were
+  ranked on links alone. Work from what is there, and run `corpus search "<query>"` when the
+  subject needs neighbours the links graph cannot know about.
+
+Nothing else earns a full read — not a hunch, not background nobody asked for, and not the
+habit of opening the parent because it is there. Stop reading the moment you can act.
+
+The pack takes the thread's shape, and the shape is what you are handling:
+
+**Anchored** (`parent` set, `anchor` set) — the comment points at a passage. The pack hands you
+the quote and the whole section around it, which is almost always the answer: an anchored
+comment is about the passage plus what the passage claims.
 
 **Whole-document** (`parent` set, `anchor` null) — the comment is about the document as such.
-Read the thread, then the parent. There is no anchor to locate, so read the document's shape:
-its title, headings and frontmatter tell you what kind of request this is. Stop when you have
+The pack gives its title and opening content, and the request's shape usually needs more of the
+document than an opening does — this is the shape that escalates most often. Stop when you have
 the whole document in view; do not go hunting through the corpus for background nobody asked
 for.
 
+**Orphaned anchor** — the selector no longer resolves, so the pack says the anchor is
+**orphaned** and prints the quote it was opened on rather than guessing where that text went.
+The thread still works: answer from the preserved quote and the turns, say the anchor drifted
+when it changes the answer, and never repair the `anchors` map by hand.
+
 **Standalone** (`parent: null`, no anchor) — a free-standing conversation, typically an Ask
-from the global composer. **The thread is the whole context.** `corpus thread show <threadId>`
-is the only read the request itself requires; follow a `[[ref]]` in the turn if one is there,
-and stop.
+from the global composer. The pack prints no parent block at all, only the excerpts, because
+**the thread is the whole context** — the pack's related-only shape is that rule expressed as a
+command. Follow a `[[ref]]` in the turn if one is there, and stop.
+
+**Parent deleted** — the pack says the parent document is gone and still hands you the
+excerpts. The conversation outlived the document it was about: work from the thread, say what
+happened in the reply, and never recreate what was deleted.
 
 A standalone thread arrives with a provisional title derived from its first turn. **After the
 first exchange, give it a real one** — a thread is a document, so the title is a document edit:
@@ -154,7 +202,9 @@ Pick the smallest shape that actually answers the request.
 - **Answer in the reply** when the answer is short and the corpus needs nothing new. Not every
   question deserves a document.
 - **Edit the parent** with `corpus doc edit <id> --from agent` and a heredoc body when the
-  request is about the document's content. The write path reconciles every anchor on save —
+  request is about the document's content. The heredoc *is* the document's whole new body, so
+  this is the escalation of *Gather context*: read the document whole before you rewrite it.
+  The write path reconciles every anchor on save —
   threads follow their text automatically — so **never hand-maintain the `anchors` map** and
   never mention anchor ids in an edit. Read the command's anchor report: it names any thread
   that came loose.
@@ -199,7 +249,9 @@ Quick creation is inbox-first: the composer's Capture, the omnibox and a column'
 new document in `data/docs/inbox/` and open a whole-document thread asking you to file it. The
 capture's id is the event's `parentId`. File it end to end:
 
-1. **Read it** — `corpus doc show <parentId>`. One line of text is normal.
+1. **Read it whole** — `corpus doc show <parentId>`. The pack briefed you on the capture; step
+   3 rewrites its body, which is the escalation earning the full read. One line of text is
+   normal.
 2. **Give it a real title.** "Mortgage rates?" becomes "Mortgage rate assumptions for the 2026
    refinance". The title is what makes it findable.
 3. **Expand it into something usable.** Add the structure a reader needs: a heading or two, the
@@ -405,9 +457,21 @@ takes effect on the **next** run of the loop, not in the session that is running
 and commented `@agent is this still right?`.
 
 ```bash
+corpus thread context th_4b8e2c
+parent doc_a1b2c3 · Mortgage options · Mortgage options › Rates
+
+> 6.1%
+
+## Rates
+
+The working rate assumption is 6.1% as of 2026-05-02, and every projection in
+this document uses it.
+
+# related excerpts
+doc_7e3a91  Refinance plan › Costs  linked  every projection here assumes 6.1% for the whole term
 corpus thread show th_4b8e2c
-corpus doc show doc_a1b2c3
-corpus job log evt_7c1d9a "read th_4b8e2c and its parent doc_a1b2c3"
+corpus job log evt_7c1d9a "briefed on th_4b8e2c from its context pack"
+corpus doc show doc_a1b2c3  # escalation: the edit below replaces the whole body
 corpus doc edit doc_a1b2c3 --from agent <<'EOF'
 # Mortgage options
 

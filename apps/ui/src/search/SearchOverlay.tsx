@@ -1,5 +1,6 @@
-import type { DocRow } from "@corpus/contract";
-import { useTree } from "@corpus/kit";
+import type { Doc, SearchHit } from "@corpus/contract";
+import { docKey, useCorpusClient, useTree } from "@corpus/kit";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -8,7 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
 } from "react";
-import { docSubject, useOpenInColumn } from "../board/openInColumn";
+import { docSubject, useOpenInColumn, type OpenSubject } from "../board/openInColumn";
 import { INBOX_TARGET, useCreateInColumn } from "../board/useCreateInColumn";
 import { useSaveAsView } from "../board/useSaveAsView";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
@@ -16,6 +17,7 @@ import { useToast } from "../shell/Toasts";
 import { FilterChips } from "./FilterChips";
 import { SearchResults } from "./SearchResults";
 import { cursorTargets, groupResults, moveCursor, shouldOfferCreate } from "./results";
+import { degradedRankingNote } from "./searchApi";
 import { EMPTY_SEARCH_QUERY, type SearchQuery } from "./searchQuery";
 import { useSearch } from "./useSearch";
 import "./search.css";
@@ -56,6 +58,8 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
   const createInColumn = useCreateInColumn();
   const board = useOpenInColumn();
   const toast = useToast();
+  const client = useCorpusClient();
+  const queries = useQueryClient();
 
   const panel = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -73,20 +77,50 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
    */
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Overlay, onEscape: onClose });
 
-  const offersCreate = shouldOfferCreate(results.items, query.text);
-  const targets = cursorTargets(groupResults(results.items), offersCreate);
+  const offersCreate = shouldOfferCreate(results.hits, query.text);
+  const targets = cursorTargets(groupResults(results.hits), offersCreate);
+  const note = degradedRankingNote(results.semanticIndex);
 
   // A shrinking result set must not leave the cursor pointing past the end.
   useEffect(() => {
     setCursor((current) => (current >= targets.length ? targets.length - 1 : current));
   }, [targets.length]);
 
+  /**
+   * `↵` opens the hit **in its list** — the footer legend's promise, and
+   * SPEC.md §11's "clicking a row opens the document _in that column_".
+   *
+   * Working out which column that is needs the document's folder, type and
+   * status (`resolveColumn`), and a ranked hit carries none of the three: it is
+   * an address and a line of context, never a row. So the document is read
+   * first — through the very cache entry the reader about to open it will use,
+   * `["docs", id]`, which makes this the reader's own request moved a moment
+   * earlier rather than an extra one. A refused read still opens the document,
+   * in the first column, because "nothing happened" is the worst possible answer
+   * to `↵`.
+   */
   const openRow = useCallback(
-    (row: DocRow) => {
+    (hit: SearchHit) => {
       onClose();
-      board.open({ docId: row.id, subject: docSubject(row) });
+      void (async () => {
+        let subject: OpenSubject | null;
+        try {
+          const doc = await queries.fetchQuery<Doc>({
+            queryKey: docKey(hit.id),
+            queryFn: () => client.getDoc(hit.id),
+          });
+          subject = docSubject({
+            path: doc.path,
+            type: doc.frontmatter.type,
+            status: doc.frontmatter.status,
+          });
+        } catch {
+          subject = null;
+        }
+        board.open({ docId: hit.id, subject });
+      })();
     },
-    [board, onClose],
+    [board, client, onClose, queries],
   );
 
   const createFromQuery = useCallback(() => {
@@ -145,9 +179,9 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
       createFromQuery();
       return;
     }
-    const row = results.items.find((item) => item.id === target);
-    if (row !== undefined) openRow(row);
-  }, [createFromQuery, cursor, openRow, results.items, targets]);
+    const hit = results.hits.find((item) => item.id === target);
+    if (hit !== undefined) openRow(hit);
+  }, [createFromQuery, cursor, openRow, results.hits, targets]);
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Escape") {
@@ -226,19 +260,33 @@ export function SearchOverlay({ onClose }: SearchOverlayProps): ReactElement {
         <FilterChips
           query={query}
           tree={tree.data}
-          items={results.items}
+          hits={results.hits}
           onChange={(next) => {
             setCursor(-1);
             setQuery(next);
           }}
         />
 
+        {/*
+         * The honest-degrade line (SPEC.md §9.1: "search stays honest meanwhile
+         * … a search response says when semantic ranking is not yet caught up").
+         * One quiet sentence above the list, present only when the envelope
+         * flags a state other than `current` — never a banner, never a spinner,
+         * and absent entirely when the server makes no claim.
+         */}
+        {note === null ? null : (
+          <p className="search-note" data-degraded={results.semanticIndex}>
+            {note}
+          </p>
+        )}
+
         <SearchResults
-          items={results.items}
+          hits={results.hits}
           query={query.text}
           offersCreate={offersCreate}
           cursor={cursor}
           isPending={results.isPending || results.isDebouncing}
+          isIdle={results.isIdle}
           error={results.error}
           onOpen={openRow}
           onCreate={createFromQuery}

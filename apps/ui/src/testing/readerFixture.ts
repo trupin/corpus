@@ -1,4 +1,4 @@
-import type { Doc, DocRow, Lock, Thread, Warning } from "@corpus/contract";
+import type { Doc, DocRow, Lock, RelatedDoc, Thread, Warning } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -36,6 +36,13 @@ export interface ReaderTransportOptions {
   readonly threads?: readonly Thread[];
   /** Rows returned for a `/api/docs` collection query, keyed by search string. */
   readonly rows?: Readonly<Record<string, readonly DocRow[]>>;
+  /**
+   * The ranked answer `GET /api/docs/{id}/related` gives, keyed by document id
+   * (UI-025). A document with no entry gets an empty ranking — an empty list,
+   * never an error, which is what the route returns for a document nothing
+   * relates to.
+   */
+  readonly related?: Readonly<Record<string, readonly RelatedDoc[]>>;
   readonly locks?: readonly Lock[];
   /** `"<METHOD> <pathname>"` → status, for the failure paths. */
   readonly failing?: Readonly<Record<string, number>>;
@@ -182,6 +189,13 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
        * back with its new `status`, so a reader that refetches sees the flip.
        */
       const [docId = "", verb] = rest.split("/");
+      /*
+       * `GET …/related` (SPEC.md §9.2), matched before the by-id read below —
+       * otherwise `id` is `"doc_m/related"`, misses the map and 404s.
+       */
+      if (verb === "related") {
+        return json({ related: options.related?.[docId] ?? [], semanticIndex: "current" });
+      }
       if (verb === "archive" || verb === "unarchive") {
         const subject = docs.get(docId);
         if (subject === undefined) return json({ code: "not_found", message: `no ${docId}` }, 404);
@@ -391,4 +405,20 @@ export function threadsSearch(docId: string): string {
 
 export function backlinksSearch(docId: string): string {
   return `?references=${docId}`;
+}
+
+/** The related read a reader issues for the document it has open. */
+export function relatedPath(docId: string): string {
+  return `/api/docs/${docId}/related`;
+}
+
+/** A related row, for the ranking the panel renders (SPEC.md §11). */
+export function relatedFixture(overrides: Partial<RelatedDoc> = {}): RelatedDoc {
+  return {
+    id: "doc_related",
+    title: "A related document",
+    excerpt: "One line, never a body.",
+    relation: "linked",
+    ...overrides,
+  };
 }

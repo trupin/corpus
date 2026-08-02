@@ -19,7 +19,9 @@ import type {
   LockList,
   MarkSeenResult,
   QueueStatus,
+  RelatedDocs,
   ReleaseLockResult,
+  SearchResults,
   Thread,
   ThreadMutationResponse,
   UpdateDocRequest,
@@ -158,6 +160,32 @@ export interface CorpusClient {
   getDoc(id: string, options?: RequestOptions): Promise<Doc>;
   getThread(id: string, options?: RequestOptions): Promise<Thread>;
   getTree(options?: RequestOptions): Promise<FolderTree>;
+  /**
+   * `GET /api/search` — ranked retrieval (SPEC.md §9.2).
+   *
+   * **Not `listDocs({ q, sort: "relevance" })`, and the difference is the
+   * payload.** The collection query answers with document *rows*, whose cost
+   * scales with the documents; a hit here is an address plus one line — id,
+   * title, the heading path of the best-matching passage, a snippet — and never
+   * a body. `q` is required: a ranked list with nothing to rank is the other
+   * endpoint.
+   *
+   * The narrower grammar is deliberate. `/api/search` publishes no `sort`, no
+   * `offset` and no `pinned`, and silently ignores them if sent, so a caller
+   * that wants paging or a stored order wants {@link listDocs} — which is why
+   * saved views and board columns stay on it (SPEC.md §11).
+   */
+  searchCorpus(params: SearchParams, options?: RequestOptions): Promise<SearchResults>;
+  /**
+   * `GET /api/docs/{id}/related` — the ranked related set for one document
+   * (SPEC.md §9.2).
+   *
+   * Each row says **why** it is related (`linked`, `similar` or `both`), and a
+   * caller renders whatever arrives rather than branching on which retrieval
+   * phase the server is in: the vocabulary is complete from day one precisely so
+   * semantic neighbours can join the same list without a shape change.
+   */
+  relatedDocs(id: string, params?: RelatedParams, options?: RequestOptions): Promise<RelatedDocs>;
   listJobs(params: JobsParams, options?: RequestOptions): Promise<JobList>;
   /**
    * `GET /api/jobs/{id}/log?cursor=` — the console's log pane (SPEC.md §7).
@@ -366,6 +394,10 @@ export interface CorpusClient {
 
 type DocsQueryParams = NonNullable<paths["/api/docs"]["get"]["parameters"]["query"]>;
 type JobsQueryParams = NonNullable<paths["/api/jobs"]["get"]["parameters"]["query"]>;
+type SearchQueryParams = NonNullable<paths["/api/search"]["get"]["parameters"]["query"]>;
+type RelatedQueryParams = NonNullable<
+  paths["/api/docs/{id}/related"]["get"]["parameters"]["query"]
+>;
 type PutDocBody = NonNullable<
   paths["/api/docs/{id}"]["put"]["requestBody"]
 >["content"]["application/json"];
@@ -398,6 +430,27 @@ export type DocsFilter = Clearable<Omit<DocsQueryParams, "tag" | "type">> & {
 };
 
 export type JobsParams = Clearable<JobsQueryParams>;
+
+/**
+ * `GET /api/search`'s grammar: `q` — the one required parameter — plus the same
+ * fourteen structured filters `GET /api/docs` takes, and a cap.
+ *
+ * Built from the contract's own parameter type rather than restated, so the
+ * three parameters ranked retrieval deliberately omits (`sort`, `offset`,
+ * `pinned`) are absent here by construction. A caller reaching for one of them
+ * gets a type error instead of a parameter the server silently drops.
+ *
+ * `tag` and `type` widen to arrays for {@link DocsFilter}'s reason: a caller
+ * holds `["note", "view"]`, and joining at the boundary keeps it honest.
+ */
+export type SearchParams = Clearable<Omit<SearchQueryParams, "q" | "tag" | "type">> & {
+  readonly q: string;
+  readonly tag?: string | readonly string[] | undefined;
+  readonly type?: string | readonly string[] | undefined;
+};
+
+/** `GET /api/docs/{id}/related`'s grammar — a cap and the archived flag, and nothing else. */
+export type RelatedParams = Clearable<RelatedQueryParams>;
 
 /**
  * The `PUT /api/docs/{id}` body, exactly as the contract declares it.
@@ -576,6 +629,28 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
 
     async getTree(options) {
       return unwrap("GET /api/tree", await api.GET("/api/tree", { ...signalOf(options) }));
+    },
+
+    async searchCorpus(params, options) {
+      // Same widening as `listDocs`: the canonicalised record forwards filters
+      // the kit has never heard of, which the generated query type cannot
+      // express without closing the grammar.
+      const query = toQueryParams(params) as SearchQueryParams;
+      return unwrap(
+        "GET /api/search",
+        await api.GET("/api/search", { params: { query }, ...signalOf(options) }),
+      );
+    },
+
+    async relatedDocs(id, params, options) {
+      const query = toQueryParams(params ?? {}) as RelatedQueryParams;
+      return unwrap(
+        "GET /api/docs/{id}/related",
+        await api.GET("/api/docs/{id}/related", {
+          params: { path: { id }, query },
+          ...signalOf(options),
+        }),
+      );
     },
 
     async listJobs(params, options) {

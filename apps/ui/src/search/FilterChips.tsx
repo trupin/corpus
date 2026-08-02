@@ -1,4 +1,4 @@
-import type { DocRow, FolderTree } from "@corpus/contract";
+import type { FolderTree, SearchHit } from "@corpus/contract";
 import { useState, type ReactElement } from "react";
 import {
   AGENT_OPTIONS,
@@ -10,9 +10,11 @@ import {
   sinceLabel,
   SINCE_WINDOWS,
   STATUS_OPTIONS,
+  tagChipState,
   tagOptions,
   titleOf,
   TYPE_OPTIONS,
+  type TagChipState,
 } from "./filters";
 import type { SearchAgent, SearchQuery, SearchStatus } from "./searchQuery";
 
@@ -29,23 +31,43 @@ export interface FilterChipsProps {
   readonly onChange: (next: SearchQuery) => void;
   /** `GET /api/tree` — the folder chip's real options. */
   readonly tree: FolderTree | undefined;
-  /** The current result set: the tag options and the two title pickers. */
-  readonly items: readonly DocRow[];
+  /** The current ranking: the two title pickers' candidates. */
+  readonly hits: readonly SearchHit[];
 }
 
 interface ChipProps {
   readonly label: string;
   readonly active: boolean;
   readonly warn?: boolean;
+  /** A chip with nothing to offer is disabled and says why — never inert. */
+  readonly disabled?: boolean;
+  /** Hover/`title` explanation; required reading whenever `disabled`. */
+  readonly title?: string;
   readonly onClick: () => void;
 }
 
-function Chip({ label, active, warn = false, onClick }: ChipProps): ReactElement {
+function Chip({
+  label,
+  active,
+  warn = false,
+  disabled = false,
+  title,
+  onClick,
+}: ChipProps): ReactElement {
   const className = ["chip", warn ? "warn" : "", active ? "on" : ""]
     .filter((part) => part !== "")
     .join(" ");
   return (
-    <button type="button" className={className} aria-pressed={active} onClick={onClick}>
+    <button
+      type="button"
+      className={className}
+      aria-pressed={active}
+      disabled={disabled}
+      // A disabled button is out of the tab order, so the tooltip alone would
+      // never reach a screen reader; the reason travels in the accessible name.
+      {...(title === undefined ? {} : { title, "aria-label": `${label} — ${title}` })}
+      onClick={onClick}
+    >
       {label}
     </button>
   );
@@ -56,9 +78,24 @@ function chipLabel(key: string, value: string | null): string {
   return `${key}: ${value ?? "any"}`;
 }
 
-export function FilterChips({ query, onChange, tree, items }: FilterChipsProps): ReactElement {
+/**
+ * What the `tag:` chip tells the user about itself, in the two states where it
+ * cannot behave like the rest of the row (see {@link tagChipState}).
+ *
+ * The wording states the consequence, not the cause: nobody outside this repo
+ * knows what a `SearchHit` is, and "the vocabulary is a contract question" is a
+ * sentence for an issue tracker. `clears` carries a warning as well as an
+ * instruction, because a tag dropped here cannot currently be put back.
+ */
+const TAG_CHIP_TITLES: Record<Exclude<TagChipState, "cycles">, string> = {
+  unavailable: "Search results do not carry tags yet, so there is nothing to filter by.",
+  clears: "Clears the tag — it cannot be applied again here yet.",
+};
+
+export function FilterChips({ query, onChange, tree, hits }: FilterChipsProps): ReactElement {
   const [picker, setPicker] = useState<"references" | "parent" | null>(null);
-  const candidates = documentChoices(items);
+  const candidates = documentChoices(hits);
+  const tag = tagChipState(query.tag);
 
   const set = (change: Partial<SearchQuery>): void => {
     onChange({ ...query, ...change });
@@ -92,8 +129,10 @@ export function FilterChips({ query, onChange, tree, items }: FilterChipsProps):
       <Chip
         label={chipLabel("tag", query.tag)}
         active={query.tag !== null}
+        disabled={tag === "unavailable"}
+        {...(tag === "cycles" ? {} : { title: TAG_CHIP_TITLES[tag] })}
         onClick={() => {
-          set({ tag: cycle(tagOptions(items), query.tag) });
+          set({ tag: cycle(tagOptions(), query.tag) });
         }}
       />
       <Chip
@@ -135,7 +174,7 @@ export function FilterChips({ query, onChange, tree, items }: FilterChipsProps):
 
       <DocumentChip
         field="references"
-        value={titleOf(items, query.references)}
+        value={titleOf(hits, query.references)}
         open={picker === "references"}
         candidates={candidates}
         onToggle={() => {
@@ -148,7 +187,7 @@ export function FilterChips({ query, onChange, tree, items }: FilterChipsProps):
       />
       <DocumentChip
         field="parent"
-        value={titleOf(items, query.parent)}
+        value={titleOf(hits, query.parent)}
         open={picker === "parent"}
         candidates={candidates}
         onToggle={() => {

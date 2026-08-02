@@ -13,6 +13,7 @@ import { ThreadCard } from "../thread/ThreadCard";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { LockBanner } from "./LockBanner";
+import { RelatedPanel } from "./RelatedPanel";
 import { ThreadSlot } from "./ThreadSlot";
 import type { ReaderDoc } from "./useReaderDoc";
 
@@ -21,7 +22,8 @@ import type { ReaderDoc } from "./useReaderDoc";
  *
  * The in-column reader and focus mode differ in chrome and in reading measure
  * and in nothing else: same frontmatter form, same lock banner, same ⋯ menu,
- * same 💬, same refs, same backlinks. Forking the rendering would let the two
+ * same 💬, same refs, same backlinks, same related panel. Forking the rendering
+ * would let the two
  * drift, and §11 describes one document view rendered at two sizes.
  *
  * The body branch is where UI-006 landed: a markdown-bodied document renders
@@ -302,6 +304,7 @@ export function DocView({
         )}
 
         <Backlinks backlinks={reader.backlinks} onOpen={onNavigate} />
+        <RelatedPanel related={reader.related} onOpen={onNavigate} />
       </div>
 
       {anchors.marginMode ? (

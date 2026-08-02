@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { createCorpusTestHarness, docRowFixture } from "@corpus/kit/testing";
+import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, type ReactElement, type ReactNode } from "react";
@@ -10,35 +10,23 @@ import {
   type BoardNavigation,
 } from "../board/openInColumn";
 import { ToastProvider } from "../shell/Toasts";
-import { boardTransport, type RecordedCall } from "../testing/boardFixture";
 import { SearchOverlay } from "./SearchOverlay";
+import { hitFixture, searchTransport, type SearchTransportOptions } from "./searchTransport";
 
 afterEach(cleanup);
 
-const ROWS = [
-  docRowFixture({
+const HITS = [
+  hitFixture({
     id: "doc_mortgage",
     title: "Mortgage options",
-    path: "data/docs/finance/housing/mortgage.md",
-    snippets: [
-      {
-        field: "body",
-        segments: [
-          { text: "…the ", match: false },
-          { text: "mortgage", match: true },
-          { text: " insurance question…", match: false },
-        ],
-      },
-    ],
+    headingPath: "Mortgage options › Rate assumptions",
+    snippet: "the base case assumes a 30-year fixed; the mortgage insurance question",
   }),
-  docRowFixture({
+  hitFixture({
     id: "th_rate",
-    type: "thread",
     title: "Rate assumption",
-    path: "data/threads/th_rate.md",
-    parent: "doc_mortgage",
-    parentTitle: "Mortgage options",
-    turnCount: 4,
+    headingPath: "user · 2026-07-19T10:05:00Z",
+    snippet: "is 6.1% the right base case?",
   }),
 ];
 
@@ -56,10 +44,13 @@ function FakeBoard({ handlers }: { readonly handlers: Handlers }): ReactElement 
   return <div />;
 }
 
-function renderOverlay(
-  options: { readonly rows?: readonly ReturnType<typeof docRowFixture>[] } = {},
-) {
-  const wire = boardTransport({ defaultRows: options.rows ?? ROWS, tree: { folders: [] } });
+function renderOverlay(options: SearchTransportOptions = {}) {
+  const wire = searchTransport({
+    hits: HITS,
+    tree: { folders: [] },
+    docs: { doc_mortgage: { path: "data/docs/finance/housing/mortgage.md" } },
+    ...options,
+  });
   const harness = createCorpusTestHarness({ fetch: wire.fetch });
   const onClose = vi.fn();
   const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn() };
@@ -78,22 +69,19 @@ function renderOverlay(
   }
 
   const view = render(<SearchOverlay onClose={onClose} />, { wrapper: Wrapper });
-  /**
-   * Searches only. The board's pinned-view query shares `/api/docs` and is
-   * excluded: `useSaveAsView` reads the column set through `useColumns`, which
-   * in the running app is the very query the board already holds — same key,
-   * same cache entry, no extra request.
-   */
-  const searches = (): RecordedCall[] =>
-    wire.calls.filter(
-      (call) =>
-        call.method === "GET" && call.path === "/api/docs" && !call.search.includes("pinned=true"),
-    );
-  return { ...view, onClose, handlers, wire, searches };
+  return { ...view, onClose, handlers, wire, searches: wire.searches };
 }
 
 const results = async (): Promise<HTMLElement> =>
   waitFor(() => screen.getByRole("listbox", { name: "Search results" }));
+
+/** Types a query and waits for its ranking to land. */
+async function search(user: ReturnType<typeof userEvent.setup>, text: string): Promise<void> {
+  await user.type(screen.getByLabelText("Search query"), text);
+  await waitFor(() => {
+    expect(document.querySelectorAll(".sr[data-sr]").length).toBeGreaterThan(0);
+  });
+}
 
 describe("the overlay's chrome", () => {
   it("is a dialog over a scrim, with the query input inside the panel", () => {
@@ -136,6 +124,52 @@ describe("the overlay's chrome", () => {
     );
   });
 
+  it("carries all twelve chips, unchanged in count and in composition", () => {
+    const { container } = renderOverlay();
+    const chips = [...container.querySelectorAll(".search-filters .chip")].map(
+      (node) => node.textContent,
+    );
+    expect(chips).toEqual([
+      "type: any",
+      "status: any",
+      "folder: any",
+      "tag: any",
+      "due: any",
+      "updated: any",
+      "unread",
+      "needs: form",
+      "agent: any",
+      "references: …",
+      "parent: …",
+      "include archived",
+    ]);
+  });
+
+  /**
+   * The row keeps all twelve, but the one that cannot act says so — in the
+   * overlay as it really mounts, not only in the chip row's own test. A disabled
+   * button is also outside `FOCUSABLE`, so the trap never parks the caret on a
+   * control that would do nothing when pressed.
+   */
+  it("shows the tag chip disabled with its reason, and keeps it out of the tab order", () => {
+    const { container } = renderOverlay();
+    const chips = [...container.querySelectorAll<HTMLButtonElement>(".search-filters .chip")];
+    const tag = chips.find((chip) => chip.textContent === "tag: any");
+
+    expect(tag?.disabled).toBe(true);
+    expect(tag?.title).toBe(
+      "Search results do not carry tags yet, so there is nothing to filter by.",
+    );
+    expect(chips.filter((chip) => chip.disabled)).toEqual([tag]);
+    expect(
+      [
+        ...container.querySelectorAll<HTMLElement>(
+          '.search-panel a[href], .search-panel button:not([disabled]), .search-panel input:not([disabled]), .search-panel [tabindex]:not([tabindex="-1"])',
+        ),
+      ].includes(tag!),
+    ).toBe(false);
+  });
+
   it("closes on Escape and on a scrim click, but not on a click inside the panel", async () => {
     const user = userEvent.setup();
     const { container, onClose } = renderOverlay();
@@ -155,9 +189,8 @@ describe("the overlay's chrome", () => {
     const user = userEvent.setup();
     const { container } = renderOverlay();
     await results();
-    await waitFor(() => {
-      expect(container.querySelectorAll(".sr[data-sr]").length).toBe(2);
-    });
+    await search(user, "mortgage");
+    expect(container.querySelectorAll(".sr[data-sr]").length).toBe(2);
 
     const panel = screen.getByRole("dialog", { name: "Search" });
     const focusable = (): HTMLElement[] => [
@@ -176,31 +209,41 @@ describe("the overlay's chrome", () => {
 });
 
 describe("searching", () => {
-  it("renders the one response, grouped, with its highlights", async () => {
-    const { container } = renderOverlay();
+  it("asks nothing until something is typed, and says so", async () => {
+    const { container, searches } = renderOverlay();
     await results();
-
-    await waitFor(() => {
-      expect([...container.querySelectorAll(".sr-group")].map((n) => n.textContent)).toEqual([
-        "Documents · 1",
-        "Threads · 1",
-      ]);
-    });
-    expect(container.querySelector(".sr-snippet mark")?.textContent).toBe("mortgage");
+    expect(searches().length).toBe(0);
+    expect(container.querySelector(".sr-empty")?.textContent).toBe(
+      "Type to search — documents, threads and turns, ranked.",
+    );
   });
 
-  it("issues one request per query and never a second one for the Threads group", async () => {
+  it("renders the one ranking, grouped, with its highlights and its addresses", async () => {
+    const user = userEvent.setup();
+    const { container } = renderOverlay();
+    await results();
+    await search(user, "mortgage");
+
+    expect([...container.querySelectorAll(".sr-group")].map((n) => n.textContent)).toEqual([
+      "Documents · 1",
+      "Threads · 1",
+    ]);
+    expect(container.querySelector(".sr-snippet mark")?.textContent).toBe("mortgage");
+    expect(
+      container.querySelector<HTMLElement>(".sr[data-sr='doc_mortgage'] .sr-path")?.textContent,
+    ).toBe("Mortgage options › Rate assumptions");
+  });
+
+  it("issues one ranked request per query and never a second one for the Threads group", async () => {
     const user = userEvent.setup();
     const { searches } = renderOverlay();
-    await waitFor(() => {
-      expect(searches().length).toBe(1);
-    });
+    await results();
 
-    await user.type(screen.getByLabelText("Search query"), "mortgage");
-    await waitFor(() => {
-      expect(searches().length).toBe(2);
-    });
-    expect(searches()[1]?.search).toContain("q=mortgage");
+    await search(user, "mortgage");
+    expect(searches().length).toBe(1);
+    expect(searches()[0]?.path).toBe("/api/search");
+    expect(new URLSearchParams(searches()[0]?.search).get("q")).toBe("mortgage");
+    expect(new URLSearchParams(searches()[0]?.search).has("sort")).toBe(false);
   });
 
   it("passes `[[`, `@` and `/` through as literal query text with no autocomplete", async () => {
@@ -216,7 +259,7 @@ describe("searching", () => {
     expect(container.querySelector(".ac-menu")).toBeNull();
 
     await waitFor(() => {
-      expect(searches().length).toBeGreaterThan(1);
+      expect(searches().length).toBeGreaterThan(0);
     });
     const last = searches()[searches().length - 1]?.search ?? "";
     expect(new URLSearchParams(last).get("q")).toBe("[[ref]] @agent /skill");
@@ -225,9 +268,8 @@ describe("searching", () => {
   it("toggles a chip into the query with one further request", async () => {
     const user = userEvent.setup();
     const { searches } = renderOverlay();
-    await waitFor(() => {
-      expect(searches().length).toBe(1);
-    });
+    await search(user, "mortgage");
+    expect(searches().length).toBe(1);
 
     await user.click(screen.getByRole("button", { name: "unread" }));
     await waitFor(() => {
@@ -240,9 +282,8 @@ describe("searching", () => {
   it("sends `includeArchived`, never `status=archived`, for the archived chip", async () => {
     const user = userEvent.setup();
     const { container, searches } = renderOverlay();
-    await waitFor(() => {
-      expect(searches().length).toBe(1);
-    });
+    await search(user, "mortgage");
+    expect(searches().length).toBe(1);
 
     const chip = screen.getByRole("button", { name: "include archived" });
     expect(chip.className).toContain("warn");
@@ -257,13 +298,11 @@ describe("searching", () => {
     expect(container.querySelector(".chip.warn.on")).not.toBeNull();
   });
 
-  it("offers documents from the result set to the `references:` picker", async () => {
+  it("offers documents from the ranking to the `references:` picker", async () => {
     const user = userEvent.setup();
     const { searches } = renderOverlay();
-    await results();
-    await waitFor(() => {
-      expect(searches().length).toBe(1);
-    });
+    await search(user, "mortgage");
+    expect(searches().length).toBe(1);
 
     await user.click(screen.getByRole("button", { name: "references: …" }));
     const menu = screen.getByRole("menu", { name: "Pick a document for references" });
@@ -279,14 +318,58 @@ describe("searching", () => {
   });
 });
 
+describe("the degraded-ranking note", () => {
+  const noteText = (): string | undefined =>
+    document.querySelector(".search-note")?.textContent ?? undefined;
+
+  it("stays silent while ranking is current", async () => {
+    const user = userEvent.setup();
+    renderOverlay({ semanticIndex: "current" });
+    await search(user, "mortgage");
+    expect(noteText()).toBeUndefined();
+  });
+
+  it("stays silent when the server makes no claim at all", async () => {
+    const user = userEvent.setup();
+    renderOverlay();
+    await search(user, "mortgage");
+    expect(noteText()).toBeUndefined();
+  });
+
+  it("shows one quiet line while the index is catching up", async () => {
+    const user = userEvent.setup();
+    renderOverlay({ semanticIndex: "indexing" });
+    await search(user, "mortgage");
+    await waitFor(() => {
+      expect(noteText()).toBe("Ranked on text alone — the semantic index is still being built.");
+    });
+    expect(document.querySelectorAll(".search-note").length).toBe(1);
+  });
+
+  it("shows it for `stale` and for `disabled` too", async () => {
+    const user = userEvent.setup();
+    renderOverlay({ semanticIndex: "stale" });
+    await search(user, "mortgage");
+    await waitFor(() => {
+      expect(noteText()).toContain("some documents are not in the semantic index yet");
+    });
+
+    cleanup();
+    const off = userEvent.setup();
+    renderOverlay({ semanticIndex: "disabled" });
+    await search(off, "mortgage");
+    await waitFor(() => {
+      expect(noteText()).toContain("no semantic index is configured");
+    });
+  });
+});
+
 describe("the keyboard", () => {
   it("moves one cursor with ↑↓ and clamps at both ends", async () => {
     const user = userEvent.setup();
     const { container } = renderOverlay();
-    await results();
-    await waitFor(() => {
-      expect(container.querySelectorAll(".sr[data-sr]").length).toBe(2);
-    });
+    await search(user, "mortgage options");
+    expect(container.querySelectorAll(".sr[data-sr]").length).toBe(2);
 
     await user.keyboard("{ArrowDown}");
     expect(container.querySelectorAll(".sr.kbd").length).toBe(1);
@@ -299,37 +382,60 @@ describe("the keyboard", () => {
     expect(container.querySelector<HTMLElement>(".sr.kbd")?.dataset["sr"]).toBe("doc_mortgage");
   });
 
-  it("opens the highlighted result in its home column and closes", async () => {
+  it("opens the highlighted hit in its home column and closes", async () => {
     const user = userEvent.setup();
     const { handlers, onClose } = renderOverlay();
-    await results();
+    await search(user, "mortgage options");
 
     await user.keyboard("{ArrowDown}{Enter}");
 
     expect(onClose).toHaveBeenCalled();
-    expect(handlers.open).toHaveBeenCalledWith({
-      docId: "doc_mortgage",
-      subject: { folder: "finance/housing", type: "note", status: "open" },
+    /*
+     * A hit carries no folder, type or status, so the overlay reads the
+     * document — through the reader's own `["docs", id]` cache entry — and hands
+     * `resolveColumn` the same subject a board row would have.
+     */
+    await waitFor(() => {
+      expect(handlers.open).toHaveBeenCalledWith({
+        docId: "doc_mortgage",
+        subject: { folder: "finance/housing", type: "note", status: "open" },
+      });
+    });
+  });
+
+  it("still opens the document when the placement read is refused", async () => {
+    const user = userEvent.setup();
+    const { handlers } = renderOverlay({ failing: { "/api/docs/doc_mortgage": 500 } });
+    await search(user, "mortgage options");
+
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() => {
+      expect(handlers.open).toHaveBeenCalledWith({ docId: "doc_mortgage", subject: null });
     });
   });
 
   it("opens the first result when ↵ is pressed with no cursor", async () => {
     const user = userEvent.setup();
     const { container, handlers } = renderOverlay();
-    await results();
-    await waitFor(() => {
-      expect(container.querySelectorAll(".sr[data-sr]").length).toBe(2);
-    });
+    await search(user, "mortgage options");
+    expect(container.querySelectorAll(".sr[data-sr]").length).toBe(2);
 
     await user.keyboard("{Enter}");
-    expect(handlers.open.mock.calls[0]?.[0]).toMatchObject({ docId: "doc_mortgage" });
+    await waitFor(() => {
+      expect(handlers.open.mock.calls[0]?.[0]).toMatchObject({ docId: "doc_mortgage" });
+    });
   });
 
-  it("⇧↵ pins the search — the same POST the chip issues", async () => {
+  /**
+   * The save-as-view regression (sprint-022 TEST-1022/1024). The view document
+   * this writes is a `GET /api/docs` query — `sort: relevance` included — and it
+   * is byte-identical to the one the pre-change overlay wrote for the same
+   * search, because `toApiParams`/`toViewFrontmatter` never moved.
+   */
+  it("⇧↵ pins the search as the same `GET /api/docs` view document it always did", async () => {
     const user = userEvent.setup();
     const { wire, handlers } = renderOverlay();
-    await results();
-    await user.type(screen.getByLabelText("Search query"), "mortgage");
+    await search(user, "mortgage");
 
     await user.keyboard("{Shift>}{Enter}{/Shift}");
 
@@ -350,13 +456,33 @@ describe("the keyboard", () => {
     // And the chip's body is identical.
     cleanup();
     const chipRun = renderOverlay();
-    await results();
-    await user.type(screen.getByLabelText("Search query"), "mortgage");
-    await user.click(screen.getByRole("button", { name: "save as view" }));
+    const chipUser = userEvent.setup();
+    await search(chipUser, "mortgage");
+    await chipUser.click(screen.getByRole("button", { name: "save as view" }));
     await waitFor(() => {
       expect(chipRun.wire.writes("POST").length).toBe(1);
     });
     expect(chipRun.wire.writes("POST")[0]?.body).toEqual(fromKeyboard);
+  });
+
+  it("pins a chip-only search even though nothing was ranked — a view is a list", async () => {
+    const user = userEvent.setup();
+    const { wire, searches } = renderOverlay();
+    await results();
+
+    await user.click(screen.getByRole("button", { name: "unread" }));
+    await user.click(screen.getByRole("button", { name: "save as view" }));
+
+    await waitFor(() => {
+      expect(wire.writes("POST").length).toBe(1);
+    });
+    expect(wire.writes("POST")[0]?.body).toMatchObject({
+      type: "view",
+      pinned: true,
+      query: { unread: "true" },
+    });
+    // …and it cost no ranked request, because there was no `q` to rank.
+    expect(searches().length).toBe(0);
   });
 });
 
@@ -380,23 +506,26 @@ describe("the create row", () => {
     });
   });
 
-  it("stays hidden when a returned row already carries the title, whatever its case", async () => {
+  it("stays hidden when a returned hit already carries the title, whatever its case", async () => {
     const user = userEvent.setup();
     const { container, searches } = renderOverlay();
     await results();
 
     await user.type(screen.getByLabelText("Search query"), "MORTGAGE OPTIONS");
     await waitFor(() => {
-      expect(searches().length).toBe(2);
+      expect(searches().length).toBe(1);
+    });
+    await waitFor(() => {
+      expect(container.querySelectorAll(".sr[data-sr]").length).toBe(2);
     });
     expect(container.querySelector(".sr-create")).toBeNull();
     // Exact-title detection cost no extra request.
-    expect(searches().length).toBe(2);
+    expect(searches().length).toBe(1);
   });
 
   it("creates into inbox and opens the new document with its title selected", async () => {
     const user = userEvent.setup();
-    const { container, wire, handlers, onClose } = renderOverlay({ rows: [] });
+    const { container, wire, handlers, onClose } = renderOverlay({ hits: [] });
     await results();
 
     await user.type(screen.getByLabelText("Search query"), "a new thought");
@@ -429,7 +558,7 @@ describe("the create row", () => {
 
   it("is the only row, and the cursor's first stop, when nothing matched", async () => {
     const user = userEvent.setup();
-    const { container } = renderOverlay({ rows: [] });
+    const { container } = renderOverlay({ hits: [] });
     await results();
     await user.type(screen.getByLabelText("Search query"), "nothing here");
 
@@ -442,25 +571,20 @@ describe("the create row", () => {
 });
 
 describe("failures", () => {
+  it("shows a refused ranking without emptying the panel", async () => {
+    const user = userEvent.setup();
+    renderOverlay({ searchFails: 400 });
+    await results();
+
+    await user.type(screen.getByLabelText("Search query"), "boom");
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("no such filter");
+    });
+  });
+
   it("keeps the overlay open and adds no column when the save is refused", async () => {
     const user = userEvent.setup();
-    const wire = boardTransport({ defaultRows: ROWS, failing: { "/api/docs": 500 } });
-    const harness = createCorpusTestHarness({ fetch: wire.fetch });
-    const onClose = vi.fn();
-    const handlers: Handlers = { open: vi.fn(), revealColumn: vi.fn() };
-
-    render(<SearchOverlay onClose={onClose} />, {
-      wrapper: ({ children }) => (
-        <harness.Wrapper>
-          <ToastProvider>
-            <BoardNavigationProvider>
-              <FakeBoard handlers={handlers} />
-              {children}
-            </BoardNavigationProvider>
-          </ToastProvider>
-        </harness.Wrapper>
-      ),
-    });
+    const { onClose, handlers } = renderOverlay({ failing: { "/api/docs": 500 } });
 
     await user.click(screen.getByRole("button", { name: "save as view" }));
 

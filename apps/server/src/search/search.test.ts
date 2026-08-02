@@ -449,7 +449,7 @@ describe("frugality", () => {
       expect(serialized.length).toBeLessThan(bodyLength / 25);
       for (const hit of results.hits) {
         expect(Object.keys(hit).sort()).toEqual(["headingPath", "id", "snippet", "title"]);
-        expect(hit.snippet.length).toBeLessThanOrEqual(ONE_LINE_MAX_CHARS + 1);
+        expect(hit.snippet.length).toBeLessThanOrEqual(ONE_LINE_MAX_CHARS);
       }
     } finally {
       big.close();

@@ -18,7 +18,8 @@
  *   boundary when one is near the cut, with a single-character ellipsis marking
  *   the truncation. A bound is required because neither source is intrinsically
  *   short in characters: FTS5's `snippet()` counts *tokens*, and a single token
- *   can be a base64 blob.
+ *   can be a base64 blob. The ellipsis is spent *from* the bound, never added to
+ *   it — the returned string is never longer than `maxChars`, for any input.
  *
  * Deliberately not a markdown stripper. `apps/server` has no markdown parser
  * and is not getting one (sprint-019 Adjudication 5); a heuristic that ate `**`
@@ -50,13 +51,25 @@ const WORD_BREAK_FLOOR = 0.75;
 
 const WHITESPACE_RUN = /\s+/gu;
 
-/** Collapse `text` to a single trimmed line, bounded to `maxChars`. */
+/**
+ * Collapse `text` to a single trimmed line, never longer than `maxChars`.
+ *
+ * `maxChars` is a hard ceiling, not a budget for the text alone: callers publish
+ * it as a schema bound (`ContextExcerptSchema.excerpt` is `.max(320)`), so a
+ * line that spent the whole budget on characters and then grew an ellipsis
+ * would violate the contract it is measured against. The marker is therefore
+ * charged against the bound — which only bites on the no-word-break path, since
+ * a word-boundary cut has already given back at least the space it broke on.
+ */
 export function toOneLine(text: string, maxChars: number = ONE_LINE_MAX_CHARS): string {
   const line = text.replace(WHITESPACE_RUN, " ").trim();
   if (line.length <= maxChars) return line;
 
+  const budget = maxChars - ONE_LINE_ELLIPSIS.length;
+  if (budget < 0) return "";
+
   const cut = line.slice(0, maxChars);
   const lastSpace = cut.lastIndexOf(" ");
-  const kept = lastSpace >= maxChars * WORD_BREAK_FLOOR ? cut.slice(0, lastSpace) : cut;
-  return `${kept.trimEnd()}${ONE_LINE_ELLIPSIS}`;
+  const end = lastSpace >= maxChars * WORD_BREAK_FLOOR ? lastSpace : budget;
+  return `${cut.slice(0, Math.min(end, budget)).trimEnd()}${ONE_LINE_ELLIPSIS}`;
 }

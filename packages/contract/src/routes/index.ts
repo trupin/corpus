@@ -34,7 +34,14 @@ import {
 import { searchCorpus } from "./search.js";
 import { createSkill, rollbackSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
-import { deleteTurn, getThread, markThreadSeen, reopenThread, resolveThread } from "./threads.js";
+import {
+  deleteTurn,
+  getThread,
+  getThreadContext,
+  markThreadSeen,
+  reopenThread,
+  resolveThread,
+} from "./threads.js";
 import { appendTurn } from "./turn-append.js";
 import { getTree } from "./tree.js";
 
@@ -79,6 +86,12 @@ export * from "./turn-append.js";
  * at its depth (`move`, `archive`, `unarchive`) are `POST`s, so no static
  * segment competes with `{id}` here. `searchCorpus` follows the document group,
  * where §9.2 lists it.
+ *
+ * `getThreadContext` sits directly after `getThread` for the same reason — §9.2
+ * lists the context pack in the bullet immediately below the thread read — and
+ * likewise not for routing: it is a `GET` one segment deeper than
+ * `/api/threads/{id}`, and every other route at that depth is a `POST` or a
+ * `DELETE`, so `context` competes with nothing.
  */
 export const contractRoutes = {
   getHealth,
@@ -100,6 +113,7 @@ export const contractRoutes = {
 
   createThread,
   getThread,
+  getThreadContext,
   appendTurn,
   deleteTurn,
   respondToForm,

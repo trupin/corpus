@@ -31,6 +31,14 @@
  * was quoted verbatim into CONTRACT-023's E2E log and walked against these
  * entries by hand, because nothing here parses `SPEC.md`.
  *
+ * `GET /api/threads/{id}/context` (CONTRACT-024) is Retrieval Phase C's single
+ * endpoint — §7's context-packs paragraph and §9.2's own bullet, both signed as
+ * SHARED-006 Edits 4 and 9. It sits immediately after `GET /api/threads/{id}`
+ * because that is where §9.2's bullet order puts it, and the same review
+ * discipline applies as to every entry above: the bullet was quoted verbatim
+ * into CONTRACT-024's E2E log and walked phrase by phrase against the route
+ * definition by hand, because nothing here parses `SPEC.md`.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -64,6 +72,7 @@ export const ENDPOINT_INVENTORY = [
 
   "POST /api/threads",
   "GET /api/threads/{id}",
+  "GET /api/threads/{id}/context",
   "POST /api/threads/{id}/turns",
   "DELETE /api/threads/{id}/turns/{ts}",
   "POST /api/threads/{id}/turns/{ts}/form",

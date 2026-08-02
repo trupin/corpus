@@ -17,6 +17,8 @@ import {
   PLUGIN_KEY_PREFIX,
   pluginKey,
   QUEUE_KEY,
+  relatedKey,
+  searchKey,
   threadKey,
   TREE_KEY,
 } from "./keys.js";
@@ -197,5 +199,48 @@ describe("collection keys", () => {
   it("keys the job list the same way", () => {
     expect(jobsListKey({ recent: 20 })).toEqual(["jobs", { recent: 20 }]);
     expect(jobsListKey()).toEqual(["jobs", {}]);
+  });
+});
+
+/**
+ * TEST-1009/TEST-1010 and TEST-1032. Sprint-022 Open Conflict 7: the two
+ * retrieval reads cache under the `["docs"]` prefix the server already emits on,
+ * so neither adds a tenth name to a vocabulary that is closed and published into
+ * `openapi.json`.
+ */
+describe("retrieval keys", () => {
+  it("keys a related set under its own document", () => {
+    expect(relatedKey("doc_x")).toEqual(["docs", "doc_x", "related"]);
+  });
+
+  it("keys a search under the docs prefix, with its canonical params", () => {
+    expect(searchKey({ q: "budget", tag: ["b", "a"] })).toEqual([
+      "docs",
+      "search",
+      { q: "budget", tag: ["a", "b"] },
+    ]);
+    expect(searchKey()).toEqual(["docs", "search", {}]);
+  });
+
+  it("adds no name to the contract's closed vocabulary", () => {
+    // A tenth name would be a contract change plus an artifact regeneration.
+    expect(contract.QUERY_KEY_NAMES).not.toContain("related");
+    expect(contract.QUERY_KEY_NAMES).not.toContain("search");
+    expect(relatedKey("doc_x")[0]).toBe(DOCS_KEY[0]);
+    expect(searchKey({ q: "x" })[0]).toBe(DOCS_KEY[0]);
+  });
+
+  it("sits under the prefixes the server names, which is what invalidates it", () => {
+    // TanStack matching is prefix-based, so both of these are the whole point.
+    expect(relatedKey("doc_x").slice(0, 1)).toEqual(DOCS_KEY);
+    expect(relatedKey("doc_x").slice(0, 2)).toEqual(docKey("doc_x"));
+    expect(searchKey({ q: "x" }).slice(0, 1)).toEqual(DOCS_KEY);
+  });
+
+  it("cannot be reached by a document key, and cannot reach one", () => {
+    // `"search"` is not a document id (ids are `<prefix>_<suffix>`), and the
+    // `"related"` tail keeps a related set out of the reader's own entry.
+    expect(hashKey(relatedKey("doc_x"))).not.toBe(hashKey(docKey("doc_x")));
+    expect(hashKey(searchKey({ q: "x" }))).not.toBe(hashKey(docsListKey({ q: "x" })));
   });
 });

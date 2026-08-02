@@ -88,6 +88,9 @@
 
 .focus .thread-card,
 .focus .backlinks,
+/* The pair below the body is measured together; focus mode restyles the measure,
+   so a related panel left off this list would be 62ch beside a 66ch backlinks. */
+.focus .related,
 .focus .thread-slots,
 .focus .lock-banner,
 .focus .archived-banner,

@@ -95,9 +95,16 @@ export const SemanticIndexStateSchema = z.enum(SEMANTIC_INDEX_STATES);
 
 /**
  * The response-envelope field carrying {@link SemanticIndexStateSchema}, shared
- * by both retrieval envelopes because Phase B degrades both rankings together.
+ * by every retrieval envelope because Phase B degrades every ranking together.
+ *
+ * **Exported since CONTRACT-024** (sprint-022 C6 / Open Conflict 3). The context
+ * pack (`./context.ts`) is the third ranked surface, and it reuses this field
+ * rather than declaring one beside it: a workspace that reports `stale` on
+ * `/api/search` and `current` on a pack would be lying to the same agent twice
+ * in one session, which is exactly the inconsistency a single shared word
+ * exists to prevent. Reuse the field; never retype the description.
  */
-const semanticIndexField = SemanticIndexStateSchema.optional().describe(
+export const semanticIndexField = SemanticIndexStateSchema.optional().describe(
   "Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, " +
     "inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** " +
     "value other than `current` as degraded ranking worth telling the caller about, rather than " +

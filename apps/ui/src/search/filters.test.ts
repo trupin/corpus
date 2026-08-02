@@ -1,4 +1,3 @@
-import { docRowFixture } from "@corpus/kit/testing";
 import { describe, expect, it } from "vitest";
 import {
   activeChipCount,
@@ -10,11 +9,13 @@ import {
   sinceInstant,
   sinceLabel,
   STATUS_OPTIONS,
+  tagChipState,
   tagOptions,
   titleOf,
   TYPE_OPTIONS,
 } from "./filters";
 import { EMPTY_SEARCH_QUERY } from "./searchQuery";
+import { hitFixture } from "./searchTransport";
 
 const NOW = new Date("2026-07-27T09:00:00.000Z");
 
@@ -84,39 +85,60 @@ describe("folderOptions", () => {
 });
 
 describe("tagOptions", () => {
-  it("offers the tags the search actually returned, sorted and deduplicated", () => {
-    expect(
-      tagOptions([
-        docRowFixture({ id: "a", tags: ["housing", "finance"] }),
-        docRowFixture({ id: "b", tags: ["finance"] }),
-      ]),
-    ).toEqual([null, "finance", "housing"]);
+  /**
+   * A ranked hit is an id, a title, a heading path and a snippet — no `tags`.
+   * The chip stays in the row and still clears a tag, but it has nothing to
+   * offer, and saying so in a test is how the gap stops being a mystery.
+   */
+  it("is just `any`, because a hit carries no tags to collect", () => {
+    expect(tagOptions()).toEqual([null]);
   });
 
-  it("is just `any` when nothing is tagged", () => {
-    expect(tagOptions([docRowFixture({ tags: [] })])).toEqual([null]);
+  it("clears a tag rather than stranding it", () => {
+    expect(cycle(tagOptions(), "finance")).toBeNull();
+    expect(cycle(tagOptions(), null)).toBeNull();
+  });
+});
+
+describe("tagChipState", () => {
+  /**
+   * The chip's three honest positions. With no vocabulary and nothing set there
+   * is nothing a click could do, and a control that renders as an affordance and
+   * swallows the click is the defect this replaces (UI-026 eval FAIL-1).
+   */
+  it("is unavailable when there is nothing to offer and nothing set", () => {
+    expect(tagChipState(null)).toBe("unavailable");
+  });
+
+  it("still clears a tag the query already carries", () => {
+    expect(tagChipState("irrigation")).toBe("clears");
+  });
+
+  it("becomes an ordinary cycling chip the moment a vocabulary exists", () => {
+    // CONTRACT-026's restoration is one changed return value away: this reads
+    // the vocabulary, so nothing else here has to change with it.
+    expect(tagChipState(null, [null, "garden"])).toBe("cycles");
+    expect(tagChipState("garden", [null, "garden"])).toBe("cycles");
   });
 });
 
 describe("the document pickers", () => {
-  const items = [
-    docRowFixture({ id: "doc_a", title: "Mortgage options" }),
-    docRowFixture({ id: "th_a", type: "thread", title: "A thread" }),
+  const hits = [
+    hitFixture({ id: "doc_a", title: "Mortgage options" }),
+    hitFixture({ id: "th_a", title: "A thread" }),
   ];
 
   it("offers documents to point at, never threads", () => {
-    expect(documentChoices(items)).toEqual([
-      { id: "doc_a", title: "Mortgage options", type: "note" },
-    ]);
+    expect(documentChoices(hits)).toEqual([{ id: "doc_a", title: "Mortgage options" }]);
   });
 
   it("names a chosen document by its title", () => {
-    expect(titleOf(items, "doc_a")).toBe("Mortgage options");
-    expect(titleOf(items, null)).toBeNull();
+    expect(titleOf(hits, "doc_a")).toBe("Mortgage options");
+    expect(titleOf(hits, null)).toBeNull();
   });
 
-  it("falls back to the id for a document no longer in the result set", () => {
-    expect(titleOf(items, "doc_gone")).toBe("doc_gone");
+  it("falls back to the id for a document no longer in the ranking", () => {
+    expect(titleOf(hits, "doc_gone")).toBe("doc_gone");
   });
 });
 

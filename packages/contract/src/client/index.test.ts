@@ -266,6 +266,59 @@ function createServer() {
   });
 
   /**
+   * The context pack (CONTRACT-024). One route, three shapes, chosen by the id —
+   * the union is the whole point of the response, and a stub that only ever
+   * answered one shape would never exercise the client's narrowing.
+   */
+  app.openapi(contractRoutes.getThreadContext, (c) => {
+    const { id } = c.req.valid("param");
+    const excerpts = [
+      {
+        id: "doc_b2c3d4",
+        headingPath: "Lender comparison › Rates",
+        excerpt: "Three lenders quoted between 5.9% and 6.4% in July.",
+        relation: "linked" as const,
+      },
+    ];
+    if (id === "th_alone") {
+      return c.json({ shape: "standalone" as const, threadId: id, excerpts: [] }, 200);
+    }
+    if (id === "th_gone") {
+      return c.json(
+        {
+          shape: "parent-deleted" as const,
+          threadId: id,
+          excerpts,
+          deletedParent: frontmatter.id,
+        },
+        200,
+      );
+    }
+    if (id !== "th_x9y8") {
+      return c.json({ code: "not_found" as const, message: `No thread ${id}.` }, 404);
+    }
+    return c.json(
+      {
+        shape: "anchored" as const,
+        threadId: id,
+        excerpts,
+        // The degrade word is the shared one: a pack cannot report `current`
+        // while search reports `stale` for the same workspace.
+        semanticIndex: "stale" as const,
+        parent: {
+          id: frontmatter.id,
+          title: frontmatter.title,
+          headingPath: `${frontmatter.title} › Rates`,
+          quote: "the 30-year fixed rate assumption is 6.1%",
+          section: "## Rates\n\nWe assume the 30-year fixed rate assumption is 6.1%.",
+          truncated: false,
+        },
+      },
+      200,
+    );
+  });
+
+  /**
    * The semantic-index pair (CONTRACT-023). Both handlers are written the way
    * the server will have to write them — one shape, two status codes — so the
    * `202` on rebuild is exercised over a real mounted route rather than asserted
@@ -456,6 +509,74 @@ describe("the typed retrieval calls", () => {
   it("surfaces an unknown document as the shipped typed 404", async () => {
     const { data, error } = await createTestClient().api.GET("/api/docs/{id}/related", {
       params: { path: { id: "doc_nope" }, query: {} },
+    });
+    expect(data).toBeUndefined();
+    expect(isApiError(error)).toBe(true);
+    expect(error?.code).toBe("not_found");
+  });
+});
+
+/**
+ * The context pack (CONTRACT-024, TEST-954). Two things are asserted that only a
+ * real typed call can show: the method exists at
+ * `paths["/api/threads/{id}/context"]["get"]`, and the discriminated response
+ * **narrows on `shape`** rather than forcing the caller to probe for a `parent`
+ * key. The compile-time assertion below is the one that matters — a query
+ * parameter added to this route would break it, not a run.
+ */
+describe("the typed context-pack call", () => {
+  type ContextOperation = paths["/api/threads/{id}/context"]["get"];
+  type ContextTakesNoQuery = ContextOperation["parameters"] extends { query?: never }
+    ? true
+    : never;
+
+  it("types the pack call as taking a path parameter and no query", () => {
+    const noQuery: ContextTakesNoQuery = true;
+    expect(noQuery).toBe(true);
+  });
+
+  it("narrows the anchored pack on `shape`, giving the quote and its whole section", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/threads/{id}/context", {
+      params: { path: { id: "th_x9y8" } },
+    });
+    expect(error).toBeUndefined();
+    if (data?.shape !== "anchored")
+      throw new Error(`Expected an anchored pack, got ${data?.shape}`);
+    expect(data.parent.quote).toBe("the 30-year fixed rate assumption is 6.1%");
+    expect(data.parent.section).toContain("## Rates");
+    expect(data.parent.truncated).toBe(false);
+    expect(Object.keys(data.excerpts[0] ?? {})).toEqual([
+      "id",
+      "headingPath",
+      "excerpt",
+      "relation",
+    ]);
+    expect(data.semanticIndex).toBe("stale");
+  });
+
+  it("narrows a standalone pack to no parent block at all", async () => {
+    const { data } = await createTestClient().api.GET("/api/threads/{id}/context", {
+      params: { path: { id: "th_alone" } },
+    });
+    if (data?.shape !== "standalone") throw new Error(`Expected standalone, got ${data?.shape}`);
+    expect("parent" in data).toBe(false);
+    expect(data.excerpts).toEqual([]);
+  });
+
+  it("answers a deleted parent with a 200 naming the id that no longer resolves", async () => {
+    const { data, error, response } = await createTestClient().api.GET(
+      "/api/threads/{id}/context",
+      { params: { path: { id: "th_gone" } } },
+    );
+    expect(response.status).toBe(200);
+    expect(error).toBeUndefined();
+    if (data?.shape !== "parent-deleted") throw new Error(`Expected parent-deleted.`);
+    expect(data.deletedParent).toBe("doc_a1b2c3");
+  });
+
+  it("surfaces an unknown thread as the shipped typed 404", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/threads/{id}/context", {
+      params: { path: { id: "th_nope" } },
     });
     expect(data).toBeUndefined();
     expect(isApiError(error)).toBe(true);

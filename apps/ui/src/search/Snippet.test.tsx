@@ -1,22 +1,16 @@
 /** @vitest-environment jsdom */
-import type { Snippet as SnippetData } from "@corpus/contract";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { primarySnippet, Snippet } from "./Snippet";
+import { highlight, Snippet } from "./Snippet";
 
 afterEach(cleanup);
 
-const snippet = (segments: SnippetData["segments"]): SnippetData => ({ field: "body", segments });
-
 describe("Snippet", () => {
-  it("renders matched runs as `<mark>` elements and the rest as text", () => {
+  it("renders the query's words as `<mark>` elements and the rest as text", () => {
     const { container } = render(
       <Snippet
-        snippet={snippet([
-          { text: "…the base case assumes a 30-year fixed; the ", match: false },
-          { text: "mortgage", match: true },
-          { text: " insurance question is threaded inline…", match: false },
-        ])}
+        snippet="the base case assumes a 30-year fixed; the mortgage insurance question"
+        query="mortgage"
       />,
     );
 
@@ -24,53 +18,77 @@ describe("Snippet", () => {
     expect(marks.length).toBe(1);
     expect(marks[0]?.textContent).toBe("mortgage");
     expect(container.querySelector(".sr-snippet")?.textContent).toBe(
-      "…the base case assumes a 30-year fixed; the mortgage insurance question is threaded inline…",
+      "the base case assumes a 30-year fixed; the mortgage insurance question",
     );
   });
 
-  it("renders text that looks like markup as text — there is no HTML path here", () => {
+  it("renders a snippet that looks like markup as text — there is no HTML path here", () => {
     const { container } = render(
       <Snippet
-        snippet={snippet([
-          { text: "<script>alert(1)</script> and <img src=x onerror=alert(1)> ", match: false },
-          { text: "mortgage", match: true },
-        ])}
+        snippet="<script>alert(1)</script> and <img src=x onerror=alert(1)>"
+        query="alert"
       />,
     );
 
     const pane = container.querySelector(".sr-snippet");
     expect(pane?.textContent).toContain("<script>alert(1)</script>");
     expect(pane?.textContent).toContain("<img src=x onerror=alert(1)>");
-    // Nothing was parsed as markup: the only element inside is the highlight.
     expect(pane?.querySelectorAll("script").length).toBe(0);
     expect(pane?.querySelectorAll("img").length).toBe(0);
-    expect(pane?.children.length).toBe(1);
-    expect(pane?.children[0]?.tagName).toBe("MARK");
+    // Only the marks React created are elements; everything else is a text node.
+    expect([...(pane?.children ?? [])].every((node) => node.tagName === "MARK")).toBe(true);
   });
 
-  it("renders a highlight-only snippet, and an empty one, without throwing", () => {
-    const { container } = render(<Snippet snippet={snippet([{ text: "rates", match: true }])} />);
-    expect(container.querySelector("mark")?.textContent).toBe("rates");
+  it("renders an empty snippet, and one nothing matched, without throwing", () => {
+    const { container } = render(<Snippet snippet="" query="mortgage" />);
+    expect(container.querySelector(".sr-snippet")?.textContent).toBe("");
 
     cleanup();
-    const empty = render(<Snippet snippet={snippet([])} />);
-    expect(empty.container.querySelector(".sr-snippet")?.textContent).toBe("");
+    const unmatched = render(<Snippet snippet="rates and terms" query="mortgage" />);
+    expect(unmatched.container.querySelector("mark")).toBeNull();
+    expect(unmatched.container.querySelector(".sr-snippet")?.textContent).toBe("rates and terms");
   });
 });
 
-describe("primarySnippet", () => {
-  const title: SnippetData = { field: "title", segments: [{ text: "Mortgage", match: true }] };
-  const body: SnippetData = { field: "body", segments: [{ text: "…rates…", match: false }] };
+describe("highlight", () => {
+  const marked = (text: string, query: string): readonly string[] =>
+    highlight(text, query)
+      .filter((segment) => segment.match)
+      .map((segment) => segment.text);
 
-  it("prefers a body or turn excerpt over a title the row already shows in full", () => {
-    expect(primarySnippet([title, body])).toBe(body);
+  it("marks every occurrence, case-insensitively, without changing the text", () => {
+    const segments = highlight("Mortgage rates; the mortgage question", "mortgage");
+    expect(marked("Mortgage rates; the mortgage question", "mortgage")).toEqual([
+      "Mortgage",
+      "mortgage",
+    ]);
+    expect(segments.map((segment) => segment.text).join("")).toBe(
+      "Mortgage rates; the mortgage question",
+    );
   });
 
-  it("falls back to the title match when that is all there is", () => {
-    expect(primarySnippet([title])).toBe(title);
+  it("marks each word of a multi-word query independently", () => {
+    expect(marked("the mortgage rate assumption", "mortgage rate")).toEqual(["mortgage", "rate"]);
   });
 
-  it("is null without `q`, when the server sends no snippets at all", () => {
-    expect(primarySnippet([])).toBeNull();
+  it("prefers the longer term where two overlap, leaving no stray fragment", () => {
+    // `rate` sits inside `rates`; the longer word claims the region whole.
+    expect(marked("fixed rates today", "rate rates")).toEqual(["rates"]);
+  });
+
+  it("marks nothing for an empty query, and returns the text as one run", () => {
+    expect(highlight("rates and terms", "   ")).toEqual([
+      { text: "rates and terms", match: false },
+    ]);
+    expect(highlight("", "mortgage")).toEqual([{ text: "", match: false }]);
+  });
+
+  it("never reorders or drops a character of the snippet", () => {
+    const text = "…a 30-year fixed; MORTGAGE insurance & <b> stay as typed…";
+    expect(
+      highlight(text, "mortgage b")
+        .map((segment) => segment.text)
+        .join(""),
+    ).toBe(text);
   });
 });

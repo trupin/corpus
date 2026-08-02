@@ -39,7 +39,9 @@ export {
   type FormAnswerInput,
   type JobsParams,
   type PluginRequestInit,
+  type RelatedParams,
   type RequestOptions,
+  type SearchParams,
   type UpdateDocChanges,
 } from "./client/createCorpusClient.js";
 export {
@@ -55,6 +57,10 @@ export { useDocs } from "./query/useDocs.js";
 export { useDoc } from "./query/useDoc.js";
 export { useThread } from "./query/useThread.js";
 export { useTree } from "./query/useTree.js";
+// Ranked retrieval (SPEC.md §9.2) — a separate seam from `useDocs` on purpose:
+// which endpoint a surface reads from is a product decision, not a parameter.
+export { useRelatedDocs } from "./query/useRelatedDocs.js";
+export { useCorpusSearch } from "./query/useCorpusSearch.js";
 export { useJobs } from "./query/useJobs.js";
 export {
   capLogLines,
@@ -125,6 +131,8 @@ export {
   PLUGIN_KEY_PREFIX,
   pluginKey,
   QUEUE_KEY,
+  relatedKey,
+  searchKey,
   threadKey,
   TREE_KEY,
   type CanonicalFilter,

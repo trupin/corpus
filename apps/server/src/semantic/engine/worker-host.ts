@@ -121,7 +121,21 @@ export async function createWorkerHost(
   function lose(detail: string, report: boolean): void {
     const error = new EmbeddingError(detail);
     lost ??= error;
-    ready.reject(error);
+    // `ready` is settled one turn late, and deliberately so. A worker's death
+    // reaches this thread over the *internal* port (`error`, `exit`) while its
+    // `ready` reaches it over the public one, and two ports have no ordering
+    // between them: measured on Node 25 with the main thread starved, 1.8% of
+    // deaths arrived before the `ready` the same worker had already posted —
+    // which rejected the load of a model that had, in fact, loaded, and made
+    // "a dead worker is a provider outage, never a dead server" a coin flip.
+    // A `setImmediate` runs in the check phase, after every port callback libuv
+    // had already queued, so an in-flight `ready` wins (11/11 measured); a
+    // microtask drains too early to help (0/11). Everything else about the
+    // outage stays in this turn — `lost`, the pending rejections and `onLost` —
+    // which is what keeps `exit`'s "already lost" guard honest, and rejecting
+    // an already-settled `ready` is a no-op, so a worker that really did die
+    // during the load still fails the load, one turn later.
+    setImmediate(() => ready.reject(error));
     for (const entry of pending.values()) entry.reject(error);
     pending.clear();
     if (report) options.onLost?.(detail);

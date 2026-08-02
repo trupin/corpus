@@ -231,7 +231,7 @@ describe("excerpts", () => {
       const results = await relatedDocs(big.db, "doc_from", RelatedQuerySchema.parse({}));
       const serialized = JSON.stringify(results);
       expect(RelatedDocsSchema.parse(results)).toEqual(results);
-      expect(results.related[0]?.excerpt.length).toBeLessThanOrEqual(ONE_LINE_MAX_CHARS + 1);
+      expect(results.related[0]?.excerpt.length).toBeLessThanOrEqual(ONE_LINE_MAX_CHARS);
       expect(serialized.length).toBeLessThan(400);
       for (const row of results.related) {
         expect(Object.keys(row).sort()).toEqual(["excerpt", "id", "relation", "title"]);
