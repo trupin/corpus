@@ -327,6 +327,13 @@ _n/a until triage._
 - Evaluator note for the record: Phase 9 proof-of-work rated the best audited on
   this repo; zero re-dos.
 
+- Dogfood-wave eval observations (2026-08-02, recorded in the eval files, both
+  outside any issue's criteria): (a) `PUT /api/x/todos/<id>/items/0` on a
+  frontmatter-ONLY legacy doc succeeds and silently self-migrates it (dual and
+  malformed correctly refuse) — decide whether silent self-migration is a
+  feature or should refuse like its siblings; (b) the editor schema normalises
+  a list mixing a plain bullet with a task item into a full task list, giving
+  the plain bullet a checkbox — decide whether mixed lists should be preserved.
 - (low-confidence, dev-only) `corpus init` from a source checkout installs
   plugins/_fixture's fixture-notes skill, which then surfaces as a type:skill doc in
   search — packaged installs are clean (underscore plugins excluded; pack:check
