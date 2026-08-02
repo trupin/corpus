@@ -26,7 +26,15 @@ activates it — the board scope's `rows.open` binding matches on the document l
 and `preventDefault()` cancels native activation. UI-028 fixed this for OPEN menus
 (`role="menu"` scope-out); this is the closed-menu case: focused chrome controls.
 The naive fix (skip when a button has focus) is unsafe — `.row` is itself a `<button>`
-deliberately bound to `↵`. Design the scoping rule: e.g. `rows.open` matches only
+deliberately bound to `↵`.
+
+**Further evidence (UI-041, 2026-08-02):** the fence copy button hit the same
+theft — `↵` on the focused button copied nothing until CodeFence added a local
+stopPropagation guard on its own Enter/Space keydown. That local pattern (stop,
+never prevent) works but each new interactive control must remember it; the
+UI-041 agent's proposed general rule — `resolveShortcut` yields when
+`document.activeElement` is a non-row button/link — is a candidate design for
+this issue, with the same `.row`-is-a-button caveat above. Design the scoping rule: e.g. `rows.open` matches only
 when the focused element is a row or nothing focusable holds focus; a
 `data-board-shortcut-exempt` marker on chrome controls; or scope shortcut matching by
 focus target generally. Prove the rule against BOTH cases: row-↵ still opens the

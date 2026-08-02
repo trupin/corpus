@@ -4,7 +4,10 @@
 plugins
 
 ## Status
-todo
+todo — the SPEC §11 amendment was SIGNED 2026-08-02 (sprint-023 OC2 resolved:
+"Amend — plugin menus in"); the amended §11 text now allows plugin-rendered
+surfaces to contribute context menus through the kit. Still gated on UI-037
+(the reveal payload for "open thread" and the kit menu seam).
 
 ## Priority
 P2
@@ -13,7 +16,8 @@ P2
 opus
 
 ## Dependencies
-- Depends on: PLUGINS-005, PLUGINS-003
+- Depends on: PLUGINS-005, PLUGINS-003, UI-037 (reveal payload for "open
+  thread"), SPEC §11 amendment sign-off
 - Blocks: —
 
 ## Spec References

@@ -226,7 +226,30 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | todo | P2 | UI-031 |
 | PLUGINS-008 | Legacy frontmatter-items todo renders a silently empty body (dogfood 2026-08-02) | todo | P1 | PLUGINS-005 |
 | PLUGINS-009 | Todo item rows: right-click quick actions — toggle, comment, open thread (dogfood) | todo | P2 | PLUGINS-005, PLUGINS-003 |
-| PLUGINS-010 | Clicking a todo item opens its document with the item revealed (dogfood) | todo | P2 | PLUGINS-005 |
+| PLUGINS-010 | Clicking a todo item opens its document with the item revealed (dogfood) | todo | P2 | PLUGINS-005, UI-037 |
+| UI-034 | Task-list items render unstyled: bullet + stacked checkbox (dogfood, sprint-023) | in_progress | P1 | PLUGINS-005 |
+| UI-036 | Todo document rows on the board have no context menu at all (sprint-023 OC3) | todo | P1 | — |
+| UI-037 | Reveal-target seam: discriminated open payload through kit + reader (sprint-023 OC5) | todo | P2 | — |
+| UI-038 | Column header sort control wraps in narrow columns; degrade label to "last ↓" (dogfood) | todo | P2 | — |
+| UI-039 | Column query editor: autocomplete + syntax help (dogfood) | todo | P2 | — |
+| SERVER-051 | Embed worker emits SSE invalidations for index status (§11 pill rider) | todo | P1 | — |
+| UI-040 | Console strip: semantic-index pill with live progress (§11 rider, signed) | todo | P1 | SERVER-051 |
+| UI-041 | Copy button on fenced blocks in rendered turns (§11 canvas rider, signed) | todo | P1 | — |
+| AGENT-010 | Skills: reusable deliverables go in labeled fenced blocks | todo | P2 | — |
+| UI-042 | Clipboard fidelity: rich HTML copy out, rich paste in as markdown (§11 rider, signed) | todo | P1 | — |
+
+Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
+
+## Phase 10 — Self-upgrade (signed rider SHARED-007, 2026-08-02)
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-007 | Self-upgrade spec rider — apply to SPEC.md at phase kickoff (orchestrator) | todo | P1 | — |
+| INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | todo | P1 | SHARED-007 |
+| CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | todo | P1 | SHARED-007, INFRA-016 |
+| CONTRACT-027 | Upgrade routes: check + trigger | todo | P1 | SHARED-007 |
+| SERVER-050 | Upgrade endpoints: check proxy + detached upgrade trigger | todo | P1 | CONTRACT-027, CLI-025 |
+| UI-035 | Upgrade UI: on-demand check + "Upgrade & restart" with SSE ride-through | todo | P1 | CONTRACT-027, SERVER-050 |
 
 ## Phase 7b — React 19, router 8, CI directives (branch `phase-7b-upgrades-ci`)
 

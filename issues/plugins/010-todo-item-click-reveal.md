@@ -13,7 +13,10 @@ P2
 opus
 
 ## Dependencies
-- Depends on: PLUGINS-005
+- Depends on: PLUGINS-005, UI-037 (the reveal seam: discriminated payload
+  through kit's onOpen/OpenTarget/NavEntry + reader scroll/flash support —
+  sprint-023 OC5; there is no existing anchor-flash to reuse, the original
+  criterion was wrong)
 - Blocks: —
 
 ## Spec References
