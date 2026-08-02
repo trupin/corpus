@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-07-31T00:00:00Z
+updated: 2026-08-01T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -467,9 +467,11 @@ comment skill, and the binding rules from Delegation — and go straight back to
 corpus queue idle
 ```
 
-Inside the subagent, the comment skill reads `th_4b8e2c` with `corpus thread show` and
-opens the one anchor that matters — `corpus doc show doc_a1b2c3`, the second line never
-read at all — finds the request, and does the work: every mutation through the CLI, every
+Inside the subagent, the comment skill briefs itself on the one thread that matters —
+`corpus thread context th_4b8e2c`, one bounded pack carrying the anchored passage with its
+enclosing section and whatever else bears on it, the second line never opened at all — reads
+the turns with `corpus thread show`, escalates to `corpus doc show doc_a1b2c3` because the
+edit below replaces the whole body, and does the work: every mutation through the CLI, every
 progress line on the dispatched event's id.
 
 ```bash
