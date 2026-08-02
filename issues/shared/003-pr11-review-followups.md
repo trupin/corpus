@@ -288,3 +288,9 @@ _n/a until triage._
   pairs ~0.6-0.8, so the gate excludes nothing and `similar` becomes a false claim.
   Design follow-up at triage: per-identity gate, score-carrying rows, or a documented
   caveat. (Compounds the small-corpus tail item above.)
+
+- **anchor-layer.spec.ts UI-031 parked-pointer test is load-flaky** (2026-08-01:
+  blocked two pre-push runs; its own build log documented the boundary-event race
+  and a two-frame settle() that is evidently marginal under load). Harden at triage:
+  wait for the hover-adoption observable itself (class state poll with timeout)
+  rather than counted frames.
