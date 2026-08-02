@@ -365,6 +365,43 @@ describe("Reader", () => {
       });
     });
 
+    /**
+     * The regression that shipped with the first cut of UI-037.
+     *
+     * Revealing scrolls the reader, and the scroll capture that follows is
+     * debounced — so it wrote its entry from a snapshot taken *before* the
+     * reveal was consumed, putting the instruction back. The entry then carried
+     * it in `localStorage` for good, re-flashing the document on every later
+     * load. What is pinned here is the end state: a scroll after a reveal
+     * persists an offset and nothing else.
+     */
+    it("keeps the entry clean when the reveal's own scroll is captured", async () => {
+      const stacks: (readonly NavEntry[])[] = [];
+      const { container } = render(
+        <Host
+          wire={fullWire()}
+          initial={[
+            { docId: "doc_m", scrollY: 0, reveal: { kind: "item", exact: "Compare against" } },
+          ]}
+          onNav={(next) => stacks.push(next)}
+        />,
+      );
+      await waitFor(() => {
+        expect(flashes()).toBe(1);
+      });
+
+      const scroller = container.querySelector(".reader-scroll") as HTMLElement;
+      scroller.scrollTop = 512;
+      fireEvent.scroll(scroller);
+
+      await waitFor(() => {
+        expect(stacks.at(-1)?.at(-1)).toEqual({ docId: "doc_m", scrollY: 512 });
+      });
+      // Spelled as keys too: an entry with `reveal: undefined` on it would
+      // serialise into storage and read back as a pending instruction.
+      expect(Object.keys(stacks.at(-1)?.at(-1) ?? {})).toEqual(["docId", "scrollY"]);
+    });
+
     it("does not flash again when Back returns to the same entry", async () => {
       const { container } = render(
         <Host

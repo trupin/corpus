@@ -160,6 +160,80 @@ level).
 Gates: `npm run typecheck -w apps/ui -w packages/kit` clean; `eslint` clean
 (no suppressions added); `prettier --check` clean.
 
+### Follow-up (same day): the one-shot guarantee was broken — a real bug, not a flaky spec
+
+`reveal.spec.ts:162` failed 2 of 3 full-suite pre-push runs while passing in
+isolation. The retained error context named the cause outright:
+
+```
+Received string: {"version":2,"columns":{"doc_view_inbox":{"scroll":0,
+  "nav":[{"docId":"doc_chores","scrollY":512,
+          "reveal":{"kind":"item","exact":"Book the passport appointment"}}]}}}
+```
+
+`scrollY: 512` **and** the reveal back on the entry. Root cause is in the
+**code**, in this issue's own `captureScrollAt`:
+
+1. the reveal is honoured and `clearRevealAt` strips it from the entry —
+   correctly, and synchronously;
+2. but honouring it *scrolled the reader*, and the scroll capture is debounced
+   by 150 ms, so it runs from a closure over the stack **as it was when the
+   scroll happened** — i.e. pre-consume;
+3. `captureScrollAt` spread that stale entry (`{...top, scrollY}`), writing the
+   already-consumed instruction straight back into `localStorage`.
+
+Under parallel load React's re-render from the passive effect is deferred past
+the browser's scroll dispatch often enough that the stale closure becomes the
+common case — hence "passes alone, fails in the suite".
+
+**This was user-facing, and worse than a flake**: the resurrected instruction
+persisted, so every later load of that board — reload, new tab, next morning —
+re-flashed *and re-scrolled* that document to that item, forever. The one-shot
+property the whole design rests on was not holding.
+
+**Fix (code):** a scroll capture now rebuilds the entry as `{docId, scrollY}`
+and never carries a reveal. This cannot lose a live instruction — honouring is
+synchronous with clearing, so any capture carrying a reveal is carrying a dead
+one. Documented degradation: a reveal still retrying while something else
+scrolls within 150 ms is forgotten and the document opens at the top (the
+honest failure), rather than flashing at the user every morning. The comment I
+had originally written on that spread ("dropping the instruction here would
+cancel it") was wrong in the important direction and is replaced.
+
+**Fix (spec), per the coordinator's "assert the durable claim":** the test
+polled for a *momentary* clean entry and so raced the same write. It now waits
+on the observable that matters — the capture's own footprint, `scrollY > 0`,
+proving the racing write has landed — and only then asserts `reveal` is absent,
+then reloads and re-asserts no flash after a settle window. The spec also now
+refuses `/events` outright (anchored `^https?://[^/]+/events(\?|$)`, never a
+`**/events*` glob, which would capture `…/dist/events/sseBridge.js` and take
+the app down — console-index.spec.ts's lesson, e875705), so a live workspace
+server on 8765 cannot open a stream whose reconnect refetches mid-assertion.
+
+Regression tests: `useNavStack.test.ts` now pins "never carries a reveal onto
+the entry it is rewriting" (the inverted assertion — the old test encoded the
+bug), and `Reader.test.tsx` pins the end state "a scroll after a reveal
+persists an offset and nothing else", keys included.
+
+**Proof:**
+- Regression test fails against the pre-fix code:
+  `AssertionError: expected [ { docId: 'doc_a', …(2) } ] to deeply equal
+  [ { docId: 'doc_a', scrollY: 88 } ]`.
+- The hardened e2e also fails against the pre-fix code — **5 of 10** with
+  `--repeat-each=10 --workers=4` (the un-hardened version was passing on the
+  momentary window, which is why it only flaked in the full suite).
+- With the fix, isolated: `reveal.spec.ts --repeat-each=10 --workers=4` →
+  **80/80 passed (50.9 s)**.
+- With the fix, under parallel load:
+  `reveal.spec.ts console-index.spec.ts console.spec.ts fences.spec.ts
+  clipboard.spec.ts --workers=4 --repeat-each=3` → **135 passed, 3 failed
+  (1.2 m)**; all three reds are the same environmental test,
+  `console.spec.ts:62`, which asserts the strip reads "server unreachable" and
+  cannot pass while the user's live server holds 8765 (`lsof -i :8765` → node
+  pid 92431 LISTEN). Zero `reveal.spec.ts` failures across all 24 runs.
+- Unit, after the fix: `apps/ui` + `packages/kit` → 148 files, **2319 tests**
+  passing. typecheck / eslint / prettier clean.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

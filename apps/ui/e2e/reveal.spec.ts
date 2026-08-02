@@ -75,8 +75,28 @@ type Reveal =
  * `reveal` as a pending instruction — the state a reveal-carrying open leaves
  * behind before the document has rendered.
  */
+/**
+ * The SSE endpoint itself — `<origin>/events?token=…` and nothing else.
+ *
+ * Anchored on the origin and the whole path segment, never a recursive
+ * `**\/events*` glob: Playwright matches globs against the whole URL and the dev
+ * server serves modules by path, so that glob also captures
+ * `…/@fs/…/packages/kit/dist/events/sseBridge.js` and refusing it takes the
+ * application down before it renders (console-index.spec.ts's lesson, e875705).
+ */
+const EVENT_STREAM = /^https?:\/\/[^/]+\/events(\?|$)/;
+
 async function openWithReveal(page: Page, reveal: Reveal | null): Promise<void> {
   await stubCorpus(page, [VIEW, CHORES, THREAD]);
+  /*
+   * Refused outright, so no stream can ever open. The suite's standing
+   * condition is that nothing answers on 8765, but a machine running a
+   * workspace server (a parallel agent's, or the user's own) proxies through
+   * the dev server — and an open stream means the bridge's reconnect recovery,
+   * which refetches every active query and re-renders the reader underneath the
+   * assertions. A spec about a one-shot instruction has to own that variable.
+   */
+  await page.route(EVENT_STREAM, (route) => route.abort("connectionrefused"));
   await page.addInitScript(
     ([columnId, docId, pending]) => {
       window.localStorage.setItem(
@@ -98,13 +118,25 @@ async function openWithReveal(page: Page, reveal: Reveal | null): Promise<void> 
   await page.locator(".reader .ProseMirror").waitFor();
 }
 
-/** The board's own record of where each column is — the reveal's storage. */
-async function storedNav(page: Page): Promise<unknown> {
-  return page.evaluate(() => {
+interface StoredEntry {
+  readonly docId?: string;
+  readonly scrollY?: number;
+  readonly reveal?: unknown;
+}
+
+/**
+ * The Inbox column's open entry, as the board persisted it — the reveal's
+ * actual storage, read the way the next page load will read it.
+ */
+async function storedEntry(page: Page, columnId: string = VIEW.id): Promise<StoredEntry | null> {
+  return page.evaluate((column) => {
     const raw = window.localStorage.getItem("corpus.board");
-    const parsed: unknown = raw === null ? null : JSON.parse(raw);
-    return parsed;
-  });
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw) as {
+      columns?: Record<string, { nav?: StoredEntry[] } | undefined>;
+    };
+    return parsed.columns?.[column]?.nav?.at(-1) ?? null;
+  }, columnId);
 }
 
 test.describe("an open that names an item", () => {
@@ -165,9 +197,20 @@ test.describe("an open that names an item", () => {
     await openWithReveal(page, { kind: "item", exact: "Book the passport appointment" });
     await expect(page.locator(".reveal-flash")).toHaveCount(1);
 
-    await expect
-      .poll(async () => JSON.stringify(await storedNav(page)))
-      .not.toContain("Book the passport appointment");
+    /*
+     * The claim is **durable**, not momentary, and asserting the momentary
+     * version is what made this test flake — and what caught a real bug.
+     *
+     * Revealing scrolls the reader, and the scroll capture that follows is
+     * debounced by 150 ms; it used to write its entry from a pre-consume
+     * snapshot, putting the instruction back after the entry had briefly gone
+     * clean. So: wait for the offset that capture persists to land, and only
+     * then assert the entry carries no instruction. Waiting on the observable
+     * that matters rather than on a duration — `scrollY` is the capture's own
+     * footprint, so its arrival is proof the write this races has happened.
+     */
+    await expect.poll(async () => (await storedEntry(page))?.scrollY ?? 0).toBeGreaterThan(0);
+    await expect.poll(async () => (await storedEntry(page))?.reveal ?? null).toBeNull();
 
     // The reader is still open on the document, at the offset the reveal left
     // it: what was consumed is the instruction, not the navigation.
@@ -175,6 +218,8 @@ test.describe("an open that names an item", () => {
     await page.locator(".reader .ProseMirror").waitFor();
     await expect(page.locator('.reader[data-reader-doc="doc_chores"]')).toHaveCount(1);
     await expect(page.locator("[data-reveal-flash]")).toHaveCount(0);
+    // …and it stays gone: nothing rewrites the instruction after the fact.
+    await expect(page.locator("[data-reveal-flash]")).toHaveCount(0, { timeout: 2000 });
   });
 
   /**
@@ -226,7 +271,13 @@ test.describe("an open that names a thread", () => {
     await openWithReveal(page, { kind: "thread", threadId: "th_1" });
     await expect(page.locator(".thread-card.flash")).toHaveCount(1);
 
-    await expect.poll(async () => JSON.stringify(await storedNav(page))).not.toContain("th_1");
-    await expect.poll(async () => JSON.stringify(await storedNav(page))).toContain(CHORES.id);
+    await expect.poll(async () => (await storedEntry(page))?.reveal ?? null).toBeNull();
+    // The open survives the instruction being forgotten: the column is still
+    // reading this document, it just has nothing left to point at.
+    expect((await storedEntry(page))?.docId).toBe(CHORES.id);
+
+    await page.reload();
+    await page.locator(".reader .ProseMirror").waitFor();
+    await expect(page.locator(".thread-card.flash")).toHaveCount(0);
   });
 });

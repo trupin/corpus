@@ -106,14 +106,24 @@ describe("captureScrollAt", () => {
   });
 
   /**
-   * Revealing scrolls the reader, so the first offset captured after an open is
-   * usually the reveal's own — and dropping the instruction here would cancel
-   * it a frame before it was honoured.
+   * The regression this shipped with for one wave.
+   *
+   * A capture is debounced by 150 ms, so it runs from a snapshot of the stack
+   * as it stood when the scroll happened — and revealing an item scrolls the
+   * reader itself, so that snapshot still carries the reveal the reader has
+   * *already* consumed. Spreading the entry wrote the dead instruction back
+   * into `localStorage`, where it re-flashed the document on every later load.
+   *
+   * Honouring a reveal is synchronous with clearing it, so a capture carrying
+   * one is always carrying a dead one: the entry is rebuilt, never spread.
    */
-  it("keeps a pending reveal on the entry it is rewriting", () => {
+  it("never carries a reveal onto the entry it is rewriting", () => {
     expect(captureScrollAt([{ docId: "doc_a", scrollY: 0, reveal: ITEM }], 88)).toEqual([
-      { docId: "doc_a", scrollY: 88, reveal: ITEM },
+      { docId: "doc_a", scrollY: 88 },
     ]);
+    expect(
+      Object.keys(captureScrollAt([{ docId: "doc_a", scrollY: 0, reveal: ITEM }], 88)[0] ?? {}),
+    ).toEqual(["docId", "scrollY"]);
   });
 });
 

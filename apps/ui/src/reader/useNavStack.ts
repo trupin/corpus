@@ -92,14 +92,32 @@ export function popEntry(stack: readonly NavEntry[]): readonly NavEntry[] {
   return stack.length === 0 ? stack : stack.slice(0, -1);
 }
 
-/** Writes the live scroll offset onto the top entry; a no-op on an empty stack. */
+/**
+ * Writes the live scroll offset onto the top entry; a no-op on an empty stack.
+ *
+ * **A scroll capture never carries a reveal, and that is a correctness rule.**
+ *
+ * The capture is debounced by 150 ms and therefore runs from a closure over the
+ * stack as it stood when the scroll *happened*. Revealing an item scrolls the
+ * reader itself, so that snapshot is routinely the pre-consume one — and
+ * carrying its `reveal` forward wrote the just-honoured instruction straight
+ * back into `localStorage`, where it survived reloads and re-flashed the
+ * document on every subsequent load, forever. It shipped that way for exactly
+ * one wave (the e2e caught it under parallel load, where React's re-render is
+ * deferred past the browser's scroll dispatch often enough to make the stale
+ * closure the common case rather than the rare one).
+ *
+ * Dropping it here cannot lose a *live* instruction: honouring one is
+ * synchronous with clearing it, so any capture that carries a reveal is
+ * carrying a dead one. The one degradation is a reveal still retrying while
+ * something else scrolls the surface within 150 ms — that one is forgotten, and
+ * the document opens at the top, which is the honest failure. The alternative
+ * failure is a document that flashes at the user every morning.
+ */
 export function captureScrollAt(stack: readonly NavEntry[], scrollY: number): readonly NavEntry[] {
   const top = stack.at(-1);
   if (top === undefined || top.scrollY === scrollY) return stack;
-  // Spread, not rebuilt: revealing scrolls the reader, so the very first scroll
-  // this records is often the one the reveal itself caused — and dropping the
-  // instruction here would cancel it a frame before it was honoured.
-  return [...stack.slice(0, -1), { ...top, scrollY }];
+  return [...stack.slice(0, -1), { docId: top.docId, scrollY }];
 }
 
 /** Drops the top entry's reveal once it has been honoured; a no-op when there is none. */
