@@ -38,6 +38,7 @@ const RUNTIME_SURFACE = [
   "MAX_BUFFERED_LOG_LINES",
   "usePluginQuery",
   "useQueueStatus",
+  "useIndexStatus",
   "useLocks",
   "useHealth",
   // write path

@@ -12,6 +12,7 @@ import type {
   FolderTree,
   FormAnswerResponse,
   Health,
+  IndexStatus,
   Job,
   JobList,
   JobLog,
@@ -199,6 +200,19 @@ export interface CorpusClient {
   listLocks(options?: RequestOptions): Promise<LockList>;
   /** `GET /api/queue/status` — halted flag plus per-status counts (SPEC.md §7). */
   getQueueStatus(options?: RequestOptions): Promise<QueueStatus>;
+  /**
+   * `GET /api/index/status` — the semantic index's own health report behind the
+   * console strip's index pill (SPEC.md §9.1, §11's index-pill rider).
+   *
+   * Read-only and parameterless, like {@link getQueueStatus}: the endpoint
+   * answers one snapshot of derived state, and every field on it is a fact the
+   * server derived — `state` is what a caller decides with and `detail` is the
+   * sentence it renders. **No rebuild method ships beside it**: kicking a
+   * rebuild off is `corpus index rebuild`'s job (SPEC.md §9.1), and a plugin
+   * that could discard the workspace's vectors through the kit would be a
+   * destructive act on the strength of an import.
+   */
+  getIndexStatus(options?: RequestOptions): Promise<IndexStatus>;
   getHealth(options?: RequestOptions): Promise<Health>;
   appendTurn(threadId: string, input: AppendTurnInput): Promise<AppendTurnResponse>;
   /**
@@ -679,6 +693,13 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "GET /api/queue/status",
         await api.GET("/api/queue/status", { ...signalOf(options) }),
+      );
+    },
+
+    async getIndexStatus(options) {
+      return unwrap(
+        "GET /api/index/status",
+        await api.GET("/api/index/status", { ...signalOf(options) }),
       );
     },
 

@@ -72,6 +72,9 @@ export {
 } from "./query/useJobLog.js";
 export { usePluginQuery } from "./query/usePluginQuery.js";
 export { useQueueStatus } from "./query/useQueueStatus.js";
+// The semantic index's health report — the console strip's index pill reads it,
+// and it refreshes on the `["index"]` frames the embed worker already emits.
+export { useIndexStatus } from "./query/useIndexStatus.js";
 export { useLocks } from "./query/useLocks.js";
 export { useHealth } from "./query/useHealth.js";
 

@@ -70,7 +70,15 @@
   color: var(--signal);
 }
 
-.agent-pill {
+/*
+ * The two strip pills. `.index-pill` is the agent pill's twin (SPEC.md §11's
+ * index-pill rider): same geometry, same dot vocabulary, one declaration — a
+ * second copy of these rules is how the two drift apart at the next token
+ * change. They keep separate class names so a Playwright locator for either
+ * stays single-match in strict mode (sprint-010 adjudication 5).
+ */
+.agent-pill,
+.index-pill {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -84,7 +92,9 @@
   white-space: nowrap;
 }
 
-.agent-pill .dot {
+.agent-pill .dot,
+.index-pill .dot,
+.index-status .dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -92,13 +102,66 @@
   flex: none;
 }
 
-.agent-pill .dot.busy {
+.agent-pill .dot.busy,
+.index-pill .dot.busy,
+.index-status .dot.busy {
   background: var(--accent);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
 .agent-pill .dot.halted {
   background: var(--signal);
+}
+
+/*
+ * A backlog nobody is draining — `--sepia`, the console's own "hasn't run yet"
+ * hue, already spoken by the pending and deferred job dots. Never `--signal`:
+ * stale is waiting, not broken, and red in this strip means needs-you.
+ */
+.index-pill .dot.stale,
+.index-status .dot.stale {
+  background: var(--sepia);
+}
+
+/*
+ * No semantic index here. The neutral treatment the abandoned job dot wears, for
+ * the same reason: the three hues are each already a meaning, and this state is
+ * not one of them.
+ */
+.index-pill .dot.off,
+.index-status .dot.off {
+  background: var(--ink-3);
+}
+
+/*
+ * The expanded drawer's index row — the server's sentence, and the failure count
+ * when there is one. Full width above the master-detail body and `flex: none`,
+ * so it takes its height from the drawer's chrome rather than from the height
+ * the resizer gave `.console-body`.
+ */
+.index-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 6px 18px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+/* The server's wording, wrapped rather than truncated: a sentence cut at the
+ * drawer's edge is a sentence that stopped explaining. */
+.index-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.index-failed {
+  color: var(--signal);
+  white-space: nowrap;
+  margin-left: auto;
 }
 
 .halt-btn {

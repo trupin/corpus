@@ -128,6 +128,20 @@ describe("the operations map onto the contract's routes", () => {
     expect(urlOf(recorder).pathname).toBe("/api/locks");
   });
 
+  it("reads the semantic index's report from GET /api/index/status", async () => {
+    const recorder = recording({
+      indexed: 273,
+      pending: 0,
+      failed: 0,
+      identity: "ollama/nomic-embed-text@768",
+      rebuilding: false,
+      state: "current",
+    });
+    await client(recorder).getIndexStatus();
+    expect(urlOf(recorder).pathname).toBe("/api/index/status");
+    expect(recorder.requests[0]?.method).toBe("GET");
+  });
+
   it("reads the probe from GET /api/health", async () => {
     const recorder = recording({ status: "ok", version: "0.0.0" });
     await client(recorder).getHealth();
