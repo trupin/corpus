@@ -461,6 +461,67 @@ other prototype name; second unrelated note.
   - D `q=toString valueOf hasOwnProperty isPrototypeOf` → `semanticIndex: current`, 2 hits.
 - `corpus server logs` — no embedding error of any kind; index still `current`, 0 failed.
 
+### PR #17 CI — engine.test.ts failed deterministically on the Node 22 runners
+
+**Implemented on: opus** (Opus 5, 1M context). Date 2026-08-01. Test-only change; no
+`engine.ts` behaviour touched, and no product bug found while there.
+
+**Root cause: two synchronisation heuristics that count event-loop turns instead of
+waiting on the observable.** `flush()` awaited eight `setImmediate`s; `waitFor()` awaited up
+to five hundred. Every fact those waits were for is produced by *filesystem* work — a `stat`
+per artifact, a read plus a sha256, a `mkdir` — which completes on libuv's threadpool and is
+signalled in the poll phase, while a `setImmediate` loop spins the check phase without
+yielding to it. On a fast idle laptop the turns outlast the I/O; on a loaded runner they do
+not. Nothing about the engine differs between Node 22 and 25 — the budget was the variable,
+and both CI failures were reproduced here by shrinking it:
+
+- `flush` 8 → 1 reproduced failure (1) verbatim: *"is single-flight: a second request while
+  one is running starts nothing" — expected [] to deeply equal [ Array(1) ]*.
+- `waitFor` 500 → 2 reproduced failure (2), *"releases a session that finished loading during
+  shutdown" — condition never held*, **and** a third test of the same class that CI had not
+  reached yet, *"surfaces progress through the availability detail while downloading"*.
+
+**Fix.** Both helpers are gone. `until(assertion)` wraps `vi.waitFor` with an explicit
+`{ timeout: 5_000, interval: 5 }`, so the budget is wall-clock — the same currency the work
+is denominated in — and the polling interval yields to the poll phase. Every wait now names
+the fact it is waiting for:
+
+| test | waited on before | waits on now |
+| --- | --- | --- |
+| makes no request while merely being asked whether it is available | `flush()` | `engine.whenSettled()` |
+| is single-flight | `flush()` ×2 | `until(calls === [tokenizer])`, then release + `whenSettled()` + `close()` and an **exact** total call list |
+| does nothing when the artifacts are already cached | `flush()` | `engine.whenSettled()` (the attempt that would have downloaded) |
+| refuses to retry inside the cooldown | `flush()` | `engine.whenSettled()` |
+| never downloads when there is nowhere to cache | `flush()` | `engine.whenSettled()` |
+| never downloads where WebAssembly cannot run | `flush()` | `engine.whenSettled()` |
+| does not start a download after close | `flush()` | `engine.whenSettled()` |
+| waits for an in-flight download during close | `flush()` | `until(calls === [tokenizer])` — the download is now *provably* in flight when `close()` is called |
+| surfaces progress while downloading | `waitFor` (500 turns) | `until(availability detail matches /downloading .*%/)` |
+| releases a session that finished loading during shutdown | `waitFor(() => entered)` | `until(entered === true)` |
+| closes a host that finished loading during shutdown | `waitFor(() => entered)` | `until(entered === true)` |
+
+Two structural improvements came with it. The single-flight negative no longer needs a
+window at all: each flight records its URL on entry to `fetchFn` before it can await
+anything, so releasing the gate, awaiting `whenSettled()` **and** `close()` (which awaits
+whatever is still running) and then asserting the *exact* total `[tokenizer, weights]` proves
+that no second flight ever started — strictly stronger than the old "nothing yet after N
+turns". And the five hand-rolled `let release; const gate = new Promise(...)` blocks are now
+one `gate()` helper whose releases are registered and fired in `afterEach`, so a *failing*
+test can no longer leave a `fetch` pending forever and hand the next test a process still
+doing the previous one's work.
+
+**Verification.** `engine.test.ts` 40/40 green, run **10×** in a loop on **Node v25.2.1**
+(10 pass / 0 fail), plus **5×** more under deliberate 4-way CPU contention (5 pass / 0 fail)
+— the closest local approximation of the loaded-runner condition, since the failure is
+load-induced. `npm test -w apps/server`: **163 files / 3130 tests** green. `tsc --noEmit`,
+`eslint` and `prettier` clean on the file.
+
+**Node 22 was not testable locally**: this machine has only `/opt/homebrew/bin/node` at
+v25.2.1, with no `nvm`, `n`, `fnm`, `volta`, `asdf` or `node@22` formula installed (checked
+read-only). The argument for CI rests on the reproduction above — the failures were induced
+and cured *on Node 25* by changing only the wait budget — plus the fact that the remaining
+budget is 5 s of wall clock against facts that currently arrive in about a millisecond.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

@@ -82,21 +82,49 @@ function stubSession(dim = 4): { factory: SessionFactory; released: () => number
 }
 
 /**
- * Flushes the event loop, including the filesystem I/O every cache check does.
- * Used for the negative assertions ("nothing was fetched"), where there is no
- * promise to await; the positive ones await `whenSettled()` instead.
+ * Waits until an assertion holds, on a **wall-clock** budget.
+ *
+ * This file previously synchronised by counting event-loop turns — eight
+ * `setImmediate`s for the negatives, five hundred for the positives — and that
+ * is not a synchronisation primitive, it is a bet. Every fact these tests wait
+ * for is produced by *filesystem* work (a `stat` per artifact, a read plus a
+ * sha256, a `mkdir`), which completes on libuv's threadpool and is signalled in
+ * the poll phase; a loop of `setImmediate`s spins through the check phase
+ * without yielding to it, so hundreds of turns can elapse while a single `stat`
+ * is still outstanding. The bet paid on a fast, idle Node 25 laptop and lost on
+ * CI's loaded Node 22 runners — deterministically, twice, on two different
+ * tests. Both are reproducible here by lowering the counts (8 → 1 reproduces
+ * CI's `expected [] to deeply equal [ Array(1) ]` verbatim; 500 → 2 reproduces
+ * the shutdown failure), which is the proof that the budget, not the product,
+ * was the variable.
+ *
+ * `vi.waitFor` polls on a timer, so the budget is time — the same currency the
+ * work is denominated in — and the interval yields to the poll phase.
  */
-const flush = async (): Promise<void> => {
-  for (let i = 0; i < 8; i++) await new Promise((resolve) => setImmediate(resolve));
-};
+const until = (assertion: () => void | Promise<void>): Promise<void> =>
+  vi.waitFor(assertion, { timeout: 5_000, interval: 5 });
 
-/** Turns the loop until `predicate` holds; fails the test rather than hanging. */
-async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  for (let i = 0; i < 500; i++) {
-    if (await predicate()) return;
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-  throw new Error("condition never held");
+/**
+ * A promise the test opens and closes by hand, used to hold a download or a
+ * model load open at a chosen instant.
+ *
+ * Registered for release in `afterEach` so that a *failing* test cannot leave a
+ * `fetch` pending forever: an engine holding one never finishes `close()`, and
+ * the next test in the file inherits a process that is still doing the previous
+ * one's work. Resolving an already-resolved promise is a no-op, so tests that
+ * release their own gate pay nothing for this.
+ */
+const openGates: (() => void)[] = [];
+
+function gate(): { readonly promise: Promise<void>; release: () => void } {
+  let release = (): void => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  openGates.push(() => {
+    release();
+  });
+  return { promise, release: () => release() };
 }
 
 let dir: string;
@@ -106,6 +134,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  for (const release of openGates.splice(0)) release();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -212,7 +241,10 @@ describe("createEmbeddedEngine — nothing downloads by itself", () => {
 
     await engine.availability();
     await engine.availability();
-    await flush();
+    // `whenSettled()` is the engine's own "nothing is in flight" — an
+    // availability read that had quietly started a download would still be
+    // running here, and this would wait for it.
+    await engine.whenSettled();
 
     expect(calls).toEqual([]);
   });
@@ -230,30 +262,35 @@ describe("createEmbeddedEngine — nothing downloads by itself", () => {
   });
 
   it("is single-flight: a second request while one is running starts nothing", async () => {
-    let release = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const held = gate();
     const calls: string[] = [];
     const engine = engineWith({
       fetchFn: async (input) => {
         calls.push(input);
-        await gate;
+        await held.promise;
         return new Response(input === MANIFEST.tokenizer.url ? TOKENIZER_BYTES : WEIGHTS);
       },
     });
 
     engine.requestModel();
-    await flush();
-    engine.requestModel();
-    engine.requestModel();
-    await flush();
-    expect(calls).toEqual([MANIFEST.tokenizer.url]);
+    // The observable, not a guess at how many turns it takes to get there: the
+    // first artifact's request has been issued and is being held open.
+    await until(() => {
+      expect(calls).toEqual([MANIFEST.tokenizer.url]);
+    });
 
-    release();
+    engine.requestModel();
+    engine.requestModel();
+
+    // The negative is proved by the *total*, which needs no window at all. Each
+    // flight records its URL on entry to `fetchFn`, before it can await
+    // anything, so a flight missing from this list is a flight that never
+    // started — and `close()` awaits whatever is still running, so one that had
+    // started and not yet reached `fetchFn` could not slip past either.
+    held.release();
     await engine.whenSettled();
-    expect(calls).toEqual([MANIFEST.tokenizer.url, MANIFEST.weights.url]);
     await engine.close();
+    expect(calls).toEqual([MANIFEST.tokenizer.url, MANIFEST.weights.url]);
   });
 
   it("does nothing when the artifacts are already cached", async () => {
@@ -262,7 +299,9 @@ describe("createEmbeddedEngine — nothing downloads by itself", () => {
     const engine = engineWith({ fetchFn });
 
     engine.requestModel();
-    await flush();
+    // The attempt runs — it scans the cache and finds nothing missing — so this
+    // waits for the very thing that would have downloaded.
+    await engine.whenSettled();
     expect(calls).toEqual([]);
   });
 
@@ -358,13 +397,10 @@ describe("createEmbeddedEngine — announcing a completed download", () => {
 
 describe("createEmbeddedEngine — failure, progress and retry", () => {
   it("surfaces progress through the availability detail while downloading", async () => {
-    let release = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const held = gate();
     const engine = engineWith({
       fetchFn: async (input) => {
-        if (input === MANIFEST.weights.url) await gate;
+        if (input === MANIFEST.weights.url) await held.promise;
         return new Response(input === MANIFEST.tokenizer.url ? TOKENIZER_BYTES : WEIGHTS);
       },
     });
@@ -372,16 +408,13 @@ describe("createEmbeddedEngine — failure, progress and retry", () => {
     engine.requestModel();
     // The tokenizer lands first; the weights request is held open, so the engine
     // is observably mid-download when the detail is read.
-    await waitFor(async () => {
+    await until(async () => {
       const state = await engine.availability();
-      return state.available === false && /downloading .*%/.test(state.detail);
+      expect(state).toMatchObject({ available: false, reason: "model-not-downloaded" });
+      expect(state.available === false && state.detail).toMatch(/downloading .*%/);
     });
 
-    const availability = await engine.availability();
-    expect(availability).toMatchObject({ available: false, reason: "model-not-downloaded" });
-    expect(availability.available === false && availability.detail).toMatch(/downloading .*%/);
-
-    release();
+    held.release();
     await engine.whenSettled();
     await engine.close();
   });
@@ -407,7 +440,10 @@ describe("createEmbeddedEngine — failure, progress and retry", () => {
     // A worker that ticks every few seconds must not turn a dead host into a loop.
     engine.requestModel();
     engine.requestModel();
-    await flush();
+    // A request the cooldown declines starts nothing, so there is nothing in
+    // flight to wait for — and a request it *wrongly* accepted would be in
+    // flight, which is exactly what this waits for before counting.
+    await engine.whenSettled();
     expect(attempts).toBe(1);
 
     const availability = await engine.availability();
@@ -468,7 +504,9 @@ describe("createEmbeddedEngine — failure, progress and retry", () => {
     });
 
     engine.requestModel();
-    await flush();
+    // Same shape as the cooldown's refusal: a guard that let this through would
+    // leave an attempt in flight, and this is what would wait for it.
+    await engine.whenSettled();
     expect(calls).toEqual([]);
   });
 
@@ -477,7 +515,7 @@ describe("createEmbeddedEngine — failure, progress and retry", () => {
     const engine = engineWith({ fetchFn, wasmSupported: false });
 
     engine.requestModel();
-    await flush();
+    await engine.whenSettled();
     expect(calls).toEqual([]);
   });
 });
@@ -599,21 +637,26 @@ describe("createEmbeddedEngine — shutdown", () => {
   });
 
   it("waits for an in-flight download instead of leaving it writing into a closed server", async () => {
-    let release = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const held = gate();
+    const calls: string[] = [];
     const engine = engineWith({
       fetchFn: async (input) => {
-        await gate;
+        calls.push(input);
+        await held.promise;
         return new Response(input === MANIFEST.tokenizer.url ? TOKENIZER_BYTES : WEIGHTS);
       },
     });
 
     engine.requestModel();
-    await flush();
+    // The test's premise is a download that is *actually* in flight when
+    // `close()` is called; waiting for the request to be issued is what makes
+    // that true, rather than hoping enough turns have passed.
+    await until(() => {
+      expect(calls).toEqual([MANIFEST.tokenizer.url]);
+    });
+
     const closing = engine.close();
-    release();
+    held.release();
     await expect(closing).resolves.toBeUndefined();
   });
 
@@ -623,32 +666,33 @@ describe("createEmbeddedEngine — shutdown", () => {
 
     await engine.close();
     engine.requestModel();
-    await flush();
+    await engine.whenSettled();
     expect(calls).toEqual([]);
   });
 
   it("releases a session that finished loading during shutdown", async () => {
     await seedCache();
-    let release = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const held = gate();
     const { factory, released } = stubSession();
     let entered = false;
     const engine = engineWith({
       sessionFactory: async (weights, threads) => {
         entered = true;
-        await gate;
+        await held.promise;
         return factory(weights, threads);
       },
     });
 
     const opening = engine.open();
     // Close only once the runtime is actually loading: the point of the test is
-    // a session that comes into existence after shutdown began.
-    await waitFor(() => entered);
+    // a session that comes into existence after shutdown began. Getting here
+    // costs two artifact reads plus their hashes, which is filesystem work — the
+    // reason a turn-counting wait failed this test on CI and not locally.
+    await until(() => {
+      expect(entered).toBe(true);
+    });
     const closing = engine.close();
-    release();
+    held.release();
 
     await expect(opening).rejects.toThrow(/aborted/);
     await closing;
@@ -764,23 +808,22 @@ describe("createEmbeddedEngine — a host that dies", () => {
   it("closes a host that finished loading during shutdown rather than leaking it", async () => {
     await seedCache();
     const recorded = recordingHosts();
-    let release = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const held = gate();
     let entered = false;
     const engine = engineWith({
       hostFactory: async (spec, options) => {
         entered = true;
-        await gate;
+        await held.promise;
         return recorded.factory(spec, options);
       },
     });
 
     const opening = engine.open();
-    await waitFor(() => entered);
+    await until(() => {
+      expect(entered).toBe(true);
+    });
     const closing = engine.close();
-    release();
+    held.release();
 
     await expect(opening).rejects.toThrow(/aborted/);
     await closing;
