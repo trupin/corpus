@@ -17,3 +17,8 @@ assets/workspace/
 # for byte — Prettier rewrapping one would make the assertion test Prettier's
 # markdown style instead of the serializer's.
 apps/ui/src/editor/markdown/fixtures/
+# Captured clipboard payloads (UI-042). These are bytes a word processor put on
+# the clipboard, and the paste path is asserted against them: pretty-printing
+# the markup would insert whitespace text nodes between the tags and change what
+# the parser sees, so the test would stop describing the real paste.
+apps/ui/src/editor/fixtures/

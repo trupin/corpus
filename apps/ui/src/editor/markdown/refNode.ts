@@ -65,9 +65,13 @@ export const DocRef = Node.create({
   /**
    * The no-view rendering: the id, or the alias when one was written.
    *
-   * It is what a copy-paste of the editor's HTML carries and what a test
-   * without a query cache sees. The live editor replaces it with
-   * `RefNodeView`, which shows the resolved title.
+   * What a test without a query cache sees. The live editor replaces it with
+   * `RefNodeView`, which shows the resolved title, and **the clipboard does not
+   * use it at all** — `clipboard.ts` serializes a ref to its title, because the
+   * id and this `href="#doc_x"` are the two things the §11 rider forbids
+   * putting on the clipboard (a detached fragment resolves that hash against
+   * whatever page is open, which is how it reached Google Docs as
+   * `about:blank#doc_x`).
    */
   renderHTML({ HTMLAttributes, node }) {
     const id = stringAttr(node.attrs["id"]);

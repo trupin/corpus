@@ -8,16 +8,20 @@ import { SelectionMenuItems, type SelectionClipboard } from "./SelectionMenuItem
  * SPEC.md §11's selection menu: Comment on selection first, then Copy always,
  * then Cut and Paste in editable content.
  *
- * The half worth testing hardest is the clipboard's honesty. `readText` is
- * permission-gated in every browser that has it, and a Paste that swallows the
- * refusal is indistinguishable from a Paste of an empty clipboard — the user is
- * left believing the clipboard was empty when in fact the page was never
- * allowed to look.
+ * Two halves are worth testing hardest. **The flavors** (UI-042): Copy used to
+ * be `writeText`, which holds exactly one, so the right-click Copy stripped
+ * every heading, bullet and bold word out of anything pasted into a word
+ * processor while ⌘C two keystrokes away kept them. **The clipboard's honesty**:
+ * `readText` is permission-gated in every browser that has it, and a Paste that
+ * swallows the refusal is indistinguishable from a Paste of an empty clipboard
+ * — the user is left believing the clipboard was empty when in fact the page
+ * was never allowed to look.
  */
 
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(globalThis.navigator, "clipboard");
+  Reflect.deleteProperty(globalThis, "ClipboardItem");
 });
 
 /** Installs a clipboard on the jsdom navigator, which ships without one. */
@@ -28,6 +32,45 @@ function stubClipboard(clipboard: Partial<SelectionClipboard> | null): void {
   });
 }
 
+/** jsdom has no `ClipboardItem`; this one keeps its flavors readable. */
+class FakeClipboardItem {
+  constructor(readonly flavors: Record<string, Blob>) {}
+}
+
+function stubClipboardItem(): void {
+  Object.defineProperty(globalThis, "ClipboardItem", {
+    value: FakeClipboardItem,
+    configurable: true,
+  });
+}
+
+/** jsdom's `Blob` has no `text()`; `FileReader` is the reader it does ship. */
+function readBlob(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const read = reader.result;
+      // `readAsText` always resolves to a string; the union is `readAsArrayBuffer`'s.
+      resolve(typeof read === "string" ? read : "");
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("blob unreadable"));
+    reader.readAsText(blob);
+  });
+}
+
+/** The flavors of the single item a `write` call carried. */
+async function flavorsOf(items: readonly unknown[]): Promise<Record<string, string>> {
+  const item = items[0];
+  if (!(item instanceof FakeClipboardItem)) throw new Error("no ClipboardItem was written");
+  const entries = await Promise.all(
+    Object.entries(item.flavors).map(async ([type, blob]) => [type, await readBlob(blob)] as const),
+  );
+  return Object.fromEntries(entries);
+}
+
+const HTML = "<h2>Findings</h2><ul><li><p>first <strong>bold</strong> bullet</p></li></ul>";
+const TEXT = "## Findings\n\n- first **bold** bullet\n";
+
 interface Mounted {
   readonly notices: RowNotice[];
   readonly replaced: string[];
@@ -35,14 +78,21 @@ interface Mounted {
   readonly close: ReturnType<typeof vi.fn>;
 }
 
-function mount(options: { editable: boolean; commentable?: boolean }): Mounted {
+function mount(options: {
+  editable: boolean;
+  commentable?: boolean;
+  html?: string | null;
+}): Mounted {
   const notices: RowNotice[] = [];
   const replaced: string[] = [];
   const state = { commented: 0 };
   const close = vi.fn();
   render(
     <SelectionMenuItems
-      text="6.4% this week"
+      copy={{
+        text: options.html === undefined ? "6.4% this week" : TEXT,
+        html: options.html ?? null,
+      }}
       onComment={
         options.commentable === false
           ? null
@@ -106,6 +156,109 @@ describe("Comment on selection", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Comment on selection/ }));
     expect(mounted.commented).toBe(1);
     expect(mounted.close).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * UI-042. The reproduction: right-click → Copy put `["text/plain"]` on the
+ * clipboard and no `text/html` at all, which is "loses ALL formatting" in a
+ * word processor, from the gesture SPEC.md §11 puts Copy on.
+ */
+describe("Copy's two flavors", () => {
+  it("writes rich text and the markdown together", async () => {
+    const write = vi.fn<(items: readonly ClipboardItem[]) => Promise<void>>().mockResolvedValue();
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
+    stubClipboard({ write, writeText });
+    stubClipboardItem();
+    const mounted = mount({ editable: true, html: HTML });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Copy/ }));
+
+    await waitFor(() => {
+      expect(write).toHaveBeenCalledOnce();
+    });
+    expect(await flavorsOf(write.mock.calls[0]?.[0] ?? [])).toEqual({
+      "text/html": HTML,
+      "text/plain": TEXT,
+    });
+    // The single-flavor path is not also taken: one copy, one clipboard state.
+    expect(writeText).not.toHaveBeenCalled();
+    expect(mounted.notices).toEqual([]);
+  });
+
+  it("cuts the same two flavors it copies", async () => {
+    const write = vi.fn<(items: readonly ClipboardItem[]) => Promise<void>>().mockResolvedValue();
+    stubClipboard({ write, writeText: vi.fn() });
+    stubClipboardItem();
+    const mounted = mount({ editable: true, html: HTML });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Cut/ }));
+
+    await waitFor(() => {
+      expect(mounted.replaced).toEqual([""]);
+    });
+    expect(await flavorsOf(write.mock.calls[0]?.[0] ?? [])).toEqual({
+      "text/html": HTML,
+      "text/plain": TEXT,
+    });
+  });
+
+  it.each([
+    ["the selection has no rich form", { writeTextOnly: false, html: null }],
+    ["the browser's clipboard is text-only", { writeTextOnly: true, html: HTML }],
+  ])("falls back to plain text when %s", async (_case, options) => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
+    const write = vi.fn<(items: readonly ClipboardItem[]) => Promise<void>>().mockResolvedValue();
+    stubClipboard(options.writeTextOnly ? { writeText } : { write, writeText });
+    stubClipboardItem();
+    mount({ editable: true, html: options.html });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Copy/ }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(TEXT);
+    });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Safari refuses a `ClipboardItem` built across an `await`. Losing the
+   * formatting is a degradation; losing the text as well is a failed copy.
+   */
+  it("degrades to plain text when the multi-flavor write is refused", async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
+    stubClipboard({
+      write: vi.fn().mockRejectedValue(new Error("NotAllowedError")),
+      writeText,
+    });
+    stubClipboardItem();
+    const mounted = mount({ editable: true, html: HTML });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Copy/ }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(TEXT);
+    });
+    expect(mounted.notices).toEqual([]);
+  });
+
+  it("reports the failure when neither write works", async () => {
+    stubClipboard({
+      write: vi.fn().mockRejectedValue(new Error("NotAllowedError")),
+      writeText: vi.fn().mockRejectedValue(new Error("write not allowed")),
+    });
+    stubClipboardItem();
+    const mounted = mount({ editable: true, html: HTML });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Copy/ }));
+
+    await waitFor(() => {
+      expect(mounted.notices).toHaveLength(1);
+    });
+    expect(mounted.notices[0]).toEqual({
+      tone: "error",
+      message: "Could not copy — write not allowed",
+    });
   });
 });
 

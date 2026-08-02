@@ -4,6 +4,7 @@ import { useCallback, type MouseEvent } from "react";
 import { rangeStillReads, STALE_SELECTION_NOTICE } from "../editor/selection";
 import { useContextMenu } from "./ContextMenuHost";
 import { selectionMenuTarget } from "./nativeMenu";
+import { captureCopy } from "./selectionCopy";
 import { SelectionMenuItems } from "./SelectionMenuItems";
 
 /**
@@ -89,6 +90,10 @@ export function useSelectionContextMenu({
         onNotify({ tone: "error", message: STALE_SELECTION_NOTICE });
       };
       const replace = found.editable ? captureReplace(editor, stale) : null;
+      // Both flavors, read now for the same reason the text is: opening the
+      // menu moves focus, and the editor's slice and the DOM range both stop
+      // describing the words the user pointed at.
+      const copy = captureCopy(editor, found.text);
 
       event.preventDefault();
       // The reader's own handler sits on an ancestor and would open the
@@ -100,7 +105,7 @@ export function useSelectionContextMenu({
         clientY: event.clientY,
         items: (close) => (
           <SelectionMenuItems
-            text={found.text}
+            copy={copy}
             onComment={comment}
             onReplace={replace}
             close={close}

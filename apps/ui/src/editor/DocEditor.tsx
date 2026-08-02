@@ -1,6 +1,10 @@
+import { getSchema } from "@tiptap/core";
 import { Node as PmModelNode, Slice } from "@tiptap/pm/model";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { cleanPastedHtml, clipboardSerializer, sliceMarkdown } from "./clipboard.js";
+import { refResolver } from "./refResolver.js";
 import { RefAutocomplete } from "./RefAutocomplete.js";
 import { docRefWithView, type OpenRefCallback } from "./RefNodeView.js";
 import { SelectionToolbar } from "./SelectionToolbar.js";
@@ -157,12 +161,39 @@ export function DocEditor({
     [],
   );
 
+  /**
+   * The clipboard's two flavors (SPEC.md §11 clipboard rider), built once
+   * beside the schema they serialize.
+   *
+   * The resolver is read through a box for the same reason `openRef` is: it
+   * closes over the query cache, and rebuilding either serializer would rebuild
+   * the schema underneath the live document.
+   */
+  const queryClient = useQueryClient();
+  const resolveRef = useRef(refResolver(queryClient));
+  resolveRef.current = refResolver(queryClient);
+  const clipboard = useMemo(
+    () => ({
+      html: clipboardSerializer(getSchema(extensions), (id) => resolveRef.current(id)),
+      text: (slice: Slice) => sliceMarkdown(slice, (id) => resolveRef.current(id)),
+    }),
+    [extensions],
+  );
+
   const editor = useEditor(
     {
       extensions,
       content: asContent(parseMarkdown(canonical)),
       editable: !locked,
       editorProps: {
+        // Rich text out (`text/html`) and the document's own markdown out
+        // (`text/plain`), so an external editor gets structure and a plain-text
+        // target gets source rather than ProseMirror's `textBetween` dump.
+        clipboardSerializer: clipboard.html,
+        clipboardTextSerializer: clipboard.text,
+        // Rich text in: the schema does the conversion, this only removes what
+        // a word processor adds that would otherwise reach the file.
+        transformPastedHTML: (html: string) => cleanPastedHtml(html),
         attributes: {
           class: "doc-body",
           "aria-label": "Document body",
