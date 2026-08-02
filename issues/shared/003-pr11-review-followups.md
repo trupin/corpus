@@ -322,3 +322,8 @@ _n/a until triage._
   not pack windows), escalation printed; craft nit.
 - Evaluator note for the record: Phase 9 proof-of-work rated the best audited on
   this repo; zero re-dos.
+
+- (low-confidence, dev-only) `corpus init` from a source checkout installs
+  plugins/_fixture's fixture-notes skill, which then surfaces as a type:skill doc in
+  search — packaged installs are clean (underscore plugins excluded; pack:check
+  guards). Consider a dev-init exclusion at triage.

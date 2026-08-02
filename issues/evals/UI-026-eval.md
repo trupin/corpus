@@ -1,8 +1,9 @@
 # Evaluation: UI-026
 
-**Date**: 2026-08-02
+**Date**: 2026-08-02 (initial) · **re-evaluated 2026-08-02** against the adjudicated interim fix
 **Sprint**: sprint-022
-**Verdict**: PARTIAL
+**Verdict**: **PASS — with one criterion carried to CONTRACT-026**
+_(superseding the PARTIAL of the first pass; the original FAIL text is kept below as dated history)_
 **Evaluator model**: Opus 5 (1M context)
 
 Real browser (headless Chromium via Playwright, 1600×1000) against the **real app**: the server on
@@ -43,7 +44,7 @@ shipped behaviour is.
 | --- | ----------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------- |
 | 1a  | Overlay results come from `/api/search`, ranked, with heading-path subtitles   | PASS   | `GET /api/search?q=…` is the only search request; `.sr-path` on every row     |
 | 1b  | Archived behaviour unchanged                                                   | PASS   | Default sends no `status`; the chip emits `includeArchived=true`               |
-| 1c  | **Chips unchanged**                                                            | **FAIL** | All 12 chips render, but the `tag:` chip is inert — see FAIL-1                |
+| 1c  | **Chips unchanged**                                                            | **CARRIED** | All 12 chips render; the `tag:` chip is now honestly disabled rather than dead (re-evaluation below). Tag *application* in the overlay is carried by CONTRACT-026. Original FAIL preserved as history |
 | 2   | Staleness note shown exactly when flagged; absent on `current`                 | PASS   | Present at `state indexing`, absent at `state current`                        |
 | 3   | "Save as view" produces an identical view doc; the column stays on `GET /api/docs` | PASS | Frontmatter `query: {q, sort: relevance}`; **0** `/api/search` requests on board load |
 | 4   | Result click-through navigation unchanged                                     | PASS   | `↵` closed the overlay and opened the reader in its home column                |
@@ -126,7 +127,78 @@ BOARD RELOAD REQUESTS:
 Ranked retrieval is confined to the overlay; the saved column is a filtered list served by
 `GET /api/docs`. SPEC.md:409's signed rule holds, observed rather than asserted.
 
-## Failures
+## Re-evaluation, 2026-08-02 — the adjudicated interim fix
+
+Head commit `[UI-026] Eval-FAIL interim fix: the tag chip is honest, never dead`. `npm run build`
+re-run; the same workspace re-served by the server on `8808` (273 documents, semantic index
+`state current`, real tags `#garden` and `#irrigation` on real documents). Same real-browser rig.
+
+**Verdict on the interim: sufficient.** The defect I filed was specifically "a control that renders
+as an affordance and does nothing". That property is gone, in all four ways it could mislead a user
+— pointer, keyboard, assistive technology, and the eye.
+
+### The shipped markup
+
+```html
+<button type="button" class="chip" aria-pressed="false" disabled=""
+        title="Search results do not carry tags yet, so there is nothing to filter by."
+        aria-label="tag: any — Search results do not carry tags yet, so there is nothing to filter by.">
+  tag: any</button>
+```
+
+The consequence is stated in the user's own terms — what is unavailable and why — not as a defect
+notice or a phase reference, and it rides `aria-label` so a screen reader gets the whole sentence
+with the label rather than a bare "tag: any, dimmed".
+
+### Pointer, keyboard, and the eye
+
+| Probe                                                     | Observed                                                                      |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Press it (forced click through the disabled state)         | Chip state byte-identical before/after; **0** API requests                       |
+| Keyboard reachability                                      | `tagChipInFocusableSet: false` — excluded from the focusable set, Tab skips it   |
+| Programmatic `focus()` then `Enter` + `Space`              | `activeElement` fell back to `<body>`; state unchanged; **0** API requests        |
+| Visual                                                     | Renders unfilled and dimmed beside eleven filled pills — unavailable at a glance |
+| Other eleven chips                                         | Unaffected; `type:` still cycles to `type: note` with `aria-pressed=true`        |
+
+Screenshot: `~/.claude/jobs/4dd0ddef/tmp/eval-p9/14-tag-chip-disabled.png`.
+
+### What the user has not lost
+
+Tag filtering is **not** gone from the product — only from the ranked overlay. A board column
+filters on tag through the list lane exactly as before. Verified end-to-end: a pinned view created
+with `--query tag=garden` fetched `GET /api/docs?tag=garden` and rendered the two tagged documents
+(`Greenhouse plan`, `Dawn misting for nursery beds`), and the column ⋯ menu's **Edit query** edits
+those stored filters inline (`tag=garden` in an editable field in the column header). Screenshot:
+`…/16-restored-tag-query.png`. That is the lane SPEC §11 assigns persisted filtered lists to, and it
+is untouched.
+
+### The one thing I could not verify, stated plainly
+
+The ruling's "in-query tags still clear" is a **defensive** behaviour for a query that already
+carries a tag. With the chip disabled there is now **no user-reachable path that puts a tag into the
+overlay's query** — "Edit query" edits the column inline rather than reopening the overlay. So I
+could not exercise it end-to-end; it rests on the implementing agent's unit assertion, not on my
+observation. This does not change the verdict: the behaviour is unreachable-by-construction in this
+build, which is the same thing as harmless. It becomes testable again when CONTRACT-026 lands tag
+application, and should be re-verified then.
+
+### The other five sub-criteria, re-confirmed after the rebuild
+
+`GET /api/search` is still the only search request; `.sr-path` heading-path subtitles present on
+every row (`Greenhouse plan › Watering`); grouping by kind intact (`Documents · 6`); the archived
+chip still emits `includeArchived=true` with no `status` parameter; `<mark>` highlighting intact;
+zero page errors and zero uncaught exceptions.
+
+### Why this is PASS-with-carried-criterion rather than PASS
+
+SPEC §11 still names `tag` among the chips the overlay's query composes with, and that promise is
+not yet kept. The interim fix does not pretend otherwise — it removes the lie, not the gap. The gap
+is explicitly owned by **CONTRACT-026**, and this criterion should be re-tested there rather than
+being quietly closed here.
+
+---
+
+## Failures (original pass, 2026-08-02 — superseded by the re-evaluation above, kept as history)
 
 ### FAIL-1: the `tag:` filter chip is an inert control
 
@@ -160,7 +232,11 @@ after clicking each:
 4. Click the `type: any` chip — it cycles to `type: note` and re-queries.
 5. Click the `tag: any` chip — nothing happens, in the DOM or on the wire.
 
-**Status**: this is a known, disclosed consequence of the endpoint change (a `SearchHit` carries no
+**Resolution (2026-08-02)**: fixed at the honesty level by the interim commit — see the
+re-evaluation section above. The chip is now disabled, keyboard-skipped, visually dimmed and
+self-explaining. Tag *application* in the overlay remains open under CONTRACT-026.
+
+**Status at the time of filing**: this is a known, disclosed consequence of the endpoint change (a `SearchHit` carries no
 `tags`, so the chip has no vocabulary to offer), it is already **escalated to the orchestrator as a
 contract question**, and sprint-022's TEST-1027 explicitly permits it *provided the log states which
 chip lost its options and why* — which the log does. It is recorded here as a criterion failure
@@ -179,7 +255,17 @@ as an affordance and does nothing is a user-visible defect regardless of its cau
 
 ## Summary
 
-5 of 6 sub-criteria passed. The endpoint switch, ranked list, heading-path subtitles, degrade note,
-archived semantics, debounce and — most importantly — the save-as-view lane separation (0
-`/api/search` requests on board load) are all correct on the real wire. One chip is dead, and it is
-a control the spec names.
+**Final: PASS, with sub-criterion 1c carried to CONTRACT-026.**
+
+5 of 6 sub-criteria passed outright on the real wire: the endpoint switch, ranked list with
+heading-path subtitles, the degrade note matching `corpus index status`'s word, archived-by-omission
+semantics, one-request debounce, and — the one that mattered most — the save-as-view lane separation
+(**0** `/api/search` requests on board load, the saved view carrying `sort: relevance` in the list
+grammar).
+
+The sixth, the `tag:` chip, was a dead affordance in the first pass and is now an honest disabled
+one: no pointer effect, no keyboard focus, no request, visually unavailable, and self-explaining to
+both sighted and assistive users. Tag filtering itself survives intact on board columns. What
+remains open is SPEC §11's promise that the *overlay* composes a tag filter — deliberately carried
+to CONTRACT-026 rather than closed here, and to be re-tested there together with the
+"in-query tags still clear" behaviour that is unreachable-by-construction in this build.
