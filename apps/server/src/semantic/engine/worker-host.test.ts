@@ -86,6 +86,9 @@ parentPort.postMessage({ kind: "ready" });
 setTimeout(() => { throw new Error("wasm heap exhausted"); }, 1);
 `;
 
+/** Dies without ever reporting ready: a load that fails by dying, not by saying so. */
+const DIE_BEFORE_READY = `process.exit(3);`;
+
 let dir: string;
 const opened: InferenceHost[] = [];
 
@@ -295,13 +298,28 @@ describe("createWorkerHost — a worker that dies", () => {
 
   it("turns an uncaught throw into one lost-worker report, not a process crash", async () => {
     const lost: string[] = [];
-    await hostOn(THROW_AFTER_READY, { onLost: (detail) => lost.push(detail) });
+    // The host is *returned*: a worker that posted `ready` before dying loaded
+    // fine, so the outage is reported on a live host rather than failing the
+    // load. That this holds even when the death overtakes the `ready` — the two
+    // travel on different ports, see `lose`'s note — is what `lose` defers for.
+    const host = await hostOn(THROW_AFTER_READY, { onLost: (detail) => lost.push(detail) });
 
     await waitFor(() => lost.length > 0);
     expect(lost[0]).toMatch(/wasm heap exhausted/);
     // `error` and `exit` both fire for an uncaught throw; it is one outage.
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(lost).toHaveLength(1);
+    // A provider outage, not a dead server: the host answers, and answers with
+    // the reason it lost.
+    await expect(host.embed(["after"])).rejects.toThrow(/wasm heap exhausted/);
+  });
+
+  it("fails the load when the worker dies before it can report ready", async () => {
+    // The other half of `lose`'s deferred `ready`: settling one turn late must
+    // not turn a worker that never loaded into a load that never settles.
+    await expect(
+      createWorkerHost(specFor(), { entry: { source: DIE_BEFORE_READY } }),
+    ).rejects.toThrow(/exited unexpectedly \(code 3\)/);
   });
 });
 
