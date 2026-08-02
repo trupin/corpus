@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-01T00:00:00Z
+updated: 2026-08-02T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -205,6 +205,11 @@ than assuming them:
   exactly as it would watch you. Same discipline: name the object and the change.
 - A reply whose work changed documents closes with the `↳ ` trace line; the comment skill
   states the grammar.
+- Anything a reply hands over for reuse elsewhere — a prepared prompt, a command line, a
+  config snippet — sits alone in a fenced block whose info string labels it (`prompt`,
+  `command`), one deliverable per fence, prose outside it: the board renders that fence as a
+  **copyable canvas** titled by the label. The comment skill states the convention; it binds
+  the turns you post yourself just as it binds a subagent's.
 
 **Queue state never crosses the boundary.** A subagent never runs `corpus queue
 claim-all`, `corpus queue complete`, `corpus queue fail`, or `corpus queue defer`: it

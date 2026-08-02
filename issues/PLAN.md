@@ -229,13 +229,13 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | PLUGINS-010 | Clicking a todo item opens its document with the item revealed (dogfood) | todo | P2 | PLUGINS-005, UI-037 |
 | UI-034 | Task-list items render unstyled: bullet + stacked checkbox (dogfood, sprint-023) | done | P1 | PLUGINS-005 |
 | UI-036 | Todo document rows on the board have no context menu at all (sprint-023 OC3) | done | P1 | — |
-| UI-037 | Reveal-target seam: discriminated open payload through kit + reader (sprint-023 OC5) | todo | P2 | — |
-| UI-038 | Column header sort control wraps in narrow columns; degrade label to "last ↓" (dogfood) | todo | P2 | — |
+| UI-037 | Reveal-target seam: discriminated open payload through kit + reader (sprint-023 OC5) | done | P2 | — |
+| UI-038 | Column header sort control wraps in narrow columns; degrade label to "last ↓" (dogfood) | done | P2 | — |
 | UI-039 | Column query editor: autocomplete + syntax help (dogfood) | todo | P2 | — |
 | SERVER-051 | Embed worker emits SSE invalidations for index status (§11 pill rider) | done | P1 | — |
 | UI-040 | Console strip: semantic-index pill with live progress (§11 rider, signed) | done | P1 | SERVER-051 |
 | UI-041 | Copy button on fenced blocks in rendered turns (§11 canvas rider, signed) | done | P1 | — |
-| AGENT-010 | Skills: reusable deliverables go in labeled fenced blocks | todo | P2 | — |
+| AGENT-010 | Skills: reusable deliverables go in labeled fenced blocks | done | P2 | — |
 | UI-042 | Clipboard fidelity: rich HTML copy out, rich paste in as markdown (§11 rider, signed) | done | P1 | — |
 
 Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.

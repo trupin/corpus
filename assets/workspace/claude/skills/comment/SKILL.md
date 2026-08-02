@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-01T00:00:00Z
+updated: 2026-08-02T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -299,6 +299,14 @@ Rules:
 - **State what changed.** Every document you created, edited, moved, archived or tagged is
   named in the reply by its `[[id]]` ref, so the person can click through to it. Nothing you
   do is silent.
+- **Anything the person will lift and reuse goes in a labeled fence.** A prompt you prepared
+  for another agent, a command line to run, a config snippet, a message to send on: put it in
+  a fenced block whose info string names what it is (`prompt`, `command`, `config`) —
+  **one deliverable per fence**, with every word about it outside the fence. The board renders
+  such a fence as a **copyable canvas**: the label is its title, and the copy button hands over
+  the block's raw text, so the fence boundary is exactly what the person gets. This changes
+  nothing else you write — prose stays prose, and code you are explaining rather than handing
+  over is fenced however the explanation reads best.
 - **Close a turn that wrote with a trace line.** When the turn's work changed the corpus, the
   reply's **final line — and only its final line —** is a trace: the arrow `↳ `, a space, then
   a one-line, past-tense report of what the work did, as in
@@ -312,6 +320,15 @@ Rules:
   restating the question, no apologising.
 - **Write like a colleague**, in plain sentences. Say what you did and what you concluded; if
   something is uncertain, say which part and why.
+
+So a prompt prepared for another agent is handed over like this — the sentence introducing it
+above the fence, nothing but the prompt inside it, and the turn's trace line, if the turn
+wrote, still last of all:
+
+```prompt
+Read [[doc_a1b2c3]] and [[doc_7e3a91]], then say in three sentences whether the
+6.4% rate assumption still holds for the 2026 refinance.
+```
 
 ## Engagement and closure
 
