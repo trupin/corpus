@@ -43,6 +43,7 @@ export * from "./anchor.js";
 export * from "./attachment.js";
 export * from "./capture.js";
 export * from "./check.js";
+export * from "./context.js";
 export * from "./db.js";
 export * from "./doc.js";
 export * from "./error.js";

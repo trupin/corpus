@@ -1095,6 +1095,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The thread's bounded context pack
+         * @description A **briefing** for one conversation: the parent-side passage the thread is about, plus the most-related excerpts from across the corpus — each an id, a heading path and a short excerpt, ranked by relatedness to the thread's anchor *and* its text. **Bounded by contract**: reading a pack costs roughly the same however large the corpus grows (SPEC.md §7), so the response caps the excerpt count, each excerpt's length and the parent-side prose, and never carries a body. `shape` discriminates the five thread cases in one field — `anchored` (the quote plus the whole enclosing section), `whole-document` (the parent's title and opening content), `orphaned-anchor` (the preserved quote, no resolved passage, SPEC.md §6), `standalone` (no parent block at all) and `parent-deleted` (the parent was deleted out from under the thread: **still a `200`**, with the id that no longer resolves named, because the conversation is real and a `404` here would make the verb unusable on exactly the threads hardest to reconstruct). A section past the cap is truncated around the anchor and the parent block says so, so an agent knows to escalate to `GET /api/docs/{id}` rather than assume it saw everything. `semanticIndex` reports when the semantic half of ranking is not caught up, the same word `/api/search` and `/api/docs/{id}/related` report for the same workspace (SPEC.md §9.1); a semantic provider that fails degrades the ranking, never the status code. **No query parameters**: the bounds live in the contract, not in a flag. A document that exists but is not a thread is a `404` on this surface rather than a `400`, matching `GET /api/threads/{id}`. Read-only; no acting party.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The pack, in whichever of the five shapes the thread has. Always within every cap the schema publishes. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AnchoredContextPack"] | components["schemas"]["WholeDocumentContextPack"] | components["schemas"]["OrphanedAnchorContextPack"] | components["schemas"]["StandaloneContextPack"] | components["schemas"]["DeletedParentContextPack"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{id}/turns": {
         parameters: {
             query?: never;
@@ -4137,6 +4206,168 @@ export interface components {
             requestsAgent?: boolean;
             /** @description Attached files, sent as repeated `files` parts. Bytes are stored under `.corpus/attachments/<thread-id>/<turn-ts>/` and referenced from the turn body by relative markdown links (SPEC.md §6). */
             files?: string[];
+        };
+        AnchoredContextPack: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "anchored";
+            /**
+             * @description The thread this pack briefs.
+             * @example th_x9y8
+             */
+            threadId: string;
+            /** @description The most-related excerpts from across the corpus, most related first, at most 10 of them (`CONTEXT_MAX_EXCERPTS`), ties broken deterministically. Ranked by relatedness to the thread's anchor **and** its text (SPEC.md §7), through the reference graph and — from Retrieval Phase B — semantic similarity. Empty when nothing relates, which is an answer rather than an error. Never contains the thread itself or its parent. */
+            excerpts: components["schemas"]["ContextExcerpt"][];
+            /**
+             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer. `GET /api/index/status` is the detailed surface behind this one word — the same value with the counts, the recorded provider/model identity and the rebuild flag it derives from.
+             * @enum {string}
+             */
+            semanticIndex?: "current" | "indexing" | "stale" | "disabled";
+            /** @description The passage the conversation is about, and the section it lives in. */
+            parent: {
+                /**
+                 * @description The parent document this thread hangs off.
+                 * @example doc_a1b2c3
+                 */
+                id: string;
+                /** @description The parent's current title. */
+                title: string;
+                /** @description Where the anchored passage sits in the parent, joined by ` › ` like every other heading path here, falling back to the parent's title for a passage above the first heading. */
+                headingPath: string;
+                /** @description The anchor's own text — what the user selected when the thread was opened (SPEC.md §6) — at most 1000 characters (`CONTEXT_MAX_QUOTE_CHARS`). */
+                quote: string;
+                /** @description The **whole heading section enclosing the quote**, from its heading line to the heading that closes it — not a window around the match, and not one chunk of a section (a section may span several). At most 4000 characters (`CONTEXT_MAX_SECTION_CHARS`); past that it is truncated around the quote and `truncated` says so. */
+                section: string;
+                /** @description `true` when the text above was cut to fit `CONTEXT_MAX_SECTION_CHARS` or `CONTEXT_MAX_QUOTE_CHARS`. The pack is a briefing, so the cut is a normal outcome for a large section rather than an error — but it is **stated**, never silent: an agent that needs the rest reads the parent with `corpus doc show`, and an agent editing against a section must know whether it saw all of it. Truncation is anchored on the anchor, so the quote and its immediate surroundings always survive the cut. */
+                truncated: boolean;
+            };
+        };
+        ContextExcerpt: {
+            /**
+             * @description The document the excerpt was taken from — a thread id when the passage lives in a thread, since threads are documents (SPEC.md §6). Never the thread this pack is about, and never its parent: the pack is context *around* the conversation, and both are already in it.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /** @description Where inside that document the excerpt sits, rendered as the enclosing headings from outermost to innermost joined by ` › ` (`HEADING_PATH_SEPARATOR`) — the same address a search hit carries, built the same way. A passage with no heading above it reports the document's title, so a row always has an address a human can read. A **display join**: print it, never split it. */
+            headingPath: string;
+            /** @description The matching passage, in plain text, at most 320 characters (`CONTEXT_MAX_EXCERPT_CHARS`) — enough to judge whether the document is worth opening, never enough to replace opening it. A longer passage is **truncated to the cap, not dropped**, so a well-ranked row never disappears for being verbose. Reading the document is a separate, deliberate `GET /api/docs/{id}` on this row's id. */
+            excerpt: string;
+            /**
+             * @description How this document is related: `linked` — the reference graph connects them (an outgoing `[[ref]]`, a backlink, or both directions); `similar` — semantic similarity only; `both` — linked *and* semantically similar. **Retrieval Phase A emits only `linked`**; the other two arrive with the semantic index (SPEC.md §9.1) and are in the vocabulary now so their arrival changes no shape.
+             * @enum {string}
+             */
+            relation: "linked" | "similar" | "both";
+        };
+        WholeDocumentContextPack: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "whole-document";
+            /**
+             * @description The thread this pack briefs.
+             * @example th_x9y8
+             */
+            threadId: string;
+            /** @description The most-related excerpts from across the corpus, most related first, at most 10 of them (`CONTEXT_MAX_EXCERPTS`), ties broken deterministically. Ranked by relatedness to the thread's anchor **and** its text (SPEC.md §7), through the reference graph and — from Retrieval Phase B — semantic similarity. Empty when nothing relates, which is an answer rather than an error. Never contains the thread itself or its parent. */
+            excerpts: components["schemas"]["ContextExcerpt"][];
+            /**
+             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer. `GET /api/index/status` is the detailed surface behind this one word — the same value with the counts, the recorded provider/model identity and the rebuild flag it derives from.
+             * @enum {string}
+             */
+            semanticIndex?: "current" | "indexing" | "stale" | "disabled";
+            /** @description The parent, identified and opened — there is no anchored passage to show. */
+            parent: {
+                /**
+                 * @description The parent document this thread hangs off.
+                 * @example doc_a1b2c3
+                 */
+                id: string;
+                /** @description The parent's current title. */
+                title: string;
+                /** @description The parent's opening content — the preamble above its first heading, or its first section when there is no preamble. Whole units of prose, never a character slice of the body. At most 4000 characters (`CONTEXT_MAX_SECTION_CHARS`), with `truncated` set when the cap cut it. */
+                opening: string;
+                /** @description `true` when the text above was cut to fit `CONTEXT_MAX_SECTION_CHARS` or `CONTEXT_MAX_QUOTE_CHARS`. The pack is a briefing, so the cut is a normal outcome for a large section rather than an error — but it is **stated**, never silent: an agent that needs the rest reads the parent with `corpus doc show`, and an agent editing against a section must know whether it saw all of it. Truncation is anchored on the anchor, so the quote and its immediate surroundings always survive the cut. */
+                truncated: boolean;
+            };
+        };
+        OrphanedAnchorContextPack: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "orphaned-anchor";
+            /**
+             * @description The thread this pack briefs.
+             * @example th_x9y8
+             */
+            threadId: string;
+            /** @description The most-related excerpts from across the corpus, most related first, at most 10 of them (`CONTEXT_MAX_EXCERPTS`), ties broken deterministically. Ranked by relatedness to the thread's anchor **and** its text (SPEC.md §7), through the reference graph and — from Retrieval Phase B — semantic similarity. Empty when nothing relates, which is an answer rather than an error. Never contains the thread itself or its parent. */
+            excerpts: components["schemas"]["ContextExcerpt"][];
+            /**
+             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer. `GET /api/index/status` is the detailed surface behind this one word — the same value with the counts, the recorded provider/model identity and the rebuild flag it derives from.
+             * @enum {string}
+             */
+            semanticIndex?: "current" | "indexing" | "stale" | "disabled";
+            /** @description The parent, and the quote that no longer resolves inside it. No resolved passage is reported, because there is none. */
+            parent: {
+                /**
+                 * @description The parent document this thread hangs off.
+                 * @example doc_a1b2c3
+                 */
+                id: string;
+                /** @description The parent's current title. */
+                title: string;
+                /** @description The preserved anchor text: what the user selected when the thread was opened, kept even though the parent no longer contains it verbatim. The parent's current text is a `GET /api/docs/{id}` away — the pack does not guess where the passage went, because guessing is exactly the misattachment exact-only resolution exists to prevent. */
+                quote: string;
+                /** @description `true` when the text above was cut to fit `CONTEXT_MAX_SECTION_CHARS` or `CONTEXT_MAX_QUOTE_CHARS`. The pack is a briefing, so the cut is a normal outcome for a large section rather than an error — but it is **stated**, never silent: an agent that needs the rest reads the parent with `corpus doc show`, and an agent editing against a section must know whether it saw all of it. Truncation is anchored on the anchor, so the quote and its immediate surroundings always survive the cut. */
+                truncated: boolean;
+            };
+        };
+        StandaloneContextPack: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "standalone";
+            /**
+             * @description The thread this pack briefs.
+             * @example th_x9y8
+             */
+            threadId: string;
+            /** @description The most-related excerpts from across the corpus, most related first, at most 10 of them (`CONTEXT_MAX_EXCERPTS`), ties broken deterministically. Ranked by relatedness to the thread's anchor **and** its text (SPEC.md §7), through the reference graph and — from Retrieval Phase B — semantic similarity. Empty when nothing relates, which is an answer rather than an error. Never contains the thread itself or its parent. */
+            excerpts: components["schemas"]["ContextExcerpt"][];
+            /**
+             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer. `GET /api/index/status` is the detailed surface behind this one word — the same value with the counts, the recorded provider/model identity and the rebuild flag it derives from.
+             * @enum {string}
+             */
+            semanticIndex?: "current" | "indexing" | "stale" | "disabled";
+        };
+        DeletedParentContextPack: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "parent-deleted";
+            /**
+             * @description The thread this pack briefs.
+             * @example th_x9y8
+             */
+            threadId: string;
+            /** @description The most-related excerpts from across the corpus, most related first, at most 10 of them (`CONTEXT_MAX_EXCERPTS`), ties broken deterministically. Ranked by relatedness to the thread's anchor **and** its text (SPEC.md §7), through the reference graph and — from Retrieval Phase B — semantic similarity. Empty when nothing relates, which is an answer rather than an error. Never contains the thread itself or its parent. */
+            excerpts: components["schemas"]["ContextExcerpt"][];
+            /**
+             * @description Whether the semantic half of ranking is caught up (SPEC.md §9.1) — **Retrieval Phase B's seam, inert in Phase A**, where it is absent or `current` and nothing computes it. Treat **any** value other than `current` as degraded ranking worth telling the caller about, rather than matching the values exhaustively: `indexing` (a rebuild or backfill is running), `stale` (documents are still pending), `disabled` (no semantic index is configured — lexical ranking only). Absent means the server makes no claim, which is Phase A's normal answer. `GET /api/index/status` is the detailed surface behind this one word — the same value with the counts, the recorded provider/model identity and the rebuild flag it derives from.
+             * @enum {string}
+             */
+            semanticIndex?: "current" | "indexing" | "stale" | "disabled";
+            /**
+             * @description The document id the thread still names, which no longer resolves — deleted while the thread survived it. Reading it is a `404`; git retains its history. No parent block accompanies it, because there is no parent content left to carry.
+             * @example doc_a1b2c3
+             */
+            deletedParent: string;
         };
         AppendTurnResponse: {
             thread: components["schemas"]["ThreadSummary"];

@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { ActorHeaderSchema } from "../schemas/actor.js";
+import { ContextPackSchema } from "../schemas/context.js";
 import { ThreadIdSchema } from "../schemas/id.js";
 import {
   DeleteTurnResultSchema,
@@ -41,6 +42,65 @@ export const getThread = createRoute({
   request: { params: ThreadIdParamSchema },
   responses: {
     200: jsonContent(ThreadSchema, "The thread and every turn, oldest first."),
+    400: VALIDATION_RESPONSE,
+    401: UNAUTHORIZED_RESPONSE,
+    404: NOT_FOUND_RESPONSE,
+  },
+});
+
+/**
+ * The thread's **context pack** (SPEC.md §7 Retrieval discipline, §9.2 —
+ * Retrieval Phase C). The endpoint behind `corpus thread context <id>`, and from
+ * Phase C the first thing the product's comment skill reads about a
+ * conversation.
+ *
+ * **Why this is not two calls the caller makes itself.** An agent handed a
+ * thread id can already reach every ingredient — `GET /api/threads/{id}` for the
+ * turns, `GET /api/docs/{id}` for the parent's body, `GET /api/docs/{id}/related`
+ * for neighbours — and assembling them costs a whole parent body to read one
+ * section, plus a related list whose rows are the document's *opening* line
+ * rather than the passage that matched. This route exists for the frugality
+ * contract: one call, bounded output, the passage rather than the body, and the
+ * matching passage rather than the opening one.
+ *
+ * The shape of the answer is `ContextPackSchema`'s five-way discrimination, and
+ * the caps are its named constants — including the parent-deleted case, which is
+ * a `200` about a thread that exists rather than a `404` inherited from a
+ * document that does not.
+ */
+export const getThreadContext = createRoute({
+  method: "get",
+  path: "/api/threads/{id}/context",
+  tags: ["threads"],
+  summary: "The thread's bounded context pack",
+  description:
+    "A **briefing** for one conversation: the parent-side passage the thread is about, plus the " +
+    "most-related excerpts from across the corpus — each an id, a heading path and a short " +
+    "excerpt, ranked by relatedness to the thread's anchor *and* its text. **Bounded by " +
+    "contract**: reading a pack costs roughly the same however large the corpus grows " +
+    "(SPEC.md §7), so the response caps the excerpt count, each excerpt's length and the " +
+    "parent-side prose, and never carries a body. `shape` discriminates the five thread cases in " +
+    "one field — `anchored` (the quote plus the whole enclosing section), `whole-document` (the " +
+    "parent's title and opening content), `orphaned-anchor` (the preserved quote, no resolved " +
+    "passage, SPEC.md §6), `standalone` (no parent block at all) and `parent-deleted` (the parent " +
+    "was deleted out from under the thread: **still a `200`**, with the id that no longer " +
+    "resolves named, because the conversation is real and a `404` here would make the verb " +
+    "unusable on exactly the threads hardest to reconstruct). A section past the cap is truncated " +
+    "around the anchor and the parent block says so, so an agent knows to escalate to " +
+    "`GET /api/docs/{id}` rather than assume it saw everything. `semanticIndex` reports when the " +
+    "semantic half of ranking is not caught up, the same word `/api/search` and " +
+    "`/api/docs/{id}/related` report for the same workspace (SPEC.md §9.1); a semantic provider " +
+    "that fails degrades the ranking, never the status code. **No query parameters**: the bounds " +
+    "live in the contract, not in a flag. A document that exists but is not a thread is a `404` " +
+    "on this surface rather than a `400`, matching `GET /api/threads/{id}`. Read-only; no acting " +
+    "party.",
+  request: { params: ThreadIdParamSchema },
+  responses: {
+    200: jsonContent(
+      ContextPackSchema,
+      "The pack, in whichever of the five shapes the thread has. Always within every cap the " +
+        "schema publishes.",
+    ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,
     404: NOT_FOUND_RESPONSE,

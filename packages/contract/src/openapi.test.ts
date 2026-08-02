@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER, ACTORS, DEFAULT_ACTOR } from "./actor.js";
 import { BEARER_SECURITY_SCHEME, buildOpenApiDocument, CONTRACT_VERSION } from "./openapi.js";
 import { CHECK_CODES, CHECK_WARNING_CODES } from "./schemas/check.js";
+import {
+  CONTEXT_MAX_EXCERPT_CHARS,
+  CONTEXT_MAX_EXCERPTS,
+  CONTEXT_MAX_QUOTE_CHARS,
+  CONTEXT_MAX_SECTION_CHARS,
+  CONTEXT_PACK_SHAPES,
+} from "./schemas/context.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
 import { ERROR_CODES } from "./schemas/error.js";
 import { QUEUE_EVENT_STATUSES } from "./schemas/queue.js";
@@ -75,6 +82,9 @@ interface SchemaNode {
   readonly required?: string[];
   readonly properties?: Record<string, SchemaNode>;
   readonly items?: SchemaNode;
+  readonly maxItems?: number;
+  readonly maxLength?: number;
+  readonly discriminator?: { propertyName: string; mapping?: Record<string, string> };
   readonly allOf?: SchemaNode[];
   readonly anyOf?: SchemaNode[];
   readonly oneOf?: SchemaNode[];
@@ -809,6 +819,218 @@ describe("the semantic-index surface (CONTRACT-023)", () => {
     // space `DoctorWarningKind` already publishes, so it costs no contract
     // change and no literal is added here. See `routes/index-maintenance.test.ts`.
     expect(componentSchemas?.["DoctorWarning"]?.properties?.["kind"]?.type).toBe("string");
+  });
+});
+
+/**
+ * CONTRACT-024: the context pack. Retrieval Phase C's one endpoint, and the
+ * contract's **first response-side bound** — so the assertions here are mostly
+ * about what reaches the published document, since that is the only place the
+ * caps exist for a client author (`z.infer` erases `.max()`, and nothing in the
+ * shipped stack validates a response — sprint-022 C5).
+ */
+describe("the context pack (CONTRACT-024)", () => {
+  const CONTEXT_PATH = "/api/threads/{id}/context";
+
+  const VARIANTS = [
+    "AnchoredContextPack",
+    "WholeDocumentContextPack",
+    "OrphanedAnchorContextPack",
+    "StandaloneContextPack",
+    "DeletedParentContextPack",
+  ] as const;
+
+  const packSchema = (): SchemaNode =>
+    (
+      operation(CONTEXT_PATH, "get").responses?.["200"]?.content?.["application/json"] as {
+        schema: SchemaNode;
+      }
+    ).schema;
+
+  const parentOf = (variant: string): SchemaNode | undefined =>
+    componentSchemas?.[variant]?.properties?.["parent"];
+
+  it("adds exactly one endpoint to the inventory, spelled as §9.2 spells it", () => {
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("/context"))).toEqual([
+      "GET /api/threads/{id}/context",
+    ]);
+  });
+
+  it("requires the workspace bearer token and declares the read's codes", () => {
+    const op = operation(CONTEXT_PATH, "get");
+    expect(op.security).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["200", "400", "401", "404"]);
+  });
+
+  /**
+   * SPEC.md:344: "Read-only; no acting party." A route names one with a header
+   * parameter, so the assertion is that the only parameter is the path id — and
+   * that there is no request body to carry an instruction either.
+   */
+  it("names no acting party, takes no body, and declares no query parameter", () => {
+    const op = operation(CONTEXT_PATH, "get");
+    expect(op.parameters?.map((entry) => `${entry.in}:${entry.name}`)).toEqual(["path:id"]);
+    expect(op.requestBody).toBeUndefined();
+    expect(op.description).toContain("Read-only; no acting party");
+  });
+
+  /**
+   * The five shapes, discriminated on one field. The `oneOf` is **inlined** into
+   * the response rather than registered under a name: a registered union has no
+   * `type: "object"`, and the "every named component is a plain, non-nullable,
+   * undefaulted object" invariant above is the guard that catches
+   * `Named.nullable()` corrupting a shared component. Inlining keeps that
+   * invariant strict while still publishing every branch as a referenced
+   * component, which is what a client generator consumes.
+   */
+  it("answers with a five-way discriminated union, keyed on `shape`", () => {
+    const schema = packSchema();
+    expect(schema.oneOf?.map((branch) => branch.$ref?.split("/").pop())).toEqual([...VARIANTS]);
+    expect(schema.discriminator?.propertyName).toBe("shape");
+    expect(Object.keys(schema.discriminator?.mapping ?? {})).toEqual([...CONTEXT_PACK_SHAPES]);
+  });
+
+  it("registers each branch as a plain object component rather than naming the union", () => {
+    expect(Object.keys(componentSchemas ?? {})).not.toContain("ContextPack");
+    for (const variant of VARIANTS) {
+      expect(componentSchemas?.[variant]?.type, variant).toBe("object");
+    }
+  });
+
+  /**
+   * TEST-943's published half: the shape is readable from one field, and the
+   * cases that carry no parent content carry no `parent` property at all — an
+   * absence a generated type reproduces, so a client cannot probe for a block
+   * that was never declared.
+   */
+  it.each([
+    [
+      "AnchoredContextPack",
+      "anchored",
+      ["id", "title", "headingPath", "quote", "section", "truncated"],
+    ],
+    ["WholeDocumentContextPack", "whole-document", ["id", "title", "opening", "truncated"]],
+    ["OrphanedAnchorContextPack", "orphaned-anchor", ["id", "title", "quote", "truncated"]],
+  ])("gives %s the `%s` literal and exactly its own parent fields", (variant, shape, fields) => {
+    expect(componentSchemas?.[variant]?.properties?.["shape"]?.enum).toEqual([shape]);
+    expect(Object.keys(parentOf(variant)?.properties ?? {})).toEqual(fields);
+    expect(componentSchemas?.[variant]?.required).toContain("parent");
+  });
+
+  it("declares no parent block on the two parentless shapes", () => {
+    for (const variant of ["StandaloneContextPack", "DeletedParentContextPack"]) {
+      expect(Object.keys(componentSchemas?.[variant]?.properties ?? {}), variant).not.toContain(
+        "parent",
+      );
+    }
+  });
+
+  /** Open Conflict 9: the deleted parent is named, and naming it is mandatory. */
+  it("makes the deleted parent's id a required statement rather than an optional hint", () => {
+    expect(componentSchemas?.["DeletedParentContextPack"]?.required).toContain("deletedParent");
+    expect(operation(CONTEXT_PATH, "get").description).toContain("still a `200`");
+  });
+
+  /**
+   * TEST-945/TEST-946's published half. The `.max()` calls exist to put
+   * `maxItems` and `maxLength` into this document — that, plus a `safeParse`
+   * that rejects overflow, is the whole of what a response-side bound can be
+   * (Open Conflict 4). Actual enforcement is SERVER-047's rank-then-cut.
+   */
+  it("publishes the excerpt count cap on every shape's excerpt array", () => {
+    for (const variant of VARIANTS) {
+      expect(componentSchemas?.[variant]?.properties?.["excerpts"]?.maxItems, variant).toBe(
+        CONTEXT_MAX_EXCERPTS,
+      );
+    }
+  });
+
+  it("publishes the per-excerpt length cap on the row every shape shares", () => {
+    expect(componentSchemas?.["ContextExcerpt"]?.properties?.["excerpt"]?.maxLength).toBe(
+      CONTEXT_MAX_EXCERPT_CHARS,
+    );
+  });
+
+  it.each([
+    ["AnchoredContextPack", "section", CONTEXT_MAX_SECTION_CHARS],
+    ["WholeDocumentContextPack", "opening", CONTEXT_MAX_SECTION_CHARS],
+    ["AnchoredContextPack", "quote", CONTEXT_MAX_QUOTE_CHARS],
+    ["OrphanedAnchorContextPack", "quote", CONTEXT_MAX_QUOTE_CHARS],
+  ])("publishes %s.parent.%s's length cap", (variant, field, cap) => {
+    expect(parentOf(variant)?.properties?.[field]?.maxLength).toBe(cap);
+  });
+
+  /**
+   * Open Conflict 1: the bound wins, but visibly. A silently truncated section
+   * is worse than no section — the agent would edit against text it believes is
+   * complete — so the flag is required on every parent block that carries prose,
+   * and the escalation path is named in the published description.
+   */
+  it("requires the truncation flag wherever parent-side prose is carried", () => {
+    for (const variant of [
+      "AnchoredContextPack",
+      "WholeDocumentContextPack",
+      "OrphanedAnchorContextPack",
+    ]) {
+      expect(parentOf(variant)?.required, variant).toContain("truncated");
+      expect(parentOf(variant)?.properties?.["truncated"]?.description).toContain(
+        "anchored on the anchor",
+      );
+    }
+  });
+
+  /**
+   * TEST-949 / C4. SPEC.md:285 and :344 both say "each an id + heading path +
+   * short excerpt"; `RelatedDoc` was considered and is one field short — it has
+   * no `headingPath`, and its excerpt is the document's *opening* line rather
+   * than the passage that matched.
+   */
+  it("is an id, a heading path, a short excerpt and a relation — and never a body", () => {
+    const excerpt = componentSchemas?.["ContextExcerpt"];
+    expect(Object.keys(excerpt?.properties ?? {})).toEqual([
+      "id",
+      "headingPath",
+      "excerpt",
+      "relation",
+    ]);
+    expect(excerpt?.required).toEqual(["id", "headingPath", "excerpt", "relation"]);
+    expect(excerpt?.properties?.["relation"]?.enum).toEqual([...RELATIONS]);
+    expect(excerpt?.properties?.["excerpt"]?.description).toContain("never enough to replace");
+  });
+
+  it("keeps the related row's heading path on the same display-join rule as a search hit", () => {
+    const description =
+      componentSchemas?.["ContextExcerpt"]?.properties?.["headingPath"]?.description;
+    expect(description).toContain(HEADING_PATH_SEPARATOR);
+    expect(description).toContain("print it, never split it");
+  });
+
+  /**
+   * Open Conflict 3 / C6. The pack is the third ranked surface, and it must
+   * report the same word the other two report for the same workspace — so it
+   * reuses `semanticIndexField` rather than declaring an enum beside it. Both
+   * the vocabulary *and* the published sentence are compared, because a retyped
+   * description is how two surfaces start meaning different things.
+   */
+  it("reuses the retrieval envelopes' staleness field byte for byte", () => {
+    const shared = componentSchemas?.["SearchResults"]?.properties?.["semanticIndex"];
+    expect(shared?.enum).toEqual([...SEMANTIC_INDEX_STATES]);
+    for (const variant of VARIANTS) {
+      const field = componentSchemas?.[variant]?.properties?.["semanticIndex"];
+      expect(field?.enum, variant).toEqual(shared?.enum);
+      expect(field?.description, variant).toBe(shared?.description);
+      expect(componentSchemas?.[variant]?.required, variant).not.toContain("semanticIndex");
+    }
+  });
+
+  it("states the bound, the truncation escalation and the shared degrade word in the route's prose", () => {
+    const description = operation(CONTEXT_PATH, "get").description ?? "";
+    expect(description).toContain(
+      "reading a pack costs roughly the same however large the corpus grows",
+    );
+    expect(description).toContain("truncated around the anchor");
+    expect(description).toContain("**No query parameters**");
+    expect(description).toContain("/api/docs/{id}/related");
   });
 });
 

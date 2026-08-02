@@ -77,6 +77,13 @@ const row = {
 
 const turn = { author: "user" as const, ts: "2026-07-19T10:05:00Z", body: "hi" };
 
+const contextExcerpt = {
+  id: "doc_b2c3d4",
+  headingPath: `Lender comparison${HEADING_PATH_SEPARATOR}Rates`,
+  excerpt: "Three lenders quoted between 5.9% and 6.4% in July.",
+  relation: "linked" as const,
+};
+
 const thread = {
   id: "th_x9y8",
   title: "Re: 30-year fixed assumption",
@@ -348,6 +355,35 @@ function createStubApp() {
     );
   });
   app.openapi(contractRoutes.getThread, (c) => c.json(thread, 200));
+  // The context pack (CONTRACT-024). The handler branches on the id so the
+  // mounted route proves the discriminated response actually serialises — a
+  // union answer is the one shape a single stub reply would not exercise.
+  app.openapi(contractRoutes.getThreadContext, (c) => {
+    const { id } = c.req.valid("param");
+    const base = { threadId: id, excerpts: [contextExcerpt], semanticIndex: "current" as const };
+    if (id === "th_standalone") return c.json({ shape: "standalone" as const, ...base }, 200);
+    if (id === "th_gone") {
+      return c.json(
+        { shape: "parent-deleted" as const, ...base, deletedParent: "doc_a1b2c3" },
+        200,
+      );
+    }
+    return c.json(
+      {
+        shape: "anchored" as const,
+        ...base,
+        parent: {
+          id: "doc_a1b2c3",
+          title: "Mortgage options",
+          headingPath: `Mortgage options${HEADING_PATH_SEPARATOR}Rates`,
+          quote: "the 30-year fixed rate assumption is 6.1%",
+          section: "## Rates\n\nWe assume the 30-year fixed rate assumption is 6.1%.",
+          truncated: false,
+        },
+      },
+      200,
+    );
+  });
   mountAppendTurn(app, (c) =>
     c.json({ thread: threadSummary, turn, eventId: null, warnings: [] }, 201),
   );
@@ -682,6 +718,57 @@ describe("routes mounted on a Hono app", () => {
     expect((await app.request("/api/docs/doc_a1b2c3/related?limit=51")).status).toBe(400);
     expect((await app.request("/api/search?q=rates&limit=51")).status).toBe(400);
     expect((await app.request("/api/search?q=rates&limit=0")).status).toBe(400);
+  });
+
+  /**
+   * The routing half of CONTRACT-024, and the same hazard one resource over:
+   * `/api/threads/{id}/context` sits a segment below `/api/threads/{id}`, so a
+   * real request has to prove it reaches the pack rather than the thread read.
+   * Both are `200`s on the same id, so the *answer* is the assertion.
+   */
+  it("routes /api/threads/{id}/context to the pack, not the thread read", async () => {
+    const app = createStubApp();
+    const response = await app.request("/api/threads/th_x9y8/context");
+    expect(response.status).toBe(200);
+    const pack = (await response.json()) as {
+      shape: string;
+      threadId: string;
+      parent: { section: string };
+      excerpts: { headingPath: string }[];
+    };
+    expect(pack.shape).toBe("anchored");
+    expect(pack.threadId).toBe("th_x9y8");
+    expect(pack.parent.section).toContain("6.1%");
+    expect(pack.excerpts[0]?.headingPath).toBe(`Lender comparison${HEADING_PATH_SEPARATOR}Rates`);
+
+    const read = (await (await app.request("/api/threads/th_x9y8")).json()) as {
+      turns: unknown[];
+    };
+    expect(read.turns).toHaveLength(1);
+  });
+
+  /**
+   * The union answers over the wire, not just in the document: three requests,
+   * three different shapes off one mounted route. The parent-deleted case is the
+   * one worth a live request — it is a `200` about a thread whose parent is
+   * gone, and a naive server answers `404` there.
+   */
+  it.each([
+    ["th_standalone", "standalone"],
+    ["th_gone", "parent-deleted"],
+    ["th_x9y8", "anchored"],
+  ])("serialises %s as the %s shape", async (id, shape) => {
+    const response = await createStubApp().request(`/api/threads/${id}/context`);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { shape: string }).shape).toBe(shape);
+  });
+
+  it("validates the thread id on the pack route, and takes no query parameters", async () => {
+    const app = createStubApp();
+    expect((await app.request("/api/threads/doc_a1b2c3/context")).status).toBe(400);
+    // Tolerant reads: an undeclared parameter is stripped, never a 400 — but the
+    // route declares none at all, which is what makes `--json` the CLI's only flag.
+    expect((await app.request("/api/threads/th_x9y8/context?limit=50")).status).toBe(200);
   });
 
   it("refuses a search with no query and answers hits with one", async () => {
