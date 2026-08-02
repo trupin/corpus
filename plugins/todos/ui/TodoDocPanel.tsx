@@ -1,6 +1,8 @@
 import type { DocPanelProps } from "@corpus/kit/plugin";
 import type { ReactElement } from "react";
 import { docSource, dueCount, isOverdue, openItems, readItems } from "../items.js";
+import { legacyStorage } from "./legacy.js";
+import { LegacyItemsNotice } from "./LegacyItemsNotice.js";
 import "./todos.css";
 
 /**
@@ -14,9 +16,16 @@ import "./todos.css";
  * here to go stale, and nothing to keep in sync.
  *
  * A document whose items cannot be read — a pre-PLUGINS-005 `extra.items` key
- * that was hand-edited into something unparseable — renders no panel at all:
- * a stats panel over an unreadable list would be a quiet claim about a broken
- * state the user cannot see from here.
+ * that was hand-edited into something unparseable — renders **no stats**: a
+ * stats panel over an unreadable list would be a quiet claim about a broken
+ * state. Since PLUGINS-008 it does not render *nothing* either; it renders
+ * {@link LegacyItemsNotice}, which says what is wrong. The notice replaces the
+ * blank, it does not restore the numbers.
+ *
+ * The notice sits **above** the strip and appears for any of the three legacy
+ * storage states {@link legacyStorage} distinguishes — including the two where
+ * the numbers below it are perfectly correct, because a correct number is not
+ * the same claim as "this document works".
  *
  * **The deadline chip carries the overdue treatment**, because SPEC.md §12 says
  * it applies wherever items are shown and this is the one surface that showed a
@@ -32,8 +41,14 @@ export interface TodoDocPanelProps extends DocPanelProps {
 }
 
 export function TodoDocPanel({ doc, now }: TodoDocPanelProps): ReactElement | null {
-  const read = readItems(docSource(doc));
-  if (!read.ok) return null;
+  const source = docSource(doc);
+  const legacy = legacyStorage(source);
+  const notice = legacy.kind === "none" ? null : <LegacyItemsNotice state={legacy} />;
+
+  const read = readItems(source);
+  // Unreadable items and a legacy notice are the same condition, so this is the
+  // notice alone rather than nothing — but the stats do not come back.
+  if (!read.ok) return notice;
 
   const today = now ?? new Date();
   const open = openItems(read.items).length;
@@ -42,7 +57,7 @@ export function TodoDocPanel({ doc, now }: TodoDocPanelProps): ReactElement | nu
   const overdue = read.items.filter((item) => isOverdue(item, today)).length;
   const complete = read.items.length === 0 ? 0 : Math.round((done / read.items.length) * 100);
 
-  return (
+  const panel = (
     <div className="doc-panel" data-todo-panel={doc.frontmatter.id}>
       <div className="stat">
         <b data-stat-open>{open}</b>
@@ -72,5 +87,14 @@ export function TodoDocPanel({ doc, now }: TodoDocPanelProps): ReactElement | nu
       )}
       <span className="chip plugin-tag">plugin: todos</span>
     </div>
+  );
+
+  // A migrated document returns exactly the element it always returned.
+  if (notice === null) return panel;
+  return (
+    <>
+      {notice}
+      {panel}
+    </>
   );
 }
