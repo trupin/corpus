@@ -8,7 +8,7 @@
 
 export { attachEmbeddedEngine } from "./attach.js";
 export { modelCacheDir, modelCacheRoot, MODEL_CACHE_DIR_ENV } from "./cache.js";
-export type { CacheLocation } from "./cache.js";
+export type { CacheLocation, ModelCacheRoot } from "./cache.js";
 export {
   artifactPath,
   downloadArtifact,

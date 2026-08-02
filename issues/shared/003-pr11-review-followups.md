@@ -282,3 +282,9 @@ _n/a until triage._
   unit substitutes only). Candidate for a long-run soak eval someday.
 - **TEST-930's literal two-build diff** still unrun (evaluator can't git); substitute
   evidence strong. Optional orchestrator follow-up.
+
+- **SEMANTIC_MIN_SIMILARITY fails open for configured providers** (PR #17 review
+  MINOR 5): 0.15 is measured for MiniLM; OpenAI-family cosine scales score unrelated
+  pairs ~0.6-0.8, so the gate excludes nothing and `similar` becomes a false claim.
+  Design follow-up at triage: per-identity gate, score-carrying rows, or a documented
+  caveat. (Compounds the small-corpus tail item above.)

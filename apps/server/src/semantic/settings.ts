@@ -24,6 +24,7 @@
  */
 
 import { z } from "zod";
+import { redactSecrets } from "./provider.js";
 
 /** Wire shapes this build knows how to speak. `none` is the explicit opt-out. */
 export const CONFIGURED_PROVIDER_KINDS = ["ollama", "openai"] as const;
@@ -117,8 +118,12 @@ export function resolveEmbeddingSettings(
     return invalid(`provider ${JSON.stringify(provider)} needs an "endpoint"`, configPath);
   }
   if (!isHttpUrl(endpoint)) {
+    // Quoted back so the operator can see their typo — through `redactSecrets`,
+    // because a rejected value is still a value they may have written
+    // credentials into (`ftp://user:pass@host` fails this check and would
+    // otherwise land verbatim in a boot warning).
     return invalid(
-      `"endpoint" must be an http(s) URL, got ${JSON.stringify(endpoint)}`,
+      `"endpoint" must be an http(s) URL, got ${JSON.stringify(redactSecrets(endpoint, []))}`,
       configPath,
     );
   }

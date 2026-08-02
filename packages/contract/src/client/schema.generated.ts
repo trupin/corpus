@@ -3173,7 +3173,7 @@ export interface paths {
         put?: never;
         /**
          * Discard and asynchronously rebuild the semantic index
-         * @description Discards the semantic index and re-queues every chunk, re-picking the current default provider and model as it goes — the narrow counterpart of `POST /api/db/rebuild`, which reconstructs the whole projection and likewise queues semantic re-indexing (SPEC.md §9.1). **Takes no request body at all**, and carries no acting party: it touches only derived runtime state, so there is no workspace file change and no git commit to attribute (SPEC.md §9.2). **Returns immediately, before the work is done** — hence `202`, and hence a response that reports only what is already true: the `IndexStatus` snapshot taken the moment everything was queued, which is a caller's acknowledgement (`identity` re-picked, `rebuilding` true, `pending` at the full corpus) and never a claim of completion. Progress is observed by polling `GET /api/index/status`; meanwhile ranked search stays fully available on its lexical half and says `indexing` while it waits. This is also how a `failed` chunk gets another attempt: failures do not drain on their own.
+         * @description Discards the semantic index and re-queues every chunk — the narrow counterpart of `POST /api/db/rebuild`, which reconstructs the whole projection and likewise queues semantic re-indexing (SPEC.md §9.1). Discarding the vectors is also what frees the **sticky** provider and model: resolution is sticky to the identities the index already records, so an index holding none leaves the next resolution free to pick the current default (SPEC.md §9.1). That re-pick happens when the indexing worker next resolves — *after* this call has returned. **Takes no request body at all**, and carries no acting party: it touches only derived runtime state, so there is no workspace file change and no git commit to attribute (SPEC.md §9.2). **Returns immediately, before the work is done** — hence `202`, and hence a response that reports only what is already true: the `IndexStatus` snapshot taken the moment everything was queued, which is a caller's acknowledgement (`rebuilding` true, `pending` at the full corpus, `indexed` and `identity` emptied by the discard) and never a claim of completion. In particular `identity` is `null` here **always** — it reports what the index's vectors record, and the call just deleted every one of them; the newly picked identity appears in `GET /api/index/status` once the first chunk is embedded. Progress is observed by polling that endpoint; meanwhile ranked search stays fully available on its lexical half and says `indexing` while it waits. This is also how a `failed` chunk gets another attempt: failures do not drain on their own.
          */
         post: {
             parameters: {
@@ -3184,7 +3184,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Accepted and queued, not completed. The snapshot is true at the moment of the call: `rebuilding` is true, `pending` counts what was just queued, and `state` is `indexing`. */
+                /** @description Accepted and queued, not completed. The snapshot is true at the moment of the call: `rebuilding` is true, `pending` counts what was just queued, `state` is `indexing`, and `identity` is `null` because the vectors that recorded one were just discarded. */
                 202: {
                     headers: {
                         [name: string]: unknown;

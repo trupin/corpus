@@ -16,13 +16,18 @@ import { acknowledgment, rebuildCommand, runIndexRebuild } from "./rebuild.js";
  * makes exactly one call, and it comes back from it. A watch loop or the
  * untimed client would each turn a queueing acknowledgment into an open-ended
  * wait, so both are asserted rather than assumed.
+ *
+ * The fixture's `identity` is `null` because that is the only value this route
+ * can answer with: the server snapshots *after* deleting every vector, and
+ * `identity` reports what the stored vectors record. A fixture naming a model
+ * here would let the prose claim a re-pick the body never carries (PR #17).
  */
 
 const QUEUED: IndexStatus = {
   indexed: 0,
   pending: 660,
   failed: 0,
-  identity: "local/all-MiniLM-L6-v2@384",
+  identity: null,
   rebuilding: true,
   state: "indexing",
 };
@@ -41,8 +46,9 @@ describe("corpus index rebuild", () => {
     expect(request?.path).toBe("/api/index/rebuild");
     expect(request?.body).toBe("");
     expect(harness.stdout()).toBe(
-      "queued a full rebuild of the semantic index — 660 chunks to embed, " +
-        "identity local/all-MiniLM-L6-v2@384, state indexing.\n" +
+      "queued a full rebuild of the semantic index — 660 chunks to embed, state indexing. " +
+        "the index holds no vectors until they land, and the provider and model are re-picked " +
+        "when the first one does.\n" +
         "it runs in the background — watch it with `corpus index status`.\n",
     );
   });
@@ -58,11 +64,27 @@ describe("corpus index rebuild", () => {
     expect(rebuildCommand.flags).toEqual([]);
   });
 
-  it("acknowledges a snapshot that has not re-picked an identity yet, without printing null", () => {
-    const line = acknowledgment({ ...QUEUED, identity: null, pending: 1 });
+  it("names no identity — the route's snapshot never carries one (PR #17)", () => {
+    const line = acknowledgment({ ...QUEUED, pending: 1 });
 
     expect(line).toContain("1 chunk to embed");
     expect(line).not.toContain("null");
+    // Not "identity <something>", and not "identity not yet recorded" either:
+    // the acknowledgment describes the re-pick as a thing that has not happened.
+    expect(line).not.toContain("identity");
+    expect(line).toContain("re-picked when the first one does");
+  });
+
+  it("promises nothing about a model in its help, examples included", () => {
+    const prose = [
+      rebuildCommand.description ?? "",
+      ...rebuildCommand.examples.map((example) => example.description),
+    ].join("\n");
+
+    // The `--json` example must show what the route actually answers.
+    expect(prose).toContain('"identity":null');
+    expect(prose).not.toContain("identity that was just re-picked");
+    expect(prose).not.toMatch(/re-picks[^.]*and\s+queues the whole corpus/);
   });
 
   it("says nothing about completion — the snapshot is true only at the call", async () => {

@@ -168,6 +168,59 @@ describe("the paraphrase pair", () => {
     expect(Object.keys(sales ?? {}).sort()).toEqual(["headingPath", "id", "snippet", "title"]);
   });
 
+  it("addresses a chunk that occurs twice by its first position, not its last", async () => {
+    // PR #17 NIT: `chunkId` hashes (document, heading path, text) and *not* the
+    // position, so a document with two byte-identical sections under one heading
+    // is one chunk addressed at two `ord`s. `new Map(rows.map(…))` kept the last
+    // — the occurrence furthest from the top — where the earliest is the one a
+    // reader sent to that hit expects to land on.
+    const section = "## Notes\n\nAccess is revoked the same afternoon.\n";
+    ws.doc({
+      id: "doc_repeat",
+      title: "Operations manual",
+      body: `${section}\n## Other\n\nBadges are issued on the first day.\n\n${section}`,
+    });
+    ws.doc({ id: "doc_lex", title: "Revocation policy", body: "Revocation policy text." });
+    ws.reproject();
+    embedChunks(ws.db, IDENTITY, (chunk) =>
+      chunk.docId === "doc_repeat" && chunk.headingPath === "Notes" ? [1, 0] : [0, 1],
+    );
+
+    // The fixture's premise, asserted rather than assumed: one id, two positions.
+    const rows = ws.db
+      .prepare(`SELECT ord FROM chunk_search WHERE doc_id = 'doc_repeat' ORDER BY ord`)
+      .all() as { ord: number }[];
+    const duplicated = ws.db
+      .prepare(
+        `SELECT ord FROM chunk_search WHERE doc_id = 'doc_repeat' AND heading_path = 'Notes'
+          ORDER BY ord`,
+      )
+      .all() as { ord: number }[];
+    expect(rows).toHaveLength(3);
+    expect(duplicated.map((row) => row.ord)).toEqual([0, 2]);
+
+    // The projector emits identical columns for both, so the *choice* is only
+    // observable once they differ — which is what this marks. The later row is
+    // stamped so a last-wins map would report it.
+    ws.db
+      .prepare(
+        `UPDATE chunk_search SET body = 'the later copy', heading_path = 'Notes (later)'
+          WHERE doc_id = 'doc_repeat' AND ord = 2`,
+      )
+      .run();
+
+    const hits = (
+      await run(
+        ws,
+        { q: "revocation" },
+        retrievalOver(ws, () => [1, 0]),
+      )
+    ).hits;
+    const repeat = hits.find((hit) => hit.id === "doc_repeat");
+    expect(repeat?.headingPath).toBe("Notes");
+    expect(repeat?.snippet).toContain("Access is revoked");
+  });
+
   it("addresses a semantic-only hit by the section that matched", async () => {
     ws.doc({
       id: "doc_manual",

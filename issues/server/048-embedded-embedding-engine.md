@@ -404,6 +404,63 @@ Ports 8804/8805 released at the end (`lsof` silent); 8765 never touched.
 - `npm run build` — clean.
 - Ports 8804/8805 free at session end; 8765 never bound; no stray processes.
 
+### PR #17 review — CRITICAL fix (prototype pollution in the vocabulary lookup)
+
+**Implemented on: opus** (Opus 5, 1M context). Date 2026-08-01. Ports **8804** only
+(8805 checked free, 8765 never bound).
+
+**The defect.** `createTokenizer` kept the Zod-parsed `vocab` as a plain object, so
+`vocab[piece]` reached `Object.prototype`. Confirmed against the **shipped** artifact
+(`~/Library/Caches/corpus/models/all-MiniLM-L6-v2@751bff…/tokenizer.json`): none of
+`constructor`, `toString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf`,
+`propertyIsEnumerable`, `toLocaleString`, `__proto__` is an own key, and every one of
+them resolves to a function (or `object` for `__proto__`). Greedy longest-match-first
+starts at the whole word and shortens, so **any word starting with one of those names**
+matched. The consequence, run on the same real vocabulary:
+
+```
+BigInt(vocab["constructor"])
+  → SyntaxError: Cannot convert function Object() { [native code] } to a BigInt
+```
+
+which is exactly `inference.ts:102`. Chunk-side that fails the chunk permanently;
+query-side it throws inside `embedQuery`, which calls `forget()` and drops the provider
+for the whole 30 s cooldown.
+
+**The fix.** `apps/server/src/semantic/engine/tokenizer.ts` builds the vocabulary as a
+`Map<string, number>` from `Object.entries(model.vocab)`. A `Map` has no inherited keys
+and types a miss as `undefined`, which is the answer the greedy walk was already written
+against, so the walk itself is unchanged.
+
+**Tests (all new, all verified failing against the pre-fix lookup by a temporary revert):**
+
+- `tokenizer.test.ts` — `it.each` over nine `Object.prototype` names × four surface forms
+  (bare, in a sentence, suffixed, upper-cased): every id is a `number`, and
+  `ids.map(BigInt)` — the exact call `inference.ts` makes — does not throw.
+- `tokenizer.test.ts` — `encode("the constructor pattern")` is `[101, 1996, 100, 100, 102]`
+  (`[UNK]`, not a function). Pre-fix this produced `[101, 1996, [Function Object], 100, 102]`.
+- `tokenizer.test.ts` — a vocabulary that legitimately *contains* `constructor` (own and
+  `##`-prefixed) still resolves it, so the fix removes a hazard rather than a capability.
+- `inference.test.ts` — the whole consequence path: a real tokenizer plus a stub session
+  embeds `"the constructor pattern in this corpus doc"` and
+  `"toString valueOf hasOwnProperty __proto__"` without throwing.
+
+**Live leg (real server, real model, real workspace `/tmp/corpus-pr17`, port 8804).**
+Workspace created with `corpus init`; a note whose body repeats `constructor` and every
+other prototype name; second unrelated note.
+
+- `corpus index status --json` →
+  `{"indexed":62,"pending":0,"failed":0,"identity":"local/all-MiniLM-L6-v2@384","rebuilding":false,"state":"current"}`
+  — **0 failed**, i.e. the chunk holding those words embedded. Pre-fix it could not.
+- Query sequence proving the provider is *not* dropped, all within one cooldown window:
+  - A `q=how services are built` → `semanticIndex: current`, 6 hits.
+  - B `q=constructor` → `semanticIndex: current`, hits
+    `['Constructor pattern notes', 'Note template', 'Orchestrate']`.
+  - C `q=how services are built` again, immediately → `semanticIndex: current`, same 6 hits.
+    A dropped provider would have answered `disabled` here for 30 s.
+  - D `q=toString valueOf hasOwnProperty isPrototypeOf` → `semanticIndex: current`, 2 hits.
+- `corpus server logs` — no embedding error of any kind; index still `current`, 0 failed.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

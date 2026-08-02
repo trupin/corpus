@@ -126,6 +126,25 @@ describe("loadInferenceRuntime", () => {
     expect(stub.rows).toEqual([8, 8, 3]);
   });
 
+  it("embeds text holding an Object.prototype member name (PR #17)", async () => {
+    // The full consequence path for the tokenizer's prototype hazard: a plain
+    // object answers `vocab["constructor"]` with a function, and `BigInt(id)`
+    // below is where that function used to throw — permanently failing the chunk
+    // and, on the query side, dropping the provider for the whole cooldown.
+    await seed();
+    const stub = stubSession();
+    const runtime = await loadInferenceRuntime(specFor(), stub.factory);
+
+    const vectors = await runtime.embed([
+      "the constructor pattern in this corpus doc",
+      "toString valueOf hasOwnProperty __proto__",
+    ]);
+
+    expect(vectors).toHaveLength(2);
+    expect(vectors[0]).toHaveLength(4);
+    expect(stub.rows).toEqual([2]);
+  });
+
   it("costs nothing for an empty batch", async () => {
     await seed();
     const stub = stubSession();

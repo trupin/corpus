@@ -96,4 +96,42 @@ describe("redactSecrets", () => {
   it("ignores absent and empty secrets rather than rewriting everything", () => {
     expect(redactSecrets("nothing to hide", [undefined, ""])).toBe("nothing to hide");
   });
+
+  /**
+   * PR #17: credentials written into a URL's authority are never in the secret
+   * list — an operator puts them in `endpoint`, not in `apiKey` — and the
+   * endpoint is quoted verbatim in every error this seam raises.
+   */
+  it("redacts credentials embedded in a URL's authority", () => {
+    expect(redactSecrets("connect ECONNREFUSED https://alice:hunter2@host/v1/embeddings", [])).toBe(
+      "connect ECONNREFUSED https://***@host/v1/embeddings",
+    );
+  });
+
+  it("redacts a bare userinfo token, with no password half", () => {
+    expect(redactSecrets("http://sk-live-abc@127.0.0.1:11434/api/embed", [])).toBe(
+      "http://***@127.0.0.1:11434/api/embed",
+    );
+  });
+
+  it("redacts every URL in one string, and any scheme", () => {
+    expect(redactSecrets("a https://u:p@x/1 and ftp://u2:p2@y/2 and wss://t@z", [])).toBe(
+      "a https://***@x/1 and ftp://***@y/2 and wss://***@z",
+    );
+  });
+
+  it("leaves ordinary text and credential-free URLs alone", () => {
+    for (const text of [
+      "https://host/v1/embeddings",
+      "mail me at nobody@example.com",
+      "ollama endpoint http://127.0.0.1:11434/api/embed answered 404",
+      "path/@scope/pkg",
+    ]) {
+      expect(redactSecrets(text, [])).toBe(text);
+    }
+  });
+
+  it("still applies the secret list on top of the URL rule", () => {
+    expect(redactSecrets("https://u:p@host said sk-1", ["sk-1"])).toBe("https://***@host said ***");
+  });
 });

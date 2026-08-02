@@ -27,7 +27,7 @@ import { createOnnxSession } from "./runtime.js";
 
 const location = { env: process.env, platform: process.platform };
 const root = modelCacheRoot(location);
-const dir = root === undefined ? undefined : modelCacheDir(root, EMBEDDED_MODEL);
+const dir = root.kind === "root" ? modelCacheDir(root.path, EMBEDDED_MODEL) : undefined;
 const cached =
   dir !== undefined &&
   modelArtifacts(EMBEDDED_MODEL).every((artifact) => existsSync(artifactPath(dir, artifact)));

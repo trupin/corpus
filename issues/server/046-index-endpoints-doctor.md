@@ -215,6 +215,49 @@ Note for the next agent: `npm run typecheck` in this repo goes through the `rtk`
   acknowledgment line has `pending` to print.
 - Neither route takes a header, a body or a query, and neither can 400.
 
+### PR #17 review — MAJOR (the 202 body never carries a re-picked identity) + NITs
+
+**Implemented on: opus** (Opus 5, 1M context). Date 2026-08-01. Ports **8804** only.
+
+**MAJOR — strings only, no behaviour change.** `maintenance.ts:142-150` snapshots *after*
+`DELETE FROM chunk_embeddings`, and `identity` reports what the stored vectors record, so
+the 202 body's `identity` is `null` on this path by construction. That is correct and
+TEST-898 pins it; what was wrong was the prose. Corrected in
+`packages/contract/src/routes/index-maintenance.ts` (route description + 202 response
+description now say the re-pick happens at the worker's next resolution, after the call
+returns, and that `identity` is `null` here always) and in
+`apps/cli/src/commands/index-maintenance/rebuild.ts` (module docstring, command description,
+`--json` example, and `acknowledgment()`, which no longer prints an identity clause at all).
+`openapi.json`, `src/client/schema.generated.ts` and `docs/cli.md` regenerated.
+Tests: `rebuild.test.ts`'s `QUEUED` fixture now carries `identity: null` — the only value the
+route can answer with — and two tests pin the prose ("names no identity", "promises nothing
+about a model in its help, examples included").
+Live: `corpus index rebuild --json` and the raw `POST /api/index/rebuild` both answered
+`{"indexed":0,"pending":62,"failed":0,"identity":null,"rebuilding":true,"state":"indexing"}`
+with status 202; polling `corpus index status` afterwards showed
+`identity local/all-MiniLM-L6-v2@384` once the chunks landed — the re-pick, where it belongs.
+
+**NIT — `search.ts` picked the last `ord` for a chunk id at two positions.** `chunkId` hashes
+(document, heading path, text) and not the position, so a document with two byte-identical
+sections under one heading is one chunk addressed at two `ord`s; `new Map(rows.map(…))` kept
+the *last*. Now an explicit first-wins loop over the `ORDER BY s.ord` rows.
+Test: `hybrid.test.ts` — a document with `## Notes` twice produces one chunk id at ords 0 and
+2 (asserted), the later row is then stamped so the choice becomes observable, and the hit
+reports the first.
+
+**NIT — `chunks.ts:143-145` overclaimed cross-document re-attach.** `chunkId` hashes the
+document id, so a paragraph moved to another document is a different chunk. Comment corrected
+to state the re-attach's actual width (all three inputs back byte-for-byte).
+
+**Housekeeping — raw NUL bytes made two sources binary to git.**
+`projection/semantic-integrity.ts:78` and `engine/tokenizer.test.ts` (two lines) held literal
+`U+0000` in string literals, so `git diff` treated both files as binary and showed nothing.
+Replaced with `\0` escapes (behaviour identical); a stray raw `U+0007` and a raw `U+FFFD` in
+the same test line were escaped too. Verified with
+`perl -ne 'print if /\0/'` over both files → no matches. `grep -c $'\0'` is *not* a valid
+check on macOS: the shell truncates the argument at the NUL, so the pattern is empty and the
+count equals the file's line count.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

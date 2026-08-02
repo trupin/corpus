@@ -187,6 +187,58 @@ installed; no dependency added to any manifest.
 added 2 more, run scoped). 101 of those tests are new here: 94 across the eight new
 `semantic/*.test.ts` files, 5 in `config.test.ts`, 2 in `lifecycle.test.ts`.
 
+### PR #17 review — three MINOR fixes (retrieval cooldown race, cache override, URL credentials)
+
+**Implemented on: opus** (Opus 5, 1M context). Date 2026-08-01. Ports **8804** only.
+
+**1. `retrieval.ts` — an in-flight resolution could re-arm a cooldown that had just been
+invalidated.** `invalidateResolution()` set `retryAfterMs = 0`, but a resolution that
+started *before* it and settled *after* it wrote `retryAfterMs = now() + cooldownMs` from a
+fact (the model was still downloading) that had stopped being true mid-call — LEDGER-1's
+symptom reached by a race instead of by the clock. Fixed with a generation counter:
+`invalidateResolution()` (and `modelWatch()`'s find-the-model-present path, the same event
+reached by asking rather than by being told) bumps `generation`; a resolution captures it at
+start and skips the failure writes if it moved. A *successful* resolution is still adopted
+regardless of generation, because `invalidateResolution`'s own contract says it clears only
+the timer and there is nothing to invalidate about a working answer.
+Tests: `retrieval.test.ts` › "resolution invalidation" — a gated resolver holds the first
+resolution open, the invalidation lands mid-flight, and the next `forQuery` resolves fresh
+and ranks with a frozen clock (verified failing with the guard disabled); plus a companion
+test that an *uninvalidated* failure still costs one resolution per cooldown, so the counter
+did not disarm the ordinary case.
+
+**2. `engine/cache.ts` — a relative `CORPUS_MODEL_CACHE_DIR` was silently discarded.** The
+fallback is the *shared* per-user cache, so an E2E run that set it to start cold started
+warm and said nothing. `modelCacheRoot` now returns a `ModelCacheRoot` union
+(`root | unset | unusable`) and refuses a present-but-relative override with the sentence to
+publish; `engine.ts` decides the cache directory once and hands that sentence to
+`availability()`. An empty value is still an absence (that is what an unset variable looks
+like in a shell profile). Tests: `cache.test.ts` (refusal on every platform by that
+platform's rules — `C:\models` is a root on win32 and unusable on linux; empty stays unset)
+and `engine.test.ts` (the refusal reaches `availability()` with `HOME` present, i.e. exactly
+where the fallback would have succeeded).
+Live: server restarted with `CORPUS_MODEL_CACHE_DIR=relative/models` →
+`corpus index status` reports `state disabled` with
+`"CORPUS_MODEL_CACHE_DIR is set to the relative path relative/models; it must be absolute, …"`.
+Pre-fix this run reported `current` off the warm shared cache.
+
+**3. `provider.ts` / `http-provider.ts` — `redactSecrets` missed URL-embedded credentials.**
+An operator writes `https://user:pass@host` into `endpoint`, never into `apiKey`, so the
+secret list could not see it — and the endpoint is quoted verbatim by all four error paths.
+`redactSecrets` now rewrites `scheme://userinfo@` to `scheme://***@` (whole userinfo, so a
+username that *is* the token does not survive) before applying the secret list, and
+`createConfiguredProvider` computes one `shownUrl = clean(url)` used by every message while
+the request still dials the real `url`. `settings.ts`'s "must be an http(s) URL, got …"
+refusal goes through the same function, since a rejected value is still a value someone may
+have written credentials into. Tests: `provider.test.ts` (five cases incl. bare userinfo, any
+scheme, no false positives on `nobody@example.com` or a credential-free URL, and the secret
+list still applying on top) and `http-provider.test.ts` (each of the four error paths
+separately, plus "still dials the real URL").
+Live: an `embedding` block with `endpoint: https://alice:hunter2@127.0.0.1:9` →
+`corpus index status --json` detail reads
+`openai endpoint https://***@127.0.0.1:9/v1/embeddings is unreachable: … https://***@…` and
+`corpus server logs | grep -c hunter2` → **0**.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

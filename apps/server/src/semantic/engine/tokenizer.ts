@@ -183,10 +183,18 @@ export function createTokenizer(source: string): Tokenizer {
   }
 
   const { model, normalizer } = result.data;
-  const vocab = model.vocab;
-  const unknownId = vocab[model.unk_token];
-  const clsId = vocab[CLS_TOKEN];
-  const sepId = vocab[SEP_TOKEN];
+  // A `Map`, never the parsed object: `vocab["constructor"]` on a plain object
+  // answers with `Object.prototype.constructor` — a function — and every word in
+  // the corpus that starts with "constructor" would then have that function
+  // pushed into the id list, where `BigInt(id)` throws and the chunk fails
+  // permanently (and a *query* containing the word drops the provider for the
+  // whole cooldown). `toString`, `valueOf` and the rest are the same hazard. A
+  // `Map` has no inherited keys to find and types the miss as `undefined`, which
+  // is the answer the greedy walk below is already written against.
+  const vocab = new Map<string, number>(Object.entries(model.vocab));
+  const unknownId = vocab.get(model.unk_token);
+  const clsId = vocab.get(CLS_TOKEN);
+  const sepId = vocab.get(SEP_TOKEN);
   if (unknownId === undefined || clsId === undefined || sepId === undefined) {
     throw new TokenizerError(
       `the cached tokenizer is missing one of ${model.unk_token}, ${CLS_TOKEN}, ${SEP_TOKEN}`,
@@ -226,7 +234,7 @@ export function createTokenizer(source: string): Tokenizer {
           let match: number | undefined;
           while (start < end) {
             const piece = start > 0 ? `${prefix}${word.slice(start, end)}` : word.slice(start, end);
-            match = vocab[piece];
+            match = vocab.get(piece);
             if (match !== undefined) break;
             end -= 1;
           }

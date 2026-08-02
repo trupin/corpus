@@ -336,7 +336,15 @@ function loadSemanticOnlyHits(
     title: string;
   }[];
 
-  const byChunk = new Map(rows.map((row) => [row.chunk_id, row]));
+  // First `ord` wins, not last. A chunk id can address more than one row —
+  // `chunkId` hashes (document, heading path, text), so a document repeating a
+  // paragraph verbatim under one heading stores it once and points at it twice —
+  // and `new Map(rows.map(…))` would silently keep the *last* position, i.e. the
+  // one furthest from the top of the document. The rows arrive `ORDER BY s.ord`,
+  // so the first sighting is the earliest occurrence, which is the one a reader
+  // sent to that hit expects to land on.
+  const byChunk = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) if (!byChunk.has(row.chunk_id)) byChunk.set(row.chunk_id, row);
   for (const match of matches) {
     const row = byChunk.get(match.chunkId);
     if (row === undefined) continue;

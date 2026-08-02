@@ -11,9 +11,11 @@
  * this path and must fail as a provider error rather than as a `TypeError` deep
  * inside the worker.
  *
- * Every string that leaves here — error message, log field — has been through
- * `redactSecrets`. An upstream that echoes the `Authorization` header back in an
- * error body is not hypothetical, and the key must not survive the trip.
+ * Every string that leaves here — error message, log field, **and the endpoint
+ * itself** — has been through `redactSecrets`. An upstream that echoes the
+ * `Authorization` header back in an error body is not hypothetical, and neither
+ * is an operator who wrote `https://user:pass@host` into `endpoint`; neither
+ * credential may survive the trip.
  */
 
 import { z } from "zod";
@@ -103,6 +105,14 @@ export function createConfiguredProvider(
   const url = embedUrl(configured.kind, configured.endpoint);
   const secrets = [configured.apiKey];
   const clean = (text: string): string => redactSecrets(text, secrets);
+  /**
+   * The endpoint as it may be *printed*. Every error below quotes the URL so an
+   * operator can see which one failed, and an endpoint written as
+   * `https://user:pass@host` would otherwise carry those credentials into the
+   * message, the log, and `corpus index status`'s detail sentence. The request
+   * is still made against `url` — only the prose is redacted.
+   */
+  const shownUrl = clean(url);
 
   return createEmbeddingProvider(
     { provider: configured.kind, model: configured.model },
@@ -126,7 +136,7 @@ export function createConfiguredProvider(
       } catch (cause) {
         const reason = cause instanceof Error ? cause.message : String(cause);
         throw new EmbeddingError(
-          `${configured.kind} endpoint ${url} is unreachable: ${clean(reason)}`,
+          `${configured.kind} endpoint ${shownUrl} is unreachable: ${clean(reason)}`,
           {
             cause,
           },
@@ -140,7 +150,7 @@ export function createConfiguredProvider(
         const body = await response.text().catch(() => "");
         const snippet = clean(body.slice(0, ERROR_BODY_LIMIT)).replace(/\s+/g, " ").trim();
         throw new EmbeddingError(
-          `${configured.kind} endpoint ${url} answered ${response.status}` +
+          `${configured.kind} endpoint ${shownUrl} answered ${response.status}` +
             (snippet === "" ? "" : `: ${snippet}`),
         );
       }
@@ -149,16 +159,21 @@ export function createConfiguredProvider(
       try {
         payload = await response.json();
       } catch (cause) {
-        throw new EmbeddingError(`${configured.kind} endpoint ${url} answered with invalid JSON`, {
-          cause,
-        });
+        throw new EmbeddingError(
+          `${configured.kind} endpoint ${shownUrl} answered with invalid JSON`,
+          {
+            cause,
+          },
+        );
       }
 
       try {
         return parseVectors(configured.kind, payload);
       } catch (cause) {
         const reason = cause instanceof Error ? cause.message : String(cause);
-        throw new EmbeddingError(`${configured.kind} endpoint ${url}: ${clean(reason)}`, { cause });
+        throw new EmbeddingError(`${configured.kind} endpoint ${shownUrl}: ${clean(reason)}`, {
+          cause,
+        });
       }
     },
   );

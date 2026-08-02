@@ -505,3 +505,96 @@ describe("status — the sentence beside the word", () => {
     expect(await retrieval.state()).toBe("stale");
   });
 });
+
+describe("resolution invalidation", () => {
+  const DOWNLOADING =
+    "downloading the fixture embedding model — semantic ranking starts once cached";
+
+  /**
+   * A resolution held open by the test, so an invalidation can land *while* it is
+   * in flight rather than between two of them.
+   *
+   * The answer is decided when the resolution starts, not when it settles: that
+   * is what a snapshot question is, and it is the whole point of the race.
+   */
+  function gatedResolver(): {
+    readonly resolve: () => Promise<ProviderResolution>;
+    release(): void;
+    calls(): number;
+  } {
+    let calls = 0;
+    let release = (): void => undefined;
+    const gate = new Promise<void>((settle) => {
+      release = () => {
+        settle();
+      };
+    });
+    return {
+      resolve: async () => {
+        calls += 1;
+        const answer: ProviderResolution =
+          calls === 1
+            ? { kind: "disabled", reason: "model-not-downloaded", detail: DOWNLOADING }
+            : stubResolution(IDENTITY, { embed: directionOf });
+        if (calls === 1) await gate;
+        return answer;
+      },
+      release: () => {
+        release();
+      },
+      calls: () => calls,
+    };
+  }
+
+  it("ignores a cooldown written by a resolution that finished after an invalidation", async () => {
+    // LEDGER-1 reached by a race rather than by the clock. The first resolution
+    // starts while the model is still downloading; `onModelReady` fires *during*
+    // it; its "model-not-downloaded" verdict lands afterwards and used to write a
+    // fresh 30 s cooldown from a fact that had already stopped being true. The
+    // clock below never moves, so a re-armed cooldown is permanent here.
+    embedDocuments(ws.db, IDENTITY, { doc_north: [1, 0], doc_south: [0, 1] });
+    const resolver = gatedResolver();
+    const retrieval = build(resolver.resolve);
+
+    const inFlight = retrieval.forQuery("north", UNFILTERED_SCOPE, 10);
+    expect(resolver.calls()).toBe(1);
+
+    // The bytes land, and the engine says so, while that resolution is stuck.
+    retrieval.invalidateResolution();
+    resolver.release();
+
+    // This request is honestly lexical: nothing had resolved when it asked.
+    expect((await inFlight).docs).toEqual([]);
+    expect(resolver.calls()).toBe(1);
+
+    const after = await retrieval.forQuery("north", UNFILTERED_SCOPE, 10);
+    // `doc_south` sits at right angles to the query and is below the relevance
+    // floor; the point is that the semantic half ran at all.
+    expect(after.docs.map((match) => match.id)).toEqual(["doc_north"]);
+    expect(after.state).toBe("current");
+    expect(resolver.calls()).toBe(2);
+    expect(clock).toBe(1_000);
+  });
+
+  it("still arms the cooldown for a resolution nothing invalidated", async () => {
+    // The counter must not disarm the ordinary case: an endpoint that is simply
+    // down still costs one timeout per cooldown, not one per request.
+    let calls = 0;
+    const retrieval = build(() => {
+      calls += 1;
+      return Promise.resolve({
+        kind: "error",
+        reason: "provider-unreachable",
+        detail: "the endpoint refused",
+      });
+    });
+
+    await retrieval.forQuery("north", UNFILTERED_SCOPE, 10);
+    await retrieval.forQuery("north", UNFILTERED_SCOPE, 10);
+    expect(calls).toBe(1);
+
+    clock += RESOLVE_COOLDOWN_MS + 1;
+    await retrieval.forQuery("north", UNFILTERED_SCOPE, 10);
+    expect(calls).toBe(2);
+  });
+});

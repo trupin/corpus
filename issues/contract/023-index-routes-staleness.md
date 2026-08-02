@@ -265,6 +265,33 @@ gained handlers for both (it fails otherwise, which is the mounting proof).
   names ("progress observable via status"). Out of scope, and flagged here so its
   absence reads as a decision.
 
+### PR #17 review — MAJOR (route description claimed a re-picked identity the body never carries)
+
+**Implemented on: opus** (Opus 5, 1M context). Date 2026-08-01. Strings only; no schema,
+route, status code or field changed.
+
+The server snapshots `IndexStatus` *after* deleting every vector (`maintenance.ts:142-150`),
+and `identity` reports what the stored vectors record — so the 202 body's `identity` is
+`null` on this path by construction. That behaviour is correct and TEST-898 pins it; the
+route description was the thing that was wrong ("a caller's acknowledgement (`identity`
+re-picked, …)").
+
+Corrected in `src/routes/index-maintenance.ts`:
+- the description now says discarding the vectors is what *frees* the sticky identity, and
+  that the re-pick happens when the indexing worker next resolves, **after** this call
+  returns;
+- the acknowledgement's field list reads `rebuilding` true, `pending` at the full corpus,
+  `indexed` and `identity` emptied by the discard, with an explicit "`identity` is `null`
+  here **always**";
+- the 202 response description says the same in one sentence.
+
+`npm run generate -w packages/contract` re-emitted `openapi.json` and
+`src/client/schema.generated.ts`. Contract tests: 121 files / 2,604 tests green
+(`vitest run packages/contract apps/cli`). Verified live against a real server on port 8804:
+`POST /api/index/rebuild` → 202 with
+`{"indexed":0,"pending":62,"failed":0,"identity":null,"rebuilding":true,"state":"indexing"}`,
+and `GET /api/index/status` naming `local/all-MiniLM-L6-v2@384` only once chunks had landed.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

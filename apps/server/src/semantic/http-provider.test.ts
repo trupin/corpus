@@ -131,6 +131,74 @@ describe("createConfiguredProvider", () => {
     expect(String(error)).toContain("***");
   });
 
+  /**
+   * PR #17: an endpoint written as `https://user:pass@host` puts credentials in
+   * the *URL*, never in `apiKey`, so the secret list cannot see them — and the
+   * URL is quoted verbatim by all four error paths below. Each is asserted
+   * separately, because each builds its message independently.
+   */
+  describe("an endpoint carrying credentials in its authority", () => {
+    const credentialed: ConfiguredEmbeddingProvider = {
+      kind: "openai",
+      endpoint: "https://alice:hunter2@vectors.example.com/v1",
+      model: "text-embedding-3-small",
+    };
+    const assertClean = (error: unknown): void => {
+      expect(String(error)).not.toContain("hunter2");
+      expect(String(error)).not.toContain("alice");
+      expect(String(error)).toContain("https://***@vectors.example.com/v1/embeddings");
+    };
+
+    it("keeps them out of an unreachable-endpoint error", async () => {
+      const fetchFn = vi.fn<FetchLike>(() => Promise.reject(new Error("fetch failed")));
+      assertClean(
+        await createConfiguredProvider(credentialed, { fetchFn })
+          .embed(["x"])
+          .catch((thrown: unknown) => thrown),
+      );
+    });
+
+    it("keeps them out of a non-2xx error", async () => {
+      const fetchFn = vi.fn<FetchLike>(() =>
+        Promise.resolve(new Response("nope", { status: 502 })),
+      );
+      assertClean(
+        await createConfiguredProvider(credentialed, { fetchFn })
+          .embed(["x"])
+          .catch((thrown: unknown) => thrown),
+      );
+    });
+
+    it("keeps them out of an invalid-JSON error", async () => {
+      const fetchFn = vi.fn<FetchLike>(() =>
+        Promise.resolve(new Response("<html>proxy</html>", { status: 200 })),
+      );
+      assertClean(
+        await createConfiguredProvider(credentialed, { fetchFn })
+          .embed(["x"])
+          .catch((thrown: unknown) => thrown),
+      );
+    });
+
+    it("keeps them out of a wrong-shape error", async () => {
+      const fetchFn = vi.fn<FetchLike>(() => Promise.resolve(json({ nope: true })));
+      assertClean(
+        await createConfiguredProvider(credentialed, { fetchFn })
+          .embed(["x"])
+          .catch((thrown: unknown) => thrown),
+      );
+    });
+
+    it("still dials the real URL — only the prose is redacted", async () => {
+      const fetchFn = vi.fn<FetchLike>(() => Promise.resolve(json({ data: [{ embedding: [1] }] })));
+      await createConfiguredProvider(credentialed, { fetchFn }).embed(["x"]);
+
+      expect(fetchFn.mock.calls[0]?.[0]).toBe(
+        "https://alice:hunter2@vectors.example.com/v1/embeddings",
+      );
+    });
+  });
+
   it("rejects a 200 that is not vectors", async () => {
     const html = vi.fn<FetchLike>(() =>
       Promise.resolve(new Response("<html>proxy error</html>", { status: 200 })),

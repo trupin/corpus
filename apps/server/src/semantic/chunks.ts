@@ -141,9 +141,15 @@ export function countPendingChunks(db: ProjectionDb): number {
  *
  * They are not deleted here: `chunk_embeddings` is deliberately outside the
  * document projector's reach (sprint-021 C2), and an orphan is cheap to hold
- * and valuable to keep — a section restored from an undo, or a paragraph moved
- * between documents, re-attaches to it for free. Collection is the index
- * maintenance surface's business.
+ * and valuable to keep — a section restored from an undo, or a document
+ * reverted to an earlier revision, re-attaches to its vector for free.
+ *
+ * The re-attach is exactly as wide as {@link import("./chunker.js").chunkId} is:
+ * the id hashes *document id, heading path and text together*, so it survives an
+ * edit that puts all three back byte-for-byte and nothing else. A paragraph that
+ * moves to another document, or under another heading, is a different chunk with
+ * a different id and is embedded afresh. Collection is the index maintenance
+ * surface's business.
  */
 export function orphanedEmbeddingIds(db: ProjectionDb): string[] {
   const rows = db

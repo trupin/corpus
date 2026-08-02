@@ -39,7 +39,18 @@ export interface EmbeddingProvider {
 }
 
 /**
- * Replaces every occurrence of each secret with `***`.
+ * Credentials written into a URL's authority: `scheme://user:pass@host`.
+ *
+ * Matched on the wire syntax rather than by parsing, because the strings this
+ * runs over are *prose* — an error message, a quoted response body — and a URL
+ * inside one is not a URL the caller holds a parsed copy of. The password half
+ * is optional: `https://token@host` is the shape a bearer-in-the-URL takes.
+ */
+const URL_USERINFO = /\b([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/?#\s@]+@/g;
+
+/**
+ * Replaces every occurrence of each secret with `***`, and every set of
+ * credentials embedded in a URL's authority with `***@`.
  *
  * Applied to every string that can reach a log or an error message on a path
  * that has seen an API key. Keys arrive from `.corpus/config.json` and end up in
@@ -47,9 +58,16 @@ export interface EmbeddingProvider {
  * or a `fetch` failure quoting a URL an operator embedded credentials in, is
  * exactly how a key reaches a log file nobody expected it in. Empty secrets are
  * ignored — replacing `""` would rewrite the whole string.
+ *
+ * The URL half is not covered by the secret list: `https://user:pass@host` is a
+ * credential the operator wrote into `endpoint`, never into `apiKey`, so nothing
+ * in `secrets` matches it — and the endpoint is quoted verbatim in every error
+ * this module raises. Redacting the whole userinfo (not just the password)
+ * matches how every other tool prints a URL, and keeps a username that *is* the
+ * token from surviving.
  */
 export function redactSecrets(text: string, secrets: readonly (string | undefined)[]): string {
-  let out = text;
+  let out = text.replace(URL_USERINFO, "$1***@");
   for (const secret of secrets) {
     if (secret === undefined || secret === "") continue;
     out = out.split(secret).join("***");

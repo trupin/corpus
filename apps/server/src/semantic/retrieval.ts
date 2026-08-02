@@ -195,6 +195,24 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
   let inFlight: Promise<ActiveProvider | undefined> | undefined;
   let retryAfterMs = 0;
   /**
+   * Bumped by {@link SemanticRetrieval.invalidateResolution}, captured by each
+   * resolution when it starts.
+   *
+   * A resolution is a *snapshot question*, and the answer can outlive the machine
+   * it was asked about: a resolution that begins while the model is still
+   * downloading is already in flight when the bytes land, so its "nothing
+   * resolved" verdict lands **after** the invalidation that was supposed to end
+   * the wait — and re-arms the full cooldown from a fact that stopped being true
+   * mid-call. That is LEDGER-1's symptom reproduced by a race rather than by the
+   * clock. So a resolution whose generation has moved does not get to write the
+   * cooldown; the next question resolves fresh instead.
+   *
+   * A *successful* resolution is adopted regardless of generation, for the reason
+   * `invalidateResolution` states in its own contract: it clears the timer, and
+   * there is nothing to invalidate about a working answer.
+   */
+  let generation = 0;
+  /**
    * The last two answers resolution gave, kept for {@link SemanticRetrieval.effectiveModel}
    * alone. `active` is cleared both by a genuine failure and by `forget()`'s
    * cooldown — and `forget()` fires precisely on the foreign-identity case the
@@ -248,6 +266,7 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
     if (now() < retryAfterMs) return undefined;
     // Single-flight: two searches arriving together must not both load a model.
     inFlight ??= (async () => {
+      const startedAt = generation;
       const resolution = await resolveProvider();
       if (resolution.kind === "provider") {
         active = { provider: resolution.provider, identity: resolution.identity };
@@ -256,14 +275,18 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
         retryAfterMs = 0;
         return active;
       }
-      lastIdentity = null;
-      lastUnavailable = resolution.detail;
-      lastReason = resolution.reason;
-      retryAfterMs = now() + cooldownMs;
       logger.debug("semantic ranking is lexical-only", {
         reason: resolution.reason,
         detail: resolution.detail,
       });
+      // Answered about a machine that has since changed — see {@link generation}.
+      // The verdict is still true of *this* request (nothing resolved, so this
+      // one is lexical), but it may not shut the door on the next one.
+      if (startedAt !== generation) return undefined;
+      lastIdentity = null;
+      lastUnavailable = resolution.detail;
+      lastReason = resolution.reason;
+      retryAfterMs = now() + cooldownMs;
       return undefined;
     })().finally(() => {
       inFlight = undefined;
@@ -390,7 +413,10 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
     }
     if (!availability.available) return availability.detail;
 
+    // Same event as `invalidateResolution`, reached by asking rather than by
+    // being told, so it ends the cooldown the same way — generation included.
     retryAfterMs = 0;
+    generation += 1;
     return undefined;
   }
 
@@ -423,6 +449,9 @@ export function createSemanticRetrieval(options: SemanticRetrievalOptions): Sema
     },
     invalidateResolution() {
       retryAfterMs = 0;
+      // A resolution already in flight was asked about the machine as it was
+      // before this call; it may no longer re-arm the cooldown behind it.
+      generation += 1;
     },
     rebuild,
     async state() {

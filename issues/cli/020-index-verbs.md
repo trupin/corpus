@@ -205,6 +205,49 @@ API clients, so they are now guarded against filesystem and subprocess calls lik
 
 Every process started here was stopped and both ports (`8806`, `8816`) verified free.
 
+### PR #17 review — MAJOR (help text and `--json` example claimed a re-picked identity)
+
+**Implemented on: opus** (Opus 5, 1M context). Date 2026-08-01. Ports **8804** only.
+
+`POST /api/index/rebuild`'s 202 body always carries `identity: null` — the server snapshots
+after discarding the vectors, and `identity` reports what the *stored* vectors record. The
+verb's prose claimed otherwise. Changed in `src/commands/index-maintenance/rebuild.ts`:
+
+- module docstring: the acknowledgment reports a queue depth and an emptied index; the newly
+  picked identity is a fact about the future, resolved by the worker after the call returns;
+- `acknowledgment()` no longer prints an identity clause at all. It read
+  `identity ${status.identity ?? "not yet recorded"}`, which could only ever render the
+  fallback — and "not yet recorded" reads as a hiccup rather than as the intended effect. It
+  now prints `… state indexing. the index holds no vectors until they land, and the provider
+  and model are re-picked when the first one does.`;
+- command `description`: no longer says "re-picks the current default provider and model" as
+  something the call reports; states that the two printed lines name no model, and that
+  `corpus index status` is what names it once the first chunk is embedded;
+- the `--json` example now shows `"identity":null` with the one-line reason.
+
+`docs/cli.md` regenerated (`npm run docs:cli -w apps/cli`).
+
+Tests (`rebuild.test.ts`): the `QUEUED` fixture now carries `identity: null` — the only value
+the route can answer with, so the fixture can no longer license a false claim — with the
+reason in a comment; the stdout assertion updated; the old "without printing null" test
+became "names no identity", which also asserts the word `identity` is absent; and a new test
+walks the command's own `description` plus every example description, requiring
+`"identity":null` and forbidding the old phrasing.
+
+Live (real workspace `/tmp/corpus-pr17`, real server on 8804, 62 chunks):
+```
+$ corpus index rebuild
+queued a full rebuild of the semantic index — 62 chunks to embed, state indexing. the index
+holds no vectors until they land, and the provider and model are re-picked when the first one does.
+it runs in the background — watch it with `corpus index status`.
+
+$ corpus index rebuild --json
+{"indexed":0,"pending":62,"failed":0,"identity":null,"rebuilding":true,"state":"indexing"}
+
+$ corpus index status --json          # after the backlog drained
+{"indexed":62,"pending":0,"failed":0,"identity":"local/all-MiniLM-L6-v2@384","rebuilding":false,"state":"current"}
+```
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

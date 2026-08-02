@@ -52,7 +52,7 @@ import type {
 import type { FetchLike } from "../http-provider.js";
 import type { EmbeddingModelRef } from "../identity.js";
 import { createEmbeddingProvider, EmbeddingError, type EmbeddingProvider } from "../provider.js";
-import { modelCacheDir, modelCacheRoot, type CacheLocation } from "./cache.js";
+import { MODEL_CACHE_DIR_ENV, modelCacheDir, modelCacheRoot, type CacheLocation } from "./cache.js";
 import { downloadArtifact, inspectArtifact, type CachedArtifactState } from "./download.js";
 import type { InferenceSpec } from "./inference.js";
 import {
@@ -144,21 +144,32 @@ type DownloadState =
 
 const mib = (bytes: number): string => `${(bytes / 1_048_576).toFixed(1)} MiB`;
 
+/** What `availability()` says when the environment names nowhere to cache a model. */
+const NO_CACHE_LOCATION_DETAIL =
+  "no per-user cache directory could be derived from the environment " +
+  `(HOME, XDG_CACHE_HOME or LOCALAPPDATA); set ${MODEL_CACHE_DIR_ENV} to choose one`;
+
 export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): CorpusEmbeddedEngine {
   const manifest = options.manifest ?? EMBEDDED_MODEL;
   const ref: EmbeddingModelRef = { provider: EMBEDDED_PROVIDER, model: manifest.model };
   const artifacts = modelArtifacts(manifest);
   const total = manifestBytes(manifest);
 
-  const root =
-    options.cacheDir ??
-    (options.location === undefined ? undefined : modelCacheRoot(options.location));
-  const dir =
-    root === undefined
-      ? undefined
-      : options.cacheDir === undefined
-        ? modelCacheDir(root, manifest)
-        : root;
+  /**
+   * The cache directory, or the sentence explaining why there is none — one
+   * decision, made once, so `availability()` can report a refused
+   * `CORPUS_MODEL_CACHE_DIR` in the operator's own words rather than as the
+   * generic "no cache could be derived".
+   */
+  const cache = ((): { readonly dir: string } | { readonly detail: string } => {
+    if (options.cacheDir !== undefined) return { dir: options.cacheDir };
+    if (options.location === undefined) return { detail: NO_CACHE_LOCATION_DETAIL };
+    const located = modelCacheRoot(options.location);
+    if (located.kind === "root") return { dir: modelCacheDir(located.path, manifest) };
+    if (located.kind === "unusable") return { detail: located.detail };
+    return { detail: NO_CACHE_LOCATION_DETAIL };
+  })();
+  const dir = "dir" in cache ? cache.dir : undefined;
 
   const fetchFn = options.fetchFn ?? ((input, init) => fetch(input, init));
   const hostFactory: InferenceHostFactory =
@@ -227,16 +238,10 @@ export function createEmbeddedEngine(options: EmbeddedEngineOptions = {}): Corpu
           "this runtime cannot execute WebAssembly, which the in-process embedding engine needs",
       };
     }
-    if (dir === undefined) {
-      return {
-        available: false,
-        reason: "unsupported-platform",
-        detail:
-          "no per-user cache directory could be derived from the environment " +
-          "(HOME, XDG_CACHE_HOME or LOCALAPPDATA); set CORPUS_MODEL_CACHE_DIR to choose one",
-      };
+    if (!("dir" in cache)) {
+      return { available: false, reason: "unsupported-platform", detail: cache.detail };
     }
-    const missing = await missingArtifacts(dir);
+    const missing = await missingArtifacts(cache.dir);
     if (missing.length === 0) return { available: true };
     return { available: false, reason: "model-not-downloaded", detail: describeMissing(missing) };
   }

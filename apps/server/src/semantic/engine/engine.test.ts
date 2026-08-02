@@ -165,6 +165,30 @@ describe("createEmbeddedEngine — identity and availability", () => {
     );
   });
 
+  it("refuses a relative CORPUS_MODEL_CACHE_DIR loudly, instead of using the default (PR #17)", async () => {
+    // The silent fallback was worse than useless: it handed back the *shared*
+    // per-user cache, so a run that set this to start cold started warm and said
+    // nothing. `HOME` is present precisely so the fallback would have succeeded.
+    const engine = createEmbeddedEngine({
+      manifest: MANIFEST,
+      location: {
+        env: { CORPUS_MODEL_CACHE_DIR: "relative/models", HOME: "/home/x" },
+        platform: "linux",
+      },
+    });
+
+    const availability = await engine.availability();
+
+    expect(availability).toMatchObject({ available: false, reason: "unsupported-platform" });
+    const detail = availability.available === false ? availability.detail : "";
+    expect(detail).toContain("CORPUS_MODEL_CACHE_DIR");
+    expect(detail).toContain("relative/models");
+    expect(detail).toContain("must be absolute");
+    // And it is not the generic "no cache could be derived" sentence.
+    expect(detail).not.toContain("XDG_CACHE_HOME");
+    await engine.close();
+  });
+
   it("derives its directory from the environment when given a location", async () => {
     const root = join(dir, "root");
     await mkdir(root, { recursive: true });
