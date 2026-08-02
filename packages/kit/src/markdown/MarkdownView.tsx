@@ -3,6 +3,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CorpusRequestError } from "../client/createCorpusClient.js";
 import { useDoc } from "../query/useDoc.js";
+import { CodeFence } from "./CodeFence.js";
 import { REF_ALIAS_ATTRIBUTE, REF_ID_ATTRIBUTE, remarkCorpusRefs } from "./refs.js";
 
 /**
@@ -110,6 +111,14 @@ export function MarkdownView({ markdown, className, onOpenRef }: MarkdownViewPro
 
   const components = useMemo<Components>(
     () => ({
+      /*
+       * Every fenced block on a rendered surface is a copyable canvas (SPEC.md
+       * §11's rider). It is wired here, at the one renderer, rather than at the
+       * thread: the rider is about *rendered* markdown, and a fence in a turn,
+       * in a `view` body and in a plugin's read surface are the same block seen
+       * from three hosts. The editable body is TipTap and reaches none of this.
+       */
+      pre: CodeFence,
       a({ node, children, ...rest }) {
         // Read off the hast node rather than the JSX props: the id is put there
         // by `remarkCorpusRefs` as a literal attribute, and reading it back the
