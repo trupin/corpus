@@ -100,9 +100,141 @@
   max-width: 100%;
 }
 
-/* GFM task lists render as list items carrying a disabled checkbox. */
-.doc-body input[type="checkbox"] {
-  margin-right: 6px;
+/*
+ * ── GFM task lists (UI-034) ──────────────────────────────────────────
+ *
+ * Two renderers emit two different shapes for the same `- [ ] item`, and both
+ * land inside `.doc-body`:
+ *
+ *   `MarkdownView` — react-markdown + remark-gfm, via mdast-util-to-hast:
+ *     ul.contains-task-list > li.task-list-item > input[type=checkbox] + text
+ *
+ *   the editor — TipTap `TaskList`/`TaskItem` (`editor/markdown/schema.ts`),
+ *   as its **node view** builds it live, which is not what `renderHTML` would
+ *   serialise: the item carries `data-checked` and no `data-type`, so the item
+ *   is only addressable through its list.
+ *     ul[data-type=taskList] > li[data-checked]
+ *                                > label > input[type=checkbox] + span
+ *                                > div   > p
+ *
+ * Both are styled here, side by side, because SPEC.md §11's "there is no edit
+ * mode" is a *visual* promise as much as a behavioural one: one document must
+ * look the same in the column reader, in full-screen focus and with a caret in
+ * it. Those are three hosts of one class — `.doc-body` is what the editor puts
+ * on its contenteditable and what every read surface puts on its wrapper — so
+ * one rule set is the only way that promise can hold.
+ *
+ * Untouched: ordinary bulleted and numbered lists. Every selector below is
+ * qualified by the task-list hook its renderer emits, so a plain `ul` keeps its
+ * marker and its 22px indent.
+ */
+
+/*
+ * No marker. A task item's marker *is* its checkbox, and the `disc` a browser
+ * draws beside it is the raw structure showing through — defect (a). Dropping
+ * the list's indent along with it is deliberate: the checkbox then hangs where
+ * the marker would have, and the item's text starts at 21px (13px box + 8px
+ * gap) against an ordinary item's 22px, so a document mixing both kinds of list
+ * still reads as one left edge.
+ */
+.doc-body ul.contains-task-list,
+.doc-body ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+/*
+ * The checkbox, in both shapes: one fixed size, no margins of its own, and
+ * never part of a text selection. The size is pinned because the hanging indent
+ * below is measured against it, and because two renderers drawing the same
+ * document must not draw two different boxes. `user-select: none` is what keeps
+ * a drag across an item — the comment-from-selection gesture, SPEC.md §6 —
+ * yielding the item's words instead of its list syntax.
+ */
+.doc-body li.task-list-item > input[type="checkbox"],
+.doc-body ul[data-type="taskList"] > li > label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  flex: none;
+}
+
+/*
+ * ── The editor's shape ──
+ *
+ * Flex, because the item's content is a real element (`div`) that can be made
+ * to carry every line: the checkbox takes the first column, the text block the
+ * second, and a line that wraps therefore wraps *inside* the text column rather
+ * than back under the box — defect (b), and the half of it that only shows on a
+ * long item. `baseline` sits the box on the first line's baseline the way
+ * `design/index.html`'s `.check` row does.
+ *
+ * The margin is the price of that flex box, paid back. In an ordinary item the
+ * paragraph's 10px margins *collapse* through the `li`, so two items sit 10px
+ * apart; inside a task item they cannot, because the content `div` is a flex
+ * item and therefore a formatting context of its own, which traps both margins
+ * and stacks them. Observed live: a task list spaced half again as loosely as
+ * the plain list under it in the same document. This margin plus the two trims
+ * below put the two lists back on one rhythm, and leave the spacing *between*
+ * the blocks of a multi-paragraph item alone.
+ */
+.doc-body ul[data-type="taskList"] > li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.doc-body ul[data-type="taskList"] > li > label {
+  flex: none;
+  user-select: none;
+}
+
+/*
+ * `min-width: 0` lets a long unbroken word wrap instead of pushing the checkbox
+ * off the measure: a flex item's default `min-width: auto` refuses to shrink
+ * below its widest word.
+ */
+.doc-body ul[data-type="taskList"] > li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.doc-body ul[data-type="taskList"] > li > div > :first-child {
+  margin-top: 0;
+}
+
+.doc-body ul[data-type="taskList"] > li > div > :last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * ── react-markdown's shape ──
+ *
+ * A hanging indent, **not** flex, because here the item's text is a bare text
+ * node: it would become an anonymous flex item, which no selector can reach and
+ * which therefore can never be given the `min-width: 0` the rule above needs —
+ * the text would refuse to wrap and the whole item would fall onto its own
+ * line, reproducing the very defect this file exists to fix. A negative
+ * `text-indent` against an equal `padding-left` needs no box at all: the first
+ * line starts 21px to the left, exactly where the checkbox is, and every
+ * wrapped line starts at the padding edge, under the text.
+ */
+.doc-body li.task-list-item {
+  padding-left: 21px;
+  text-indent: -21px;
+}
+
+.doc-body li.task-list-item > input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+/*
+ * A sub-list, or any block, under such an item: `text-indent` is inherited, and
+ * an unreset one would pull that block's own first line 21px out of the item.
+ */
+.doc-body li.task-list-item > * {
+  text-indent: 0;
 }
 
 .ref {
@@ -127,4 +259,89 @@
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   cursor: default;
+}
+
+/*
+ * ── Copyable canvases (UI-041) ───────────────────────────────────────
+ *
+ * A fenced block on a rendered surface (SPEC.md §11, rider signed 2026-08-02):
+ * the info string as a small label above the block, and a copy button over its
+ * top-right corner. Only `MarkdownView` emits this shape — the editor's code
+ * blocks are bare `pre`s and keep the rules above, untouched.
+ *
+ * The button follows the app's one hover-reveal convention (`.turn-comment` /
+ * `.turn-del` in `apps/ui/src/thread/thread.css`): invisible until the block is
+ * hovered or the button itself is keyboard-focused, and never *absent*, so it
+ * stays in the tab order and `↵` activates it without a pointer ever moving.
+ * Its box is reserved by the overlay, so revealing it shifts no text.
+ */
+.fence {
+  margin: 10px 0;
+}
+
+.fence-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  margin-bottom: 3px;
+}
+
+.fence-canvas {
+  position: relative;
+}
+
+.fence-canvas > pre {
+  margin: 0;
+}
+
+.fence-copy {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  opacity: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: pointer;
+  /* A drag across the block yields the code, never the word "Copy" with it. */
+  user-select: none;
+  transition: opacity 0.12s ease;
+}
+
+.fence:hover .fence-copy,
+.fence-copy:focus-visible {
+  opacity: 1;
+}
+
+.fence-copy:hover {
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+/*
+ * Both settled states stay visible on their own, whether or not the pointer is
+ * still over the block: the confirmation and — especially — the refusal are the
+ * only report either outcome gets.
+ */
+.fence-copy.copied,
+.fence-copy.failed {
+  opacity: 1;
+}
+
+.fence-copy.copied {
+  color: var(--accent-ink);
+  border-color: var(--accent-wash);
+}
+
+.fence-copy.failed {
+  color: var(--signal);
+  border-color: var(--signal);
+  background: var(--signal-wash);
 }

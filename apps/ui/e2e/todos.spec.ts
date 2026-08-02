@@ -49,6 +49,37 @@ const TODO = {
 };
 
 /**
+ * A second todo document, whose first item is long enough to wrap inside a
+ * column.
+ *
+ * UI-034 is a *layout* defect and the wrapped line is where half of it shows,
+ * so it needs an item that wraps and an ordinary bullet list beside it to prove
+ * the fix stayed scoped. `TODO_BODY` above is deliberately left untouched: the
+ * toggle tests assert an exact saved body, and growing their fixture to serve
+ * this one would make a styling change able to break them.
+ */
+const WRAPPING_ITEM =
+  "Book the passport appointment at the consulate, and bring the old passport, two photographs and the completed form";
+
+const WRAPPING_TODO = {
+  id: "doc_todo_wrap",
+  type: "todo",
+  title: "Long chores",
+  path: "data/docs/inbox/long-chores.md",
+  body: [
+    `- [ ] ${WRAPPING_ITEM}`,
+    "- [x] Send the signed form",
+    "",
+    // A paragraph closes the list; without it CommonMark keeps the bullets
+    // below in the *same* list, and the parser would make them task items.
+    "Not a task list:",
+    "",
+    "- an ordinary bullet",
+    "",
+  ].join("\n"),
+};
+
+/**
  * The plugin's own aggregate (`GET /api/x/todos/lists/at/<fingerprint>`), served
  * from the stubbed store.
  *
@@ -64,6 +95,7 @@ const TODO = {
 async function stubTodosAggregate(
   page: Page,
   bodyOf: () => Promise<string>,
+  doc: { readonly id: string; readonly title: string; readonly path: string } = TODO,
 ): Promise<{ readonly paths: string[] }> {
   const paths: string[] = [];
   await page.route("**/api/x/todos/**", async (route) => {
@@ -78,9 +110,9 @@ async function stubTodosAggregate(
       body: JSON.stringify({
         lists: [
           {
-            docId: TODO.id,
-            title: TODO.title,
-            path: TODO.path,
+            docId: doc.id,
+            title: doc.title,
+            path: doc.path,
             status: "open",
             open: items.filter((item) => !item.done).length,
             done: items.filter((item) => item.done).length,
@@ -98,11 +130,11 @@ function boxes(page: Page): Locator {
   return page.locator('.reader .ProseMirror li input[type="checkbox"]');
 }
 
-/** Opens the todo document in its column reader. */
-async function openTodo(page: Page): Promise<void> {
+/** Opens a todo document in its column reader. */
+async function openTodo(page: Page, docId: string = TODO.id): Promise<void> {
   await page.goto("/");
   await page.locator(".board").waitFor();
-  await page.locator(`.row[data-row-doc="${TODO.id}"]`).click();
+  await page.locator(`.row[data-row-doc="${docId}"]`).click();
   await page.locator(".reader .ProseMirror").waitFor();
 }
 
@@ -137,6 +169,240 @@ async function selectItemText(page: Page, text: string): Promise<void> {
   await page.mouse.move(found.x + found.width - 1, y);
   await page.mouse.up();
 }
+
+/** An integer-rounded box; sub-pixel layout is noise every assertion tolerates. */
+interface Rect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** What UI-034 is about, measured off the live layout rather than described. */
+interface TaskItemGeometry {
+  /** `list-style-type` on the task list — the marker, or its absence. */
+  readonly taskListStyle: string;
+  /** The same, on an ordinary list in the same body: the scoping control. */
+  readonly plainListStyle: string;
+  /** The checkbox's border box. */
+  readonly box: Rect;
+  /** One rect per *rendered line* of the item's own text. */
+  readonly lines: readonly Rect[];
+}
+
+/**
+ * Where to look, and for what: the two renderers emit two shapes for one
+ * markdown construct (`packages/kit/src/markdown/markdown.css` documents both),
+ * so the selectors are arguments rather than constants.
+ */
+interface GeometryQuery {
+  readonly scope: string;
+  readonly list: string;
+  readonly plainList: string;
+  readonly item: string;
+  /** A prefix of the item's own text node. */
+  readonly text: string;
+}
+
+/**
+ * The item's geometry, taken from a `Range` over its **text node** and not from
+ * its container.
+ *
+ * The container would prove nothing: the editor wraps item content in a `div`
+ * whose box includes the paragraph's margins, so it overlaps the checkbox
+ * whether or not the two share a line. Client rects of the text are one per
+ * rendered line, which is exactly the two questions this issue asks — is the
+ * box on the first line, and where does the second line start.
+ */
+async function taskItemGeometry(page: Page, query: GeometryQuery): Promise<TaskItemGeometry> {
+  return page.evaluate((q) => {
+    const scope = document.querySelector(q.scope);
+    if (scope === null) throw new Error(`nothing matches ${q.scope}`);
+    const list = scope.querySelector(q.list);
+    const plainList = scope.querySelector(q.plainList);
+    if (list === null || plainList === null) throw new Error(`no ${q.list} / ${q.plainList}`);
+
+    const walker = document.createTreeWalker(list, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node !== null && !(node.textContent ?? "").startsWith(q.text)) {
+      node = walker.nextNode();
+    }
+    if (node === null) throw new Error(`no text node starts “${q.text}”`);
+    const item = node.parentElement?.closest(q.item) ?? null;
+    const input = item?.querySelector('input[type="checkbox"]') ?? null;
+    if (input === null) throw new Error(`no checkbox in the item holding “${q.text}”`);
+
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const round = (r: DOMRect): Rect => ({
+      x: Math.round(r.x),
+      y: Math.round(r.y),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    });
+
+    /*
+     * One rect per line, not per box. `getClientRects()` hands back a separate
+     * rect for the collapsed space that ends each wrapped line — observed live:
+     * a three-line item produced five rects, alternating text and a 4px stub —
+     * so reading `rects[1]` as "the second line" reads a trailing space sitting
+     * at the *right* edge of the first one. Rects on the same line are merged
+     * by their top instead.
+     */
+    const lines: DOMRect[] = [];
+    for (const rect of range.getClientRects()) {
+      const line = lines.at(-1);
+      if (line !== undefined && Math.abs(line.top - rect.top) < 2) {
+        lines[lines.length - 1] = new DOMRect(
+          Math.min(line.x, rect.x),
+          Math.min(line.y, rect.y),
+          Math.max(line.right, rect.right) - Math.min(line.x, rect.x),
+          Math.max(line.bottom, rect.bottom) - Math.min(line.y, rect.y),
+        );
+        continue;
+      }
+      lines.push(rect);
+    }
+
+    return {
+      taskListStyle: getComputedStyle(list).listStyleType,
+      plainListStyle: getComputedStyle(plainList).listStyleType,
+      box: round(input.getBoundingClientRect()),
+      lines: lines.map(round),
+    };
+  }, query);
+}
+
+/**
+ * The editor's shape (TipTap `TaskList`/`TaskItem`), under some root.
+ *
+ * The item is addressed through its list because that is what the live node
+ * view gives: it puts `data-checked` on the `li` and no `data-type`, so
+ * `li[data-type="taskItem"]` — what the extension's `renderHTML` would
+ * serialise — matches nothing on screen. Measuring the real DOM is the only
+ * reason this is known, and it is exactly the mistake the original defect made.
+ */
+function editorQuery(scope: string): GeometryQuery {
+  return {
+    scope,
+    list: 'ul[data-type="taskList"]',
+    plainList: "ul:not([data-type])",
+    item: 'ul[data-type="taskList"] > li',
+    text: WRAPPING_ITEM.slice(0, 24),
+  };
+}
+
+/**
+ * The three assertions the acceptance criteria spell out, made against one
+ * measured item so a regression names itself.
+ */
+function expectTaskItemLayout(geometry: TaskItemGeometry): void {
+  // (1) No marker — and an ordinary list in the same body still has one, which
+  // is what makes this a scoped fix rather than a blanket `list-style: none`.
+  expect(geometry.taskListStyle).toBe("none");
+  expect(geometry.plainListStyle).toBe("disc");
+
+  // The item has to be long enough to wrap, or the third assertion below would
+  // pass vacuously.
+  const [first, second] = geometry.lines;
+  if (first === undefined || second === undefined) {
+    throw new Error(`the item rendered on ${geometry.lines.length} line(s); it must wrap`);
+  }
+
+  // (2) The checkbox shares the first line's line box — the two vertical spans
+  // overlap — and sits to its left, which is precisely what "stacked above the
+  // text" is not.
+  expect(geometry.box.y).toBeLessThan(first.y + first.height);
+  expect(first.y).toBeLessThan(geometry.box.y + geometry.box.height);
+  expect(geometry.box.x + geometry.box.width).toBeLessThanOrEqual(first.x);
+
+  // (3) The wrapped line indents under the text, not under the checkbox.
+  expect(Math.abs(second.x - first.x)).toBeLessThanOrEqual(1);
+  expect(second.x).toBeGreaterThan(geometry.box.x + geometry.box.width);
+}
+
+/**
+ * UI-034: the shipped stylesheet for a GFM task list, measured in a real
+ * browser.
+ *
+ * The dogfood build rendered every task item with its `ul` marker still showing
+ * and the checkbox on a line of its own above the text, because
+ * `@corpus/kit/markdown.css` said nothing about the task-list node structure at
+ * all and the browser laid the raw markup out with its defaults. Nothing here
+ * is pixel-perfect: each assertion is a structural relation (no marker, shared
+ * line box, wrapped-line indent) that holds at any font size or column width
+ * and fails the moment the rules go missing again.
+ */
+test.describe("a task list's layout", () => {
+  test("drops the bullet and puts the checkbox on the item's first line", async ({ page }) => {
+    const corpus = await stubCorpus(page, [VIEW, WRAPPING_TODO]);
+    await stubTodosAggregate(
+      page,
+      async () => (await corpus.doc(WRAPPING_TODO.id))?.body ?? "",
+      WRAPPING_TODO,
+    );
+    await openTodo(page, WRAPPING_TODO.id);
+
+    expectTaskItemLayout(await taskItemGeometry(page, editorQuery(".reader .ProseMirror")));
+  });
+
+  test("lays the same item out identically in full-screen focus", async ({ page }) => {
+    const corpus = await stubCorpus(page, [VIEW, WRAPPING_TODO]);
+    await stubTodosAggregate(
+      page,
+      async () => (await corpus.doc(WRAPPING_TODO.id))?.body ?? "",
+      WRAPPING_TODO,
+    );
+    await openTodo(page, WRAPPING_TODO.id);
+
+    await page.locator(`.reader[data-reader-doc="${WRAPPING_TODO.id}"] [data-expand]`).click();
+    await page.locator(".focus.open .ProseMirror").waitFor();
+
+    // Focus mode is the same class on a wider measure (`.focus .doc-body`), so
+    // the item wraps at a different word and every relation still holds.
+    expectTaskItemLayout(await taskItemGeometry(page, editorQuery(".focus.open .ProseMirror")));
+  });
+
+  /**
+   * The other renderer. `MarkdownView` (react-markdown + remark-gfm) emits a
+   * different shape for the same markdown — `li.task-list-item` with a bare
+   * checkbox and a text node — and it is what thread turns and non-editable
+   * bodies render through, so it has to obey the same rules.
+   *
+   * Reached with a probe rather than a fixture document, the way
+   * `thread.spec.ts` pins its card: the markup below is the renderer's real
+   * output, mounted into the real page, measured against the real stylesheet.
+   */
+  test("gives react-markdown's task-list shape the same treatment", async ({ page }) => {
+    await stubCorpus(page, [VIEW, TODO]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+
+    await page.evaluate((text) => {
+      const host = document.createElement("div");
+      host.id = "ui034-probe";
+      // Narrow enough to force the item onto two lines.
+      host.style.width = "260px";
+      host.innerHTML =
+        '<div class="doc-body"><ul class="contains-task-list">' +
+        `<li class="task-list-item"><input disabled="" type="checkbox"> ${text}</li>` +
+        "</ul><ul><li>an ordinary bullet</li></ul></div>";
+      document.body.append(host);
+    }, WRAPPING_ITEM);
+
+    const geometry = await taskItemGeometry(page, {
+      scope: "#ui034-probe",
+      list: "ul.contains-task-list",
+      plainList: "ul:not([class])",
+      item: "li.task-list-item",
+      // The renderer puts a space between the checkbox and the text.
+      text: ` ${WRAPPING_ITEM.slice(0, 24)}`,
+    });
+    await page.evaluate(() => document.querySelector("#ui034-probe")?.remove());
+
+    expectTaskItemLayout(geometry);
+  });
+});
 
 test.describe("a todo document in the core editor", () => {
   test("renders its items as task-list checkboxes, not as a plugin surface", async ({ page }) => {
