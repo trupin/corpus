@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubRow } from "./stubCorpus";
 
@@ -83,6 +83,39 @@ async function settle(page: Page): Promise<void> {
             resolve();
           });
         });
+      }),
+  );
+}
+
+/**
+ * Resolves once `target`'s box has read the same for three consecutive frames.
+ *
+ * `.col` transitions `width` over 250 ms, so a column keeps sliding for a
+ * quarter of a second after its neighbour's reader closes. A box measured
+ * during that names a place the column has already left, and a pointer aimed
+ * there lands on the board's background — `expect`'s retries cannot help,
+ * because nothing is coming back under the cursor. Three identical frames is
+ * the browser's own answer to "has it stopped", with no invented duration in
+ * it: two would accept a transition that happens to hold still for one frame.
+ */
+async function stopped(target: Locator): Promise<void> {
+  await target.evaluate(
+    async (element) =>
+      new Promise<void>((resolve) => {
+        let previous = "";
+        let repeats = 0;
+        const tick = (): void => {
+          const box = element.getBoundingClientRect();
+          const current = `${String(box.x)},${String(box.y)},${String(box.width)},${String(box.height)}`;
+          repeats = current === previous ? repeats + 1 : 0;
+          previous = current;
+          if (repeats >= 2) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
       }),
   );
 }
@@ -225,10 +258,32 @@ test.describe("closing full screen with the pointer parked over another column",
     await page.keyboard.press("Escape");
     await expect(page.locator(".reader")).toHaveCount(0);
 
-    // And an actual movement resumes hover-follows-active immediately: the
-    // columns have resized, so this is a fresh box and a genuine input event.
+    /*
+     * And an actual movement resumes hover-follows-active. Two things make that
+     * a statement about the app rather than about the harness's luck:
+     *
+     * The column is measured only once it has stopped moving. Closing the reader
+     * narrows its column, and `.col` eases `width` for 250 ms, so the neighbour
+     * is still travelling when `esc` returns.
+     *
+     * And the pointer travels in more than one event, as a pointer does.
+     * Chromium dispatches a movement's boundary events before its `mousemove`,
+     * while `useActiveColumn` activates on `mouseover` and releases the
+     * keyboard's latch on `mousemove` — so the opening move of any gesture has
+     * its activation dropped by the latch that same move then releases, and the
+     * column adopts the board on the next crossing. A lone `mouse.move` offers
+     * no next crossing: it used to pass only when the running transition
+     * happened to slide a different element under the resting cursor in time,
+     * and failed roughly one run in four when it did not. Here the first move
+     * releases the latch over the header and the second crosses into the list,
+     * which is one small gesture of a hand and two events to the browser.
+     */
+    await stopped(neighbour);
     const moved = await neighbour.boundingBox();
-    await page.mouse.move((moved?.x ?? 0) + (moved?.width ?? 0) / 2, (moved?.y ?? 0) + 120);
+    const lane = (moved?.x ?? 0) + (moved?.width ?? 0) / 2;
+    await page.mouse.move(lane, (moved?.y ?? 0) + 60);
+    await settle(page);
+    await page.mouse.move(lane, (moved?.y ?? 0) + 120);
     await expect(neighbour).toHaveClass(/kactive/);
   });
 });
