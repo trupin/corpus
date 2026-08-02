@@ -2,12 +2,17 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { ColumnMenuItems } from "../menu/ColumnMenuItems";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { keepsNativeMenu } from "../menu/nativeMenu";
+import { shortSortLabel, useSortFit } from "./sortFit";
 import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from "./viewDoc";
 
 /**
  * A column's header: title, kind, live count, `＋`, `⋯`, and the stored query
  * rendered as filter chips with the sort label pushed right
  * (`design/index.html`'s `.col-head`).
+ *
+ * That row never wraps (UI-038): when the chips leave no room for the full sort
+ * label, the label degrades to its short form rather than dropping to a second
+ * line. `sortFit.ts` owns the measurement and the rule.
  *
  * The header is also the **drag handle** (`cursor: grab`). The prototype's
  * trick is kept exactly: `mousedown` arms `draggable` unless the press landed
@@ -48,6 +53,7 @@ export function ColumnHead({
   const menuButton = useRef<HTMLButtonElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const menu = useContextMenu();
+  const sortFit = useSortFit(column.chips, column.sortLabel, editing !== "query");
 
   useEffect(() => {
     if (editing === null) return;
@@ -188,13 +194,30 @@ export function ColumnHead({
           onKeyDown={onFieldKeyDown}
         />
       ) : (
-        <div className="chips">
+        <div className="chips" ref={sortFit.row}>
           {column.chips.map((chip) => (
             <span key={chip.key} className="chip on">
               {chip.label}
             </span>
           ))}
-          <span className="sort">{column.sortLabel}</span>
+          <span className="sort" data-sort-compact={sortFit.compact ? "" : undefined}>
+            {sortFit.compact ? shortSortLabel(column.sortLabel) : column.sortLabel}
+          </span>
+          {/*
+           * The same row, out of flow, at `width: max-content`, always with the
+           * full label. The visible chips shrink to whatever the column gives
+           * them, so this copy is the only place the row's real requirement can
+           * be read. It reuses `.chip`, deliberately: a twin class would let the
+           * two drift and the measurement lie.
+           */}
+          <div className="chips-probe" aria-hidden="true" ref={sortFit.probe}>
+            {column.chips.map((chip) => (
+              <span key={chip.key} className="chip on">
+                {chip.label}
+              </span>
+            ))}
+            <span className="sort">{column.sortLabel}</span>
+          </div>
         </div>
       )}
     </header>
