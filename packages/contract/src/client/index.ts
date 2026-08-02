@@ -61,6 +61,7 @@ export { ACTOR_HEADER, DEFAULT_ACTOR, type Actor } from "../actor.js";
  */
 export {
   DOCS_KEY,
+  INDEX_KEY,
   JOBS_KEY,
   LOCKS_KEY,
   QUERY_KEY_NAMES,

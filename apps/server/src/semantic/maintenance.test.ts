@@ -9,6 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
+import { createInvalidationBus, type InvalidationBus } from "../events/bus.js";
+import { INDEX_KEY } from "../events/keys.js";
 import { silentLogger } from "../logger.js";
 import { rebuild as rebuildProjection } from "../projection/rebuild.js";
 import { createStaticEmbeddedEngine, type EmbeddedEngine } from "./embedded-engine.js";
@@ -23,6 +25,8 @@ const DIM = 4;
 const identityOf = (model: string): string => `local/${model}@${String(DIM)}`;
 
 let ws: Workspace;
+let bus: InvalidationBus;
+let frames: { rebuilding: boolean }[] = [];
 let semantic: SemanticRetrieval;
 let maintenance: IndexMaintenance;
 let worker: EmbedWorkerHandle;
@@ -64,6 +68,16 @@ function engineFor(options: EngineOptions = {}): EmbeddedEngine {
  * maintenance service bound to both.
  */
 function build(engine: EmbeddedEngine): void {
+  bus = createInvalidationBus();
+  frames = [];
+  // The seat the SSE hub occupies. `rebuilding` is captured *with* each frame,
+  // because the rebuild's two announcements are claims about a flag no count
+  // records — reading it afterwards would prove nothing about the ordering.
+  bus.subscribe((keys) => {
+    if (!keys.every((key) => key.length === 1 && key[0] === INDEX_KEY[0])) return;
+    frames.push({ rebuilding: semantic.rebuild.active });
+  });
+
   const resolve = () =>
     resolveEmbeddingProvider({
       settings: { kind: "absent" },
@@ -84,10 +98,11 @@ function build(engine: EmbeddedEngine): void {
     db: ws.db,
     logger: silentLogger,
     resolve,
+    bus,
     intervalMs: 0,
     now: () => clock,
   });
-  maintenance = createIndexMaintenance({ db: ws.db, semantic, logger: silentLogger });
+  maintenance = createIndexMaintenance({ db: ws.db, semantic, logger: silentLogger, bus });
   maintenance.useWorker(worker);
 }
 
@@ -379,6 +394,48 @@ describe("POST /api/index/rebuild", () => {
     maintenance.rebuild();
     await until("the drain to finish", () => !semantic.rebuild.active);
     expect(indexCounts(ws.db)).toMatchObject({ failed: 0, pending: 0 });
+  });
+
+  // SERVER-051. The rebuild flag is the one part of `IndexStatus` no row
+  // records, so these two frames are the only way a client learns that `state`
+  // entered and left `indexing`.
+  it("announces its start with the 202, and its end once the flag is down", async () => {
+    seedCorpus(4);
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Gated, so the drain cannot finish before the start frame is asserted —
+    // and therefore not ticked first: a gated engine would hold the tick open.
+    build(engineFor({ gate }));
+
+    maintenance.rebuild();
+    // Synchronous with the acknowledgement, and describing the same instant it
+    // does: the discard has landed and the flag is up.
+    expect(frames).toEqual([{ rebuilding: true }]);
+
+    release();
+    await until("the drain to finish", () => !semantic.rebuild.active);
+
+    // The drain's own frames sit between, but the last word belongs to the
+    // rebuild: `indexing` is over, and it is announced after the flag is down
+    // so a refetch on this frame reads the settled state.
+    expect(frames.length).toBeGreaterThan(1);
+    expect(frames.at(-1)).toEqual({ rebuilding: false });
+    expect((await maintenance.status()).state).toBe("current");
+  });
+
+  it("announces the end even on a server with no worker to drain it", async () => {
+    seedCorpus();
+    build(engineFor());
+    await worker.tick();
+    frames.length = 0;
+
+    const detached = createIndexMaintenance({ db: ws.db, semantic, logger: silentLogger, bus });
+    detached.rebuild();
+    await until("the flag to drop", () => !semantic.rebuild.active);
+
+    expect(frames).toEqual([{ rebuilding: true }, { rebuilding: false }]);
   });
 
   it("still discards and re-queues on a server with no worker bound", async () => {

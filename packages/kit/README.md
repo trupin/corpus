@@ -64,10 +64,11 @@ keys with the exported builders; never write a literal.
 | `["jobs", "<eventId>"]`           | `jobKey(eventId)`      | an append to that job's log, and its retry/abandon transitions                            | the console's live log panel         |
 | `["locks"]`                       | `LOCKS_KEY`            | lock acquire, release, force-break, reap                                                  | `useLocks()`                         |
 | `["locks", "<docId>"]`            | `lockKey(docId)`       | acquire/release/force-break/reap of that one document's lock                              | the open reader's holder banner      |
+| `["index"]`                       | `INDEX_KEY`            | the embed worker's state transitions and throttled drain progress; rebuild start/end      | the console strip's index pill       |
 | `["health"]`                      | `HEALTH_KEY`           | **nothing server-side.** The SSE bridge invalidates it on every drop and every reconnect  | `useHealth()` — the console strip    |
 | `["x", "<plugin>", …]`            | `pluginKey(plugin, …)` | whatever the plugin's server routes emit                                                  | the plugin's own queries             |
 
-The first eleven core shapes come from `@corpus/contract`'s published
+The ten core shapes come from `@corpus/contract`'s published
 vocabulary, whose set is closed and pinned by a test upstream, and are
 re-exported here rather than restated — a rename there is a compile error here,
 not a cache that silently stops updating. `["health"]` and the `x/` namespace
@@ -75,8 +76,8 @@ are the kit's own, because the contract publishes what the _server_ emits and
 the server emits neither.
 
 The two retrieval shapes are the kit's own for a different reason: the contract's
-vocabulary is closed at nine names, and ranked search and a related set need no
-tenth one. Both hang **under the `["docs"]` prefix** the server already emits on
+vocabulary is closed, and ranked search and a related set need no name of their
+own in it. Both hang **under the `["docs"]` prefix** the server already emits on
 every mutation, so prefix matching invalidates them for free — a `[[ref]]`
 appearing anywhere refreshes an open related panel with no new frame, no contract
 change and no artifact regeneration (sprint-022 Open Conflict 7).

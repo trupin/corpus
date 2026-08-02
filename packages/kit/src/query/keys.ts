@@ -1,5 +1,6 @@
 import {
   DOCS_KEY,
+  INDEX_KEY,
   JOBS_KEY,
   LOCKS_KEY,
   QUEUE_KEY,
@@ -36,6 +37,7 @@ import {
 
 export {
   DOCS_KEY,
+  INDEX_KEY,
   JOBS_KEY,
   LOCKS_KEY,
   QUEUE_KEY,

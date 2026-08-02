@@ -400,7 +400,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // The index's maintenance verbs share the retrieval half's rebuild flag and
     // its provider resolution — one bit and one cached answer, so `indexing`
     // cannot outrank `stale` on one endpoint and not on another.
-    indexMaintenance = createIndexMaintenance({ db: deps.projection, semantic, logger });
+    indexMaintenance = createIndexMaintenance({ db: deps.projection, semantic, logger, bus });
     mountIndexRoutes(app, indexMaintenance);
 
     mountDocsRoutes(app, deps.projection, { now, mutex, workspace: docsWorkspace, semantic });

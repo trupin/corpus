@@ -37,7 +37,7 @@ export const streamEvents = createRoute({
   description:
     "Emits `invalidate` events carrying query keys — never data (SPEC.md §2.2 rule 3). 25 s heartbeat, " +
     "dead subscribers pruned. Consume via `createEventStream` from `@corpus/contract/client`.\n\n" +
-    "The key vocabulary is **closed** — these nine shapes and no others. Constants and helpers that " +
+    "The key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that " +
     "build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and " +
     "`@corpus/contract/client`, so the emitter and the client bridge share one source rather than " +
     "two copies that drift:\n\n" +

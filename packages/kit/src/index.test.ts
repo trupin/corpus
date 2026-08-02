@@ -75,6 +75,7 @@ const RUNTIME_SURFACE = [
   "docsListKey",
   "DOCS_KEY",
   "HEALTH_KEY",
+  "INDEX_KEY",
   "jobKey",
   "jobsListKey",
   "JOBS_KEY",
