@@ -222,6 +222,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | CLI-024 | SIGPIPE guard for piped output (eval finding) | todo | P2 | CLI-001 |
 | UI-032 | Board ↵ shortcut preempts focused chrome buttons (UI-030 escalation) | todo | P2 | UI-028, UI-030 |
 | INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | todo | P2 | INFRA-013 |
+| CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
 
 ## Phase 7b — React 19, router 8, CI directives (branch `phase-7b-upgrades-ci`)
 
@@ -263,12 +264,12 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 
 | ID | Title | Status | Priority | Dependencies |
 | --- | --- | --- | --- | --- |
-| CONTRACT-024 | Route: GET /api/threads/{id}/context (bounded pack) | todo | P0 | CONTRACT-022 |
-| SERVER-047 | Context pack assembly | todo | P1 | CONTRACT-024, SERVER-041, SERVER-045 |
-| CLI-021 | `corpus thread context <id>` | todo | P1 | CONTRACT-024, SERVER-047 |
-| AGENT-009 | Comment skill starts from the context pack | todo | P1 | CLI-021, AGENT-008 |
-| UI-025 | Related-documents panel beside backlinks | todo | P2 | CONTRACT-022, SERVER-041 |
-| UI-026 | ⌘K overlay adopts GET /api/search | todo | P2 | SERVER-045 |
+| CONTRACT-024 | Route: GET /api/threads/{id}/context (bounded pack) | done | P0 | CONTRACT-022 |
+| SERVER-047 | Context pack assembly | done | P1 | CONTRACT-024, SERVER-041, SERVER-045 |
+| CLI-021 | `corpus thread context <id>` | done | P1 | CONTRACT-024, SERVER-047 |
+| AGENT-009 | Comment skill starts from the context pack | done | P1 | CLI-021, AGENT-008 |
+| UI-025 | Related-documents panel beside backlinks | done | P2 | CONTRACT-022, SERVER-041 |
+| UI-026 | ⌘K overlay adopts GET /api/search | done | P2 | SERVER-045 |
 
 ---
 

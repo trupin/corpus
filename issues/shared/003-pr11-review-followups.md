@@ -262,10 +262,17 @@ _n/a until triage._
 
 ## Phase 8 harvest note (2026-07-31)
 
-- **worker-host.test.ts crash-drill test flaked once under full-suite load** (an
-  EmbeddingError rejection surfaced unhandled; green scoped and on retry). Harden at
-  triage: default catch on the host's ready promise inside createWorkerHost, or the
-  test attaches its rejection handler before the worker can die.
+- **worker-host.test.ts crash-drill flake — RESOLVED (2026-08-01), and the ledger's
+  hypothesis was wrong.** Cause was a cross-port delivery race, not an unhandled
+  rejection: error/exit arrive on the internal port while ready arrives on the
+  public one, so under a starved loop the death could pre-empt a queued ready
+  (measured 1.8% of spawns; 4% of loads through the real path), rejecting a load
+  that had succeeded. Fixed by deferring only lose()'s ready.reject with
+  setImmediate (check phase runs after queued port callbacks — 11/11; a microtask
+  0/11). deferred()'s pre-existing .catch() already made unhandled rejections
+  impossible (0 in 400 probed runs). Residual note: the abort test holds pending
+  across an await before attaching its handler — harmless today, a genuine
+  unhandled-rejection window under extreme memory pressure.
 
 ## Phase 8 eval ledger additions (2026-08-01)
 
@@ -294,3 +301,14 @@ _n/a until triage._
   and a two-frame settle() that is evidently marginal under load). Harden at triage:
   wait for the hover-adoption observable itself (class state poll with timeout)
   rather than counted frames.
+
+## Phase 9 in-flight notes (2026-08-02)
+
+- **Search snippets include raw heading markup** ("## Rate assumptions The base…") —
+  server-side cosmetic (UI-026 observation); strip heading markers at snippet
+  composition at triage.
+- **Blank-query chips search nothing** on the hybrid overlay ("Type to search…") —
+  ACCEPTED as correct per the signed §11 amendment (q required for ranked search;
+  chips-only browsing is saved views' job). Recorded so it isn't re-litigated.
+- TEST-1032 naming deviation (searchCorpus/useCorpusSearch vs "one search method") —
+  orchestrator-directed, flag to the evaluator.
