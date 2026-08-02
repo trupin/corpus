@@ -184,6 +184,37 @@ describe("corpus thread context", () => {
     expect(output).not.toContain("## ");
   });
 
+  // The server returns `quote: ""` when neither the frontmatter selector nor the
+  // projection row survived: a real state, and the one the "preserved below:"
+  // sentence must not be printed for — a colon pointing at nothing promises the
+  // agent text that never arrives.
+  it("says the quote could not be recovered when the orphan kept none, and prints no empty block", async () => {
+    const output = await render(orphaned({ quote: "" }));
+
+    expect(output).toBe(
+      [
+        "parent doc_u3dbw462 · Long doc",
+        "the anchor no longer resolves in the parent (SPEC.md §6), and the quote the thread was opened on was not preserved either, so the original text cannot be recovered and is not guessed at.",
+        "",
+        "# related excerpts",
+        "doc_kp62gce5  Impound account true-up  similar  The lender re-runs the impound analysis every twelve months.",
+        "",
+      ].join("\n"),
+    );
+    // Neither half of the promise: no colon pointing forward, no quote block.
+    expect(output).not.toContain("preserved below");
+    expect(output).not.toContain(">");
+  });
+
+  it("keeps the sentence and the block agreeing when the quote is only whitespace", async () => {
+    // `quoteLines` prints nothing for a blank quote, so the sentence must be the
+    // one that claims nothing — the two are decided by the same test.
+    const output = await render(orphaned({ quote: "  \n  " }));
+
+    expect(output).toContain("cannot be recovered");
+    expect(output).not.toContain(">");
+  });
+
   it("prints no parent block for a standalone thread, and no empty heading for one", async () => {
     const output = await render(standalone());
 

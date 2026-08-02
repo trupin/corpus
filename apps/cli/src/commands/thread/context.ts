@@ -102,16 +102,17 @@ function parentBlock(pack: ContextPack): readonly string[] {
         proseLines(pack.parent.opening),
         truncationLines(pack.parent.truncated, pack.parent.id),
       );
-    case "orphaned-anchor":
+    case "orphaned-anchor": {
+      // Branch on the *rendered* quote rather than the raw string: `quoteLines`
+      // is what decides whether anything is printed, so the sentence and the
+      // block below it can never disagree about whether there is a quote.
+      const preserved = quoteLines(pack.parent.quote);
       return joinBlocks(
-        [
-          `parent ${pack.parent.id} · ${orNone(pack.parent.title)}`,
-          "the anchor no longer resolves in the parent (SPEC.md §6); the quote the thread was " +
-            "opened on is preserved below, and where that text went is not guessed at:",
-        ],
-        quoteLines(pack.parent.quote),
+        [`parent ${pack.parent.id} · ${orNone(pack.parent.title)}`, orphanLine(preserved)],
+        preserved,
         truncationLines(pack.parent.truncated, pack.parent.id),
       );
+    }
     case "parent-deleted":
       return [
         `parent ${pack.deletedParent} was deleted; this conversation outlived it, so there is no ` +
@@ -146,6 +147,30 @@ function excerptBlock(excerpts: ContextPack["excerpts"]): readonly string[] {
       ]),
     ),
   ];
+}
+
+/**
+ * Why an orphan has no passage — and, when the quote is gone too, why it has no
+ * quote either.
+ *
+ * The server returns `quote: ""` when neither the parent's frontmatter selector
+ * nor the projection's anchor row survived (`threads/context.ts#readAnchor`),
+ * which is a real state and not an error. Ending the sentence in a colon in
+ * front of that absence would promise text the pack never prints, so the two
+ * states get two sentences: one points at a block, the other states the loss.
+ */
+function orphanLine(preserved: readonly string[]): string {
+  if (preserved.length === 0) {
+    return (
+      "the anchor no longer resolves in the parent (SPEC.md §6), and the quote the thread was " +
+      "opened on was not preserved either, so the original text cannot be recovered and is not " +
+      "guessed at."
+    );
+  }
+  return (
+    "the anchor no longer resolves in the parent (SPEC.md §6); the quote the thread was opened " +
+    "on is preserved below, and where that text went is not guessed at:"
+  );
 }
 
 /** The anchor's text, as a quote — multi-line selections included. */
@@ -207,7 +232,9 @@ export const contextCommand: WorkspaceCommandSpec = {
     "section** around it — a comment on one sentence is rarely answerable from that sentence. A " +
     "whole-document thread shows the parent's title and its opening content. A thread whose " +
     "anchor no longer resolves (SPEC.md §6) says so and prints the preserved quote, with no " +
-    "invented passage. A thread whose parent was deleted says that too, and still gets its " +
+    "invented passage — and when the quote did not survive either, it says the original text " +
+    "cannot be recovered rather than promising one. A thread whose parent was deleted says that " +
+    "too, and still gets its " +
     "excerpts — it is a `200`, never a `404`, because the conversation plainly exists. A " +
     "standalone thread has no parent content, so it prints no parent block at all and goes " +
     "straight to the excerpts.\n\n" +

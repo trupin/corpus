@@ -318,6 +318,10 @@ _n/a until triage._
 - Pack degrade note says "ranked on the lexical half alone" while already-embedded
   rows are present under `indexing` — honest state word, overstated sentence;
   reword at triage (matches shipped search behavior, not drift).
+  - PR #18 review (2026-08-03, MINOR): the ⌘K overlay's note has the same defect —
+    `searchApi.ts` prefixes "Ranked on text alone —" for `stale`/`indexing`, where
+    embedded rows still contribute; only `disabled` is truly text-alone. Reword
+    both surfaces in the same triage pass, one shared phrasing.
 - Truncated section windows can open mid-word — legal (§6 governs anchor quotes,
   not pack windows), escalation printed; craft nit.
 - Evaluator note for the record: Phase 9 proof-of-work rated the best audited on
