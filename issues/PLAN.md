@@ -224,6 +224,9 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-015 | Audit checker: overflow/spawn failure must fail closed locally (PR #16 review) | todo | P2 | INFRA-013 |
 | CONTRACT-026 | Tag vocabulary source for the search overlay tag chip (UI-026 finding) | todo | P2 | CONTRACT-022 |
 | UI-033 | First pointer move after focus-close never activates the hovered column (UI-031 race, v0.1.0 flake diagnosis) | todo | P2 | UI-031 |
+| PLUGINS-008 | Legacy frontmatter-items todo renders a silently empty body (dogfood 2026-08-02) | todo | P1 | PLUGINS-005 |
+| PLUGINS-009 | Todo item rows: right-click quick actions — toggle, comment, open thread (dogfood) | todo | P2 | PLUGINS-005, PLUGINS-003 |
+| PLUGINS-010 | Clicking a todo item opens its document with the item revealed (dogfood) | todo | P2 | PLUGINS-005 |
 
 ## Phase 7b — React 19, router 8, CI directives (branch `phase-7b-upgrades-ci`)
 
