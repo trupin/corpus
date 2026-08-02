@@ -21,6 +21,9 @@ afterEach(() => {
   cleanup();
   resetEscapeLayers();
   resetSeenMarks();
+  // The reveal flash is drawn outside the reader's subtree (UI-037), so RTL's
+  // own teardown cannot see it.
+  for (const layer of document.querySelectorAll("[data-reveal-flash]")) layer.remove();
 });
 
 const MORTGAGE = docFixture({
@@ -327,6 +330,104 @@ describe("Reader", () => {
 
     fireEvent.click(backlink);
     await showsDoc(container, "doc_m");
+  });
+
+  /**
+   * UI-037. The reveal is an instruction the open carries, honoured once the
+   * document is on screen and then **gone from the entry** — which is what
+   * makes Back a restoration rather than a second flash.
+   */
+  describe("a reveal on the entry", () => {
+    function flashes(): number {
+      return document.querySelectorAll("[data-reveal-flash]").length;
+    }
+
+    it("flashes the item it names, and clears the instruction", async () => {
+      const stacks: (readonly NavEntry[])[] = [];
+      const { container } = render(
+        <Host
+          wire={fullWire()}
+          initial={[
+            { docId: "doc_m", scrollY: 0, reveal: { kind: "item", exact: "Compare against" } },
+          ]}
+          onNav={(next) => stacks.push(next)}
+        />,
+      );
+      await showsTitle(container, "Mortgage options");
+      await waitFor(() => {
+        expect(flashes()).toBe(1);
+      });
+      // The flash traces the rendered text, so it is outside the reader's own
+      // subtree: nothing was added to a DOM ProseMirror believes it owns.
+      expect(container.querySelector("[data-reveal-flash]")).toBeNull();
+      await waitFor(() => {
+        expect(stacks.at(-1)?.at(-1)).toEqual({ docId: "doc_m", scrollY: 0 });
+      });
+    });
+
+    it("does not flash again when Back returns to the same entry", async () => {
+      const { container } = render(
+        <Host
+          wire={fullWire()}
+          initial={[
+            { docId: "doc_m", scrollY: 0, reveal: { kind: "item", exact: "Compare against" } },
+          ]}
+        />,
+      );
+      await waitFor(() => {
+        expect(flashes()).toBe(1);
+      });
+      for (const layer of document.querySelectorAll("[data-reveal-flash]")) layer.remove();
+
+      fireEvent.click(await screen.findByText("Rates"));
+      await showsDoc(container, "doc_r");
+      fireEvent.click(container.querySelector(".back") as HTMLElement);
+      await showsTitle(container, "Mortgage options");
+
+      // The restoration ran; the reveal did not.
+      expect(flashes()).toBe(0);
+    });
+
+    it("delegates a thread reveal to the 💬 jump, in the same act as the open", async () => {
+      const { container } = render(
+        <Host
+          wire={fullWire()}
+          initial={[
+            { docId: "doc_m", scrollY: 0, reveal: { kind: "thread", threadId: "th_rate" } },
+          ]}
+        />,
+      );
+      await waitFor(() => {
+        expect(container.querySelector(".thread-slot.expanded")).not.toBeNull();
+      });
+      expect(container.querySelector(".thread-card.flash")).not.toBeNull();
+      // One mechanism: a thread reveal draws no box of its own.
+      expect(flashes()).toBe(0);
+    });
+
+    /**
+     * A quote the document no longer contains — edited between the click and
+     * the open. Giving up counts as honouring it: a pending instruction left on
+     * the entry would fire on the next reload, against a document that has
+     * moved on even further.
+     */
+    it("gives up on text the document does not contain, and still clears it", async () => {
+      const stacks: (readonly NavEntry[])[] = [];
+      const { container } = render(
+        <Host
+          wire={fullWire()}
+          initial={[
+            { docId: "doc_m", scrollY: 0, reveal: { kind: "item", exact: "an item long deleted" } },
+          ]}
+          onNav={(next) => stacks.push(next)}
+        />,
+      );
+      await showsTitle(container, "Mortgage options");
+      await waitFor(() => {
+        expect(stacks.at(-1)?.at(-1)).toEqual({ docId: "doc_m", scrollY: 0 });
+      });
+      expect(flashes()).toBe(0);
+    });
   });
 
   it("expands, scrolls to and flashes the thread the 💬 popover chose", async () => {

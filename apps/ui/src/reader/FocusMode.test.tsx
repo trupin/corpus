@@ -2,6 +2,7 @@
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavEntry } from "../board/useBoardLocalState";
 import {
@@ -19,6 +20,7 @@ import { resetEscapeLayers } from "./useEscapeStack";
 afterEach(() => {
   cleanup();
   resetEscapeLayers();
+  for (const layer of document.querySelectorAll("[data-reveal-flash]")) layer.remove();
 });
 
 const MORTGAGE = docFixture({
@@ -46,9 +48,11 @@ function wire(): ReaderTransport {
 
 function Solo({
   transport,
+  reveal,
   onClose,
 }: {
   readonly transport: ReaderTransport;
+  readonly reveal?: RevealTarget;
   readonly onClose?: () => void;
 }): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
@@ -57,6 +61,7 @@ function Solo({
       <FocusMode
         docId="doc_m"
         listTitle="Finance"
+        reveal={reveal}
         onClose={onClose ?? (() => undefined)}
         onNotify={() => undefined}
       />
@@ -127,6 +132,38 @@ describe("FocusMode", () => {
     expect(overlay?.querySelector("[data-doc-menu]")).not.toBeNull();
     // Already full screen: there is nothing for ⤢ to do.
     expect(overlay?.querySelector("[data-expand]")).toBeNull();
+  });
+
+  /**
+   * UI-037. The reveal lives on the *shared* surface, so focus mode gets it for
+   * the same reason it gets scroll restoration and the 💬 jump: one mechanism,
+   * two hosts. A second implementation is how the two would drift.
+   */
+  it("honours a reveal on arrival, in the full-screen host too", async () => {
+    render(<Solo transport={wire()} reveal={{ kind: "item", exact: "Compare against" }} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(1);
+    });
+  });
+
+  it("honours a thread reveal by expanding and flashing the thread", async () => {
+    render(<Solo transport={wire()} reveal={{ kind: "thread", threadId: "th_rate" }} />);
+    await waitFor(() => {
+      expect(document.querySelector(".focus .thread-slot.expanded")).not.toBeNull();
+    });
+    expect(document.querySelector(".focus .thread-card.flash")).not.toBeNull();
+  });
+
+  it("opens at the top when no reveal is given — the ordinary case, unchanged", async () => {
+    render(<Solo transport={wire()} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+    expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(0);
+    expect(document.querySelector(".focus .thread-slot.expanded")).toBeNull();
   });
 
   it("names the hint after what it can actually do", () => {

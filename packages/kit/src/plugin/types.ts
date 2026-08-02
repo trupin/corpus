@@ -44,6 +44,56 @@ export interface DocPanelProps {
 }
 
 /**
+ * Where inside a document an open should land — the **reveal target** (UI-037,
+ * sprint-023 OC5).
+ *
+ * One discriminated field rather than two mechanisms: "open this document at
+ * this item" and "open this document at this thread" are the same act with a
+ * different destination, and a caller that could only name a document had to
+ * choose between opening it and pointing at anything inside it.
+ */
+export type RevealTarget = RevealItem | RevealThread;
+
+/**
+ * A piece of the document's own text, quoted the way SPEC.md §6 quotes an
+ * anchor: `exact` is what to find, `prefix`/`suffix` are the surrounding text
+ * that says **which** occurrence when the quote is not unique (sprint-023 OC4 —
+ * `exact` alone silently reveals the wrong duplicate item).
+ *
+ * The text is matched against what the reader *rendered*, so it is the
+ * document's prose, not its markdown: quote the item, not `- [ ] the item`.
+ */
+export interface RevealItem {
+  readonly kind: "item";
+  readonly exact: string;
+  readonly prefix?: string | undefined;
+  readonly suffix?: string | undefined;
+}
+
+/** A thread on the document: the reader expands it, scrolls to it and flashes it. */
+export interface RevealThread {
+  readonly kind: "thread";
+  readonly threadId: string;
+}
+
+/**
+ * An open, with somewhere to land. `reveal` is honoured **once**, when the
+ * document has rendered; the reader then forgets it, so Back onto the same
+ * entry restores the scroll position the user left rather than re-flashing.
+ */
+export interface OpenRequest {
+  readonly docId: string;
+  readonly reveal?: RevealTarget | undefined;
+}
+
+/**
+ * What every open seam accepts. A bare document id is exactly the request it
+ * has always been — the reveal is additive, and a caller that has nothing to
+ * reveal keeps passing a string.
+ */
+export type OpenPayload = string | OpenRequest;
+
+/**
  * Props a plugin column `Component` receives. A plugin column IS a pinned
  * `type: view` document with `column: "<plugin>/<type>"` frontmatter (SPEC.md
  * §11); the component renders only the column *body* — header, drag-reorder,
@@ -74,8 +124,11 @@ export interface ColumnComponentProps {
    * Optional so a host that renders a plugin column outside a board (a test, a
    * future preview surface) is not forced to invent a navigation it does not
    * have; a column that cannot open anything simply does not.
+   *
+   * `onOpen(docId)` and `onOpen({docId, reveal})` are the same act (UI-037):
+   * the second one also says where inside the document to land.
    */
-  readonly onOpen?: ((docId: string) => void) | undefined;
+  readonly onOpen?: ((target: OpenPayload) => void) | undefined;
 }
 
 /**

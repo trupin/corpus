@@ -1,8 +1,10 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import {
   captureScrollAt,
+  clearRevealAt,
   dropMissing,
   popEntry,
   pushEntry,
@@ -13,6 +15,7 @@ import {
 afterEach(cleanup);
 
 const A: NavEntry = { docId: "doc_a", scrollY: 0 };
+const ITEM: RevealTarget = { kind: "item", exact: "Call the plumber" };
 
 describe("pushEntry", () => {
   it("writes the live scroll onto the entry being left, and starts the new one at 0", () => {
@@ -32,6 +35,47 @@ describe("pushEntry", () => {
       { docId: "doc_a", scrollY: 120 },
       { docId: "doc_a", scrollY: 0 },
     ]);
+  });
+
+  /** UI-037. The bare push is byte-identical: no `reveal` key appears at all. */
+  it("writes no reveal onto an ordinary push", () => {
+    expect(Object.keys(pushEntry([], "doc_a", 0)[0] ?? {})).toEqual(["docId", "scrollY"]);
+  });
+
+  it("carries a reveal onto the entry it is pushing", () => {
+    expect(pushEntry([A], "doc_b", 10, ITEM)).toEqual([
+      { docId: "doc_a", scrollY: 10 },
+      { docId: "doc_b", scrollY: 0, reveal: ITEM },
+    ]);
+  });
+
+  /**
+   * The entry being left loses an unhonoured reveal. It was an instruction
+   * about *arriving*, and the user has navigated past it — carrying it would
+   * make Back flash something they already walked away from.
+   */
+  it("drops a pending reveal from the entry being left", () => {
+    const stack = [{ docId: "doc_a", scrollY: 0, reveal: ITEM }];
+    expect(pushEntry(stack, "doc_b", 40)).toEqual([
+      { docId: "doc_a", scrollY: 40 },
+      { docId: "doc_b", scrollY: 0 },
+    ]);
+  });
+});
+
+describe("clearRevealAt", () => {
+  it("takes the honoured instruction off the top entry", () => {
+    expect(clearRevealAt([A, { docId: "doc_b", scrollY: 12, reveal: ITEM }])).toEqual([
+      A,
+      { docId: "doc_b", scrollY: 12 },
+    ]);
+  });
+
+  it("returns the same array when there is nothing to clear, so no write happens", () => {
+    const stack = [A];
+    expect(clearRevealAt(stack)).toBe(stack);
+    const empty: readonly NavEntry[] = [];
+    expect(clearRevealAt(empty)).toBe(empty);
   });
 });
 
@@ -59,6 +103,17 @@ describe("captureScrollAt", () => {
     expect(captureScrollAt(stack, 88)).toBe(stack);
     const empty: readonly NavEntry[] = [];
     expect(captureScrollAt(empty, 5)).toBe(empty);
+  });
+
+  /**
+   * Revealing scrolls the reader, so the first offset captured after an open is
+   * usually the reveal's own — and dropping the instruction here would cancel
+   * it a frame before it was honoured.
+   */
+  it("keeps a pending reveal on the entry it is rewriting", () => {
+    expect(captureScrollAt([{ docId: "doc_a", scrollY: 0, reveal: ITEM }], 88)).toEqual([
+      { docId: "doc_a", scrollY: 88, reveal: ITEM },
+    ]);
   });
 });
 
@@ -126,6 +181,34 @@ describe("useNavStack", () => {
     const before = result.current.stack;
     act(() => {
       result.current.toList();
+    });
+    expect(result.current.stack).toBe(before);
+  });
+
+  it("reports the current entry's pending reveal, and forgets it once consumed", () => {
+    const { result } = renderHook(() => useMemoryNavStack([A]));
+    expect(result.current.reveal).toBeNull();
+
+    act(() => {
+      result.current.push("doc_b", 0, ITEM);
+    });
+    expect(result.current.reveal).toEqual(ITEM);
+
+    act(() => {
+      result.current.consumeReveal();
+    });
+    expect(result.current.reveal).toBeNull();
+
+    // Back lands on an entry that never had one: nothing to re-trigger.
+    act(() => {
+      result.current.back();
+    });
+    expect(result.current.reveal).toBeNull();
+
+    // And consuming again writes nothing at all.
+    const before = result.current.stack;
+    act(() => {
+      result.current.consumeReveal();
     });
     expect(result.current.stack).toBe(before);
   });

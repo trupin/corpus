@@ -14,9 +14,14 @@ export type {
   DocPanelProps,
   DocViewProps,
   ListItemProps,
+  OpenPayload,
+  OpenRequest,
   PluginColumnType,
   PluginDocType,
   PluginManifest,
+  RevealItem,
+  RevealTarget,
+  RevealThread,
 } from "./types.js";
 
 /**

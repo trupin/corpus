@@ -1,5 +1,6 @@
 import type { DocRow } from "@corpus/contract";
 import { useDocs, type RowNotice } from "@corpus/kit";
+import type { OpenPayload } from "@corpus/kit/plugin";
 import { useState, type DragEvent, type ReactElement } from "react";
 import { PluginMissingCard } from "../plugins/PluginMissingCard";
 import { usePluginRegistry } from "../plugins/registry";
@@ -41,11 +42,15 @@ export interface ColumnProps {
   readonly cursorDocId: string | null;
   readonly onActivate: () => void;
   readonly onScroll: (scrollTop: number) => void;
-  /** Opens a document in this column's reader — a push onto its navigation stack. */
-  readonly onOpen: (docId: string) => void;
+  /**
+   * Opens a document in this column's reader — a push onto its navigation
+   * stack. A bare id opens it at the top; a request may also say where inside
+   * the document to land (UI-037).
+   */
+  readonly onOpen: (target: OpenPayload) => void;
   /** Replaces the reader's navigation stack; `[]` returns to the list. */
   readonly onNav: (nav: readonly NavEntry[]) => void;
-  readonly onFocusMode: (docId: string) => void;
+  readonly onFocusMode: (target: OpenPayload) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -61,8 +66,8 @@ interface ColumnBodyProps {
   readonly cursorDocId: string | null;
   readonly onHandle: (armed: boolean) => void;
   readonly onScroll: (scrollTop: number) => void;
-  readonly onOpen: (docId: string) => void;
-  readonly onOpenFocus: (docId: string) => void;
+  readonly onOpen: (target: OpenPayload) => void;
+  readonly onOpenFocus: (target: OpenPayload) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -135,7 +140,7 @@ interface PluginColumnBodyProps {
   readonly pluginRef: PluginColumnRef;
   readonly onHandle: (armed: boolean) => void;
   /** Opens a document in this column's reader — handed to the plugin body. */
-  readonly onOpen: (docId: string) => void;
+  readonly onOpen: (target: OpenPayload) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -273,11 +278,13 @@ export function Column(props: ColumnProps): ReactElement {
           onHandle={setDraggable}
           onScroll={props.onScroll}
           onOpen={onOpen}
-          onOpenFocus={(docId) => {
+          onOpenFocus={(target) => {
             // Same act as `⇧↵`: the document opens in its column *and* full
-            // screen, so closing focus leaves the reader where it belongs.
-            onOpen(docId);
-            props.onFocusMode(docId);
+            // screen, so closing focus leaves the reader where it belongs. A
+            // reveal rides along to both, so the surface the user ends up
+            // looking at is the one that lands on it.
+            onOpen(target);
+            props.onFocusMode(target);
           }}
           onAdd={props.onAdd}
           onRename={props.onRename}

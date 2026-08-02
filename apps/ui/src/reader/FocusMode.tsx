@@ -1,4 +1,5 @@
 import type { RowNotice } from "@corpus/kit";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
@@ -30,6 +31,12 @@ export interface FocusModeProps {
   readonly docId: string;
   /** Named on the back button when the focus stack has no depth. */
   readonly listTitle: string;
+  /**
+   * Where inside the document to land (UI-037). Focus mode honours it through
+   * the same shared surface the column reader does — one reveal mechanism, two
+   * hosts, exactly as `DocView` is one document view rendered at two sizes.
+   */
+  readonly reveal?: RevealTarget | undefined;
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -41,8 +48,16 @@ export interface FocusModeProps {
  */
 export const FOCUS_HINT = "esc closes · click anywhere to edit";
 
-export function FocusMode({ docId, listTitle, onClose, onNotify }: FocusModeProps): ReactElement {
-  const stack = useMemoryNavStack([{ docId, scrollY: 0 }]);
+export function FocusMode({
+  docId,
+  listTitle,
+  reveal,
+  onClose,
+  onNotify,
+}: FocusModeProps): ReactElement {
+  const stack = useMemoryNavStack([
+    reveal === undefined ? { docId, scrollY: 0 } : { docId, scrollY: 0, reveal },
+  ]);
   const current = stack.docId ?? docId;
   const reader = useReaderDoc(current);
 
@@ -51,6 +66,8 @@ export function FocusMode({ docId, listTitle, onClose, onNotify }: FocusModeProp
     restoreY: stack.restoreY,
     navToken: `${current}#${String(stack.depth)}`,
     onScroll: stack.captureScroll,
+    reveal: stack.reveal,
+    onRevealed: stack.consumeReveal,
   });
 
   /**
