@@ -115,6 +115,47 @@ the expanded row's sentence compared character-for-character plus `4 failed` in
 `apps/ui/src/console` 117 tests green. `tsc --noEmit` clean in both workspaces;
 eslint and prettier clean on every touched file.
 
+### Follow-up (2026-08-02) — flake in `counts climb on an ['index'] frame`
+Green in isolation, failed the full-suite pre-push run twice: `expect(stub.calls()).toBe(2)`
+received `3`. **Spec defect, not a product race** — the pill reached the right
+end state every time.
+
+Cause: `route.fulfill` can only send a *complete* body, so the stubbed event
+stream ended the instant the frame landed. The bridge correctly read that as a
+dropped stream, backed off, reconnected — and a reconnect is exactly when it
+blanket-refetches active queries, because nothing told it what changed while it
+was away (`sseBridge.ts`, `handleOpen`). That third read is right behaviour; the
+spec had merely been winning a race against the backoff timer when the machine
+was idle.
+
+Two fixes, both at the cause:
+- the events stub now serves the frame **once** and refuses every reconnect, so
+  exactly one stream ever opens in the page's life — no reconnect recovery, no
+  re-delivered frame;
+- the assertions are durable rather than incidental: the end state, `calls() >= 2`
+  (the frame caused a re-read), and a real no-reload proof — a `window` mark
+  stamped before the frame that a navigation could not survive. The exact-count
+  claim now lives only in the "never polls" test, where no stream opens at all
+  and it is deterministic.
+
+While fixing it, a second latent bug surfaced and is worth remembering: the
+`**/events*` glob matches Playwright's *whole URL*, so it also captured Vite's
+dev module URL for `…/packages/kit/dist/events/sseBridge.js`. Refusing that took
+the whole app down before first paint — an empty strip and a locator that never
+resolves, with nothing in the failure naming the cause. Both routes now anchor on
+a regex for the endpoint itself (`^https?://[^/]+/events(\?|$)`).
+
+Proof: `--repeat-each=10 --workers=4` in isolation → **90/90 green**; alongside
+`console`, `reveal`, `fences` and `clipboard` at `--workers=4 --repeat-each=3` →
+all 27 runs of this spec green (135 passed overall).
+
+Not mine, but seen in that same run: `console.spec.ts:62` ("keeps the failed-job
+count off the health notice's class") failed 3/3 — and also fails alone, on one
+worker, with this spec out of the run. It asserts "server unreachable", and a
+workspace server (another agent's, pid 92431) is listening on 8765, which the dev
+proxy reaches. Environmental; untouched deliberately, since its point is the
+strict-mode single match on `.c-failed` and that needs a genuinely absent server.
+
 ### Note for the record
 The Playwright run initially failed one spec that assumed "server unreachable":
 a *different* agent's workspace server was answering on 8765 and the dev proxy

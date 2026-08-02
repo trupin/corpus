@@ -89,20 +89,63 @@ async function stubIndex(page: Page, bodies: readonly Status[]): Promise<IndexSt
 }
 
 /**
- * Starts answering `/events` with one real `invalidate` frame naming `["index"]`.
+ * The SSE endpoint itself — `<origin>/events?token=…` and nothing else.
  *
- * **Registered after the initial render, never before it.** With no workspace
- * server the stream cannot connect at all, so the bridge sits in its retry
- * backoff and the page renders the status it fetched once — which is the state
- * this spec asserts before pushing anything. Installing the route then lets the
- * *next* retry succeed, and because that is the first connection ever to open,
- * the bridge's reconnect recovery (a blanket refetch of active queries, which it
- * does when it has no idea what it missed) does not fire. The frame is therefore
- * the only thing that could have moved the counts.
+ * A recursive-wildcard glob ending in `events*` is **wrong here**, and
+ * expensively so: Playwright matches globs against the whole URL, and the dev
+ * server hands the browser its modules
+ * by path, including `…/@fs/…/packages/kit/dist/events/sseBridge.js`. That glob
+ * therefore captures the bridge's own source file, and a route that refuses or
+ * rewrites it takes the application down before it renders — an empty strip and
+ * a locator that never resolves, with nothing in the failure to say why. Anchor
+ * on the origin and the whole path segment instead.
+ */
+const EVENT_STREAM = /^https?:\/\/[^/]+\/events(\?|$)/;
+
+/**
+ * Refuses `/events` outright, so no stream can ever open.
+ *
+ * Stated rather than assumed. The suite's standing condition is that no
+ * workspace server answers, but a machine running one (a parallel agent's, say)
+ * proxies through the dev server and could open a stream mid-test — and an open
+ * stream means the bridge's reconnect recovery, which refetches every active
+ * query. A spec that counts reads has to own that variable instead of inheriting
+ * it from whatever else is running on the box.
+ */
+async function refuseEvents(page: Page): Promise<void> {
+  await page.route(EVENT_STREAM, (route) => route.abort("connectionrefused"));
+}
+
+/**
+ * Delivers exactly one real `invalidate` frame naming `["index"]`, then refuses
+ * every reconnect.
+ *
+ * Both halves are load-bearing, and the second one is what this spec got wrong
+ * the first time round.
+ *
+ * `route.fulfill` can only send a *complete* body, so the stream ends the moment
+ * the frame lands. The bridge treats that as a dropped stream, backs off, and
+ * reconnects — and a *reconnect* is precisely when it blanket-refetches active
+ * queries, because nothing told it what changed while it was away. That is
+ * correct behaviour, not a race: it just means "how many times was the status
+ * read" stops being a fact about the frame and becomes a fact about whether the
+ * assertion beat the backoff timer. In isolation it did; under a loaded parallel
+ * suite it did not, and the read count came back 3 instead of 2.
+ *
+ * Refusing every retry leaves exactly one successful open in the page's whole
+ * life — the one carrying the frame — so there is no reconnect recovery and no
+ * second delivery of the same frame. The invalidation stays the only thing that
+ * could have moved the counts, which is what the test is about.
  */
 async function pushIndexFrame(page: Page): Promise<void> {
   const frame = `event: invalidate\ndata: ${JSON.stringify({ keys: [["index"]] })}\n\n`;
-  await page.route("**/events*", async (route) => {
+  let delivered = false;
+  await page.route(EVENT_STREAM, async (route) => {
+    if (delivered) {
+      await route.abort("connectionrefused").catch(() => undefined);
+      return;
+    }
+    delivered = true;
     await route
       .fulfill({ status: 200, contentType: "text/event-stream", body: frame })
       // The page can be gone by the time a retry lands; nothing left to serve.
@@ -166,27 +209,53 @@ test.describe("the collapsed strip's index pill", () => {
   /*
    * The acceptance criterion, through the real stack: a real EventSource, a real
    * `invalidate` frame naming `["index"]`, and counts that climb with no reload.
+   *
+   * What is asserted is durable — the end state, the direction of travel, and
+   * the page's identity — never a specific intermediate count. Whether the
+   * server's own reconnect recovery adds a read on top is timing, and timing is
+   * exactly what a loaded four-worker suite does not preserve. The claim "and
+   * never more than that" belongs to the poller test below, which is the one
+   * that can hold it deterministically.
    */
   test("counts climb on an ['index'] frame, with no reload", async ({ page }) => {
     const stub = await stubIndex(page, [REBUILDING, { ...CAUGHT_UP, indexed: 68 }]);
+    // Nothing may open a stream before the frame is pushed — otherwise the
+    // "one read so far" below is a fact about the machine, not about the page.
+    // `pushIndexFrame` registers later and therefore takes precedence.
+    await refuseEvents(page);
     await page.goto("/");
 
     await expect(pill(page)).toHaveText("index: indexing · 41/68");
     expect(stub.calls()).toBe(1);
 
+    // A mark on the document this page mounted with. It cannot survive a
+    // navigation, which is what makes "with no reload" an assertion rather than
+    // a hope — the pill updating after a full reload would prove nothing.
+    await page.evaluate(() => {
+      (globalThis as unknown as Record<string, unknown>)["__ui040Mounted"] = "kept";
+    });
+
     await pushIndexFrame(page);
 
     await expect(pill(page)).toHaveText("index: current · 68 indexed", { timeout: 20_000 });
     await expect(dot(page)).toHaveCSS("background-color", GOOD);
-    // Two reads in total, and no reload: the frame is what moved the counts.
-    expect(stub.calls()).toBe(2);
+
+    // Same document, never reloaded.
+    expect(
+      await page.evaluate(
+        () => (globalThis as unknown as Record<string, unknown>)["__ui040Mounted"],
+      ),
+    ).toBe("kept");
+    // The frame caused a re-read. The counts moved forward and never back.
+    expect(stub.calls()).toBeGreaterThanOrEqual(2);
+    await expect(pill(page)).toHaveText("index: current · 68 indexed");
   });
 
   test("never polls: one read, then nothing until the server says otherwise", async ({ page }) => {
     const stub = await stubIndex(page, [REBUILDING]);
-    // `/events` is left unanswered on purpose: the stream never opens, so no
-    // frame and no reconnect recovery can explain a second read. One would only
-    // be a timer.
+    // No stream, by construction: nothing can open one, so neither a frame nor a
+    // reconnect recovery can explain a second read. One would only be a timer.
+    await refuseEvents(page);
     await page.goto("/");
 
     await expect(pill(page)).toHaveText("index: indexing · 41/68");
