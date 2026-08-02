@@ -35,6 +35,8 @@ export {
   turnRef,
 } from "./chunks.js";
 export type { ChunkablePassage } from "./chunks.js";
+export { loadSemanticOnlyHits } from "./passages.js";
+export type { SemanticOnlyHit, SemanticPassageLoader } from "./passages.js";
 export { attachSemanticIndex } from "./attach.js";
 export type {
   AttachSemanticIndexDeps,

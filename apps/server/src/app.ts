@@ -420,7 +420,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       enqueue: (input) => queue.enqueue(input),
       attachmentLimits: config.attachments,
     };
-    mountThreadRoutes(app, threadsWorkspace, mutex);
+    // `semantic` reaches the thread surface for one route — the context pack's
+    // related half (SERVER-047) — and is read per request for the same reason
+    // `mountSearchRoutes` reads it per request.
+    mountThreadRoutes(app, threadsWorkspace, mutex, { semantic });
     mountCaptureRoutes(app, threadsWorkspace, mutex);
 
     mountJobRoutes(
