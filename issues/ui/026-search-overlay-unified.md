@@ -224,6 +224,91 @@ agents cannot collide on one handler. `npm run e2e` was held once, alone: 5287 a
 free before and after (`lsof -nP -iTCP:<port> -sTCP:LISTEN`), no `.corpus` at the repo root, no
 `corpus init` inside the checkout, the shared model cache read and never written.
 
+### FIXED (interim) — eval FAIL-1, the inert `tag:` chip
+
+**implemented on: opus** (2026-08-01, ui-dev). Orchestrator adjudication: **no dead affordances**.
+The vocabulary itself stays CONTRACT-026's; what ships here is honesty about its absence. Ports: Vite
+`5288` only (`8765` never bound, no workspace server needed — the chip is client-side), e2e held
+single-holder, `5288` confirmed free before and after (`lsof -nP -iTCP:5288 -sTCP:LISTEN`).
+
+**The shape.** `tagChipState(tag, options = tagOptions())` in `filters.ts` names the chip's three
+honest positions and derives them from the vocabulary rather than hard-coding the gap:
+
+- `cycles` — a vocabulary exists; an ordinary chip. Nothing else changes when CONTRACT-026 makes
+  `tagOptions()` return real tags, which is the point of reading it rather than branching on "today".
+- `clears` — no vocabulary but the query carries a tag: the chip stays **live**, shows `tag: <value>`,
+  and removes it on click. A filter the user can neither see nor drop is worse than one that cannot
+  be set.
+- `unavailable` — nothing to offer, nothing set: the chip is `disabled`, dimmed to `opacity: .5` with
+  `cursor: not-allowed` and no pill wash (`.search-filters .chip:disabled`), carrying
+  `title="Search results do not carry tags yet, so there is nothing to filter by."` The wording states
+  the consequence, not the cause: no `SearchHit`, no endpoint, no issue id — a user does not know what
+  those are. `clears` carries `"Clears the tag — it cannot be applied again here yet."`, a warning as
+  much as an instruction, because the tag cannot currently be put back.
+
+The reason also travels in `aria-label` (`"tag: any — <title>"`), because a disabled button is out of
+the tab order and the tooltip alone would never reach a screen reader. All **twelve** chips still
+render in the same order with the same text — `SearchOverlay.test.tsx`'s verbatim assertion is
+unedited. The save-as-view path, `searchQuery.ts`, and every other chip were not touched.
+
+**Real browser, real app** (Chromium 1600×1000 → Vite `5288`; the dev server is the real bundle, and
+the chip needs no rows):
+
+```
+A. overlay open, nothing typed
+<button type="button" class="chip" aria-pressed="false" disabled=""
+        title="Search results do not carry tags yet, so there is nothing to filter by."
+        aria-label="tag: any — Search results do not carry tags yet, so there is nothing to filter by."
+>tag: any</button>
+   computed: opacity 0.5 · cursor not-allowed · background rgba(0,0,0,0) · color rgb(155,161,168)
+
+B. real mouse press at the chip's own centre → byte-identical outerHTML; api requests over the whole
+   session: ["/api/docs?pinned=true&sort=order&type=view","/api/health","/api/queue/status",
+             "/api/jobs","/api/tree"]   ← no /api/search, nothing swallowed, nothing pretended
+
+C. Tab from the query input, sixteen presses:
+   ["save as view","type: any","status: any","folder: any","due: any","updated: any","unread",
+    "needs: form","agent: any","references: …","parent: …","include archived","Search query", …]
+   ← folder → due: the keyboard never stops on a control that cannot act
+
+D. with `tag: irrigation` in the query (see the deferral below)
+<button type="button" class="chip on" aria-pressed="true"
+        title="Clears the tag — it cannot be applied again here yet."
+>tag: irrigation</button>
+   computed: opacity 1 · cursor pointer · accent wash — an ordinary live chip
+
+E. a real click on it → back to the disabled `tag: any` above. page errors: []
+```
+
+Screenshots: `/tmp/ui026fix/tag-chip-{disabled,set}.png` (the disabled chip reads as recessed, unfilled
+type beside the filled pills — the eval's "indistinguishable from the working chips" is gone).
+
+**DEFERRED → unreachable state, substituted.** Step D could not be reached by clicking: the overlay
+always opens on `EMPTY_SEARCH_QUERY` and `fromViewFrontmatter` has no consumer yet, so **no user path
+today puts a tag into the overlay's query** — the `clears` branch is there for the restore/saved-view
+path and for CONTRACT-026. Substitute, in the real page rather than a fixture: the app's own
+`FilterChips` `onChange` prop was called through the live React fiber with `{...query, tag:
+"irrigation"}` — the exact callback a chip click invokes — and the clearing click in E is a real
+Playwright click on the real button. Reinforced in jsdom by `FilterChips.test.tsx`, which drives the
+same branch with a real `userEvent` click and asserts the emitted query is `tag: null`.
+
+**Tests.** `VITEST_MAX_THREADS=4 vitest run apps/ui/src/search` → **147 passed** (9 files), up from
+138: +3 `tagChipState` cases in `filters.test.ts`, +5 in the new `FilterChips.test.tsx` (disabled ·
+no copy leaks · sole disabled chip · other chips still cycle · a set tag clears), +1 in
+`SearchOverlay.test.tsx` (disabled with its reason, and outside `FOCUSABLE`). No existing assertion
+edited. `CORPUS_UI_PORT=5288 npm run e2e -- apps/ui/e2e/search.spec.ts` → **17 passed**, up from 16;
+the new case presses the disabled chip with a forced real click and walks the tab order.
+`tsc --noEmit` in `apps/ui` → 0; `eslint`/`prettier` clean on `apps/ui/src/search` and the spec, no
+suppressions.
+
+**Proposal, not shipped (for CONTRACT-026's adjudication).** There *is* a zero-request vocabulary
+within reach: `DocRow` carries `tags` (`packages/contract/src/schemas/doc.ts:208`) and the board's
+columns already hold rows in the TanStack cache, so `queryClient.getQueriesData` over the docs list
+keys would yield tags without a single new request — no second `GET /api/docs`, no invented route.
+It was **not** shipped because the vocabulary it produces is a subset that changes as columns load:
+a chip that offers `#garden` on one open and not the next is a subtler dishonesty than a chip that
+says it has nothing. Recommended only if CONTRACT-026 slips and the chip is wanted sooner.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

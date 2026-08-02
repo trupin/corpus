@@ -29,6 +29,11 @@ folders), (b) a dedicated `GET /api/tags` (inventory + §9.2 rider), or (c) tags
 SearchHit (weighs every hit for one chip's benefit — probably wrong). Whichever
 wins, the UI consumption is a small UI follow-up rider on this issue.
 
+**Widened (Phase 9 eval, 2026-08-02):** consider letting SearchHit carry `type`
+in the same decision — the frugal hit dropped the result-type glyphs too
+(view/skill/template hits all render as doc). One additive field closes both if
+chosen; weigh payload cost vs the two affordances.
+
 ## Acceptance Criteria
 - [ ] Chosen source specced (one-bullet §9.2/§11 rider if a new route — user sign-off per house rules), implemented, and the chip offers options again on the hybrid path
 - [ ] No per-hit payload growth unless explicitly chosen

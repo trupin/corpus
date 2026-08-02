@@ -82,6 +82,19 @@
   border-color: var(--sepia);
 }
 
+/*
+ * A chip with nothing to offer. It stays in the row — the row is the query's
+ * vocabulary and a hole in it would read as a missing filter — but it must not
+ * read as pressable: recessed, dimmed, and refusing the pointer, with its `title`
+ * saying why. The pressable chips are the ones that respond.
+ */
+.search-filters .chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: none;
+  color: var(--ink-3);
+}
+
 /* The two chips that name a document open a picker anchored under them. */
 .chip-holder {
   position: relative;

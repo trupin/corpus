@@ -312,3 +312,13 @@ _n/a until triage._
   chips-only browsing is saved views' job). Recorded so it isn't re-litigated.
 - TEST-1032 naming deviation (searchCorpus/useCorpusSearch vs "one search method") —
   orchestrator-directed, flag to the evaluator.
+
+## Phase 9 eval residue (2026-08-02, five PASS + one PARTIAL fixed in-phase)
+
+- Pack degrade note says "ranked on the lexical half alone" while already-embedded
+  rows are present under `indexing` — honest state word, overstated sentence;
+  reword at triage (matches shipped search behavior, not drift).
+- Truncated section windows can open mid-word — legal (§6 governs anchor quotes,
+  not pack windows), escalation printed; craft nit.
+- Evaluator note for the record: Phase 9 proof-of-work rated the best audited on
+  this repo; zero re-dos.

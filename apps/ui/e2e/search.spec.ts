@@ -155,6 +155,48 @@ test.describe("the search overlay", () => {
     await expect(status).toHaveText("status: open");
   });
 
+  /**
+   * UI-026 eval FAIL-1. A ranked hit carries no tags, so the chip has no
+   * vocabulary to offer until CONTRACT-026 supplies one — and until then it must
+   * look as unusable as it is. Disabled, dimmed, refusing the pointer, with a
+   * `title` that explains itself; a real mouse press over it changes nothing,
+   * which is now what it promises rather than what it hides.
+   */
+  test("the tag chip is visibly disabled and explains itself", async ({ page }) => {
+    await openOverlay(page);
+
+    const tag = page.locator(".search-filters .chip", { hasText: "tag:" });
+    await expect(tag).toHaveText("tag: any");
+    await expect(tag).toBeDisabled();
+    await expect(tag).toHaveAttribute(
+      "title",
+      "Search results do not carry tags yet, so there is nothing to filter by.",
+    );
+    await expect(tag).toHaveCSS("opacity", "0.5");
+    await expect(tag).toHaveCSS("cursor", "not-allowed");
+
+    // The pointer really does land on it; the browser fires nothing, so the
+    // chip stays exactly as it was.
+    await tag.click({ force: true });
+    await expect(tag).toHaveText("tag: any");
+    await expect(tag).not.toHaveClass(/\bon\b/);
+    await expect(tag).toHaveAttribute("aria-pressed", "false");
+
+    // …and the focus trap never parks on it, because a keyboard user pressing a
+    // control that cannot act is the same defect by another route.
+    const visited: boolean[] = [];
+    for (let step = 0; step < 25; step += 1) {
+      await page.keyboard.press("Tab");
+      visited.push(
+        await page.evaluate(
+          () =>
+            document.activeElement?.getAttribute("title")?.startsWith("Search results") ?? false,
+        ),
+      );
+    }
+    expect(visited.some(Boolean)).toBe(false);
+  });
+
   test("the create row appears at two characters and reads as the prototype writes it", async ({
     page,
   }) => {

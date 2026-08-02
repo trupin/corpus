@@ -145,6 +145,31 @@ describe("the overlay's chrome", () => {
     ]);
   });
 
+  /**
+   * The row keeps all twelve, but the one that cannot act says so — in the
+   * overlay as it really mounts, not only in the chip row's own test. A disabled
+   * button is also outside `FOCUSABLE`, so the trap never parks the caret on a
+   * control that would do nothing when pressed.
+   */
+  it("shows the tag chip disabled with its reason, and keeps it out of the tab order", () => {
+    const { container } = renderOverlay();
+    const chips = [...container.querySelectorAll<HTMLButtonElement>(".search-filters .chip")];
+    const tag = chips.find((chip) => chip.textContent === "tag: any");
+
+    expect(tag?.disabled).toBe(true);
+    expect(tag?.title).toBe(
+      "Search results do not carry tags yet, so there is nothing to filter by.",
+    );
+    expect(chips.filter((chip) => chip.disabled)).toEqual([tag]);
+    expect(
+      [
+        ...container.querySelectorAll<HTMLElement>(
+          '.search-panel a[href], .search-panel button:not([disabled]), .search-panel input:not([disabled]), .search-panel [tabindex]:not([tabindex="-1"])',
+        ),
+      ].includes(tag!),
+    ).toBe(false);
+  });
+
   it("closes on Escape and on a scrim click, but not on a click inside the panel", async () => {
     const user = userEvent.setup();
     const { container, onClose } = renderOverlay();

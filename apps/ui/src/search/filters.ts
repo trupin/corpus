@@ -111,10 +111,37 @@ export function folderOptions(tree: FolderTree | undefined): readonly (string | 
  * So the `tag:` chip stays in the row — it still displays a tag set from a
  * restored query, and still clears it — but it can no longer *offer* one. A
  * source for the workspace's tag vocabulary is a contract question, escalated
- * rather than improvised (sprint-022 TEST-1027).
+ * rather than improvised (sprint-022 TEST-1027, CONTRACT-026).
+ *
+ * Until that lands the chip must not *look* like the working ones: a control
+ * that renders as an affordance and does nothing is a defect whatever its cause
+ * (UI-026 eval FAIL-1). {@link tagChipState} is what keeps the two honest, and
+ * it reads the vocabulary rather than hard-coding the gap — the day this
+ * function returns real tags, the chip becomes a normal cycling chip again with
+ * no other edit.
  */
 export function tagOptions(): readonly (string | null)[] {
   return [null];
+}
+
+/**
+ * What the `tag:` chip can actually do right now.
+ *
+ * - `cycles` — there is a vocabulary; the chip behaves like every other one.
+ * - `clears` — no vocabulary, but the query carries a tag: the chip must still
+ *   show it and still remove it, because a filter the user cannot see or drop is
+ *   worse than one that cannot be set.
+ * - `unavailable` — nothing to offer and nothing set: the chip is disabled and
+ *   says why, rather than swallowing the click.
+ */
+export type TagChipState = "cycles" | "clears" | "unavailable";
+
+export function tagChipState(
+  tag: string | null,
+  options: readonly (string | null)[] = tagOptions(),
+): TagChipState {
+  if (options.some((option) => option !== null)) return "cycles";
+  return tag === null ? "unavailable" : "clears";
 }
 
 /** A document the `references:` / `parent:` pickers can point at. */

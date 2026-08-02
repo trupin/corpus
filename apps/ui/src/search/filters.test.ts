@@ -9,6 +9,7 @@ import {
   sinceInstant,
   sinceLabel,
   STATUS_OPTIONS,
+  tagChipState,
   tagOptions,
   titleOf,
   TYPE_OPTIONS,
@@ -96,6 +97,28 @@ describe("tagOptions", () => {
   it("clears a tag rather than stranding it", () => {
     expect(cycle(tagOptions(), "finance")).toBeNull();
     expect(cycle(tagOptions(), null)).toBeNull();
+  });
+});
+
+describe("tagChipState", () => {
+  /**
+   * The chip's three honest positions. With no vocabulary and nothing set there
+   * is nothing a click could do, and a control that renders as an affordance and
+   * swallows the click is the defect this replaces (UI-026 eval FAIL-1).
+   */
+  it("is unavailable when there is nothing to offer and nothing set", () => {
+    expect(tagChipState(null)).toBe("unavailable");
+  });
+
+  it("still clears a tag the query already carries", () => {
+    expect(tagChipState("irrigation")).toBe("clears");
+  });
+
+  it("becomes an ordinary cycling chip the moment a vocabulary exists", () => {
+    // CONTRACT-026's restoration is one changed return value away: this reads
+    // the vocabulary, so nothing else here has to change with it.
+    expect(tagChipState(null, [null, "garden"])).toBe("cycles");
+    expect(tagChipState("garden", [null, "garden"])).toBe("cycles");
   });
 });
 
