@@ -64,6 +64,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus skill create`](#corpus-skill-create)
   - [`corpus skill rollback`](#corpus-skill-rollback)
 - [`corpus thread`](#corpus-thread)
+  - [`corpus thread context`](#corpus-thread-context)
   - [`corpus thread create`](#corpus-thread-create)
   - [`corpus thread reopen`](#corpus-thread-reopen)
   - [`corpus thread reply`](#corpus-thread-reply)
@@ -1678,7 +1679,45 @@ corpus skill rollback orchestrate --json
 
 Open conversations, read them, reply to them, and resolve them.
 
-A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, or standalone — `show` is the read §7's comment skill starts from (status, anchoring and every turn), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+A comment opens a thread anchored to the text it is about; every later turn appends to that thread's file (SPEC.md §6). `create` opens one — on a quoted selection, on a whole document, or standalone — `show` is the read §7's comment skill starts from (status, anchoring and every turn), `context` is the bounded briefing around it (the anchored passage plus the excerpts that bear on it, Retrieval Phase C), `reply` is the agent's half of the conversation, and `resolve`/`reopen` control whether later turns keep waking it (SPEC.md §8).
+
+### `corpus thread context`
+
+Brief yourself on a conversation: what it is about, and what else bears on it.
+
+Reads `GET /api/threads/{id}/context` (SPEC.md §7 Retrieval discipline, §9.2) and prints the thread's **context pack** in the order an agent reads it: what the conversation is about, then the most-related excerpts from elsewhere in the corpus, then a note if ranking was degraded.
+
+**This is where the comment skill starts.** One call replaces reading the thread, then the whole parent document to find the anchored passage inside it, then searching for whatever else bears on it. And it stays affordable: the pack is bounded by contract — at most 10 excerpts, 320 characters each, 4000 characters of parent-side prose — so reading a briefing costs roughly the same however large the corpus grows. There are no flags beyond `--json`: the bounds live in the contract, so there is no way to ask this verb for the dump it exists to refuse.
+
+**The parent block takes the shape the thread has.** A thread anchored to a selection shows the parent's id, title and heading path, the quote itself, and the **whole enclosing section** around it — a comment on one sentence is rarely answerable from that sentence. A whole-document thread shows the parent's title and its opening content. A thread whose anchor no longer resolves (SPEC.md §6) says so and prints the preserved quote, with no invented passage. A thread whose parent was deleted says that too, and still gets its excerpts — it is a `200`, never a `404`, because the conversation plainly exists. A standalone thread has no parent content, so it prints no parent block at all and goes straight to the excerpts.
+
+When the parent-side prose was cut to fit, a `#` line says so and names the escalation — `corpus doc show <parent>`. Nothing is ever silently trimmed: an agent editing a section must know whether it saw all of it.
+
+Each excerpt is one padded line — id, heading path, relation, excerpt — and **never a body**. Reading one is a separate, deliberate `corpus doc show <id>` on that row's id, exactly as with `corpus search` and `corpus doc related`. A pack with nothing related is a single honest line and exit 0. `--json` emits the server's envelope unchanged, whose `shape` field is the one thing a machine reader switches on. A thread id that names nothing is the server's `404`, which is exit 5.
+
+```
+corpus thread context <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                      |
+| -------- | -------- | -------------------------------- |
+| `id`     | yes      | The thread to brief yourself on. |
+
+**Examples**
+
+The briefing for an anchored thread: the parent, the quote, its whole section, then one line per related excerpt.
+
+```
+corpus thread context th_a1b2c3
+```
+
+One JSON value: `{"shape":"anchored","threadId":"th_a1b2c3","parent":{"id":"doc_a1b2c3","title":"Mortgage options","headingPath":"Mortgage options › Escrow","quote":"recalculated annually","section":"## Escrow\n\nThe escrow reserve is recalculated annually.","truncated":false},"excerpts":[{"id":"doc_zz","headingPath":"Impound account true-up","excerpt":"The lender re-runs the impound analysis every twelve months.","relation":"similar"}],"semanticIndex":"current"}`.
+
+```
+corpus thread context th_a1b2c3 --json
+```
 
 ### `corpus thread create`
 
