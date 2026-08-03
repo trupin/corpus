@@ -1,7 +1,12 @@
 import type { ColumnComponentProps } from "@corpus/kit/plugin";
-import type { ReactElement } from "react";
-import { isOverdue, openItems, type TodoItem } from "../items.js";
+import { useState, type KeyboardEvent, type ReactElement } from "react";
+import { isOverdue, type TodoItem } from "../items.js";
+import { useTodoItemToggle } from "./itemActions.js";
+import type { ItemSelector } from "./itemAnchor.js";
 import { useTodoLists, type TodoListView } from "./queries.js";
+import { itemOpenRequest } from "./reveal.js";
+import { TodoItemComposer } from "./TodoItemComposer.js";
+import { TodoItemMenu, type TodoItemTarget } from "./TodoItemMenu.js";
 import "./todos.css";
 
 /**
@@ -27,26 +32,73 @@ import "./todos.css";
  * **Archived documents are excluded** because the default result set excludes
  * them (SPEC.md §11); the column states no `status` and therefore inherits
  * core's answer rather than inventing a second one.
+ *
+ * **A click on an item names the item** (PLUGINS-010): the open carries UI-037's
+ * reveal, so the reader opens scrolled to that line and flashes it, rather than
+ * at the top of a list the user then has to search. The payload is built in
+ * `./reveal.ts` from the document's *whole* item list — which is why the groups
+ * below carry `all` beside the open items they render.
+ *
+ * **Right-click is the plugin's own** (PLUGINS-009). Core deliberately leaves
+ * this surface alone — `Column.tsx` stamps `data-plugin-surface` on the node
+ * above these rows, which is exactly where every core menu rule bails — so a
+ * plugin row that wants a menu has to open one, and SPEC.md §11's 2026-08-02
+ * amendment is what permits it. `TodoItemMenu` holds what is in it and why
+ * nothing else is; the *writes* it triggers live here, in the component that
+ * outlives the menu (`itemActions.ts`).
  */
 
 /** Wide content belongs in focus mode (SPEC.md §10) — the column body stays narrow. */
 const MAX_ITEMS_PER_LIST = 5;
 
+/** One open item, and where it sits among **all** of its document's items. */
+interface OpenItem {
+  /** Its position in {@link TodoGroup.all} — what a reveal's frame is read from. */
+  readonly at: number;
+  readonly item: TodoItem;
+}
+
 interface TodoGroup {
   readonly docId: string;
   readonly title: string;
-  readonly items: readonly TodoItem[];
+  /**
+   * Every item the document has, in body order, done ones included.
+   *
+   * The column shows only the open ones, but a reveal frames its target with
+   * the lines the *reader* will render around it (PLUGINS-010) — and a checked
+   * item between two open ones is one of those lines. Framing with the open
+   * items alone would quote a neighbour that is not adjacent on screen, and the
+   * frame would never match.
+   */
+  readonly all: readonly TodoItem[];
+  readonly items: readonly OpenItem[];
 }
 
 /** Open items, grouped by their source document, empty lists dropped. */
 export function groupOpenItems(lists: readonly TodoListView[]): readonly TodoGroup[] {
   const groups: TodoGroup[] = [];
   for (const list of lists) {
-    const open = openItems(list.items);
+    const open = list.items.flatMap((item, at) => (item.done ? [] : [{ at, item }]));
     if (open.length === 0) continue;
-    groups.push({ docId: list.docId, title: list.title, items: open });
+    groups.push({ docId: list.docId, title: list.title, all: list.items, items: open });
   }
   return groups;
+}
+
+/** Which item's menu is open, and where it was opened from. */
+interface OpenMenu {
+  readonly target: TodoItemTarget;
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly autoFocus: boolean;
+}
+
+/** An item whose comment composer is open, with the selector it will anchor to. */
+interface OpenComposer {
+  readonly target: TodoItemTarget;
+  readonly selector: ItemSelector;
+  readonly clientX: number;
+  readonly clientY: number;
 }
 
 export interface TodosColumnProps extends ColumnComponentProps {
@@ -61,6 +113,9 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
   // explain. The `type: todo` collection query is still in there — it is what
   // the fingerprint is taken from (`ui/queries.ts`).
   const lists = useTodoLists();
+  const toggle = useTodoItemToggle();
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const [composer, setComposer] = useState<OpenComposer | null>(null);
   const today = now ?? new Date();
 
   if (lists.error !== null) {
@@ -87,31 +142,88 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
     );
   }
 
+  const openMenu = (
+    target: TodoItemTarget,
+    clientX: number,
+    clientY: number,
+    autoFocus: boolean,
+  ): void => {
+    setComposer(null);
+    setMenu({ target, clientX, clientY, autoFocus });
+  };
+
+  /** The menu key and ⇧F10, on the row the keyboard is on (SPEC.md §11). */
+  const onItemKeyDown = (event: KeyboardEvent<HTMLButtonElement>, target: TodoItemTarget): void => {
+    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
+    // Also stops the board's own `menu.open` shortcut: its dispatcher skips an
+    // already-defaulted event, which is how a surface says "this press was
+    // mine" — and the board would otherwise refuse it anyway, because a plugin
+    // row is one of the elements its keyboard path bails on.
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    openMenu(target, rect.left + 16, rect.bottom - 8, true);
+  };
+
   return (
     <div className="todos-column" data-todos-column={viewDocId}>
+      {toggle.error === null ? null : (
+        <p className="todos-error" role="alert">
+          {toggle.error}
+          <button type="button" className="todos-error-dismiss" onClick={toggle.dismiss}>
+            Dismiss
+          </button>
+        </p>
+      )}
+
       {groups.map((group) => (
         <section className="todos-group" key={group.docId} data-todos-group={group.docId}>
+          {/*
+           * The heading names the *document*, so it opens the document — at the
+           * top, the way it always has. Only a click that named a line asks to
+           * land on one (PLUGINS-010); "+N more" is the same, it is a click on
+           * the rest of the list rather than on any item of it.
+           */}
           <button type="button" className="todos-group-head" onClick={() => onOpen?.(group.docId)}>
             <span className="todos-group-title">{group.title}</span>
             <span className="todos-group-count">{group.items.length}</span>
           </button>
           <div className="check-list">
-            {group.items.slice(0, MAX_ITEMS_PER_LIST).map((item, index) => (
-              <button
-                type="button"
-                key={`${String(index)}:${item.text}`}
-                className={`check${isOverdue(item, today) ? " overdue" : ""}`}
-                onClick={() => onOpen?.(group.docId)}
-              >
-                <span className="box">☐</span>
-                <span className="todo-item-text">{item.text}</span>
-                {item.due === undefined ? null : (
-                  <span className="due" data-overdue={isOverdue(item, today) ? "true" : "false"}>
-                    {item.due}
-                  </span>
-                )}
-              </button>
-            ))}
+            {group.items.slice(0, MAX_ITEMS_PER_LIST).map(({ at, item }) => {
+              const target: TodoItemTarget = {
+                docId: group.docId,
+                listTitle: group.title,
+                index: at,
+                item,
+              };
+              return (
+                <button
+                  type="button"
+                  key={`${String(at)}:${item.text}`}
+                  className={`check${isOverdue(item, today) ? " overdue" : ""}`}
+                  data-todos-item={String(at)}
+                  onClick={() => onOpen?.(itemOpenRequest(group.docId, group.all, at))}
+                  onContextMenu={(event) => {
+                    // The browser's menu is what this surface gets otherwise
+                    // (`nativeMenu.ts` keeps it for every `[data-plugin-surface]`),
+                    // so taking it is this issue's whole act — refused here, by
+                    // the plugin, rather than by core.
+                    event.preventDefault();
+                    openMenu(target, event.clientX, event.clientY, false);
+                  }}
+                  onKeyDown={(event) => {
+                    onItemKeyDown(event, target);
+                  }}
+                >
+                  <span className="box">☐</span>
+                  <span className="todo-item-text">{item.text}</span>
+                  {item.due === undefined ? null : (
+                    <span className="due" data-overdue={isOverdue(item, today) ? "true" : "false"}>
+                      {item.due}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
             {group.items.length > MAX_ITEMS_PER_LIST ? (
               <button
                 type="button"
@@ -124,6 +236,44 @@ export function TodosColumn({ viewDocId, onOpen, now }: TodosColumnProps): React
           </div>
         </section>
       ))}
+
+      {menu === null ? null : (
+        <TodoItemMenu
+          target={menu.target}
+          clientX={menu.clientX}
+          clientY={menu.clientY}
+          autoFocus={menu.autoFocus}
+          onToggle={toggle.toggle}
+          onComment={(target, selector) => {
+            setComposer({ target, selector, clientX: menu.clientX, clientY: menu.clientY });
+          }}
+          onOpenThread={(target, threadId) => {
+            onOpen?.({ docId: target.docId, reveal: { kind: "thread", threadId } });
+          }}
+          onClose={() => {
+            setMenu(null);
+          }}
+        />
+      )}
+
+      {composer === null ? null : (
+        <TodoItemComposer
+          target={composer.target}
+          selector={composer.selector}
+          clientX={composer.clientX}
+          clientY={composer.clientY}
+          onCreated={(target, threadId) => {
+            setComposer(null);
+            // Straight to the comment that was just made: this column shows
+            // items and never threads, so without this the only feedback for a
+            // posted comment would be the popover disappearing.
+            onOpen?.({ docId: target.docId, reveal: { kind: "thread", threadId } });
+          }}
+          onClose={() => {
+            setComposer(null);
+          }}
+        />
+      )}
     </div>
   );
 }

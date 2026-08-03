@@ -78,7 +78,28 @@ describe("groupOpenItems", () => {
       list("doc_c", "C", []),
     ]);
     expect(grouped).toEqual([
-      { docId: "doc_a", title: "A", items: [{ text: "open", done: false }] },
+      {
+        docId: "doc_a",
+        title: "A",
+        // Every item, done ones included: a reveal's frame quotes the lines the
+        // reader renders, and a checked item is one of them (PLUGINS-010).
+        all: [
+          { text: "open", done: false },
+          { text: "done", done: true },
+        ],
+        items: [{ at: 0, item: { text: "open", done: false } }],
+      },
+    ]);
+  });
+
+  /** The position is the item's place in the **document**, not in the column. */
+  it("records each open item's position among all of the document's items", () => {
+    const grouped = groupOpenItems([
+      list("doc_a", "A", [item("done", true), item("first", false), item("second", false)]),
+    ]);
+    expect(grouped[0]?.items).toEqual([
+      { at: 1, item: { text: "first", done: false } },
+      { at: 2, item: { text: "second", done: false } },
     ]);
   });
 
@@ -157,14 +178,73 @@ describe("TodosColumn", () => {
     expect(url).not.toContain("includeArchived");
   });
 
-  it("opens the source document from a group heading and from any item row", async () => {
-    const { onOpen } = mount([["doc_week", "Week", [item("a", false)]]]);
+  /**
+   * PLUGINS-010. The heading names a document and opens it at the top, exactly
+   * as it always did; an item row names a **line**, and says so.
+   */
+  it("opens the document from a group heading and the clicked line from an item row", async () => {
+    const { onOpen } = mount([
+      ["doc_week", "Week", [item("a", false), item("b", false), item("c", false)]],
+    ]);
     await waitFor(() => {
       expect(groups()).toHaveLength(1);
     });
     fireEvent.click(screen.getByText("Week"));
-    fireEvent.click(screen.getByText("a"));
-    expect(onOpen.mock.calls).toEqual([["doc_week"], ["doc_week"]]);
+    fireEvent.click(screen.getByText("b"));
+    expect(onOpen.mock.calls).toEqual([
+      ["doc_week"],
+      [
+        {
+          docId: "doc_week",
+          reveal: { kind: "item", exact: "b", prefix: "a", suffix: "c" },
+        },
+      ],
+    ]);
+  });
+
+  /**
+   * sprint-023 OC4, through the real click: the column shows two identical
+   * lines, and clicking the second one must not point at the first. The frames
+   * come from the document's own neighbours — including the **checked** item
+   * the column does not display, because the reader does.
+   */
+  it("distinguishes duplicate items by the neighbours the reader will render", async () => {
+    const { onOpen } = mount([
+      [
+        "doc_week",
+        "Week",
+        [
+          item("Call the plumber", false),
+          item("Sent the signed form", true),
+          item("Call the plumber", false),
+        ],
+      ],
+    ]);
+    await waitFor(() => {
+      expect(itemTexts()).toEqual(["Call the plumber", "Call the plumber"]);
+    });
+    const [firstRow, secondRow] = [
+      ...document.querySelectorAll<HTMLElement>(".todos-column .check"),
+    ];
+    if (firstRow === undefined || secondRow === undefined) throw new Error("expected two rows");
+    fireEvent.click(secondRow);
+    expect(onOpen).toHaveBeenCalledWith({
+      docId: "doc_week",
+      reveal: {
+        kind: "item",
+        exact: "Call the plumber",
+        prefix: "Sent the signed form",
+      },
+    });
+    fireEvent.click(firstRow);
+    expect(onOpen).toHaveBeenLastCalledWith({
+      docId: "doc_week",
+      reveal: {
+        kind: "item",
+        exact: "Call the plumber",
+        suffix: "Sent the signed form",
+      },
+    });
   });
 
   it("survives a host that wired no open callback", async () => {
