@@ -243,6 +243,7 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | todo | P2 | — |
 | UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | todo | P2 | — |
+| INFRA-019 | Pre-push hook never reads stdin: pushes die of SIGPIPE after passing (blocked v0.2.0) | done | P0 | — |
 
 Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
 

@@ -6,6 +6,17 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+# Drain the ref list git writes to our stdin, before anything else runs.
+# Nothing below reads it — but leaving it unread is not free: every step here
+# spawns npm, vitest and Playwright with this descriptor inherited, and once one
+# of them closes it, git's write to the pipe raises SIGPIPE and git abandons the
+# push *after* the gate has passed. The symptom is a clean "all checks passed"
+# followed by exit 141 and nothing on the remote, which is what blocked the
+# v0.2.0 tag (INFRA-019). Consuming it here costs one process and removes the
+# race for good.
+refs_to_push="$(cat)"
+readonly refs_to_push
+
 # The e2e suite binds a port for its Vite `webServer`. `vite.config.ts` pins the
 # dev server to 5173 (SPEC.md §3) and that is right for `npm run dev`; it is the
 # wrong default for a hook, which must not fight a dev server the developer
