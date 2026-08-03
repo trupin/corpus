@@ -39,9 +39,19 @@ time. The predicate already exists and is exported from `scripts/coverage-gate.t
 — reuse it rather than restating it, so the collector and the merge cannot drift
 about what counts as repo source.
 
+Ride-along from the PR #19 re-review (MINOR): `scripts/coverage-gate.ts`'s
+`readBrowserDumps` guards the `readFileSync` carefully — naming the file and
+explaining that a concurrent `npm run e2e` empties the directory — and then
+`JSON.parse`s the contents unguarded. A truncated dump (collector killed
+mid-write, disk full) throws a bare `SyntaxError` with no filename, in the one
+function whose reads now span the entire merge. Give the parse the same
+treatment as the read.
+
 ## Acceptance Criteria
 - [ ] The collector drops non-repo entries before writing; on-disk
       `coverage-raw/browser-v8/` roughly halves (report before/after bytes)
+- [ ] A truncated/unparseable dump fails with the offending filename, like the
+      unreadable-file path already does
 - [ ] One predicate, shared with the merge — not a second copy
 - [ ] Merged gate numbers are unchanged: all four metrics identical to a
       pre-change full run, proven by diffing `coverage-summary.json`
