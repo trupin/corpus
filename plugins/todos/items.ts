@@ -313,6 +313,39 @@ export function parseBodyItems(body: string): readonly TodoItem[] {
   return taskLines(body).map((line) => line.item);
 }
 
+/** Half-open character offsets into a body. */
+export interface TextRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Where an item's **text** sits in the body, in characters — the span a person
+ * selects when they select the item in the reader.
+ *
+ * It deliberately excludes everything that is not the item's words: the indent,
+ * the bullet, the `[ ]` box and its spacing on the left, and the `(due: …)`
+ * marker and any trailing whitespace on the right. That is what makes a
+ * selector built from this range the *same* selector the reader's own
+ * Comment-on-selection produces for the same item (SPEC.md §6, §12) — quoting
+ * `- [ ] call the bank` instead of `call the bank` would anchor a thread to text
+ * that changes the moment the box is checked.
+ *
+ * `null` when the body has no such item — a not-yet-migrated document whose
+ * items are still in the legacy frontmatter key, or an index the list no longer
+ * has.
+ */
+export function itemTextRange(body: string, index: number): TextRange | null {
+  const line = taskLines(body)[index];
+  if (line === undefined) return null;
+  const lines = body.split("\n");
+  let start = 0;
+  // `+ 1` per line for the `\n` that `split` consumed.
+  for (let at = 0; at < line.at; at += 1) start += String(lines[at]).length + 1;
+  start += `${line.indent}${line.bullet}${line.afterBullet}[${line.mark}]${line.afterMark}`.length;
+  return { start, end: start + line.item.text.length };
+}
+
 // ---------------------------------------------------------------------------
 // Reading — body first, legacy frontmatter while a workspace is mid-transition
 // ---------------------------------------------------------------------------

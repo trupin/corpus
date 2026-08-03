@@ -104,6 +104,18 @@ export interface TodoLists {
   /** True until both halves have answered once. */
   readonly loading: boolean;
   readonly error: Error | null;
+  /**
+   * Re-reads the aggregate now, and resolves when it has landed.
+   *
+   * The plugin's own write path already broadcasts `["lists"]` and the SSE
+   * bridge turns that into this very invalidation — but only for a client whose
+   * stream is up. A write made from the board should refresh the board it was
+   * made from whether or not the stream is connected, which is the same reason
+   * `useUpdateDoc` invalidates alongside the server's frame rather than instead
+   * of it. Every todo surface shares this query key, so one refetch updates the
+   * column and every document row's preview at once.
+   */
+  readonly refresh: () => Promise<void>;
 }
 
 const EMPTY: readonly TodoListView[] = [];
@@ -132,6 +144,9 @@ export function useTodoLists(): TodoLists {
   return {
     byDoc: new Map(all.map((list) => [list.docId, list])),
     all,
+    refresh: async () => {
+      await lists.refetch();
+    },
     loading: rows === undefined || (lists.data === undefined && lists.error === null),
     error:
       docs.error ??

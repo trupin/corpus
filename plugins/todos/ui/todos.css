@@ -329,3 +329,141 @@
   color: var(--ink-3);
   font-size: 11.5px;
 }
+
+/*
+ * ── The item context menu (PLUGINS-009) ───────────────────────────
+ *
+ * The frame itself is `.ac-menu` / `.ac-item`, imported from the kit
+ * (`@corpus/kit/autocomplete.css`) — the one positioned-menu surface every menu
+ * in the product renders. Only the deltas `apps/ui`'s `menu.css` applies to a
+ * *context* menu are restated here, because that stylesheet is core's and a
+ * plugin that leaned on it would look correct until the day it is not loaded.
+ */
+
+.todo-menu {
+  min-width: 220px;
+  max-height: min(60vh, 420px);
+}
+
+.todo-menu .ac-item {
+  text-align: left;
+  padding: 7px 9px;
+}
+
+.todo-menu .ac-item .d {
+  display: block;
+  margin-left: 0;
+  margin-top: 1px;
+}
+
+.todo-menu .ac-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.todo-menu .ac-item:focus-visible {
+  background: var(--surface-2);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── The item comment composer ─────────────────────────────────── */
+
+.todo-comment-pop {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px 8px;
+  font-family: var(--sans);
+}
+
+.todo-cm-quote {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+
+.todo-cm-input {
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  resize: vertical;
+}
+
+.todo-cm-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.todo-comment-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--ink-3);
+}
+
+.todo-comment-foot .todo-toggle {
+  cursor: pointer;
+}
+
+.todo-comment-foot .todo-toggle.on {
+  color: var(--accent-ink);
+}
+
+.todo-comment-foot .todo-send {
+  margin-left: auto;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.todo-comment-foot .todo-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.todo-cm-error {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--signal);
+}
+
+/* ── A refused item write ──────────────────────────────────────── */
+
+.todos-error {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--signal-wash);
+  color: var(--signal);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.todos-error-dismiss {
+  margin-left: auto;
+  flex: none;
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-decoration: underline;
+}

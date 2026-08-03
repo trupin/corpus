@@ -376,11 +376,23 @@ test.describe("the context menu", () => {
   });
 
   /**
-   * The negative the signed rule still owns (TEST-1075): rows a **plugin column
-   * body** renders are the plugin's own surface, stamped `data-plugin-surface`,
-   * and keep the browser's menu. Right-click and ⇧F10 both stay silent there.
+   * The negative UI-036 owns, restated for the SPEC §11 amendment of
+   * 2026-08-02 (TEST-1075, as the amendment leaves it).
+   *
+   * When this test was written the rule was "a plugin column body's rows keep
+   * the **browser's** menu", because v1 excluded plugin-rendered surfaces
+   * outright. The user reversed that exclusion in writing, and PLUGINS-009 is
+   * the reversal: a plugin may now contribute its own menu through the kit. So
+   * a row inside `[data-plugin-surface]` does open a menu again — the *plugin's*.
+   *
+   * What UI-036 is actually about survives untouched, and is what is asserted
+   * here: **core** paints no menu over a surface it handed to a plugin. Core's
+   * frame is `[data-ctx-menu]`; the plugin's is its own element, built from the
+   * kit's `.ac-menu` and carrying the item's actions rather than a document's.
+   * The distinction is the whole rule — the exclusion reads on where the markup
+   * came from, never on a document's type.
    */
-  test("leaves a plugin column body's own rows to the browser", async ({ page }) => {
+  test("leaves a plugin column body's own rows to the plugin, never to core", async ({ page }) => {
     await stubCorpus(page, [INBOX_VIEW, TODOS_COLUMN_VIEW, TODO]);
     await stubTodoLists(page);
     await page.goto("/");
@@ -392,11 +404,19 @@ test.describe("the context menu", () => {
     );
 
     await item.click({ button: "right" });
-    await expect(page.getByRole("menu")).toHaveCount(0);
+    // Core's own frame never appears over a plugin surface…
+    await expect(page.locator("[data-ctx-menu]")).toHaveCount(0);
+    // …and what does appear is the plugin's, naming the item rather than a document.
+    await expect(page.locator("[data-todo-menu]")).toHaveAttribute(
+      "aria-label",
+      "Actions for Call the plumber",
+    );
 
-    // The core column beside it is unaffected: same page, same gesture, a menu.
+    // The core column beside it is unaffected: same page, same gesture, core's menu.
+    await page.keyboard.press("Escape");
     await page.locator('.row[data-row-doc="doc_todo"]').click({ button: "right" });
     await expect(page.getByRole("menu", { name: "Actions for Inbox chores" })).toBeVisible();
+    await expect(page.locator("[data-ctx-menu]")).toHaveCount(1);
   });
 
   test("a column header offers its own three acts", async ({ page }) => {
