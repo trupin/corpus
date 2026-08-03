@@ -234,6 +234,85 @@ persists an offset and nothing else", keys included.
 - Unit, after the fix: `apps/ui` + `packages/kit` → 148 files, **2319 tests**
   passing. typecheck / eslint / prettier clean.
 
+### Follow-up 2: the flash was a frame stale — found by PLUGINS-010's real-app drill
+
+The drill instrumented a cold open frame by frame and found the box drawn on a
+layout that was already obsolete: `t` `flashY=580 / li y=579` (correct), `t+1`
+`flashY=580 / li y=527` — `.fm-chips` un-wraps two rows to one and the editor
+re-flows once `hasContent` goes true, and the fixed-position boxes, drawn once,
+never followed. Reproduced with no plugin on the seeded path too. Every open
+from a column is a cold open, so this was the common case.
+
+Frame-by-frame probe of my own producer fixture, before the fix:
+
+```
+f=4 flashY=493 liY=492 chipsH=51 colW=370   ← drawn, correct
+f=5 flashY=493 liY=517 chipsH=23 colW=463   ← chips un-wrap, line moves; box does not
+f=39 flashY=493 liY=517                      ← 24 px off, for the rest of the flash
+```
+
+**Fix (`apps/ui/src/reader/reveal.ts`).** The flash now *tracks* its line for as
+long as it is lit: an rAF loop re-measures and repositions the boxes every
+frame. `flashRange` returns a `RevealFlash` handle (`follow(rects?)` / `stop()`)
+instead of a bare undo, and `syncBoxes` **reuses** the box elements — recreating
+them each frame would restart the CSS fade, leaving a highlight that never
+fades. The drawn-not-applied property is untouched: this reads geometry and
+writes only to its own body-level layer, so nothing enters ProseMirror's DOM.
+The scroll is re-aimed over the same settling window (`REVEAL_SETTLE_FRAMES`,
+8), and stops the instant `scrollTop` differs from what the reveal last wrote —
+the rule scroll restoration already follows. Box tracking continues regardless,
+because a highlight left behind while its text scrolls away is the same defect
+in a different frame.
+
+**A second defect the fix exposed, and the more dangerous one.** The first cut
+of the tracker broke 7 e2e tests. Probing showed why: with tracking on,
+`scrollTop` ended at **0** and the box was frozen anyway. The editor rebuilds
+its DOM a frame or two after mounting, so the `Range` the reveal was drawn from
+**dies** — and a range over replaced nodes answers with an all-zero rectangle,
+which is not a position but the absence of one. Measuring from it froze the
+boxes; *aiming* from it computed an offset out of nothing and scrolled the
+reader to the top of the document. So: `rectsOf` now filters zero-area
+rectangles (jsdom and a dead range are one case, and callers must treat them
+alike), `scrollRangeIntoView` refuses to aim at an all-zero rect, and the
+tracker **re-finds the words** with `findRevealRange` when its range goes dead,
+giving up after `REVEAL_ATTEMPTS` consecutive misses rather than re-walking the
+document 60 times a second to keep saying the text is gone.
+
+**Proof:**
+- Unit reproducer, red against the pre-fix code with the drill's own numbers:
+  `keeps the flash on its line when the layout settles a frame later` →
+  `Expected: "527px" / Received: "580px"`. Green after.
+- E2E: `holds the box on the line after the cold open's layout settles` (seeded)
+  and `holds the box on the clicked line once the document has settled`
+  (producer) assert on the settled frame — both boxes measured in one
+  `evaluate` after three identical frames of the target line, so the flash
+  cannot expire between two round trips. These are **end-state guards, not
+  deterministic reproducers**: whether a cold open's reveal lands before or
+  after the column's 250 ms width transition depends on how fast the document
+  arrives, and measured across runs it reads 24 px off on one and 1 px on the
+  next. Recorded here so nobody mistakes their green for proof.
+- The deterministic e2e is `follows its line when the surface moves under the
+  lit flash`: it scrolls the reader while the flash is up and asserts the box
+  is still on the line. Red pre-fix by exactly the distance the text travelled
+  (`Expected: < 12 / Received: 119`), green after — and it first caught its own
+  vacuity (the initial version scrolled *down*, hit the scroller's end, and
+  moved the text only 62 px, which is why the assertion checks the text really
+  travelled before scoring the gap).
+- `reveal.spec.ts` → **18/18**; `--repeat-each=5 --workers=4` → **90/90 passed
+  (53.4 s)** on `CORPUS_UI_PORT=5773`.
+- Unit: `apps/ui` + `packages/kit` → 152 files, **2390 tests** passing (33 in
+  `reveal.test.ts`, incl. moving-target, cleanup-stops-following, and
+  scroll-aim-yields-to-the-user). typecheck / eslint / prettier clean.
+
+### Ledgered, not fixed: no producer can put a reveal into full-screen focus
+
+PLUGINS-010 noted it and it is real: `Column.tsx` hands a plugin body `onOpen`
+and no focus seam, so the only way a reveal reaches `FocusMode` today is the
+`reveal` prop this issue added, which nothing in the shipped app sets.
+`FocusMode`'s honouring of both kinds is pinned by `FocusMode.test.tsx`, and the
+`onOpenFocus`/`onFocusMode` widening is in place, so a producer is a prop away —
+but there is no code change here. Left with the orchestrator to ledger.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

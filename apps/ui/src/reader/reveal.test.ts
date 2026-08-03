@@ -25,6 +25,10 @@ import {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.useRealTimers();
+  // jsdom defines neither, so deleting restores the genuine absence the
+  // feature-detection in `reveal.ts` exists for.
+  delete (Range.prototype as Partial<Range>).getClientRects;
+  delete (Range.prototype as Partial<Range>).getBoundingClientRect;
 });
 
 function mount(html: string): HTMLElement {
@@ -224,22 +228,153 @@ describe("flashRange", () => {
     expect(host.isConnected).toBe(true);
   });
 
-  it("hands back an undo that removes the flash early", () => {
+  it("hands back a handle that removes the flash early", () => {
     vi.useFakeTimers();
     mount("<p>Buy milk</p>");
     const range = document.createRange();
     range.getClientRects = () =>
       [{ top: 1, left: 1, width: 10, height: 10 }] as unknown as DOMRectList;
-    const undo = flashRange(range, document.body);
-    undo();
+    const flash = flashRange(range, document.body);
+    flash.stop();
     expect(document.querySelector("[data-reveal-flash]")).toBeNull();
     // And the timer that would have removed it is harmless afterwards.
     vi.advanceTimersByTime(REVEAL_FLASH_MS);
     expect(document.querySelector("[data-reveal-flash]")).toBeNull();
+    // A gone flash reports as gone, which is what stops the tracking loop.
+    expect(flash.follow()).toBe(false);
+  });
+
+  /**
+   * `follow` re-measures rather than redraws. The fade is a CSS animation on
+   * the box, so replacing the element each frame would restart it and the
+   * highlight would never fade — the boxes have to be the same elements,
+   * moved.
+   */
+  it("moves the same boxes onto the range's new rectangles", () => {
+    vi.useFakeTimers();
+    mount("<p>Buy milk</p>");
+    let top = 580;
+    const range = document.createRange();
+    range.getClientRects = () =>
+      [{ top, left: 20, width: 100, height: 18 }] as unknown as DOMRectList;
+
+    const flash = flashRange(range, document.body);
+    const box = document.querySelector<HTMLElement>(".reveal-flash");
+    expect(box?.style.top).toBe("580px");
+
+    top = 527;
+    expect(flash.follow()).toBe(true);
+    expect(box?.style.top).toBe("527px");
+    expect(document.querySelectorAll(".reveal-flash")).toHaveLength(1);
+    // The very same element: a new one would start the fade again.
+    expect(document.querySelector(".reveal-flash")).toBe(box);
+    flash.stop();
+  });
+
+  it("leaves the boxes where they are when the geometry goes away", () => {
+    vi.useFakeTimers();
+    mount("<p>Buy milk</p>");
+    let rects = [{ top: 40, left: 4, width: 90, height: 18 }];
+    const range = document.createRange();
+    range.getClientRects = () => rects as unknown as DOMRectList;
+
+    const flash = flashRange(range, document.body);
+    rects = [];
+    expect(flash.follow()).toBe(true);
+    // Frozen, not vanished: a renderer that swapped the text nodes under the
+    // flash should not make the highlight disappear mid-fade.
+    expect(document.querySelector<HTMLElement>(".reveal-flash")?.style.top).toBe("40px");
+    flash.stop();
   });
 });
 
 describe("revealItem", () => {
+  /**
+   * jsdom has no layout, so the geometry a real browser would measure is
+   * stated: `Range` gets the rectangles the test wants, and the container gets
+   * a viewport. Removed again in `afterEach` — jsdom defines neither method, so
+   * deleting restores the real absence the rest of the suite relies on.
+   */
+  function stageLayout(container: HTMLElement, rectTop: () => number): void {
+    Range.prototype.getClientRects = () =>
+      [{ top: rectTop(), left: 20, width: 120, height: 18 }] as unknown as DOMRectList;
+    Range.prototype.getBoundingClientRect = () => ({ top: rectTop(), height: 18 }) as DOMRect;
+    container.getBoundingClientRect = () => ({ top: 0, height: 600 }) as DOMRect;
+    Object.defineProperty(container, "clientHeight", { value: 600, configurable: true });
+  }
+
+  async function frames(count: number): Promise<void> {
+    for (let index = 0; index < count; index += 1) {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          resolve();
+        });
+      });
+    }
+  }
+
+  /**
+   * PLUGINS-010's drill, in a unit test.
+   *
+   * A reveal fires as soon as the document has content, and the document is not
+   * finished laying out then: on a cold open the next frame is where the chips
+   * row un-wraps and the editor re-flows, lifting the body ~50 px. The box was
+   * drawn once, so it stayed at the old coordinates and the user saw the
+   * highlight one or two lines below the line they had clicked.
+   */
+  it("keeps the flash on its line when the layout settles a frame later", async () => {
+    const container = mount("<div class='reader-scroll'><p>Buy milk</p></div>")
+      .firstElementChild as HTMLElement;
+    let top = 580;
+    stageLayout(container, () => top);
+
+    const undo = revealItem(container, item("Buy milk"));
+    const box = document.querySelector<HTMLElement>(".reveal-flash");
+    expect(box?.style.top).toBe("580px");
+
+    top = 527;
+    await frames(2);
+
+    expect(box?.style.top).toBe("527px");
+    // The same element throughout: the fade must not restart every frame.
+    expect(document.querySelector(".reveal-flash")).toBe(box);
+    undo?.();
+  });
+
+  it("stops following once the flash has been taken away", async () => {
+    const container = mount("<div class='reader-scroll'><p>Buy milk</p></div>")
+      .firstElementChild as HTMLElement;
+    let top = 580;
+    stageLayout(container, () => top);
+
+    const undo = revealItem(container, item("Buy milk"));
+    undo?.();
+    top = 100;
+    await frames(2);
+    expect(document.querySelector(".reveal-flash")).toBeNull();
+  });
+
+  /**
+   * The rule scroll restoration already follows, for the same reason: once the
+   * reader has moved on its own, the surface never touches it again. Tracking
+   * the *boxes* continues either way — a highlight left behind while its text
+   * scrolls away is the same defect in a different frame.
+   */
+  it("stops re-aiming the scroll the moment the reader is moved by hand", async () => {
+    const container = mount("<div class='reader-scroll'><p>Buy milk</p></div>")
+      .firstElementChild as HTMLElement;
+    stageLayout(container, () => 900);
+
+    const undo = revealItem(container, item("Buy milk"));
+    // 900 below the container's top, less the 200 px (600/3) parking margin.
+    expect(container.scrollTop).toBe(700);
+
+    container.scrollTop = 120;
+    await frames(3);
+    expect(container.scrollTop).toBe(120);
+    undo?.();
+  });
+
   it("flashes the match and reports that it found it", () => {
     vi.useFakeTimers();
     const container = mount("<div class='reader-scroll'><p>Buy milk</p></div>")
