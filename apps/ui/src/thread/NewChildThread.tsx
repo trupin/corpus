@@ -1,5 +1,11 @@
-import { useCreateThread, type RowNotice } from "@corpus/kit";
+import {
+  COMPOSER_PRIMARY_KEY,
+  handleComposerKeyDown,
+  useCreateThread,
+  type RowNotice,
+} from "@corpus/kit";
 import { useState, type ReactElement } from "react";
+import { GrowingTextarea } from "./GrowingTextarea";
 
 /**
  * Commenting on a turn (SPEC.md §6's recursion). One `POST /api/threads` with
@@ -11,6 +17,12 @@ import { useState, type ReactElement } from "react";
  * toggle, because the thing being created is a conversation, and its first turn
  * is the question. Everything else about it happens in the child card's own
  * composer, which is the full one.
+ *
+ * Its keys are the kit's contract (SPEC.md §11) — `↵` newline, `⌘↵` comment,
+ * `esc` cancel. Until UI-052 this box spelled them itself and got them wrong: it
+ * sent on any `Enter`, including the one that **commits an IME composition**, so
+ * typing a Japanese comment posted it mid-word. The contract carries that guard
+ * for every composer now, which is why this one no longer states it.
  */
 
 export interface NewChildThreadProps {
@@ -60,7 +72,7 @@ export function NewChildThread({
 
   return (
     <div className="composer child-composer" data-child-composer={parentThreadId}>
-      <input
+      <GrowingTextarea
         autoFocus
         value={text}
         placeholder="Comment on this turn"
@@ -69,15 +81,7 @@ export function NewChildThread({
           setText(event.target.value);
         }}
         onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            send();
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            onCancel();
-          }
+          handleComposerKeyDown(event, { onPrimary: send, onEscape: onCancel });
         }}
       />
       <div className="composer-foot">
@@ -88,7 +92,7 @@ export function NewChildThread({
           disabled={text.trim() === "" || create.isPending}
           onClick={send}
         >
-          Comment ↵
+          Comment {COMPOSER_PRIMARY_KEY}
         </button>
       </div>
     </div>

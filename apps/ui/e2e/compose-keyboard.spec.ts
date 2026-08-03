@@ -63,10 +63,10 @@ const COMPOSE_PANEL = `
       <div class="pending-atts"><span class="att-chip">a.png<button>✕</button></span></div>
       <div class="compose-actions">
         <button class="clip">📎</button>
-        <span class="hint">@ agents · / skills · [[ refs · ⇧↵ newline</span>
+        <span class="hint">@ agents · / skills · [[ refs · ↵ newline</span>
         <span class="spacer"></span>
-        <button class="btn-capture">Capture ⌘↵</button>
-        <button class="btn-ask">Ask ↵</button>
+        <button class="btn-capture">Capture ⇧⌘↵</button>
+        <button class="btn-ask">Ask ⌘↵</button>
       </div>
     </div>
   </div>`;
@@ -288,8 +288,8 @@ test.describe("the top bar's way in", () => {
 
   test("orders the actions 📎 · hint · Capture · Ask", async ({ page }) => {
     await page.keyboard.press("c");
-    await expect(page.locator(".compose-actions .btn-capture")).toHaveText("Capture ⌘↵");
-    await expect(page.locator(".compose-actions .btn-ask")).toHaveText("Ask ↵");
+    await expect(page.locator(".compose-actions .btn-capture")).toHaveText("Capture ⇧⌘↵");
+    await expect(page.locator(".compose-actions .btn-ask")).toHaveText("Ask ⌘↵");
     const order = await page
       .locator(".compose-actions > *")
       .evaluateAll((nodes: Element[]): string[] =>
@@ -308,14 +308,39 @@ test.describe("the top bar's way in", () => {
     await expect(page.locator(".btn-capture")).toBeEnabled();
   });
 
-  test("⇧↵ inserts a newline in the textarea and submits nothing", async ({ page }) => {
+  /**
+   * SPEC.md §11's composer key contract in a real browser, where `↵` is a real
+   * keystroke into a real textarea rather than a synthetic event: it types a
+   * newline, and the composer is still open afterwards because nothing was
+   * submitted. `⇧↵` keeps doing the same thing it always did.
+   */
+  test("↵ and ⇧↵ both insert a newline in the textarea and submit nothing", async ({ page }) => {
     await page.keyboard.press("c");
     const textarea = page.locator(".compose-panel textarea");
     await textarea.fill("line one");
-    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.press("Enter");
     await page.keyboard.type("line two");
-    await expect(textarea).toHaveValue("line one\nline two");
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.type("line three");
+    await expect(textarea).toHaveValue("line one\nline two\nline three");
     await expect(page.getByRole("dialog", { name: "Ask or capture" })).toBeVisible();
+  });
+
+  /**
+   * The hint is the contract's own advertisement, and the buttons name the keys
+   * that now submit them — `⌘↵` for the primary action, `⇧⌘↵` for the secondary.
+   * What the chords *do* is asserted against a real workspace in the issue's E2E
+   * log: this suite runs with no server, so Ask and Capture cannot land.
+   */
+  test("advertises the contract: ↵ newline in the hint, the chords on the buttons", async ({
+    page,
+  }) => {
+    await page.keyboard.press("c");
+    await expect(page.locator(".compose-actions .hint")).toHaveText(
+      "@ agents · / skills · [[ refs · ↵ newline",
+    );
+    await expect(page.locator(".compose-actions .btn-ask")).toHaveText("Ask ⌘↵");
+    await expect(page.locator(".compose-actions .btn-capture")).toHaveText("Capture ⇧⌘↵");
   });
 
   test("types `c` into the composer instead of reopening it", async ({ page }) => {

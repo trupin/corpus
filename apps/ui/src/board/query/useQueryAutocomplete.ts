@@ -1,4 +1,4 @@
-import { AUTOCOMPLETE_LIMIT, type AutocompleteItem } from "@corpus/kit";
+import { AUTOCOMPLETE_LIMIT, handleAutocompleteKeyDown, type AutocompleteItem } from "@corpus/kit";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { QUERY_FIELDS, queryField, type ValueSource } from "./grammar";
 import {
@@ -16,9 +16,10 @@ import { useQueryVocabulary, type QueryVocabulary, type ValueOption } from "./qu
  * §11 smart-input one (`@` / `/` / `[[`) and its data source is three hardcoded
  * `useDocs` calls, neither of which describes a query string. What is reused is
  * everything a user can perceive — the item shape, `AUTOCOMPLETE_LIMIT`, the
- * `.ac-menu` the kit renders, and the ↑ ↓ ↵ esc contract including
- * `handleKeyDown`'s "true means I consumed it" — so the query field behaves like
- * every other completing input in the product and differs only in what it lists.
+ * `.ac-menu` the kit renders, and, since UI-053, the ↑ ↓ ⇥ ↵ esc contract as
+ * literally the kit's `handleAutocompleteKeyDown` rather than a second copy of
+ * it — so the query field behaves like every other completing input in the
+ * product and differs only in what it lists.
  */
 
 /** Fields whose values need no vocabulary; `q=` is prose, not an enumeration. */
@@ -146,6 +147,10 @@ export function useQueryAutocomplete({
    * claims `↵` only when it has something to add: the user has moved the
    * selection, or has typed a prefix the highlighted item extends. `⇥` is the
    * unconditional accept for everything else.
+   *
+   * This is the one qualification any host makes to the shared contract
+   * (`handleAutocompleteKeyDown`'s `enterAccepts`), and it is a qualification of
+   * `↵` only: `⇥`, the arrows and `esc` behave exactly as they do everywhere.
    */
   const active = items[activeIndex];
   const enterCompletes =
@@ -168,36 +173,23 @@ export function useQueryAutocomplete({
   );
 
   const handleKeyDown = useCallback(
-    (event: KeyboardEvent): boolean => {
-      if (!isOpen) return false;
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setNavigated(true);
-        setActiveIndex((current) => (current + 1) % items.length);
-        return true;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setNavigated(true);
-        setActiveIndex((current) => (current - 1 + items.length) % items.length);
-        return true;
-      }
-      if (event.key === "Tab" || (event.key === "Enter" && enterCompletes)) {
-        event.preventDefault();
-        choose(activeIndex);
-        return true;
-      }
-      if (event.key === "Enter") return false;
-      if (event.key === "Escape") {
-        event.preventDefault();
-        // Stopped so the editor's own Escape — which cancels the edit — does not
-        // also fire: the first esc closes the menu, the second abandons the edit.
-        event.stopPropagation();
-        dismiss();
-        return true;
-      }
-      return false;
-    },
+    (event: KeyboardEvent): boolean =>
+      handleAutocompleteKeyDown(event, {
+        isOpen,
+        count: items.length,
+        activeIndex,
+        // Only the arrows set `navigated` — hovering the mouse over a row is not
+        // the user telling the field that `↵` now means "take this one".
+        setActiveIndex: (index) => {
+          setNavigated(true);
+          setActiveIndex(index);
+        },
+        accept: () => {
+          choose(activeIndex);
+        },
+        dismiss,
+        enterAccepts: enterCompletes,
+      }),
     [activeIndex, choose, dismiss, enterCompletes, isOpen, items.length],
   );
 

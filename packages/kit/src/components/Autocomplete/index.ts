@@ -1,5 +1,10 @@
 export { AutocompleteMenu, type AutocompleteMenuProps } from "./AutocompleteMenu.js";
 export {
+  handleAutocompleteKeyDown,
+  type AutocompleteKeyEvent,
+  type AutocompleteKeyOptions,
+} from "./autocompleteKeys.js";
+export {
   applyCompletion,
   completionText,
   detectTrigger,
@@ -16,7 +21,9 @@ export {
   rowToken,
   SKILL_DOC_TYPE,
   useAutocomplete,
+  useRefCompletions,
   type AutocompleteItem,
   type AutocompleteState,
+  type RefCompletions,
   type UseAutocompleteOptions,
 } from "./useAutocomplete.js";

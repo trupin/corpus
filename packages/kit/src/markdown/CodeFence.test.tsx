@@ -14,8 +14,35 @@ import { MarkdownView } from "./MarkdownView.js";
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(globalThis.navigator, "clipboard");
+  Reflect.deleteProperty(HTMLPreElement.prototype, "scrollHeight");
+  Reflect.deleteProperty(HTMLPreElement.prototype, "clientHeight");
   vi.useRealTimers();
 });
+
+/**
+ * jsdom lays nothing out: every box is 0 high, so the overflow the collapse
+ * decision reads would never be seen. Stubbing the two lengths the component
+ * asks for is what puts a *tall* block in front of it — the geometry itself is
+ * `fences.spec.ts`'s job, in a browser that actually has one.
+ */
+function stubHeights(scrollHeight: number, clientHeight: number): void {
+  for (const [name, value] of [
+    ["scrollHeight", scrollHeight],
+    ["clientHeight", clientHeight],
+  ] as const) {
+    Object.defineProperty(HTMLPreElement.prototype, name, {
+      configurable: true,
+      get: () => value,
+    });
+  }
+}
+
+/** A block several times the collapse threshold. */
+const TALL = Array.from({ length: 60 }, (_, index) => `line ${index + 1}`).join("\n");
+
+function moreButton(): HTMLElement {
+  return screen.getByRole("button", { name: /^(Show all|Show the whole|Collapse)/ });
+}
 
 /** jsdom's navigator ships without a clipboard; `null` installs none at all. */
 function stubClipboard(writeText: ((text: string) => Promise<void>) | null): void {
@@ -244,6 +271,155 @@ describe("a fenced block in rendered markdown", () => {
     const container = renderMarkdown("a `snippet` in a sentence");
     expect(container.querySelector(".fence")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  /**
+   * ── Collapsing a tall block (UI-050) ────────────────────────────────
+   *
+   * **The invariant, and the reason the feature is safe to have at all**: the
+   * copy button puts the *whole* block on the clipboard, collapsed or not. A
+   * copy that silently yielded the visible portion would be worse than no
+   * collapse — the paste would look complete and be truncated. It holds by
+   * construction (the bytes are read off the hast tree, and the DOM the user
+   * cannot see is not consulted), and this is what pins it there.
+   */
+  it("copies the entire block while it is collapsed — and again once expanded", async () => {
+    const written: string[] = [];
+    stubClipboard((text) => {
+      written.push(text);
+      return Promise.resolve();
+    });
+    stubHeights(1230, 420);
+    const container = renderMarkdown(`\`\`\`prompt\n${TALL}\n\`\`\``);
+
+    // Located by its hook, not by its name: the name carries the button's
+    // state, and the second copy happens while the first is still confirming.
+    const copy = container.querySelector("[data-fence-copy]");
+    if (copy === null) throw new Error("a copy button was expected");
+
+    expect(container.querySelector("[data-fence-collapsed]")).not.toBeNull();
+    fireEvent.click(copy);
+    await waitFor(() => {
+      expect(written).toEqual([TALL]);
+    });
+    // 60 lines, of which the collapsed box shows perhaps twenty.
+    expect(written[0]?.split("\n")).toHaveLength(60);
+
+    fireEvent.click(moreButton());
+    expect(container.querySelector("[data-fence-collapsed]")).toBeNull();
+
+    fireEvent.click(copy);
+    await waitFor(() => {
+      expect(written).toEqual([TALL, TALL]);
+    });
+  });
+
+  it("says how much more there is, and goes back", () => {
+    stubHeights(1230, 420);
+    renderMarkdown(`\`\`\`prompt\n${TALL}\n\`\`\``);
+    const toggle = moreButton();
+
+    expect(toggle.textContent).toBe("Show all 60 lines");
+    expect(toggle.getAttribute("aria-label")).toBe("Show all 60 lines of the prompt block");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(toggle);
+    expect(toggle.textContent).toBe("Show less");
+    expect(toggle.getAttribute("aria-label")).toBe("Collapse the prompt block");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    // Reversible, and back to the same state it started in.
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: /^Show all/ })).toBe(toggle);
+  });
+
+  /**
+   * The block the reports started from: one 400-column prompt line, which is a
+   * single line until wrapping turns it into twenty.
+   */
+  it("counts a single wrapped line as one line", () => {
+    stubHeights(600, 420);
+    renderMarkdown(`\`\`\`prompt\n${"x".repeat(400)}\n\`\`\``);
+    const toggle = moreButton();
+
+    expect(toggle.textContent).toBe("Show the whole line");
+    expect(toggle.getAttribute("aria-label")).toBe("Show the whole prompt block");
+  });
+
+  /** Per block: expanding one long fence says nothing about the next one. */
+  it("keeps the expanded state per block", () => {
+    stubHeights(1230, 420);
+    renderMarkdown(`\`\`\`prompt\n${TALL}\n\`\`\`\n\n\`\`\`sh\n${TALL}\n\`\`\``);
+    const toggles = screen.getAllByRole("button", { name: /^Show all/ });
+    expect(toggles).toHaveLength(2);
+
+    const [first, second] = toggles;
+    if (first === undefined || second === undefined) throw new Error("two toggles expected");
+    fireEvent.click(first);
+
+    expect(first.getAttribute("aria-expanded")).toBe("true");
+    expect(second.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("leaves a block that fits alone — no toggle, nothing collapsed", () => {
+    stubHeights(120, 420);
+    const container = renderMarkdown("```prompt\nshort\n```");
+
+    expect(screen.queryByRole("button", { name: /^Show all/ })).toBeNull();
+    expect(container.querySelector("[data-fence-collapsed]")).toBeNull();
+    // The label and the copy button are never what a collapse takes away.
+    expect(container.querySelector(".fence-label")?.textContent).toBe("prompt");
+    expect(copyButton()).toBeDefined();
+  });
+
+  /** The collapse hides no chrome: label above, copy button over the corner. */
+  it("keeps the label and the copy button while collapsed", () => {
+    stubHeights(1230, 420);
+    const container = renderMarkdown(`\`\`\`prompt\n${TALL}\n\`\`\``);
+    expect(container.querySelector(".fence-label")?.textContent).toBe("prompt");
+    expect(copyButton().getAttribute("aria-label")).toBe("Copy the prompt block");
+  });
+
+  /**
+   * The block's height is a function of the column's width, and the board's
+   * columns are resizable — a block that fits at one width overflows at
+   * another, and the affordance has to arrive when it does.
+   */
+  it("notices a block that only overflows once the column narrows", () => {
+    let scroll = 120;
+    Object.defineProperty(HTMLPreElement.prototype, "scrollHeight", {
+      configurable: true,
+      get: () => scroll,
+    });
+    Object.defineProperty(HTMLPreElement.prototype, "clientHeight", {
+      configurable: true,
+      get: () => 420,
+    });
+    renderMarkdown(`\`\`\`prompt\n${TALL}\n\`\`\``);
+    expect(screen.queryByRole("button", { name: /^Show all/ })).toBeNull();
+
+    scroll = 1230;
+    fireEvent(globalThis.window, new Event("resize"));
+    expect(screen.getByRole("button", { name: /^Show all/ })).toBeDefined();
+  });
+
+  /** Same reason the copy button claims them: the host binds `↵` globally. */
+  it("keeps the toggle's activation keys away from a host's global shortcuts", () => {
+    stubHeights(1230, 420);
+    renderMarkdown(`\`\`\`prompt\n${TALL}\n\`\`\``);
+    const heard: string[] = [];
+    const listener = (event: KeyboardEvent): void => {
+      heard.push(event.key);
+    };
+    document.addEventListener("keydown", listener);
+
+    fireEvent.keyDown(moreButton(), { key: "Enter" });
+    fireEvent.keyDown(moreButton(), { key: " " });
+    fireEvent.keyDown(moreButton(), { key: "j" });
+
+    document.removeEventListener("keydown", listener);
+    expect(heard).toEqual(["j"]);
   });
 
   it("gives each fence its own button and its own state", async () => {

@@ -32,8 +32,15 @@ import { SelectionMenuItems } from "./SelectionMenuItems";
 export interface SelectionContextMenuOptions {
   /** The body's editor, when the body is one; `null` otherwise. */
   readonly editor: Editor | null;
-  /** The commenting seam: the live selection as an action, or `null`. */
-  readonly captureComment: () => (() => void) | null;
+  /**
+   * The commenting seam: the live selection as an action, or `null`.
+   *
+   * Takes the right-clicked node because a rendered body has no single owner to
+   * ask. A document's editor holds one selection and ignores the argument; a
+   * thread's conversation is many `MarkdownView`s and the target is what says
+   * which turn — and which card — the words belong to (UI-051).
+   */
+  readonly captureComment: (target: EventTarget | null) => (() => void) | null;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -102,7 +109,7 @@ export function useSelectionContextMenu({
     (event: MouseEvent<HTMLElement>) => {
       const found = selectionMenuTarget(event.target);
       if (found === null) return;
-      const comment = captureComment();
+      const comment = captureComment(event.target);
       const stale = (): void => {
         onNotify({ tone: "error", message: STALE_SELECTION_NOTICE });
       };

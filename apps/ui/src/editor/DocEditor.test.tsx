@@ -429,7 +429,8 @@ describe("the `[[` autocomplete (SPEC.md §11)", () => {
   const MORTGAGE = docFixture({ frontmatter: { id: "doc_m1n2o3", title: "Mortgage options" } });
 
   function menu(): HTMLElement | null {
-    return document.querySelector<HTMLElement>("[data-ref-autocomplete]");
+    // The kit's `AutocompleteMenu`, which is what this popup is since UI-053.
+    return document.querySelector<HTMLElement>('[role=listbox][aria-label="Link a document"]');
   }
 
   function options(): readonly HTMLElement[] {
@@ -473,7 +474,56 @@ describe("the `[[` autocomplete (SPEC.md §11)", () => {
       "Rates",
       "Mortgage options",
     ]);
-    expect(options()[0]?.className).toBe("ac-item on");
+    expect(options()[0]?.className).toBe("ac-item active");
+    // One row shape for both `[[` menus (`design/index.html`): title, then type.
+    expect(options()[0]?.querySelector(".d")?.textContent).toBe(RATES.frontmatter.type);
+  });
+
+  /**
+   * UI-053. `⇥` was unhandled here, and in the ProseMirror path an unhandled key
+   * is the browser's: focus left the editor mid-`[[`. Two things have to be true
+   * — the completion lands, and the press is cancelled, which is what stops the
+   * focus move. The event is `cancelable` so `defaultPrevented` can report it.
+   */
+  it("accepts on ⇥, cancelling the press so focus stays in the editor", async () => {
+    const transport = wire([RATES, MORTGAGE], [RATES, MORTGAGE]);
+    const editor = await open(transport);
+    await waitFor(() => {
+      expect(options()).toHaveLength(2);
+    });
+
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    await act(async () => {
+      editor.view.dom.dispatchEvent(tab);
+      await Promise.resolve();
+    });
+
+    expect(tab.defaultPrevented).toBe(true);
+    await waitFor(() => {
+      expect(document.querySelector("[data-corpus-ref='doc_z9y8x7']")?.textContent).toBe("Rates");
+    });
+  });
+
+  it("wraps the highlight past both ends, as every menu does", async () => {
+    const transport = wire([RATES, MORTGAGE], [RATES, MORTGAGE]);
+    const editor = await open(transport);
+    await waitFor(() => {
+      expect(options()).toHaveLength(2);
+    });
+    const arrow = (key: string): void => {
+      act(() => {
+        editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      });
+    };
+
+    arrow("ArrowUp");
+    await waitFor(() => {
+      expect(options()[1]?.getAttribute("aria-selected")).toBe("true");
+    });
+    arrow("ArrowDown");
+    await waitFor(() => {
+      expect(options()[0]?.getAttribute("aria-selected")).toBe("true");
+    });
   });
 
   it("moves the highlight with ↑ and ↓", async () => {

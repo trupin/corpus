@@ -58,6 +58,16 @@ const type = (container: HTMLElement, value: string): void => {
 
 const file = (name: string): File => new File(["bytes"], name, { type: "image/png" });
 
+/**
+ * A macrotask, so that "and nothing was submitted" is a claim about what the
+ * composer did rather than about how fast the assertion ran: the submit reaches
+ * the transport through a microtask chain.
+ */
+const settle = (): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, 10);
+  });
+
 describe("ComposeOverlay", () => {
   describe("the panel", () => {
     it("is the prototype's: a scrim, a 640px compose panel, and the actions in order", () => {
@@ -100,12 +110,12 @@ describe("ComposeOverlay", () => {
   });
 
   describe("submitting", () => {
-    it("↵ asks: a standalone thread with the text as its first turn", async () => {
+    it("⌘↵ asks: a standalone thread with the text as its first turn", async () => {
       const wire = composeTransport();
       const onClose = vi.fn();
       const { container, notices } = mount(wire, onClose);
       type(container, "What is due this week?");
-      fireEvent.keyDown(textareaOf(container), { key: "Enter" });
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true });
 
       await waitFor(() => {
         expect(wire.to("/api/threads")).toHaveLength(1);
@@ -122,11 +132,16 @@ describe("ComposeOverlay", () => {
       expect(notices.at(-1)?.message).toContain("standalone thread");
     });
 
-    it("⌘↵ captures, and so does Ctrl+↵ where the chord is claimed", async () => {
+    /**
+     * Capture is the *secondary* submit under SPEC.md §11's contract, so it
+     * moved off `⌘↵` — which the primary action now owns in every composer —
+     * onto `⇧⌘↵`.
+     */
+    it("⇧⌘↵ captures, and so does ⇧Ctrl+↵ where the chord is claimed", async () => {
       const wire = composeTransport();
       const { container } = mount(wire);
       type(container, "a thought");
-      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true });
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
       await waitFor(() => {
         expect(wire.to("/api/capture")).toHaveLength(1);
       });
@@ -135,27 +150,40 @@ describe("ComposeOverlay", () => {
       const second = composeTransport();
       const next = mount(second);
       type(next.container, "another thought");
-      fireEvent.keyDown(textareaOf(next.container), { key: "Enter", ctrlKey: true });
+      fireEvent.keyDown(textareaOf(next.container), {
+        key: "Enter",
+        ctrlKey: true,
+        shiftKey: true,
+      });
       await waitFor(() => {
         expect(second.to("/api/capture")).toHaveLength(1);
       });
     });
 
-    it("⇧↵ inserts a newline and issues nothing", () => {
+    it.each([
+      ["↵", {}],
+      ["⇧↵", { shiftKey: true }],
+    ])("%s inserts a newline and issues nothing", async (_name, modifier) => {
       const wire = composeTransport();
       const { container } = mount(wire);
       type(container, "line one");
-      const event = fireEvent.keyDown(textareaOf(container), { key: "Enter", shiftKey: true });
+      const event = fireEvent.keyDown(textareaOf(container), { key: "Enter", ...modifier });
       // Not prevented: the textarea's own newline is the behaviour.
       expect(event).toBe(true);
+      await settle();
       expect(wire.calls.filter((call) => call.method === "POST")).toEqual([]);
     });
 
-    it("never treats an IME composition as a submit", () => {
+    it.each([
+      ["a bare commit", {}],
+      ["an Ask chord", { metaKey: true }],
+      ["a Capture chord", { metaKey: true, shiftKey: true }],
+    ])("never treats an IME composition as a submit — %s", async (_name, modifier) => {
       const wire = composeTransport();
       const { container } = mount(wire);
       type(container, "にほん");
-      fireEvent.keyDown(textareaOf(container), { key: "Enter", isComposing: true });
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", isComposing: true, ...modifier });
+      await settle();
       expect(wire.calls.filter((call) => call.method === "POST")).toEqual([]);
     });
 
@@ -176,12 +204,13 @@ describe("ComposeOverlay", () => {
   });
 
   describe("what can be submitted", () => {
-    it("disables both buttons while there is nothing to send, and ↵ does nothing", () => {
+    it("disables both buttons while there is nothing to send, and ⌘↵ does nothing", async () => {
       const wire = composeTransport();
       const { container } = mount(wire);
       expect(button(container, "btn-ask").disabled).toBe(true);
       expect(button(container, "btn-capture").disabled).toBe(true);
-      fireEvent.keyDown(textareaOf(container), { key: "Enter" });
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true });
+      await settle();
       expect(wire.calls.filter((call) => call.method === "POST")).toEqual([]);
     });
 
@@ -254,14 +283,14 @@ describe("ComposeOverlay", () => {
       });
     });
 
-    it("sends them to the capture's filing thread on ⌘↵", async () => {
+    it("sends them to the capture's filing thread on ⇧⌘↵", async () => {
       const wire = composeTransport();
       const { container } = mount(wire);
       type(container, "file this");
       fireEvent.change(container.querySelector("input[type=file]") as HTMLInputElement, {
         target: { files: [file("shot.png")] },
       });
-      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true });
+      fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
       await waitFor(() => {
         expect(wire.to("/api/capture")).toHaveLength(1);
       });

@@ -1,4 +1,4 @@
-import { useAttachment } from "@corpus/kit";
+import { CorpusImage, useAttachment } from "@corpus/kit";
 import type { ReactElement } from "react";
 import type { TurnAttachment } from "./attachmentRefs";
 
@@ -8,31 +8,20 @@ import type { TurnAttachment } from "./attachmentRefs";
  *
  * Bytes come through `GET /attachments/…` with the workspace bearer token, which
  * is why this is a fetch and an object URL rather than a bare `src` — see
- * `useAttachment`. A failed fetch degrades to the file chip: the reference is
+ * `useAttachment`. A failed fetch degrades to a visible chip: the reference is
  * still a fact about the turn even when the bytes are unreachable.
+ *
+ * **The image is the kit's** (UI-049). It was this component's own until the
+ * bug it hid became the issue: the same attachment referenced one line earlier
+ * in the prose went through `MarkdownView` as a bare relative `src` and loaded
+ * nothing. `CorpusImage` is the one renderer both paths now use, so the trailing
+ * reference and the mid-prose one cannot render differently again — and it is
+ * what makes the thumbnail below clickable through to the full-size viewer.
+ * This file keeps only what is the *thread's*: the 240×180 preview cap.
  */
 
 export interface TurnAttachmentsProps {
   readonly attachments: readonly TurnAttachment[];
-}
-
-function AttachmentImage({ attachment }: { readonly attachment: TurnAttachment }): ReactElement {
-  const bytes = useAttachment(attachment.target);
-  if (bytes.url === null) {
-    return (
-      <span className="att-file" data-att-target={attachment.target}>
-        {bytes.error === null ? "🖼" : "⚠"} {attachment.name}
-      </span>
-    );
-  }
-  return (
-    <img
-      className="turn-att-img"
-      src={bytes.url}
-      alt={attachment.name}
-      data-att-target={attachment.target}
-    />
-  );
 }
 
 function AttachmentFile({ attachment }: { readonly attachment: TurnAttachment }): ReactElement {
@@ -62,7 +51,12 @@ export function TurnAttachments({ attachments }: TurnAttachmentsProps): ReactEle
     <div className="turn-atts">
       {attachments.map((attachment) =>
         attachment.isImage ? (
-          <AttachmentImage key={attachment.target} attachment={attachment} />
+          <CorpusImage
+            key={attachment.target}
+            src={attachment.target}
+            alt={attachment.name}
+            className="turn-att-img"
+          />
         ) : (
           <AttachmentFile key={attachment.target} attachment={attachment} />
         ),

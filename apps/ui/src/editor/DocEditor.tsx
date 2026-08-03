@@ -4,6 +4,7 @@ import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { cleanPastedHtml, clipboardSerializer, sliceMarkdown } from "./clipboard.js";
+import { imageWithView } from "./ImageNodeView.js";
 import { refResolver } from "./refResolver.js";
 import { RefAutocomplete } from "./RefAutocomplete.js";
 import { docRefWithView, type OpenRefCallback } from "./RefNodeView.js";
@@ -154,8 +155,16 @@ export function DocEditor({
    */
   const extensions = useMemo(
     () => [
-      ...corpusExtensions().filter((extension) => extension.name !== DOC_REF_NAME),
+      // Two nodes are swapped for view-carrying twins: the reference, whose
+      // title is resolved at render time, and the image, whose bytes come
+      // through the authenticated attachment path (UI-049). Both are the same
+      // schema — only rendering differs — which is what keeps a document parsed
+      // outside the browser and one typed in it the same document.
+      ...corpusExtensions().filter(
+        (extension) => extension.name !== DOC_REF_NAME && extension.name !== NODE_NAMES.image,
+      ),
       docRefWithView(openRef),
+      imageWithView(),
       createRefSuggestion({ onStateChange: setSuggestion, keyHandler: suggestionKeys }),
     ],
     [],

@@ -1,6 +1,8 @@
 import {
   useCallback,
   useEffect,
+  useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentPropsWithoutRef,
@@ -23,6 +25,19 @@ import type { ExtraProps } from "react-markdown";
  * back off the hast tree rather than off the DOM: no fence markers, no info
  * string, and no label — a `prompt` block pastes into another agent's input
  * exactly as its author wrote it.
+ *
+ * **Wrapped, and collapsed when tall** (UI-050, SPEC.md §11's wrap rider signed
+ * 2026-08-03). Long lines wrap inside the canvas instead of scrolling sideways
+ * — that is `markdown.css`'s doing and applies to every `pre` on a rendered
+ * surface. Wrapping is what makes the collapse necessary: the same 400-column
+ * prompt that used to be one scrollable line is twenty on screen, so a block
+ * taller than the canvas's threshold is clipped and offers to open itself.
+ *
+ * **The invariant the collapse must never cost**: copying yields the *whole*
+ * block, collapsed or not. It holds by construction — the bytes come off the
+ * hast tree and never off the DOM, so text the user cannot see is text the
+ * clipboard still gets — and `CodeFence.test.tsx` pins it against a block
+ * several times the threshold.
  */
 
 /** What the button says, and how long it says it for. */
@@ -32,6 +47,19 @@ type CopyState = "idle" | "copied" | "failed";
 const COPIED_MS = 1400;
 /** A failure is a sentence to read, not a flash. */
 const FAILED_MS = 4000;
+
+/**
+ * How much taller than its clipped box a block must be before it is called
+ * overflowing.
+ *
+ * The threshold itself is **not here**: it is `--fence-collapsed-height` in
+ * `markdown.css`, and what this component asks is only "is there more than the
+ * box shows". That keeps one number in one file, lets a host retune it, and
+ * makes the question the same one in every browser. The slack absorbs the
+ * border and the sub-pixel rounding of a box whose content is exactly its
+ * height — a block that fits must never be told it does not.
+ */
+const OVERFLOW_SLACK_PX = 4;
 
 export type CodeFenceProps = ComponentPropsWithoutRef<"pre"> & ExtraProps;
 
@@ -105,9 +133,41 @@ interface FenceClipboard {
 
 export function CodeFence({ node, children, ...rest }: CodeFenceProps): ReactElement {
   const code = fenceCode(node);
+  // The fence's bytes, read once per render off the hast tree. Everything that
+  // needs the block's content — the clipboard, the line count the toggle
+  // states, the measurement's dependency — comes from here and never from the
+  // DOM, which is what makes a collapsed block copy in full.
+  const text = code === null ? "" : stripOneNewline(fenceText(code));
   const [state, setState] = useState<CopyState>("idle");
   const [failure, setFailure] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
+  const preId = useId();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /*
+   * Measured, never estimated. Whether a block is too tall depends on the
+   * canvas's width — the same fence fits in a wide reader and overflows in a
+   * narrow column, because wrapping turned its long lines into many — so the
+   * only honest answer comes from the laid-out box.
+   *
+   * Measured **while clipped**, and never while expanded: an expanded block's
+   * scroll height *is* its client height, so re-measuring there would report
+   * "it fits", drop the toggle, and strand the reader with no way back.
+   */
+  useLayoutEffect(() => {
+    const element = preRef.current;
+    if (element === null || expanded) return undefined;
+    const measure = (): void => {
+      setOverflowing(element.scrollHeight > element.clientHeight + OVERFLOW_SLACK_PX);
+    };
+    measure();
+    globalThis.window.addEventListener("resize", measure);
+    return () => {
+      globalThis.window.removeEventListener("resize", measure);
+    };
+  }, [expanded, text]);
 
   useEffect(
     () => () => {
@@ -149,24 +209,48 @@ export function CodeFence({ node, children, ...rest }: CodeFenceProps): ReactEle
     [settle],
   );
 
-  const pre = <pre {...rest}>{children}</pre>;
   // Not a fenced block (nothing in the pipeline emits one today, but a `pre`
   // whose text cannot be read must not grow a button that copies the wrong
-  // thing).
-  if (code === null) return pre;
+  // thing — nor a clip it has no control to undo).
+  if (code === null) return <pre {...rest}>{children}</pre>;
 
   const label = fenceLabel(code);
   const subject = label === null ? "code block" : `${label} block`;
+  const lines = text === "" ? 0 : text.split("\n").length;
+  /*
+   * Clipped whenever it is not expanded, including when it turns out to fit:
+   * the clip *is* the measurement's frame of reference, and on a block shorter
+   * than the box it changes nothing visible. What the reader is told — the
+   * fade, the toggle — hangs off `collapsed`, which is only true when there is
+   * genuinely more to see.
+   */
+  const collapsed = overflowing && !expanded;
+  /*
+   * One line can overflow all by itself — a 400-column prompt is exactly the
+   * block this issue started from, and it is one line until it wraps. So the
+   * sentence has to work at n = 1 rather than saying "show all 1 lines".
+   */
+  const more =
+    lines === 1
+      ? { text: "Show the whole line", name: `Show the whole ${subject}` }
+      : { text: `Show all ${lines} lines`, name: `Show all ${lines} lines of the ${subject}` };
 
   return (
-    <div className="fence" data-fence>
+    <div className="fence" data-fence {...(collapsed ? { "data-fence-collapsed": "" } : {})}>
       {label === null ? null : (
         <span className="fence-label" data-fence-label={label}>
           {label}
         </span>
       )}
       <div className="fence-canvas">
-        {pre}
+        <pre
+          {...rest}
+          ref={preRef}
+          id={preId}
+          className={joinClasses(rest.className, expanded ? null : "fence-clipped")}
+        >
+          {children}
+        </pre>
         <button
           type="button"
           data-fence-copy
@@ -175,32 +259,64 @@ export function CodeFence({ node, children, ...rest }: CodeFenceProps): ReactEle
           aria-label={ariaLabel(state, subject, failure)}
           title={state === "failed" && failure !== null ? `Could not copy — ${failure}` : undefined}
           onClick={() => {
+            // The whole block, and never what the box happens to be showing:
+            // `text` is the fence's own bytes off the hast tree, so a collapsed
+            // block copies exactly what an expanded one does.
+            //
             // Voided deliberately: the outcome is the button's own state, and
             // nothing upstream awaits a copy.
-            void copy(stripOneNewline(fenceText(code)));
+            void copy(text);
           }}
-          onKeyDown={(event) => {
-            /*
-             * `↵` and `space` are a button's own activation keys, and this
-             * button has to say so out loud: a host may bind them globally —
-             * `apps/ui` binds `↵` to "open the highlighted document" on a
-             * document-level listener that calls `preventDefault()` (SPEC.md
-             * §11's keyboard scheme) — and a cancelled keydown never becomes
-             * the click a keyboard user is owed. Observed in a real browser:
-             * focus the button, press `↵`, nothing is copied.
-             *
-             * Stopped, never prevented. The native activation is left to
-             * proceed, and the host's shortcut keeps working everywhere the
-             * focus is not on this control.
-             */
-            if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-          }}
+          onKeyDown={claimActivationKeys}
         >
           {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
         </button>
+        {overflowing ? (
+          <button
+            type="button"
+            data-fence-more
+            className={expanded ? "fence-more expanded" : "fence-more"}
+            aria-expanded={expanded}
+            aria-controls={preId}
+            /*
+             * The name states what is hidden, in the block's own units. A bare
+             * fade would leave a screen reader — and a hurried reader — with no
+             * way to know the block was cut at all, which is the difference
+             * between a collapse and a truncation.
+             */
+            aria-label={expanded ? `Collapse the ${subject}` : more.name}
+            onClick={() => {
+              setExpanded((open) => !open);
+            }}
+            onKeyDown={claimActivationKeys}
+          >
+            {expanded ? "Show less" : more.text}
+          </button>
+        ) : null}
       </div>
     </div>
   );
+}
+
+/**
+ * `↵` and `space` are a button's own activation keys, and a button inside a
+ * rendered body has to say so out loud: a host may bind them globally —
+ * `apps/ui` binds `↵` to "open the highlighted document" on a document-level
+ * listener that calls `preventDefault()` (SPEC.md §11's keyboard scheme) — and
+ * a cancelled keydown never becomes the click a keyboard user is owed. Observed
+ * in a real browser: focus the button, press `↵`, nothing happens.
+ *
+ * Stopped, never prevented. The native activation is left to proceed, and the
+ * host's shortcut keeps working everywhere the focus is not on one of these.
+ */
+function claimActivationKeys(event: { key: string; stopPropagation: () => void }): void {
+  if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+}
+
+/** `className`s from two owners — the caller's, and the canvas's own state. */
+function joinClasses(...names: readonly (string | null | undefined)[]): string | undefined {
+  const kept = names.filter((name): name is string => name !== null && name !== undefined);
+  return kept.length === 0 ? undefined : kept.join(" ");
 }
 
 /**

@@ -390,22 +390,60 @@
   margin-bottom: 8px;
 }
 
-.todo-cm-input {
-  width: 100%;
-  font-family: var(--sans);
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ink);
+/* `↵` writes a newline in this composer (SPEC.md §11), so the field has to be a
+   decent place to write more than one line. The wrapper is the visible box and
+   stacks a hidden copy of the value in the *same* grid cell as the field, so the
+   row is exactly as tall as the text — capped, past which the wrapper scrolls
+   rather than letting a long draft push the popover's foot off the screen.
+   Same technique as `apps/ui`'s `GrowingTextarea`; a plugin cannot import it. */
+.todo-cm-grow {
+  display: grid;
+  max-height: 30vh;
+  overflow-y: auto;
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 9px;
-  resize: vertical;
+}
+
+.todo-cm-grow:focus-within {
+  border-color: var(--accent);
+}
+
+/* The mirror only measures right while it wraps exactly as the field does, so
+   everything that decides a line break is set on both. */
+.todo-cm-grow > .todo-cm-input,
+.todo-cm-grow::after {
+  grid-area: 1 / 1 / 2 / 2;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.todo-cm-grow::after {
+  content: attr(data-replicated-value) " ";
+  visibility: hidden;
+}
+
+.todo-cm-input {
+  color: var(--ink);
+  background: none;
+  resize: none;
+  overflow: hidden;
 }
 
 .todo-cm-input:focus {
   outline: none;
-  border-color: var(--accent);
+}
+
+.todo-cm-input::placeholder {
+  color: var(--ink-3);
 }
 
 .todo-comment-foot {

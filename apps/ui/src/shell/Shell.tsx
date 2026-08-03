@@ -4,6 +4,7 @@ import { ComposeOverlay } from "../compose/ComposeOverlay";
 import { Console } from "../console/Console";
 import { BoardCommandsProvider, useBoardCommands } from "../keyboard/boardCommands";
 import { CheatSheet } from "../keyboard/CheatSheet";
+import { ImageViewerHost } from "../image/ImageViewerHost";
 import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import type { ShortcutContext } from "../keyboard/shortcuts";
 import { useShortcuts } from "../keyboard/useShortcuts";
@@ -42,7 +43,12 @@ export function Shell(): ReactElement {
       <BoardNavigationProvider>
         <BoardCommandsProvider>
           <ContextMenuProvider>
-            <ShellSurfaces />
+            {/* Outermost of the surface hosts: an image can be clicked in the
+                board, in a thread, in focus mode and inside a plugin's view,
+                and the viewer opens over all of them. */}
+            <ImageViewerHost>
+              <ShellSurfaces />
+            </ImageViewerHost>
           </ContextMenuProvider>
         </BoardCommandsProvider>
       </BoardNavigationProvider>

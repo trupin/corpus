@@ -1,6 +1,7 @@
 import type { DocRow } from "@corpus/contract";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useDocs } from "../../query/useDocs.js";
+import { handleAutocompleteKeyDown } from "./autocompleteKeys.js";
 import {
   applyCompletion,
   detectTrigger,
@@ -80,18 +81,59 @@ function describe(row: DocRow): string {
   return line.length <= MAX_DESCRIPTION ? line : `${line.slice(0, MAX_DESCRIPTION - 1)}…`;
 }
 
+/**
+ * A document as a `[[` row: its title, and its type beside it — the shape
+ * `design/index.html` draws (`<span class="k">{title}</span><span
+ * class="d">{type}</span>`).
+ *
+ * Exactly one function builds it, for both `[[` menus. Before UI-053 the
+ * composers' menu put the document *id* in the `.d` column and the document
+ * editor's put the type, which is a difference a user can see and nobody chose.
+ */
+function refItem(row: DocRow): AutocompleteItem {
+  return { key: row.id, token: row.id, label: row.title, description: row.type };
+}
+
 function toItem(row: DocRow, kind: TriggerKind): AutocompleteItem {
-  const token = kind === "ref" ? row.id : rowToken(row);
-  return {
-    key: row.id,
-    token,
-    label: kind === "ref" ? row.title : token,
-    description: kind === "ref" ? row.id : describe(row),
-  };
+  if (kind === "ref") return refItem(row);
+  const token = rowToken(row);
+  return { key: row.id, token, label: token, description: describe(row) };
 }
 
 /** How many rows the menu ever offers; it scrolls at `max-height: 200px` anyway. */
 export const AUTOCOMPLETE_LIMIT = 12;
+
+export interface RefCompletions {
+  readonly items: readonly AutocompleteItem[];
+  /** In flight, for a menu that reports the difference from "no matches". */
+  readonly isPending: boolean;
+}
+
+/**
+ * The `[[` list — **the** list, for both menus that offer one (UI-053).
+ *
+ * The document editor's `[[` cannot share this hook's *trigger* (that is a
+ * ProseMirror range, not an offset into a string) or its *insertion* (a ref
+ * node, not text), but the thing between them — which documents are offered, in
+ * what order, how many, and how each row reads — has no reason to differ, and
+ * differed in three ways until this existed.
+ *
+ * `query === null` means the caller is not asking. The `useDocs` call still
+ * happens, because hooks are unconditional; it asks for the unfiltered list,
+ * which every board column has already put in the cache.
+ */
+export function useRefCompletions(query: string | null): RefCompletions {
+  const needle = query?.trim() ?? "";
+  const docs = useDocs(
+    query === null ? {} : { ...(needle === "" ? {} : { q: needle }), limit: AUTOCOMPLETE_LIMIT },
+  );
+  const rows = docs.data?.items;
+  const items = useMemo<readonly AutocompleteItem[]>(
+    () => (query === null ? [] : (rows ?? []).slice(0, AUTOCOMPLETE_LIMIT).map(refItem)),
+    [query, rows],
+  );
+  return { items, isPending: docs.isPending };
+}
 
 /** How many `agent-def` / `skill` documents a workspace's menus draw from. */
 const DIRECTORY_LIMIT = 50;
@@ -117,10 +159,11 @@ export interface AutocompleteState {
   readonly dismiss: () => void;
   readonly choose: (index: number) => void;
   /**
-   * ↑ ↓ ↵ esc while the menu is open. Returns true when it consumed the key, so
-   * a host can fall through to its own handling when it did not — the composer's
-   * ↵ must still send when no menu is open, and esc must still reach the
-   * reader's escape layer.
+   * SPEC.md §11's one keyboard contract — ↑ ↓ ⇥ ↵ esc — applied while the menu
+   * is open, from {@link handleAutocompleteKeyDown}. Returns true when it
+   * consumed the key, so a host can fall through to its own handling when it did
+   * not: the composer's ↵ must still insert a newline when no menu is open, ⇥
+   * must still move focus, and esc must still reach the reader's escape layer.
    */
   readonly handleKeyDown: (event: KeyboardEvent) => boolean;
 }
@@ -147,17 +190,11 @@ export function useAutocomplete({
       ? { type: kind === "mention" ? MENTION_DOC_TYPE : SKILL_DOC_TYPE, limit: DIRECTORY_LIMIT }
       : {},
   );
-  const links = useDocs(
-    kind === "ref"
-      ? { ...(query.trim() === "" ? {} : { q: query.trim() }), limit: AUTOCOMPLETE_LIMIT }
-      : {},
-  );
+  const links = useRefCompletions(kind === "ref" ? query : null);
 
   const items = useMemo<readonly AutocompleteItem[]>(() => {
     if (kind === undefined) return [];
-    if (kind === "ref") {
-      return (links.data?.items ?? []).slice(0, AUTOCOMPLETE_LIMIT).map((row) => toItem(row, kind));
-    }
+    if (kind === "ref") return links.items;
     const rows = (directory.data?.items ?? [])
       .map((row) => toItem(row, kind))
       .filter((item) => TYPEABLE_TOKEN.test(item.token));
@@ -185,7 +222,7 @@ export function useAutocomplete({
               item.label.toLowerCase().includes(needle),
           );
     return filtered.slice(0, AUTOCOMPLETE_LIMIT);
-  }, [directory.data, kind, links.data, query]);
+  }, [directory.data, kind, links.items, query]);
 
   const isOpen = trigger !== null && items.length > 0;
 
@@ -208,33 +245,17 @@ export function useAutocomplete({
   );
 
   const handleKeyDown = useCallback(
-    (event: KeyboardEvent): boolean => {
-      if (!isOpen) return false;
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setActiveIndex((current) => (current + 1) % items.length);
-        return true;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setActiveIndex((current) => (current - 1 + items.length) % items.length);
-        return true;
-      }
-      if (event.key === "Enter") {
-        event.preventDefault();
-        choose(activeIndex);
-        return true;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        // Stopped here so the reader's escape layer does not also close the
-        // document behind the menu (`useEscapeStack` listens on capture).
-        event.stopPropagation();
-        dismiss();
-        return true;
-      }
-      return false;
-    },
+    (event: KeyboardEvent): boolean =>
+      handleAutocompleteKeyDown(event, {
+        isOpen,
+        count: items.length,
+        activeIndex,
+        setActiveIndex,
+        accept: () => {
+          choose(activeIndex);
+        },
+        dismiss,
+      }),
     [activeIndex, choose, dismiss, isOpen, items.length],
   );
 

@@ -1,22 +1,33 @@
-import { useDocs } from "@corpus/kit";
+import { AutocompleteMenu, handleAutocompleteKeyDown, useRefCompletions } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import type { RefSuggestionState } from "./refSuggestion.js";
 
 /**
- * The `[[` menu — the prototype's `.ac-menu` / `.ac-item`, keyboard first.
+ * The `[[` menu, in the document body — and, since UI-053, **the kit's** menu.
  *
- * The list is `useDocs`, filtered by the text typed after the trigger: SPEC.md
- * §11 is explicit that there is no separate registry anywhere in the smart
- * input, so a document becomes suggestable by existing and by nothing else.
+ * What is left here is only what `@tiptap/suggestion` makes irreducibly
+ * different from a composer's `[[`:
+ *
+ *  - the **trigger** is a range in a ProseMirror document, not an offset into a
+ *    string, so `useAutocomplete`'s `detectTrigger` cannot see it;
+ *  - the **insertion** replaces that range with a ref *node*, not with text, so
+ *    `applyCompletion`'s `{ text, caret }` cannot express it;
+ *  - the plugin owns **open-ness** — its state is derived from where the caret
+ *    is, which is why closing needs `refSuggestion.ts`'s `dismissedAt` dance and
+ *    why this menu, unlike a composer's, exists while it has no items to show.
+ *
+ * Everything a user can perceive comes from the kit: `useRefCompletions` is the
+ * same list in the same order with the same rows, `AutocompleteMenu` is the same
+ * DOM, and `handleAutocompleteKeyDown` is SPEC.md §11's one keyboard contract.
+ * Before this the two `[[` menus were separate implementations that happened to
+ * agree, and had already drifted — different limits, different `.d` column,
+ * different highlight class, and neither of them accepting on `⇥`.
  *
  * Portalled to `document.body` and positioned `fixed` because the trigger sits
  * inside a column's scroller: anchored in place it would be clipped by the
  * scroll container the moment it opened near the bottom of a reader.
  */
-
-/** Enough to choose from; the query is a title search, not a browser. */
-const LIMIT = 8;
 
 /** Distance from the caret to the menu's top edge. */
 const OFFSET_PX = 6;
@@ -27,20 +38,8 @@ export interface RefAutocompleteProps {
   readonly keyHandler: { current: ((event: KeyboardEvent) => boolean) | null };
 }
 
-interface Suggestion {
-  readonly id: string;
-  readonly title: string;
-  readonly kind: string;
-}
-
 export function RefAutocomplete({ state, keyHandler }: RefAutocompleteProps): ReactElement | null {
-  const query = state.query.trim();
-  const docs = useDocs({ ...(query === "" ? {} : { q: query }), limit: LIMIT });
-  const items: readonly Suggestion[] = (docs.data?.items ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    kind: row.type,
-  }));
+  const { items, isPending } = useRefCompletions(state.query);
 
   const [highlighted, setHighlighted] = useState(0);
   // The list changes under the highlight on every keystroke; starting over is
@@ -49,38 +48,32 @@ export function RefAutocomplete({ state, keyHandler }: RefAutocompleteProps): Re
     setHighlighted(0);
   }, [state.query]);
 
-  const select = useRef(state.select);
-  select.current = state.select;
-  const close = useRef(state.close);
-  close.current = state.close;
-  const current = useRef({ items, highlighted });
-  current.current = { items, highlighted };
+  // The plugin reads one handler for the life of the trigger, so what the
+  // handler reads has to be a box rather than a closure over this render.
+  const live = useRef({ items, highlighted, select: state.select, close: state.close });
+  live.current = { items, highlighted, select: state.select, close: state.close };
 
   useEffect(() => {
     keyHandler.current = (event) => {
-      const { items: list, highlighted: index } = current.current;
-      if (event.key === "ArrowDown") {
-        setHighlighted(list.length === 0 ? 0 : (index + 1) % list.length);
-        return true;
-      }
-      if (event.key === "ArrowUp") {
-        setHighlighted(list.length === 0 ? 0 : (index - 1 + list.length) % list.length);
-        return true;
-      }
-      if (event.key === "Enter") {
-        const chosen = list[index];
-        if (chosen === undefined) return false;
-        select.current(chosen.id);
-        return true;
-      }
-      if (event.key === "Escape") {
-        // Consumed here so it neither reaches the reader's escape layer nor
-        // leaves the menu open. The literal `[[` characters stay in the text —
-        // the user typed them, and nothing has replaced them yet.
-        close.current();
-        return true;
-      }
-      return false;
+      const current = live.current;
+      // Returning true is how ProseMirror is told the key was consumed; the
+      // contract also calls `preventDefault`, which is what actually keeps `⇥`
+      // from moving focus out of the editor.
+      return handleAutocompleteKeyDown(event, {
+        isOpen: true,
+        count: current.items.length,
+        activeIndex: current.highlighted,
+        setActiveIndex: setHighlighted,
+        accept: () => {
+          const chosen = current.items[current.highlighted];
+          if (chosen !== undefined) current.select(chosen.token);
+        },
+        // The literal `[[` characters stay in the text — the user typed them,
+        // and nothing has replaced them yet.
+        dismiss: () => {
+          current.close();
+        },
+      });
     };
     return () => {
       keyHandler.current = null;
@@ -91,46 +84,22 @@ export function RefAutocomplete({ state, keyHandler }: RefAutocompleteProps): Re
   if (rect === null) return null;
 
   return createPortal(
-    <div
-      className="ac-menu open"
-      role="listbox"
-      aria-label="Link a document"
-      data-ref-autocomplete
+    <AutocompleteMenu
+      open
+      items={items}
+      activeIndex={highlighted}
+      onHover={setHighlighted}
+      onChoose={(index) => {
+        const item = items[index];
+        if (item !== undefined) state.select(item.token);
+      }}
       style={{
         top: `${String(Math.round(rect.bottom + OFFSET_PX))}px`,
         left: `${String(Math.round(rect.left))}px`,
       }}
-    >
-      {items.length === 0 ? (
-        <div className="ac-item ac-empty" role="presentation">
-          {docs.isPending ? "searching…" : "no documents match"}
-        </div>
-      ) : (
-        items.map((item, index) => (
-          <button
-            key={item.id}
-            type="button"
-            role="option"
-            aria-selected={index === highlighted}
-            className={index === highlighted ? "ac-item on" : "ac-item"}
-            // `mousedown` would move focus out of the editor and close the
-            // suggestion before the click landed.
-            onMouseDown={(event) => {
-              event.preventDefault();
-            }}
-            onMouseEnter={() => {
-              setHighlighted(index);
-            }}
-            onClick={() => {
-              state.select(item.id);
-            }}
-          >
-            <span className="k">{item.title}</span>
-            <span className="d">{item.kind}</span>
-          </button>
-        ))
-      )}
-    </div>,
+      label="Link a document"
+      emptyLabel={isPending ? "searching…" : "no documents match"}
+    />,
     document.body,
   );
 }

@@ -206,8 +206,25 @@ describe("QueryEditor", () => {
       await waitFor(() => {
         expect(options().length).toBeGreaterThan(0);
       });
-      fireEvent.keyDown(field(), { key: "Tab" });
+      // `fireEvent` returns false when the default was prevented: the focus
+      // move that `⇥` would otherwise perform is cancelled (UI-053).
+      expect(fireEvent.keyDown(field(), { key: "Tab" })).toBe(false);
       expect(editor.value()).toBe("status=open");
+    });
+
+    it("wraps the highlight past both ends, as every menu does", async () => {
+      renderEditor();
+      type("status=");
+      await waitFor(() => {
+        expect(options().length).toBe(3);
+      });
+      const selected = (): readonly (string | null)[] =>
+        screen.getAllByRole("option").map((option) => option.getAttribute("aria-selected"));
+
+      fireEvent.keyDown(field(), { key: "ArrowUp" });
+      expect(selected()).toEqual(["false", "false", "true"]);
+      fireEvent.keyDown(field(), { key: "ArrowDown" });
+      expect(selected()).toEqual(["true", "false", "false"]);
     });
 
     /**

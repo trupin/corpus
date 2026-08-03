@@ -1,4 +1,12 @@
-import { AutocompleteMenu, useAutocomplete, type RowNotice } from "@corpus/kit";
+import {
+  AutocompleteMenu,
+  COMPOSER_NEWLINE_HINT,
+  COMPOSER_PRIMARY_KEY,
+  COMPOSER_SECONDARY_KEY,
+  handleComposerKeyDown,
+  useAutocomplete,
+  type RowNotice,
+} from "@corpus/kit";
 import {
   useCallback,
   useEffect,
@@ -41,9 +49,14 @@ export const COMPOSE_PLACEHOLDER =
   "Ask the agent anything, or capture a thought…\n" +
   "@ routes to a subagent · / invokes a skill · [[ links a document · paste/drop files";
 
-export const COMPOSE_HINT = "@ agents · / skills · [[ refs · ⇧↵ newline";
-export const ASK_LABEL = "Ask ↵";
-export const CAPTURE_LABEL = "Capture ⌘↵";
+export const COMPOSE_HINT = `@ agents · / skills · [[ refs · ${COMPOSER_NEWLINE_HINT}`;
+export const ASK_LABEL = `Ask ${COMPOSER_PRIMARY_KEY}`;
+/**
+ * Capture is the *secondary* submit, so it takes `⇧⌘↵` — SPEC.md §11's contract
+ * gives `⌘↵` to the primary action in every composer, and here that is Ask. The
+ * chord it used to own moved with the rule, not against it.
+ */
+export const CAPTURE_LABEL = `Capture ${COMPOSER_SECONDARY_KEY}`;
 
 /** Why Capture can be unavailable while Ask is not: a document needs a body. */
 export const CAPTURE_NEEDS_TEXT = "A capture becomes a document — it needs a line of text.";
@@ -126,24 +139,23 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
     [canAsk, canCapture, compose, intake, onClose, text],
   );
 
+  /**
+   * The contract, and only the contract (SPEC.md §11): `↵` is a newline, `⌘↵`
+   * asks, `⇧⌘↵` captures, `esc` closes, an IME commit does none of it, and an
+   * open completion menu is asked first. Every one of those sentences used to be
+   * written out here, and in four other composers, each slightly differently.
+   */
   const onKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    // An IME commit is a keystroke the composer must not read as a submit.
-    if (event.nativeEvent.isComposing) return;
-    if (autocomplete.handleKeyDown(event)) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key !== "Enter") return;
-    // `⇧↵` is a newline and nothing else — the default, deliberately not
-    // preventDefault'd, so the caret and the undo stack behave as they would in
-    // any textarea.
-    if (event.shiftKey) return;
-    event.preventDefault();
-    // Ctrl as well as ⌘: on non-mac there is no ⌘, and on mac some browsers
-    // claim the chord before the page sees it.
-    submit(event.metaKey || event.ctrlKey ? "capture" : "ask");
+    handleComposerKeyDown(event, {
+      claim: autocomplete.handleKeyDown,
+      onPrimary: () => {
+        submit("ask");
+      },
+      onSecondary: () => {
+        submit("capture");
+      },
+      onEscape: onClose,
+    });
   };
 
   return (

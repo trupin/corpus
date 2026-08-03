@@ -133,6 +133,26 @@ export function Turn({
     turn.author === "agent" ? splitFormFence(body) : { before: body, after: "", source: undefined };
   const form = fence.source === undefined ? { status: "none" as const } : parseFormBlock(body);
 
+  /*
+   * A newline in a **user** turn is a line break (UI-054).
+   *
+   * `↵` in every composer inserts a newline and never submits (SPEC.md §11's
+   * key contract, SHARED-009 Amendment 1), so the newlines in a user turn are
+   * the ones a person pressed a key for — and CommonMark rendering them as
+   * spaces made them invisible, which is the defect. Every chat tool keeps
+   * them; so does this.
+   *
+   * An **agent** turn keeps CommonMark's rule, because an agent turn is
+   * authored markdown. Measured against the real workspace before choosing:
+   * 10 of its 11 agent turns hard-wrap their paragraphs at ~80 columns (60
+   * newlines in all) while 10 of 10 user turns contain no newline at all —
+   * every existing agent turn would have been shredded into ragged lines, and
+   * not one existing user turn would have changed. An agent that wants a break
+   * writes markdown's own (two trailing spaces, or a backslash); a person
+   * typing into a textarea has no such key.
+   */
+  const hardBreaks = turn.author === "user";
+
   return (
     <div className={pending ? "turn pending" : "turn"} data-turn-ts={turn.ts}>
       <div className="turn-who">
@@ -179,7 +199,12 @@ export function Turn({
 
       <div className="turn-body">
         {form.status === "none" ? (
-          <MarkdownView markdown={body} className="doc-body turn-markdown" onOpenRef={onOpenRef} />
+          <MarkdownView
+            markdown={body}
+            className="doc-body turn-markdown"
+            onOpenRef={onOpenRef}
+            hardBreaks={hardBreaks}
+          />
         ) : (
           <>
             {fence.before === "" ? null : (
@@ -187,6 +212,7 @@ export function Turn({
                 markdown={fence.before}
                 className="doc-body turn-markdown"
                 onOpenRef={onOpenRef}
+                hardBreaks={hardBreaks}
               />
             )}
             {form.status === "ok" ? (
@@ -213,6 +239,7 @@ export function Turn({
                 markdown={fence.after}
                 className="doc-body turn-markdown"
                 onOpenRef={onOpenRef}
+                hardBreaks={hardBreaks}
               />
             )}
           </>

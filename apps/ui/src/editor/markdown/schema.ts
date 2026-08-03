@@ -45,6 +45,21 @@ import { CorpusTable } from "./tableNode.js";
 export const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
 
 /**
+ * The image node's configuration, named once.
+ *
+ * **Inline**, because markdown's `![alt](src)` is phrasing content: a block
+ * image could not live inside a paragraph, so every inline image in an existing
+ * document would be relocated on the first save.
+ *
+ * It is a constant rather than an inline literal because `DocEditor` swaps this
+ * node for one carrying a React view (`ImageNodeView`, UI-049) and the two must
+ * configure the *same* node — a view-only difference, exactly as `DocRef` and
+ * `docRefWithView` are. Two literals that happen to agree today are a schema
+ * fork tomorrow.
+ */
+export const IMAGE_OPTIONS = { inline: true, allowBase64: true } as const;
+
+/**
  * The extension list, in one call so the schema cannot be built twice from two
  * different configurations.
  *
@@ -71,10 +86,7 @@ export function corpusExtensions(): Extensions {
       linkOnPaste: false,
       HTMLAttributes: { rel: "noreferrer noopener", target: "_blank" },
     }),
-    // Inline, because markdown's `![alt](src)` is phrasing content: a block
-    // image could not live inside a paragraph, so every inline image in an
-    // existing document would be relocated on the first save.
-    Image.configure({ inline: true, allowBase64: true }),
+    Image.configure(IMAGE_OPTIONS),
     TaskList,
     TaskItem.configure({ nested: true }),
     CorpusTable.configure({ resizable: false }),

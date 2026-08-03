@@ -197,7 +197,7 @@ test.describe("the `[[` menu", () => {
     const styles = await measure(
       page,
       `<div class="ac-menu open" id="menu">
-         <button class="ac-item on"><span class="k">Rates</span><span class="d">note</span></button>
+         <button class="ac-item active"><span class="k">Rates</span><span class="d">note</span></button>
          <button class="ac-item"><span class="k">Mortgage options</span><span class="d">note</span></button>
        </div>`,
       [
@@ -236,7 +236,7 @@ test.describe("the `[[` menu", () => {
       page,
       `<div class="ac-menu open">
          <button class="ac-item" id="off">a</button>
-         <button class="ac-item on" id="on">b</button>
+         <button class="ac-item active" id="on">b</button>
        </div>`,
       [
         ["#off", ["background-color"]],

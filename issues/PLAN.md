@@ -327,12 +327,19 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-009 | Five SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
-| UI-049 | Images open full-size on click; inline attachment images actually load | todo | P1 | SHARED-009 |
-| UI-051 | Select text in a turn and comment on it, with the selection quoted | todo | P1 | SHARED-009 |
-| UI-052 | One composer key contract: ↵ newline, ⌘↵ send, ⇧⌘↵ secondary | todo | P1 | SHARED-009 |
-| UI-053 | One keyboard contract for all three autocompletes; ⇥ accepts | todo | P1 | SHARED-009 |
-| UI-050 | Fenced canvases wrap long lines instead of scrolling | todo | P2 | SHARED-009 |
-| PLUGINS-011 | Todos item composer adopts the composer key contract | todo | P2 | UI-052 |
+| SHARED-009 | Five SPEC amendments — apply at phase kickoff (orchestrator) | done | P1 | — |
+| UI-049 | Images open full-size on click; inline attachment images actually load | done | P1 | SHARED-009 |
+| UI-051 | Select text in a turn and comment on it, with the selection quoted | done | P1 | SHARED-009 |
+| UI-052 | One composer key contract: ↵ newline, ⌘↵ send, ⇧⌘↵ secondary | done | P1 | SHARED-009 |
+| UI-053 | One keyboard contract for all three autocompletes; ⇥ accepts | done | P1 | SHARED-009 |
+| UI-054 | Newlines typed into a turn don't render — `a\nb` shows as `a b` (UI-052 finding) | done | P1 | UI-052 |
+| UI-050 | Fenced canvases: wrap long lines, collapse tall blocks (2nd report) | done | P1 | SHARED-009 |
+| PLUGINS-011 | Todos item composer adopts the composer key contract | done | P2 | UI-052 |
+| UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | todo | P2 | UI-052 |
+| UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | todo | P1 | UI-051 |
+| AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | todo | P1 | AGENT-010 |
+| UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | todo | P2 | — |
+| UI-058 | A "note only" turn still shows "agent is working" (dogfood) | todo | P1 | — |
+| UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | todo | P1 | — |
 
 <!-- Additional phases will be added as the project grows -->

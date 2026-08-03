@@ -214,12 +214,16 @@ test.describe("the thread card's shipped stylesheet", () => {
 const COMPOSER = `
   <div class="composer">
     <div class="pending-atts"><span class="att-chip"><img alt="" src=""/>shot.png<button>✕</button></span></div>
-    <input placeholder="Reply — @ route · / skill · [[ link · paste or drop files" aria-label="Reply"/>
+    <div class="composer-grow" data-replicated-value="one&#10;two&#10;three">
+      <textarea rows="1" placeholder="Reply — @ route · / skill · [[ link · paste or drop files" aria-label="Reply">one
+two
+three</textarea>
+    </div>
     <div class="composer-foot">
       <button class="clip">📎</button>
       <button class="toggle on">◉ ask agent</button>
       <span class="composer-hint">thread stays open</span>
-      <button class="send">Reply ↵</button>
+      <button class="send">Reply ⌘↵</button>
     </div>
   </div>
   <div class="composer dropping"></div>`;
@@ -250,6 +254,52 @@ test.describe("the composer's shipped stylesheet", () => {
     expect(styles[".composer-foot .send"]?.["margin-left"]).not.toBe("0px");
     expect(styles[".composer-foot .send"]?.["color"]).toBe(LIGHT_ACCENT_INK);
     expect(styles[".composer-foot .send"]?.["font-weight"]).toBe("600");
+  });
+
+  /**
+   * UI-052 made the field a textarea (SPEC.md §11's `↵`-is-a-newline contract),
+   * and the whole risk of that swap is visual: a textarea arrives with a border,
+   * a scrollbar and the browser's own font unless every one of them is turned
+   * off. Measured in the real cascade, because that is where the defaults are.
+   */
+  test("keeps the field looking like the mockup's one-line input, and grows it", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const styles = await measure(page, COMPOSER, [
+      [".composer-grow", ["display", "overflow-y"]],
+      [
+        ".composer-grow > textarea",
+        ["border-style", "background-color", "resize", "overflow", "padding", "font-family"],
+      ],
+      [".composer-foot", ["font-family"]],
+    ]);
+    expect(styles[".composer-grow"]?.["display"]).toBe("grid");
+    expect(styles[".composer-grow"]?.["overflow-y"]).toBe("auto");
+    const field = styles[".composer-grow > textarea"] ?? {};
+    expect(field["border-style"]).toBe("none");
+    expect(field["background-color"]).toBe("rgba(0, 0, 0, 0)");
+    expect(field["resize"]).toBe("none");
+    expect(field["overflow"]).toBe("hidden");
+    expect(field["padding"]).toBe("0px");
+    // `font: inherit` — the card's serif, never the textarea's monospace default.
+    expect(field["font-family"]).not.toBe(styles[".composer-foot"]?.["font-family"]);
+
+    // Three lines of value make a three-line box: the mirror is what measures it.
+    const heights = await page.evaluate((markup) => {
+      const host = document.createElement("div");
+      host.innerHTML = markup;
+      document.body.append(host);
+      const field = host.querySelector("textarea") as HTMLTextAreaElement;
+      const grown = field.getBoundingClientRect().height;
+      const wrap = host.querySelector(".composer-grow") as HTMLElement;
+      wrap.dataset["replicatedValue"] = "";
+      field.value = "";
+      const empty = field.getBoundingClientRect().height;
+      host.remove();
+      return { grown, empty };
+    }, COMPOSER);
+    expect(heights.grown).toBeGreaterThan(heights.empty * 2);
   });
 
   test("previews a pending attachment at 34px and renders a posted one in both forms", async ({

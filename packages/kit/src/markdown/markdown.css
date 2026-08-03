@@ -59,12 +59,31 @@
   padding: 1px 4px;
 }
 
+/*
+ * A block wraps; it does not scroll (UI-050, SPEC.md §11's rider signed
+ * 2026-08-03: "long lines wrap inside the canvas rather than scrolling
+ * horizontally"). The reading measure is 62ch, so a 400-column line — every one
+ * of the 37 fenced blocks in a real workspace has a line wider than the canvas
+ * — used to be a small horizontal scroller inside the column, i.e. a second
+ * axis of navigation to read one snippet.
+ *
+ * `overflow-wrap: anywhere` is the half that matters for the blocks that are
+ * actually unreadable: a pasted URL, a base64 blob or a 400-column email quote
+ * has no space to break at, and `pre-wrap` alone would leave it overflowing.
+ * It breaks only where a line would otherwise overflow, so ordinary code still
+ * breaks between words.
+ *
+ * Nothing here touches the **bytes**: wrapping is a line-box decision, the copy
+ * button reads the fence off the hast tree, and `white-space: pre-wrap` is what
+ * keeps every space and every indent of the original in the rendered block.
+ */
 .doc-body pre {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .doc-body pre code {
@@ -98,6 +117,53 @@
 
 .doc-body img {
   max-width: 100%;
+}
+
+/*
+ * ── Images (UI-049) ──────────────────────────────────────────────────
+ *
+ * SPEC.md §11: "clicking any rendered image … opens it full-screen over the
+ * app". The affordance is declared once, on the class `CorpusImage` puts on
+ * every image it draws, so a turn attachment, a document body and a plugin
+ * surface all say the same thing about what a click will do.
+ *
+ * `.md-img` alone carries no cursor: without a viewer mounted the image is not
+ * clickable, and `role="button"` is what the component adds only when one is.
+ */
+.md-img[role="button"] {
+  cursor: zoom-in;
+}
+
+.md-img[role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * A reference whose bytes have not arrived — or never will. Both are chips
+ * rather than a blank: the reference is a fact about the body even when the
+ * file behind it is unreachable, and a silent gap is the one outcome that
+ * tells the reader nothing. Shaped like the thread's own `.att-file` chip,
+ * which is the treatment `design/index.html` gives an attachment with no
+ * preview.
+ */
+.md-img-pending,
+.md-img-broken {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 9px;
+  background: var(--surface-2);
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.md-img-broken {
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 40%, var(--line));
 }
 
 /*
@@ -219,6 +285,28 @@
  * Its box is reserved by the overlay, so revealing it shifts no text.
  */
 .fence {
+  /*
+   * ── The collapse threshold (UI-050) ────────────────────────────────
+   *
+   * The one place the number lives. `CodeFence` never reads it: it asks the
+   * laid-out box whether there is more than it shows, so retuning this — a
+   * host with a taller reader, a plugin with a denser surface — retunes the
+   * whole behavior with no code change.
+   *
+   * **420px ≈ 20 lines of the block's own type** (12.5px mono at the 1.62 line
+   * height, ≈ 20.3px a line, plus the block's 20px of vertical padding).
+   *
+   * Twenty is measured, not round. Across the 37 fenced blocks of a real
+   * workspace, rendered at this canvas's ~60 columns, the median block is 10
+   * lines tall and the 75th percentile is 20 — so the threshold is both twice
+   * the typical block and the point above which a block stops being something
+   * you take in at a glance. Three quarters of real blocks are therefore
+   * visually untouched, and the quarter that collapse are the ones that
+   * swallow the column: the tallest in that corpus is 125 lines, which is more
+   * than a reader's whole height for one snippet.
+   */
+  --fence-collapsed-height: 420px;
+
   margin: 10px 0;
 }
 
@@ -287,4 +375,63 @@
   color: var(--signal);
   border-color: var(--signal);
   background: var(--signal-wash);
+}
+
+/*
+ * The clip. Present whenever the block is not expanded — including on blocks
+ * shorter than the box, where it does nothing except give `CodeFence` a frame
+ * of reference to measure against (see the component). `hidden`, never `auto`:
+ * trading a horizontal scroller for a vertical one inside the column would be
+ * the same complaint in the other direction.
+ */
+.fence-canvas > pre.fence-clipped {
+  max-height: var(--fence-collapsed-height);
+  overflow: hidden;
+}
+
+/*
+ * The expand control. It is a bar rather than a corner button because it is
+ * also the block's cut edge: collapsed, it rises over the last lines with the
+ * block's own background fading in, so the truncation is *shown* as well as
+ * stated — and the whole width of that fade is the click target.
+ *
+ * `position: relative` is load-bearing. An in-flow sibling's background paints
+ * before the `pre`'s inline content, so without a positioned box the clipped
+ * text would show straight through the gradient.
+ */
+.fence-more {
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 5px 0 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  text-align: center;
+  cursor: pointer;
+}
+
+.fence-more:hover {
+  color: var(--accent-ink);
+}
+
+.fence-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.fence[data-fence-collapsed] .fence-more {
+  position: relative;
+  margin-top: -46px;
+  padding: 32px 0 6px;
+  border-radius: 0 0 8px 8px;
+  /*
+   * Opaque well before the label: the fade is there to say "cut here", and a
+   * line of text showing *through* the sentence that names it is the one thing
+   * it must not do.
+   */
+  background: linear-gradient(to bottom, transparent, var(--surface-2) 55%);
 }

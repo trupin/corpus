@@ -1,0 +1,79 @@
+/*
+ * The full-screen image viewer (UI-049, SPEC.md §11's "images open full-size").
+ *
+ * It carries `.overlay.open` because that class pair is the app's contract for
+ * "a modal surface owns the keyboard" — `isOverlayOpen()` queries exactly it,
+ * and the board's single-letter bindings go out of scope while it is up. What
+ * it does *not* inherit is the search overlay's z-index: this layer sits above
+ * every other one, matching `EscapeLayerPriority.ImageViewer` at the top of the
+ * escape chain. The selector is doubled (`.overlay.image-viewer`) so the
+ * override does not depend on which stylesheet the bundler emitted last.
+ */
+
+.overlay.image-viewer {
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 24px;
+  /* Darker than the search scrim: the subject here is the picture, and a
+     backdrop that lets the board through washes out every mid-tone in it. */
+  background: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+
+.image-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  align-self: stretch;
+  justify-content: flex-end;
+}
+
+.image-viewer-hint {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--bg);
+  opacity: 0.7;
+}
+
+.image-viewer-close {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--bg);
+  background: color-mix(in srgb, var(--bg) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bg) 30%, transparent);
+  border-radius: 7px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.image-viewer-close:hover,
+.image-viewer-close:focus-visible {
+  background: color-mix(in srgb, var(--bg) 26%, transparent);
+}
+
+/*
+ * Full size, capped only by the viewport — which is the whole point of the
+ * feature: the thread's 240×180 thumbnail is a preview, and this is the detail
+ * the user came for. `object-fit: contain` keeps the aspect ratio when the cap
+ * bites; `min-height: 0` lets the flex item actually shrink to it.
+ */
+.image-viewer-img {
+  flex: 1;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.image-viewer-caption {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--bg);
+  opacity: 0.8;
+  text-align: center;
+  max-width: min(80ch, 100%);
+}

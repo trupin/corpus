@@ -354,7 +354,7 @@ test.describe("the comment action", () => {
       (request) => request.url().endsWith("/api/threads") && request.method() === "POST",
     );
     await page.locator("[data-todo-comment] textarea").fill("which plumber was it?");
-    await page.getByText("Comment ↵").click();
+    await page.getByText("Comment ⌘↵").click();
 
     const request = await posted;
     const sent = request.postDataJSON() as {
