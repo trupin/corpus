@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { ColumnMenuItems } from "../menu/ColumnMenuItems";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { keepsNativeMenu } from "../menu/nativeMenu";
+import { QueryEditor } from "./query/QueryEditor";
 import { shortSortLabel, useSortFit } from "./sortFit";
 import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from "./viewDoc";
 
@@ -18,6 +19,11 @@ import { formatQueryString, parseQueryString, sameQuery, type BoardColumn } from
  * trick is kept exactly: `mousedown` arms `draggable` unless the press landed
  * on a button, and `mouseup` disarms it — which is what keeps `＋` and `⋯`
  * clickable inside a handle.
+ *
+ * Renaming happens in place here; editing the query is `QueryEditor`
+ * (`./query/`), which adds completions and a syntax reference to the same field
+ * without changing what it stores — `commit()` below is unchanged, including its
+ * "a no-op edit writes nothing" rule.
  *
  * `⋯` and right-click open the **same** menu, from the same declaration and
  * through the same frame (SPEC.md §11's right-click bullet) — the header had
@@ -55,8 +61,11 @@ export function ColumnHead({
   const menu = useContextMenu();
   const sortFit = useSortFit(column.chips, column.sortLabel, editing !== "query");
 
+  // Only the rename field: the query editor is its own component (UI-039) and
+  // focuses itself, because it owns a menu and a help panel that must be able to
+  // take focus without this effect stealing it back.
   useEffect(() => {
-    if (editing === null) return;
+    if (editing !== "title") return;
     field.current?.focus();
     field.current?.select();
   }, [editing]);
@@ -181,17 +190,14 @@ export function ColumnHead({
       </div>
 
       {editing === "query" ? (
-        <input
-          ref={field}
-          className="col-query-input"
-          aria-label={`Edit query for ${column.title}`}
-          placeholder="type=thread&status=open"
+        <QueryEditor
+          columnTitle={column.title}
           value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
+          onChange={setDraft}
+          onCommit={commit}
+          onCancel={() => {
+            setEditing(null);
           }}
-          onBlur={commit}
-          onKeyDown={onFieldKeyDown}
         />
       ) : (
         <div className="chips" ref={sortFit.row}>

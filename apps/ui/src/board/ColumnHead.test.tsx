@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
+import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
-import { viewRow } from "../testing/boardFixture";
+import { boardTransport, viewRow } from "../testing/boardFixture";
 import { ColumnHead } from "./ColumnHead";
 import { toBoardColumn } from "./viewDoc";
 
@@ -32,12 +33,19 @@ function renderHead(overrides: Partial<Parameters<typeof ColumnHead>[0]> = {}) {
     onHandle: vi.fn(),
     ...overrides,
   };
+  // The query field completes against the projection (UI-039), so the head now
+  // needs the kit's data layer mounted. The transport answers with nothing,
+  // which is the point here: these tests are about the header, and an empty
+  // workspace is exactly the case where the menu must stay out of the way.
+  const harness = createCorpusTestHarness({ fetch: boardTransport().fetch });
   return {
     props,
     ...render(
-      <ContextMenuProvider>
-        <ColumnHead {...props} />
-      </ContextMenuProvider>,
+      <harness.Wrapper>
+        <ContextMenuProvider>
+          <ColumnHead {...props} />
+        </ContextMenuProvider>
+      </harness.Wrapper>,
     ),
   };
 }
