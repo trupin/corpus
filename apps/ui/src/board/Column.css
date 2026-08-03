@@ -161,9 +161,13 @@
   background: var(--accent-wash);
 }
 
+/* One row at every column width (UI-038). The prototype wraps here, which in a
+   narrow column dropped the sort label onto a second line; the label degrades
+   instead (`sortFit.ts`). `position: relative` contains the measuring probe. */
 .chips {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 5px;
   align-items: center;
 }
@@ -179,17 +183,48 @@
   white-space: nowrap;
 }
 
+/* Past the point where even the short label leaves the chips no room, the chips
+   are what gives: they are clipped by the row, so nothing can ever spill across
+   the sort label. `.fm-chips` and the search bar's chips are untouched — they
+   wrap, and should. */
+.chips .chip {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .chip.on {
   background: var(--accent-wash);
   border-color: transparent;
   color: var(--accent-ink);
 }
 
+/* Never shrunk and never wrapped: the direction glyph is the part of this label
+   that must survive every width. */
 .sort {
   margin-left: auto;
+  flex: none;
   font-size: 11px;
   font-family: var(--mono);
   color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* Measured, never seen (UI-038): the same chips and the same full label, laid
+   out at `max-content` so nothing shrinks, which is the width the visible row
+   is compared against. `visibility: hidden` keeps it out of the accessibility
+   tree, out of find-in-page and out of a selection; `position: absolute` keeps
+   it out of the flex line it sits beside. */
+.chips-probe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .col-query-input {

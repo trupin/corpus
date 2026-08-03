@@ -36,7 +36,7 @@
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test --config apps/ui/playwright.config.ts",
     "coverage": "npm run test:coverage && npm run e2e && npm run coverage:merge",
-    "coverage:merge": "node --import tsx scripts/merge-coverage.ts"
+    "coverage:merge": "node --max-old-space-size=8192 --import tsx scripts/merge-coverage.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

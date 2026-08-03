@@ -1,9 +1,11 @@
 import type { RowNotice } from "@corpus/kit";
+import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import { useCallback, type MouseEvent } from "react";
 import { rangeStillReads, STALE_SELECTION_NOTICE } from "../editor/selection";
 import { useContextMenu } from "./ContextMenuHost";
 import { selectionMenuTarget } from "./nativeMenu";
+import { captureCopy } from "./selectionCopy";
 import { SelectionMenuItems } from "./SelectionMenuItems";
 
 /**
@@ -41,9 +43,17 @@ export const SELECTION_MENU_LABEL = "Actions for the selection";
 /**
  * Cut and Paste, as one operation on the range that was selected.
  *
- * A plain-text transaction rather than TipTap's `insertContentAt`, which parses
- * its string as HTML: pasting `a <b` into a document must paste those four
- * characters, not open an element.
+ * **Plain text goes in as plain text.** A text transaction rather than TipTap's
+ * `insertContentAt`, which parses its string as HTML: pasting `a <b` into a
+ * document must paste those four characters, not open an element.
+ *
+ * **Rich text goes in through the editor's own paste path** (PR #19 review).
+ * `EditorView.pasteHTML` is the function ProseMirror's `paste` handler calls, so
+ * the menu's Paste runs `transformPastedHTML` and the schema's parse rules that
+ * ⌘V runs — the mirror image of what `selectionCopy.ts` does for Copy, and for
+ * the same reason: the two gestures are one act, and a menu Paste that dropped
+ * every heading and bullet ⌘V keeps would be the defect UI-042 fixed, pointing
+ * the other way.
  *
  * **The captured positions are checked before they are used** (PR #13 review,
  * MINOR). A menu can sit open while the agent's write arrives over SSE and
@@ -56,19 +66,27 @@ export const SELECTION_MENU_LABEL = "Actions for the selection";
 export function captureReplace(
   editor: Editor | null,
   onStale: () => void,
-): ((text: string) => void) | null {
+): ((text: string, html?: string | null) => void) | null {
   if (editor === null || editor.isDestroyed || !editor.isEditable) return null;
   const { from, to, empty } = editor.state.selection;
   if (empty) return null;
   const captured = editor.state.doc.textBetween(from, to, "\n", "");
-  return (text: string) => {
+  return (text: string, html?: string | null) => {
     if (editor.isDestroyed) return;
     const { state, view } = editor;
     if (!rangeStillReads(state.doc, from, to, captured)) {
       onStale();
       return;
     }
-    view.dispatch(text === "" ? state.tr.delete(from, to) : state.tr.insertText(text, from, to));
+    if (html != null && html !== "") {
+      // `pasteHTML` replaces the selection, so the captured range has to *be*
+      // the selection first: the menu took focus out of the body, and the
+      // editor's own selection is wherever it last was.
+      view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, from, to)));
+      view.pasteHTML(html);
+    } else {
+      view.dispatch(text === "" ? state.tr.delete(from, to) : state.tr.insertText(text, from, to));
+    }
     view.focus();
   };
 }
@@ -89,6 +107,10 @@ export function useSelectionContextMenu({
         onNotify({ tone: "error", message: STALE_SELECTION_NOTICE });
       };
       const replace = found.editable ? captureReplace(editor, stale) : null;
+      // Both flavors, read now for the same reason the text is: opening the
+      // menu moves focus, and the editor's slice and the DOM range both stop
+      // describing the words the user pointed at.
+      const copy = captureCopy(editor, found.text);
 
       event.preventDefault();
       // The reader's own handler sits on an ancestor and would open the
@@ -100,7 +122,7 @@ export function useSelectionContextMenu({
         clientY: event.clientY,
         items: (close) => (
           <SelectionMenuItems
-            text={found.text}
+            copy={copy}
             onComment={comment}
             onReplace={replace}
             close={close}

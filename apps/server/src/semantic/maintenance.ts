@@ -21,6 +21,8 @@
  */
 
 import type { IndexStatus } from "@corpus/contract";
+import type { InvalidationBus } from "../events/bus.js";
+import { INDEX_KEY } from "../events/keys.js";
 import type { Logger } from "../logger.js";
 import type { ProjectionDb } from "../projection/db.js";
 import { recordedIdentity } from "./embeddings.js";
@@ -47,11 +49,20 @@ export interface IndexMaintenanceOptions {
   readonly db: ProjectionDb;
   readonly semantic: SemanticRetrieval;
   readonly logger: Logger;
+  /**
+   * Where a rebuild's two edges are announced (SERVER-051). The worker owns
+   * every *other* `["index"]` frame; these two are the rebuild flag's own, and
+   * the flag lives here — a `state` that flips to `indexing` and back with no
+   * count moving is invisible to a loop that only watches rows.
+   */
+  readonly bus?: InvalidationBus | undefined;
 }
 
 export function createIndexMaintenance(options: IndexMaintenanceOptions): IndexMaintenance {
   const { db, semantic, logger } = options;
   let worker: EmbedWorkerHandle | undefined;
+
+  const announce = (): void => options.bus?.invalidate([INDEX_KEY]);
 
   /**
    * The counts, the recorded identity and the flag, as the wire's five
@@ -93,6 +104,12 @@ export function createIndexMaintenance(options: IndexMaintenanceOptions): IndexM
       });
     } finally {
       semantic.rebuild.end();
+      // The end of the rebuild is a state change no row records: `indexing`
+      // becomes whatever the counts now say — `current` for a drained index,
+      // `stale` for one the provider gave up on. Announced after the flag is
+      // lowered so a client that refetches on this frame reads the settled word
+      // and not the one it is replacing.
+      announce();
     }
   }
 
@@ -165,6 +182,10 @@ export function createIndexMaintenance(options: IndexMaintenanceOptions): IndexM
         throw error;
       }
 
+      // Announced before the drain is launched and after the discard has
+      // landed, so the frame and the `202` body describe the same instant:
+      // every vector gone, the flag raised, `state` `indexing`.
+      announce();
       void drain();
       return queued;
     },

@@ -37,6 +37,59 @@ const ARCHIVE_VIEW = {
 const NOTE = { id: "doc_note", title: "Mortgage options", body: "6.4% this week." };
 const OTHER = { id: "doc_other", title: "Rates" };
 
+/**
+ * UI-036's subject: a document whose type the todos plugin owns, so the board
+ * paints its row with the plugin's `ListItem` instead of the kit's `Row`. It is
+ * still a core document in a core column, and the row menu is core's.
+ */
+const TODO = {
+  id: "doc_todo",
+  type: "todo",
+  title: "Inbox chores",
+  path: "data/docs/inbox/inbox-chores.md",
+  body: "- [ ] Call the plumber\n",
+};
+
+/** A **plugin column**: everything in its body is the plugin's own surface. */
+const TODOS_COLUMN_VIEW = {
+  id: "doc_view_todos",
+  type: "view",
+  title: "Todos",
+  path: "data/docs/views/todos.md",
+  pinned: true,
+  order: 3,
+  column: "todos/todos",
+  query: { type: "todo" },
+};
+
+/**
+ * The todos plugin's own aggregate (`GET /api/x/todos/lists/at/<fingerprint>`),
+ * which both its row preview and its column read. Registered **after**
+ * `stubCorpus`, whose `**\/api\/**` handler would otherwise swallow it —
+ * Playwright matches the most recently added route first. Without it a todo row
+ * renders degraded, which would make the menu assertions below less than the
+ * real thing.
+ */
+async function stubTodoLists(page: import("@playwright/test").Page): Promise<void> {
+  await page.route("**/api/x/todos/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        lists: [
+          {
+            docId: TODO.id,
+            title: TODO.title,
+            open: 1,
+            done: 0,
+            items: [{ text: "Call the plumber", done: false }],
+          },
+        ],
+      }),
+    });
+  });
+}
+
 test.describe("the context menu", () => {
   test("opens a row's own actions at the pointer", async ({ page }) => {
     await stubCorpus(page, [INBOX_VIEW, NOTE]);
@@ -253,6 +306,117 @@ test.describe("the context menu", () => {
     const menu = page.getByRole("menu", { name: "Actions for Mortgage options" });
     await expect(menu).toBeVisible();
     await expect(menu.locator('[data-act="open"]')).toBeFocused();
+  });
+
+  /**
+   * UI-036, and the regression it pins (sprint-023 TEST-1073, TEST-1078).
+   *
+   * Core suppressed its own row menu for every document type that had a plugin
+   * `ListItem`, so a `todo` document — the shipped case — had **no** menu at
+   * all: no open, no open in focus, no archive, no delete, no staleness, from
+   * either input path. The signed v1 exclusion (SPEC.md §11, SHARED-004 item 4)
+   * is about surfaces a plugin *renders*; a todo document listed in an ordinary
+   * column is a core subject in a core surface, and the menu's actions are
+   * built from the `DocRow` core already holds.
+   */
+  test("gives a todo document row the same menu a note row gets", async ({ page }) => {
+    const corpus = await stubCorpus(page, [INBOX_VIEW, NOTE, TODO]);
+    await stubTodoLists(page);
+    await page.goto("/");
+
+    const todoRow = page.locator('.row[data-row-doc="doc_todo"]');
+    await expect(todoRow).toBeVisible();
+    // The plugin's `ListItem` really is what painted it — the precondition the
+    // old bail keyed on, now proved present rather than assumed.
+    await expect(todoRow).toHaveClass(/todo-row/);
+    await expect(todoRow.locator(".todo-items .t")).toContainText("Call the plumber");
+
+    await todoRow.click({ button: "right" });
+
+    const menu = page.getByRole("menu", { name: "Actions for Inbox chores" });
+    await expect(menu).toBeVisible();
+    const acts = await menu
+      .getByRole("menuitem")
+      .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset["act"]));
+    expect(acts).toEqual(["open", "open-focus", "archive", "delete"]);
+
+    // The same set the note row in the same column offers.
+    await page.keyboard.press("Escape");
+    await page.locator('.row[data-row-doc="doc_note"]').click({ button: "right" });
+    const noteActs = await page
+      .getByRole("menu")
+      .getByRole("menuitem")
+      .evaluateAll((items) => items.map((item) => (item as HTMLElement).dataset["act"]));
+    expect(noteActs).toEqual(acts);
+
+    // And an action taken from it acts on the document, through the core route.
+    await page.keyboard.press("Escape");
+    await todoRow.click({ button: "right" });
+    await menu.locator('[data-act="archive"]').click();
+    await expect.poll(async () => (await corpus.doc("doc_todo"))?.status).toBe("archived");
+    expect(await corpus.of("POST", "/api/docs/doc_todo/archive")).toHaveLength(1);
+  });
+
+  /** The keyboard half of the same rule (TEST-1074). */
+  test("⇧F10 opens the todo row's menu, with its first item focused", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, TODO]);
+    await stubTodoLists(page);
+    await page.goto("/");
+
+    const todoRow = page.locator('.row[data-row-doc="doc_todo"]');
+    await todoRow.hover();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator(".row.kbd")).toHaveAttribute("data-row-doc", "doc_todo");
+
+    await page.keyboard.press("Shift+F10");
+
+    const menu = page.getByRole("menu", { name: "Actions for Inbox chores" });
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('[data-act="open"]')).toBeFocused();
+  });
+
+  /**
+   * The negative UI-036 owns, restated for the SPEC §11 amendment of
+   * 2026-08-02 (TEST-1075, as the amendment leaves it).
+   *
+   * When this test was written the rule was "a plugin column body's rows keep
+   * the **browser's** menu", because v1 excluded plugin-rendered surfaces
+   * outright. The user reversed that exclusion in writing, and PLUGINS-009 is
+   * the reversal: a plugin may now contribute its own menu through the kit. So
+   * a row inside `[data-plugin-surface]` does open a menu again — the *plugin's*.
+   *
+   * What UI-036 is actually about survives untouched, and is what is asserted
+   * here: **core** paints no menu over a surface it handed to a plugin. Core's
+   * frame is `[data-ctx-menu]`; the plugin's is its own element, built from the
+   * kit's `.ac-menu` and carrying the item's actions rather than a document's.
+   * The distinction is the whole rule — the exclusion reads on where the markup
+   * came from, never on a document's type.
+   */
+  test("leaves a plugin column body's own rows to the plugin, never to core", async ({ page }) => {
+    await stubCorpus(page, [INBOX_VIEW, TODOS_COLUMN_VIEW, TODO]);
+    await stubTodoLists(page);
+    await page.goto("/");
+
+    const item = page.locator('.col[data-col="doc_view_todos"] .check').first();
+    await expect(item).toContainText("Call the plumber");
+    await expect(page.locator('.col[data-col="doc_view_todos"] [data-plugin-surface]')).toHaveCount(
+      1,
+    );
+
+    await item.click({ button: "right" });
+    // Core's own frame never appears over a plugin surface…
+    await expect(page.locator("[data-ctx-menu]")).toHaveCount(0);
+    // …and what does appear is the plugin's, naming the item rather than a document.
+    await expect(page.locator("[data-todo-menu]")).toHaveAttribute(
+      "aria-label",
+      "Actions for Call the plumber",
+    );
+
+    // The core column beside it is unaffected: same page, same gesture, core's menu.
+    await page.keyboard.press("Escape");
+    await page.locator('.row[data-row-doc="doc_todo"]').click({ button: "right" });
+    await expect(page.getByRole("menu", { name: "Actions for Inbox chores" })).toBeVisible();
+    await expect(page.locator("[data-ctx-menu]")).toHaveCount(1);
   });
 
   test("a column header offers its own three acts", async ({ page }) => {

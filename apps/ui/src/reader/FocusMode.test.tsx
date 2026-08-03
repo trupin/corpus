@@ -2,6 +2,7 @@
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavEntry } from "../board/useBoardLocalState";
 import {
@@ -19,6 +20,7 @@ import { resetEscapeLayers } from "./useEscapeStack";
 afterEach(() => {
   cleanup();
   resetEscapeLayers();
+  for (const layer of document.querySelectorAll("[data-reveal-flash]")) layer.remove();
 });
 
 const MORTGAGE = docFixture({
@@ -46,9 +48,11 @@ function wire(): ReaderTransport {
 
 function Solo({
   transport,
+  reveal,
   onClose,
 }: {
   readonly transport: ReaderTransport;
+  readonly reveal?: RevealTarget;
   readonly onClose?: () => void;
 }): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
@@ -57,7 +61,36 @@ function Solo({
       <FocusMode
         docId="doc_m"
         listTitle="Finance"
+        reveal={reveal}
         onClose={onClose ?? (() => undefined)}
+        onNotify={() => undefined}
+      />
+    </harness.Wrapper>
+  );
+}
+
+/** An already-open overlay the board points somewhere else, without unmounting it. */
+function Rewired({ transport }: { readonly transport: ReaderTransport }): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
+  const [target, setTarget] = useState<{ docId: string; reveal?: RevealTarget }>({
+    docId: "doc_m",
+  });
+  return (
+    <harness.Wrapper>
+      <button
+        type="button"
+        data-retarget
+        onClick={() => {
+          setTarget({ docId: "doc_r", reveal: { kind: "item", exact: "Back to" } });
+        }}
+      >
+        retarget
+      </button>
+      <FocusMode
+        docId={target.docId}
+        listTitle="Finance"
+        reveal={target.reveal}
+        onClose={() => undefined}
         onNotify={() => undefined}
       />
     </harness.Wrapper>
@@ -127,6 +160,63 @@ describe("FocusMode", () => {
     expect(overlay?.querySelector("[data-doc-menu]")).not.toBeNull();
     // Already full screen: there is nothing for ⤢ to do.
     expect(overlay?.querySelector("[data-expand]")).toBeNull();
+  });
+
+  /**
+   * UI-037. The reveal lives on the *shared* surface, so focus mode gets it for
+   * the same reason it gets scroll restoration and the 💬 jump: one mechanism,
+   * two hosts. A second implementation is how the two would drift.
+   */
+  it("honours a reveal on arrival, in the full-screen host too", async () => {
+    render(<Solo transport={wire()} reveal={{ kind: "item", exact: "Compare against" }} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(1);
+    });
+  });
+
+  it("honours a thread reveal by expanding and flashing the thread", async () => {
+    render(<Solo transport={wire()} reveal={{ kind: "thread", threadId: "th_rate" }} />);
+    await waitFor(() => {
+      expect(document.querySelector(".focus .thread-slot.expanded")).not.toBeNull();
+    });
+    expect(document.querySelector(".focus .thread-card.flash")).not.toBeNull();
+  });
+
+  it("opens at the top when no reveal is given — the ordinary case, unchanged", async () => {
+    render(<Solo transport={wire()} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+    expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(0);
+    expect(document.querySelector(".focus .thread-slot.expanded")).toBeNull();
+  });
+
+  /**
+   * PR #19 review. `docId` and `reveal` seeded the stack in a `useState`
+   * initializer and were never read again, so a board that re-pointed an open
+   * overlay changed nothing on screen — the seam was there and the props were
+   * dropped.
+   */
+  it("follows its props when the board re-points an overlay that is already open", async () => {
+    render(<Rewired transport={wire()} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+
+    fireEvent.click(document.querySelector("[data-retarget]") as HTMLElement);
+
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Rates");
+    });
+    // The new instruction's reveal is honoured too, not just its document.
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(1);
+    });
+    // A new excursion, not a push onto the old one: Back goes to the list.
+    expect(document.querySelector(".focus .back:not([data-close-focus])")).toBeNull();
   });
 
   it("names the hint after what it can actually do", () => {

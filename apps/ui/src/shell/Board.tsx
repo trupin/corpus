@@ -6,14 +6,15 @@ import {
   useUpdateDocById,
   type RowNotice,
 } from "@corpus/kit";
+import type { OpenPayload, RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Column } from "../board/Column";
 import { measureColumns, previewOrder } from "../board/columnDrag";
 import { nextOrder, reinsert } from "../board/columnOrder";
 import { useRegisterBoardCommands, type BoardCommands } from "../keyboard/boardCommands";
 import { useContextMenu } from "../menu/ContextMenuHost";
+import { isPluginRendered } from "../menu/nativeMenu";
 import { RowMenuItems, subjectFromElement } from "../menu/RowMenuItems";
-import { resolveListItem } from "../plugins/slots";
 import { focusReplyComposer, replyRoot } from "../keyboard/focusReply";
 import { useActiveColumn } from "../keyboard/useActiveColumn";
 import { useRowCursor } from "../keyboard/useRowCursor";
@@ -27,6 +28,7 @@ import { NewListGhost } from "../board/NewListGhost";
 import { NewListPicker } from "../board/NewListPicker";
 import {
   COLUMN_FLASH_MS,
+  openRequest,
   resolveColumn,
   useRegisterBoardNavigation,
   type BoardNavigation,
@@ -85,7 +87,11 @@ export function Board(): ReactElement {
    * full-viewport overlay on load would hide the board a reload was meant to
    * show. Its own navigation stack lives inside the overlay.
    */
-  const [focusDoc, setFocusDoc] = useState<{ columnTitle: string; docId: string } | null>(null);
+  const [focusDoc, setFocusDoc] = useState<{
+    columnTitle: string;
+    docId: string;
+    reveal?: RevealTarget | undefined;
+  } | null>(null);
 
   const board = useRef<HTMLElement>(null);
   /** Set by the board's own `drop`; a drag that ends anywhere else persists nothing. */
@@ -98,8 +104,8 @@ export function Board(): ReactElement {
 
   /** Following a row, a ref or a backlink: a push onto that column's stack. */
   const openInColumn = useCallback(
-    (columnId: string, docId: string) => {
-      setNav(columnId, pushEntry(forColumn(columnId).nav, docId, 0));
+    (columnId: string, docId: string, reveal?: RevealTarget) => {
+      setNav(columnId, pushEntry(forColumn(columnId).nav, docId, 0, reveal));
     },
     [forColumn, setNav],
   );
@@ -198,7 +204,7 @@ export function Board(): ReactElement {
             : null;
         const columnId = named ?? resolveColumn(orderedRef.current, target.subject ?? null);
         if (columnId === null) return;
-        openInColumn(columnId, target.docId);
+        openInColumn(columnId, target.docId, target.reveal);
         setSelectTitleFor(target.selectTitle === true ? target.docId : null);
         setScrollTo(columnId);
         setFlashing(columnId);
@@ -376,9 +382,14 @@ export function Board(): ReactElement {
   const openRowMenu = useCallback(() => {
     const element = cursor.element();
     if (element === null) return;
+    // A plugin **column body** owns its surface, and since the 2026-08-02 §11
+    // amendment it may put its own menu on it through the kit — so core opens
+    // none there. Asked of the painted element, not of the row's type — a `todo`
+    // document row in an ordinary column is a core row with the core action set
+    // however it is painted (UI-036).
+    if (isPluginRendered(element)) return;
     const subject = subjectFromElement(element);
-    // A plugin `ListItem` owns its surface; v1 leaves it alone (sign-off item 4).
-    if (subject === null || resolveListItem(subject.type) !== null) return;
+    if (subject === null) return;
     const rect = element.getBoundingClientRect();
     contextMenu.open({
       label: `Actions for ${subject.title}`,
@@ -591,15 +602,21 @@ export function Board(): ReactElement {
           onScroll={(scrollTop) => {
             setScroll(column.id, scrollTop);
           }}
-          onOpen={(docId) => {
-            openInColumn(column.id, docId);
+          onOpen={(target: OpenPayload) => {
+            const request = openRequest(target);
+            openInColumn(column.id, request.docId, request.reveal);
           }}
           onNav={(nav) => {
             setNav(column.id, nav);
             if (nav.length === 0) setSelectTitleFor(null);
           }}
-          onFocusMode={(docId) => {
-            setFocusDoc({ columnTitle: column.title, docId });
+          onFocusMode={(target: OpenPayload) => {
+            const request = openRequest(target);
+            setFocusDoc({
+              columnTitle: column.title,
+              docId: request.docId,
+              reveal: request.reveal,
+            });
           }}
           onAdd={() => {
             void addToColumn(column);
@@ -654,6 +671,7 @@ export function Board(): ReactElement {
         <FocusMode
           docId={focusDoc.docId}
           listTitle={focusDoc.columnTitle}
+          reveal={focusDoc.reveal}
           onClose={closeFocus}
           onNotify={notify}
         />

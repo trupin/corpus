@@ -144,6 +144,100 @@
   margin-left: auto;
 }
 
+/*
+ * ── The legacy-storage notice ─────────────────────────────────────
+ *
+ * Sits above the stats strip in the same slot (PLUGINS-008). Two treatments,
+ * because the three states are not the same news: an unmigrated list is
+ * *outdated* and reads in the sepia advisory ramp, while an unreadable key and
+ * a dual-stored document are *broken* — every write is refused — and take the
+ * `--signal` wash the overdue chip already uses. Both are tokens, so both
+ * follow the theme.
+ */
+
+.todo-legacy {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sepia-wash);
+  border-color: transparent;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.todo-legacy-malformed,
+.todo-legacy-dual {
+  background: var(--signal-wash);
+}
+
+.todo-legacy-lead {
+  color: var(--ink);
+}
+
+.todo-legacy-malformed .todo-legacy-lead,
+.todo-legacy-dual .todo-legacy-lead {
+  color: var(--signal);
+}
+
+.todo-legacy-problems {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.todo-legacy-remedy {
+  margin-top: 6px;
+}
+
+.todo-legacy-remedy code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.todo-legacy-details {
+  margin-top: 8px;
+}
+
+.todo-legacy-details summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.todo-legacy-details summary:hover {
+  color: var(--accent-ink);
+}
+
+/*
+ * Read-only by construction — these are `div`s, not controls — so the list
+ * deliberately has no hover, no pointer and no focus treatment: nothing here
+ * may look like something to click.
+ */
+.todo-legacy-list .t {
+  padding: 1px 0;
+}
+
+.todo-legacy-list .due {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  flex: none;
+}
+
 /* ── The list-item preview ───────────────────────────────────────── */
 
 .todo-items {
@@ -234,4 +328,142 @@
 .todos-column .todo-more {
   color: var(--ink-3);
   font-size: 11.5px;
+}
+
+/*
+ * ── The item context menu (PLUGINS-009) ───────────────────────────
+ *
+ * The frame itself is `.ac-menu` / `.ac-item`, imported from the kit
+ * (`@corpus/kit/autocomplete.css`) — the one positioned-menu surface every menu
+ * in the product renders. Only the deltas `apps/ui`'s `menu.css` applies to a
+ * *context* menu are restated here, because that stylesheet is core's and a
+ * plugin that leaned on it would look correct until the day it is not loaded.
+ */
+
+.todo-menu {
+  min-width: 220px;
+  max-height: min(60vh, 420px);
+}
+
+.todo-menu .ac-item {
+  text-align: left;
+  padding: 7px 9px;
+}
+
+.todo-menu .ac-item .d {
+  display: block;
+  margin-left: 0;
+  margin-top: 1px;
+}
+
+.todo-menu .ac-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.todo-menu .ac-item:focus-visible {
+  background: var(--surface-2);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── The item comment composer ─────────────────────────────────── */
+
+.todo-comment-pop {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px 8px;
+  font-family: var(--sans);
+}
+
+.todo-cm-quote {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+
+.todo-cm-input {
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  resize: vertical;
+}
+
+.todo-cm-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.todo-comment-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--ink-3);
+}
+
+.todo-comment-foot .todo-toggle {
+  cursor: pointer;
+}
+
+.todo-comment-foot .todo-toggle.on {
+  color: var(--accent-ink);
+}
+
+.todo-comment-foot .todo-send {
+  margin-left: auto;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.todo-comment-foot .todo-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.todo-cm-error {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--signal);
+}
+
+/* ── A refused item write ──────────────────────────────────────── */
+
+.todos-error {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--signal-wash);
+  color: var(--signal);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.todos-error-dismiss {
+  margin-left: auto;
+  flex: none;
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-decoration: underline;
 }

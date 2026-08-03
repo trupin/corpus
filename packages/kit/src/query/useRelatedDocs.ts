@@ -9,8 +9,8 @@ import { relatedKey } from "./keys.js";
  *
  * Caches under `relatedKey(id)`, i.e. `["docs", id, "related"]`: under the
  * `["docs"]` prefix the server emits on every document and thread mutation, so
- * an SSE `invalidate` frame that already exists refreshes the panel, and no
- * tenth key name enters the closed contract vocabulary.
+ * an SSE `invalidate` frame that already exists refreshes the panel, and no new
+ * key name enters the closed contract vocabulary.
  *
  * `id` is optional, and an absent one disables the query rather than issuing a
  * request for `""` — the same shape as {@link useDoc} and {@link useThread}, so

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
-import type { Job, QueueStatus } from "@corpus/contract";
-import { JOBS_KEY, QUEUE_KEY, docsListKey } from "@corpus/kit";
+import type { IndexStatus, Job, QueueStatus } from "@corpus/contract";
+import { INDEX_KEY, JOBS_KEY, QUEUE_KEY, docsListKey } from "@corpus/kit";
 import { createCorpusTestHarness, type CorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -57,8 +57,23 @@ function job(overrides: Partial<Job> = {}): Job {
   };
 }
 
+/**
+ * A caught-up semantic index — the answer `GET /api/index/status` gives a
+ * workspace with nothing to say about itself, and the fixture every test that is
+ * not about the index pill gets.
+ */
+const CURRENT_INDEX: IndexStatus = {
+  indexed: 273,
+  pending: 0,
+  failed: 0,
+  identity: "ollama/nomic-embed-text@768",
+  rebuilding: false,
+  state: "current",
+};
+
 interface Workspace {
   readonly queue?: QueueStatus;
+  readonly index?: IndexStatus;
   readonly jobs?: readonly Job[];
   readonly health?: boolean;
   readonly log?: {
@@ -105,6 +120,7 @@ function transport(workspace: Workspace = {}): {
       return json(HEALTH_BODY);
     }
     if (url.pathname === "/api/queue/status") return json(workspace.queue ?? IDLE_QUEUE);
+    if (url.pathname === "/api/index/status") return json(workspace.index ?? CURRENT_INDEX);
     if (url.pathname.endsWith("/log")) {
       return json(workspace.log ?? { lines: [], nextCursor: 0 });
     }
@@ -308,6 +324,183 @@ describe("the collapsed strip", () => {
     await waitFor(() => {
       expect(posted).toContain("/api/queue/resume");
     });
+  });
+});
+
+/**
+ * The index pill (UI-040, SPEC.md §11's index-pill rider) — the strip's second
+ * pill, fed by `GET /api/index/status` and refreshed by the `["index"]` frames
+ * the embed worker emits as it drains.
+ */
+describe("the index pill", () => {
+  const pill = (container: HTMLElement): Element | null => container.querySelector(".index-pill");
+
+  it("renders the caught-up state beside the agent pill", async () => {
+    const { container } = renderConsole(transport().fetch);
+
+    await waitFor(() => {
+      expect(pill(container)?.textContent).toBe("index: current · 273 indexed");
+    });
+    expect(container.querySelector(".index-pill .dot")?.className).toBe("dot");
+    // Beside, not instead of: both pills live on the one collapsed line.
+    expect(container.querySelector(".console-strip .agent-pill")).not.toBeNull();
+    expect(container.querySelector(".console-strip .index-pill")).not.toBeNull();
+  });
+
+  it("shows the fraction and the pulse while a rebuild drains", async () => {
+    const { container } = renderConsole(
+      transport({
+        index: { ...CURRENT_INDEX, indexed: 41, pending: 27, rebuilding: true, state: "indexing" },
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(pill(container)?.textContent).toBe("index: indexing · 41/68");
+    });
+    expect(container.querySelector(".index-pill .dot")?.className).toBe("dot busy");
+    expect(pill(container)?.getAttribute("data-index-state")).toBe("indexing");
+  });
+
+  it("shows the same count shape, in its own colour, for a stale index", async () => {
+    const { container } = renderConsole(
+      transport({ index: { ...CURRENT_INDEX, indexed: 41, pending: 27, state: "stale" } }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(pill(container)?.textContent).toBe("index: stale · 41/68");
+    });
+    expect(container.querySelector(".index-pill .dot")?.className).toBe("dot stale");
+  });
+
+  it("says disabled with no count when there is no index", async () => {
+    const { container } = renderConsole(
+      transport({
+        index: { ...CURRENT_INDEX, indexed: 0, identity: null, state: "disabled" },
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(pill(container)?.textContent).toBe("index: disabled");
+    });
+    expect(container.querySelector(".index-pill .dot")?.className).toBe("dot off");
+  });
+
+  /*
+   * The acceptance criterion, at the seam it is written about: an `["index"]`
+   * frame arrives, the counts climb, and nothing reloaded or polled. The stub
+   * answers a *different* status on the second call, so a pill that never
+   * refetched would keep showing `41/68` and fail here.
+   */
+  it("climbs on the index frame the server emits, with no poller", async () => {
+    let drained = false;
+    const calls: string[] = [];
+    const { container } = renderConsole((input: RequestInfo | URL): Promise<Response> => {
+      const { pathname } = new URL(new Request(input).url);
+      calls.push(pathname);
+      if (pathname === "/api/health") return json(HEALTH_BODY);
+      if (pathname === "/api/queue/status") return json(IDLE_QUEUE);
+      if (pathname === "/api/index/status") {
+        return json(
+          drained
+            ? { ...CURRENT_INDEX, indexed: 68, pending: 0 }
+            : { ...CURRENT_INDEX, indexed: 41, pending: 27, rebuilding: true, state: "indexing" },
+        );
+      }
+      return json({ jobs: [] });
+    });
+
+    await waitFor(() => {
+      expect(pill(container)?.textContent).toBe("index: indexing · 41/68");
+    });
+
+    drained = true;
+    harness?.eventSource.latest().emit("invalidate", JSON.stringify({ keys: [INDEX_KEY] }));
+
+    await waitFor(() => {
+      expect(pill(container)?.textContent).toBe("index: current · 68 indexed");
+    });
+    // Exactly two reads: the mount and the frame. A poller would add more.
+    expect(calls.filter((path) => path === "/api/index/status")).toHaveLength(2);
+  });
+
+  // An unreachable server knows nothing about a workspace's vectors, and
+  // `index: disabled` would be a claim. The pill is absent instead; the
+  // reachability notice beside it is the fact that is true.
+  it("stays absent rather than guessing when the server does not answer", async () => {
+    const { container } = renderConsole(
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toBe("server unreachable");
+    });
+    expect(pill(container)).toBeNull();
+  });
+});
+
+describe("the expanded drawer's index row", () => {
+  const DOWNLOADING: IndexStatus = {
+    indexed: 0,
+    pending: 0,
+    failed: 0,
+    identity: null,
+    rebuilding: false,
+    state: "disabled",
+    detail:
+      "downloading the all-MiniLM-L6-v2 embedding model (10.4 MiB of 22.6 MiB, 46%) — " +
+      "semantic ranking starts once it is cached",
+  };
+
+  /*
+   * The rider's wording: the sentence is the server's. This test compares the
+   * rendered text to the fixture **character for character**, which is what
+   * makes any future summarising, truncating or keyword-branching a failure
+   * here rather than a judgement call in review.
+   */
+  it("renders the server's detail sentence verbatim", async () => {
+    vi.stubGlobal("localStorage", memoryStorage(openedStorage()));
+    const { container } = renderConsole(transport({ index: DOWNLOADING }).fetch);
+
+    await waitFor(() => {
+      expect(container.querySelector(".index-detail")?.textContent).toBe(DOWNLOADING.detail);
+    });
+  });
+
+  it("shows the failed count only when it is non-zero", async () => {
+    vi.stubGlobal("localStorage", memoryStorage(openedStorage()));
+    const { container } = renderConsole(
+      transport({
+        index: { ...CURRENT_INDEX, indexed: 41, pending: 27, failed: 3, state: "stale" },
+      }).fetch,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector(".index-failed")?.textContent).toBe("3 failed");
+    });
+  });
+
+  it("says nothing at all when there is nothing to add", async () => {
+    vi.stubGlobal("localStorage", memoryStorage(openedStorage()));
+    const { container } = renderConsole(transport().fetch);
+
+    await waitFor(() => {
+      expect(container.querySelector(".index-pill")?.textContent).toBe(
+        "index: current · 273 indexed",
+      );
+    });
+    expect(container.querySelector(".index-status")).toBeNull();
+    expect(container.querySelector(".index-failed")).toBeNull();
+  });
+
+  // Collapsed, the drawer's body is not mounted and neither is this row: the
+  // strip is one line, and the sentence belongs to the expanded view.
+  it("is not rendered while the drawer is collapsed", async () => {
+    const { container } = renderConsole(transport({ index: DOWNLOADING }).fetch);
+
+    await waitFor(() => {
+      expect(container.querySelector(".index-pill")?.textContent).toBe("index: disabled");
+    });
+    expect(container.querySelector(".index-status")).toBeNull();
   });
 });
 

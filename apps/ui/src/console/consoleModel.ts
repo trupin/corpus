@@ -1,4 +1,4 @@
-import type { Job, QueueEventStatus, QueueStatus } from "@corpus/contract";
+import type { IndexStatus, Job, QueueEventStatus, QueueStatus } from "@corpus/contract";
 
 /**
  * Everything the console derives rather than fetches, as pure functions.
@@ -138,6 +138,70 @@ export function agentState(status: QueueStatus): AgentState {
 /** `agent: working · queue 2` — the pill's text, halted included. */
 export function agentPillText(status: QueueStatus): string {
   return `agent: ${agentState(status)} · queue ${String(status.pending)}`;
+}
+
+/**
+ * The index pill's dot, in the agent pill's own vocabulary (SPEC.md §11's
+ * index-pill rider: "the semantic index's state dot").
+ *
+ * Two of the four states map straight onto a dot the strip already draws, and
+ * two are named rather than borrowed:
+ *
+ * - **`current` keeps the base dot** — `--good`, exactly what an idle agent
+ *   wears. Caught up is caught up.
+ * - **`indexing` takes `busy`** — `--accent` and the pulse, the strip's one
+ *   symbol for work actually in flight. Nothing else pulses, which is why the
+ *   pulse means something.
+ * - **`stale` takes a dot of its own**, `--sepia`, borrowed from the console's
+ *   own `pending` job dot rather than from `halted`'s `--signal`: a backlog
+ *   nobody is draining is *waiting*, not broken, and red is the strip's word for
+ *   "needs you". A `failed` count is what earns attention, and it has its own
+ *   line in the expanded view.
+ * - **`disabled` takes the neutral dot**, `--ink-3`, for the reason the
+ *   `abandoned` job dot takes it: the three hues are each already a meaning, and
+ *   "there is no semantic index here" is not one of them.
+ */
+export type IndexDotClass = "dot" | "dot busy" | "dot stale" | "dot off";
+
+const INDEX_DOT_CLASSES: Readonly<Record<IndexStatus["state"], IndexDotClass>> = {
+  current: "dot",
+  indexing: "dot busy",
+  stale: "dot stale",
+  disabled: "dot off",
+};
+
+export function indexDotClass(status: Pick<IndexStatus, "state">): IndexDotClass {
+  return INDEX_DOT_CLASSES[status.state];
+}
+
+/**
+ * `index: current · 273 indexed`, `index: indexing · 41/68`,
+ * `index: stale · 41/68`, `index: disabled`.
+ *
+ * Two count shapes, because the two questions are different. Caught up, the only
+ * interesting number is how much is searchable, so the pill says it plainly.
+ * With a backlog — `indexing` *or* `stale`, which differ in whether anything is
+ * currently draining it and not in what the numbers mean — the interesting
+ * number is the fraction: `indexed` over `indexed + pending`, the corpus minus
+ * whatever has permanently failed. That total is computed here rather than read
+ * off the wire because the contract deliberately publishes no total (a fourth
+ * number that must equal the sum of three others is a number that can be wrong).
+ *
+ * `failed` never enters the pill. It does not drain on its own, so it is not
+ * progress; it is a fact that wants a sentence, and the expanded row is where it
+ * gets one.
+ *
+ * `disabled` carries no count at all: with no usable vectors there is nothing to
+ * be a fraction of, and `0/0` would read like a stalled backlog. What a disabled
+ * index has to say instead is the server's `detail` sentence — a model still
+ * downloading and a workspace that will never have one are the same word here,
+ * and only that sentence tells them apart.
+ */
+export function indexPillText(status: IndexStatus): string {
+  if (status.state === "disabled") return "index: disabled";
+  if (status.state === "current") return `index: current · ${String(status.indexed)} indexed`;
+  const total = status.indexed + status.pending;
+  return `index: ${status.state} · ${String(status.indexed)}/${String(total)}`;
 }
 
 /**

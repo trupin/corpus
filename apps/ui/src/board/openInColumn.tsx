@@ -1,5 +1,6 @@
 import type { DocRow } from "@corpus/contract";
 import { folderOf } from "@corpus/kit";
+import type { OpenPayload, OpenRequest, RevealTarget } from "@corpus/kit/plugin";
 import {
   createContext,
   useCallback,
@@ -59,6 +60,24 @@ export interface OpenTarget {
   readonly columnId?: string | null;
   /** Focus *and* select the title on arrival — the omnibox's "ready to type". */
   readonly selectTitle?: boolean;
+  /**
+   * Where inside the document to land (UI-037): an item of its text, or one of
+   * its threads. Additive — every caller that only knows a document keeps
+   * opening it at the top, which is the same act it always was.
+   */
+  readonly reveal?: RevealTarget | undefined;
+}
+
+/**
+ * The one place a bare id and a full request are reconciled.
+ *
+ * Both spellings exist because both are honest: a row click knows a document
+ * and nothing else, while a plugin that renders items knows exactly which one
+ * was clicked. Normalising at the seam means every surface below it handles one
+ * shape (SPEC.md §10's `onOpen`, sprint-023 OC5).
+ */
+export function openRequest(payload: OpenPayload): OpenRequest {
+  return typeof payload === "string" ? { docId: payload } : payload;
 }
 
 export interface BoardNavigation {

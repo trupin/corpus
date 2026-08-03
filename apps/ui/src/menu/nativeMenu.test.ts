@@ -1,6 +1,11 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { keepsNativeMenu, selectionMenuTarget, type SelectionSource } from "./nativeMenu";
+import {
+  isPluginRendered,
+  keepsNativeMenu,
+  selectionMenuTarget,
+  type SelectionSource,
+} from "./nativeMenu";
 
 /**
  * SPEC.md §11's two shared halves: the native menu survives where it is the
@@ -93,6 +98,37 @@ describe("keepsNativeMenu", () => {
   it("yields to the Corpus menu on an ordinary item", () => {
     const row = mount('<div class="row" data-row-doc="doc_a"><span>title</span></div>');
     expect(keepsNativeMenu({ target: row })).toBe(false);
+  });
+});
+
+/**
+ * UI-036. The one question every suppression site asks, and the one it used to
+ * ask instead: "did a plugin render this **surface**", never "does this
+ * document's type have a plugin renderer".
+ */
+describe("isPluginRendered", () => {
+  it("answers for anything inside a plugin surface, however deep", () => {
+    const host = mount(
+      '<div class="col-list" data-plugin-surface=""><div class="row" data-row-doc="doc_a">' +
+        '<span id="inner">item</span></div></div>',
+    );
+    expect(isPluginRendered(host)).toBe(true);
+    expect(isPluginRendered(host.querySelector("#inner"))).toBe(true);
+  });
+
+  it("answers no for a core row a plugin ListItem painted", () => {
+    // The core column list is core's surface; only the row's renderer came from
+    // a plugin, and the subject is still the document core holds.
+    const list = mount(
+      '<div class="col-list"><div class="row todo-row" data-row-doc="doc_a" ' +
+        'data-row-type="todo"><span class="row-title">Inbox chores</span></div></div>',
+    );
+    expect(isPluginRendered(list.querySelector(".row"))).toBe(false);
+  });
+
+  it("answers no for anything that is not an element", () => {
+    expect(isPluginRendered(null)).toBe(false);
+    expect(isPluginRendered(document)).toBe(false);
   });
 });
 

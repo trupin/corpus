@@ -93,6 +93,63 @@ describe("readBoardLocalState", () => {
     ]);
   });
 
+  /**
+   * UI-037. A reveal is a pending *instruction*, and it rides the entry into
+   * storage because it outlives the click that made it: the document is not on
+   * screen yet when the open happens. What must not survive is an instruction
+   * nobody can make sense of — the same rule as the blob around it.
+   */
+  it("reads back a pending reveal of either kind", () => {
+    const storage = memoryStorage();
+    writeBoardLocalState(
+      {
+        version: BOARD_STATE_VERSION,
+        columns: {
+          doc_a: {
+            scroll: 0,
+            nav: [
+              {
+                docId: "doc_x",
+                scrollY: 0,
+                reveal: { kind: "item", exact: "Call the plumber", prefix: "before" },
+              },
+            ],
+          },
+          doc_b: {
+            scroll: 0,
+            nav: [{ docId: "doc_y", scrollY: 0, reveal: { kind: "thread", threadId: "th_1" } }],
+          },
+        },
+      },
+      storage,
+    );
+    const read = readBoardLocalState(storage).columns;
+    expect(read["doc_a"]?.nav[0]?.reveal).toEqual({
+      kind: "item",
+      exact: "Call the plumber",
+      prefix: "before",
+    });
+    expect(read["doc_b"]?.nav[0]?.reveal).toEqual({ kind: "thread", threadId: "th_1" });
+  });
+
+  it.each([
+    ["an unknown kind", { kind: "anchor", exact: "x" }],
+    ["an item with no text to find", { kind: "item" }],
+    ["a thread naming no thread", { kind: "thread" }],
+    ["a scalar", "item"],
+    ["null", null],
+  ])("drops a stored reveal that is %s, keeping the entry", (_case, reveal) => {
+    const storage = memoryStorage({
+      [BOARD_STORAGE_KEY]: JSON.stringify({
+        version: BOARD_STATE_VERSION,
+        columns: { doc_a: { scroll: 0, nav: [{ docId: "doc_x", scrollY: 0, reveal }] } },
+      }),
+    });
+    expect(readBoardLocalState(storage).columns["doc_a"]?.nav).toEqual([
+      { docId: "doc_x", scrollY: 0 },
+    ]);
+  });
+
   it("ignores a columns field that is not an object", () => {
     const storage = memoryStorage({
       [BOARD_STORAGE_KEY]: JSON.stringify({ version: BOARD_STATE_VERSION, columns: 5 }),
@@ -207,6 +264,49 @@ describe("useBoardLocalState", () => {
       result.current.setNav("doc_a", [{ docId: "doc_x", scrollY: 5 }]);
     });
     expect(setItem).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The difference that matters most is a reveal **disappearing**: the reader
+   * clears the instruction the moment it honours it, and a comparison that
+   * ignored the field would call that write a no-op and leave the reveal in
+   * storage to fire again on the next reload.
+   */
+  it("writes when a reveal appears or is consumed, but not when it is unchanged", () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    const { result } = renderHook(() => useBoardLocalState());
+    const reveal = { kind: "item", exact: "Call the plumber" } as const;
+
+    act(() => {
+      result.current.setNav("doc_a", [{ docId: "doc_x", scrollY: 0 }]);
+    });
+    const setItem = vi.spyOn(storage, "setItem");
+
+    act(() => {
+      result.current.setNav("doc_a", [{ docId: "doc_x", scrollY: 0, reveal }]);
+    });
+    expect(setItem).toHaveBeenCalledTimes(1);
+
+    // An equal instruction, spelled as a different object: no write.
+    act(() => {
+      result.current.setNav("doc_a", [
+        { docId: "doc_x", scrollY: 0, reveal: { kind: "item", exact: "Call the plumber" } },
+      ]);
+    });
+    expect(setItem).toHaveBeenCalledTimes(1);
+
+    // A different one, and then none at all: both are real changes.
+    act(() => {
+      result.current.setNav("doc_a", [
+        { docId: "doc_x", scrollY: 0, reveal: { kind: "thread", threadId: "th_1" } },
+      ]);
+    });
+    act(() => {
+      result.current.setNav("doc_a", [{ docId: "doc_x", scrollY: 0 }]);
+    });
+    expect(setItem).toHaveBeenCalledTimes(3);
+    expect(result.current.forColumn("doc_a").nav[0]?.reveal).toBeUndefined();
   });
 
   it("prunes the columns that went away, and only those", () => {

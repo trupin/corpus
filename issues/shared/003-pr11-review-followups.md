@@ -327,7 +327,49 @@ _n/a until triage._
 - Evaluator note for the record: Phase 9 proof-of-work rated the best audited on
   this repo; zero re-dos.
 
+- Second-half eval observations (2026-08-02, 8/8 PASS, recorded in eval
+  files): (a) UI-042's PLAIN flavor emits `[[id|Title]]`, not bare titles —
+  rider-compliant (it governs rich-text receivers; HTML carries title-only)
+  and the id is the Corpus→Corpus round-trip carrier, but the issue log's
+  "markdown byte for byte" claim is imprecise; decide at triage whether the
+  plain flavor should title-strip for external plain-text targets. (b) UI-040:
+  `stale`/`disabled` pill states verified stub-only (a real disabled drained
+  to current before paint); `failed`>0 not producible live. (c) PLUGINS-009's
+  "Mark as open" branch unreachable from the column (spec-correct: checked
+  items never render rows) — untested in the real app by construction.
+- Reveal-into-focus gap (PLUGINS-010, 2026-08-02): FocusMode honours reveal
+  payloads (UI-037, unit-pinned) but no producer can reach it — Column.tsx
+  hands plugin bodies `onOpen` only, and every core focus path passes a bare
+  id. Wire `onOpenFocus` (or widen the focus path) when a producer wants it;
+  until then the honouring code is contracted but unreachable.
+- Dogfood-wave eval observations (2026-08-02, recorded in the eval files, both
+  outside any issue's criteria): (a) `PUT /api/x/todos/<id>/items/0` on a
+  frontmatter-ONLY legacy doc succeeds and silently self-migrates it (dual and
+  malformed correctly refuse) — decide whether silent self-migration is a
+  feature or should refuse like its siblings; (b) the editor schema normalises
+  a list mixing a plain bullet with a task item into a full task list, giving
+  the plain bullet a checkbox — decide whether mixed lists should be preserved.
 - (low-confidence, dev-only) `corpus init` from a source checkout installs
   plugins/_fixture's fixture-notes skill, which then surfaces as a type:skill doc in
   search — packaged installs are clean (underscore plugins excluded; pack:check
   guards). Consider a dev-init exclusion at triage.
+- Orchestrator ruling, no rider needed (2026-08-03, PR #19 review question):
+  the Fable reviewer asked whether UI-039's query editor (autocomplete + syntax
+  help) needed its own signed SPEC rider, noting that four comparable UI
+  additions on the same branch each got one. Ruling: **no**. The four that got
+  riders each introduced something the spec did not describe or reversed a
+  prior signed decision — a new console surface (index pill), a new copy
+  affordance (canvases), a changed clipboard contract, and plugin-contributed
+  menus (reversing SHARED-004 item 4). UI-039 adds an *affordance over the
+  existing documented filter vocabulary* (§5/§9.2) and changes no behavior: the
+  same queries were expressible before, and the completion source is
+  `DocsQuerySchema` plus the contract enums, so the editor cannot describe a
+  grammar the spec does not already define. Recorded here rather than silently,
+  because the asymmetry is a fair question and the next reviewer will ask it
+  again. Revisit if the editor ever gains grammar of its own.
+- Kit CSS placement deviation (2026-08-03, PR #19 review MINOR): sprint-023's
+  Out of Scope said UI-034's task-list CSS lands in `apps/ui`; it landed in
+  `packages/kit/src/markdown/markdown.css`. The kit renders markdown, so
+  rendered task lists plausibly belong there — but the TipTap-editor-shaped
+  selectors ship to plugins that can never emit that markup. Resolution
+  recorded with the ui-dev fix pass; triage should confirm the split.

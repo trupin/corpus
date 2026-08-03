@@ -103,10 +103,15 @@ export function ColumnList({
         // here, or anywhere else on the page — does not suppress a row's own
         // menu (SPEC.md §11, user report 2026-07-30).
         if (row === undefined) return;
+        // Core paints no menu over a plugin-*rendered* surface: since the
+        // 2026-08-02 §11 amendment the plugin may contribute one of its own
+        // through the kit, so a half-populated core menu there would now be
+        // painting over somebody else's. `keepsNativeMenu` is where that rule
+        // lives — `[data-plugin-surface]` is one of its hosts. This list is
+        // core's own, so nothing here is one;
+        // the row's **type** is not consulted at all. It used to be, which cost
+        // every `todo` document row its entire core action set (UI-036).
         if (keepsNativeMenu({ target: event.target })) return;
-        // A plugin `ListItem` owns its own surface; v1 leaves it the native menu
-        // rather than half-populating a core menu over it (sign-off item 4).
-        if (resolveListItem(row.type) !== null) return;
         event.preventDefault();
         menu.open({
           label: `Actions for ${row.title}`,

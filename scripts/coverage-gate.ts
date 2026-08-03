@@ -1,5 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { isAbsolute, posix, relative, sep } from "node:path";
+import { isAbsolute, posix, relative, resolve, sep } from "node:path";
 import type { CoverageMapData, Range } from "istanbul-lib-coverage";
 import picomatch from "picomatch";
 import {
@@ -163,6 +164,97 @@ export function rewriteEntrySources(entry: V8Entry, viteRoot: string, repoRoot: 
     ...entry,
     source: `${source.slice(0, match.index)}${SOURCE_MAP_PRAGMA}data:application/json;base64,${rewritten}`,
   };
+}
+
+/**
+ * One browser dump, as the Playwright fixture in `apps/ui/e2e/coverage.ts`
+ * writes it: the raw V8 entries of a single spec, plus the Vite root their URLs
+ * are relative to (the merge cannot infer that from a URL alone).
+ */
+export interface E2EDump {
+  root: string;
+  entries: V8Entry[];
+}
+
+/**
+ * Whether an entry can map back to a repo source file at all. Vite's own client,
+ * its HMR runtime and its prebundled deps are not repo sources, and they are the
+ * larger half of every dump: dropping them saves unpacking megabytes of source
+ * maps that `sourceFilter` would discard anyway.
+ *
+ * Exported so the merge can apply it *before* building its rewritten copy of a
+ * dump's entries, rather than only handing it to the reporter as `entryFilter` —
+ * the same predicate in both places, so pre-filtering cannot change the result.
+ */
+export function isRepoSourceEntry(entry: { url: string }): boolean {
+  return (
+    !entry.url.includes("/node_modules/") &&
+    !entry.url.includes("/@vite/") &&
+    !entry.url.includes("/@react-refresh")
+  );
+}
+
+/**
+ * The dump files in a directory, in the order they are to be merged. Sorted
+ * because the fixture names them by UUID: without it the merge order is
+ * `readdir` order, which is neither stable nor reproducible across machines.
+ */
+export function browserDumpNames(directory: string): string[] {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter((name) => name.endsWith(".json"))
+    .sort();
+}
+
+/**
+ * Parses the dumps one at a time (INFRA-017).
+ *
+ * A generator, not an array, and that is the whole point: one spec's dump is
+ * ~9 MB of script text and source maps, a 237-spec suite writes 2.2 GB of them,
+ * and the previous version parsed every one into a single array before the
+ * consumer added the first to the reporter. That held the entire corpus live as
+ * JS objects for the length of the merge — `CI / validate` died on it with
+ * `Reached heap limit Allocation failed`. The consumer needs exactly one dump at
+ * a time, so each is read on demand and is collectable as soon as the next is
+ * pulled.
+ *
+ * The shape check is structural rather than a Zod parse on purpose: these
+ * objects are megabytes of V8 byte ranges, and re-validating every range would
+ * cost more time and more memory than the merge they feed.
+ *
+ * Reading on demand does mean the listing can go stale: the names are taken
+ * once, the reads span the whole merge, and `npm run e2e`'s global setup empties
+ * this directory. That surfaces as an unreadable file rather than a wrong
+ * number, so it is reported as what it is instead of as a raw `fs` stack.
+ */
+export function* readBrowserDumps(
+  directory: string,
+  names: readonly string[],
+): Generator<E2EDump, void, undefined> {
+  for (const name of names) {
+    const path = resolve(directory, name);
+
+    let contents: string;
+    try {
+      contents = readFileSync(path, "utf8");
+    } catch (cause) {
+      throw new Error(
+        `${path} was listed for this merge but could not be read. ` +
+          "A concurrent `npm run e2e` empties this directory in its global setup — " +
+          "re-run the merge once it has finished.",
+        { cause },
+      );
+    }
+
+    const dump = JSON.parse(contents) as Partial<E2EDump>;
+    if (typeof dump.root !== "string" || !Array.isArray(dump.entries)) {
+      throw new Error(
+        `${path} is not a coverage dump this version writes. ` +
+          "Re-run `npm run e2e` — its global setup clears the directory.",
+      );
+    }
+    yield { root: dump.root, entries: dump.entries };
+  }
 }
 
 /** The coverage scope, as the same globs the unit run is configured with. */

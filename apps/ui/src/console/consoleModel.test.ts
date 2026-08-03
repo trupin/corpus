@@ -1,5 +1,5 @@
-import type { Job, QueueStatus } from "@corpus/contract";
-import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
+import type { IndexStatus, Job, QueueStatus } from "@corpus/contract";
+import { QUEUE_EVENT_STATUSES, SEMANTIC_INDEX_STATES } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import {
   JOB_DOT_CLASSES,
@@ -9,6 +9,8 @@ import {
   blockedOnDetailLabel,
   blockedOnLabel,
   consoleCounts,
+  indexDotClass,
+  indexPillText,
   isErrorLine,
   jobDotClass,
   jobLabel,
@@ -148,6 +150,71 @@ describe("the agent pill", () => {
   // and calling the agent "working" because one job is finishing would mislead.
   it("is halted even with a job still in progress", () => {
     expect(agentState({ ...IDLE, halted: true, inProgress: 3 })).toBe("halted");
+  });
+});
+
+describe("the index pill", () => {
+  const CAUGHT_UP: IndexStatus = {
+    indexed: 273,
+    pending: 0,
+    failed: 0,
+    identity: "ollama/nomic-embed-text@768",
+    rebuilding: false,
+    state: "current",
+  };
+
+  it("says how much is searchable once it is caught up", () => {
+    expect(indexPillText(CAUGHT_UP)).toBe("index: current · 273 indexed");
+  });
+
+  // `41/68` is `indexed` over `indexed + pending` — the total the contract
+  // deliberately does not publish, computed here from the two numbers it does.
+  it("shows the fraction of the corpus embedded while a rebuild drains", () => {
+    expect(
+      indexPillText({
+        ...CAUGHT_UP,
+        indexed: 41,
+        pending: 27,
+        rebuilding: true,
+        state: "indexing",
+      }),
+    ).toBe("index: indexing · 41/68");
+  });
+
+  it("shows the same count shape for a backlog nobody is draining", () => {
+    expect(indexPillText({ ...CAUGHT_UP, indexed: 41, pending: 27, state: "stale" })).toBe(
+      "index: stale · 41/68",
+    );
+  });
+
+  // `failed` is not progress — it never drains on its own — so it must not move
+  // the fraction. The expanded row is where it gets said.
+  it("keeps the failed count out of the fraction", () => {
+    expect(
+      indexPillText({ ...CAUGHT_UP, indexed: 41, pending: 27, failed: 9, state: "indexing" }),
+    ).toBe("index: indexing · 41/68");
+  });
+
+  it("carries no count at all when there is no index", () => {
+    expect(indexPillText({ ...CAUGHT_UP, indexed: 0, identity: null, state: "disabled" })).toBe(
+      "index: disabled",
+    );
+  });
+
+  it.each([
+    ["current", "dot"],
+    ["indexing", "dot busy"],
+    ["stale", "dot stale"],
+    ["disabled", "dot off"],
+  ] as const)("dresses %s in %s", (state, expected) => {
+    expect(indexDotClass({ state })).toBe(expected);
+  });
+
+  // The one that catches a state added to the contract with no dot decided.
+  it("has a treatment for every state the contract declares", () => {
+    for (const state of SEMANTIC_INDEX_STATES) {
+      expect(indexDotClass({ state })).toMatch(/^dot/);
+    }
   });
 });
 

@@ -1,0 +1,55 @@
+/*
+ * The reveal flash (UI-037) — the third member of a family, spelled the way the
+ * other two are: `.col.flash` lights a column's accent border for 1.5 s and
+ * `.thread-card.flash` its left rule for 1.2 s. Same accent, same "here, and
+ * now stop pointing", same duration as the thread it sits beside.
+ *
+ * Fixed rather than absolute, and outside the reader's own subtree: the boxes
+ * trace client rectangles, they must never be clipped by the scroller they
+ * describe, and they must not enter a DOM ProseMirror or React owns. Nothing
+ * below is interactive — the text under it stays clickable and selectable.
+ *
+ * **One above focus mode, and below everything that covers a reader.** The
+ * layer is body-level, so it has to outrank focus mode's 35 to be seen over the
+ * document it is pointing at — and it must not outrank a surface that is
+ * *hiding* that document: the search overlay (40, UI-009), the selection
+ * toolbar (50) and the menus and popovers (60). It shipped at 55, which painted
+ * a fading highlight over the search overlay and over focus mode's own chrome.
+ */
+.reveal-flash-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 36;
+  pointer-events: none;
+}
+
+.reveal-flash {
+  position: fixed;
+  border-radius: 3px;
+  background: var(--accent-wash);
+  box-shadow: 0 0 0 1px var(--accent);
+  pointer-events: none;
+  animation: reveal-flash 1.2s ease-out forwards;
+}
+
+@keyframes reveal-flash {
+  0%,
+  65% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/*
+ * Reduced motion keeps the highlight and drops the fade: the point of the flash
+ * is *where*, and where is not an animation. It is removed on the same timer
+ * either way.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .reveal-flash {
+    animation: none;
+    opacity: 1;
+  }
+}

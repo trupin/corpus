@@ -142,7 +142,7 @@ describe("useCorpusSearch", () => {
  * TEST-1010 / TEST-1044. Open Conflict 7's ruling, proven behaviourally rather
  * than by inspecting a key: the server emits `["docs"]` on every document and
  * thread mutation and every watcher-projected change, and that frame — with no
- * tenth name in the contract's closed vocabulary — has to reach both queries.
+ * new name in the contract's closed vocabulary — has to reach both queries.
  */
 describe("the frames the server already sends", () => {
   it("refetches a related set on a bare `docs` frame", async () => {

@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextMenuProvider } from "../menu/ContextMenuHost";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
-import { viewRow } from "../testing/boardFixture";
+import { boardTransport, viewRow } from "../testing/boardFixture";
 import { ColumnHead } from "./ColumnHead";
 import { toBoardColumn } from "./viewDoc";
 
@@ -32,12 +33,19 @@ function renderHead(overrides: Partial<Parameters<typeof ColumnHead>[0]> = {}) {
     onHandle: vi.fn(),
     ...overrides,
   };
+  // The query field completes against the projection (UI-039), so the head now
+  // needs the kit's data layer mounted. The transport answers with nothing,
+  // which is the point here: these tests are about the header, and an empty
+  // workspace is exactly the case where the menu must stay out of the way.
+  const harness = createCorpusTestHarness({ fetch: boardTransport().fetch });
   return {
     props,
     ...render(
-      <ContextMenuProvider>
-        <ColumnHead {...props} />
-      </ContextMenuProvider>,
+      <harness.Wrapper>
+        <ContextMenuProvider>
+          <ColumnHead {...props} />
+        </ContextMenuProvider>
+      </harness.Wrapper>,
     ),
   };
 }
@@ -49,11 +57,11 @@ describe("ColumnHead", () => {
     expect(container.querySelector(".col-title")?.textContent).toBe("Conversations");
     expect(container.querySelector(".col-kind")?.textContent).toBe("view");
     expect(container.querySelector(".col-count")?.textContent).toBe("4");
-    expect([...container.querySelectorAll(".chips .chip.on")].map((n) => n.textContent)).toEqual([
+    expect([...container.querySelectorAll(".chips > .chip.on")].map((n) => n.textContent)).toEqual([
       "type: thread",
       "status: open",
     ]);
-    expect(container.querySelector(".sort")?.textContent).toBe("last activity ↓");
+    expect(container.querySelector(".chips > .sort")?.textContent).toBe("last activity ↓");
   });
 
   it("says the count is unknown rather than showing a zero it has not been told", () => {
@@ -213,10 +221,137 @@ describe("ColumnHead", () => {
     expect(screen.getByRole("menu")).toBeDefined();
   });
 
+  /**
+   * UI-038. jsdom has no layout, so the widths are supplied — the header's own
+   * rule (measure, compare, degrade, restore) is what is under test, and the
+   * pixels themselves are asserted in `e2e/column-header.spec.ts`.
+   */
+  describe("the one-row rule", () => {
+    let callbacks: ResizeObserverCallback[] = [];
+
+    class TestResizeObserver {
+      constructor(private readonly callback: ResizeObserverCallback) {
+        callbacks.push(callback);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {
+        callbacks = callbacks.filter((entry) => entry !== this.callback);
+      }
+    }
+
+    beforeEach(() => {
+      callbacks = [];
+      vi.stubGlobal("ResizeObserver", TestResizeObserver);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    interface Layout {
+      /** The visible row's content width. */
+      readonly row: number;
+      /** What the row's copy needs for its chips and the full label. */
+      readonly required: number;
+    }
+
+    function layOut(container: HTMLElement, layout: Layout): void {
+      const row = container.querySelector(".chips");
+      const probe = container.querySelector(".chips-probe");
+      if (row === null || probe === null) throw new Error("no chips row");
+      Object.defineProperty(row, "clientWidth", { value: layout.row, configurable: true });
+      probe.getBoundingClientRect = () => ({ width: layout.required }) as DOMRect;
+      act(() => {
+        for (const callback of [...callbacks]) callback([], {} as ResizeObserver);
+      });
+    }
+
+    function sortText(container: HTMLElement): string {
+      return container.querySelector(".chips > .sort")?.textContent ?? "";
+    }
+
+    it("keeps the label whole while the row has room for it", () => {
+      const { container } = renderHead();
+      layOut(container, { row: 400, required: 304 });
+
+      expect(sortText(container)).toBe("last activity ↓");
+      expect(
+        container.querySelector(".chips > .sort")?.getAttribute("data-sort-compact"),
+      ).toBeNull();
+    });
+
+    it("sheds the word the label can spare rather than wrapping", () => {
+      const { container } = renderHead();
+      layOut(container, { row: 212, required: 304 });
+
+      expect(sortText(container)).toBe("last ↓");
+      expect(container.querySelector(".chips > .sort")?.getAttribute("data-sort-compact")).toBe("");
+    });
+
+    it("restores the full label when the width comes back", () => {
+      const { container } = renderHead();
+      layOut(container, { row: 212, required: 304 });
+      expect(sortText(container)).toBe("last ↓");
+
+      layOut(container, { row: 400, required: 304 });
+      expect(sortText(container)).toBe("last activity ↓");
+    });
+
+    it("measures a copy of the row that carries every chip and the full label", () => {
+      // Four chips: what the row needs is the chips it has, not its width.
+      const busy = toBoardColumn(
+        viewRow({
+          title: "Conversations",
+          query: { type: "thread", status: "open", tag: "finance", folder: "inbox" },
+        }),
+      );
+      const { container } = renderHead({ column: busy });
+      const probe = container.querySelector(".chips-probe");
+
+      expect([...(probe?.querySelectorAll(".chip") ?? [])].map((n) => n.textContent)).toEqual([
+        "type: thread",
+        "status: open",
+        "tag: finance",
+        "folder: inbox/",
+      ]);
+      expect(probe?.querySelector(".sort")?.textContent).toBe("last activity ↓");
+    });
+
+    it("keeps the copy out of the accessibility tree, degraded or not", () => {
+      const { container } = renderHead();
+      layOut(container, { row: 212, required: 304 });
+
+      const probe = container.querySelector(".chips-probe");
+      expect(probe?.getAttribute("aria-hidden")).toBe("true");
+      // The visible row degraded; the copy it is measured against did not.
+      expect(sortText(container)).toBe("last ↓");
+      expect(probe?.querySelector(".sort")?.textContent).toBe("last activity ↓");
+      expect(container.querySelectorAll(".chips > .chip")).toHaveLength(2);
+    });
+
+    it("measures again on the row the Edit-query field leaves behind", () => {
+      const { container } = renderHead();
+      layOut(container, { row: 212, required: 304 });
+      expect(sortText(container)).toBe("last ↓");
+
+      fireEvent.click(screen.getByRole("button", { name: /List options/ }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /Edit query/ }));
+      expect(container.querySelector(".chips")).toBeNull();
+
+      fireEvent.blur(screen.getByLabelText("Edit query for Conversations"));
+      // A fresh row element: the observer has to be re-armed on it, and the
+      // label starts whole again until that measurement says otherwise.
+      expect(sortText(container)).toBe("last activity ↓");
+      layOut(container, { row: 212, required: 304 });
+      expect(sortText(container)).toBe("last ↓");
+    });
+  });
+
   it("names the kind a folder column really is", () => {
     const folder = toBoardColumn(viewRow({ title: "Finance", query: { folder: "finance" } }));
     const { container } = renderHead({ column: folder });
     expect(container.querySelector(".col-kind")?.textContent).toBe("folder");
-    expect(container.querySelector(".chip.on")?.textContent).toBe("folder: finance/");
+    expect(container.querySelector(".chips > .chip.on")?.textContent).toBe("folder: finance/");
   });
 });

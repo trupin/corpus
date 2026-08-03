@@ -1,8 +1,9 @@
-import { useHaltQueue, useJobs, useQueueStatus, useResumeQueue } from "@corpus/kit";
+import { useHaltQueue, useIndexStatus, useJobs, useQueueStatus, useResumeQueue } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
 import { useToast } from "../shell/Toasts";
 import { UNKNOWN_QUEUE_STATUS, resolveSelectedJob } from "./consoleModel";
 import { ConsoleStrip } from "./ConsoleStrip";
+import { IndexStatusRow } from "./IndexPill";
 import { JobDetail } from "./JobDetail";
 import { JobList } from "./JobList";
 import { MAX_CONSOLE_HEIGHT_RATIO, MIN_CONSOLE_HEIGHT, useConsoleLayout } from "./useConsoleLayout";
@@ -27,6 +28,13 @@ export function Console(): ReactElement {
   const layout = useConsoleLayout();
   const notify = useToast();
   const queue = useQueueStatus();
+  /*
+   * The index pill's data (SPEC.md §11's index-pill rider). One query for the
+   * whole feature, mounted with the strip rather than with the drawer body: the
+   * pill is on the collapsed line, so unlike the job log there is nothing to
+   * defer. It costs one request per `["index"]` frame and never polls.
+   */
+  const index = useIndexStatus();
   const jobs = useJobs();
   const halt = useHaltQueue();
   const resume = useResumeQueue();
@@ -80,15 +88,26 @@ export function Console(): ReactElement {
       <ConsoleStrip
         open={layout.open}
         status={status}
+        index={index.data}
         controlsEnabled={queue.data !== undefined}
         onToggle={layout.toggle}
         onToggleHalt={onToggleHalt}
       />
       {layout.open ? (
-        <div className="console-body" style={{ height: `${String(layout.height)}px` }}>
-          <JobList jobs={rows} selectedId={selectedId} onSelect={setChosen} />
-          <JobDetail job={selected} enabled />
-        </div>
+        <>
+          {/*
+           * Above the master-detail body and outside it: the index's sentence is
+           * about the workspace, not about the selected job, and putting it in
+           * either pane would tie it to a selection it has nothing to do with.
+           * It is `flex: none`, so it takes its height from the drawer's chrome
+           * and the body keeps the height the resizer set.
+           */}
+          <IndexStatusRow status={index.data} />
+          <div className="console-body" style={{ height: `${String(layout.height)}px` }}>
+            <JobList jobs={rows} selectedId={selectedId} onSelect={setChosen} />
+            <JobDetail job={selected} enabled />
+          </div>
+        </>
       ) : null}
     </div>
   );

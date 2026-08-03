@@ -8,12 +8,14 @@
 
 import { join } from "node:path";
 import { describe, expect, it, vi, afterEach } from "vitest";
+import type { QueryKey } from "@corpus/contract";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { createLogger, silentLogger } from "../logger.js";
-import { openProjectionReadonly } from "../projection/db.js";
+import { openProjectionReadonly, type ProjectionDb } from "../projection/db.js";
 import { projectDocument } from "../projection/project-document.js";
 import { rebuild } from "../projection/rebuild.js";
-import { createInvalidationBus } from "../events/bus.js";
+import { createInvalidationBus, type InvalidationBus } from "../events/bus.js";
+import { INDEX_KEY } from "../events/keys.js";
 import { countPendingChunks, pendingChunkIds } from "./chunks.js";
 import { blobToVector, writeEmbedding } from "./embeddings.js";
 import { formatIdentity, type EmbeddingModelRef } from "./identity.js";
@@ -956,5 +958,385 @@ describe("startEmbedWorker — debounce behind the write path (TEST-864)", () =>
     } finally {
       clearInterval(churn);
     }
+  });
+});
+
+// SERVER-051. The subject is *what a client is told and when* — so nothing here
+// reads the worker's internals: every assertion is made from a bus subscriber,
+// which is the same seat the SSE hub occupies in production, and every frame is
+// paired with the counts that were true when it went out.
+describe("startEmbedWorker — announcing the index (SERVER-051)", () => {
+  interface Frame {
+    readonly keys: QueryKey[];
+    readonly pending: number;
+    readonly indexed: number;
+  }
+
+  /** Records every `["index"]` frame with the backlog it describes. */
+  function watch(bus: InvalidationBus, db: ProjectionDb): Frame[] {
+    const frames: Frame[] = [];
+    bus.subscribe((keys) => {
+      if (!keys.every((key) => key.length === 1 && key[0] === INDEX_KEY[0])) return;
+      const counts = indexCounts(db);
+      frames.push({
+        keys: keys.map((key) => [...key]),
+        pending: counts.pending,
+        indexed: counts.indexed,
+      });
+    });
+    return frames;
+  }
+
+  it("carries the key and nothing else", async () => {
+    const workspace = seedWorkspace("announce-shape", 1, 2);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    const stub = stubProvider();
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+
+    await worker.tick();
+
+    expect(frames.length).toBeGreaterThan(0);
+    for (const frame of frames) expect(frame.keys).toEqual([["index"]]);
+  });
+
+  it("throttles the drain and still announces the caught-up transition last", async () => {
+    const workspace = seedWorkspace("announce-throttle", 1, 24);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    const startedAt = 7_000_000;
+    let clock = startedAt;
+    // A quarter of the announce window per batch: four batches must pass before
+    // the throttle opens again, so the emitted count is a fraction of the work.
+    const announceMs = 1_000;
+    const stub = stubProvider({
+      onBatch: () => {
+        clock += 250;
+      },
+    });
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      batchSize: 1,
+      announceMs,
+      now: () => clock,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+
+    await worker.tick();
+
+    const batches = stub.calls.length;
+    expect(batches).toBeGreaterThan(16);
+    // Bounded by the window and not by the work: at most one progress frame per
+    // window of drain, plus the three edges (backlog seen, provider adopted,
+    // caught up). The gap widens with the corpus — this is the property that
+    // stops a bulk edit from becoming a frame per chunk.
+    const windows = (clock - startedAt) / announceMs;
+    expect(frames.length).toBeLessThanOrEqual(windows + 3);
+    expect(frames.length).toBeLessThan(batches / 2);
+    // The last word is always the same word.
+    expect(frames.at(-1)).toMatchObject({ pending: 0 });
+    expect(frames.at(-1)!.indexed).toBe(indexCounts(workspace.db).total);
+  });
+
+  it("never lets the throttle absorb the final frame, even with a frozen clock", async () => {
+    const workspace = seedWorkspace("announce-final", 1, 10);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    const stub = stubProvider();
+    // Nothing can ever satisfy `elapsed >= announceMs`: every *progress* frame
+    // is suppressed, which is precisely the arrangement under which the
+    // caught-up announcement must still arrive.
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      batchSize: 1,
+      announceMs: 60_000,
+      now: () => 8_000_000,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+
+    await worker.tick();
+
+    expect(stub.calls.length).toBeGreaterThan(5);
+    expect(countPendingChunks(workspace.db)).toBe(0);
+    expect(frames.at(-1)).toMatchObject({ pending: 0 });
+  });
+
+  it("announces the backlog appearing and its draining, once each", async () => {
+    const workspace = seedWorkspace("announce-edges", 1, 2);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    const stub = stubProvider();
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+
+    await worker.tick();
+    const drained = frames.length;
+    expect(frames[0]).toMatchObject({ indexed: 0 });
+    expect(frames.at(-1)).toMatchObject({ pending: 0 });
+
+    // A new document is a new backlog: the edge fires again, and the drain that
+    // follows ends on the same caught-up frame.
+    workspace.doc({ id: "doc_new", body: section(9) });
+    projectDocument(
+      workspace.db,
+      join(workspace.config.workspaceRoot, "data", "docs", "doc_new.md"),
+    );
+    await worker.tick();
+
+    expect(frames.length).toBeGreaterThan(drained);
+    expect(frames.at(-1)).toMatchObject({ pending: 0 });
+  });
+
+  it("is silent when there is nothing to say", async () => {
+    const workspace = seedWorkspace("announce-idle", 1, 3);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    const stub = stubProvider();
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+
+    await worker.tick();
+    expect(countPendingChunks(workspace.db)).toBe(0);
+    frames.length = 0;
+
+    // Steady state: a drained corpus, ticked repeatedly, tells nobody anything.
+    await worker.tick();
+    await worker.tick();
+    await worker.tick();
+
+    expect(frames).toEqual([]);
+  });
+
+  it("announces a disabled reason each time the sentence changes, and not once more", async () => {
+    const workspace = seedWorkspace("announce-detail", 1, 3);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    let clock = 9_000_000;
+    let detail = "the model is downloading (10%)";
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      now: () => clock,
+      modelPollMs: 10,
+      requestModel: () => undefined,
+      resolve: () => Promise.resolve({ kind: "disabled", reason: "model-not-downloaded", detail }),
+    });
+
+    // First look: the backlog is news, and so is the sentence explaining why it
+    // is not moving.
+    await worker.tick();
+    expect(frames).toHaveLength(2);
+
+    // The download machinery's own cadence — a new percentage is a new detail,
+    // and the status endpoint would read differently, so a frame goes out.
+    clock += 20;
+    detail = "the model is downloading (60%)";
+    await worker.tick();
+    expect(frames).toHaveLength(3);
+
+    // The same percentage twice is not a change. This is the whole of the
+    // "silent when idle" rule for a workspace that cannot index at all.
+    clock += 20;
+    await worker.tick();
+    clock += 20;
+    await worker.tick();
+    expect(frames).toHaveLength(3);
+  });
+
+  // Found on a live server before it was found here: killing the provider mid-
+  // corpus produced two frames on every rung of the retry ladder — a chunk that
+  // stops being *eligible* and becomes eligible again is an edge in the worker's
+  // scheduling and no change at all on the wire. The counts are the arbiter.
+  it("stays silent through a retry ladder that moves no number on the wire", async () => {
+    const workspace = seedWorkspace("announce-retry-ladder", 1, 3);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    let clock = 10_000_000;
+    // One passage the provider refuses and two it accepts, so the provider is
+    // demonstrably healthy and the refusal is counted against the chunk.
+    const stub = stubProvider({ failText: (text) => text.includes("Section 1") });
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      batchSize: 1,
+      now: () => clock,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+
+    await worker.tick();
+    const settled = indexCounts(workspace.db);
+    expect(settled).toMatchObject({ pending: 0, failed: 1 });
+    expect(frames.length).toBeGreaterThan(0);
+    const announcedSoFar = frames.length;
+
+    // Every rung: the chunk becomes due, is offered again, fails again, and its
+    // failure count grows — a number `IndexStatus` does not carry.
+    for (let failures = 1; failures < MAX_CHUNK_FAILURES; failures += 1) {
+      clock += embedBackoffMs(failures) + 1;
+      await worker.tick();
+      expect(indexCounts(workspace.db)).toEqual(settled);
+    }
+
+    expect(frames).toHaveLength(announcedSoFar);
+    expect(stub.calls.length).toBeGreaterThan(3);
+  });
+
+  // The pill's worst case, and the mirror image of the retry ladder above: there
+  // the numbers stood still and the worker spoke, here they moved and it did
+  // not. A pass that a backoff turns away is still a look at the corpus, and on
+  // the ten-minute rung of a provider outage the pill would otherwise sit frozen
+  // for ten minutes while the user watches their saves pile up — the one moment
+  // it has something worth saying.
+  it("announces a backlog that grows while a backoff holds the pass back", async () => {
+    const workspace = seedWorkspace("announce-backoff", 1, 12);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    let clock = 11_000_000;
+    const announceMs = 1_000;
+    let down = true;
+    // A quarter of the announce window per batch, so the recovery drain has to
+    // cross several windows and the throttle has something to bite on.
+    const healthy = stubProvider({
+      onBatch: () => {
+        clock += 250;
+      },
+    });
+    const broken = stubProvider({ failAll: true });
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      batchSize: 1,
+      announceMs,
+      now: () => clock,
+      resolve: () => Promise.resolve(providerResolution(down ? broken : healthy)),
+    });
+
+    await worker.tick();
+    const backlog = indexCounts(workspace.db).pending;
+    expect(backlog).toBeGreaterThan(0);
+    const outage = frames.length;
+    expect(outage).toBeGreaterThan(0);
+    const asked = broken.calls.length;
+
+    // Well inside the rung: the user saves, the backlog grows, and the pass that
+    // follows never reaches the provider.
+    clock += 1;
+    workspace.doc({ id: "doc_outage", body: [section(20), section(21)].join("\n") });
+    projectDocument(
+      workspace.db,
+      join(workspace.config.workspaceRoot, "data", "docs", "doc_outage.md"),
+    );
+    const grown = indexCounts(workspace.db).pending;
+    expect(grown).toBeGreaterThan(backlog);
+
+    await worker.tick();
+
+    expect(broken.calls).toHaveLength(asked);
+    expect(frames).toHaveLength(outage + 1);
+    expect(frames.at(-1)).toMatchObject({ pending: grown });
+
+    // Still inside the rung, still nothing new: measurement decides, so being
+    // turned away is not itself an event.
+    clock += 1;
+    await worker.tick();
+    clock += 1;
+    await worker.tick();
+    expect(frames).toHaveLength(outage + 1);
+
+    // The rung expires against a provider that is back. The drain's own frames
+    // are throttled exactly as before — the announcement above bought no extra
+    // ones — and the caught-up frame is still the last word.
+    down = false;
+    clock += EMBED_BACKOFF_MS[0];
+    frames.length = 0;
+    await worker.tick();
+
+    const batches = healthy.calls.length;
+    expect(batches).toBeGreaterThan(8);
+    expect(frames.length).toBeLessThan(batches / 2);
+    expect(frames.at(-1)).toMatchObject({ pending: 0 });
+  });
+
+  it("announces the discard when the recorded model is not the effective one", async () => {
+    const workspace = seedWorkspace("announce-identity", 1, 3);
+    for (const id of pendingChunkIds(workspace.db)) {
+      writeEmbedding(workspace.db, {
+        state: "ready",
+        chunkId: id,
+        identity: "stub/other@4",
+        vector: Float32Array.from([1, 0, 0, 0]),
+        updatedMs: 1,
+      });
+    }
+    expect(countPendingChunks(workspace.db)).toBe(0);
+
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    const stub = stubProvider();
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+
+    await worker.tick();
+
+    // Nothing was pending when the pass began, so every frame here is the
+    // invalidation's doing: the index emptied, then refilled under the adopted
+    // identity, and the last frame reports it whole again.
+    expect(frames.length).toBeGreaterThan(1);
+    expect(frames.at(-1)).toMatchObject({ pending: 0 });
+    expect(new Set(embeddingRows(workspace).map((row) => row.identity))).toEqual(
+      new Set([STUB_IDENTITY]),
+    );
+  });
+
+  it("does not wake itself on its own frame, but still wakes on a write", async () => {
+    const workspace = seedWorkspace("announce-no-self-wake", 1, 2);
+    const bus = createInvalidationBus();
+    const stub = stubProvider();
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      intervalMs: 20,
+      debounceMs: 5,
+      resolve: () => Promise.resolve(providerResolution(stub)),
+    });
+    await worker.tick();
+    // This worker self-schedules, so its boot pass may still be pending; let it
+    // land before the corpus grows, or the wake under test is not the only one.
+    await vi.waitFor(() => expect(countPendingChunks(workspace.db)).toBe(0));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    stub.calls.length = 0;
+
+    // New work nobody has told the worker about: it is idle, and only a frame
+    // can start it.
+    workspace.doc({ id: "doc_woken", body: section(4) });
+    projectDocument(
+      workspace.db,
+      join(workspace.config.workspaceRoot, "data", "docs", "doc_woken.md"),
+    );
+    const pending = countPendingChunks(workspace.db);
+    expect(pending).toBeGreaterThan(0);
+
+    bus.invalidate([[...INDEX_KEY]]);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(stub.calls).toHaveLength(0);
+    expect(countPendingChunks(workspace.db)).toBe(pending);
+
+    bus.invalidate([["docs"]]);
+    await vi.waitFor(() => expect(countPendingChunks(workspace.db)).toBe(0));
   });
 });

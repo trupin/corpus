@@ -172,7 +172,7 @@ describe("invalidation mapping", () => {
     expect(invalidated(queryClient, TREE_KEY)).toBe(true);
   });
 
-  // TEST-18: no allowlist. A kit that only honoured the nine core shapes would
+  // TEST-18: no allowlist. A kit that only honoured the core shapes would
   // break every plugin's live updates (SPEC.md §10).
   it("passes plugin and unrecognised keys straight through", () => {
     const { bridge, factory, queryClient } = setup();

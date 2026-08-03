@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import type { OpenPayload } from "@corpus/kit/plugin";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
@@ -46,7 +47,7 @@ const pluginView = viewRow({
 
 interface FxColumnProps {
   readonly title: string;
-  readonly onOpen?: ((docId: string) => void) | undefined;
+  readonly onOpen?: ((target: OpenPayload) => void) | undefined;
 }
 
 function installFx(): void {
@@ -75,6 +76,21 @@ function installFx(): void {
                       >
                         open a document
                       </button>
+                      {/*
+                       * UI-037's payload, as a plugin actually sends it: the
+                       * same callback, one field more.
+                       */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpen?.({
+                            docId: "doc_target",
+                            reveal: { kind: "item", exact: "Call the plumber" },
+                          });
+                        }}
+                      >
+                        open at an item
+                      </button>
                     </p>
                   ),
                 },
@@ -96,6 +112,26 @@ describe("a plugin column on the board", () => {
     });
     // The column chrome is the board's: header present, like any column.
     expect(document.querySelector(".col[data-col='doc_pluginview'] .col-head")).toBeTruthy();
+  });
+
+  /**
+   * UI-036. `data-plugin-surface` is how core says "everything below here is
+   * the plugin's" — the same stamp a plugin `View` carries — and it is the
+   * **only** thing the menu rules read. Without it the exclusion had nowhere to
+   * live but a document's type, which took the core row menu away from every
+   * `todo` document on the board.
+   */
+  it("stamps the plugin body as a plugin-rendered surface", async () => {
+    installFx();
+    renderBoard(boardTransport({ views: [pluginView] }));
+    await waitFor(() => {
+      expect(screen.getByText(/plugin body/)).toBeTruthy();
+    });
+    // The stamp sits on the body container itself, so it covers everything the
+    // registered Component renders and nothing the board's chrome does.
+    const surface = screen.getByText(/plugin body/).closest("[data-plugin-surface]");
+    expect(surface).toBe(document.querySelector(".col[data-col='doc_pluginview'] .col-list"));
+    expect(document.querySelector(".col-head[data-plugin-surface]")).toBeNull();
   });
 
   it("issues no GET /api/docs for the plugin column body", async () => {
@@ -159,6 +195,64 @@ describe("a plugin column on the board", () => {
     await waitFor(() => {
       expect(document.querySelector(".col[data-col='doc_pluginview'].reading")).toBeTruthy();
     });
+  });
+
+  /**
+   * The reveal seam, end to end through the board (UI-037): the plugin passes a
+   * request instead of an id, and it survives every hop — `onOpen`, the
+   * column's push, the navigation entry, `localStorage` — to reach the reader
+   * that acts on it. A bare id, meanwhile, still writes an entry with no
+   * `reveal` key on it at all.
+   */
+  it("carries a reveal from the plugin body onto the column's navigation entry", async () => {
+    installFx();
+    renderBoard(boardTransport({ views: [pluginView] }));
+    await waitFor(() => {
+      expect(screen.getByText(/plugin body/)).toBeTruthy();
+    });
+
+    await act(async () => {
+      screen.getByRole("button", { name: "open at an item" }).click();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(document.querySelector(".col[data-col='doc_pluginview'].reading")).toBeTruthy();
+    });
+
+    const stored: unknown = JSON.parse(globalThis.localStorage.getItem("corpus.board") ?? "{}");
+    expect(stored).toMatchObject({
+      columns: {
+        doc_pluginview: {
+          nav: [
+            {
+              docId: "doc_target",
+              scrollY: 0,
+              reveal: { kind: "item", exact: "Call the plumber" },
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("writes no reveal for a plugin that opens by id, exactly as before", async () => {
+    installFx();
+    renderBoard(boardTransport({ views: [pluginView] }));
+    await waitFor(() => {
+      expect(screen.getByText(/plugin body/)).toBeTruthy();
+    });
+
+    await act(async () => {
+      screen.getByRole("button", { name: "open a document" }).click();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(document.querySelector(".col[data-col='doc_pluginview'].reading")).toBeTruthy();
+    });
+
+    expect(globalThis.localStorage.getItem("corpus.board")).toBe(
+      '{"version":2,"columns":{"doc_pluginview":{"scroll":0,"nav":[{"docId":"doc_target","scrollY":0}]}}}',
+    );
   });
 
   it("shows the plugin-missing card while keeping the column when unregistered", async () => {

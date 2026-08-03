@@ -7,6 +7,7 @@ import {
   isOverdue,
   itemProblems,
   itemsOrEmpty,
+  itemTextRange,
   migrateBody,
   openItems,
   parseBodyItems,
@@ -576,5 +577,48 @@ describe("derivations", () => {
     // A completed item is never overdue, and neither is one with no deadline.
     expect(isOverdue(item({ due: "2026-07-10", done: true }), today)).toBe(false);
     expect(isOverdue(item(), today)).toBe(false);
+  });
+});
+
+/**
+ * PLUGINS-009. The range is what a selector is sliced from, so it is asserted
+ * as the slice a caller would take rather than as two numbers: an off-by-one
+ * here quotes `] call the bank` and anchors a comment to punctuation.
+ */
+describe("itemTextRange", () => {
+  it("spans exactly the item's words, box and bullet excluded", () => {
+    const body = "## Notes\n\n- [ ] Call the plumber\n- [x] Send the form\n";
+    const range = itemTextRange(body, 0);
+    expect(range).not.toBeNull();
+    expect(body.slice(range?.start ?? 0, range?.end ?? 0)).toBe("Call the plumber");
+    const second = itemTextRange(body, 1);
+    expect(body.slice(second?.start ?? 0, second?.end ?? 0)).toBe("Send the form");
+  });
+
+  it("stops before the inline due marker and any trailing space", () => {
+    const body = "- [ ] Renew the passport (due: 2026-08-01)   \n";
+    const range = itemTextRange(body, 0);
+    expect(body.slice(range?.start ?? 0, range?.end ?? 0)).toBe("Renew the passport");
+  });
+
+  it("follows odd but legal line spelling — tabs, `*`, indentation, CRLF", () => {
+    const body = ["prose", "", "  *\t[X]\t  Nested and oddly spaced  \r", ""].join("\n");
+    const range = itemTextRange(body, 0);
+    expect(body.slice(range?.start ?? 0, range?.end ?? 0)).toBe("Nested and oddly spaced");
+  });
+
+  it("counts from the same list the routes index, skipping code blocks", () => {
+    const body = ["- [ ] first", "", "```", "- [ ] not an item", "```", "", "- [ ] second"].join(
+      "\n",
+    );
+    expect(parseBodyItems(body).map((entry) => entry.text)).toEqual(["first", "second"]);
+    const range = itemTextRange(body, 1);
+    expect(body.slice(range?.start ?? 0, range?.end ?? 0)).toBe("second");
+  });
+
+  it("answers null for an index the body does not have, and for a body with no items", () => {
+    expect(itemTextRange("- [ ] only one\n", 1)).toBeNull();
+    expect(itemTextRange("- [ ] only one\n", -1)).toBeNull();
+    expect(itemTextRange("Just prose, no list at all.\n", 0)).toBeNull();
   });
 });

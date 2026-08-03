@@ -20,21 +20,30 @@
  * it knows what its items are.
  */
 
-/** Editable hosts, plus the plugin surfaces v1 leaves alone (sign-off item 4). */
+/**
+ * A plugin owns its whole surface, menus included (SPEC.md §10, sign-off item
+ * 4). Stamped by the two places core hands a region over to plugin code: a
+ * plugin `View` (`DocView.tsx`) and a plugin column's body (`Column.tsx`).
+ *
+ * **This attribute is the whole rule** (UI-036). The exclusion is about where
+ * markup came *from*, never about a document's type: a `todo` document listed
+ * in an ordinary column is a core row for a core subject, and it keeps the core
+ * menu even though a plugin `ListItem` paints it.
+ */
+const PLUGIN_SURFACE = "[data-plugin-surface]";
+
+/** Editable hosts, plus the plugin surfaces core paints no menu over (§11). */
 const NATIVE_HOSTS = [
   "input",
   "textarea",
   "select",
   "[contenteditable='']",
   "[contenteditable='true']",
-  "[data-plugin-surface]",
+  PLUGIN_SURFACE,
 ].join(", ");
 
 /** Editable hosts only — what decides whether Cut and Paste are offered. */
 const EDITABLE_HOSTS = "input, textarea, [contenteditable=''], [contenteditable='true']";
-
-/** A plugin owns its whole surface, menus included (SPEC.md §10). */
-const PLUGIN_SURFACE = "[data-plugin-surface]";
 
 /**
  * The document body, in all three of its renders — the editor's
@@ -59,6 +68,25 @@ export interface NativeMenuContext {
 export function keepsNativeMenu({ target }: NativeMenuContext): boolean {
   if (!(target instanceof Element)) return true;
   return target.closest(NATIVE_HOSTS) !== null;
+}
+
+/**
+ * Is this node inside markup a plugin rendered? — the one test every
+ * suppression site asks (UI-036).
+ *
+ * The surface's **origin** is the subject: rows a plugin column body invents
+ * are its own, so core declines to half-populate a menu over them. The 2026-08-02
+ * §11 amendment reversed SHARED-004 item 4 — a plugin may now contribute its own
+ * menu there — which changes who paints, not this rule about who does not.
+ * Nothing here reads a document's type. A row
+ * whose renderer is a plugin `ListItem` but whose surface is a core column list
+ * is a core row, and answers `false`.
+ *
+ * Kept beside {@link keepsNativeMenu} — which folds the same selector into its
+ * own host list — so the rule has exactly one spelling.
+ */
+export function isPluginRendered(node: EventTarget | null): boolean {
+  return node instanceof Element && node.closest(PLUGIN_SURFACE) !== null;
 }
 
 /**

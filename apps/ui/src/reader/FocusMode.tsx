@@ -1,12 +1,13 @@
 import type { RowNotice } from "@corpus/kit";
-import { useCallback, useEffect, type ReactElement } from "react";
+import type { RevealTarget } from "@corpus/kit/plugin";
+import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
-import { useMemoryNavStack } from "./useNavStack";
+import { rootEntry, useMemoryNavStack } from "./useNavStack";
 import { useReaderDoc } from "./useReaderDoc";
 import { useReaderSurface } from "./useReaderSurface";
 import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
@@ -30,6 +31,12 @@ export interface FocusModeProps {
   readonly docId: string;
   /** Named on the back button when the focus stack has no depth. */
   readonly listTitle: string;
+  /**
+   * Where inside the document to land (UI-037). Focus mode honours it through
+   * the same shared surface the column reader does — one reveal mechanism, two
+   * hosts, exactly as `DocView` is one document view rendered at two sizes.
+   */
+  readonly reveal?: RevealTarget | undefined;
   readonly onClose: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -41,16 +48,44 @@ export interface FocusModeProps {
  */
 export const FOCUS_HINT = "esc closes · click anywhere to edit";
 
-export function FocusMode({ docId, listTitle, onClose, onNotify }: FocusModeProps): ReactElement {
-  const stack = useMemoryNavStack([{ docId, scrollY: 0 }]);
+export function FocusMode({
+  docId,
+  listTitle,
+  reveal,
+  onClose,
+  onNotify,
+}: FocusModeProps): ReactElement {
+  const stack = useMemoryNavStack([rootEntry(docId, reveal)]);
   const current = stack.docId ?? docId;
   const reader = useReaderDoc(current);
+
+  /**
+   * The overlay is a live component, not a one-shot (PR #19 review).
+   *
+   * `docId` and `reveal` seeded the stack at mount and were then ignored, so a
+   * board that pointed an *already open* focus mode at another document — or at
+   * another place in the same one — changed nothing on screen. The excursion
+   * this overlay was holding belongs to the instruction it replaces, so a new
+   * one starts the history again rather than pushing onto it.
+   *
+   * Compared by identity, and both props are stable while the instruction is:
+   * `Board` holds them in one state object, so re-seeding cannot loop.
+   */
+  const opened = useRef({ docId, reveal });
+  const { openAt } = stack;
+  useEffect(() => {
+    if (opened.current.docId === docId && opened.current.reveal === reveal) return;
+    opened.current = { docId, reveal };
+    openAt(docId, reveal);
+  }, [docId, openAt, reveal]);
 
   const surface = useReaderSurface({
     reader,
     restoreY: stack.restoreY,
     navToken: `${current}#${String(stack.depth)}`,
     onScroll: stack.captureScroll,
+    reveal: stack.reveal,
+    onRevealed: stack.consumeReveal,
   });
 
   /**

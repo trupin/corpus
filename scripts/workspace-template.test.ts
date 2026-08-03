@@ -78,6 +78,34 @@ const documentAt = (relPath: string) => {
   return document;
 };
 
+interface FencedBlock {
+  /** The fence's info string — `bash`, `prompt`, or `""` when it carries none. */
+  readonly info: string;
+  readonly content: string;
+  /** Index of the opening fence line in the body. */
+  readonly openLine: number;
+}
+
+/** Every fenced block in a markdown body, in document order. Fences never nest. */
+const fencedBlocks = (markdown: string): FencedBlock[] => {
+  const blocks: FencedBlock[] = [];
+  let open: { info: string; openLine: number; lines: string[] } | null = null;
+  for (const [index, line] of markdown.split("\n").entries()) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("```")) {
+      if (open === null) {
+        open = { info: trimmed.slice(3).trim(), openLine: index, lines: [] };
+      } else {
+        blocks.push({ info: open.info, content: open.lines.join("\n"), openLine: open.openLine });
+        open = null;
+      }
+      continue;
+    }
+    open?.lines.push(line);
+  }
+  return blocks;
+};
+
 describe("template tree", () => {
   it("contains exactly the documented tree", () => {
     expect(templateFiles).toEqual(EXPECTED_TREE);
@@ -316,6 +344,58 @@ describe("skills", () => {
       // Both skills' traces live inside `--from agent` reply heredocs only.
       const orchestrate = documentAt("claude/skills/orchestrate/SKILL.md").body;
       expect(orchestrate).toMatch(/nothing changed, so that reply carries no trace line/);
+    });
+  });
+
+  /**
+   * Copyable canvases (SPEC.md §11, rider signed 2026-08-02): the reader draws
+   * every fenced block in a rendered turn with a copy button and its info string
+   * as the label. The skills' half of that contract is the authoring rule —
+   * text the person is expected to lift and reuse elsewhere is emitted alone
+   * inside a labeled fence, so the button lands on exactly the deliverable.
+   */
+  describe("deliverable fences", () => {
+    it.each(skills)("$name states the labeled-fence convention", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      expect(body).toMatch(/info string/);
+      expect(body).toMatch(/copyable canvas/);
+      expect(body).toMatch(/one deliverable per fence/i);
+      // The label vocabulary is a convention, shown by example, never a closed
+      // list the agent has to match.
+      expect(body).toMatch(/`prompt`/);
+      expect(body).toMatch(/`command`/);
+    });
+
+    it("scopes the rule to lift-and-reuse deliverables only", () => {
+      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      expect(body).toMatch(/lift and reuse/i);
+      // Ordinary writing is explicitly untouched — the rule must not read as
+      // "fence everything", which would put a copy button on the prose.
+      expect(body).toMatch(/prose stays prose/i);
+      expect(body).toMatch(/explaining rather than handing\s+over/i);
+    });
+
+    it("shows exactly one worked deliverable, alone in its fence", () => {
+      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      const lines = body.split("\n");
+      const examples = fencedBlocks(body).filter((block) => block.info === "prompt");
+      expect(examples).toHaveLength(1);
+      const [example] = examples;
+      expect(example?.content.trim(), "the example fence is empty").not.toBe("");
+      // One deliverable per fence: no blank line splitting it into two things.
+      expect(example?.content.split("\n").some((line) => line.trim() === "")).toBe(false);
+      // Prose outside: the deliverable is introduced from above the fence,
+      // never framed by a sentence living inside it.
+      const openLine = example?.openLine ?? 0;
+      expect(lines[openLine - 1]?.trim()).toBe("");
+      expect(lines[openLine - 2]?.trimEnd()).toMatch(/:$/);
+    });
+
+    it("keeps orchestrate's copy deferential rather than a second statement of the rule", () => {
+      const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      expect(body).toMatch(/The comment skill states the convention/);
+      // It binds the turns orchestrate posts itself, not only dispatched work.
+      expect(body).toMatch(/binds\s+the turns you post yourself/);
     });
   });
 

@@ -1,0 +1,142 @@
+import { useEffect, useRef, useState, type RefObject } from "react";
+import type { ColumnChip } from "./viewDoc";
+
+/**
+ * The column header's one-row rule (UI-038).
+ *
+ * `design/index.html` wraps the chips row (`.chips { flex-wrap: wrap }`), and
+ * in a narrow column that put the sort label on a line of its own under the
+ * chips — reported live from a real board on 2026-08-02. The user's directive
+ * is that the row never wraps: when the full label cannot share the row with
+ * the chips, the label sheds words instead ("last activity ↓" → "last ↓"), and
+ * the direction glyph is never what gets dropped.
+ *
+ * The decision is made from measurements rather than from a width breakpoint
+ * because what has to fit is the chips, and a column carries whatever chips its
+ * stored query names — one `folder:` chip and four filters need very different
+ * room at the same column width.
+ *
+ * **The predicate never reads the current state.** Both its inputs — the row's
+ * width, and the width the row would need for its chips plus the *full* label —
+ * are independent of which form is currently rendered, so it cannot oscillate
+ * between the two.
+ *
+ * That second number cannot be read off the visible row. The chips shrink
+ * (`.chips .chip { min-width: 0 }`, so a row too narrow for even the short
+ * label clips its chips rather than letting anything cross the label), which
+ * means the visible chips measure whatever the row gives them and the row
+ * always looks like it fits. So the header renders a hidden `width: max-content`
+ * copy of the row — same chips, same gaps, always the full label — and that
+ * copy is what gets measured.
+ */
+
+/** The trailing direction glyph a sort label may carry (`viewDoc.ts`). */
+const DIRECTION = /\s*([↓↑])$/u;
+
+/**
+ * The degraded form of a sort label: the first word, and the direction glyph.
+ *
+ * Labels that are already one word ("created ↓", "relevance") are returned
+ * unchanged — degrading them would cost the meaning and save nothing.
+ */
+export function shortSortLabel(label: string): string {
+  const trimmed = label.trim();
+  const direction = DIRECTION.exec(trimmed);
+  const glyph = direction?.[1] ?? "";
+  const words = (direction === null ? trimmed : trimmed.slice(0, direction.index)).trim();
+  const head = words.split(/\s+/u)[0] ?? "";
+  if (head === "") return trimmed;
+  return glyph === "" ? head : `${head} ${glyph}`;
+}
+
+/** What the chips row is, in pixels, at the moment it is measured. */
+export interface SortRowMeasure {
+  /** The row's content width. */
+  readonly available: number;
+  /** What the same row needs for its chips and the **full** label. */
+  readonly required: number;
+}
+
+/**
+ * Whether the full sort label can share the row with the chips.
+ *
+ * An unmeasured row (zero width — jsdom, a column not yet laid out, a hidden
+ * one) reads as fitting: the full label is the honest default, and degrading on
+ * a measurement nobody made would show "last ↓" in a column with room to spare.
+ */
+export function fitsFullSortLabel({ available, required }: SortRowMeasure): boolean {
+  if (!Number.isFinite(available) || available <= 0) return true;
+  return required <= available;
+}
+
+/**
+ * The row against its own copy. `clientWidth` is the content box by definition
+ * and rounds down, which errs toward degrading a pixel early rather than toward
+ * clipping — the row cannot wrap any more, so overflow would be a clip.
+ */
+function measureSortRow(row: HTMLElement, probe: HTMLElement): SortRowMeasure {
+  return { available: row.clientWidth, required: probe.getBoundingClientRect().width };
+}
+
+/**
+ * What joins the labels in the change signature below: a character no label can
+ * contain, so `["a,b"]` and `["a", "b"]` are never the same string.
+ *
+ * Written as an escape, never as the raw byte — a literal NUL in the source
+ * makes git call the whole module binary, which costs it its diff, its
+ * `git grep` and any hope of resolving a conflict in it (PR #19 review).
+ */
+const SEPARATOR = "\u0000";
+
+export interface SortFit {
+  /** Attach to the chips row. */
+  readonly row: RefObject<HTMLDivElement | null>;
+  /** Attach to the out-of-flow copy of that row. */
+  readonly probe: RefObject<HTMLDivElement | null>;
+  /** Whether the sort label must render in its degraded form. */
+  readonly compact: boolean;
+}
+
+/**
+ * Watches the chips row and reports whether the full sort label still fits.
+ *
+ * Both the row and the probe are observed: the row for the column being
+ * resized, the probe because a late web font changes what the same string
+ * measures. `enabled` is false while the header shows the Edit-query field
+ * instead of the chips, which is what re-arms the observer on the *new* row
+ * element when the field closes.
+ */
+export function useSortFit(
+  chips: readonly ColumnChip[],
+  sortLabel: string,
+  enabled: boolean,
+): SortFit {
+  const row = useRef<HTMLDivElement>(null);
+  const probe = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  // Content, not identity: a re-render that rebuilds an equal chip list must
+  // not re-measure, and a query edit that changes one chip's text must.
+  const signature = `${chips.map((chip) => chip.label).join(SEPARATOR)}${SEPARATOR}${sortLabel}`;
+
+  useEffect(() => {
+    const rowElement = row.current;
+    const probeElement = probe.current;
+    if (!enabled || rowElement === null || probeElement === null) {
+      setCompact(false);
+      return undefined;
+    }
+    const decide = (): void => {
+      setCompact(!fitsFullSortLabel(measureSortRow(rowElement, probeElement)));
+    };
+    decide();
+    if (typeof ResizeObserver !== "function") return undefined;
+    const observer = new ResizeObserver(decide);
+    observer.observe(rowElement);
+    observer.observe(probeElement);
+    return () => {
+      observer.disconnect();
+    };
+  }, [signature, enabled]);
+
+  return { row, probe, compact };
+}

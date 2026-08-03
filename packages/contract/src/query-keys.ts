@@ -5,8 +5,9 @@
  * module is the shared source of truth for *which* key arrays exist, what emits
  * each one, and what should refetch on it.
  *
- * Nine shapes, no more and no fewer. `query-keys.test.ts` pins the set: a tenth
- * shape fails a test rather than quietly appearing in a frame the UI ignores.
+ * {@link QUERY_KEY_NAMES} is the whole of it — no more and no fewer.
+ * `query-keys.test.ts` pins the set against that list, so a new shape fails a
+ * test rather than quietly appearing in a frame the UI ignores.
  *
  * **Zod-free on purpose.** This module imports nothing. `ACTOR_HEADER`/`ACTORS`
  * live outside `schemas/` for the same reason: a browser consumer must be able
@@ -44,6 +45,17 @@ export const JOBS_KEY: QueryKey = ["jobs"];
 export const LOCKS_KEY: QueryKey = ["locks"];
 
 /**
+ * The semantic index's derived state behind `GET /api/index/status` (SPEC.md
+ * §9.1, and §11's console index pill).
+ *
+ * One segment, exactly as {@link QUEUE_KEY} is one segment for
+ * `GET /api/queue/status`: the resource is named, not the endpoint. Anything a
+ * client caches under an `["index", …]` prefix therefore refetches on the frame
+ * the server actually emits, so a later index query needs no eleventh shape.
+ */
+export const INDEX_KEY: QueryKey = ["index"];
+
+/**
  * One document, by id. Threads are documents, so a thread id is legal here and
  * both `["docs", threadId]` and `["threads", threadId]` are emitted for a turn.
  */
@@ -59,7 +71,7 @@ export const jobKey = (eventId: string): QueryKey => ["jobs", eventId];
 export const lockKey = (docId: string): QueryKey => ["locks", docId];
 
 /**
- * Names of the nine shapes, in the order the vocabulary is documented. Pinned by
+ * Names of every shape, in the order the vocabulary is documented. Pinned by
  * `query-keys.test.ts`, and the render order of the description that reaches
  * `openapi.json` — so it is also what keeps that document byte-stable.
  */
@@ -73,6 +85,7 @@ export const QUERY_KEY_NAMES = [
   "job",
   "locks",
   "lock",
+  "index",
 ] as const;
 
 export type QueryKeyName = (typeof QUERY_KEY_NAMES)[number];
@@ -173,6 +186,16 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     emittedBy: "acquire, release, force-break and reap of that one document's lock",
     refetchedBy:
       "the open reader for that document, which renders read-only with a holder banner while held",
+  },
+  index: {
+    shape: '["index"]',
+    key: () => [...INDEX_KEY],
+    parameterised: false,
+    emittedBy:
+      "the embed worker whenever the index's derived state moves: provider adoption, a new " +
+      "disabled or model-download reason, throttled progress while a backlog drains, and the " +
+      "caught-up transition — plus an index rebuild's start and end",
+    refetchedBy: "`GET /api/index/status` — the console strip's index pill",
   },
 };
 

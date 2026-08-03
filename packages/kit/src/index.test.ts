@@ -38,6 +38,7 @@ const RUNTIME_SURFACE = [
   "MAX_BUFFERED_LOG_LINES",
   "usePluginQuery",
   "useQueueStatus",
+  "useIndexStatus",
   "useLocks",
   "useHealth",
   // write path
@@ -75,6 +76,7 @@ const RUNTIME_SURFACE = [
   "docsListKey",
   "DOCS_KEY",
   "HEALTH_KEY",
+  "INDEX_KEY",
   "jobKey",
   "jobsListKey",
   "JOBS_KEY",

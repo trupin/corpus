@@ -9,9 +9,13 @@ coverage/
 coverage-raw/
 *.tsbuildinfo
 
-# Playwright
+# Playwright. The rooted pair matters: a run invoked from the repo root (rather
+# than from apps/ui) writes its output here, and only the apps/ui paths were
+# covered — a stray `test-results/` then shows up as untracked repo content.
 apps/ui/test-results/
 apps/ui/playwright-report/
+/test-results/
+/playwright-report/
 
 # Local env
 .env

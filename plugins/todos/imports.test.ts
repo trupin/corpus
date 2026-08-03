@@ -23,6 +23,11 @@ const ALLOWED_PACKAGES = new Set([
   "@corpus/kit",
   "@corpus/kit/plugin",
   "@corpus/kit/testing",
+  // Stylesheet subpaths are kit imports like any other (`packages/kit/src/index.ts`
+  // documents them as the way a plugin inherits Corpus theming). The item menu
+  // renders `.ac-menu` / `.ac-item` — the app's one positioned-menu surface — and
+  // names the sheet rather than assuming whoever mounted it already did.
+  "@corpus/kit/autocomplete.css",
   "@corpus/contract",
   "@corpus/contract/plugin",
   "react",

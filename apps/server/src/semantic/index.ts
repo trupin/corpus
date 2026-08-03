@@ -118,6 +118,7 @@ export {
   EMBED_INTERVAL_MS,
   EMBED_MAX_DEFER_MS,
   EMBED_MODEL_POLL_MS,
+  INDEX_ANNOUNCE_MS,
   MAX_CHUNK_FAILURES,
   chunkEmbedInput,
   embedBackoffMs,

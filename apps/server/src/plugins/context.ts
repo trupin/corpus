@@ -1,5 +1,7 @@
 import {
   CreateDocRequestSchema,
+  QUERY_KEY_NAMES,
+  QUERY_KEY_VOCABULARY,
   UpdateDocRequestSchema,
   type CreateDocRequest,
   type Doc,
@@ -51,21 +53,34 @@ export type { PluginServerContext } from "@corpus/contract/plugin";
 export const PLUGIN_KEY_PREFIX = "x";
 
 /**
- * The roots of the core query-key vocabulary (`@corpus/contract`'s closed nine
- * shapes, plus the kit-owned `health`). A plugin key may name none of them:
- * core keys are broadcast by the core write path itself — which a plugin write
- * already goes through — so a plugin never needs to, and must not be able to,
- * invalidate core queries directly.
+ * The one root the core vocabulary does not declare: the kit owns `["health"]`
+ * (`packages/kit/src/query/keys.ts`), because nothing on the server emits it —
+ * it is the client's own connection query. Pinned by `context.test.ts`, which
+ * the server needs because it cannot import the kit.
  */
-const CORE_KEY_ROOTS: ReadonlySet<string> = new Set([
-  "docs",
-  "tree",
-  "threads",
-  "queue",
-  "jobs",
-  "locks",
-  "health",
-]);
+const KIT_KEY_ROOT = "health";
+
+/**
+ * The roots of the core query-key vocabulary, plus {@link KIT_KEY_ROOT}. A
+ * plugin key may name none of them: core keys are broadcast by the core write
+ * path itself — which a plugin write already goes through — so a plugin never
+ * needs to, and must not be able to, invalidate core queries directly.
+ *
+ * **Derived, not transcribed.** A hand-written list is a second vocabulary that
+ * only review keeps honest, and it silently fell a key behind when SERVER-051
+ * added `["index"]`. Reading the roots out of `QUERY_KEY_VOCABULARY` makes the
+ * eleventh shape protected the moment the contract declares it; `id` is a
+ * placeholder that the parameterised builders put in a later segment and the
+ * unparameterised ones ignore.
+ */
+const CORE_KEY_ROOTS: ReadonlySet<string> = new Set(
+  [
+    ...QUERY_KEY_NAMES.map((name) => QUERY_KEY_VOCABULARY[name].key("id")[0]),
+    KIT_KEY_ROOT,
+    // A filter record can only ever be a *later* segment — a key whose first
+    // segment is not a name is not a shape a plugin could collide with.
+  ].filter((segment): segment is string => typeof segment === "string"),
+);
 
 export interface PluginContextDeps {
   readonly plugin: string;

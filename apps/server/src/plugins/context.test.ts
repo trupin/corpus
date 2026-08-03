@@ -1,4 +1,4 @@
-import type { QueryKey } from "@corpus/contract";
+import { QUERY_KEY_NAMES, QUERY_KEY_VOCABULARY, type QueryKey } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import type { DocsWorkspace } from "../docs/index.js";
 import { createDocumentMutex } from "../docs/index.js";
@@ -52,14 +52,38 @@ describe("broadcastInvalidate", () => {
     expect(emitted).toEqual([]);
   });
 
-  it("rejects every member of core's closed vocabulary", () => {
+  // The pin the guard's hand-written list never had. SERVER-051 added `["index"]`
+  // to the contract's vocabulary and this test — transcribing the same list a
+  // second time — could not notice, so a plugin naming its key `index` was
+  // quietly namespaced instead of being told why it may not. Reading the roots
+  // out of the vocabulary is what stops the eleventh shape repeating it.
+  it("rejects every root the contract's key vocabulary declares, plus the kit's health", () => {
     const { broadcast, emitted } = contextWithRecorder();
-    for (const root of ["docs", "tree", "threads", "queue", "jobs", "locks", "health"]) {
+    const roots = QUERY_KEY_NAMES.map((name) => QUERY_KEY_VOCABULARY[name].key("id")[0]).filter(
+      (segment): segment is string => typeof segment === "string",
+    );
+    // Every shape is named by its first segment; one filtered away here would be
+    // a root no plugin is ever refused.
+    expect(roots).toHaveLength(QUERY_KEY_NAMES.length);
+    expect(roots).toContain("index");
+
+    for (const root of [...roots, "health"]) {
       expect(() => {
         broadcast([[root]]);
       }).toThrow(/may not invalidate/);
     }
     expect(emitted).toEqual([]);
+  });
+
+  it("still namespaces a plugin key that merely resembles a core one", () => {
+    const { broadcast, emitted } = contextWithRecorder();
+    broadcast([["indexes"], ["docs-of-mine"]]);
+    expect(emitted).toEqual([
+      [
+        [PLUGIN_KEY_PREFIX, "fx", "indexes"],
+        [PLUGIN_KEY_PREFIX, "fx", "docs-of-mine"],
+      ],
+    ]);
   });
 
   it("rejects a key that tries to smuggle its own x/ prefix", () => {

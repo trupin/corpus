@@ -54,6 +54,10 @@ export function Reader({
     restoreY: stack.restoreY,
     navToken: `${docId}#${String(stack.depth)}`,
     onScroll: stack.captureScroll,
+    // UI-037: where this open should land, when the caller said. Consuming it
+    // takes it off the entry, so Back returns to a plain restoration.
+    reveal: stack.reveal,
+    onRevealed: stack.consumeReveal,
   });
 
   /**

@@ -1,4 +1,6 @@
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { REVEAL_RETRIES, REVEAL_RETRY_MS, revealItem } from "./reveal";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
@@ -34,6 +36,15 @@ export interface ReaderSurfaceOptions {
   readonly navToken: string;
   /** Persists the live scroll offset onto the current navigation entry. */
   readonly onScroll: (scrollY: number) => void;
+  /**
+   * Where inside the arriving document to land (UI-037), or `null` for an
+   * ordinary open. Honoured once the document has rendered — never on a
+   * restoration, because the caller clears it through {@link onRevealed} the
+   * moment it is honoured and Back therefore arrives at an entry with none.
+   */
+  readonly reveal?: RevealTarget | null | undefined;
+  /** Called once the reveal has been acted on — or given up on. */
+  readonly onRevealed?: (() => void) | undefined;
 }
 
 /** One navigation's restoration: where it is going, and what it last wrote. */
@@ -61,6 +72,8 @@ export function useReaderSurface({
   restoreY,
   navToken,
   onScroll,
+  reveal,
+  onRevealed,
 }: ReaderSurfaceOptions): ReaderSurface {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedThreads, setExpanded] = useState<readonly string[]>([]);
@@ -68,6 +81,31 @@ export function useReaderSurface({
   const restore = useRef<RestoreState | null>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The reveal this surface has already acted on, by identity. */
+  const revealed = useRef<RevealTarget | null>(null);
+  /**
+   * The lit reveal flash, and the navigation entry it belongs to.
+   *
+   * The token is half of it, not bookkeeping: the flash is drawn over one
+   * document and kept on its line by an animation-frame loop that re-finds the
+   * text every frame, so the moment the surface shows a *different* document
+   * that loop is hunting through the wrong one. Recording which navigation lit
+   * it is what lets the surface put it out on the way past — and, because the
+   * question is "is this still that navigation" rather than "did an effect
+   * re-run", StrictMode's replayed effects leave it alone.
+   */
+  const revealFlash = useRef<{ readonly nav: string; readonly stop: () => void } | null>(null);
+  /** Read through a ref so the reveal effect never depends on the token. */
+  const navTokenRef = useRef(navToken);
+  navTokenRef.current = navToken;
+  /**
+   * Read through a ref so the retry ladder below is not a dependency of the
+   * caller's identity: `consumeReveal` is rebuilt on every navigation-stack
+   * write, and a scroll captured mid-ladder would otherwise tear the effect
+   * down between two attempts and leave the instruction pending forever.
+   */
+  const revealedCallback = useRef(onRevealed);
+  revealedCallback.current = onRevealed;
 
   const hasContent = reader.doc !== undefined || reader.isMissing || reader.error !== null;
 
@@ -129,9 +167,87 @@ export function useReaderSurface({
     () => () => {
       if (scrollTimer.current !== null) clearTimeout(scrollTimer.current);
       if (flashTimer.current !== null) clearTimeout(flashTimer.current);
+      revealFlash.current?.stop();
+      revealFlash.current = null;
     },
     [],
   );
+
+  /**
+   * A reveal flash does not outlive its navigation.
+   *
+   * Unmounting the surface already put it out; navigating *within* it did not,
+   * and that is the ordinary case — a reveal lights for 1.2 s and a reader can
+   * follow a ref in half of that. What stayed behind was not just a highlight
+   * over the wrong document but its tracker, re-searching the newly opened body
+   * for the old document's words on every frame.
+   */
+  useEffect(() => {
+    const live = revealFlash.current;
+    if (live === null || live.nav === navToken) return;
+    live.stop();
+    revealFlash.current = null;
+  }, [navToken]);
+
+  const jumpToThread = useCallback((threadId: string) => {
+    setExpanded((current) => (current.includes(threadId) ? current : [...current, threadId]));
+    setFlash(threadId);
+    if (flashTimer.current !== null) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => {
+      flashTimer.current = null;
+      setFlash(null);
+    }, FLASH_MS);
+  }, []);
+
+  /**
+   * The reveal, honoured exactly once (UI-037).
+   *
+   * Two guards, because two different things could fire it twice. `revealed`
+   * holds the instruction by identity, which covers a re-render — including
+   * StrictMode's double-invoked effect — while `onRevealed` takes the
+   * instruction off the navigation entry, which is what covers a *reload* and a
+   * Back onto the same entry. Neither alone is enough: the first does not
+   * survive a remount and the second does not survive React calling the effect
+   * twice before the state it sets has landed.
+   *
+   * Giving up counts as honouring it. A quote the document no longer contains
+   * (edited between the click and the open, or never rendered because a plugin
+   * `View` shows something else) must not leave a pending instruction behind
+   * for the next navigation to trip over.
+   */
+  useEffect(() => {
+    if (reveal == null || !hasContent || revealed.current === reveal) return undefined;
+    revealed.current = reveal;
+
+    if (reveal.kind === "thread") {
+      jumpToThread(reveal.threadId);
+      revealedCallback.current?.();
+      return undefined;
+    }
+
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = (): void => {
+      attempts += 1;
+      const container = scrollRef.current;
+      const undo = container === null ? null : revealItem(container, reveal);
+      if (undo !== null) {
+        revealFlash.current?.stop();
+        revealFlash.current = { nav: navTokenRef.current, stop: undo };
+      } else if (attempts < REVEAL_RETRIES) {
+        // The body may still be arriving — the editor mounts its own DOM, and a
+        // plugin `View` may be fetching. Retry, then stop asking.
+        timer = setTimeout(attempt, REVEAL_RETRY_MS);
+        return;
+      }
+      revealedCallback.current?.();
+    };
+    attempt();
+
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [hasContent, jumpToThread, reveal]);
 
   const handleScroll = useCallback(
     (scrollY: number) => {
@@ -148,16 +264,6 @@ export function useReaderSurface({
     setExpanded((current) =>
       current.includes(threadId) ? current.filter((id) => id !== threadId) : [...current, threadId],
     );
-  }, []);
-
-  const jumpToThread = useCallback((threadId: string) => {
-    setExpanded((current) => (current.includes(threadId) ? current : [...current, threadId]));
-    setFlash(threadId);
-    if (flashTimer.current !== null) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => {
-      flashTimer.current = null;
-      setFlash(null);
-    }, FLASH_MS);
   }, []);
 
   const currentScroll = useCallback(() => scrollRef.current?.scrollTop ?? 0, []);

@@ -1,5 +1,6 @@
 import type { DocRow } from "@corpus/contract";
 import { useDocs, type RowNotice } from "@corpus/kit";
+import type { OpenPayload } from "@corpus/kit/plugin";
 import { useState, type DragEvent, type ReactElement } from "react";
 import { PluginMissingCard } from "../plugins/PluginMissingCard";
 import { usePluginRegistry } from "../plugins/registry";
@@ -41,11 +42,15 @@ export interface ColumnProps {
   readonly cursorDocId: string | null;
   readonly onActivate: () => void;
   readonly onScroll: (scrollTop: number) => void;
-  /** Opens a document in this column's reader — a push onto its navigation stack. */
-  readonly onOpen: (docId: string) => void;
+  /**
+   * Opens a document in this column's reader — a push onto its navigation
+   * stack. A bare id opens it at the top; a request may also say where inside
+   * the document to land (UI-037).
+   */
+  readonly onOpen: (target: OpenPayload) => void;
   /** Replaces the reader's navigation stack; `[]` returns to the list. */
   readonly onNav: (nav: readonly NavEntry[]) => void;
-  readonly onFocusMode: (docId: string) => void;
+  readonly onFocusMode: (target: OpenPayload) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -61,8 +66,8 @@ interface ColumnBodyProps {
   readonly cursorDocId: string | null;
   readonly onHandle: (armed: boolean) => void;
   readonly onScroll: (scrollTop: number) => void;
-  readonly onOpen: (docId: string) => void;
-  readonly onOpenFocus: (docId: string) => void;
+  readonly onOpen: (target: OpenPayload) => void;
+  readonly onOpenFocus: (target: OpenPayload) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -135,7 +140,7 @@ interface PluginColumnBodyProps {
   readonly pluginRef: PluginColumnRef;
   readonly onHandle: (armed: boolean) => void;
   /** Opens a document in this column's reader — handed to the plugin body. */
-  readonly onOpen: (docId: string) => void;
+  readonly onOpen: (target: OpenPayload) => void;
   readonly onAdd: () => void;
   readonly onRename: (title: string) => void;
   readonly onEditQuery: (query: Readonly<Record<string, string>>) => void;
@@ -179,7 +184,18 @@ function PluginColumnBody({
       {Body === null ? (
         <PluginMissingCard plugin={pluginRef} />
       ) : (
-        <div className="col-list">
+        <div className="col-list" data-plugin-surface="">
+          {/*
+           * The surface below this node is the plugin's, and `data-plugin-surface`
+           * is how every menu rule says so (SPEC.md §10; §11 as amended
+           * 2026-08-02, which lets the plugin paint its own there) — the
+           * same stamp `DocView` puts on a plugin `View`. Marking the *surface*
+           * is what lets core stop guessing from a document's **type**, which is
+           * what suppressed the row menu on every `todo` document anywhere on
+           * the board (UI-036). Rows a plugin column body invents still get the
+           * browser's menu; a core row painted by a plugin `ListItem` does not
+           * live under this node and keeps its own.
+           */}
           {/*
            * `onOpen` is the board's own "push onto this column's navigation
            * stack" — the same callback a core row gets. Handing it to the
@@ -263,11 +279,13 @@ export function Column(props: ColumnProps): ReactElement {
           onHandle={setDraggable}
           onScroll={props.onScroll}
           onOpen={onOpen}
-          onOpenFocus={(docId) => {
+          onOpenFocus={(target) => {
             // Same act as `⇧↵`: the document opens in its column *and* full
-            // screen, so closing focus leaves the reader where it belongs.
-            onOpen(docId);
-            props.onFocusMode(docId);
+            // screen, so closing focus leaves the reader where it belongs. A
+            // reveal rides along to both, so the surface the user ends up
+            // looking at is the one that lands on it.
+            onOpen(target);
+            props.onFocusMode(target);
           }}
           onAdd={props.onAdd}
           onRename={props.onRename}

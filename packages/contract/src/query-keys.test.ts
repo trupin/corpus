@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { QueryKeySchema } from "./schemas/sse.js";
 import {
   DOCS_KEY,
+  INDEX_KEY,
   JOBS_KEY,
   LOCKS_KEY,
   QUERY_KEY_NAMES,
@@ -29,7 +30,7 @@ describe("the published query-key vocabulary", () => {
    * derived from the module, because a test that computes its expectation from
    * the thing it is testing pins nothing.
    */
-  it("is exactly the nine shapes the server emits", () => {
+  it("is exactly the ten shapes the server emits", () => {
     const shapes = QUERY_KEY_NAMES.map((name) => QUERY_KEY_VOCABULARY[name].shape);
     expect(shapes).toEqual([
       '["docs"]',
@@ -41,12 +42,13 @@ describe("the published query-key vocabulary", () => {
       '["jobs", "<eventId>"]',
       '["locks"]',
       '["locks", "<docId>"]',
+      '["index"]',
     ]);
   });
 
   /**
-   * Closed by assertion, not by convention: adding a tenth entry to the record
-   * without adding it here fails, naming the newcomer.
+   * Closed by assertion, not by convention: adding an eleventh entry to the
+   * record without adding it here fails, naming the newcomer.
    */
   it("is a closed set — the record and the pinned name list agree", () => {
     expect(Object.keys(QUERY_KEY_VOCABULARY)).toEqual([...QUERY_KEY_NAMES]);
@@ -60,6 +62,7 @@ describe("the published query-key vocabulary", () => {
       "job",
       "locks",
       "lock",
+      "index",
     ]);
   });
 
@@ -69,6 +72,7 @@ describe("the published query-key vocabulary", () => {
     expect(QUERY_KEY_VOCABULARY.queue.key("ignored")).toEqual(QUEUE_KEY);
     expect(QUERY_KEY_VOCABULARY.jobs.key("ignored")).toEqual(JOBS_KEY);
     expect(QUERY_KEY_VOCABULARY.locks.key("ignored")).toEqual(LOCKS_KEY);
+    expect(QUERY_KEY_VOCABULARY.index.key("ignored")).toEqual(INDEX_KEY);
     expect(QUERY_KEY_VOCABULARY.doc.key("doc_a1b2c3")).toEqual(docKey("doc_a1b2c3"));
     expect(QUERY_KEY_VOCABULARY.thread.key("th_x9y8")).toEqual(threadKey("th_x9y8"));
     expect(QUERY_KEY_VOCABULARY.job.key("evt_7c1d")).toEqual(jobKey("evt_7c1d"));
@@ -81,6 +85,7 @@ describe("the published query-key vocabulary", () => {
     expect(QUEUE_KEY).toEqual(["queue"]);
     expect(JOBS_KEY).toEqual(["jobs"]);
     expect(LOCKS_KEY).toEqual(["locks"]);
+    expect(INDEX_KEY).toEqual(["index"]);
     expect(docKey("th_x9y8")).toEqual(["docs", "th_x9y8"]);
     expect(threadKey("th_x9y8")).toEqual(["threads", "th_x9y8"]);
     expect(jobKey("evt_7c1d")).toEqual(["jobs", "evt_7c1d"]);

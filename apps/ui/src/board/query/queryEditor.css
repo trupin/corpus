@@ -1,0 +1,147 @@
+/*
+ * The column query editor (UI-039). `.col-query-input` itself keeps living in
+ * `Column.css` beside the rest of the header — this file adds only what the
+ * field grew around it, so the two never fight over one selector.
+ *
+ * The help panel is `.ac-menu` with a body: the product has exactly one
+ * positioned-surface look (see `autocomplete.css`), and a reference panel that
+ * invented a second one would read as a different application.
+ */
+
+/* One flex item in `.col-head`'s column, exactly where the bare input sat. */
+.col-query-editor {
+  min-width: 0;
+}
+
+.col-query-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.col-query-row .col-query-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.col-query-help-toggle {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.col-query-help-toggle:hover,
+.col-query-help-toggle[aria-expanded="true"] {
+  color: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+
+.col-query-notice {
+  margin: 3px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+/* --- the syntax reference ------------------------------------------------- */
+
+/*
+ * Doubled selector on purpose: `.ac-menu` caps every *menu* at 200px, which is
+ * right for a list of completions and far too short for a reference. Same
+ * specificity would leave the winner to import order, and import order is not a
+ * thing this file should depend on.
+ */
+.ac-menu.query-help {
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: min(60vh, 520px);
+  padding: 10px 12px 12px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.query-help:focus {
+  outline: none;
+}
+
+.query-help-lead {
+  margin: 0 0 8px;
+  color: var(--ink-3);
+}
+
+.query-help h4 {
+  margin: 10px 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.query-help dl {
+  margin: 0;
+}
+
+.query-help-rule {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr;
+  gap: 4px 8px;
+  padding: 2px 0;
+}
+
+/*
+ * The field list is **one** grid, not a grid per row, so its name column is as
+ * wide as the widest name and no wider — measured, never guessed. A per-row grid
+ * cannot align across rows, which is what a hard-coded width was standing in for
+ * (it was fitted to `includeArchived`, and the next contract filter with a
+ * longer name would have wrapped or left a gap). Each row is `display: contents`
+ * so its `dt`/`dd` become items of that shared grid while the wrapper stays in
+ * the DOM for `data-query-field`.
+ */
+.query-help-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 8px;
+}
+
+.query-help-field {
+  display: contents;
+}
+
+.query-help dt {
+  margin: 0;
+  min-width: 0;
+}
+
+.query-help dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.query-help code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+.query-help-rule code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.query-help-values {
+  display: block;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  word-break: break-word;
+}

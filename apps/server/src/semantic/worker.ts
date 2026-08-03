@@ -41,9 +41,19 @@
  * stay pending. The difference is decided by evidence rather than assumed — see
  * `splitBatch` below — because "the model cannot encode this passage" and "the
  * endpoint is down" have opposite correct responses.
+ *
+ * **Progress is announced, never pushed.** Everything `GET /api/index/status`
+ * reports moves under this loop and nowhere else, so the worker is the only
+ * honest emitter of `["index"]` (SERVER-051, SPEC.md §11's console index pill).
+ * It publishes on the same bus it listens to — see {@link INDEX_ANNOUNCE_MS} and
+ * the emission points below — carrying the key and nothing else, exactly like
+ * every other producer of staleness. Nothing about it reaches a request: a save
+ * still returns before the worker has looked at the corpus.
  */
 
+import type { QueryKey } from "@corpus/contract";
 import type { InvalidationBus } from "../events/bus.js";
+import { INDEX_KEY } from "../events/keys.js";
 import type { Logger } from "../logger.js";
 import type { ProjectionDb } from "../projection/db.js";
 import { writeEmbedding } from "./embeddings.js";
@@ -111,6 +121,23 @@ export const EMBED_INTERVAL_MS = 1_000;
  * becoming a request storm.
  */
 export const EMBED_MODEL_POLL_MS = 5_000;
+
+/**
+ * Floor between two *progress* announcements while a backlog drains.
+ *
+ * A drain writes a batch every few hundred milliseconds and each batch moves
+ * `indexed` and `pending`, so an unthrottled emitter would turn one bulk edit
+ * into hundreds of frames — and every frame costs every connected client a
+ * refetch of `GET /api/index/status`. One per second is the rate a human reading
+ * a count can actually perceive.
+ *
+ * It bounds *progress only*. The transitions — a provider adopted, a reason
+ * changed, the backlog appearing, the backlog draining to nothing — are edges,
+ * they announce the instant they happen, and the caught-up frame in particular
+ * is emitted through the edge rather than through the throttle precisely so that
+ * no rate limit can be the reason a pill stays stuck on "indexing".
+ */
+export const INDEX_ANNOUNCE_MS = 1_000;
 
 /**
  * Backoff for a chunk that has failed `failures` times, or for a pass whose
@@ -248,9 +275,11 @@ export interface EmbedWorkerOptions {
   readonly db: ProjectionDb;
   readonly logger: Logger;
   /**
-   * The invalidation bus. Subscribing to it is how the worker learns that
-   * something was written without any write path knowing the worker exists.
-   * Omitted in tests that drive {@link EmbedWorkerHandle.tick} directly.
+   * The invalidation bus, in both directions: subscribing to it is how the
+   * worker learns that something was written without any write path knowing the
+   * worker exists, and publishing `["index"]` on it is how a client learns the
+   * index moved without polling. Omitted in tests that drive
+   * {@link EmbedWorkerHandle.tick} directly.
    */
   readonly bus?: InvalidationBus | undefined;
   /**
@@ -271,6 +300,7 @@ export interface EmbedWorkerOptions {
   readonly debounceMs?: number | undefined;
   readonly maxDeferMs?: number | undefined;
   readonly modelPollMs?: number | undefined;
+  readonly announceMs?: number | undefined;
   readonly batchSize?: number | undefined;
   readonly claimSize?: number | undefined;
   readonly maxFailures?: number | undefined;
@@ -300,12 +330,17 @@ interface ActiveProvider {
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+/** Structural equality against {@link INDEX_KEY}, the way a client compares keys. */
+const isIndexKey = (key: QueryKey): boolean =>
+  key.length === INDEX_KEY.length && key.every((segment, at) => segment === INDEX_KEY[at]);
+
 export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle {
   const { db, logger } = options;
   const intervalMs = options.intervalMs ?? EMBED_INTERVAL_MS;
   const debounceMs = options.debounceMs ?? EMBED_DEBOUNCE_MS;
   const maxDeferMs = options.maxDeferMs ?? EMBED_MAX_DEFER_MS;
   const modelPollMs = options.modelPollMs ?? EMBED_MODEL_POLL_MS;
+  const announceMs = Math.max(0, options.announceMs ?? INDEX_ANNOUNCE_MS);
   const batchSize = Math.max(1, options.batchSize ?? EMBED_BATCH_SIZE);
   const claimSize = Math.max(batchSize, options.claimSize ?? EMBED_CLAIM_SIZE);
   const maxFailures = Math.max(1, options.maxFailures ?? MAX_CHUNK_FAILURES);
@@ -329,6 +364,81 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
    * is invalid whether or not anybody has edited anything since.
    */
   let identityChecked = false;
+  /** Work seen since the last frame that no frame has told anyone about yet. */
+  let unannounced = false;
+  /** When the last frame went out. Negative infinity so the first one never waits. */
+  let announcedAt = Number.NEGATIVE_INFINITY;
+  /** The counts the last frame described; `undefined` until the first one. */
+  let announcedCounts: string | undefined;
+
+  // --- announcements -----------------------------------------------------
+  //
+  // SERVER-051. Four rules, and their ordering is the whole of what the issue
+  // asks for: a frame covers everything outstanding at once (the key carries no
+  // data, so one refetch answers every question), progress is throttled, the
+  // transitions are not, and a pass that changed nothing says nothing.
+  //
+  // **The last rule is decided by measurement, not by call site** — the lesson
+  // SERVER-018 and SERVER-020 already paid for on `["tree"]`. The tempting
+  // version tracks "did the worker have work last time" and announces on the
+  // edge; it announces on every rung of a retry ladder, because a failed chunk
+  // stops being *eligible* and becomes eligible again without one number on the
+  // wire moving. So the numbers themselves are the test: `announceCounts`
+  // compares the three counts `GET /api/index/status` publishes against the ones
+  // the last frame described, and declines to speak when they agree. The
+  // uncountable changes — a `detail` sentence, an adopted identity, a discard —
+  // go through `announceEdge`, which is unconditional because each of those has
+  // already established that it changed.
+
+  function send(at: number, counts: string): void {
+    unannounced = false;
+    announcedAt = at;
+    announcedCounts = counts;
+    options.bus?.invalidate([INDEX_KEY]);
+  }
+
+  /**
+   * The three published numbers as one string, or `undefined` when the database
+   * is unreadable — the shutdown path closes it under a pass in flight, and a
+   * frame is never worth a throw there.
+   */
+  function countsKey(): string | undefined {
+    try {
+      const counts = indexCounts(db);
+      return `${String(counts.indexed)}/${String(counts.pending)}/${String(counts.failed)}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Announces iff the wire would read differently. Never throttled. */
+  function announceCounts(): void {
+    const counts = countsKey();
+    if (counts === undefined || counts === announcedCounts) {
+      // Nothing to say, so nothing is owed: an outstanding write whose numbers
+      // a previous frame already described is already announced.
+      unannounced = false;
+      return;
+    }
+    send(now(), counts);
+  }
+
+  /** A change no count records: a reason, an identity, a discard. Always sent. */
+  function announceEdge(): void {
+    send(now(), countsKey() ?? "");
+  }
+
+  /** A batch landed. Throttled, and remembered when it is not sent. */
+  function announceProgress(): void {
+    unannounced = true;
+    if (now() - announcedAt < announceMs) return;
+    announceCounts();
+  }
+
+  /** End of a pass: whatever the throttle held back goes out now. */
+  function flushAnnouncements(): void {
+    if (unannounced) announceCounts();
+  }
 
   // Resolved by `close()`. Every await in the pass races against it, which is
   // what lets a shutdown abandon an in-flight provider call instead of waiting
@@ -525,16 +635,33 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
           `re-indexing with ${identity}`,
         { identity, discarded: changes },
       );
+      // Every count on the wire just moved at once, and the state word with
+      // them: an index that was `current` a statement ago now has a backlog and
+      // no vectors. Nothing later in this pass would report it any sooner.
+      announceEdge();
     }
   }
 
   // --- resolution --------------------------------------------------------
 
+  /**
+   * Says a line about why nothing is embedding, once per distinct line — and
+   * announces on exactly the same edge.
+   *
+   * The dedupe is the cadence, and it is deliberately not a second one. Every
+   * sentence that reaches here is a `detail` the status endpoint publishes
+   * verbatim: a disabled reason, a provider outage, or the embedded engine's
+   * download progress, whose percentage changes the string as often as the
+   * engine reports a new one. So "the log said something new" and "the wire
+   * would read differently" are the same event, and inventing a separate rate
+   * for the second would either lie about the first or duplicate it.
+   */
   function report(message: string, level: "info" | "error" = "info"): void {
     if (notice === message) return;
     notice = message;
     if (level === "error") logger.error(message);
     else logger.info(message);
+    announceEdge();
   }
 
   async function ensureProvider(): Promise<ActiveProvider | undefined> {
@@ -563,6 +690,9 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
       if (announced !== resolution.identity) {
         announced = resolution.identity;
         logger.info(`semantic index: embedding with ${resolution.identity} (${resolution.source})`);
+        // Adoption is the moment `disabled` stops being the honest answer — a
+        // provider now resolves — so it is an edge even though no row moved.
+        announceEdge();
       }
       return active;
     }
@@ -694,6 +824,17 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
   async function runPass(): Promise<void> {
     if (stopped) return;
     const at = now();
+    // Looking is when the counts are re-read, and *every* look counts — the one
+    // a backoff turns away included. A backlog that appeared while the worker
+    // was asleep is news the moment the worker notices, and it is news even when
+    // nothing can be embedded: a disabled provider, or one on the ten-minute
+    // rung of an outage ladder, still owes the pill a count that grew — that
+    // pill is the only thing telling the user their saves are queued and not
+    // lost, and it would otherwise sit frozen for the whole rung. Announcing
+    // before the guard rather than after it is what makes that true. A pass over
+    // an unchanged corpus still says nothing, because `announceCounts` compares
+    // before it speaks; the drain's own frames are the throttled ones.
+    announceCounts();
     if (waitUntil > at) return;
     // Two reasons to wake a provider: there is something to embed, or the index
     // holds vectors whose model this process has not verified yet. The second is
@@ -710,13 +851,21 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
 
     while (!stopped) {
       const claimed = claim(now());
-      if (claimed.length === 0) break;
+      if (claimed.length === 0) {
+        // Caught up: the announcement the throttle may never absorb. A drain
+        // that ends within `announceMs` of its last progress frame would
+        // otherwise have its most important frame — the one that turns the pill
+        // green — held back behind a rate limit.
+        announceCounts();
+        break;
+      }
 
       let wrote = false;
       for (let offset = 0; offset < claimed.length && !stopped; offset += batchSize) {
         const batch = claimed.slice(offset, offset + batchSize);
         if (!(await embedBatch(current, batch))) return;
         wrote = true;
+        announceProgress();
       }
       // A round that claimed rows but wrote none would loop forever on the same
       // rows; the only way here is cancellation, which the `while` re-checks.
@@ -754,6 +903,10 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
       .finally(() => {
         pass = undefined;
         deferUntil = 0;
+        // The one exit every pass has, however it ended. A pass abandoned by a
+        // provider outage or by `close()` still wrote whatever it wrote before
+        // giving up, and the throttle may be holding the last batch of it.
+        flushAnnouncements();
         scheduleNext();
       });
     return pass;
@@ -783,8 +936,13 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
     schedule(Math.min(...waits));
   }
 
-  const unsubscribe = options.bus?.subscribe(() => {
+  const unsubscribe = options.bus?.subscribe((keys) => {
     if (stopped || intervalMs === 0) return;
+    // A frame that says only "the index changed" is this worker's own voice
+    // coming back — or a rebuild's, which reaches the worker through `wake()`
+    // and not through here. Treating it as a write would make every drain
+    // reschedule itself, and every announcement buy a pass that finds nothing.
+    if (keys.every(isIndexKey)) return;
     const at = now();
     // The livelock guard: the quiet period may be extended, but only until the
     // deadline opened by the first signal of this burst.

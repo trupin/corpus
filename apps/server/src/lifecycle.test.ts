@@ -506,7 +506,16 @@ describe("runServerProcess — boot", () => {
 
     try {
       const batches: string[] = [];
-      server.bus.subscribe((keys) => batches.push(JSON.stringify(keys)));
+      // `[["index"]]` frames belong to the embed worker (SERVER-051), which
+      // announces the seeded corpus's backlog on its own schedule: neither a
+      // queue transition nor a watcher echo, and so not what this test
+      // observes. Every frame the watcher can produce names documents, so
+      // dropping index-only frames weakens nothing the assertion claims.
+      server.bus.subscribe((keys) => {
+        const encoded = JSON.stringify(keys);
+        if (encoded === '[["index"]]') return;
+        batches.push(encoded);
+      });
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       const event = await server.queue.enqueue({

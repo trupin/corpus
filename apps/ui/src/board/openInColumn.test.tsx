@@ -7,6 +7,7 @@ import {
   BoardNavigationProvider,
   COLUMN_FLASH_MS,
   docSubject,
+  openRequest,
   resolveColumn,
   useOpenInColumn,
   useRegisterBoardNavigation,
@@ -108,6 +109,22 @@ describe("resolveColumn", () => {
   it("resolves nothing on a board with no columns", () => {
     expect(resolveColumn([], subject())).toBeNull();
     expect(resolveColumn([], null)).toBeNull();
+  });
+});
+
+/** UI-037: the one place a bare id and a full request are reconciled. */
+describe("openRequest", () => {
+  it("reads a bare id as the request it has always been", () => {
+    expect(openRequest("doc_a")).toEqual({ docId: "doc_a" });
+    expect(openRequest("doc_a").reveal).toBeUndefined();
+  });
+
+  it("passes a request through by reference, reveal and all", () => {
+    const request = {
+      docId: "doc_a",
+      reveal: { kind: "item", exact: "Call the plumber" },
+    } as const;
+    expect(openRequest(request)).toBe(request);
   });
 });
 

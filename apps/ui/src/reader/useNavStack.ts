@@ -1,3 +1,4 @@
+import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useMemo, useState } from "react";
 import type { NavEntry } from "../board/useBoardLocalState";
 
@@ -32,15 +33,28 @@ export interface NavStackApi {
   readonly previous: NavEntry | null;
   /** Where the current entry should be scrolled to; `0` for a fresh push. */
   readonly restoreY: number;
+  /** The current entry's pending reveal (UI-037), or `null` once it is honoured. */
+  readonly reveal: RevealTarget | null;
   readonly depth: number;
   /**
    * Follows a ref, a backlink or a thread-context link. `currentScrollY` is
    * where the reader is right now, written into the entry being left so Back
-   * can restore it exactly.
+   * can restore it exactly. `reveal` says where inside the arriving document to
+   * land, for the callers that know (UI-037).
    */
-  readonly push: (docId: string, currentScrollY: number) => void;
+  readonly push: (docId: string, currentScrollY: number, reveal?: RevealTarget) => void;
   /** Back. Pops one entry; popping the last one exits to the list. */
   readonly back: () => void;
+  /**
+   * Starts the history again at `docId` — what a host does when it is handed a
+   * new instruction while it is already open (focus mode's `docId`/`reveal`
+   * props).
+   *
+   * Not a push: the entries behind it belong to the reading excursion that
+   * instruction replaces, and Back out of the new one goes to the list rather
+   * than to somebody else's history.
+   */
+  readonly openAt: (docId: string, reveal?: RevealTarget) => void;
   /** Shift-click Back / `⇧esc`: empties the stack in one act. */
   readonly toList: () => void;
   /**
@@ -53,6 +67,14 @@ export interface NavStackApi {
   readonly drop: (docId: string) => void;
   /** Records the live scroll offset on the current entry, without navigating. */
   readonly captureScroll: (scrollY: number) => void;
+  /**
+   * Forgets the current entry's reveal, once the reader has honoured it.
+   *
+   * This is what makes the instruction one-shot: the entry that is left behind
+   * is an ordinary one, so Back onto it restores the scroll position the user
+   * left and flashes nothing (UI-037).
+   */
+  readonly consumeReveal: () => void;
 }
 
 /** Follows a link: remembers where we were, then goes. */
@@ -60,14 +82,24 @@ export function pushEntry(
   stack: readonly NavEntry[],
   docId: string,
   currentScrollY: number,
+  reveal?: RevealTarget,
 ): readonly NavEntry[] {
   // A self-referential ref (`[[thisDoc]]`) pushes like any other. De-duplicating
   // it into a no-op would leave the user having clicked a link that did nothing,
   // with no Back to undo — the stranding this deliberately avoids.
+  //
+  // The entry being left keeps its scroll offset and *loses* any reveal it had
+  // not got round to honouring: it was an instruction about arriving, and the
+  // user has already navigated past it.
   const kept = stack.map((entry, index) =>
     index === stack.length - 1 ? { docId: entry.docId, scrollY: currentScrollY } : entry,
   );
-  return [...kept, { docId, scrollY: 0 }];
+  return [...kept, rootEntry(docId, reveal)];
+}
+
+/** One entry, with a reveal only when there is one to carry. */
+export function rootEntry(docId: string, reveal?: RevealTarget): NavEntry {
+  return reveal === undefined ? { docId, scrollY: 0 } : { docId, scrollY: 0, reveal };
 }
 
 /** Back. An already-empty stack stays empty rather than going negative. */
@@ -75,11 +107,39 @@ export function popEntry(stack: readonly NavEntry[]): readonly NavEntry[] {
   return stack.length === 0 ? stack : stack.slice(0, -1);
 }
 
-/** Writes the live scroll offset onto the top entry; a no-op on an empty stack. */
+/**
+ * Writes the live scroll offset onto the top entry; a no-op on an empty stack.
+ *
+ * **A scroll capture never carries a reveal, and that is a correctness rule.**
+ *
+ * The capture is debounced by 150 ms and therefore runs from a closure over the
+ * stack as it stood when the scroll *happened*. Revealing an item scrolls the
+ * reader itself, so that snapshot is routinely the pre-consume one — and
+ * carrying its `reveal` forward wrote the just-honoured instruction straight
+ * back into `localStorage`, where it survived reloads and re-flashed the
+ * document on every subsequent load, forever. It shipped that way for exactly
+ * one wave (the e2e caught it under parallel load, where React's re-render is
+ * deferred past the browser's scroll dispatch often enough to make the stale
+ * closure the common case rather than the rare one).
+ *
+ * Dropping it here cannot lose a *live* instruction: honouring one is
+ * synchronous with clearing it, so any capture that carries a reveal is
+ * carrying a dead one. The one degradation is a reveal still retrying while
+ * something else scrolls the surface within 150 ms — that one is forgotten, and
+ * the document opens at the top, which is the honest failure. The alternative
+ * failure is a document that flashes at the user every morning.
+ */
 export function captureScrollAt(stack: readonly NavEntry[], scrollY: number): readonly NavEntry[] {
   const top = stack.at(-1);
   if (top === undefined || top.scrollY === scrollY) return stack;
   return [...stack.slice(0, -1), { docId: top.docId, scrollY }];
+}
+
+/** Drops the top entry's reveal once it has been honoured; a no-op when there is none. */
+export function clearRevealAt(stack: readonly NavEntry[]): readonly NavEntry[] {
+  const top = stack.at(-1);
+  if (top === undefined || top.reveal === undefined) return stack;
+  return [...stack.slice(0, -1), { docId: top.docId, scrollY: top.scrollY }];
 }
 
 /**
@@ -102,8 +162,8 @@ export function useNavStack(store: NavStackStore): NavStackApi {
   const { stack, setStack } = store;
 
   const push = useCallback(
-    (docId: string, currentScrollY: number) => {
-      setStack(pushEntry(stack, docId, currentScrollY));
+    (docId: string, currentScrollY: number, reveal?: RevealTarget) => {
+      setStack(pushEntry(stack, docId, currentScrollY, reveal));
     },
     [setStack, stack],
   );
@@ -111,6 +171,13 @@ export function useNavStack(store: NavStackStore): NavStackApi {
   const back = useCallback(() => {
     setStack(popEntry(stack));
   }, [setStack, stack]);
+
+  const openAt = useCallback(
+    (docId: string, reveal?: RevealTarget) => {
+      setStack([rootEntry(docId, reveal)]);
+    },
+    [setStack],
+  );
 
   const toList = useCallback(() => {
     // One act, one state change: no intermediate document is ever rendered and
@@ -134,6 +201,11 @@ export function useNavStack(store: NavStackStore): NavStackApi {
     [setStack, stack],
   );
 
+  const consumeReveal = useCallback(() => {
+    const next = clearRevealAt(stack);
+    if (next !== stack) setStack(next);
+  }, [setStack, stack]);
+
   return useMemo(() => {
     const top = stack.at(-1) ?? null;
     return {
@@ -141,14 +213,17 @@ export function useNavStack(store: NavStackStore): NavStackApi {
       docId: top?.docId ?? null,
       previous: stack.length >= 2 ? (stack[stack.length - 2] ?? null) : null,
       restoreY: top?.scrollY ?? 0,
+      reveal: top?.reveal ?? null,
       depth: stack.length,
       push,
       back,
+      openAt,
       toList,
       drop,
       captureScroll,
+      consumeReveal,
     };
-  }, [back, captureScroll, drop, push, stack, toList]);
+  }, [back, captureScroll, consumeReveal, drop, openAt, push, stack, toList]);
 }
 
 /** An in-memory store, for a surface whose history is not persisted (focus mode). */

@@ -1,9 +1,10 @@
-import type { QueueStatus } from "@corpus/contract";
+import type { IndexStatus, QueueStatus } from "@corpus/contract";
 import { useHealth } from "@corpus/kit";
 import type { KeyboardEvent, ReactElement } from "react";
 import { usePluginRegistry } from "../plugins/registry";
 import { AgentPill } from "./AgentPill";
 import { consoleCounts } from "./consoleModel";
+import { IndexPill } from "./IndexPill";
 
 /**
  * The collapsed one-line strip (SPEC.md §11): caret, the word `console`, the
@@ -81,6 +82,18 @@ export function ConsoleCounts({ status }: { readonly status: QueueStatus }): Rea
 export interface ConsoleStripProps {
   readonly open: boolean;
   readonly status: QueueStatus;
+  /**
+   * The semantic index's report, or `undefined` while the server has not
+   * answered — including when it never will.
+   *
+   * Unlike the queue status, an absent one is **not** substituted with zeroes:
+   * `UNKNOWN_QUEUE_STATUS` can stand in because "0 running" is true of a server
+   * that is not there, while every index state is a claim about a workspace's
+   * vectors. `index: disabled` on an unreachable server would say the workspace
+   * has no semantic index, which nobody knows. So the pill is simply absent, and
+   * the reachability notice two spans to the right is the fact that is true.
+   */
+  readonly index: IndexStatus | undefined;
   /** False while the queue status is unknown — halting would be a guess. */
   readonly controlsEnabled: boolean;
   readonly onToggle: () => void;
@@ -90,6 +103,7 @@ export interface ConsoleStripProps {
 export function ConsoleStrip({
   open,
   status,
+  index,
   controlsEnabled,
   onToggle,
   onToggleHalt,
@@ -115,6 +129,7 @@ export function ConsoleStrip({
       </span>
       <span>console</span>
       <AgentPill status={status} />
+      {index === undefined ? null : <IndexPill status={index} />}
       <ConsoleCounts status={status} />
       <span className="spacer" />
       <PluginWarnings />
