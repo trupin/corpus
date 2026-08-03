@@ -243,7 +243,8 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | todo | P2 | — |
 | UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | todo | P2 | — |
-| INFRA-019 | Pre-push hook never reads stdin: pushes die of SIGPIPE after passing (blocked v0.2.0) | done | P0 | — |
+| INFRA-019 | Tag pushes die after the pre-push gate passes; cause unknown (v0.2.0 shipped via API) | todo | P1 | — |
+| SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
 
 Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
 
@@ -317,5 +318,21 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 | UI-026 | ⌘K overlay adopts GET /api/search | done | P2 | SERVER-045 |
 
 ---
+
+## Phase 12 — Dogfood wave 2 (signed rider SHARED-009, 2026-08-03)
+
+Five live reports on v0.2.0. Rider signed; apply the SPEC text before the domain
+issues start. UI-049/051/052/053 are independent of each other and can run in
+parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-009 | Five SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
+| UI-049 | Images open full-size on click; inline attachment images actually load | todo | P1 | SHARED-009 |
+| UI-051 | Select text in a turn and comment on it, with the selection quoted | todo | P1 | SHARED-009 |
+| UI-052 | One composer key contract: ↵ newline, ⌘↵ send, ⇧⌘↵ secondary | todo | P1 | SHARED-009 |
+| UI-053 | One keyboard contract for all three autocompletes; ⇥ accepts | todo | P1 | SHARED-009 |
+| UI-050 | Fenced canvases wrap long lines instead of scrolling | todo | P2 | SHARED-009 |
+| PLUGINS-011 | Todos item composer adopts the composer key contract | todo | P2 | UI-052 |
 
 <!-- Additional phases will be added as the project grows -->
