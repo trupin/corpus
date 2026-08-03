@@ -327,6 +327,11 @@ _n/a until triage._
 - Evaluator note for the record: Phase 9 proof-of-work rated the best audited on
   this repo; zero re-dos.
 
+- Reveal-into-focus gap (PLUGINS-010, 2026-08-02): FocusMode honours reveal
+  payloads (UI-037, unit-pinned) but no producer can reach it — Column.tsx
+  hands plugin bodies `onOpen` only, and every core focus path passes a bare
+  id. Wire `onOpenFocus` (or widen the focus path) when a producer wants it;
+  until then the honouring code is contracted but unreachable.
 - Dogfood-wave eval observations (2026-08-02, recorded in the eval files, both
   outside any issue's criteria): (a) `PUT /api/x/todos/<id>/items/0` on a
   frontmatter-ONLY legacy doc succeeds and silently self-migrates it (dual and
