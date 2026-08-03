@@ -4,7 +4,7 @@
 plugins
 
 ## Status
-todo
+done
 
 ## Priority
 P2

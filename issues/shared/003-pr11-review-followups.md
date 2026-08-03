@@ -327,6 +327,16 @@ _n/a until triage._
 - Evaluator note for the record: Phase 9 proof-of-work rated the best audited on
   this repo; zero re-dos.
 
+- Second-half eval observations (2026-08-02, 8/8 PASS, recorded in eval
+  files): (a) UI-042's PLAIN flavor emits `[[id|Title]]`, not bare titles —
+  rider-compliant (it governs rich-text receivers; HTML carries title-only)
+  and the id is the Corpus→Corpus round-trip carrier, but the issue log's
+  "markdown byte for byte" claim is imprecise; decide at triage whether the
+  plain flavor should title-strip for external plain-text targets. (b) UI-040:
+  `stale`/`disabled` pill states verified stub-only (a real disabled drained
+  to current before paint); `failed`>0 not producible live. (c) PLUGINS-009's
+  "Mark as open" branch unreachable from the column (spec-correct: checked
+  items never render rows) — untested in the real app by construction.
 - Reveal-into-focus gap (PLUGINS-010, 2026-08-02): FocusMode honours reveal
   payloads (UI-037, unit-pinned) but no producer can reach it — Column.tsx
   hands plugin bodies `onOpen` only, and every core focus path passes a bare
