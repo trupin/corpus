@@ -7,15 +7,39 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 # Drain the ref list git writes to our stdin, before anything else runs.
-# Nothing below reads it — but leaving it unread is not free: every step here
-# spawns npm, vitest and Playwright with this descriptor inherited, and once one
-# of them closes it, git's write to the pipe raises SIGPIPE and git abandons the
-# push *after* the gate has passed. The symptom is a clean "all checks passed"
-# followed by exit 141 and nothing on the remote, which is what blocked the
-# v0.2.0 tag (INFRA-019). Consuming it here costs one process and removes the
-# race for good.
+# Nothing below reads it, but a hook that leaves its stdin unread is a hook that
+# can strand a writer. Consuming it costs one process. (This was first shipped
+# as a fix for the exit-141 push failures below — it is not; see INFRA-019.)
 refs_to_push="$(cat)"
 readonly refs_to_push
+
+# ── Why a push can die with 141 *after* this gate passes (INFRA-019) ──────────
+#
+# `GIT_TRACE=1` on a failing push shows the order that matters:
+#
+#   run_command: ssh git@github.com 'git-receive-pack ...'   <- 11:29:23
+#   run_command: .githooks/pre-push origin git@github.com:…   <- 11:29:25
+#   (this gate runs for three to five minutes)
+#   pre-push ✓ all checks passed
+#   <nothing — git is gone, exit 141>
+#
+# git opens the transport to the remote **before** it runs us, then waits. By the
+# time this gate finishes, the server has closed an idle `git-receive-pack`
+# session, and git's first write to that dead connection raises SIGPIPE. Nothing
+# is on the remote, the gate output says everything passed, and git prints no
+# error at all because it never reaches its reporting path.
+#
+# It reads as intermittent because it is a race against the remote's idle
+# timeout: a fast gate wins, a gate that ran the e2e suite loses. It is not about
+# tags versus branches, and not about ref creation versus update.
+#
+# The fix is SSH keepalives — and it CANNOT be set here. git opened the
+# connection before it ran us, so exporting `GIT_SSH_COMMAND` from this script
+# reaches only this script's own children, never the transport already waiting.
+# It has to be in git's config before the push starts, which is why
+# `npm run setup-hooks` now sets `core.sshCommand` alongside `core.hooksPath`.
+# A clone that skipped that step gets the old symptom, so if a push exits 141
+# with a clean gate above it, check `git config core.sshCommand` first.
 
 # The e2e suite binds a port for its Vite `webServer`. `vite.config.ts` pins the
 # dev server to 5173 (SPEC.md §3) and that is right for `npm run dev`; it is the
