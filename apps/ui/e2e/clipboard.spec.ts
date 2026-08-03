@@ -427,6 +427,27 @@ test.describe("pasting rich text into the document view", () => {
     expect(body).not.toMatch(/^\\$/m);
   });
 
+  /**
+   * The shape every mail client and chat app writes (PR #19 review, MAJOR): a
+   * `<div>` with `<br>` between its lines. The Docs repair used to strip any
+   * `<br>` whose nearest ancestor was not one of a hand-listed set of block
+   * hosts — `div` was not among them — so this paste saved as `line oneline
+   * two`, one word-run, with the separator silently gone.
+   */
+  test("a Gmail-shaped div-and-br paste keeps its lines apart", async ({ page }) => {
+    const corpus = await openNote(page);
+    await pasteHtml(
+      page,
+      "<div>Lender called back<br>Rate held at 6.1%</div>",
+      "Lender called back\nRate held at 6.1%",
+    );
+
+    const body = await savedBody(corpus);
+    expect(body).toContain("Lender called back");
+    expect(body).toContain("Rate held at 6.1%");
+    expect(body).not.toContain("Lender called backRate held at 6.1%");
+  });
+
   test("a plain-markdown paste still parses as markdown", async ({ page }) => {
     const corpus = await openNote(page);
     await page.evaluate(async () => {
@@ -439,6 +460,42 @@ test.describe("pasting rich text into the document view", () => {
     const body = await savedBody(corpus);
     expect(body).toContain("## Pasted heading");
     expect(body).toContain("- pasted bullet");
+  });
+});
+
+/**
+ * The other half of the same gesture (PR #19 review). The menu's Paste was
+ * `readText`, which carries one flavor, while ⌘V two keystrokes away pastes the
+ * rich one through the schema — UI-042's Copy defect pointing inwards.
+ */
+test.describe("pasting through the right-click menu", () => {
+  test("brings the clipboard's rich flavor in, the way ⌘V does", async ({ page }) => {
+    const corpus = await openNote(page);
+    await page.evaluate(async () => {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob(["<h2>Pasted findings</h2><ul><li>first pasted bullet</li></ul>"], {
+            type: "text/html",
+          }),
+          "text/plain": new Blob(["Pasted findings first pasted bullet"], { type: "text/plain" }),
+        }),
+      ]);
+    });
+
+    const prose = page.locator(".reader .doc-body h1").first();
+    await prose.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await prose.click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "Actions for the selection" });
+    await menu.waitFor();
+    await menu.locator('[data-act="paste"]').click();
+    await expect(menu).toHaveCount(0);
+
+    const body = await savedBody(corpus);
+    // Structure, not the flattened sentence the plain flavor holds.
+    expect(body).toContain("## Pasted findings");
+    expect(body).toContain("- first pasted bullet");
+    expect(body).not.toContain("Pasted findings first pasted bullet");
   });
 });
 

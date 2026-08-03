@@ -154,7 +154,9 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
     multi: false,
   },
   sort: {
-    summary: `Sort key; ${DEFAULT_DOC_SORT} when unset. A leading - reverses it.`,
+    // Not "a leading - reverses it": the contract enumerates the keys, and only
+    // updated and created have a descending form. `sort=-due` is a 400.
+    summary: `One of the keys below; ${DEFAULT_DOC_SORT} when unset.`,
     values: { kind: "fixed", values: DOC_SORTS },
     multi: false,
   },

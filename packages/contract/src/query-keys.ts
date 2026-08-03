@@ -5,8 +5,9 @@
  * module is the shared source of truth for *which* key arrays exist, what emits
  * each one, and what should refetch on it.
  *
- * Nine shapes, no more and no fewer. `query-keys.test.ts` pins the set: a tenth
- * shape fails a test rather than quietly appearing in a frame the UI ignores.
+ * {@link QUERY_KEY_NAMES} is the whole of it — no more and no fewer.
+ * `query-keys.test.ts` pins the set against that list, so a new shape fails a
+ * test rather than quietly appearing in a frame the UI ignores.
  *
  * **Zod-free on purpose.** This module imports nothing. `ACTOR_HEADER`/`ACTORS`
  * live outside `schemas/` for the same reason: a browser consumer must be able
@@ -70,7 +71,7 @@ export const jobKey = (eventId: string): QueryKey => ["jobs", eventId];
 export const lockKey = (docId: string): QueryKey => ["locks", docId];
 
 /**
- * Names of the ten shapes, in the order the vocabulary is documented. Pinned by
+ * Names of every shape, in the order the vocabulary is documented. Pinned by
  * `query-keys.test.ts`, and the render order of the description that reaches
  * `openapi.json` — so it is also what keeps that document byte-stable.
  */

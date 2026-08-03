@@ -11,7 +11,7 @@ export const INVALIDATE_EVENT = "invalidate";
  *
  * *Which* keys exist is a separate, closed question, answered by
  * `../query-keys.js`: this schema says what a well-formed key looks like, the
- * vocabulary says which nine the server actually emits.
+ * vocabulary says which of them the server actually emits.
  */
 export const QueryKeySchema = z
   .array(z.union([z.string(), z.number(), z.record(z.string(), z.unknown())]))

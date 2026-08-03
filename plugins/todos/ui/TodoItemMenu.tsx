@@ -61,7 +61,13 @@ export function TodoItemMenu({
   const doc = useDoc(target.docId);
   const body = doc.data?.body;
   const selector = body === undefined ? null : itemSelector(body, target.index, target.item.text);
-  const anchor = doc.data === undefined ? null : threadForItem(doc.data.anchors, target.item.text);
+  // The same body, index and label the selector is built from: an anchor is
+  // this item's thread when it lands on this item's characters, and a namesake
+  // three lines down is a different item with a different answer.
+  const anchor =
+    doc.data === undefined
+      ? null
+      : threadForItem(doc.data.anchors, doc.data.body, target.index, target.item.text);
 
   const actions: PluginMenuAction[] = [
     {

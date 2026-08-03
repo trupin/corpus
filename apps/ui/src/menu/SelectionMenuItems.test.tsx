@@ -2,7 +2,11 @@
 import type { RowNotice } from "@corpus/kit";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SelectionMenuItems, type SelectionClipboard } from "./SelectionMenuItems";
+import {
+  SelectionMenuItems,
+  type SelectionClipboard,
+  type SelectionClipboardItem,
+} from "./SelectionMenuItems";
 
 /**
  * SPEC.md §11's selection menu: Comment on selection first, then Copy always,
@@ -74,6 +78,8 @@ const TEXT = "## Findings\n\n- first **bold** bullet\n";
 interface Mounted {
   readonly notices: RowNotice[];
   readonly replaced: string[];
+  /** Every replacement in full, so a paste's rich flavor is inspectable. */
+  readonly pasted: { text: string; html: string | null | undefined }[];
   readonly commented: number;
   readonly close: ReturnType<typeof vi.fn>;
 }
@@ -85,6 +91,7 @@ function mount(options: {
 }): Mounted {
   const notices: RowNotice[] = [];
   const replaced: string[] = [];
+  const pasted: { text: string; html: string | null | undefined }[] = [];
   const state = { commented: 0 };
   const close = vi.fn();
   render(
@@ -102,8 +109,9 @@ function mount(options: {
       }
       onReplace={
         options.editable
-          ? (text) => {
+          ? (text, html) => {
               replaced.push(text);
+              pasted.push({ text, html });
             }
           : null
       }
@@ -114,10 +122,20 @@ function mount(options: {
   return {
     notices,
     replaced,
+    pasted,
     get commented() {
       return state.commented;
     },
     close,
+  };
+}
+
+/** A clipboard entry carrying the flavors it is given, the way `read` answers. */
+function clipboardEntry(flavors: Readonly<Record<string, string>>): SelectionClipboardItem {
+  return {
+    types: Object.keys(flavors),
+    getType: (type: string) =>
+      Promise.resolve({ text: () => Promise.resolve(flavors[type] ?? "") }),
   };
 }
 
@@ -313,6 +331,60 @@ describe("the clipboard items", () => {
 
     await waitFor(() => {
       expect(mounted.replaced).toEqual(["pasted words"]);
+    });
+    expect(mounted.notices).toEqual([]);
+  });
+
+  /**
+   * UI-042's defect, pointing the other way (PR #19 review). Paste was
+   * `readText`, which holds one flavor, so a Google Docs selection pasted
+   * through the menu lost every heading and bullet ⌘V would have kept.
+   */
+  it("pastes the clipboard's rich flavor when it carries one", async () => {
+    const readText = vi.fn<() => Promise<string>>().mockResolvedValue(TEXT);
+    stubClipboard({
+      readText,
+      read: vi.fn().mockResolvedValue([clipboardEntry({ "text/html": HTML, "text/plain": TEXT })]),
+    });
+    const mounted = mount({ editable: true });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Paste/ }));
+
+    await waitFor(() => {
+      expect(mounted.pasted).toEqual([{ text: TEXT, html: HTML }]);
+    });
+    // The plain read is not also taken: one gesture, one clipboard read.
+    expect(readText).not.toHaveBeenCalled();
+    expect(mounted.notices).toEqual([]);
+  });
+
+  it.each([
+    [
+      "the browser's clipboard is text-only",
+      { readText: vi.fn<() => Promise<string>>().mockResolvedValue("pasted words") },
+    ],
+    [
+      "the rich read is refused",
+      {
+        readText: vi.fn<() => Promise<string>>().mockResolvedValue("pasted words"),
+        read: vi.fn().mockRejectedValue(new Error("Read permission denied.")),
+      },
+    ],
+    [
+      "the clipboard holds no rich flavor",
+      {
+        readText: vi.fn<() => Promise<string>>().mockResolvedValue("pasted words"),
+        read: vi.fn().mockResolvedValue([clipboardEntry({ "text/plain": "pasted words" })]),
+      },
+    ],
+  ])("pastes plain text when %s", async (_case, clipboard) => {
+    stubClipboard(clipboard);
+    const mounted = mount({ editable: true });
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Paste/ }));
+
+    await waitFor(() => {
+      expect(mounted.pasted).toEqual([{ text: "pasted words", html: null }]);
     });
     expect(mounted.notices).toEqual([]);
   });

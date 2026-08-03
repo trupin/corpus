@@ -90,17 +90,30 @@
   margin: 0;
 }
 
-.query-help-rule,
-.query-help-field {
+.query-help-rule {
   display: grid;
   grid-template-columns: minmax(0, auto) 1fr;
   gap: 4px 8px;
   padding: 2px 0;
 }
 
-/* Wide enough for `includeArchived`, the longest name the grammar has. */
+/*
+ * The field list is **one** grid, not a grid per row, so its name column is as
+ * wide as the widest name and no wider — measured, never guessed. A per-row grid
+ * cannot align across rows, which is what a hard-coded width was standing in for
+ * (it was fitted to `includeArchived`, and the next contract filter with a
+ * longer name would have wrapped or left a gap). Each row is `display: contents`
+ * so its `dt`/`dd` become items of that shared grid while the wrapper stays in
+ * the DOM for `data-query-field`.
+ */
+.query-help-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 8px;
+}
+
 .query-help-field {
-  grid-template-columns: 106px 1fr;
+  display: contents;
 }
 
 .query-help dt {

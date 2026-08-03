@@ -45,6 +45,16 @@ export interface NavStackApi {
   readonly push: (docId: string, currentScrollY: number, reveal?: RevealTarget) => void;
   /** Back. Pops one entry; popping the last one exits to the list. */
   readonly back: () => void;
+  /**
+   * Starts the history again at `docId` — what a host does when it is handed a
+   * new instruction while it is already open (focus mode's `docId`/`reveal`
+   * props).
+   *
+   * Not a push: the entries behind it belong to the reading excursion that
+   * instruction replaces, and Back out of the new one goes to the list rather
+   * than to somebody else's history.
+   */
+  readonly openAt: (docId: string, reveal?: RevealTarget) => void;
   /** Shift-click Back / `⇧esc`: empties the stack in one act. */
   readonly toList: () => void;
   /**
@@ -84,7 +94,12 @@ export function pushEntry(
   const kept = stack.map((entry, index) =>
     index === stack.length - 1 ? { docId: entry.docId, scrollY: currentScrollY } : entry,
   );
-  return [...kept, reveal === undefined ? { docId, scrollY: 0 } : { docId, scrollY: 0, reveal }];
+  return [...kept, rootEntry(docId, reveal)];
+}
+
+/** One entry, with a reveal only when there is one to carry. */
+export function rootEntry(docId: string, reveal?: RevealTarget): NavEntry {
+  return reveal === undefined ? { docId, scrollY: 0 } : { docId, scrollY: 0, reveal };
 }
 
 /** Back. An already-empty stack stays empty rather than going negative. */
@@ -157,6 +172,13 @@ export function useNavStack(store: NavStackStore): NavStackApi {
     setStack(popEntry(stack));
   }, [setStack, stack]);
 
+  const openAt = useCallback(
+    (docId: string, reveal?: RevealTarget) => {
+      setStack([rootEntry(docId, reveal)]);
+    },
+    [setStack],
+  );
+
   const toList = useCallback(() => {
     // One act, one state change: no intermediate document is ever rendered and
     // no intermediate scroll restoration runs.
@@ -195,12 +217,13 @@ export function useNavStack(store: NavStackStore): NavStackApi {
       depth: stack.length,
       push,
       back,
+      openAt,
       toList,
       drop,
       captureScroll,
       consumeReveal,
     };
-  }, [back, captureScroll, consumeReveal, drop, push, stack, toList]);
+  }, [back, captureScroll, consumeReveal, drop, openAt, push, stack, toList]);
 }
 
 /** An in-memory store, for a surface whose history is not persisted (focus mode). */

@@ -130,6 +130,21 @@ ESLint and Prettier clean on every touched file.
 Not covered here: a real `corpus` server. This issue writes nothing — it is
 layout only — so the browser half is the whole of it.
 
+## PR #19 review follow-up (2026-08-03)
+
+**Model: Opus 5 (`claude-opus-5[1m]`).** Agent: ui-dev.
+
+`sortFit.ts` carried two **raw NUL bytes** (0x00) — `join("\0")` written as literal
+control characters. Git classified the whole 5.5 KB module as binary
+(`Bin 0 -> 5494 bytes` in `git diff` and in GitHub's review UI), `git grep` skipped it,
+and a conflict in it could only have been resolved ours/theirs. Replaced with a named
+`SEPARATOR = "\u0000"` constant: byte-identical at runtime, and `file` now reports
+`Unicode text, UTF-8`. (`git diff` against HEAD still says `Bin` because the *committed*
+blob is the binary one; the file is new on this branch, so the PR's diff against `main`
+renders it as text once the fix is committed.)
+
+`vitest run apps/ui/src/board/sortFit.test.ts` → 15 passed, unchanged.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

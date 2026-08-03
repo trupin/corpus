@@ -1,13 +1,13 @@
 import type { RowNotice } from "@corpus/kit";
 import type { RevealTarget } from "@corpus/kit/plugin";
-import { useCallback, useEffect, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
-import { useMemoryNavStack } from "./useNavStack";
+import { rootEntry, useMemoryNavStack } from "./useNavStack";
 import { useReaderDoc } from "./useReaderDoc";
 import { useReaderSurface } from "./useReaderSurface";
 import { EscapeLayerPriority, useEscapeLayer } from "./useEscapeStack";
@@ -55,11 +55,29 @@ export function FocusMode({
   onClose,
   onNotify,
 }: FocusModeProps): ReactElement {
-  const stack = useMemoryNavStack([
-    reveal === undefined ? { docId, scrollY: 0 } : { docId, scrollY: 0, reveal },
-  ]);
+  const stack = useMemoryNavStack([rootEntry(docId, reveal)]);
   const current = stack.docId ?? docId;
   const reader = useReaderDoc(current);
+
+  /**
+   * The overlay is a live component, not a one-shot (PR #19 review).
+   *
+   * `docId` and `reveal` seeded the stack at mount and were then ignored, so a
+   * board that pointed an *already open* focus mode at another document — or at
+   * another place in the same one — changed nothing on screen. The excursion
+   * this overlay was holding belongs to the instruction it replaces, so a new
+   * one starts the history again rather than pushing onto it.
+   *
+   * Compared by identity, and both props are stable while the instruction is:
+   * `Board` holds them in one state object, so re-seeding cannot loop.
+   */
+  const opened = useRef({ docId, reveal });
+  const { openAt } = stack;
+  useEffect(() => {
+    if (opened.current.docId === docId && opened.current.reveal === reveal) return;
+    opened.current = { docId, reveal };
+    openAt(docId, reveal);
+  }, [docId, openAt, reveal]);
 
   const surface = useReaderSurface({
     reader,

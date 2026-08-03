@@ -21,6 +21,13 @@ const BODY = todoBody([
   ["Send the signed form", true],
 ]);
 
+/** Two identical items with a different one between them — the ordinary case. */
+const DUPES = todoBody([
+  ["Call the plumber", false],
+  ["Chase the invoice", false],
+  ["Call the plumber", false],
+]);
+
 const target = (overrides: Partial<TodoItemTarget> = {}): TodoItemTarget => ({
   docId: "doc_week",
   listTitle: "Week of Jul 20",
@@ -29,15 +36,36 @@ const target = (overrides: Partial<TodoItemTarget> = {}): TodoItemTarget => ({
   ...overrides,
 });
 
-const anchorOn = (exact: string, overrides: Partial<ResolvedAnchor> = {}): ResolvedAnchor => ({
-  anchorId: "anc_1",
-  threadId: "th_plumber",
-  threadStatus: "open",
-  selector: { exact, prefix: "", suffix: "" },
-  range: { start: 0, end: exact.length },
-  orphaned: false,
-  ...overrides,
-});
+/** The row for the plumber item at `index` of {@link DUPES}. */
+const plumber = (index: number): TodoItemTarget =>
+  target({ index, item: { text: "Call the plumber", done: false } });
+
+/**
+ * An anchor resolved **where it actually lands**: on the `nth` (0-based)
+ * occurrence of `exact` in the body the menu is about to read.
+ *
+ * The range is the identity, not the quote (PR #19 MAJOR 3): a document with
+ * two "Call the plumber" lines has two candidate spans, and the thread belongs
+ * to exactly one of them.
+ */
+const anchorOn = (
+  exact: string,
+  overrides: Partial<ResolvedAnchor> = {},
+  where: { readonly body?: string; readonly nth?: number } = {},
+): ResolvedAnchor => {
+  const body = where.body ?? BODY;
+  let start = body.indexOf(exact);
+  for (let seen = 0; seen < (where.nth ?? 0); seen += 1) start = body.indexOf(exact, start + 1);
+  return {
+    anchorId: "anc_1",
+    threadId: "th_plumber",
+    threadStatus: "open",
+    selector: { exact, prefix: "", suffix: "" },
+    range: { start, end: start + exact.length },
+    orphaned: false,
+    ...overrides,
+  };
+};
 
 interface Mounted {
   readonly onToggle: ReturnType<typeof vi.fn>;
@@ -102,6 +130,63 @@ describe("TodoItemMenu", () => {
     mount({ anchors: [anchorOn("Call the plumber", { orphaned: true, range: null })] });
     await waitFor(() => {
       expect(act("comment").hasAttribute("disabled")).toBe(false);
+    });
+    expect(acts()).toEqual(["toggle", "comment"]);
+  });
+
+  /**
+   * PR #19, MAJOR 3. Two rows read "Call the plumber"; one of them has a
+   * thread. Offering it to the other is the menu inventing a relationship the
+   * document does not have (SPEC.md §11 — "exactly that item's existing
+   * actions, nothing invented"), and following it navigates to a conversation
+   * about a different line.
+   */
+  it("does not lend the earlier duplicate's thread to a later namesake", async () => {
+    mount({
+      body: DUPES,
+      anchors: [anchorOn("Call the plumber", {}, { body: DUPES, nth: 0 })],
+      subject: plumber(2),
+    });
+    await waitFor(() => {
+      expect(act("comment").hasAttribute("disabled")).toBe(false);
+    });
+    expect(acts()).toEqual(["toggle", "comment"]);
+  });
+
+  it("offers the later duplicate's own thread, and offers it only to that row", async () => {
+    const onSecond = { body: DUPES, nth: 1 };
+    mount({
+      body: DUPES,
+      anchors: [anchorOn("Call the plumber", {}, onSecond)],
+      subject: plumber(2),
+    });
+    await waitFor(() => {
+      expect(acts()).toEqual(["toggle", "comment", "open-thread"]);
+    });
+    cleanup();
+    mount({
+      body: DUPES,
+      anchors: [anchorOn("Call the plumber", {}, onSecond)],
+      subject: plumber(0),
+    });
+    await waitFor(() => {
+      expect(act("comment").hasAttribute("disabled")).toBe(false);
+    });
+    expect(acts()).toEqual(["toggle", "comment"]);
+  });
+
+  /**
+   * The same guard `itemSelector` has always had, now on this half too: between
+   * the aggregate and the document read, the item at that index can be someone
+   * else. An anchor on *that* item is not this row's thread.
+   */
+  it("offers no thread when the index no longer holds the item the row named", async () => {
+    mount({
+      anchors: [anchorOn("Send the signed form")],
+      subject: target({ index: 2, item: { text: "Call the plumber", done: false } }),
+    });
+    await waitFor(() => {
+      expect(act("comment").textContent).toContain("not in the document body");
     });
     expect(acts()).toEqual(["toggle", "comment"]);
   });

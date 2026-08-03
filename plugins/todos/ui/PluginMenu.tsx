@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent, type ReactElement } from "react";
+import { useDismissable } from "./dismiss.js";
 import "@corpus/kit/autocomplete.css";
 import "./todos.css";
 
@@ -28,15 +29,10 @@ import "./todos.css";
  *   including its deliberate omission: `↵` is a focused `<button>`'s own default
  *   action and is never re-implemented here.
  *
- * **Escape is listened for on `window`, in the capture phase**, which is the one
- * place this frame cannot simply follow core. Core menus join an escape
- * *registry* (`useEscapeStack`) that resolves precedence between the reader,
- * focus mode and popovers; a plugin cannot register with it. A `document`
- * listener would be too late — the registry's own capture listener runs first
- * and `stopPropagation()`s, so a reader open behind this menu would swallow the
- * key and close instead. `window` captures before `document` does, so the menu
- * gets the press, stops it, and the layer underneath is left alone: the same
- * outcome `EscapeLayerPriority.Popover` produces for a core menu.
+ * **Escape and outside-click dismissal are `./dismiss.ts`'s**, which is the one
+ * place this frame cannot simply follow core (a plugin cannot join
+ * `useEscapeStack`) — and is shared with `TodoItemComposer` so the two
+ * plugin-rendered surfaces in this directory dismiss identically.
  */
 
 export interface PluginMenuAction {
@@ -113,26 +109,7 @@ export function PluginMenu({
     };
   }, [autoFocus]);
 
-  useEffect(() => {
-    const onKeyDownCapture = (event: globalThis.KeyboardEvent): void => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      // Before `document`, so the escape registry behind this menu never sees
-      // the press and the reader underneath stays open.
-      event.stopPropagation();
-      onClose();
-    };
-    const onPointerDown = (event: MouseEvent): void => {
-      if (menu.current?.contains(event.target as Node) === true) return;
-      onClose();
-    };
-    window.addEventListener("keydown", onKeyDownCapture, true);
-    document.addEventListener("mousedown", onPointerDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKeyDownCapture, true);
-      document.removeEventListener("mousedown", onPointerDown, true);
-    };
-  }, [onClose]);
+  useDismissable(menu, onClose);
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>): void => {

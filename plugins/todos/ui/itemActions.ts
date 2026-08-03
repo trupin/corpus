@@ -26,7 +26,18 @@ import type { TodoItemTarget } from "./TodoItemMenu.js";
 export interface TodoItemToggle {
   /** Flips one item's box. Never throws — a refusal lands in {@link error}. */
   readonly toggle: (target: TodoItemTarget) => void;
-  /** True while a write is in flight, so the column can stop a second one. */
+  /**
+   * True while a write is in flight — a **progress** signal, not a lock, and
+   * deliberately not gated on by the column.
+   *
+   * A second click during the first write cannot do damage: the payload states
+   * the value it wants rather than an increment (`done: !item.done`, read off
+   * the row the user is looking at), so repeating it re-applies the same value,
+   * and it carries `expectedText`, so a list that moved underneath is refused
+   * with a 409 instead of flipping whatever took the index. A guard here would
+   * buy nothing and would cost the honest case — the user who clicks two
+   * different rows quickly, which is two independent writes.
+   */
   readonly busy: boolean;
   /** The last refusal, in the server's own words, until it is dismissed. */
   readonly error: string | null;

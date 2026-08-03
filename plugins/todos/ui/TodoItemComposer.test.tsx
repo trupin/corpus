@@ -138,6 +138,40 @@ describe("TodoItemComposer", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * PR #19 review. The composer used to answer Escape only from its textarea,
+   * so pressing the agent toggle first — which moves focus to a button — left
+   * the key to the app's own escape chain: the reader **underneath** closed
+   * while this popover stayed open, over nothing.
+   */
+  it("closes on Escape once focus has left the field", () => {
+    const { onClose } = mount();
+    fireEvent.click(screen.getByText("◉ ask agent"));
+    fireEvent.keyDown(screen.getByText("○ note only"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes Escape before the layer behind it can act on it", () => {
+    const behind = vi.fn();
+    // The app's escape chain listens on `document` in the capture phase; this
+    // popover listens on `window`, which captures first.
+    document.addEventListener("keydown", behind, true);
+    const { onClose } = mount();
+    fireEvent.keyDown(input(), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(behind).not.toHaveBeenCalled();
+    document.removeEventListener("keydown", behind, true);
+  });
+
+  it("dismisses on a click outside, and not on one inside", () => {
+    const { onClose } = mount();
+    fireEvent.mouseDown(input());
+    fireEvent.mouseDown(screen.getByText("“Call the plumber”"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the words and reports the refusal when the server says no", async () => {
     const { onCreated } = mount({
       status: 423,

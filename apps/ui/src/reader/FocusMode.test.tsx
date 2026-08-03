@@ -69,6 +69,34 @@ function Solo({
   );
 }
 
+/** An already-open overlay the board points somewhere else, without unmounting it. */
+function Rewired({ transport }: { readonly transport: ReaderTransport }): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
+  const [target, setTarget] = useState<{ docId: string; reveal?: RevealTarget }>({
+    docId: "doc_m",
+  });
+  return (
+    <harness.Wrapper>
+      <button
+        type="button"
+        data-retarget
+        onClick={() => {
+          setTarget({ docId: "doc_r", reveal: { kind: "item", exact: "Back to" } });
+        }}
+      >
+        retarget
+      </button>
+      <FocusMode
+        docId={target.docId}
+        listTitle="Finance"
+        reveal={target.reveal}
+        onClose={() => undefined}
+        onNotify={() => undefined}
+      />
+    </harness.Wrapper>
+  );
+}
+
 /** Focus mode over a live column reader — the arrangement TEST-34/35 describe. */
 function Stacked({
   transport,
@@ -164,6 +192,31 @@ describe("FocusMode", () => {
     });
     expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(0);
     expect(document.querySelector(".focus .thread-slot.expanded")).toBeNull();
+  });
+
+  /**
+   * PR #19 review. `docId` and `reveal` seeded the stack in a `useState`
+   * initializer and were never read again, so a board that re-pointed an open
+   * overlay changed nothing on screen — the seam was there and the props were
+   * dropped.
+   */
+  it("follows its props when the board re-points an overlay that is already open", async () => {
+    render(<Rewired transport={wire()} />);
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Mortgage options");
+    });
+
+    fireEvent.click(document.querySelector("[data-retarget]") as HTMLElement);
+
+    await waitFor(() => {
+      expect(titleOf(document)).toBe("Rates");
+    });
+    // The new instruction's reveal is honoured too, not just its document.
+    await waitFor(() => {
+      expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(1);
+    });
+    // A new excursion, not a push onto the old one: Back goes to the list.
+    expect(document.querySelector(".focus .back:not([data-close-focus])")).toBeNull();
   });
 
   it("names the hint after what it can actually do", () => {

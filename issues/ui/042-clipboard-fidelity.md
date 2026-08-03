@@ -439,6 +439,83 @@ passes **unchanged** — the test was right and the code was wrong.
   the correct reading of the rider. No code change.
 - Nothing else outstanding.
 
+## PR #19 review follow-up (2026-08-03)
+
+**Model: Opus 5 (`claude-opus-5[1m]`).** Agent: ui-dev. Branch: `dogfood-todos-polish`.
+Real Chromium via Playwright against the real Vite dev server (`CORPUS_UI_PORT=5974`),
+real system clipboard, `clipboard-read` + `clipboard-write` granted.
+
+### MAJOR — `cleanPastedHtml` welded two lines into one word-run
+
+`BREAK_HOSTS` was a hand-listed allowlist of block hosts (`p,h1…h6,li,td,th,blockquote,pre`)
+and every `<br>` whose nearest matching ancestor was null was removed. `div`, `span` and
+`section` were not on it, so `<div>line one<br>line two</div>` — what Gmail, Outlook web
+and Slack put on the clipboard — cleaned to one paragraph with no separator.
+
+**Red proof, at the markdown (not the HTML):**
+
+```
+FAIL a paste from anywhere but Google Docs > keeps both lines of a a div separated…
+AssertionError: expected 'line oneline two\n' to be 'line one\\\nline two\n'
+- line one\
+- line two
++ line oneline two
+```
+
+Two more, from the same run (MINOR 1, the unconditional DOMParser round trip):
+
+```
+expected 'Acme6.1%' to be '<tr><td>Acme</td><td>6.1%</td></tr>'      (wrapMap lost the table)
+expected '<p class="c1">strong words</p>' to be '<html><head><style>…'  (the <style> was dropped)
+```
+
+**Fixed two ways, both required.** (a) The whole clean-up is now gated on Google Docs'
+own signature (`docs-internal-guid-` in the payload); anything else is returned byte for
+byte and reaches ProseMirror's `readHTML` with its `wrapMap` and `<style>`-folding intact.
+(b) The `<br>` rule is positive and asks the break's **neighbours** rather than its
+ancestors: inline content on either side means it separates words and it stays; a block
+element (or nothing) either side means it separates blocks and goes. An unrecognised tag
+counts as inline, so the next tag nobody listed costs a stray `\` at worst instead of
+losing a line.
+
+`clipboard.test.ts` → **40 passed** (9 new: div/span/section/custom-element hosted breaks
+kept, div-and-br surviving to the markdown for all three, bare `<tr>` fragment and a
+class+`<style>` Word payload passed through untouched).
+
+### MINOR — the menu's Paste was plain text while ⌘V was rich
+
+The mirror image of the Copy defect this issue fixed. `SelectionMenuItems` read
+`clipboard.readText()`; it now reads `text/html` through `clipboard.read()` when the
+clipboard carries one and hands it to `captureReplace`, which selects the captured range
+and calls `EditorView.pasteHTML` — the same function ProseMirror's own `paste` handler
+calls, so the menu and ⌘V run one paste path. Degradations, in order: no `read`, a
+refused `read`, or no rich flavor → `readText` exactly as before.
+
+Real browser, real clipboard: `navigator.clipboard.write()` with
+`<h2>Pasted findings</h2><ul><li>first pasted bullet</li></ul>`, `⌘A` in the body,
+right-click → menu **Paste**, then the autosaved `PUT /api/docs/doc_note` body read off
+the wire:
+
+```
+## Pasted findings
+
+- first pasted bullet
+```
+
+— structure, not the flattened `Pasted findings first pasted bullet` the plain flavor
+held (asserted absent).
+
+### Checks
+
+| Gate | Result |
+| --- | --- |
+| `vitest run apps/ui/src` | **1888 passed** / 118 files |
+| `vitest run packages/kit/src` | **533 passed** / 35 files |
+| Playwright `clipboard.spec.ts` | **13 passed** (2 new: Gmail div+br, menu rich paste) |
+| Playwright `context-menu` + `editor` + `reader` + `todos` | **67 passed** |
+| `tsc --noEmit` (apps/ui, packages/kit) | clean |
+| `eslint` + `prettier --check` (apps/ui, packages/kit) | clean, nothing suppressed |
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

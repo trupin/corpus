@@ -146,8 +146,8 @@ export function createSseBridge(options: SseBridgeOptions): SseBridge {
     for (const key of keys) {
       // The contract's `QueryKeySchema` allows an empty array, and TanStack
       // treats `[]` as a prefix of every key — so one degenerate frame would
-      // invalidate the entire cache. Nine shapes exist and none of them is
-      // empty, so this can only ever be a malformed frame.
+      // invalidate the entire cache. No shape in the vocabulary is empty, so
+      // this can only ever be a malformed frame.
       if (key.length === 0) {
         logger.debug("[corpus] ignored an empty query key in an invalidate frame");
         continue;

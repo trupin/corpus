@@ -313,6 +313,42 @@ and no focus seam, so the only way a reveal reaches `FocusMode` today is the
 `onOpenFocus`/`onFocusMode` widening is in place, so a producer is a prop away —
 but there is no code change here. Left with the orchestrator to ledger.
 
+## PR #19 review follow-up (2026-08-03)
+
+**Model: Opus 5 (`claude-opus-5[1m]`).** Agent: ui-dev.
+
+Four findings against this issue's surface, all fixed:
+
+1. **The flash outlived its navigation.** `useReaderSurface`'s reveal effect cleared its
+   retry timer but not `clearFlash`, so navigating inside `REVEAL_FLASH_MS` left
+   `trackReveal`'s animation-frame loop re-searching the *newly opened* document for the
+   previous one's words. Fixed by scoping the live flash to the navigation that lit it
+   (`{ nav, stop }` keyed on `navToken`) and putting it out when the surface leaves that
+   entry. Keyed on the token rather than on an effect teardown deliberately: a
+   cleanup-based fix would fire on StrictMode's replayed effects and re-create UI-046.
+   New `apps/ui/src/reader/useReaderSurface.test.tsx` (4 tests) — red pre-fix with
+   `expected 1 to be +0` on the layer count after a navigation; it also asserts
+   `cancelAnimationFrame` was called, that a second document's own reveal still leaves
+   exactly one flash, that an ordinary re-render leaves the flash alone, and that unmount
+   still clears it.
+2. **`z-index: 55` outranked every overlay that hides a reader.** A fading flash painted
+   over focus mode's chrome (35) and over the search overlay (40). Now **36**: one above
+   focus mode, so it is still seen over the document it points at, and below search (40),
+   the selection toolbar (50) and the menus (60).
+3. **`FocusMode`'s `reveal`/`docId` were read only at mount** (a `useState` initializer),
+   so a board re-pointing an overlay that was already open changed nothing. `NavStackApi`
+   gained `openAt(docId, reveal)` — start the history again, since the excursion behind it
+   belongs to the instruction being replaced — and `FocusMode` calls it when either prop
+   changes identity. Red pre-fix: `expected 'Mortgage options' to be 'Rates'`
+   (`FocusMode.test.tsx` → "follows its props when the board re-points an overlay that is
+   already open"); `useNavStack.test.ts` pins `openAt` itself.
+4. **`REVEAL_ATTEMPTS` served two budgets.** Split: `REVEAL_RETRIES` (openings of the
+   document, `REVEAL_RETRY_MS` apart) and `REVEAL_MISS_FRAMES` (consecutive frames the
+   tracker may find nothing while the flash is lit).
+
+Checks: `vitest run apps/ui/src` **1888 passed** / 118 files (`reader/` alone: 209);
+Playwright `reader` + `editor` **22 passed**; `tsc --noEmit`, `eslint`, `prettier` clean.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

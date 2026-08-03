@@ -382,8 +382,9 @@ export function Board(): ReactElement {
   const openRowMenu = useCallback(() => {
     const element = cursor.element();
     if (element === null) return;
-    // A plugin **column body** owns its surface; v1 leaves it alone (sign-off
-    // item 4). Asked of the painted element, not of the row's type — a `todo`
+    // A plugin **column body** owns its surface, and since the 2026-08-02 §11
+    // amendment it may put its own menu on it through the kit — so core opens
+    // none there. Asked of the painted element, not of the row's type — a `todo`
     // document row in an ordinary column is a core row with the core action set
     // however it is painted (UI-036).
     if (isPluginRendered(element)) return;

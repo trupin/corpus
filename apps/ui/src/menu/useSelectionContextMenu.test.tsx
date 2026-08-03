@@ -26,7 +26,17 @@ afterEach(() => {
   cleanup();
   resetEscapeLayers();
   vi.restoreAllMocks();
+  Reflect.deleteProperty(globalThis, "ClipboardEvent");
 });
+
+/**
+ * `EditorView.pasteHTML` constructs a `ClipboardEvent` to hand to `handlePaste`,
+ * and jsdom ships none — every browser does. The gap is the environment's, so it
+ * is filled here rather than worked around in the code under test.
+ */
+function stubClipboardEvent(): void {
+  Object.defineProperty(globalThis, "ClipboardEvent", { value: Event, configurable: true });
+}
 
 /** Points `getSelection` at the contents of `#quote`, as a real range would. */
 function selectQuote(): void {
@@ -180,6 +190,61 @@ describe("captureReplace", () => {
     captureReplace(editor, never)?.("a <b> c");
 
     expect(editor.state.doc.textContent).toBe("a <b> c");
+    editor.destroy();
+  });
+
+  /**
+   * PR #19 review: the menu's Paste was plain text while ⌘V was rich, which is
+   * UI-042's copy defect pointing the other way. The rich flavor goes in through
+   * the editor's own paste path, so the schema converts it exactly as it does
+   * for ⌘V.
+   */
+  it("pastes the rich flavor through the schema, replacing the captured range", () => {
+    stubClipboardEvent();
+    const editor = editorWith("rates");
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+    const replace = captureReplace(editor, never);
+
+    // Focus has moved to the menu and the caret collapsed, as it really has.
+    editor.commands.setTextSelection({ from: 6, to: 6 });
+    replace?.(
+      "## Findings\n\n- first bullet\n",
+      "<h2>Findings</h2><ul><li><p>first bullet</p></li></ul>",
+    );
+
+    const json = editor.getJSON();
+    const types = (json.content ?? []).map((node) => node.type);
+    expect(types).toContain("heading");
+    expect(types).toContain("bulletList");
+    expect(editor.state.doc.textContent).toContain("Findings");
+    expect(editor.state.doc.textContent).toContain("first bullet");
+    // The words the range held are gone: this replaced, it did not append.
+    expect(editor.state.doc.textContent).not.toContain("rates");
+    editor.destroy();
+  });
+
+  it("falls back to the plain flavor when the clipboard carried no rich one", () => {
+    const editor = editorWith("rates");
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+    captureReplace(editor, never)?.("prices", null);
+
+    expect(editor.getJSON().content?.[0]?.type).toBe("paragraph");
+    expect(editor.state.doc.textContent).toBe("prices");
+    editor.destroy();
+  });
+
+  it("refuses a rich paste onto a range that no longer reads the same", () => {
+    stubClipboardEvent();
+    const editor = editorWith("rates moved");
+    editor.commands.setTextSelection({ from: 1, to: 6 });
+    const stale = vi.fn();
+    const replace = captureReplace(editor, stale);
+
+    editor.commands.setContent("<p>PRICE moved</p>", false);
+    replace?.("Findings", "<h2>Findings</h2>");
+
+    expect(stale).toHaveBeenCalledOnce();
+    expect(editor.state.doc.textContent).toBe("PRICE moved");
     editor.destroy();
   });
 

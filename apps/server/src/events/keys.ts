@@ -11,7 +11,7 @@
 // (`@corpus/contract` → `query-keys.ts`, the follow-up CONTRACT issue this file
 // used to promise), which is what makes "the published set is the emitted set"
 // true by construction — the UI's SSE bridge, the OpenAPI description of
-// `GET /events` and this emitter all read the same nine builders. This module
+// `GET /events` and this emitter all read the same builders. This module
 // stays the server's import site, so nothing downstream of `../events/index.js`
 // changed, and keeps the one genuinely server-side concern: collapsing a batch
 // before it goes on the wire.

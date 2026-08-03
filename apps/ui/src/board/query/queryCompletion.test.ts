@@ -44,6 +44,48 @@ describe("detectQueryTrigger", () => {
     expect(detectQueryTrigger(text, caret)).toMatchObject({ kind: "field", query: "ty" });
   });
 
+  /**
+   * The token, not the part in front of the caret (PR #19 review). A caret
+   * dropped into the middle of a word is the ordinary way to fix a typo, and a
+   * trigger that ended at the caret left the tail behind.
+   */
+  it.each([
+    ["a field name", "ty|e=note", "type", "type=note", 5],
+    ["a value", "type=no|te", "note", "type=note", 9],
+    [
+      "a value with another field after it",
+      "type=no|te&status=open",
+      "note",
+      "type=note&status=open",
+      9,
+    ],
+    ["a value after a comma", "type=note,vi|ew", "view", "type=note,view", 14],
+    ["a caret at the very start of the token", "|tye=note", "type", "type=note", 5],
+  ])(
+    "replaces the whole token under the caret — %s",
+    (_case, marked, chosen, expected, caretAfter) => {
+      const { text, caret } = at(marked);
+      const trigger = detectQueryTrigger(text, caret);
+      expect(trigger).not.toBeNull();
+      expect(applyQueryCompletion(text, trigger as never, chosen)).toEqual({
+        text: expected,
+        caret: caretAfter,
+      });
+    },
+  );
+
+  it("stops the token at the delimiter, never eating the next field", () => {
+    const { text, caret } = at("ty|&status=open");
+    const trigger = detectQueryTrigger(text, caret);
+    expect(applyQueryCompletion(text, trigger as never, "type").text).toBe("type=&status=open");
+  });
+
+  it("leaves the spacing a person typed around the token alone", () => {
+    const { text, caret } = at("ty|e = note");
+    const trigger = detectQueryTrigger(text, caret);
+    expect(applyQueryCompletion(text, trigger as never, "type").text).toBe("type= = note");
+  });
+
   it("refuses a caret outside the text rather than inventing a trigger", () => {
     expect(detectQueryTrigger("type=note", -1)).toBeNull();
     expect(detectQueryTrigger("type=note", 99)).toBeNull();

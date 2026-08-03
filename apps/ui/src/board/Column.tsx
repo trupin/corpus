@@ -187,7 +187,8 @@ function PluginColumnBody({
         <div className="col-list" data-plugin-surface="">
           {/*
            * The surface below this node is the plugin's, and `data-plugin-surface`
-           * is how every menu rule says so (SPEC.md §10, sign-off item 4) — the
+           * is how every menu rule says so (SPEC.md §10; §11 as amended
+           * 2026-08-02, which lets the plugin paint its own there) — the
            * same stamp `DocView` puts on a plugin `View`. Marking the *surface*
            * is what lets core stop guessing from a document's **type**, which is
            * what suppressed the row menu on every `todo` document anywhere on

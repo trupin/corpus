@@ -233,6 +233,69 @@ This issue avoided a new kit export entirely by returning `refresh()` from
 `useTodoLists` (the underlying `refetch`), which needs nothing new — but every
 plugin that writes will re-invent the same three lines.
 
+### PR #19 review follow-up — MAJOR 3 and three MINORs
+
+**Model: Opus 5 (`claude-opus-5[1m]`), 2026-08-03, branch `dogfood-todos-polish`.**
+
+**MAJOR 3 — duplicate items borrowed each other's thread.** `threadForItem`
+matched on quote text alone (`!orphaned && selector.exact === text`), so with
+`Call the plumber` at index 0 (has a thread) and index 2 (has none), the second
+row was offered "Open existing thread" and navigated to the **first** item's
+conversation. The acceptance criterion above says the action is shown "only when
+the item has one"; SPEC.md §11 says "exactly that item's existing actions,
+nothing invented". Both were unmet, and the inconsistency was internal:
+`itemSelector` already refused a stale index by comparing `expectedText`, and
+`reveal.ts` already framed duplicates by their neighbours.
+
+*Red proof* (new component test, pre-fix — the behavioural level, so it does not
+depend on the helper's signature):
+
+```
+× TodoItemMenu > does not lend the earlier duplicate's thread to a later namesake
+    AssertionError: expected [ 'toggle', 'comment', 'open-thread' ] to deeply equal [ 'toggle', 'comment' ]
+× TodoItemMenu > offers the later duplicate's own thread, and offers it only to that row
+    AssertionError: expected [ 'toggle', 'comment', 'open-thread' ] to deeply equal [ 'toggle', 'comment' ]
+  Tests  2 failed | 9 passed (11)
+```
+
+*Fix* (`ui/itemAnchor.ts`): both questions now come from one guarded span. A new
+private `itemRange(body, index, expectedText)` holds the stale-index refusal
+`itemSelector` had; `itemSelector` is built on it, and
+`threadForItem(anchors, body, index, expectedText)` returns the anchor that
+**resolves onto exactly those characters**. Range identity subsumes the quote
+test for every exactly-resolved anchor (the server's range *is* the span of
+`exact`) and preserves both older refusals — a fragment quote spans a narrower
+range, an orphaned anchor has no range at all. Sole caller `TodoItemMenu` passes
+`doc.data.body` and the row's index; test fixtures that faked `range: {start: 0}`
+now compute the real span from the body they hand the component.
+
+**MINOR 1 — `busy`.** Chose the comment, not the wiring: the payload states the
+value it wants (`done: !item.done`, read off the row on screen) rather than an
+increment, and carries `expectedText`, so a repeat click either re-applies the
+same value or is refused with a 409 — a guard would buy nothing and would cost
+the honest case (two quick clicks on two *different* rows are two independent
+writes). The doc comment now says that instead of describing a lock.
+
+**MINOR 2 — the composer's dismissal.** Escape was handled only inside the
+textarea, so pressing *ask agent* (focus moves to a button) and then Escape let
+the app's escape registry close the **reader underneath** while the composer
+stayed open. Rather than copying `PluginMenu`'s listeners a second time, both now
+share `ui/dismiss.ts`'s `useDismissable` — window-capture Escape (ahead of the
+registry's `document` listener) plus outside-mousedown, one implementation, so
+the two plugin-rendered surfaces in this directory cannot drift. Four new
+composer tests: Escape with focus off the field, Escape not reaching the layer
+behind, outside click dismisses, inside click does not.
+
+**MINOR 3 — `SELECTOR_CONTEXT`.** Comment corrected: the tests pin this module
+against *itself*, so core changing its constant desyncs plugin anchors silently.
+Names UI-045 item 1 as the owner of the real fix; no kit export built here.
+
+**Gates.** `plugins/todos` → **15 files, 369 tests, all passing**;
+`todos-menu.spec.ts` + `reveal.spec.ts` in real Chromium → **26 passed**
+(`CORPUS_UI_PORT=6373`; 5173/8765 untouched). `eslint --max-warnings 0`,
+`prettier --check`, `tsc --noEmit` clean in `plugins/todos` and `apps/ui`; no
+rule disabled, no suppression added.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

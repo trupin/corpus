@@ -38,9 +38,9 @@ import { serializeDoc } from "./markdown/serialize.js";
  * **Pasting is a clean-up, not a parser.** ProseMirror's own clipboard parser
  * runs the HTML through this schema's `parseHTML` rules, which is what turns a
  * word processor's `<span style="font-weight:700">` into a `bold` mark and
- * drops everything the schema cannot name. It needs help with exactly two
- * things Google Docs does that survive that pass as junk (see
- * {@link cleanPastedHtml}).
+ * drops everything the schema cannot name. It needs help with the few things
+ * Google Docs does that survive that pass as junk — and with nothing else, so
+ * the help is gated on Docs' own signature (see {@link cleanPastedHtml}).
  */
 
 /**
@@ -216,8 +216,71 @@ function withRefLabels(node: PmNode, resolve: RefResolver): PmNode {
 /** Where Google Docs sends every external link, with the real one in `q`. */
 const GOOGLE_REDIRECT = "https://www.google.com/url?";
 
-/** The block containers a `<br>` legitimately sits inside. */
-const BREAK_HOSTS = "p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,pre";
+/**
+ * The id Google Docs stamps on the wrapper around every copied selection —
+ * the signature this whole clean-up is gated on (see {@link cleanPastedHtml}).
+ */
+const DOCS_SIGNATURE = "docs-internal-guid-";
+
+/** `nodeType` values, spelled out so no DOM global has to be in scope here. */
+const ELEMENT_NODE = 1;
+const TEXT_NODE = 3;
+
+/**
+ * Elements that cannot hold inline content: the HTML block set.
+ *
+ * Used the safe way round. An element **named here** beside a `<br>` means the
+ * break separates blocks, which markdown already separates with a blank line;
+ * anything else — a `<span>`, a custom element, a tag added to HTML next year —
+ * counts as inline, so the break is separating text and survives as a hard
+ * break. The default therefore costs a stray `\` at worst, where the opposite
+ * default silently welds two lines into one word-run.
+ */
+const BLOCK_ELEMENTS = new Set([
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "caption",
+  "col",
+  "colgroup",
+  "dd",
+  "details",
+  "dialog",
+  "div",
+  "dl",
+  "dt",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hgroup",
+  "hr",
+  "li",
+  "main",
+  "nav",
+  "ol",
+  "p",
+  "pre",
+  "section",
+  "summary",
+  "table",
+  "tbody",
+  "td",
+  "tfoot",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+]);
 
 /**
  * Google Docs' HTML, made parseable without loss.
@@ -236,20 +299,32 @@ const BREAK_HOSTS = "p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,pre";
  *    `google.com/url?q=…&sa=D&usg=…` tracking hop. It survives the schema, so a
  *    paste writes a 200-character redirect into the markdown where the author
  *    wrote `https://example.com`. The real destination is `q`.
- * 3. **Block-level `<br>`.** Docs separates blocks with bare `<br>` elements
- *    outside any paragraph. The parser has to put them somewhere, so each
- *    becomes a paragraph holding a hard break — a `\` on its own line in the
- *    saved markdown. A break between blocks says nothing markdown does not say
- *    with a blank line.
+ * 3. **Block-separating `<br>`.** Docs separates blocks with bare `<br>`
+ *    elements outside any paragraph. The parser has to put them somewhere, so
+ *    each becomes a paragraph holding a hard break — a `\` on its own line in
+ *    the saved markdown. A break with a block either side of it says nothing
+ *    markdown does not say with a blank line; a break with *text* either side
+ *    of it is the line separator every mail client writes, and it stays.
+ *
+ * **Gated on the signature, and that is the point** (PR #19 review). This is a
+ * DOMParser round trip, and a round trip is not free: `readHTML` in
+ * ProseMirror's own clipboard path re-hosts a bare `<tr>` fragment through its
+ * `wrapMap` and folds a `<style>` block into the inline styles its mark rules
+ * read — both of which a `parseFromString(…).body` has already thrown away by
+ * the time it hands the markup on. So every payload that is not Docs' is
+ * returned byte for byte and reaches that parser exactly as the clipboard wrote
+ * it. If Docs ever stops stamping the wrapper, the three repairs stop with it
+ * and a Docs paste degrades to ugly-but-lossless, which is the right way round.
  *
  * Everything else is left exactly as it arrived: the mark rules key on the
  * inline styles, so stripping them would lose the emphasis this is here to keep.
  */
 export function cleanPastedHtml(html: string, parse: HtmlParser = domParse): string {
+  if (!html.includes(DOCS_SIGNATURE)) return html;
   const body = parse(html);
   if (body === null) return html;
 
-  for (const wrapper of [...body.querySelectorAll('b[id^="docs-internal-guid-"]')]) {
+  for (const wrapper of [...body.querySelectorAll(`b[id^="${DOCS_SIGNATURE}"]`)]) {
     wrapper.replaceWith(...wrapper.childNodes);
   }
 
@@ -259,10 +334,43 @@ export function cleanPastedHtml(html: string, parse: HtmlParser = domParse): str
   }
 
   for (const linebreak of [...body.querySelectorAll("br")]) {
-    if (linebreak.closest(BREAK_HOSTS) === null) linebreak.remove();
+    if (!separatesText(linebreak)) linebreak.remove();
   }
 
   return body.innerHTML;
+}
+
+/**
+ * Does this `<br>` stand between text rather than between blocks?
+ *
+ * Asked of the break's own neighbours instead of of its ancestors, because the
+ * ancestor question needs a list of the elements that become text blocks and
+ * that list is never finished — `<div>line one<br>line two</div>`, which is what
+ * Gmail, Outlook web and Slack put on the clipboard, is a `<br>` inside an
+ * element no such list named. Neighbours answer it directly: inline content on
+ * either side means the break is separating words.
+ */
+function separatesText(linebreak: Element): boolean {
+  return (
+    isInline(meaningfulSibling(linebreak, "previousSibling")) ||
+    isInline(meaningfulSibling(linebreak, "nextSibling"))
+  );
+}
+
+/** The nearest sibling in one direction that is not whitespace or a comment. */
+function meaningfulSibling(node: Node, direction: "previousSibling" | "nextSibling"): Node | null {
+  for (let at = node[direction]; at !== null; at = at[direction]) {
+    if (at.nodeType === TEXT_NODE && (at.textContent ?? "").trim() === "") continue;
+    if (at.nodeType !== TEXT_NODE && at.nodeType !== ELEMENT_NODE) continue;
+    return at;
+  }
+  return null;
+}
+
+function isInline(node: Node | null): boolean {
+  if (node === null) return false;
+  if (node.nodeType === TEXT_NODE) return true;
+  return !BLOCK_ELEMENTS.has(node.nodeName.toLowerCase());
 }
 
 /** The destination a Google redirect wraps, or `null` when it is not one. */

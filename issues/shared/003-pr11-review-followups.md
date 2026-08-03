@@ -353,3 +353,23 @@ _n/a until triage._
   plugins/_fixture's fixture-notes skill, which then surfaces as a type:skill doc in
   search — packaged installs are clean (underscore plugins excluded; pack:check
   guards). Consider a dev-init exclusion at triage.
+- Orchestrator ruling, no rider needed (2026-08-03, PR #19 review question):
+  the Fable reviewer asked whether UI-039's query editor (autocomplete + syntax
+  help) needed its own signed SPEC rider, noting that four comparable UI
+  additions on the same branch each got one. Ruling: **no**. The four that got
+  riders each introduced something the spec did not describe or reversed a
+  prior signed decision — a new console surface (index pill), a new copy
+  affordance (canvases), a changed clipboard contract, and plugin-contributed
+  menus (reversing SHARED-004 item 4). UI-039 adds an *affordance over the
+  existing documented filter vocabulary* (§5/§9.2) and changes no behavior: the
+  same queries were expressible before, and the completion source is
+  `DocsQuerySchema` plus the contract enums, so the editor cannot describe a
+  grammar the spec does not already define. Recorded here rather than silently,
+  because the asymmetry is a fair question and the next reviewer will ask it
+  again. Revisit if the editor ever gains grammar of its own.
+- Kit CSS placement deviation (2026-08-03, PR #19 review MINOR): sprint-023's
+  Out of Scope said UI-034's task-list CSS lands in `apps/ui`; it landed in
+  `packages/kit/src/markdown/markdown.css`. The kit renders markdown, so
+  rendered task lists plausibly belong there — but the TipTap-editor-shaped
+  selectors ship to plugins that can never emit that markup. Resolution
+  recorded with the ui-dev fix pass; triage should confirm the split.

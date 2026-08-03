@@ -406,12 +406,20 @@ interface ChoreItem {
  * Two identical open items with a **checked** one between them: the ambiguity
  * of sprint-023 OC4, framed by a line the column does not display and the
  * reader does.
+ *
+ * **The duplicated item is the one carrying a deadline**, deliberately (PR #19
+ * review, MAJOR 1). A deadline renders as part of its own line, so it sits
+ * between the quote and the line below it; a payload whose frame ignored that
+ * could never match, and the reader's fallback quietly flashed the *first*
+ * "Call the plumber" instead. Putting the marker on a non-duplicated item —
+ * which is what this fixture used to do — is precisely the arrangement in which
+ * producer and consumer never meet.
  */
 const CHORE_ITEMS: readonly ChoreItem[] = [
-  { text: "Call the plumber", done: false },
+  { text: "Call the plumber", done: false, due: "2026-08-09" },
   { text: "Book the passport appointment", done: false, due: "2026-08-01" },
   { text: "Send the signed form", done: true },
-  { text: "Call the plumber", done: false },
+  { text: "Call the plumber", done: false, due: "2026-08-09" },
   { text: "Rinse the filters", done: false },
 ];
 
@@ -536,10 +544,12 @@ test.describe("a click on a todo item", () => {
   });
 
   /**
-   * sprint-023 OC4, end to end. Both rows read "Call the plumber"; the payload
-   * is what distinguishes them, and the frame it carries is the **checked**
-   * item above the second one — a line the column never displays and the reader
-   * always renders.
+   * sprint-023 OC4, end to end, and the one place the producer's frame and the
+   * reader's occurrence rule actually meet. Both rows read "Call the plumber";
+   * the payload is what distinguishes them, and it has to survive two things
+   * the column never shows — the **checked** item above the second one, and the
+   * clicked item's **own deadline**, which the reader renders between the quote
+   * and the line below it.
    */
   test("reveals the duplicate that was clicked, not the first line with the same words", async ({
     page,

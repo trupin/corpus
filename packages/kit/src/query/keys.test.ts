@@ -61,8 +61,8 @@ describe("the core vocabulary is the contract's, not the kit's", () => {
 });
 
 describe("keys the kit owns because the contract's set is closed", () => {
-  // TEST-12: nine shapes upstream, pinned by `query-keys.test.ts`. These two are
-  // needed here and may not be added there.
+  // TEST-12: the upstream shapes are closed and pinned by `query-keys.test.ts`.
+  // These two are needed here and may not be added there.
   it("names the health probe, which no server mutation emits", () => {
     expect(HEALTH_KEY).toEqual(["health"]);
     expect(contract.QUERY_KEY_NAMES).not.toContain("health");
@@ -205,7 +205,7 @@ describe("collection keys", () => {
 /**
  * TEST-1009/TEST-1010 and TEST-1032. Sprint-022 Open Conflict 7: the two
  * retrieval reads cache under the `["docs"]` prefix the server already emits on,
- * so neither adds a tenth name to a vocabulary that is closed and published into
+ * so neither adds a name to a vocabulary that is closed and published into
  * `openapi.json`.
  */
 describe("retrieval keys", () => {
@@ -223,7 +223,7 @@ describe("retrieval keys", () => {
   });
 
   it("adds no name to the contract's closed vocabulary", () => {
-    // A tenth name would be a contract change plus an artifact regeneration.
+    // A new name would be a contract change plus an artifact regeneration.
     expect(contract.QUERY_KEY_NAMES).not.toContain("related");
     expect(contract.QUERY_KEY_NAMES).not.toContain("search");
     expect(relatedKey("doc_x")[0]).toBe(DOCS_KEY[0]);

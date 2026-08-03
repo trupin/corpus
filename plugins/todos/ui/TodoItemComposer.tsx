@@ -1,5 +1,6 @@
 import { useCreateThread } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useDismissable } from "./dismiss.js";
 import { clampToViewport } from "./PluginMenu.js";
 import type { ItemSelector } from "./itemAnchor.js";
 import type { TodoItemTarget } from "./TodoItemMenu.js";
@@ -22,6 +23,12 @@ import "./todos.css";
  * into a job). It is a copy because the kit publishes no composer; the *thread*
  * it produces is not a copy of anything — `useCreateThread` is the kit's own
  * hook and the request is the ordinary §6 one, selector included.
+ *
+ * **Dismissal is `./dismiss.ts`'s, the same as `PluginMenu`'s.** Core's popover
+ * answers Escape from its field *and* through the escape registry, which a
+ * plugin cannot join; answering only from the field left a real hole — press
+ * the agent toggle, so focus is on a button, then Escape, and the app's own
+ * chain closed the reader **underneath** while this popover stayed open.
  */
 
 /** The quote, short enough to sit in a popover without becoming the popover. */
@@ -55,8 +62,11 @@ export function TodoItemComposer({
   const [text, setText] = useState("");
   const [asking, setAsking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const surface = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const create = useCreateThread();
+
+  useDismissable(surface, onClose);
 
   useEffect(() => {
     input.current?.focus();
@@ -97,6 +107,7 @@ export function TodoItemComposer({
 
   return (
     <div
+      ref={surface}
       className="todo-comment-pop"
       role="dialog"
       aria-label="New comment on todo item"
@@ -115,14 +126,10 @@ export function TodoItemComposer({
           setText(event.target.value);
         }}
         onKeyDown={(event) => {
-          // A field answers Escape itself: the app's escape chain deliberately
-          // ignores keys typed inside one, so `⌫` still deletes a character.
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            onClose();
-            return;
-          }
+          // Escape is not handled here: `useDismissable` takes it on `window`
+          // in the capture phase, so it answers wherever focus is inside this
+          // popover — and stops it before the app's chain, which is the half a
+          // field-scoped handler could not do.
           if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
           event.preventDefault();
           send();

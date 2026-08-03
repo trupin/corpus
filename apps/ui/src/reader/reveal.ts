@@ -26,7 +26,19 @@ import "./reveal.css";
 export const REVEAL_FLASH_MS = 1200;
 
 /** Passes at finding the text before giving up; the body may still be arriving. */
-export const REVEAL_ATTEMPTS = 5;
+export const REVEAL_RETRIES = 5;
+
+/**
+ * Consecutive frames the tracker may find nothing before it stops following.
+ *
+ * A different budget from {@link REVEAL_RETRIES}, which counts *openings* of a
+ * document spaced {@link REVEAL_RETRY_MS} apart: this one counts animation
+ * frames while the flash is already lit, and it is what decides how long a
+ * renderer may swap its text nodes out from under a live highlight before the
+ * surface accepts the text is gone. They shared one constant, and a change to
+ * either budget silently moved the other.
+ */
+const REVEAL_MISS_FRAMES = 5;
 
 /** Delay between those passes. */
 export const REVEAL_RETRY_MS = 80;
@@ -384,7 +396,7 @@ function trackReveal(
       // worth anyone's frame budget. The boxes stay where they are until the
       // flash's own timer takes them away.
       misses += 1;
-      if (misses >= REVEAL_ATTEMPTS) return;
+      if (misses >= REVEAL_MISS_FRAMES) return;
     } else {
       misses = 0;
       frames += 1;

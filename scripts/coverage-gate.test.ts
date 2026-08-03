@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { CoverageMapData } from "istanbul-lib-coverage";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   COVERAGE_EXCLUDE,
   COVERAGE_INCLUDE,
@@ -11,10 +12,13 @@ import {
 } from "./coverage-config.js";
 import {
   attributionOf,
+  browserDumpNames,
   coverageScope,
   emptyScopeFailure,
   formatMetricsTable,
+  isRepoSourceEntry,
   projectExecutedLines,
+  readBrowserDumps,
   resolveServedSource,
   rewriteEntrySources,
   SOURCE_MAP_PRAGMA,
@@ -210,6 +214,98 @@ describe("rewriteEntrySources", () => {
 
     const noSource = { url: "http://localhost:5273/x.js" };
     expect(rewriteEntrySources(noSource, "apps/ui", REPO_ROOT)).toBe(noSource);
+  });
+});
+
+describe("isRepoSourceEntry", () => {
+  it("keeps repo sources and drops what Vite serves on its own behalf", () => {
+    expect(isRepoSourceEntry({ url: "http://localhost:5273/src/main.tsx" })).toBe(true);
+    expect(
+      isRepoSourceEntry({ url: "http://localhost:5273/@fs/repo/packages/kit/dist/index.js" }),
+    ).toBe(true);
+    expect(
+      isRepoSourceEntry({ url: "http://localhost:5273/node_modules/.vite/deps/react.js" }),
+    ).toBe(false);
+    expect(isRepoSourceEntry({ url: "http://localhost:5273/@vite/client" })).toBe(false);
+    expect(isRepoSourceEntry({ url: "http://localhost:5273/@react-refresh" })).toBe(false);
+  });
+});
+
+describe("reading the browser dumps", () => {
+  let directory = "";
+
+  function writeDump(name: string, contents: unknown): void {
+    writeFileSync(resolve(directory, name), JSON.stringify(contents), "utf8");
+  }
+
+  beforeEach(() => {
+    directory = mkdtempSync(resolve(tmpdir(), "corpus-coverage-"));
+  });
+
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("lists only dump files, in a stable order", () => {
+    writeDump("b.json", {});
+    writeDump("a.json", {});
+    writeFileSync(resolve(directory, "notes.txt"), "x", "utf8");
+
+    expect(browserDumpNames(directory)).toEqual(["a.json", "b.json"]);
+  });
+
+  it("lists nothing for a directory that was never created", () => {
+    expect(browserDumpNames(resolve(directory, "absent"))).toEqual([]);
+  });
+
+  it("merges in the order it is given", () => {
+    writeDump("a.json", { root: "apps/ui", entries: [] });
+    writeDump("b.json", { root: "apps/other", entries: [] });
+
+    const roots = [...readBrowserDumps(directory, ["b.json", "a.json"])].map((dump) => dump.root);
+
+    expect(roots).toEqual(["apps/other", "apps/ui"]);
+  });
+
+  // The defect INFRA-017 fixes: reading all of them up front held 2.2 GB of
+  // dumps live for the length of the merge. A dump that does not exist when the
+  // generator is created, and is read anyway, can only have been read on demand.
+  it("reads one dump per pull rather than the whole directory up front", () => {
+    writeDump("a.json", { root: "first", entries: [] });
+
+    const roots: string[] = [];
+    for (const dump of readBrowserDumps(directory, ["a.json", "b.json"])) {
+      roots.push(dump.root);
+      if (roots.length === 1) writeDump("b.json", { root: "written later", entries: [] });
+    }
+
+    expect(roots).toEqual(["first", "written later"]);
+  });
+
+  // Reading on demand widens the window in which the listing can go stale, and
+  // an e2e run clearing the directory mid-merge is the way that happens.
+  it("says what happened when a listed dump is gone by the time it is read", () => {
+    writeDump("a.json", { root: "apps/ui", entries: [] });
+
+    expect(() => {
+      for (const dump of readBrowserDumps(directory, ["a.json", "vanished.json"])) {
+        if (dump.root === "apps/ui") rmSync(resolve(directory, "vanished.json"), { force: true });
+      }
+    }).toThrow(/vanished\.json was listed for this merge but could not be read/);
+  });
+
+  it("names the offending file when a dump is not the shape this version writes", () => {
+    writeDump("a.json", { root: "apps/ui", entries: [] });
+    writeDump("b.json", { entries: [] });
+
+    const roots: string[] = [];
+
+    expect(() => {
+      for (const dump of readBrowserDumps(directory, ["a.json", "b.json"])) roots.push(dump.root);
+    }).toThrow(/b\.json is not a coverage dump this version writes/);
+    // The dump before the bad one was delivered and merged: the failure is per
+    // file, not "the whole directory failed to load".
+    expect(roots).toEqual(["apps/ui"]);
   });
 });
 
@@ -484,5 +580,17 @@ describe("the e2e suite feeds the gate", () => {
         /import\s*{[^}]*\btest\b[^}]*}\s*from\s*"@playwright\/test"/,
       );
     }
+  });
+});
+
+describe("the merged gate's runner", () => {
+  it("runs the merge with heap headroom over V8's RAM-derived default", () => {
+    // INFRA-017: the default old space on a 16 GB CI runner is ~4 GB, which the
+    // merge reached and died on. The streaming reader is the fix; this is the
+    // margin above it, and it is invisible from the script itself.
+    const manifest = readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8");
+    const { scripts } = JSON.parse(manifest) as { scripts: Record<string, string> };
+
+    expect(scripts["coverage:merge"]).toContain("--max-old-space-size=");
   });
 });

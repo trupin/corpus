@@ -213,6 +213,81 @@ items, and the spent instruction does not fire a second time in the other host.
   where this diff is the group shape (`all` + `{at, item}` — which that issue's
   menus need anyway) and the `onClick`.
 
+### PR #19 review follow-up — MAJOR 1: a deadlined duplicate revealed the wrong line
+
+**Model: Opus 5 (`claude-opus-5[1m]`), 2026-08-03, branch `dogfood-todos-polish`.**
+
+The frames this issue shipped were asymmetric: `prefix` carried the previous
+line's due marker (correct — it is rendered text), `suffix` carried only the
+next item's words. But the target's **own** marker sits between `exact` and the
+next line, so the reader's `chooseOccurrence` — which tests the suffix with
+`trimStart().startsWith(tail)` — was matching against `"(due: 2026-08-09) Send
+the form"` and could never satisfy a suffix of `"Send the form"`. It fell back
+to the first occurrence, so **clicking the second of two identical deadlined
+items flashed the first**. Confidently wrong, not degraded; exactly what
+sprint-023 OC4 exists to prevent.
+
+The gap was baked into the tests: `reveal.test.ts` pinned the unmatchable
+payload (single occurrence, so the fallback hid it), and `reveal.spec.ts` put
+its `due` on the **non-duplicated** item, so producer and consumer never met.
+
+**Fix** (`ui/reveal.ts`): a new `dueMarker(item)`, and `suffix` is now the
+target's own marker joined with the next line's *full* rendered text — built the
+same way `prefix` always was. `exact` still excludes the marker (documented,
+wanted: a deadline edited between click and open costs the frame, which degrades
+to the first occurrence, not the quote, which would find nothing). Also
+tightened: an out-of-range index now returns before `exact` is computed instead
+of relying on `?.`.
+
+**Red proof, unit** (new tests against the pre-fix producer):
+
+```
+× itemOpenRequest > quotes a deadline in both frames and never in the target
+× itemOpenRequest > frames the last item with its own deadline when it has one
+× …against what the reader does with it > lands on the clicked duplicate when the target carries a deadline
+     AssertionError: expected null to be 116        ← no occurrence satisfies the frame
+× …against what the reader does with it > lands on the first duplicate when that is the one clicked
+     AssertionError: expected null to be 33         ← the *first* one's frame was unusable too
+× …against what the reader does with it > resolves every item of a mixed list onto its own line
+  Tests  5 failed | 13 passed (18)
+```
+
+The new `describe("itemOpenRequest, against what the reader does with it")`
+crosses producer and consumer: it builds the string the reader actually indexes
+(collapsed, markers included) and runs the reader's occurrence rule over it,
+**without** its first-occurrence fallback — the fallback is right in production
+and is precisely what hid this for a release. It restates `chooseOccurrence`
+rather than importing it because a plugin may not import `apps/ui` and the kit
+publishes no reveal matcher (see the kit gap below).
+
+**Red proof, real browser** (the un-copied crossing). `apps/ui/e2e/reveal.spec.ts`'s
+fixture now puts the deadline on the **duplicated** item. Mutation check —
+restore the old one-line `suffix` and run the spec:
+
+```
+PASS (17) FAIL (1)
+1. reveals the duplicate that was clicked, not the first line with the same words
+   Error: expect(received).toBeLessThan(expected)      ← the flash moved to the first line
+```
+
+Restored; `reveal.spec.ts` **18 passed**, and 26 passed with `todos-menu.spec.ts`
+alongside it (`CORPUS_UI_PORT=6373`; 5173 and 8765 left to their holders). One
+flake seen once under two specs × two workers — "carries into full screen as an
+open" — passed alone and passed on the re-run of the pair; unrelated to this
+change (focus-mode expansion timing).
+
+`plugins/todos` → **15 files, 369 tests, all passing**. `eslint --max-warnings 0`,
+`prettier --check`, `tsc --noEmit` clean in `plugins/todos` and `apps/ui`; no
+suppressions.
+
+**Kit gap, one entry wider than UI-045 item 1 records**: `chooseOccurrence` is
+the consumer of every reveal a plugin will ever produce and it lives in
+`apps/ui/src/reader/reveal.ts`, unreachable and untestable from a plugin. The
+crossing test above is a restatement, which is the same drift risk
+`SELECTOR_CONTEXT` has. Publishing the matcher (or a frame builder) from the kit
+would let a producer be tested against the real consumer — worth folding into
+UI-045.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

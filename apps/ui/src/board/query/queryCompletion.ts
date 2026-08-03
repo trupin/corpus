@@ -24,7 +24,10 @@ export interface QueryTrigger {
   readonly field: string;
   /** Offset of the first character the completion replaces. */
   readonly start: number;
-  /** Offset of the last, i.e. the caret. */
+  /**
+   * Offset just past the last character it replaces — the end of the **token**,
+   * which is the caret only when the caret sits at the end of one.
+   */
   readonly end: number;
   /** What has been typed into the token so far, trimmed. */
   readonly query: string;
@@ -48,6 +51,33 @@ function token(text: string, from: number, caret: number): { start: number; quer
   return { start: from + lead, query: raw.trim() };
 }
 
+/**
+ * Where the token under the caret ends.
+ *
+ * **The caret is not the end of it**, and assuming so is what made mid-token
+ * completion duplicate the tail: with the caret two characters into `tye=note`,
+ * accepting `type` wrote `type=e=note`, which `parseQueryString` reads as a
+ * *known* field — so the unknown-field notice never fired and the column
+ * silently rendered empty (PR #19 review). The `@`/`/`/`[[` triggers can look
+ * only leftwards because their sigil bounds them; a query string has none, so
+ * every caret position is inside a token and the whole token is what a
+ * completion replaces.
+ *
+ * Trailing whitespace stays out, the way {@link token} keeps leading whitespace
+ * out: what a person spaced is theirs, and a completion replaces the word.
+ */
+function tokenEnd(text: string, caret: number, stops: string): number {
+  let at = caret;
+  while (at < text.length && !stops.includes(text[at] ?? "")) at += 1;
+  return caret + text.slice(caret, at).trimEnd().length;
+}
+
+/** What closes a field name: its own `=`, or the next field. */
+const FIELD_STOPS = "=&";
+
+/** What closes a value: the next value, or the next field. `q=a=b` is one value. */
+const VALUE_STOPS = ",&";
+
 export function detectQueryTrigger(text: string, caret: number): QueryTrigger | null {
   if (caret < 0 || caret > text.length) return null;
   const from = segmentStart(text, caret);
@@ -56,7 +86,7 @@ export function detectQueryTrigger(text: string, caret: number): QueryTrigger | 
 
   if (equals === -1) {
     const { start, query } = token(text, from, caret);
-    return { kind: "field", field: "", start, end: caret, query };
+    return { kind: "field", field: "", start, end: tokenEnd(text, caret, FIELD_STOPS), query };
   }
 
   const field = segment.slice(0, equals).trim();
@@ -65,7 +95,7 @@ export function detectQueryTrigger(text: string, caret: number): QueryTrigger | 
   const after = segment.slice(equals + 1);
   const from2 = from + equals + 1 + after.lastIndexOf(",") + 1;
   const { start, query } = token(text, from2, caret);
-  return { kind: "value", field, start, end: caret, query };
+  return { kind: "value", field, start, end: tokenEnd(text, caret, VALUE_STOPS), query };
 }
 
 export interface QueryCompletion {
@@ -74,7 +104,8 @@ export interface QueryCompletion {
 }
 
 /**
- * Replaces the token under the caret with a chosen completion.
+ * Replaces the whole token under the caret with a chosen completion — not just
+ * the part in front of it, which would leave the tail behind as a duplicate.
  *
  * A field completion carries its `=` along, because the only thing that can
  * follow a field name is one — making the user type it would be a keystroke the
@@ -87,9 +118,14 @@ export function applyQueryCompletion(
   trigger: QueryTrigger,
   value: string,
 ): QueryCompletion {
-  const inserted = trigger.kind === "field" ? `${value}=` : value;
+  // …unless the field already has its `=`, which is the mid-token case: the
+  // caret is being used to repair a name that is already followed by a value,
+  // and a second operator would break the very query it is fixing.
+  const equipped = trigger.kind === "field" && text[trigger.end] === "=";
+  const inserted = trigger.kind === "field" && !equipped ? `${value}=` : value;
   return {
     text: `${text.slice(0, trigger.start)}${inserted}${text.slice(trigger.end)}`,
-    caret: trigger.start + inserted.length,
+    // Past the `=` either way, so typing continues in the value.
+    caret: trigger.start + inserted.length + (equipped ? 1 : 0),
   };
 }

@@ -1193,6 +1193,82 @@ describe("startEmbedWorker — announcing the index (SERVER-051)", () => {
     expect(stub.calls.length).toBeGreaterThan(3);
   });
 
+  // The pill's worst case, and the mirror image of the retry ladder above: there
+  // the numbers stood still and the worker spoke, here they moved and it did
+  // not. A pass that a backoff turns away is still a look at the corpus, and on
+  // the ten-minute rung of a provider outage the pill would otherwise sit frozen
+  // for ten minutes while the user watches their saves pile up — the one moment
+  // it has something worth saying.
+  it("announces a backlog that grows while a backoff holds the pass back", async () => {
+    const workspace = seedWorkspace("announce-backoff", 1, 12);
+    const bus = createInvalidationBus();
+    const frames = watch(bus, workspace.db);
+    let clock = 11_000_000;
+    const announceMs = 1_000;
+    let down = true;
+    // A quarter of the announce window per batch, so the recovery drain has to
+    // cross several windows and the throttle has something to bite on.
+    const healthy = stubProvider({
+      onBatch: () => {
+        clock += 250;
+      },
+    });
+    const broken = stubProvider({ failAll: true });
+    const worker = makeWorker({
+      db: workspace.db,
+      bus,
+      batchSize: 1,
+      announceMs,
+      now: () => clock,
+      resolve: () => Promise.resolve(providerResolution(down ? broken : healthy)),
+    });
+
+    await worker.tick();
+    const backlog = indexCounts(workspace.db).pending;
+    expect(backlog).toBeGreaterThan(0);
+    const outage = frames.length;
+    expect(outage).toBeGreaterThan(0);
+    const asked = broken.calls.length;
+
+    // Well inside the rung: the user saves, the backlog grows, and the pass that
+    // follows never reaches the provider.
+    clock += 1;
+    workspace.doc({ id: "doc_outage", body: [section(20), section(21)].join("\n") });
+    projectDocument(
+      workspace.db,
+      join(workspace.config.workspaceRoot, "data", "docs", "doc_outage.md"),
+    );
+    const grown = indexCounts(workspace.db).pending;
+    expect(grown).toBeGreaterThan(backlog);
+
+    await worker.tick();
+
+    expect(broken.calls).toHaveLength(asked);
+    expect(frames).toHaveLength(outage + 1);
+    expect(frames.at(-1)).toMatchObject({ pending: grown });
+
+    // Still inside the rung, still nothing new: measurement decides, so being
+    // turned away is not itself an event.
+    clock += 1;
+    await worker.tick();
+    clock += 1;
+    await worker.tick();
+    expect(frames).toHaveLength(outage + 1);
+
+    // The rung expires against a provider that is back. The drain's own frames
+    // are throttled exactly as before — the announcement above bought no extra
+    // ones — and the caught-up frame is still the last word.
+    down = false;
+    clock += EMBED_BACKOFF_MS[0];
+    frames.length = 0;
+    await worker.tick();
+
+    const batches = healthy.calls.length;
+    expect(batches).toBeGreaterThan(8);
+    expect(frames.length).toBeLessThan(batches / 2);
+    expect(frames.at(-1)).toMatchObject({ pending: 0 });
+  });
+
   it("announces the discard when the recorded model is not the effective one", async () => {
     const workspace = seedWorkspace("announce-identity", 1, 3);
     for (const id of pendingChunkIds(workspace.db)) {

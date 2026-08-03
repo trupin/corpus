@@ -388,7 +388,7 @@ describe("the ['tree'] invalidation key", () => {
     await ws.del(`/api/docs/${thread}`);
     off();
 
-    // The nine shapes of `packages/contract/src/query-keys.ts`, by their first
+    // The shapes of `packages/contract/src/query-keys.ts`, by their first
     // segment. SERVER-018 changed when `["tree"]` is emitted, never what the
     // emitted names are.
     const names = new Set(frames.flat().map((key) => key[0]));

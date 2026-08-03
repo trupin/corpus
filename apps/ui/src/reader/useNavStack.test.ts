@@ -223,6 +223,34 @@ describe("useNavStack", () => {
     expect(result.current.stack).toBe(before);
   });
 
+  /**
+   * The host's own re-pointing (PR #19 review): focus mode is handed a new
+   * `docId`/`reveal` while it is already open, and the excursion behind it
+   * belongs to the instruction being replaced.
+   */
+  it("starts the history again at a new document, keeping nothing behind it", () => {
+    const { result } = renderHook(() => useMemoryNavStack([A]));
+    act(() => {
+      result.current.push("doc_b", 120);
+    });
+    expect(result.current.depth).toBe(2);
+
+    act(() => {
+      result.current.openAt("doc_c", ITEM);
+    });
+    expect(result.current.depth).toBe(1);
+    expect(result.current.docId).toBe("doc_c");
+    expect(result.current.previous).toBeNull();
+    expect(result.current.restoreY).toBe(0);
+    expect(result.current.reveal).toEqual(ITEM);
+
+    // Without one, the entry carries no `reveal` key at all — an ordinary open.
+    act(() => {
+      result.current.openAt("doc_d");
+    });
+    expect(Object.keys(result.current.stack[0] ?? {})).toEqual(["docId", "scrollY"]);
+  });
+
   it("captures scroll without navigating", () => {
     const { result } = renderHook(() => useMemoryNavStack([A]));
     act(() => {

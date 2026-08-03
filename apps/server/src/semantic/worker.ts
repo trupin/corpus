@@ -824,20 +824,23 @@ export function startEmbedWorker(options: EmbedWorkerOptions): EmbedWorkerHandle
   async function runPass(): Promise<void> {
     if (stopped) return;
     const at = now();
+    // Looking is when the counts are re-read, and *every* look counts — the one
+    // a backoff turns away included. A backlog that appeared while the worker
+    // was asleep is news the moment the worker notices, and it is news even when
+    // nothing can be embedded: a disabled provider, or one on the ten-minute
+    // rung of an outage ladder, still owes the pill a count that grew — that
+    // pill is the only thing telling the user their saves are queued and not
+    // lost, and it would otherwise sit frozen for the whole rung. Announcing
+    // before the guard rather than after it is what makes that true. A pass over
+    // an unchanged corpus still says nothing, because `announceCounts` compares
+    // before it speaks; the drain's own frames are the throttled ones.
+    announceCounts();
     if (waitUntil > at) return;
     // Two reasons to wake a provider: there is something to embed, or the index
     // holds vectors whose model this process has not verified yet. The second is
     // what makes an identity mismatch a *startup* event rather than something
     // that waits for the next edit — and it fires at most once per process,
     // never on a fresh workspace with nothing to invalidate.
-    //
-    //
-    // Looking is also when the counts are re-read: a backlog that appeared
-    // while the worker was asleep is news the moment the worker notices, and it
-    // is news even when nothing can be embedded — a disabled provider still owes
-    // the pill a count that grew. A pass over an unchanged corpus says nothing,
-    // because `announceCounts` compares before it speaks.
-    announceCounts();
     if (!hasWork(at) && (identityChecked || !hasVectors())) {
       providerFailures = 0;
       return;

@@ -176,12 +176,13 @@ const settled = async (): Promise<void> => {
   });
 };
 
+/** An anchor resolved where it lands in {@link BODY} — the item's own span. */
 const anchorOn = (exact: string): ResolvedAnchor => ({
   anchorId: "anc_1",
   threadId: "th_plumber",
   threadStatus: "open",
   selector: { exact, prefix: "", suffix: "" },
-  range: { start: 0, end: exact.length },
+  range: { start: BODY.indexOf(exact), end: BODY.indexOf(exact) + exact.length },
   orphaned: false,
 });
 

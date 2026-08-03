@@ -239,6 +239,9 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | UI-041 | Copy button on fenced blocks in rendered turns (§11 canvas rider, signed) | done | P1 | — |
 | AGENT-010 | Skills: reusable deliverables go in labeled fenced blocks | done | P2 | — |
 | UI-042 | Clipboard fidelity: rich HTML copy out, rich paste in as markdown (§11 rider, signed) | done | P1 | — |
+| INFRA-017 | Coverage merge OOMs: every browser dump parsed at once (PR #19 CI blocker) | done | P0 | — |
+| INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
+| UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | todo | P2 | — |
 
 Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
 

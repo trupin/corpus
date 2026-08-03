@@ -21,11 +21,23 @@ import type { SelectionCopy } from "./selectionCopy";
  * carries more than one flavor; `writeText` remains the fallback for a browser
  * without it and for a selection with no rich form (see {@link writeFlavors}).
  *
+ * **Paste carries both back.** The same rider, read in the other direction: the
+ * item was `readText`, which holds one flavor, so pasting a Google Docs
+ * selection through the menu arrived as unformatted prose while ⌘V arrived as
+ * headings and lists. It now reads `text/html` when the clipboard has one and
+ * hands it to the editor's paste path (see {@link readFlavors}).
+ *
  * **The clipboard is asked, not assumed.** `navigator.clipboard` is
  * permission-gated and can refuse; every refusal is reported as a notice rather
  * than swallowed, because a Paste that quietly does nothing is indistinguishable
  * from a Paste that pasted nothing.
  */
+
+/** One clipboard entry, in the parts the rich read needs of it. */
+export interface SelectionClipboardItem {
+  readonly types: readonly string[];
+  getType(type: string): Promise<{ text(): Promise<string> }>;
+}
 
 /** What the menu needs of `navigator.clipboard`. */
 export interface SelectionClipboard {
@@ -33,6 +45,14 @@ export interface SelectionClipboard {
   readText(): Promise<string>;
   /** Multi-flavor write. Absent in browsers that only carry plain text. */
   write?(items: readonly ClipboardItem[]): Promise<void>;
+  /** Multi-flavor read. Absent — or refused — in browsers that only carry text. */
+  read?(): Promise<readonly SelectionClipboardItem[]>;
+}
+
+/** What a paste puts into the document: the rich form when there is one. */
+interface PasteFlavors {
+  readonly text: string;
+  readonly html: string | null;
 }
 
 export interface SelectionMenuItemsProps {
@@ -41,10 +61,12 @@ export interface SelectionMenuItemsProps {
   /** Comment on selection, bound to the captured range; `null` when unavailable. */
   readonly onComment: (() => void) | null;
   /**
-   * Replaces the captured range — `""` for Cut, the clipboard's text for
-   * Paste. `null` when the selection is not in editable content.
+   * Replaces the captured range — `""` for Cut, the clipboard's contents for
+   * Paste. `html` is the clipboard's rich flavor when it carried one, and it
+   * goes in through the editor's own paste path. `null` when the selection is
+   * not in editable content.
    */
-  readonly onReplace: ((text: string) => void) | null;
+  readonly onReplace: ((text: string, html?: string | null) => void) | null;
   readonly close: () => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -86,6 +108,41 @@ async function writeFlavors(clipboard: SelectionClipboard, copy: SelectionCopy):
   } catch {
     await clipboard.writeText(copy.text);
   }
+}
+
+/**
+ * Both flavors off the clipboard where the browser holds both, the text alone
+ * where it does not.
+ *
+ * The mirror of {@link writeFlavors}, and it exists for the same defect read the
+ * other way (PR #19 review): the menu's Paste was `readText`, which carries
+ * exactly one flavor, while ⌘V one keystroke away pastes the rich one through
+ * the schema. Copying out of a word processor and pasting *in* through the menu
+ * therefore lost every heading, bullet and bold word — UI-042's report, in the
+ * opposite direction.
+ *
+ * A refused or absent `read` degrades to `readText` rather than failing: the
+ * rich read is permission-gated separately in some browsers, and losing the
+ * formatting beats losing the paste. A genuine refusal surfaces from `readText`,
+ * which is refused for the same reason and is the caller's error path.
+ */
+async function readFlavors(clipboard: SelectionClipboard): Promise<PasteFlavors> {
+  if (clipboard.read !== undefined) {
+    try {
+      for (const item of await clipboard.read()) {
+        if (!item.types.includes("text/html")) continue;
+        const html = await (await item.getType("text/html")).text();
+        const text = item.types.includes("text/plain")
+          ? await (await item.getType("text/plain")).text()
+          : "";
+        if (html !== "") return { text, html };
+      }
+    } catch {
+      // Deliberate: the plain read below is the fallback, and its own refusal is
+      // what the caller reports. Two notices for one gesture would be noise.
+    }
+  }
+  return { text: await clipboard.readText(), html: null };
 }
 
 export function SelectionMenuItems({
@@ -155,7 +212,7 @@ export function SelectionMenuItems({
       {
         id: "paste",
         label: "Paste",
-        meta: "replaces the selection with the clipboard's text",
+        meta: "replaces the selection with the clipboard's contents",
         run: () => {
           void (async () => {
             if (clipboard === null) {
@@ -166,7 +223,8 @@ export function SelectionMenuItems({
               return;
             }
             try {
-              onReplace(await clipboard.readText());
+              const flavors = await readFlavors(clipboard);
+              onReplace(flavors.text, flavors.html);
             } catch (error) {
               onNotify({
                 tone: "error",

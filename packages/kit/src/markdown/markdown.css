@@ -103,30 +103,28 @@
 /*
  * ── GFM task lists (UI-034) ──────────────────────────────────────────
  *
- * Two renderers emit two different shapes for the same `- [ ] item`, and both
- * land inside `.doc-body`:
+ * **What is here is the shape this package renders.** `MarkdownView` —
+ * react-markdown + remark-gfm, via mdast-util-to-hast — emits:
  *
- *   `MarkdownView` — react-markdown + remark-gfm, via mdast-util-to-hast:
  *     ul.contains-task-list > li.task-list-item > input[type=checkbox] + text
  *
- *   the editor — TipTap `TaskList`/`TaskItem` (`editor/markdown/schema.ts`),
- *   as its **node view** builds it live, which is not what `renderHTML` would
- *   serialise: the item carries `data-checked` and no `data-type`, so the item
- *   is only addressable through its list.
- *     ul[data-type=taskList] > li[data-checked]
- *                                > label > input[type=checkbox] + span
- *                                > div   > p
+ * and that is a shape any plugin importing this stylesheet can produce, because
+ * `MarkdownView` is what produces it.
  *
- * Both are styled here, side by side, because SPEC.md §11's "there is no edit
- * mode" is a *visual* promise as much as a behavioural one: one document must
- * look the same in the column reader, in full-screen focus and with a caret in
- * it. Those are three hosts of one class — `.doc-body` is what the editor puts
- * on its contenteditable and what every read surface puts on its wrapper — so
- * one rule set is the only way that promise can hold.
+ * The editor's shape is **not** here (PR #19 review). TipTap's
+ * `TaskList`/`TaskItem` node views build `ul[data-type=taskList] > li > label`,
+ * and no consumer of this package can emit that: the kit has no TipTap, no
+ * editor, and no way to render one. Those selectors live beside the editor that
+ * produces them, in `apps/ui/src/editor/editor.css`, which is where sprint-023's
+ * Out of Scope note put UI-034's CSS in the first place. The two files draw the
+ * *same* box for the same document — SPEC.md §11's "there is no edit mode" is a
+ * visual promise as much as a behavioural one — so the shared measurements (a
+ * 13px box, 8px from its text) are stated in both and changing one is changing
+ * both.
  *
  * Untouched: ordinary bulleted and numbered lists. Every selector below is
- * qualified by the task-list hook its renderer emits, so a plain `ul` keeps its
- * marker and its 22px indent.
+ * qualified by the task-list hook react-markdown emits, so a plain `ul` keeps
+ * its marker and its 22px indent.
  */
 
 /*
@@ -137,22 +135,18 @@
  * gap) against an ordinary item's 22px, so a document mixing both kinds of list
  * still reads as one left edge.
  */
-.doc-body ul.contains-task-list,
-.doc-body ul[data-type="taskList"] {
+.doc-body ul.contains-task-list {
   list-style: none;
   padding-left: 0;
 }
 
 /*
- * The checkbox, in both shapes: one fixed size, no margins of its own, and
- * never part of a text selection. The size is pinned because the hanging indent
- * below is measured against it, and because two renderers drawing the same
- * document must not draw two different boxes. `user-select: none` is what keeps
- * a drag across an item — the comment-from-selection gesture, SPEC.md §6 —
- * yielding the item's words instead of its list syntax.
+ * The checkbox: one fixed size, with no margins of its own. The size is pinned
+ * because the hanging indent below is measured against it, and because the
+ * editor drawing the same document must not draw a different box (`editor.css`
+ * states the same 13px).
  */
-.doc-body li.task-list-item > input[type="checkbox"],
-.doc-body ul[data-type="taskList"] > li > label input[type="checkbox"] {
+.doc-body li.task-list-item > input[type="checkbox"] {
   width: 13px;
   height: 13px;
   margin: 0;
@@ -160,65 +154,14 @@
 }
 
 /*
- * ── The editor's shape ──
- *
- * Flex, because the item's content is a real element (`div`) that can be made
- * to carry every line: the checkbox takes the first column, the text block the
- * second, and a line that wraps therefore wraps *inside* the text column rather
- * than back under the box — defect (b), and the half of it that only shows on a
- * long item. `baseline` sits the box on the first line's baseline the way
- * `design/index.html`'s `.check` row does.
- *
- * The margin is the price of that flex box, paid back. In an ordinary item the
- * paragraph's 10px margins *collapse* through the `li`, so two items sit 10px
- * apart; inside a task item they cannot, because the content `div` is a flex
- * item and therefore a formatting context of its own, which traps both margins
- * and stacks them. Observed live: a task list spaced half again as loosely as
- * the plain list under it in the same document. This margin plus the two trims
- * below put the two lists back on one rhythm, and leave the spacing *between*
- * the blocks of a multi-paragraph item alone.
- */
-.doc-body ul[data-type="taskList"] > li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 10px 0;
-}
-
-.doc-body ul[data-type="taskList"] > li > label {
-  flex: none;
-  user-select: none;
-}
-
-/*
- * `min-width: 0` lets a long unbroken word wrap instead of pushing the checkbox
- * off the measure: a flex item's default `min-width: auto` refuses to shrink
- * below its widest word.
- */
-.doc-body ul[data-type="taskList"] > li > div {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.doc-body ul[data-type="taskList"] > li > div > :first-child {
-  margin-top: 0;
-}
-
-.doc-body ul[data-type="taskList"] > li > div > :last-child {
-  margin-bottom: 0;
-}
-
-/*
- * ── react-markdown's shape ──
- *
  * A hanging indent, **not** flex, because here the item's text is a bare text
  * node: it would become an anonymous flex item, which no selector can reach and
- * which therefore can never be given the `min-width: 0` the rule above needs —
- * the text would refuse to wrap and the whole item would fall onto its own
- * line, reproducing the very defect this file exists to fix. A negative
- * `text-indent` against an equal `padding-left` needs no box at all: the first
- * line starts 21px to the left, exactly where the checkbox is, and every
- * wrapped line starts at the padding edge, under the text.
+ * which therefore can never be given a `min-width: 0` — the text would refuse to
+ * wrap and the whole item would fall onto its own line, reproducing the very
+ * defect this rule set exists to fix. A negative `text-indent` against an equal
+ * `padding-left` needs no box at all: the first line starts 21px to the left,
+ * exactly where the checkbox is, and every wrapped line starts at the padding
+ * edge, under the text.
  */
 .doc-body li.task-list-item {
   padding-left: 21px;

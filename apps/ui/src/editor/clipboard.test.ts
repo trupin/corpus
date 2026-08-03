@@ -89,6 +89,17 @@ function serializeHtml(fragment: Fragment, resolve: RefResolver): string {
   return host.innerHTML;
 }
 
+/**
+ * `html` wearing Google Docs' signature — the wrapper it puts around every
+ * copied selection, and the gate the repairs below are behind.
+ *
+ * The HTML parser's adoption agency reconstructs the `<b>` inside each block it
+ * cannot contain, id and all, so unwrapping still yields the bare `html` back.
+ */
+function fromDocs(html: string): string {
+  return `<b style="font-weight:normal;" id="docs-internal-guid-2b7f">${html}</b>`;
+}
+
 /** The Google Docs fixture, cleaned, parsed through the schema, saved. */
 function pasteToMarkdown(html: string): string {
   const body = new DOMParser().parseFromString(cleanPastedHtml(html), "text/html").body;
@@ -301,11 +312,11 @@ describe("cleaning pasted HTML", () => {
   });
 
   it("leaves an ordinary <b> alone", () => {
-    expect(cleanPastedHtml("<p><b>bold</b></p>")).toBe("<p><b>bold</b></p>");
+    expect(cleanPastedHtml(fromDocs("<p><b>bold</b></p>"))).toBe("<p><b>bold</b></p>");
   });
 
   it("drops a <br> between blocks and keeps one inside a paragraph", () => {
-    expect(cleanPastedHtml("<p>one<br>two</p><br><p>three</p>")).toBe(
+    expect(cleanPastedHtml(fromDocs("<p>one<br>two</p><br><p>three</p>"))).toBe(
       "<p>one<br>two</p><p>three</p>",
     );
   });
@@ -314,24 +325,76 @@ describe("cleaning pasted HTML", () => {
     ["a heading", "<h2>a<br>b</h2>"],
     ["a list item", "<ul><li>a<br>b</li></ul>"],
     ["a table cell", "<table><tbody><tr><td>a<br>b</td></tr></tbody></table>"],
+    // The middle ground the allowlist missed: an element that is not a block
+    // *host* by name, but whose contents are still text with a break in them.
+    ["a div", "<div>a<br>b</div>"],
+    ["a span", "<p><span>a<br>b</span></p>"],
+    ["a section", "<section>a<br>b</section>"],
+    ["an unnamed element", "<x-note>a<br>b</x-note>"],
   ])("keeps a <br> inside %s", (_name, html) => {
-    expect(cleanPastedHtml(html)).toContain("<br>");
+    expect(cleanPastedHtml(fromDocs(html))).toContain("<br>");
   });
 
   it("rewrites only the redirects it can read a destination out of", () => {
     expect(
-      cleanPastedHtml('<a href="https://www.google.com/url?q=https://x.test/a&amp;sa=D">x</a>'),
+      cleanPastedHtml(
+        fromDocs('<a href="https://www.google.com/url?q=https://x.test/a&amp;sa=D">x</a>'),
+      ),
     ).toContain('href="https://x.test/a"');
     // No `q`: nothing better is known, so the link is left exactly as it came.
-    expect(cleanPastedHtml('<a href="https://www.google.com/url?sa=D">x</a>')).toContain(
+    expect(cleanPastedHtml(fromDocs('<a href="https://www.google.com/url?sa=D">x</a>'))).toContain(
       'href="https://www.google.com/url?sa=D"',
     );
-    expect(cleanPastedHtml('<a href="https://example.com/direct">x</a>')).toContain(
+    expect(cleanPastedHtml(fromDocs('<a href="https://example.com/direct">x</a>'))).toContain(
       'href="https://example.com/direct"',
     );
   });
 
   it("hands the HTML back untouched where there is no DOM to parse it with", () => {
-    expect(cleanPastedHtml("<p>x</p>", () => null)).toBe("<p>x</p>");
+    expect(cleanPastedHtml(fromDocs("<p>x</p>"), () => null)).toBe(fromDocs("<p>x</p>"));
+  });
+});
+
+/**
+ * The paste that is *not* Google Docs (PR #19 review, MAJOR + MINOR 1).
+ *
+ * Everything above describes a payload carrying the Docs signature. Every other
+ * clipboard in the world must reach ProseMirror's own parser exactly as it
+ * arrived: it has a `wrapMap` that re-hosts a bare `<tr>` fragment inside a
+ * table, and a `<style>`-folding pass that turns a word processor's
+ * class-plus-stylesheet emphasis into marks. A DOMParser round trip in front of
+ * it silently loses both, and the `<br>` rule lost text outright.
+ */
+describe("a paste from anywhere but Google Docs", () => {
+  it("is handed on untouched, byte for byte", () => {
+    const gmail = "<div>line one<br>line two</div>";
+    expect(cleanPastedHtml(gmail)).toBe(gmail);
+  });
+
+  it("leaves a bare table fragment for the parser's wrapMap to re-host", () => {
+    // A DOMParser round trip drops the cells on the floor: `<tr>` outside a
+    // `<table>` is not a tree the HTML parser will build.
+    const fragment = "<tr><td>Acme</td><td>6.1%</td></tr>";
+    expect(cleanPastedHtml(fragment)).toBe(fragment);
+  });
+
+  it("leaves a Word payload's <style> block where the parser can fold it", () => {
+    // Word and Outlook express emphasis as a class plus a stylesheet in <head>;
+    // parsing to a body and re-serialising it throws the stylesheet away.
+    const word =
+      "<html><head><style>.c1 { font-weight: bold }</style></head>" +
+      '<body><p class="c1">strong words</p></body></html>';
+    expect(cleanPastedHtml(word)).toBe(word);
+  });
+
+  it.each([
+    ["a div", "<div>line one<br>line two</div>"],
+    ["a span", "<span>line one<br>line two</span>"],
+    ["a section", "<section>line one<br>line two</section>"],
+  ])("keeps both lines of a %s separated, all the way to the markdown", (_name, html) => {
+    // The regression this file exists to prevent: the two lines arriving welded
+    // into `line oneline two`, which is what a hand-listed allowlist of block
+    // hosts produced for every clipboard Gmail, Outlook web or Slack writes.
+    expect(pasteToMarkdown(html)).toBe("line one\\\nline two\n");
   });
 });

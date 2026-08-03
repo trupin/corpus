@@ -13,17 +13,19 @@ import {
 } from "./coverage-config.js";
 import {
   attributionOf,
+  browserDumpNames,
   coverageScope,
   emptyScopeFailure,
   formatMetricsTable,
+  isRepoSourceEntry,
   projectExecutedLines,
+  readBrowserDumps,
   rewriteEntrySources,
   summarize,
   thresholdFailures,
   toRepoRelative,
   type ExecutedLines,
   type SourceLineCoverage,
-  type V8Entry,
 } from "./coverage-gate.js";
 
 /**
@@ -33,6 +35,15 @@ import {
  *
  *     npm run coverage        # unit → e2e → merge → gate
  *     npx tsx scripts/merge-coverage.ts   # merge → gate, on existing output
+ *
+ * `coverage:merge` runs this under `--max-old-space-size=8192` (INFRA-017). The
+ * streaming reader below is what brought peak RSS on a 237-spec run down from
+ * 4.0 GB to well under 1 GB, but the flag stays on top of it: V8's default old
+ * space is derived from the host's RAM (~4 GB on a 16 GB GitHub runner), which
+ * is the ceiling this hit, and the browser corpus grows with every spec added.
+ * A cap is not a reservation, so it costs nothing on a machine that never needs
+ * it; the trade-off it accepts is that a host with less than ~8 GB free would
+ * now be killed by the OS rather than by a legible V8 heap error.
  */
 
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -40,58 +51,45 @@ function log(line: string): void {
   process.stdout.write(`${line}\n`);
 }
 
-interface E2EDump {
-  root: string;
-  entries: V8Entry[];
-}
-
-function readBrowserEntries(directory: string): E2EDump[] {
-  if (!existsSync(directory)) return [];
-  return readdirSync(directory)
-    .filter((name) => name.endsWith(".json"))
-    .sort()
-    .map((name) => {
-      const dump = JSON.parse(readFileSync(resolve(directory, name), "utf8")) as Partial<E2EDump>;
-      if (typeof dump.root !== "string" || !Array.isArray(dump.entries)) {
-        throw new Error(
-          `${E2E_COVERAGE_DIR}/${name} is not a coverage dump this version writes. ` +
-            "Re-run `npm run e2e` — its global setup clears the directory.",
-        );
-      }
-      return { root: dump.root, entries: dump.entries };
-    });
-}
-
 /**
  * Runs the raw V8 data through `monocart-coverage-reports`, which unpacks each
  * entry through its source map and reports per-source line hits. The `none`
  * reporter is deliberate: the merged istanbul report below is the artifact, and
  * a second on-disk report would be a second answer to the same question.
+ *
+ * Takes dump *names*, not dumps: the whole corpus does not fit in memory at once
+ * (INFRA-017), so the dumps are pulled from disk one at a time by the loop below
+ * and each is released before the next is parsed.
  */
-async function executedLines(browser: E2EDump[], nodeDirectory: string): Promise<ExecutedLines> {
+async function executedLines(
+  browserDirectory: string,
+  dumpNames: readonly string[],
+  nodeDirectory: string,
+): Promise<ExecutedLines> {
   const inScope = coverageScope(COVERAGE_INCLUDE, COVERAGE_EXCLUDE);
   const report = new CoverageReport({
     logging: "error",
     reports: ["none"],
     outputDir: resolve(repoRoot, MERGED_COVERAGE_DIR, "v8-cache"),
     baseDir: repoRoot,
-    // Vite's own client, HMR runtime and prebundled deps are not repo sources;
-    // dropping them here saves unpacking megabytes of source maps that
-    // `sourceFilter` would discard anyway.
-    entryFilter: (entry: { url: string }) =>
-      !entry.url.includes("/node_modules/") &&
-      !entry.url.includes("/@vite/") &&
-      !entry.url.includes("/@react-refresh"),
+    entryFilter: isRepoSourceEntry,
     sourceFilter: inScope,
     clean: true,
     cleanCache: true,
   });
 
-  for (const dump of browser) {
-    // A test that never navigated to the app produces an empty entry list, which
-    // the reporter rejects outright rather than treating as "nothing to add".
-    if (dump.entries.length === 0) continue;
-    await report.add(dump.entries.map((entry) => rewriteEntrySources(entry, dump.root, repoRoot)));
+  for (const dump of readBrowserDumps(browserDirectory, dumpNames)) {
+    // Filtered with the reporter's own `entryFilter` before rewriting rather than
+    // after: those entries are the larger half of a dump, and rewriting them
+    // would build a second copy of megabytes the reporter then discards.
+    const entries = dump.entries
+      .filter(isRepoSourceEntry)
+      .map((entry) => rewriteEntrySources(entry, dump.root, repoRoot));
+    // A test that never navigated to the app contributes nothing here, and the
+    // reporter rejects an empty batch outright rather than treating it as
+    // "nothing to add".
+    if (entries.length === 0) continue;
+    await report.add(entries);
   }
   if (countDumps(nodeDirectory) > 0) {
     await report.addFromDir(nodeDirectory);
@@ -130,8 +128,8 @@ async function main(): Promise<void> {
   }
 
   const browserDirectory = resolve(repoRoot, E2E_COVERAGE_DIR);
-  const browser = readBrowserEntries(browserDirectory);
-  if (browser.length === 0) {
+  const dumpNames = browserDumpNames(browserDirectory);
+  if (dumpNames.length === 0) {
     log(`coverage: no browser coverage in ${E2E_COVERAGE_DIR}.`);
     log("coverage: run `npm run e2e` first, or use `npm run coverage`.");
     process.exitCode = 1;
@@ -141,7 +139,7 @@ async function main(): Promise<void> {
   const nodeDirectory = resolve(repoRoot, NODE_COVERAGE_DIR);
   const nodeDumps = countDumps(nodeDirectory);
 
-  const lines = await executedLines(browser, nodeDirectory);
+  const lines = await executedLines(browserDirectory, dumpNames, nodeDirectory);
   const projected = projectExecutedLines(unit, lines);
 
   const summary = summarize(projected.data, repoRoot);
@@ -183,7 +181,7 @@ async function main(): Promise<void> {
   log("Combined coverage — unit (Vitest) + e2e (Playwright/Chromium V8)");
   log(
     `  inputs: ${String(Object.keys(unit).length)} files from ${UNIT_COVERAGE_DIR}/coverage-final.json, ` +
-      `${String(browser.length)} browser dumps from ${E2E_COVERAGE_DIR}, ` +
+      `${String(dumpNames.length)} browser dumps from ${E2E_COVERAGE_DIR}, ` +
       `${String(nodeDumps)} NODE_V8_COVERAGE dumps from ${NODE_COVERAGE_DIR}`,
   );
   log(

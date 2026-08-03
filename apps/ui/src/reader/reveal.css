@@ -8,11 +8,18 @@
  * trace client rectangles, they must never be clipped by the scroller they
  * describe, and they must not enter a DOM ProseMirror or React owns. Nothing
  * below is interactive — the text under it stays clickable and selectable.
+ *
+ * **One above focus mode, and below everything that covers a reader.** The
+ * layer is body-level, so it has to outrank focus mode's 35 to be seen over the
+ * document it is pointing at — and it must not outrank a surface that is
+ * *hiding* that document: the search overlay (40, UI-009), the selection
+ * toolbar (50) and the menus and popovers (60). It shipped at 55, which painted
+ * a fading highlight over the search overlay and over focus mode's own chrome.
  */
 .reveal-flash-layer {
   position: fixed;
   inset: 0;
-  z-index: 55;
+  z-index: 36;
   pointer-events: none;
 }
 

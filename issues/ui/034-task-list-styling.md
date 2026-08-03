@@ -155,6 +155,30 @@ existing treatment; there is none in a document body today (the mockup's
 `.check.done` belonged to the todos plugin's `View`, which PLUGINS-006 deleted).
 Inventing one here would be a design decision this issue does not carry.
 
+## PR #19 review follow-up (2026-08-03)
+
+**Model: Opus 5 (`claude-opus-5[1m]`).** Agent: ui-dev.
+
+The reviewer's judgment call: this issue's CSS landed in `packages/kit/src/markdown/
+markdown.css`, where sprint-023's Out of Scope note had put it in `apps/ui` — and the
+TipTap-shaped half (`ul[data-type="taskList"] > li > label …`) is markup **no kit consumer
+can emit**: the kit carries no TipTap and no editor, and `MarkdownView` produces the other
+shape.
+
+**Decision: split, not keep.** The react-markdown shape (`ul.contains-task-list >
+li.task-list-item`) stays in the kit — that *is* what the kit renders, so a plugin
+importing `@corpus/kit/markdown.css` needs it. The TipTap node-view shape moved to
+`apps/ui/src/editor/editor.css`, beside the editor that builds it. Both files state the
+shared measurements (13px box, 8px gap, text at 21px) and say in so many words that
+changing one is changing both — §11's "there is no edit mode" is a visual promise, and the
+two renderers must draw one document the same way.
+
+Verified in a real browser, both shapes, unchanged: Playwright `todos.spec.ts` →
+**10 passed** on `CORPUS_UI_PORT=5974`, including the geometry test that measures the
+editor's task item (marker, box size, hanging indent, wrap column) and the probe test that
+mounts react-markdown's real output into the real page and measures it against the real
+stylesheet.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

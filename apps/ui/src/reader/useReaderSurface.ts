@@ -1,6 +1,6 @@
 import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { REVEAL_ATTEMPTS, REVEAL_RETRY_MS, revealItem } from "./reveal";
+import { REVEAL_RETRIES, REVEAL_RETRY_MS, revealItem } from "./reveal";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
@@ -83,7 +83,21 @@ export function useReaderSurface({
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The reveal this surface has already acted on, by identity. */
   const revealed = useRef<RevealTarget | null>(null);
-  const clearFlash = useRef<(() => void) | null>(null);
+  /**
+   * The lit reveal flash, and the navigation entry it belongs to.
+   *
+   * The token is half of it, not bookkeeping: the flash is drawn over one
+   * document and kept on its line by an animation-frame loop that re-finds the
+   * text every frame, so the moment the surface shows a *different* document
+   * that loop is hunting through the wrong one. Recording which navigation lit
+   * it is what lets the surface put it out on the way past — and, because the
+   * question is "is this still that navigation" rather than "did an effect
+   * re-run", StrictMode's replayed effects leave it alone.
+   */
+  const revealFlash = useRef<{ readonly nav: string; readonly stop: () => void } | null>(null);
+  /** Read through a ref so the reveal effect never depends on the token. */
+  const navTokenRef = useRef(navToken);
+  navTokenRef.current = navToken;
   /**
    * Read through a ref so the retry ladder below is not a dependency of the
    * caller's identity: `consumeReveal` is rebuilt on every navigation-stack
@@ -153,11 +167,27 @@ export function useReaderSurface({
     () => () => {
       if (scrollTimer.current !== null) clearTimeout(scrollTimer.current);
       if (flashTimer.current !== null) clearTimeout(flashTimer.current);
-      clearFlash.current?.();
-      clearFlash.current = null;
+      revealFlash.current?.stop();
+      revealFlash.current = null;
     },
     [],
   );
+
+  /**
+   * A reveal flash does not outlive its navigation.
+   *
+   * Unmounting the surface already put it out; navigating *within* it did not,
+   * and that is the ordinary case — a reveal lights for 1.2 s and a reader can
+   * follow a ref in half of that. What stayed behind was not just a highlight
+   * over the wrong document but its tracker, re-searching the newly opened body
+   * for the old document's words on every frame.
+   */
+  useEffect(() => {
+    const live = revealFlash.current;
+    if (live === null || live.nav === navToken) return;
+    live.stop();
+    revealFlash.current = null;
+  }, [navToken]);
 
   const jumpToThread = useCallback((threadId: string) => {
     setExpanded((current) => (current.includes(threadId) ? current : [...current, threadId]));
@@ -202,9 +232,9 @@ export function useReaderSurface({
       const container = scrollRef.current;
       const undo = container === null ? null : revealItem(container, reveal);
       if (undo !== null) {
-        clearFlash.current?.();
-        clearFlash.current = undo;
-      } else if (attempts < REVEAL_ATTEMPTS) {
+        revealFlash.current?.stop();
+        revealFlash.current = { nav: navTokenRef.current, stop: undo };
+      } else if (attempts < REVEAL_RETRIES) {
         // The body may still be arriving — the editor mounts its own DOM, and a
         // plugin `View` may be fetching. Retry, then stop asking.
         timer = setTimeout(attempt, REVEAL_RETRY_MS);

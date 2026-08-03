@@ -24,7 +24,7 @@ import {
  * builders makes a rename a compile error on both sides at once.
  *
  * Two shapes are the kit's own and deliberately absent from the contract, whose
- * vocabulary is closed at nine shapes and pinned by a test:
+ * vocabulary is closed at whatever `QUERY_KEY_NAMES` lists and pinned by a test:
  *
  * - {@link HEALTH_KEY} — the liveness probe is a *client* concern. No server
  *   mutation invalidates it; the SSE bridge does, on every connect and every
@@ -142,9 +142,9 @@ export function docsListKey(filter: Readonly<Record<string, unknown>> = {}): Que
  * One document's related set: `["docs", <id>, "related"]`.
  *
  * **Under `docKey(id)`, on purpose** (sprint-022 Open Conflict 7). The contract's
- * key vocabulary is closed at nine names and pinned by a test, so a tenth shape
- * — `["related", id]` — would be a contract change plus an artifact
- * regeneration, for a query the server already announces. TanStack matches
+ * key vocabulary is closed — `QUERY_KEY_NAMES` is the whole of it, pinned by a
+ * test — so a new shape `["related", id]` would be a contract change plus an
+ * artifact regeneration, for a query the server already announces. TanStack matches
  * prefixes, and the server emits `["docs"]` on every document and thread
  * mutation and every watcher-projected change out of band, so this key is
  * invalidated by frames that already exist: a `[[ref]]` appearing anywhere in

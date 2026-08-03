@@ -270,7 +270,8 @@ describe("the related panel", () => {
    * TEST-1018 / Open Conflict 7. The panel's key sits under the `["docs"]`
    * prefix the server already emits on every document and thread mutation, so a
    * `[[ref]]` landing anywhere in the workspace refreshes it with no new frame
-   * and no tenth key name. This is the assertion that would fail if the key were
+   * and no key name of its own added to the vocabulary. This is the assertion
+   * that would fail if the key were
    * moved out from under that prefix — every other test here would still pass.
    */
   it("refetches on the `docs` frame the server already sends", async () => {

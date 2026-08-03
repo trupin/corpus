@@ -159,3 +159,98 @@ button.save-chip {
 /* The `[[` suggestion popup renders `.ac-menu` / `.ac-item` — the prototype's
    one autocomplete surface, which lives in `@corpus/kit`'s `autocomplete.css`
    together with the `.on` and `.ac-empty` states this popup needs. */
+
+/*
+ * ── GFM task lists, the editor's shape (UI-034) ──────────────────────
+ *
+ * The other half of a rule set whose first half ships in
+ * `@corpus/kit/markdown.css`. Two renderers emit two different shapes for the
+ * same `- [ ] item` and both land inside `.doc-body`; the kit styles the one it
+ * renders (react-markdown's `ul.contains-task-list > li.task-list-item`), and
+ * this file styles the one TipTap's `TaskList`/`TaskItem` **node views** build
+ * live — which is not what their `renderHTML` would serialise, so the item is
+ * only addressable through its list:
+ *
+ *     ul[data-type=taskList] > li[data-checked]
+ *                                > label > input[type=checkbox] + span
+ *                                > div   > p
+ *
+ * Split that way because the kit is the plugin contract (SPEC.md §10) and no
+ * plugin can emit this markup: the kit carries no TipTap and no editor. The two
+ * halves must still *draw the same document the same way* — §11's "there is no
+ * edit mode" is a visual promise, and `.doc-body` is what the editor puts on its
+ * contenteditable and what every read surface puts on its wrapper — so the
+ * shared measurements are repeated deliberately: a 13px box, 8px from its text,
+ * text starting 21px in. Changing one is changing both.
+ */
+
+/*
+ * No marker. A task item's marker *is* its checkbox, and the `disc` a browser
+ * draws beside it is the raw structure showing through. Dropping the list's
+ * indent with it is deliberate: the checkbox then hangs where the marker would
+ * have, and a document mixing both kinds of list still reads as one left edge.
+ */
+.doc-body ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+/* The same box the kit's stylesheet draws for the rendered shape. */
+.doc-body ul[data-type="taskList"] > li > label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  flex: none;
+}
+
+/*
+ * Flex, because here the item's content is a real element (`div`) that can be
+ * made to carry every line: the checkbox takes the first column, the text block
+ * the second, and a line that wraps therefore wraps *inside* the text column
+ * rather than back under the box — the half of the defect that only shows on a
+ * long item. `baseline` sits the box on the first line's baseline the way
+ * `design/index.html`'s `.check` row does.
+ *
+ * The margin is the price of that flex box, paid back. In an ordinary item the
+ * paragraph's 10px margins *collapse* through the `li`, so two items sit 10px
+ * apart; inside a task item they cannot, because the content `div` is a flex
+ * item and therefore a formatting context of its own, which traps both margins
+ * and stacks them. Observed live: a task list spaced half again as loosely as
+ * the plain list under it in the same document. This margin plus the two trims
+ * below put the two lists back on one rhythm, and leave the spacing *between*
+ * the blocks of a multi-paragraph item alone.
+ */
+.doc-body ul[data-type="taskList"] > li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+/*
+ * `user-select: none` is what keeps a drag across an item — the
+ * comment-from-selection gesture, SPEC.md §6 — yielding the item's words
+ * instead of its list syntax.
+ */
+.doc-body ul[data-type="taskList"] > li > label {
+  flex: none;
+  user-select: none;
+}
+
+/*
+ * `min-width: 0` lets a long unbroken word wrap instead of pushing the checkbox
+ * off the measure: a flex item's default `min-width: auto` refuses to shrink
+ * below its widest word.
+ */
+.doc-body ul[data-type="taskList"] > li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.doc-body ul[data-type="taskList"] > li > div > :first-child {
+  margin-top: 0;
+}
+
+.doc-body ul[data-type="taskList"] > li > div > :last-child {
+  margin-bottom: 0;
+}

@@ -32,7 +32,7 @@
  */
 const PLUGIN_SURFACE = "[data-plugin-surface]";
 
-/** Editable hosts, plus the plugin surfaces v1 leaves alone (sign-off item 4). */
+/** Editable hosts, plus the plugin surfaces core paints no menu over (§11). */
 const NATIVE_HOSTS = [
   "input",
   "textarea",
@@ -74,9 +74,11 @@ export function keepsNativeMenu({ target }: NativeMenuContext): boolean {
  * Is this node inside markup a plugin rendered? — the one test every
  * suppression site asks (UI-036).
  *
- * The surface's **origin** is the subject, which is what sign-off item 4
- * decided: rows a plugin column body invents are its own, so core declines to
- * half-populate a menu over them. Nothing here reads a document's type. A row
+ * The surface's **origin** is the subject: rows a plugin column body invents
+ * are its own, so core declines to half-populate a menu over them. The 2026-08-02
+ * §11 amendment reversed SHARED-004 item 4 — a plugin may now contribute its own
+ * menu there — which changes who paints, not this rule about who does not.
+ * Nothing here reads a document's type. A row
  * whose renderer is a plugin `ListItem` but whose surface is a core column list
  * is a core row, and answers `false`.
  *

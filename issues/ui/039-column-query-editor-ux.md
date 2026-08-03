@@ -173,6 +173,33 @@ blocks nothing, adds no validation to the commit path, and leaves both existing
 error states — `BoardColumn.error` and the column's failed-request card —
 untouched.
 
+## PR #19 review follow-up (2026-08-03)
+
+**Model: Opus 5 (`claude-opus-5[1m]`).** Agent: ui-dev.
+
+1. **Mid-token completion duplicated the tail.** `detectQueryTrigger` ended the trigger at
+   the caret (the kit's `detectTrigger` convention — but that convention is safe only
+   because a sigil bounds those triggers, and a query string has none, so *every* caret
+   position sits inside a token). From `tye=note` with the caret at 2, `↵` wrote
+   `type=e=note`, which `parseQueryString` reads as the **known** field `type` — so the
+   unknown-field notice stayed silent and the column just rendered empty. The trigger now
+   spans the whole token under the caret (stopping at `=`/`&` for a field, `,`/`&` for a
+   value, trailing whitespace excluded), and `applyQueryCompletion` skips its `=` when the
+   field already has one, putting the caret past it. 8 new cases in
+   `queryCompletion.test.ts` plus a real-input `QueryEditor.test.tsx` case: type
+   `tye=note`, caret to 2, `↵` → `type=note`, no `role="status"` notice.
+2. **The `sort` help was wrong.** "A leading `-` reverses it" — but `DOC_SORTS` enumerates
+   the keys and only `updated`/`created` have a descending form; `sort=-due` is a 400. Now
+   "One of the keys below; -updated when unset." (the completion menu was already right).
+3. **`.query-help-field`'s hard-coded `106px` name column** — fitted by hand to
+   `includeArchived` in a panel that is otherwise schema-derived. The field list is now one
+   grid (`grid-template-columns: max-content minmax(0, 1fr)`) with each row
+   `display: contents`, so the column is exactly as wide as the widest name the contract
+   publishes and the next longer filter needs no CSS edit.
+
+Checks: `vitest run apps/ui/src/board/query` → **73 passed** / 4 files; full `apps/ui/src`
+**1888 passed**; `tsc --noEmit`, `eslint`, `prettier` clean.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

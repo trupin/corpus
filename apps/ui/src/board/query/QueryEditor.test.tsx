@@ -357,4 +357,27 @@ describe("QueryEditor", () => {
       expect(screen.queryByRole("status")).toBeNull();
     });
   });
+
+  /**
+   * PR #19 review. Fixing a typo the ordinary way — click into the middle of the
+   * word, complete — used to write `type=e=note`, which `parseQueryString` reads
+   * as the *known* field `type` with the value `e=note`. So the unknown-field
+   * notice stayed silent and the column just rendered empty.
+   */
+  describe("completing from the middle of a token", () => {
+    it("replaces the whole word rather than duplicating its tail", async () => {
+      const editor = renderEditor();
+      const input = field();
+      fireEvent.change(input, { target: { value: "tye=note", selectionStart: 2 } });
+      fireEvent.select(input, { target: { selectionStart: 2 } });
+
+      await waitFor(() => {
+        expect(options().some((text) => text.startsWith("type"))).toBe(true);
+      });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(editor.value()).toBe("type=note");
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+  });
 });
