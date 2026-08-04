@@ -7,7 +7,7 @@ ui
 todo
 
 ## Priority
-P2
+P1
 
 ## Model
 opus
@@ -43,12 +43,33 @@ an anchor over `he\n\n` for a selection of `hen`.
 
 **Shipped in PR #20:** a guard in `captureTurnAnchor` — if the two projections
 disagree about how many times the quote appears, the capture **declines**. The
-confidently-wrong anchor is gone; the cost is that a legitimate selection in a
-turn where the join manufactures a collision now offers no comment, and the user
-falls back to 💬 on the whole turn.
+confidently-wrong anchor is gone.
 
-**What is still owed:** make the projections genuinely agree, so those selections
-anchor instead of declining.
+**The cost is larger than this file first claimed** (corrected 2026-08-04 from
+the PR #20 re-review, which measured it). The guard's condition is "the two
+projections disagree about the count *anywhere in the part*", which is broader
+than "this user's occurrence index is untransferable". A turn reading
+`hen sleeps. the\n\nnext day` renders one `hen` and traces two, so selecting the
+**leading** word — an occurrence the old code resolved correctly — now declines.
+And the collision is not as rare as "rare": bullets seldom end in punctuation, so
+in list-heavy agent turns a join routinely welds two words into a third
+(`…set` + `up…` → `setup`, `…to` + `day…` → `today`), and short double-clicked
+quotes are exactly what collides. Occasional, not exotic.
+
+**What is still owed:**
+1. Make the projections genuinely agree, so those selections anchor instead of
+   declining.
+2. **Guard the other direction too.** `renderedRangeOfTurnAnchor` (and
+   `domRangeOfTurnAnchor` through it) got no equivalent check, so the same
+   disagreement still produces a confidently-wrong result when *painting* an
+   existing anchor. Measured in the re-review: a turn `the\n\nnext hen and hen`
+   with an anchor over the **first** real `hen` paints the **second** one,
+   because the manufactured occurrence inside `thenext` takes index 0. Data is
+   untouched and the thread still opens correctly, so it is visual only — but
+   anchors created before the capture-side guard exist in the live workspace
+   today and hit it. The rationale the guard shipped with ("guessing costs them
+   a comment attached to words they did not choose") was applied to one of the
+   two directions.
 
 ## The trap, stated plainly
 The obvious fix — emit `"\n"` for block joins and `break` nodes in `walk` — is
@@ -72,10 +93,19 @@ prevent, and it is the reason the bug was possible.
       — this is the regression to fear; test it first
 - [ ] Markdown hard breaks (`  \n` and backslash-newline) resolve
 - [ ] List items, nested lists and blockquotes resolve
-- [ ] The disagreement guard stays as a backstop, and a test proves it still
-      fires if the projections are ever made to disagree again
-- [ ] `turnAnchors.test.tsx`'s decline test is restored to asserting the anchor,
-      and its comment pointing here is removed
+- [ ] The disagreement guard stays as a backstop **in both directions** — capture
+      and paint — and a test proves each still fires if the projections are ever
+      made to disagree again
+- [ ] `renderedRangeOfTurnAnchor` no longer paints a different occurrence than
+      the one the anchor resolved to (the `the\n\nnext hen and hen` case)
+- [ ] `turnAnchors.test.tsx`'s `the\n\nnext hen` test asserts the **anchor**
+      rather than `toBeNull()`, and its comment pointing here is removed
+
+_(Correction, 2026-08-04: an earlier draft of this file said that test had been
+"weakened" and should be "restored". It was not — the case did not exist before
+PR #20, which added it at +47/−0. Nothing was lost; the new test simply asserts
+refusal rather than correctness. Recorded because the wording would have sent
+whoever picks this up looking for a revision to restore.)_
 
 ## Technical Design
 ### Files to Create/Modify

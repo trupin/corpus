@@ -264,7 +264,6 @@ Rider **amended 2026-08-03** (signed): `corpus upgrade` also runs the workspace
 template sync, and a file the workspace edited that the tool also changed is
 reported as **unresolved work** — named, with `corpus workspace diff` to see it,
 never auto-merged. The audience for that report is the agent.
-| CLI-027 | `corpus workspace diff <path>` — what the tool changed under an edited file | todo | P1 | SHARED-007 |
 
 ## Phase 11 — Edit acknowledgment (signed rider SHARED-008, 2026-08-02)
 
@@ -348,7 +347,7 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | todo | P2 | — |
 | UI-058 | A "note only" turn still shows "agent is working" (dogfood) | todo | P1 | — |
 | UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | todo | P1 | — |
-| UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P2 | UI-051 |
+| UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P1 | UI-051 |
 | UI-061 | A selection spanning several turns is silently truncated to one (PR #20) | todo | P2 | UI-051 |
 | UI-062 | Document comment sometimes anchors at the top, not at the selection (dogfood) | todo | P1 | — |
 
