@@ -353,3 +353,20 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-062 | Document comment sometimes anchors at the top, not at the selection (dogfood) | todo | P1 | — |
 
 <!-- Additional phases will be added as the project grows -->
+
+---
+
+## Phase 13 — Dogfood wave 3 (signed rider SHARED-010, 2026-08-04)
+
+Four live reports on the Phase 12 build. UI-064 and UI-065 are bug/refinement and
+need no spec text; UI-063 and UI-066 are new user-visible surfaces and wait on
+the rider. UI-062 (comment anchors at the top) is tracked in the wave-2 table and
+belongs to the same fix wave.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-010 | Two SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
+| UI-064 | `<br>` inside a table cell renders as literal text | todo | P1 | — |
+| UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
+| UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
+| UI-065 | A long document title wraps instead of being cut | todo | P2 | — |
