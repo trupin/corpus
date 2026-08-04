@@ -262,6 +262,53 @@ describe("a selection inside a turn", () => {
     expect(resolveExact(turn.body, captured?.selector as TextQuoteSelector)).toBe(0);
   });
 
+  /**
+   * PR #20 review, MINOR. `mdast-util-to-hast` puts a `"\n"` text node between
+   * sibling blocks and beside every `<br>`; `sourceTrace`'s walk emits nothing
+   * for either. So the rendered text and the trace's `plain` carry different
+   * *whitespace*, and an occurrence that exists only in the concatenated `plain`
+   * used to shift the index — anchoring `hen` to `he\n\nn`, straddling the
+   * paragraph break. The exact case the reviewer measured.
+   */
+  it("declines rather than anchoring a selection to a block join", () => {
+    const turn = turnFixture({ body: "the\n\nnext hen" });
+    const { container } = render(<Host turn={turn} />);
+    const root = rootsOf(container)[0];
+    const captured = captureTurnAnchor({
+      root: root as Element,
+      part: { source: turn.body, base: 0 },
+      turnBody: turn.body,
+      range: selectNth(root as Element, "hen"),
+    });
+    // Pre-fix this returned an anchor over `he\n\n` — the words either side of
+    // the paragraph break rather than the ones selected. The guarantee made here
+    // is *refusal*, not correctness: the two projections disagree about how many
+    // times `hen` appears (once as rendered, twice with the join closed up), and
+    // an occurrence index is not transferable across that disagreement.
+    //
+    // Anchoring this correctly is UI-060. It needs the source trace to reproduce
+    // `mdast-util-to-hast`'s join rules exactly, which is a bigger change than a
+    // review fix and would put the currently-working typed-newline case at risk.
+    expect(captured).toBeNull();
+  });
+
+  it("still anchors normally when the join manufactures no occurrence", () => {
+    // The guard is scoped to disagreement, not to block joins in general: two
+    // paragraphs are fine as long as closing the join up does not invent another
+    // copy of the quote.
+    const turn = turnFixture({ body: "first para\n\nsecond para with target" });
+    const { container } = render(<Host turn={turn} />);
+    const root = rootsOf(container)[0];
+    const captured = captureTurnAnchor({
+      root: root as Element,
+      part: { source: turn.body, base: 0 },
+      turnBody: turn.body,
+      range: selectNth(root as Element, "target"),
+    });
+    expect(captured?.selector.exact).toBe("target");
+    expect(turn.body.slice(captured?.range.start, captured?.range.end)).toBe("target");
+  });
+
   it("declines a whitespace-only selection — `exact` is min(1) on the wire", () => {
     const turn = turnFixture({ body: "a   b" });
     const { container } = render(<Host turn={turn} />);

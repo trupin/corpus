@@ -16,7 +16,7 @@
     "better-sqlite3": "^12.4.1",
     "chokidar": "^4.0.3",
     "diff-match-patch": "^1.0.5",
-    "hono": "^4.12.32",
+    "hono": "^4.12.34",
     "onnxruntime-web": "^1.27.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

@@ -16,12 +16,19 @@ interface Press {
   readonly stopped: () => boolean;
 }
 
-function press(key: string): Press {
+type Modifiers = Partial<Pick<AutocompleteKeyEvent, "shiftKey" | "metaKey" | "ctrlKey" | "altKey">>;
+
+function press(key: string, modifiers: Modifiers = {}): Press {
   let prevented = false;
   let stopped = false;
   return {
     event: {
       key,
+      shiftKey: false,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      ...modifiers,
       preventDefault: () => {
         prevented = true;
       },
@@ -122,6 +129,33 @@ describe("handleAutocompleteKeyDown", () => {
     expect(opts.dismiss).toHaveBeenCalledTimes(1);
     expect(keypress.prevented()).toBe(true);
     expect(keypress.stopped()).toBe(true);
+  });
+
+  /**
+   * PR #20 review, MINOR: an open menu answered *any* `Enter`, so the composer's
+   * primary action (SPEC.md §11: "the primary action is always `⌘↵`") accepted a
+   * completion instead of asking — and `⇧⇥`, the browser's reverse-focus key,
+   * accepted one instead of moving focus back.
+   */
+  it.each([
+    ["⌘↵", "Enter", { metaKey: true }],
+    ["Ctrl+↵", "Enter", { ctrlKey: true }],
+    ["⇧⌘↵", "Enter", { metaKey: true, shiftKey: true }],
+    ["⇧↵", "Enter", { shiftKey: true }],
+    ["⌥↵", "Enter", { altKey: true }],
+    ["⇧⇥", "Tab", { shiftKey: true }],
+    ["⌘⇥", "Tab", { metaKey: true }],
+    ["⇧↓", "ArrowDown", { shiftKey: true }],
+    ["⌘↑", "ArrowUp", { metaKey: true }],
+  ])("hands %s back to the host, menu open or not", (_name, key, modifiers) => {
+    const keypress = press(key, modifiers);
+    const opts = options();
+    expect(handleAutocompleteKeyDown(keypress.event, opts)).toBe(false);
+    expect(keypress.prevented()).toBe(false);
+    expect(keypress.stopped()).toBe(false);
+    expect(opts.accept).not.toHaveBeenCalled();
+    expect(opts.setActiveIndex).not.toHaveBeenCalled();
+    expect(opts.dismiss).not.toHaveBeenCalled();
   });
 
   it("claims nothing else", () => {

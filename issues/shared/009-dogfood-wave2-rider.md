@@ -156,6 +156,48 @@ APPEND to the copyable-canvases sentence:
 
 ---
 
+### Amendments 6 and 7 — SIGNED 2026-08-03, after the PR #20 review
+
+Both of these were **shipped in Phase 12 without spec text**, and the Fable
+reviewer was right to block on them. Neither is an implementation defect; both
+are orchestrator process failures — a mid-flight request and an accepted
+deviation, each carried into code without coming back for sign-off. Recording
+that plainly because the pattern is the lesson: an amendment signed at kickoff
+does not cover what the work grows into afterwards.
+
+**Amendment 6 — canvases clip as well as wrap.** The user's second report
+("Let's add a way to collapse snippets when they have a lot of content") arrived
+after Amendment 5 was signed and went straight into UI-050. Amendment 5 covers
+wrapping only, so the shipped collapse had no spec behind it — and it sits in
+mild tension with the sentence that *was* signed ("readable without a second
+axis of navigation"), since an expand control adds a click back. Signed with
+that tension acknowledged rather than glossed: wrapping fixes the horizontal
+axis, clipping fixes the vertical one it creates.
+
+**Amendment 7 — newlines render by author.** UI-054 shipped `hardBreaks` on
+**user** turns only, a narrowing of the brief the implementing agent escalated
+and the orchestrator accepted on measurement (10 of 11 agent turns in the live
+workspace hard-wrap at ~80 columns and would render ragged; 0 of 10 user turns
+were affected, since `↵` submitted before UI-052). The acceptance was recorded
+in the issue and in the commit — and never reached SPEC.md, which is the only
+place that makes it a rule rather than an implementation detail.
+
+Both are applied to the §11 thread-view canvas/turn sentences, replacing
+Amendment 5's standalone wrap clause:
+
+> Long lines **wrap** inside the canvas rather than scrolling horizontally, so
+> the whole block is readable without a second axis of navigation, and a block
+> taller than a threshold renders **clipped** behind a control that expands it
+> and says how much is hidden — wrapping makes a long block tall, and a block
+> that swallows the column is its own kind of unreadable. The copy button always
+> puts the **whole** block on the clipboard, collapsed or not.
+> **Newlines in a turn written by a person render as line breaks** — a textarea
+> offers no other way to write one — while a turn written by the agent renders
+> as ordinary markdown, where a single newline is a space and a break is written
+> as markdown spells it.
+
+---
+
 ## Acceptance Criteria
 - [ ] All five amendments applied to SPEC.md verbatim, each carrying its
       signed-2026-08-03 marker

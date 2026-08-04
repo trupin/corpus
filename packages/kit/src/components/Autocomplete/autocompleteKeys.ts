@@ -31,8 +31,35 @@
  */
 export interface AutocompleteKeyEvent {
   readonly key: string;
+  readonly shiftKey: boolean;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
   preventDefault: () => void;
   stopPropagation: () => void;
+}
+
+/**
+ * **The menu only ever claims an unmodified press.**
+ *
+ * The contract's keys are bare keys — `↑` `↓` `⇥` `↵` `esc` — and every chord
+ * built on one of them belongs to somebody else. Two of those somebodies are
+ * live in the same field: SPEC.md §11 gives the composer `⌘↵` ("the primary
+ * action is always `⌘↵`") and `⇧⌘↵`, and the browser gives everyone `⇧⇥` for
+ * reverse focus. Neither has any accept semantics, and a menu that answered
+ * them would be a menu overruling the app's primary action from a popup the
+ * user opened by typing an `@`.
+ *
+ * The rule lives **here**, on the menu, rather than in the composer's key
+ * handler: the composer consults the menu's claim before it looks at anything
+ * (`composerKeys.ts`), so a menu that says "this is not my key" needs no host
+ * to know a menu exists — and that holds for the ProseMirror host and any
+ * plugin's completing input just as it does for the global composer, none of
+ * which would otherwise spell the exclusion the same way. (PR #20 review,
+ * MINOR: `⌘↵` in the global composer accepted a completion instead of asking.)
+ */
+function isBarePress(event: AutocompleteKeyEvent): boolean {
+  return !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
 }
 
 /** The highlight's next home, wrapping at both ends. */
@@ -70,6 +97,9 @@ export interface AutocompleteKeyOptions {
  * which is how a host tells that it may fall through to its own handling, and,
  * in the ProseMirror path, is *the* signal that stops the key.
  *
+ * Nothing is consumed while the menu is closed, and nothing is consumed from a
+ * modified press: see {@link isBarePress}.
+ *
  * `preventDefault` is called on every key this consumes, and that is what keeps
  * `⇥` in the field: a completion menu that lets focus escape mid-trigger is the
  * bug this module exists to prevent. ProseMirror would prevent the default
@@ -80,7 +110,7 @@ export function handleAutocompleteKeyDown(
   event: AutocompleteKeyEvent,
   options: AutocompleteKeyOptions,
 ): boolean {
-  if (!options.isOpen) return false;
+  if (!options.isOpen || !isBarePress(event)) return false;
   const { activeIndex, count, setActiveIndex } = options;
 
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {

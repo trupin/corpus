@@ -321,6 +321,101 @@ describe("ComposeOverlay", () => {
       });
       expect(container.querySelector(".ac-item .k")?.textContent).toBeDefined();
     });
+
+    /**
+     * The composer that has both claims on `↵` — a menu that owns the bare key
+     * and a contract that owns the chords (SPEC.md §11: "the primary action is
+     * always `⌘↵`"). All four combinations, because the defect PR #20's review
+     * found lived in exactly one of them: an open menu answered *any* `Enter`,
+     * so `⌘↵` accepted a completion instead of asking.
+     */
+    describe("the menu's claim on ↵ against the contract's on ⌘↵", () => {
+      /** Types `Ask @rate` with the caret at the end, and waits for the menu. */
+      async function openMenu(container: HTMLElement): Promise<void> {
+        fireEvent.change(textareaOf(container), {
+          target: { value: "Ask @rate", selectionStart: 9 },
+        });
+        await waitFor(() => {
+          expect(container.querySelector(".ac-menu")).not.toBeNull();
+        });
+      }
+
+      const withMenu = (): ComposeTransport =>
+        composeTransport({
+          rows: [docRowFixture({ id: "doc_r", title: "rate", type: "agent-def" })],
+        });
+
+      it("menu closed · ↵ — inserts a newline and submits nothing", async () => {
+        const wire = withMenu();
+        const { container } = mount(wire);
+        type(container, "Ask something");
+        expect(container.querySelector(".ac-menu")).toBeNull();
+        expect(fireEvent.keyDown(textareaOf(container), { key: "Enter" })).toBe(true);
+        await settle();
+        expect(wire.calls.filter((call) => call.method === "POST")).toEqual([]);
+      });
+
+      it("menu closed · ⌘↵ — asks", async () => {
+        const wire = withMenu();
+        const { container } = mount(wire);
+        type(container, "Ask something");
+        fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true });
+        await waitFor(() => {
+          expect(wire.to("/api/threads")).toHaveLength(1);
+        });
+      });
+
+      it("menu open · ↵ — accepts the completion, submits nothing", async () => {
+        const wire = withMenu();
+        const { container } = mount(wire);
+        await openMenu(container);
+        expect(fireEvent.keyDown(textareaOf(container), { key: "Enter" })).toBe(false);
+        await settle();
+        expect(wire.calls.filter((call) => call.method === "POST")).toEqual([]);
+        expect(textareaOf(container).value).toBe("Ask @rate ");
+      });
+
+      it("menu open · ⌘↵ — asks, on the first press, with the text as typed", async () => {
+        const wire = withMenu();
+        const { container } = mount(wire);
+        await openMenu(container);
+        fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true });
+        await waitFor(() => {
+          expect(wire.to("/api/threads")).toHaveLength(1);
+        });
+        expect(wire.to("/api/threads")[0]?.json).toMatchObject({ body: "Ask @rate" });
+      });
+
+      it("menu open · ⇧⌘↵ — captures, on the first press", async () => {
+        const wire = withMenu();
+        const { container } = mount(wire);
+        await openMenu(container);
+        fireEvent.keyDown(textareaOf(container), { key: "Enter", metaKey: true, shiftKey: true });
+        await waitFor(() => {
+          expect(wire.to("/api/capture")).toHaveLength(1);
+        });
+      });
+
+      /**
+       * `⇧⇥` is the browser's reverse-focus key and has no accept semantics;
+       * SPEC.md §11 gives the menu `⇥`.
+       */
+      it("menu open · ⇧⇥ — leaves the field, accepting nothing", async () => {
+        const wire = withMenu();
+        const { container } = mount(wire);
+        await openMenu(container);
+        expect(fireEvent.keyDown(textareaOf(container), { key: "Tab", shiftKey: true })).toBe(true);
+        expect(textareaOf(container).value).toBe("Ask @rate");
+      });
+
+      it("menu open · ⇥ — accepts", async () => {
+        const wire = withMenu();
+        const { container } = mount(wire);
+        await openMenu(container);
+        expect(fireEvent.keyDown(textareaOf(container), { key: "Tab" })).toBe(false);
+        expect(textareaOf(container).value).toBe("Ask @rate ");
+      });
+    });
   });
 
   describe("failure and dismissal", () => {

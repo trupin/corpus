@@ -164,6 +164,29 @@ export function captureTurnAnchor(input: CaptureTurnAnchorInput): TurnAnchorCapt
 
   const quote = rendered.text.slice(trimmed.start, trimmed.end);
   const trace = sourceTraceOf(input.part.source);
+
+  // The occurrence index is only transferable between the two projections while
+  // they agree about how many times the quote appears — and they do not always
+  // agree. `mdast-util-to-hast` writes a `"\n"` text node where two blocks join
+  // and beside a markdown hard break; the source trace emits nothing there,
+  // because no markdown was consumed. So `plain` is the rendered text with those
+  // joins closed up, and closing them up can *manufacture* an occurrence that
+  // the reader never saw: a turn reading `the\n\nnext hen` renders as
+  // `the⏎next hen` (one "hen") and traces as `thenext hen` (two — one straddling
+  // the join). Counting in the DOM and looking up in the trace then lands an
+  // occurrence early, and the anchor comes back as `he\n\n` for a selection of
+  // `hen` (PR #20 review). That is the confidently-wrong anchor this module
+  // exists to prevent, so disagreement is a refusal.
+  //
+  // Deliberately a guard rather than a reconciliation: making the trace
+  // reproduce the renderer's join rules exactly means re-implementing
+  // `mdast-util-to-hast`'s block wrapping, and getting that subtly wrong would
+  // break the case that works today — a newline the user typed carries the
+  // `"\n"` in *both* projections, so comments spanning two typed lines resolve.
+  // Refusing costs the user a whole-turn 💬 in a rare case; guessing costs them
+  // a comment attached to words they did not choose.
+  if (countOccurrences(rendered.text, quote) !== countOccurrences(trace.plain, quote)) return null;
+
   const occurrence = countOccurrences(rendered.text.slice(0, trimmed.start), quote);
   const at = nthIndexOf(trace.plain, quote, occurrence);
   // Strict on purpose: falling back to the first occurrence is precisely the

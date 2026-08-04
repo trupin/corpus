@@ -48,6 +48,14 @@ export interface ComposerKeyOptions {
    * the menu's own `preventDefault` is what keeps the newline from also being
    * inserted. Dismissing the menu closes it, the claim stops returning true, and
    * `↵` means newline again.
+   *
+   * Asking first is safe because the menu claims **bare presses only**
+   * (`autocompleteKeys.ts`'s `isBarePress`): `⌘↵` and `⇧⌘↵` are never a
+   * completing input's keys, so the two chords below reach the contract whether
+   * a menu is open or not. That exclusion is deliberately the menu's rule and
+   * not a check here — a host that had to inspect menu state before honouring
+   * its own primary action would be one more place for the five composers to
+   * disagree, which is the failure this module exists to end.
    */
   readonly claim?: (event: KeyboardEvent) => boolean;
 }
