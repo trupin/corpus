@@ -87,11 +87,36 @@ APPEND to §11 Document view:
 
 ---
 
+### Amendment 3 — commenting without a selection, and replying in place
+
+**User:** _"I want be able to leave a comment on a document without having to
+select text. A comment section should always be available… conversations should
+be organized as threads of conversations a bit like in a forum website."_ On the
+question of what a second comment does: _"a new thread per comment but I want to
+be able to leave follow up comments on each thread from the document itself."_
+
+The object already exists — §6 defines a whole-document comment as a thread with
+`anchor: null`, and §11 already lists them below the body. What the spec never
+says is that a user can **make** one: every commenting path it describes starts
+from a text selection. This closes that.
+
+APPEND to §11 Document view, after the comments-list sentence from Amendment 1:
+
+> A comment does not require a selection. The comments list carries a composer,
+> so a remark about the document as a whole starts a thread with no anchor (§6) —
+> and a second, unrelated remark starts its **own** thread rather than joining the
+> first, so topics stay separately resolvable. Every thread in the list can be
+> replied to in place, without leaving the document: the section reads as a set of
+> conversations, each continuing where it began.
+
 ## Acceptance Criteria
-- [ ] Both amendments applied to SPEC.md verbatim at phase kickoff, each with a
-      signed-2026-08-04 marker
+- [ ] All three amendments applied to SPEC.md verbatim at phase kickoff, each
+      with a signed-2026-08-04 marker
 - [ ] Amendment 1 replaces the below-the-body clause rather than duplicating it
-- [ ] UI-063 and UI-066 do not start before the text is in place
+- [ ] UI-063, UI-066 and UI-067 do not start before the text is in place
+- [ ] UI-063 and UI-067 are sequenced or shipped together — they are one surface
+      seen from two angles (finding comments, writing them), and building the tab
+      twice is the failure mode
 
 ## Technical Design
 ### Files to Create/Modify

@@ -365,8 +365,9 @@ belongs to the same fix wave.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-010 | Two SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
+| SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
 | UI-064 | `<br>` inside a table cell renders as literal text | todo | P1 | — |
 | UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
 | UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
+| UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | todo | P2 | — |
