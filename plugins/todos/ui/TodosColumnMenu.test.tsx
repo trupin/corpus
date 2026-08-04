@@ -316,7 +316,7 @@ describe("the todos column's item menu", () => {
     fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "which plumber was it?" },
     });
-    fireEvent.click(screen.getByText("Comment ↵"));
+    fireEvent.click(screen.getByText("Comment ⌘↵"));
     await waitFor(() => {
       expect(onOpen).toHaveBeenCalledWith({
         docId: "doc_week",

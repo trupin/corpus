@@ -40,11 +40,12 @@
   font-size: 12.5px;
 }
 
-/* `.active` is the textarea composers' keyboard cursor, `.on` the editor
-   suggestion plugin's. Same state, two spellings, one appearance. */
+/* The keyboard cursor. One spelling: the document editor's `[[` popup used to
+   write `.on` for the same state, which is how two menus that must be
+   indistinguishable stop being so (UI-053). Every menu now renders
+   `AutocompleteMenu`, which emits `.active`. */
 .ac-item:hover,
-.ac-item.active,
-.ac-item.on {
+.ac-item.active {
   background: var(--surface-2);
 }
 

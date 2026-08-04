@@ -1,4 +1,4 @@
-import { useCreateThread } from "@corpus/kit";
+import { COMPOSER_PRIMARY_KEY, handleComposerKeyDown, useCreateThread } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useDismissable } from "./dismiss.js";
 import { clampToViewport } from "./PluginMenu.js";
@@ -16,13 +16,22 @@ import "./todos.css";
  * item that silently posted an empty or invented comment would be a different
  * act wearing the same name.
  *
- * Modelled on `apps/ui/src/anchors/CommentPopover.tsx` down to its keys — the
- * quote shown for confirmation, `↵` sends, `⇧↵` newlines, `esc` closes, and the
- * tri-state agent toggle that sends an explicit `false` for a note (an omitted
- * flag means "enqueue if the body mentions the agent", which would turn a note
- * into a job). It is a copy because the kit publishes no composer; the *thread*
- * it produces is not a copy of anything — `useCreateThread` is the kit's own
- * hook and the request is the ordinary §6 one, selector included.
+ * Modelled on `apps/ui/src/anchors/CommentPopover.tsx` — the quote shown for
+ * confirmation, `esc` closes, and the tri-state agent toggle that sends an
+ * explicit `false` for a note (an omitted flag means "enqueue if the body
+ * mentions the agent", which would turn a note into a job). It is a copy because
+ * the kit publishes no composer; the *thread* it produces is not a copy of
+ * anything — `useCreateThread` is the kit's own hook and the request is the
+ * ordinary §6 one, selector included.
+ *
+ * **The keys are not a copy — they are the kit's `handleComposerKeyDown`.**
+ * SPEC.md §11's composer contract binds "any composer a plugin contributes", so
+ * `↵` inserts a newline, `⌘↵` sends, and an IME composition commit never sends.
+ * The plugin does not re-implement that sentence and does not spell the chord
+ * itself: the label is built from `COMPOSER_PRIMARY_KEY`, so the glyph on this
+ * button cannot drift from the glyph on the app's own composers (PLUGINS-011).
+ * This is the whole extent of what `@corpus/kit` had to publish for a plugin to
+ * obey the contract, and it published it.
  *
  * **Dismissal is `./dismiss.ts`'s, the same as `PluginMenu`'s.** Core's popover
  * answers Escape from its field *and* through the escape registry, which a
@@ -40,6 +49,9 @@ export function quotePreview(quote: string, limit = 90): string {
 export const ASK_AGENT_LABEL = "◉ ask agent";
 export const NOTE_ONLY_LABEL = "○ note only";
 export const COMMENT_PLACEHOLDER = "Comment on this item";
+
+/** Every submit control names its key, and this one names the kit's (§11). */
+export const COMMENT_SUBMIT_LABEL = `Comment ${COMPOSER_PRIMARY_KEY}`;
 
 export interface TodoItemComposerProps {
   readonly target: TodoItemTarget;
@@ -115,26 +127,33 @@ export function TodoItemComposer({
       style={{ left: `${String(placement.left)}px`, top: `${String(placement.top)}px` }}
     >
       <div className="todo-cm-quote">“{quotePreview(selector.exact)}”</div>
-      <textarea
-        ref={input}
-        className="todo-cm-input"
-        value={text}
-        rows={2}
-        placeholder={COMMENT_PLACEHOLDER}
-        aria-label="Comment"
-        onChange={(event) => {
-          setText(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          // Escape is not handled here: `useDismissable` takes it on `window`
-          // in the capture phase, so it answers wherever focus is inside this
-          // popover — and stops it before the app's chain, which is the half a
-          // field-scoped handler could not do.
-          if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-          event.preventDefault();
-          send();
-        }}
-      />
+      {/* The wrapper is the box; the field inside it is transparent and grows
+          with the draft, because `↵` is a newline here now and a two-row field
+          that scrolls its first line out of sight is a poor place to write more
+          than one. The mirror is the browser laying out the same string in the
+          same font — no `scrollHeight` read, nothing to fall out of sync. It is
+          the technique `apps/ui`'s `GrowingTextarea` uses and not that
+          component, which a plugin may not import (§10). */}
+      <div className="todo-cm-grow" data-replicated-value={text}>
+        <textarea
+          ref={input}
+          className="todo-cm-input"
+          value={text}
+          rows={2}
+          placeholder={COMMENT_PLACEHOLDER}
+          aria-label="Comment"
+          onChange={(event) => {
+            setText(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            // No `onEscape`: `useDismissable` takes the key on `window` in the
+            // capture phase, so it answers wherever focus is inside this
+            // popover — and stops it before the app's chain, which is the half
+            // a field-scoped handler could not do. It never reaches here.
+            handleComposerKeyDown(event, { onPrimary: send });
+          }}
+        />
+      </div>
       <div className="todo-comment-foot">
         <button
           type="button"
@@ -153,7 +172,7 @@ export function TodoItemComposer({
           data-todo-comment-send
           onClick={send}
         >
-          Comment ↵
+          {COMMENT_SUBMIT_LABEL}
         </button>
       </div>
       {error === null ? null : (

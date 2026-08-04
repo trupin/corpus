@@ -1,3 +1,4 @@
+import { COMPOSER_PRIMARY_KEY, handleComposerKeyDown } from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
@@ -20,10 +21,13 @@ import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL } from "../thread/ThreadComposer";
  * It registers in the escape chain at `Popover` priority, above the reader and
  * above focus mode, so Escape closes the popover and leaves the document open
  * (sprint-011 TEST-101).
+ *
+ * Its keys are the kit's contract (SPEC.md §11): `↵` is a newline, `⌘↵`
+ * comments, `esc` closes.
  */
 
 export const COMMENT_PLACEHOLDER = "Comment — @ route · / skill · [[ link";
-export const COMMENT_SUBMIT_LABEL = "Comment ↵";
+export const COMMENT_SUBMIT_LABEL = `Comment ${COMPOSER_PRIMARY_KEY}`;
 
 export interface CommentPopoverProps {
   /** The markdown the thread will be anchored to, shown for confirmation. */
@@ -96,14 +100,7 @@ export function CommentPopover({
           // character — so the field answers Escape itself. The registration
           // below is for every other case: a click landing elsewhere while the
           // popover is still open.
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onClose();
-            return;
-          }
-          if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-          event.preventDefault();
-          send();
+          handleComposerKeyDown(event, { onPrimary: send, onEscape: onClose });
         }}
       />
       <div className="composer-foot">

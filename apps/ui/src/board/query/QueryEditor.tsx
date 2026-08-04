@@ -153,6 +153,10 @@ export function QueryEditor({
             // ↓ on an untouched field is the standard "show me the options".
             if (event.key === "ArrowDown" && !engaged) setEngaged(true);
             if (autocomplete.handleKeyDown(event)) return;
+            // `↵` commits the query. This is **not** a composer, so SPEC.md
+            // §11's composer key contract (`↵` newline, `⌘↵` submit) does not
+            // reach it: a query is one line of filter syntax, never prose, and
+            // there is no newline for the key to insert.
             if (event.key === "Enter") {
               event.preventDefault();
               onCommit();

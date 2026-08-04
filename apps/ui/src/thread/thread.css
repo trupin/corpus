@@ -89,16 +89,46 @@
   padding: 8px 10px;
 }
 
-.composer input[type="text"],
-.composer > input:not([type]) {
-  border: none;
-  background: none;
-  font: inherit;
-  color: var(--ink);
-  width: 100%;
+/* The field is a textarea rather than the mockup's `<input>` because SPEC.md
+   §11's composer contract makes `↵` a newline, and an `<input>` cannot hold one.
+   It still *looks* like the mockup's single line: borderless, transparent, the
+   card's own font. `.composer-grow` (see `GrowingTextarea.tsx`) stacks a hidden
+   copy of the value in the same grid cell, so the row is as tall as the text and
+   the field grows with it — capped, past which the wrapper scrolls rather than
+   letting one long draft push the card's foot off the screen. */
+.composer-grow {
+  display: grid;
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
-.composer > input::placeholder {
+.composer-grow::after {
+  content: attr(data-replicated-value) " ";
+  visibility: hidden;
+}
+
+/* The mirror only measures right while it wraps exactly as the field does, so
+   everything that decides a line break is set on both. */
+.composer-grow > textarea,
+.composer-grow::after {
+  grid-area: 1 / 1 / 2 / 2;
+  font: inherit;
+  padding: 0;
+  border: none;
+  width: 100%;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.composer-grow > textarea {
+  background: none;
+  color: var(--ink);
+  resize: none;
+  overflow: hidden;
+}
+
+.composer-grow > textarea::placeholder {
   color: var(--ink-3);
 }
 
@@ -335,4 +365,24 @@
 
 .child-composer {
   margin-left: 14px;
+}
+
+/*
+ * An anchor inside a turn, painted through the CSS Custom Highlight API
+ * (`anchors/textHighlight.ts`) rather than through markup: `react-markdown`
+ * owns every node in a rendered turn, and a second writer wrapping the anchored
+ * words in a `<mark>` would be undone by the next render.
+ *
+ * Deliberately the same reading as `.anchor-hl` in `anchors/anchors.css` — the
+ * same wash and the same accent underline — because SPEC.md §11 says a selection
+ * commented on in a turn is highlighted "the way an anchor is highlighted in a
+ * document", and two spellings of one idea drift. `::highlight()` accepts only
+ * the paint properties, so the border becomes a text decoration.
+ */
+::highlight(corpus-turn-anchor) {
+  background-color: var(--accent-wash);
+  text-decoration-line: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }

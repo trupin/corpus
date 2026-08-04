@@ -1,3 +1,4 @@
+import type { ResolvedAnchor } from "@corpus/contract";
 import type { ThreadTurn } from "@corpus/kit";
 import { describe, expect, it } from "vitest";
 import { threadRowFixture } from "../testing/readerFixture";
@@ -71,5 +72,67 @@ describe("placeChildThreads", () => {
     );
     expect(byTurn.size).toBe(0);
     expect(unanchored.map((row) => row.id)).toEqual(["th_whole", "th_orphan"]);
+  });
+});
+
+/**
+ * A phrase repeated across turns is the ordinary case once a comment can anchor
+ * to a *phrase* rather than to a whole turn (UI-051) — a reply quoting the
+ * question, an agent restating an assumption. The quote search puts every one of
+ * them under the first turn that contains the words; the server's own resolved
+ * range puts each under the turn it actually belongs to.
+ */
+describe("placeChildThreads, with the thread's own resolved anchors", () => {
+  const REPEATED: readonly ThreadTurn[] = [
+    { author: "user", ts: "1", body: "the rate is stale" },
+    { author: "agent", ts: "2", body: "agreed, the rate is stale" },
+  ];
+  const BODY = "## user · 1\n\nthe rate is stale\n\n## agent · 2\n\nagreed, the rate is stale\n";
+  const SECOND = BODY.indexOf("the rate is stale", BODY.indexOf("the rate is stale") + 1);
+
+  function anchorFor(threadId: string, start: number): ResolvedAnchor {
+    return {
+      anchorId: "a_1",
+      selector: { exact: "the rate is stale", prefix: "", suffix: "" },
+      threadId,
+      threadStatus: "open",
+      range: { start, end: start + "the rate is stale".length },
+      orphaned: false,
+    };
+  }
+
+  it("puts a child under the turn the server resolved its anchor into", () => {
+    const rows = [threadRowFixture({ id: "th_second", anchorQuote: "the rate is stale" })];
+    const { byTurn } = placeChildThreads(rows, REPEATED, {
+      body: BODY,
+      anchors: [anchorFor("th_second", SECOND)],
+    });
+    expect(byTurn.get("2")?.map((row) => row.id)).toEqual(["th_second"]);
+    expect(byTurn.has("1")).toBe(false);
+  });
+
+  it("is what the quote search would have got wrong", () => {
+    const rows = [threadRowFixture({ id: "th_second", anchorQuote: "the rate is stale" })];
+    // The same row, placed without the resolved range: the first turn wins.
+    const { byTurn } = placeChildThreads(rows, REPEATED);
+    expect(byTurn.get("1")?.map((row) => row.id)).toEqual(["th_second"]);
+  });
+
+  it("lists a child whose anchor the server declared orphaned", () => {
+    const rows = [threadRowFixture({ id: "th_gone", anchorQuote: "the rate is stale" })];
+    const { byTurn, unanchored } = placeChildThreads(rows, REPEATED, {
+      body: BODY,
+      anchors: [{ ...anchorFor("th_gone", 0), range: null, orphaned: true }],
+    });
+    // The server's verdict stands: falling through to the quote would overrule
+    // it and re-attach a thread it declared detached.
+    expect(byTurn.size).toBe(0);
+    expect(unanchored.map((row) => row.id)).toEqual(["th_gone"]);
+  });
+
+  it("still uses the quote for a child the parent's anchors do not mention", () => {
+    const rows = [threadRowFixture({ id: "th_other", anchorQuote: "agreed" })];
+    const { byTurn } = placeChildThreads(rows, REPEATED, { body: BODY, anchors: [] });
+    expect(byTurn.get("2")?.map((row) => row.id)).toEqual(["th_other"]);
   });
 });

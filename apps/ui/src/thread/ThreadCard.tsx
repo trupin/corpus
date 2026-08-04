@@ -1,4 +1,4 @@
-import type { DocRow } from "@corpus/contract";
+import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 import {
   CorpusRequestError,
   isPendingTurn,
@@ -19,6 +19,7 @@ import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
 import { ThreadComposer } from "./ThreadComposer";
 import { Turn } from "./Turn";
+import { useTurnComments } from "./useTurnComments";
 import "./thread.css";
 
 /**
@@ -38,6 +39,9 @@ import "./thread.css";
  */
 
 export type ThreadHost = "slot" | "margin" | "standalone" | "nested";
+
+/** A thread with no anchors, shared so it is one identity rather than one per render. */
+const NO_ANCHORS: readonly ResolvedAnchor[] = [];
 
 /** Past this depth the card stops indenting and says how deep it is instead. */
 export const MAX_NESTED_DEPTH = 3;
@@ -149,8 +153,38 @@ export function ThreadCard({
     parent.data?.anchors.find((anchor) => anchor.threadId === threadId)?.selector.exact ?? null;
   const quote = (resolvedQuote ?? row?.anchorQuote ?? "").trim();
 
+  /**
+   * The thread **as a document** — its markdown and its own anchors.
+   *
+   * A thread is a document (SPEC.md §6), so a comment on one of its turns writes
+   * an anchor into its frontmatter exactly as a comment on a note does. This is
+   * the only place those resolved ranges can be read from, and they are what
+   * puts a child card under the right turn and a highlight over the right words
+   * (UI-051). Free wherever the thread is the open document — the reader already
+   * fetched it, and the kit's cache is keyed by id.
+   */
+  const self = useDoc(threadId);
+  const selfBody = self.data?.body;
+  // The constant, not a fresh `[]`: this array is an effect dependency in
+  // `useTurnComments`, and a new one per render would re-measure every
+  // highlight on every render of the card.
+  const selfAnchors = self.data?.anchors ?? NO_ANCHORS;
+
   const children = useDocs({ parent: threadId, type: THREAD_DOC_TYPE });
-  const placement = placeChildThreads(children.data?.items ?? [], turns);
+  const placement = placeChildThreads(
+    children.data?.items ?? [],
+    turns,
+    selfBody === undefined ? undefined : { body: selfBody, anchors: selfAnchors },
+  );
+
+  const turnComments = useTurnComments({
+    threadId,
+    turns,
+    body: selfBody,
+    anchors: selfAnchors,
+    cardRef: card,
+    onNotify,
+  });
   /*
    * The answers this card submitted, in the order it submitted them.
    *
@@ -184,7 +218,20 @@ export function ThreadCard({
     quote !== "" ? `“${quote}”` : parentId === null ? "standalone" : "whole-document thread";
 
   return (
-    <div ref={card} className={classes.join(" ")} data-thread={threadId} data-depth={String(depth)}>
+    <div
+      ref={card}
+      className={classes.join(" ")}
+      data-thread={threadId}
+      data-depth={String(depth)}
+      /*
+       * SPEC.md §11's selection menu, on the card rather than on the reader: a
+       * thread card renders in four hosts and only one of them is a document
+       * view. The handler stops the event when it opens, so the innermost card
+       * answers for its own turns and the document view's own menu never opens
+       * over one (UI-051).
+       */
+      onContextMenu={turnComments.onContextMenu}
+    >
       <div className="t-head">
         <span className="t-quote">{headLabel}</span>
         <span className="chip t-status">{status}</span>
@@ -309,6 +356,7 @@ export function ThreadCard({
       {awaiting && lastTurn !== undefined ? <PendingIndicator since={lastTurn.ts} /> : null}
 
       <ThreadComposer threadId={threadId} resolved={resolved} onNotify={onNotify} />
+      {turnComments.popover}
     </div>
   );
 }

@@ -41,6 +41,35 @@ verbs). No background checks, no telemetry, ever.
 - [ ] Already-latest: says so, exits 0, touches nothing
 - [ ] Network failures are reported honestly; no partial installs
 
+### The workspace half (SHARED-007 amendment, signed 2026-08-03)
+The user asked what happens to skills and agent files on upgrade, and the answer
+was "nothing, and that is a gap". `corpus workspace upgrade` already does the
+three-way sync correctly; it was never wired to this command.
+- [ ] After a successful tool install, the upgrade performs the workspace
+      template sync — the same code path as `corpus workspace upgrade`, called,
+      not reimplemented
+- [ ] A file the workspace edited is **never** overwritten. This is inherited
+      from `template/plan.ts`'s `decide`, so the test that matters is that this
+      command routes through it rather than doing its own copying
+- [ ] The report says what was updated and what was left alone, in one place
+- [ ] **Conflicts (`keep-modified`) are presented as unresolved work, not as
+      notices** — listed distinctly from what merely happened, each naming
+      `corpus workspace diff <path>` (CLI-027). The audience is the agent (user,
+      2026-08-03: _"assume this will be run by an agent… make it clear it needs
+      to be resolved"_), so an agent must be able to tell what it still owes
+      without parsing prose
+- [ ] Never auto-merges a conflicted skill — a plausible-looking merge of prose
+      that instructs the agent is worse than a clear refusal
+- [ ] Ordering is deliberate and stated: install → template sync → conditional
+      restart, so the restarted server is running the same generation as the
+      files on disk
+- [ ] A template sync failure does not silently follow a successful install —
+      say plainly that the tool moved and the workspace did not, and what to run
+- [ ] Everything written lands in one attributed commit (inherited), so
+      `corpus skill rollback` still undoes a bad upgrade
+- [ ] `--check` remains side-effect free: it reports that template changes are
+      pending, and writes nothing
+
 ## Technical Design
 ### Files to Create/Modify
 - `apps/cli/src/commands/upgrade/` (colocated per feature); reuse the server

@@ -45,6 +45,15 @@ unconditionally — it is a link-attribute rewrite that cannot weld lines togeth
 `<style>`.
 
 **3. The comment composer discards a draft on any outside click.**
+_Escalated 2026-08-03 by PLUGINS-011, and I agree: this got more pressing, not
+less._ The signed composer contract now makes `↵` insert a newline, which
+actively encourages multi-line drafts — so a stray `mousedown` throws away more
+text than it used to, still with no confirmation. Whatever is resolved for
+`CommentPopover` must land in `plugins/todos/ui/dismiss.ts` in the **same**
+change: that module exists only to imitate core's dismissal, and leaving the
+plugin imitating a behavior core has abandoned is worse than either behavior.
+Treat this item as the one to do first when UI-048 is picked up.
+
 `plugins/todos/ui/dismiss.ts` applied at `TodoItemComposer.tsx` — the shared
 dismissal hook was extracted to fix **Escape** ordering, and outside-click came
 along with it. Type a comment on a todo item, click elsewhere on the board to

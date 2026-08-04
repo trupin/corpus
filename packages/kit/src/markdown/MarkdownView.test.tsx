@@ -212,6 +212,121 @@ describe("MarkdownView", () => {
     expect(opened).toEqual(["doc_b"]);
   });
 
+  /**
+   * UI-049's regression. An attachment referenced at the *end* of a turn always
+   * rendered — the thread fetched it with the bearer token — while the same
+   * reference one line earlier went through here as a bare relative `src` and
+   * loaded nothing at all. The override is what makes the two the same picture.
+   */
+  it("routes a mid-prose attachment reference through the authenticated fetch", async () => {
+    const reads: string[] = [];
+    const fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const request = new Request(input, init);
+      reads.push(
+        `${new URL(request.url).pathname} auth=${request.headers.get("authorization") ?? ""}`,
+      );
+      return Promise.resolve(new Response(new Blob(["png"]), { status: 200 }));
+    };
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      writable: true,
+      value: () => "blob:md-1",
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      writable: true,
+      value: () => undefined,
+    });
+    const harness = createCorpusTestHarness({ fetch, token: "tok_9" });
+    const { container } = render(
+      <MarkdownView markdown="before ![shot.png](attachments/th_a/t/shot.png) after" />,
+      { wrapper: harness.Wrapper },
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:md-1");
+    });
+    expect(reads).toEqual(["/attachments/th_a/t/shot.png auth=Bearer tok_9"]);
+    // The prose around it is untouched — no wrapper, no new block.
+    expect(container.querySelector("p")?.textContent).toContain("before");
+  });
+
+  it("hands a remote image to the browser untouched", () => {
+    const harness = createCorpusTestHarness({ fetch: wire().fetch });
+    const { container } = render(<MarkdownView markdown="![a](https://example.com/a.png)" />, {
+      wrapper: harness.Wrapper,
+    });
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("https://example.com/a.png");
+    expect(container.querySelector("img")?.getAttribute("alt")).toBe("a");
+  });
+
+  /**
+   * ── `hardBreaks` (UI-054) ───────────────────────────────────────────
+   *
+   * One fixture, both modes, because the whole issue is that the *same* text
+   * has to render two ways: hard-wrapped authored markdown is one paragraph,
+   * and lines a person typed into a composer are lines.
+   */
+  describe("a single newline", () => {
+    const WRAPPED = "the rate assumption\nlooks stale to me";
+
+    it("is a space by default — a hard-wrapped document body gains no breaks", () => {
+      const harness = createCorpusTestHarness({ fetch: wire().fetch });
+      const { container } = render(<MarkdownView markdown={WRAPPED} />, {
+        wrapper: harness.Wrapper,
+      });
+      expect(container.querySelectorAll("br")).toHaveLength(0);
+      expect(container.querySelectorAll("p")).toHaveLength(1);
+    });
+
+    it("is a line break when the caller asks for one", () => {
+      const harness = createCorpusTestHarness({ fetch: wire().fetch });
+      const { container } = render(<MarkdownView markdown={WRAPPED} hardBreaks />, {
+        wrapper: harness.Wrapper,
+      });
+      expect(container.querySelectorAll("br")).toHaveLength(1);
+      // Still one paragraph: a break, not a new block.
+      expect(container.querySelectorAll("p")).toHaveLength(1);
+    });
+
+    /**
+     * The property `apps/ui`'s turn anchoring rests on (UI-051): a selection in
+     * a turn is mapped from the *rendered text* back to the markdown, and the
+     * two projections have to agree about the characters between two words.
+     * `mdast-util-to-hast` emits a `<br>` **and** the newline it stands for, so
+     * they still do — asserted here because if that ever stopped being true,
+     * every comment on a selection spanning two typed lines would silently
+     * start declining.
+     */
+    it("keeps the newline in the rendered text, so turn anchors still line up", () => {
+      const harness = createCorpusTestHarness({ fetch: wire().fetch });
+      const { container } = render(<MarkdownView markdown={WRAPPED} hardBreaks />, {
+        wrapper: harness.Wrapper,
+      });
+      expect(container.querySelector("p")?.textContent).toBe(WRAPPED);
+    });
+
+    it("leaves a fenced block's newlines to the fence", () => {
+      const harness = createCorpusTestHarness({ fetch: wire().fetch });
+      const { container } = render(<MarkdownView markdown={"```\na\nb\n```"} hardBreaks />, {
+        wrapper: harness.Wrapper,
+      });
+      expect(container.querySelectorAll("pre br")).toHaveLength(0);
+      expect(container.querySelector("pre")?.textContent).toBe("a\nb\n");
+    });
+
+    it("does not disturb refs, which cannot span one", async () => {
+      const harness = createCorpusTestHarness({ fetch: wire({ docs: { doc_b: "Rates" } }).fetch });
+      const { container } = render(<MarkdownView markdown={"see [[doc_b]]\nagain"} hardBreaks />, {
+        wrapper: harness.Wrapper,
+      });
+      await waitFor(() => {
+        expect(container.querySelector(".ref")?.textContent).toBe("Rates");
+      });
+      expect(container.querySelectorAll("br")).toHaveLength(1);
+    });
+  });
+
   it("takes the caller's class so a host can set its own measure", () => {
     const harness = createCorpusTestHarness({ fetch: wire().fetch });
     const { container } = render(

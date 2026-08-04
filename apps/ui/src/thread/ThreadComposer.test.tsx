@@ -44,7 +44,7 @@ function Host({
   );
 }
 
-const input = (): HTMLInputElement => screen.getByLabelText<HTMLInputElement>("Reply");
+const input = (): HTMLTextAreaElement => screen.getByLabelText<HTMLTextAreaElement>("Reply");
 const send = (): HTMLElement => screen.getByText(SEND_LABEL);
 
 describe("ThreadComposer", () => {
@@ -145,15 +145,47 @@ describe("ThreadComposer", () => {
     expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
   });
 
-  it("sends on ↵ and clears the input", async () => {
+  /** SPEC.md §11's composer key contract, as UI-052 rebound it. */
+  it("sends on ⌘↵ and clears the field", async () => {
     const transport = wire();
     render(<Host transport={transport} />);
     fireEvent.change(input(), { target: { value: "by keyboard" } });
-    fireEvent.keyDown(input(), { key: "Enter" });
+    fireEvent.keyDown(input(), { key: "Enter", metaKey: true });
     await waitFor(() => {
       expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
     });
     expect(input().value).toBe("");
+  });
+
+  it("takes a newline on ↵ instead of sending, in a field that can hold one", () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    fireEvent.change(input(), { target: { value: "line one" } });
+
+    // Not prevented: the textarea's own insertion is the behaviour.
+    expect(fireEvent.keyDown(input(), { key: "Enter" })).toBe(true);
+    expect(transport.calls.filter((call) => call.method === "POST")).toEqual([]);
+
+    fireEvent.change(input(), { target: { value: "line one\nline two" } });
+    expect(input().value).toBe("line one\nline two");
+    expect(input().tagName).toBe("TEXTAREA");
+  });
+
+  /** The mirror `.composer-grow` measures with — the field's height *is* its text. */
+  it("grows with the text it is holding", () => {
+    const { container } = render(<Host transport={wire()} />);
+    const wrap = container.querySelector<HTMLElement>(".composer-grow");
+    expect(wrap?.dataset["replicatedValue"]).toBe("");
+    fireEvent.change(input(), { target: { value: "one\ntwo\nthree" } });
+    expect(wrap?.dataset["replicatedValue"]).toBe("one\ntwo\nthree");
+  });
+
+  it("never sends on an IME composition commit", () => {
+    const transport = wire();
+    render(<Host transport={transport} />);
+    fireEvent.change(input(), { target: { value: "にほんご" } });
+    fireEvent.keyDown(input(), { key: "Enter", metaKey: true, isComposing: true });
+    expect(transport.calls.filter((call) => call.method === "POST")).toEqual([]);
   });
 
   it("restores the text and the chips when the send fails", async () => {

@@ -1,4 +1,11 @@
-import { AutocompleteMenu, useAppendTurn, useAutocomplete, type RowNotice } from "@corpus/kit";
+import {
+  AutocompleteMenu,
+  COMPOSER_PRIMARY_KEY,
+  handleComposerKeyDown,
+  useAppendTurn,
+  useAutocomplete,
+  type RowNotice,
+} from "@corpus/kit";
 import {
   useCallback,
   useLayoutEffect,
@@ -7,13 +14,18 @@ import {
   type CSSProperties,
   type ReactElement,
 } from "react";
+import { GrowingTextarea } from "./GrowingTextarea";
 import { PendingAttachments } from "./PendingAttachments";
 import { useAttachmentIntake, type PendingAttachment } from "./useAttachmentIntake";
 
 /**
- * The thread composer (`design/index.html`'s `.composer`): one input, the shared
+ * The thread composer (`design/index.html`'s `.composer`): one field, the shared
  * `@` / `/` / `[[` autocomplete, the `◉ ask agent` / `○ note only` toggle, and
  * three ways to attach a file.
+ *
+ * **Its keys are the kit's, not its own** (SPEC.md §11): `↵` is a newline and
+ * `⌘↵` sends. That is why the field is a `GrowingTextarea` rather than the
+ * mockup's `<input>` — a reply is prose, and prose has paragraphs.
  *
  * **The toggle is the tri-state `requestsAgent`, and `○ note only` sends an
  * explicit `false`.** Omitting it means "enqueue if the thread is already
@@ -33,7 +45,7 @@ export const ASK_AGENT_LABEL = "◉ ask agent";
 export const NOTE_ONLY_LABEL = "○ note only";
 export const OPEN_HINT = "thread stays open";
 export const RESOLVED_HINT = "reopens on reply";
-export const SEND_LABEL = "Reply ↵";
+export const SEND_LABEL = `Reply ${COMPOSER_PRIMARY_KEY}`;
 
 export interface ThreadComposerProps {
   readonly threadId: string;
@@ -50,7 +62,7 @@ export function ThreadComposer({
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [asking, setAsking] = useState(true);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
   const intake = useAttachmentIntake();
@@ -130,7 +142,7 @@ export function ThreadComposer({
     >
       <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
 
-      <input
+      <GrowingTextarea
         ref={input}
         value={text}
         placeholder={COMPOSER_PLACEHOLDER}
@@ -138,18 +150,14 @@ export function ThreadComposer({
         data-composer={threadId}
         onChange={(event) => {
           setText(event.target.value);
-          setCaret(event.target.selectionStart ?? event.target.value.length);
+          setCaret(event.target.selectionStart);
         }}
         onSelect={(event) => {
-          setCaret(event.currentTarget.selectionStart ?? 0);
+          setCaret(event.currentTarget.selectionStart);
         }}
         onPaste={intake.onPaste}
         onKeyDown={(event) => {
-          if (autocomplete.handleKeyDown(event)) return;
-          if (event.key === "Enter") {
-            event.preventDefault();
-            send();
-          }
+          handleComposerKeyDown(event, { claim: autocomplete.handleKeyDown, onPrimary: send });
         }}
       />
 

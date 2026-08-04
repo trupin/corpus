@@ -214,10 +214,35 @@ export {
   REF_PATTERN,
   type DocRef,
 } from "./markdown/refs.js";
+// One image renderer for every host (SPEC.md §11's "images open full-size"):
+// the authenticated attachment fetch and the click-to-open affordance, so a
+// plugin's read surface draws pictures exactly as a turn does. The viewer
+// itself is the app's — `ImageViewerProvider` is the door to it, and images
+// below no provider are simply not clickable. See `markdown/imageViewer.tsx`
+// for why that split and not a viewer in this package.
+export { attachmentTarget, ATTACHMENT_PREFIX } from "./markdown/attachmentSrc.js";
+export {
+  CorpusImage,
+  IMAGE_BROKEN_CLASS,
+  IMAGE_CLASS,
+  IMAGE_PENDING_CLASS,
+  type CorpusImageProps,
+} from "./markdown/CorpusImage.js";
+export {
+  ImageViewerProvider,
+  useImageViewer,
+  type ImageViewerApi,
+  type ImageViewerProviderProps,
+  type ViewableImage,
+} from "./markdown/imageViewer.js";
 
 // SPEC.md §11's "smart input everywhere": one `@` / `/` / `[[` implementation,
 // shared by the thread composer, the document editor and the global composer.
 // Its stylesheet is a subpath, like the tokens: `import "@corpus/kit/autocomplete.css"`.
+//
+// `handleAutocompleteKeyDown` and `useRefCompletions` are the halves the
+// document editor's `[[` can share without sharing this hook's trigger grammar
+// (UI-053): the keyboard contract, and the list of documents itself.
 export {
   applyCompletion,
   AUTOCOMPLETE_LIMIT,
@@ -225,20 +250,37 @@ export {
   completionText,
   detectTrigger,
   GENERIC_AGENT_TOKEN,
+  handleAutocompleteKeyDown,
   invocableName,
   MENTION_DOC_TYPE,
   rowToken,
   SKILL_DOC_TYPE,
   TRIGGER_KINDS,
   useAutocomplete,
+  useRefCompletions,
   type AutocompleteItem,
+  type AutocompleteKeyEvent,
+  type AutocompleteKeyOptions,
   type AutocompleteMenuProps,
   type AutocompleteState,
   type CompletionResult,
+  type RefCompletions,
   type TriggerKind,
   type TriggerMatch,
   type UseAutocompleteOptions,
 } from "./components/Autocomplete/index.js";
+
+// SPEC.md §11's composer key contract — `↵` newline, `⌘↵` primary, `⇧⌘↵`
+// secondary — as one function, because the sentence binds every composer in the
+// app *and* every composer a plugin contributes, and a plugin may import
+// nothing but this package.
+export {
+  COMPOSER_NEWLINE_HINT,
+  COMPOSER_PRIMARY_KEY,
+  COMPOSER_SECONDARY_KEY,
+  handleComposerKeyDown,
+  type ComposerKeyOptions,
+} from "./components/Composer/index.js";
 
 // The live-update connection.
 export { useConnectionState } from "./events/useConnectionState.js";

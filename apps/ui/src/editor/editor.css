@@ -254,3 +254,20 @@ button.save-chip {
 .doc-body ul[data-type="taskList"] > li > div > :last-child {
   margin-bottom: 0;
 }
+
+/*
+ * ── Images, the editor's shape (UI-049) ──────────────────────────────
+ *
+ * The picture itself is the kit's `CorpusImage` — the same component the read
+ * surfaces draw, so §11's "there is no edit mode" holds for images too. What
+ * belongs here is only the wrapper ProseMirror needs around an inline node
+ * view: it must not introduce a line box of its own, or an image mid-sentence
+ * would push the sentence apart.
+ */
+.doc-body .doc-image {
+  display: inline;
+}
+
+.doc-body .doc-image .md-img {
+  vertical-align: text-bottom;
+}

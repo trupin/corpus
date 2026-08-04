@@ -1,9 +1,11 @@
 import { useMemo, useRef, type MutableRefObject, type ReactElement } from "react";
 import Markdown, { type Components } from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { CorpusRequestError } from "../client/createCorpusClient.js";
 import { useDoc } from "../query/useDoc.js";
 import { CodeFence } from "./CodeFence.js";
+import { CorpusImage } from "./CorpusImage.js";
 import { REF_ALIAS_ATTRIBUTE, REF_ID_ATTRIBUTE, remarkCorpusRefs } from "./refs.js";
 
 /**
@@ -33,12 +35,46 @@ export interface MarkdownViewProps {
    * preview surface with nowhere to navigate to.
    */
   readonly onOpenRef?: ((docId: string) => void) | undefined;
+  /**
+   * Render a single newline as a line break (`remark-breaks`), instead of the
+   * space CommonMark makes of it. **Off by default, and deliberately a
+   * per-instance option rather than a plugin the renderer always carries**
+   * (UI-054).
+   *
+   * The two kinds of body this component draws disagree about what a newline
+   * means, so one global answer is wrong for one of them:
+   *
+   * - **Text a person typed into a composer** — a thread reply, a comment on a
+   *   turn or on a selection. `↵` inserts a newline there and never submits
+   *   (SPEC.md §11's composer key contract, amended by SHARED-009), so a
+   *   newline is a line break the author asked for, exactly as in every chat
+   *   tool. This is what the option is for.
+   * - **Authored markdown** — a document body, and anything an agent wrote.
+   *   Those are hard-wrapped prose (measured: 10 of the 11 agent turns in a
+   *   real workspace wrap their paragraphs at ~80 columns, 60 newlines in
+   *   all), and a break at every newline would shred every one of them into
+   *   ragged lines. A markdown author who wants a break already has two ways
+   *   to write one; a person typing into a textarea has none.
+   *
+   * A plugin surface rendering through this component keeps today's behavior
+   * until it opts in — its bodies are documents, not chat.
+   */
+  readonly hardBreaks?: boolean | undefined;
 }
 
 type OpenRef = ((docId: string) => void) | undefined;
 
-/** Hoisted for the same reason `components` is memoised: a new array is a new tree. */
+/**
+ * Hoisted for the same reason `components` is memoised: a new array is a new
+ * tree. Two frozen lists rather than one built per render, so a host toggling
+ * nothing re-renders nothing.
+ *
+ * `remarkBreaks` runs last, over a tree `remarkCorpusRefs` has already split:
+ * a `[[ref]]` cannot contain a newline, so neither plugin can see text the
+ * other needed.
+ */
 const REMARK_PLUGINS = [remarkGfm, remarkCorpusRefs];
+const REMARK_PLUGINS_HARD_BREAKS = [remarkGfm, remarkCorpusRefs, remarkBreaks];
 
 interface RefLinkProps {
   readonly id: string;
@@ -94,7 +130,12 @@ function RefLink({ id, alias, onOpenRef }: RefLinkProps): ReactElement {
   );
 }
 
-export function MarkdownView({ markdown, className, onOpenRef }: MarkdownViewProps): ReactElement {
+export function MarkdownView({
+  markdown,
+  className,
+  onOpenRef,
+  hardBreaks = false,
+}: MarkdownViewProps): ReactElement {
   /**
    * The navigation callback is held in a ref, and `components` is built **once**.
    *
@@ -119,6 +160,20 @@ export function MarkdownView({ markdown, className, onOpenRef }: MarkdownViewPro
        * from three hosts. The editable body is TipTap and reaches none of this.
        */
       pre: CodeFence,
+      /*
+       * Every rendered image is a workspace-aware image (UI-049): an
+       * `attachments/…` source is fetched with the bearer token rather than
+       * left as a bare relative `src` that loads nothing, and a click opens it
+       * full-screen wherever a viewer is mounted. Wired here, at the one
+       * renderer, for the reason the fence is: a picture in a turn, in a `view`
+       * body and in a plugin's read surface is the same picture seen from three
+       * hosts. `src` is optional on the hast node and an image without one is
+       * not an image, so it renders as nothing rather than as a broken box.
+       */
+      img({ src, alt, title }) {
+        if (typeof src !== "string" || src === "") return null;
+        return <CorpusImage src={src} alt={alt ?? ""} title={title} />;
+      },
       a({ node, children, ...rest }) {
         // Read off the hast node rather than the JSX props: the id is put there
         // by `remarkCorpusRefs` as a literal attribute, and reading it back the
@@ -147,7 +202,10 @@ export function MarkdownView({ markdown, className, onOpenRef }: MarkdownViewPro
 
   return (
     <div className={className ?? "doc-body"}>
-      <Markdown remarkPlugins={REMARK_PLUGINS} components={components}>
+      <Markdown
+        remarkPlugins={hardBreaks ? REMARK_PLUGINS_HARD_BREAKS : REMARK_PLUGINS}
+        components={components}
+      >
         {markdown}
       </Markdown>
     </div>

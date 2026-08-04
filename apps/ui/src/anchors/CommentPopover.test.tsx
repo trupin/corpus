@@ -78,14 +78,39 @@ describe("the comment composer", () => {
     expect(screen.getByRole("button", { name: /Comment/u }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("submits on ↵ and takes a newline on ⇧↵", () => {
+  /**
+   * SPEC.md §11's composer key contract, as UI-052 rebound it: `↵` is the
+   * newline now — in *this* composer it always could have been, since the field
+   * was already a textarea — and `⌘↵` is the submit.
+   */
+  it("submits on ⌘↵ and leaves ↵ and ⇧↵ to the text", () => {
     const { onSubmit } = open();
     type("A comment.");
     const input = screen.getByLabelText("Comment");
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+
+    // Neither is prevented: the textarea's own insertion is the behaviour.
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: "Enter", shiftKey: true })).toBe(true);
     expect(onSubmit).not.toHaveBeenCalled();
-    fireEvent.keyDown(input, { key: "Enter" });
+
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
     expect(onSubmit).toHaveBeenCalledWith("A comment.", true);
+  });
+
+  it("never submits on an IME composition commit", () => {
+    const { onSubmit } = open();
+    type("にほんご");
+    fireEvent.keyDown(screen.getByLabelText("Comment"), {
+      key: "Enter",
+      metaKey: true,
+      isComposing: true,
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("names its key on the button", () => {
+    open();
+    expect(screen.getByRole("button", { name: /Comment/u }).textContent).toBe("Comment ⌘↵");
   });
 
   it("closes on escape from inside the field, which the chain must not consume", () => {

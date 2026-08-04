@@ -129,6 +129,15 @@ const RUNTIME_SURFACE = [
   "REF_ID_ATTRIBUTE",
   "REF_NODE_TYPE",
   "REF_PATTERN",
+  // images: one renderer, and the door to the app's viewer
+  "attachmentTarget",
+  "ATTACHMENT_PREFIX",
+  "CorpusImage",
+  "IMAGE_BROKEN_CLASS",
+  "IMAGE_CLASS",
+  "IMAGE_PENDING_CLASS",
+  "ImageViewerProvider",
+  "useImageViewer",
   // the shared `@` / `/` / `[[` autocomplete
   "AutocompleteMenu",
   "applyCompletion",
@@ -142,6 +151,14 @@ const RUNTIME_SURFACE = [
   "rowToken",
   "SKILL_DOC_TYPE",
   "useAutocomplete",
+  "useRefCompletions",
+  // the one keyboard contract every completion menu obeys
+  "handleAutocompleteKeyDown",
+  // the composer key contract every composer obeys
+  "COMPOSER_NEWLINE_HINT",
+  "COMPOSER_PRIMARY_KEY",
+  "COMPOSER_SECONDARY_KEY",
+  "handleComposerKeyDown",
   "useConnectionState",
   "backoffDelay",
   "DEFAULT_BASE_DELAY_MS",

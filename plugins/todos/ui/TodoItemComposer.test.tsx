@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { COMPOSER_PRIMARY_KEY } from "@corpus/kit";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { transport, wrapperFor, type Transport } from "./testing.js";
@@ -30,6 +31,7 @@ const TARGET: TodoItemTarget = {
 interface Mounted {
   /** Every `POST /api/threads` body the composer sent, parsed. */
   readonly posted: readonly Record<string, unknown>[];
+  readonly container: HTMLElement;
   readonly onCreated: ReturnType<typeof vi.fn>;
   readonly onClose: ReturnType<typeof vi.fn>;
 }
@@ -62,7 +64,7 @@ function mount(threadsAnswer?: { readonly status: number; readonly body: unknown
     },
   };
   const handlers = { onCreated: vi.fn(), onClose: vi.fn() };
-  render(
+  const { container } = render(
     <TodoItemComposer
       target={TARGET}
       selector={SELECTOR}
@@ -72,11 +74,16 @@ function mount(threadsAnswer?: { readonly status: number; readonly body: unknown
     />,
     { wrapper: wrapperFor(wired).Wrapper },
   );
-  return { posted, ...handlers };
+  return { posted, container, ...handlers };
 }
 
 const input = (): HTMLTextAreaElement => screen.getByLabelText<HTMLTextAreaElement>("Comment");
-const send = (): HTMLButtonElement => screen.getByText<HTMLButtonElement>("Comment ↵");
+/**
+ * Spelled out rather than imported from the component: the acceptance criterion
+ * is the glyph a user reads on the button, and a test that re-used the constant
+ * would pass whatever the constant said.
+ */
+const send = (): HTMLButtonElement => screen.getByText<HTMLButtonElement>("Comment ⌘↵");
 
 describe("TodoItemComposer", () => {
   it("shows the quote it will anchor to, and takes focus", () => {
@@ -121,15 +128,62 @@ describe("TodoItemComposer", () => {
     expect(posted[0]?.["requestsAgent"]).toBe(false);
   });
 
-  it("sends on ↵ and newlines on ⇧↵", async () => {
+  /**
+   * PLUGINS-011. This composer sent on `↵` with `⇧↵` for a newline, which was
+   * the convention SPEC.md §11 replaced. The contract binds "any composer a
+   * plugin contributes", so the reference plugin demonstrates it: `↵` belongs to
+   * the text, `⌘↵` sends. The handler is the kit's `handleComposerKeyDown` — its
+   * own unit tests cover the contract, and what is asserted here is that this
+   * composer is wired to it and to nothing else.
+   */
+  it("sends on ⌘↵ and leaves ↵ to the text", async () => {
     const { onCreated } = mount();
     fireEvent.change(input(), { target: { value: "first line" } });
-    fireEvent.keyDown(input(), { key: "Enter", shiftKey: true });
+    // `fireEvent` returns false once `preventDefault` has been called, so a
+    // `true` here is the proof the browser's own newline insertion still runs —
+    // in jsdom nothing types into the field, and un-prevented is the behaviour.
+    expect(fireEvent.keyDown(input(), { key: "Enter" })).toBe(true);
     expect(onCreated).not.toHaveBeenCalled();
-    fireEvent.keyDown(input(), { key: "Enter" });
+    // ⇧↵ was the old newline chord; it stays a newline and never sends.
+    expect(fireEvent.keyDown(input(), { key: "Enter", shiftKey: true })).toBe(true);
+    expect(onCreated).not.toHaveBeenCalled();
+
+    expect(fireEvent.keyDown(input(), { key: "Enter", metaKey: true })).toBe(false);
     await waitFor(() => {
       expect(onCreated).toHaveBeenCalledWith(TARGET, "th_new1");
     });
+  });
+
+  /** The chord on the button is the kit's, so it cannot drift from the app's. */
+  it("names the key it answers to", () => {
+    mount();
+    expect(send().textContent).toBe(`Comment ${COMPOSER_PRIMARY_KEY}`);
+  });
+
+  /**
+   * The keystroke that *commits* an IME composition arrives as `Enter`, and on
+   * macOS a user may well be holding ⌘ from the chord before it. Committing
+   * "プランを" must put those characters in the field, not post them.
+   */
+  it("never sends on an IME composition commit", async () => {
+    const { posted, onCreated } = mount();
+    fireEvent.change(input(), { target: { value: "プランを" } });
+    fireEvent.keyDown(input(), { key: "Enter", isComposing: true });
+    fireEvent.keyDown(input(), { key: "Enter", metaKey: true, isComposing: true });
+    await Promise.resolve();
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(posted).toEqual([]);
+    // And the composition is still there to be sent deliberately.
+    expect(input().value).toBe("プランを");
+  });
+
+  /** The field grows with the draft; the mirror that measures it carries it. */
+  it("mirrors the draft so the field grows with it", () => {
+    const { container } = mount();
+    const grow = container.querySelector(".todo-cm-grow");
+    expect(grow?.getAttribute("data-replicated-value")).toBe("");
+    fireEvent.change(input(), { target: { value: "first line\nsecond line" } });
+    expect(grow?.getAttribute("data-replicated-value")).toBe("first line\nsecond line");
   });
 
   it("closes on Escape from inside the field", () => {

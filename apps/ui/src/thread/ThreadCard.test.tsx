@@ -514,7 +514,7 @@ describe("child threads", () => {
     fireEvent.change(screen.getByLabelText("Comment on this turn"), {
       target: { value: "where from?" },
     });
-    fireEvent.click(screen.getByText("Comment ↵"));
+    fireEvent.click(screen.getByText("Comment ⌘↵"));
     await waitFor(() => {
       expect(transport.of("POST", "/api/threads")).toHaveLength(1);
     });

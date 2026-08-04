@@ -34,6 +34,14 @@ export const EscapeLayerPriority = {
   Overlay: 20,
   /** Popovers and menus: whatever is open inside the surface below them. */
   Popover: 30,
+  /**
+   * The full-screen image viewer (UI-049, `z-index: 70`). Top of the chain by
+   * declaration rather than by mount order: it opens *from* a reader, a focus
+   * mode or an overlay — every layer below it is still mounted underneath — and
+   * SPEC.md §11 gives Escape to the image. Tying that to registration order
+   * would make it true only for as long as nothing else registered later.
+   */
+  ImageViewer: 40,
 } as const;
 
 export type EscapeLayerPriorityValue =

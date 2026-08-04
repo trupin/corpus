@@ -12,10 +12,10 @@ import { DOC_REF_NAME } from "./markdown/refNode.js";
  * insertion has to replace exactly those characters. A DOM listener over a
  * contenteditable would lose the range the first time anything reflowed.
  *
- * The menu itself is React (`RefAutocomplete`) and owns the list and the
- * highlight, because the list is a query. The plugin publishes *where* and
- * *what was typed*; the component decides what to show and hands back a key
- * handler so ↑/↓/↵/esc are answered before ProseMirror sees them.
+ * The menu itself is React (`RefAutocomplete`, over `@corpus/kit`'s) and owns
+ * the list and the highlight, because the list is a query. The plugin publishes
+ * *where* and *what was typed*; the component decides what to show and hands
+ * back a key handler so ↑/↓/⇥/↵/esc are answered before ProseMirror sees them.
  */
 
 /** Everything the menu needs, published on every change to the trigger's state. */
@@ -37,7 +37,7 @@ export interface RefSuggestionOptions {
    * The menu's key handler, in a box. `true` means the menu consumed the key —
    * which is how esc closes the menu instead of the reader (the escape chain
    * already ignores keys inside a contenteditable, and this keeps ↑/↓ from
-   * moving the caret).
+   * moving the caret and ⇥ from moving focus out of the editor).
    */
   readonly keyHandler: { current: ((event: KeyboardEvent) => boolean) | null };
 }

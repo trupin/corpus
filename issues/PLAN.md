@@ -243,7 +243,8 @@ table (SHARED-003, SERVER-038, UI-020, UI-021, CLI-018) and the deferred pair
 | INFRA-018 | Halve the e2e coverage payload at the collector (INFRA-017 follow-up) | todo | P2 | INFRA-017 |
 | UI-047 | Flaky spec: focus-ring check tabs before the app is interactive (PR #19 CI) | todo | P2 | — |
 | UI-048 | PR #19 re-review MINORs: paste edges, composer draft loss, completion whitespace | todo | P2 | — |
-| INFRA-019 | Pre-push hook never reads stdin: pushes die of SIGPIPE after passing (blocked v0.2.0) | done | P0 | — |
+| INFRA-019 | A slow pre-push gate outlives the SSH session git opened (141, blocked v0.2.0 + phase 12) | done | P0 | — |
+| SERVER-053 | Flaky: rollback "nothing to restore" needs 1s of a 5s budget, fails under load | todo | P2 | — |
 
 Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-023 OC2: "Amend — plugin menus in"); PLUGINS-009 is unblocked pending UI-037.
 
@@ -253,10 +254,16 @@ Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-0
 | --- | --- | --- | --- | --- |
 | SHARED-007 | Self-upgrade spec rider — apply to SPEC.md at phase kickoff (orchestrator) | todo | P1 | — |
 | INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | todo | P1 | SHARED-007 |
-| CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | todo | P1 | SHARED-007, INFRA-016 |
+| CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | todo | P1 | SHARED-007, INFRA-016, CLI-027 |
 | CONTRACT-027 | Upgrade routes: check + trigger | todo | P1 | SHARED-007 |
 | SERVER-050 | Upgrade endpoints: check proxy + detached upgrade trigger | todo | P1 | CONTRACT-027, CLI-025 |
+| CLI-027 | `corpus workspace diff <path>`: what the tool changed under an edited file | todo | P1 | SHARED-007 |
 | UI-035 | Upgrade UI: on-demand check + "Upgrade & restart" with SSE ride-through | todo | P1 | CONTRACT-027, SERVER-050 |
+
+Rider **amended 2026-08-03** (signed): `corpus upgrade` also runs the workspace
+template sync, and a file the workspace edited that the tool also changed is
+reported as **unresolved work** — named, with `corpus workspace diff` to see it,
+never auto-merged. The audience for that report is the agent.
 
 ## Phase 11 — Edit acknowledgment (signed rider SHARED-008, 2026-08-02)
 
@@ -318,4 +325,48 @@ FTS5 index. SHARED-006's amendment is applied to SPEC.md as this phase's kickoff
 
 ---
 
+## Phase 12 — Dogfood wave 2 (signed rider SHARED-009, 2026-08-03)
+
+Five live reports on v0.2.0. Rider signed; apply the SPEC text before the domain
+issues start. UI-049/051/052/053 are independent of each other and can run in
+parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-009 | Five SPEC amendments — apply at phase kickoff (orchestrator) | done | P1 | — |
+| UI-049 | Images open full-size on click; inline attachment images actually load | done | P1 | SHARED-009 |
+| UI-051 | Select text in a turn and comment on it, with the selection quoted | done | P1 | SHARED-009 |
+| UI-052 | One composer key contract: ↵ newline, ⌘↵ send, ⇧⌘↵ secondary | done | P1 | SHARED-009 |
+| UI-053 | One keyboard contract for all three autocompletes; ⇥ accepts | done | P1 | SHARED-009 |
+| UI-054 | Newlines typed into a turn don't render — `a\nb` shows as `a b` (UI-052 finding) | done | P1 | UI-052 |
+| UI-050 | Fenced canvases: wrap long lines, collapse tall blocks (2nd report) | done | P1 | SHARED-009 |
+| PLUGINS-011 | Todos item composer adopts the composer key contract | done | P2 | UI-052 |
+| UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | todo | P2 | UI-052 |
+| UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | todo | P1 | UI-051 |
+| AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | todo | P1 | AGENT-010 |
+| UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | todo | P2 | — |
+| UI-058 | A "note only" turn still shows "agent is working" (dogfood) | todo | P1 | — |
+| UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | todo | P1 | — |
+| UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P1 | UI-051 |
+| UI-061 | A selection spanning several turns is silently truncated to one (PR #20) | todo | P2 | UI-051 |
+| UI-062 | Document comment sometimes anchors at the top, not at the selection (dogfood) | todo | P1 | — |
+
 <!-- Additional phases will be added as the project grows -->
+
+---
+
+## Phase 13 — Dogfood wave 3 (signed rider SHARED-010, 2026-08-04)
+
+Four live reports on the Phase 12 build. UI-064 and UI-065 are bug/refinement and
+need no spec text; UI-063 and UI-066 are new user-visible surfaces and wait on
+the rider. UI-062 (comment anchors at the top) is tracked in the wave-2 table and
+belongs to the same fix wave.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
+| UI-064 | `<br>` inside a table cell renders as literal text | todo | P1 | — |
+| UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
+| UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
+| UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
+| UI-065 | A long document title wraps instead of being cut | todo | P2 | — |
