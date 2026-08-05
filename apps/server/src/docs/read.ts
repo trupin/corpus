@@ -21,7 +21,7 @@ import {
   type TextQuoteSelector,
   type ThreadStatus,
 } from "@corpus/contract";
-import { resolveAnchorExact } from "../anchors/index.js";
+import { resolveAnchor } from "../anchors/index.js";
 import {
   DocumentParseError,
   parseDocument,
@@ -204,15 +204,31 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
 type AnchorThreadRow = { readonly anchor_id: string; readonly id: string; readonly status: string };
 
 /**
- * Resolve every anchor of a document against its current body (SPEC.md §6).
+ * Resolve every anchor of a document against its current body — the **whole**
+ * §6 ladder, fuzzy rung included (SERVER-055).
  *
- * **Exact rungs only**, matching what the projection stores in `anchors`
- * (sprint-003 Adjudication 1): running fuzzy at render time would re-attach a
- * deleted paragraph's look-alike sibling and put a thread's highlight on text
- * nobody commented on — exactly the misattachment SERVER-002/012/013 were fixed
- * to prevent. Reconciliation already rewrites `exact` on every save, so the
- * fuzzy rung would only ever fire on an out-of-band edit the watcher has not
- * reconciled yet, and it would fire wrong.
+ * This used to stop at the exactness tier (sprint-003 Adjudication 1, whose
+ * premise was that reconciliation keeps every live selector byte-fresh, so rung
+ * 3 could only ever fire wrong). Reconciliation does keep selectors fresh *on
+ * the paths it runs on*, but three states reach a reader without it: a selector
+ * a client captured against a re-printed spelling of the file and that never
+ * byte-matched (UI-068 — an anchor born orphaned, which no later save repairs,
+ * because reconciliation leaves an anchor that does not resolve in `oldBody`
+ * exactly as it found it); an out-of-band edit inside the watcher's debounce and
+ * flush budget; and a thread document whose turns were appended or deleted,
+ * which changes a body no reconciliation pass ever sees. In every one of them
+ * the reader is asking precisely the question reconciliation itself asks with
+ * the full ladder (`reconcileAnchors` resolves each selector in `oldBody` via
+ * `resolveAnchor`), so answering it with a weaker ladder made the write path and
+ * the read path disagree about what resolves.
+ *
+ * The safety property that made the old adjudication right is kept by rung 3
+ * itself, not by refusing to call it: a fuzzy candidate must carry its declared
+ * context (`anchors/fuzzy.ts`), so a deleted bullet's parallel sibling — same
+ * words, different neighbours — fails the rung and the thread orphans. Fuzzy
+ * remains banned where reconciliation bans it: verifying a *deletion claim*
+ * against diff evidence is a different question from "where does this selector
+ * point", and only the exactness tier may answer it.
  *
  * An anchor entry no thread claims is omitted rather than reported with a
  * fabricated thread id: `ResolvedAnchor` requires one. §14 already reports the
@@ -239,7 +255,7 @@ export function resolveDocumentAnchors(
     const selector = anchors[anchorId];
     const thread = byAnchor.get(anchorId);
     if (selector === undefined || thread === undefined) continue;
-    const range = resolveAnchorExact(parsed.body, selector);
+    const range = resolveAnchor(parsed.body, selector);
     resolved.push({
       anchorId,
       selector,

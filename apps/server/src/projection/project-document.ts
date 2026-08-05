@@ -19,7 +19,7 @@ import {
   type TextQuoteSelector,
 } from "@corpus/contract";
 import { z } from "zod";
-import { resolveAnchorExact } from "../anchors/index.js";
+import { resolveAnchor } from "../anchors/index.js";
 import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/document.js";
 import { readThreadForms } from "../core/form.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
@@ -379,12 +379,15 @@ function insertAnchors(
   for (const anchorId of ids) {
     const selector = fields.anchors[anchorId];
     if (selector === undefined) continue;
-    // Sprint-003 Adjudication 1: **exact-only**, never the full ladder. Fuzzy is
-    // the rung that finds a deleted bullet's look-alike sibling, and re-running
-    // it here would reintroduce at render time exactly the misattachment the
-    // reconciler was fixed to prevent (SERVER-002 rounds 2–3). NULL when the
-    // selector no longer resolves verbatim — the §9.1 orphan state.
-    const range = resolveAnchorExact(body, selector);
+    // The **whole** §6 ladder, exactly as `docs/read.ts` runs it (SERVER-055,
+    // superseding sprint-003 Adjudication 1's exact-only rule). This column is
+    // what `corpus thread context` calls a thread anchored or orphaned; the
+    // wire `Doc.anchors` is what the board draws. One definition of "resolves"
+    // or the agent is told a thread is detached while the reader highlights it.
+    // NULL is the §9.1 orphan state: rung 3 is context-corroborated
+    // (`anchors/fuzzy.ts`), so a deleted passage's look-alike sibling does not
+    // capture the anchor here any more than it does on the write path.
+    const range = resolveAnchor(body, selector);
     insert.run(
       docId,
       anchorId,

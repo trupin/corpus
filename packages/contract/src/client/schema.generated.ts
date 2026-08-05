@@ -471,6 +471,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/{id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one document's change across a commit range
+         * @description The unified diff of a single document across a git commit range — what `corpus doc diff <id>` prints, and the escalation a `doc.edited` queue event deliberately does not carry (SPEC.md §4). The event announces *that* a user edit session ended, with its range and change stats; this is the one call that says *what* changed, made only when the agent decides the change is worth reading.
+         *
+         *     **Bounded, like the context pack.** Reading a diff costs roughly the same however large the document or the change: the body is capped at 16000 characters (`DOC_DIFF_MAX_CHARS`) and a longer diff is **truncated, not refused** — whole hunks are dropped from the end so the answer is still a valid unified diff, `truncated` says so, and `totalChars` says how much was cut. Refusing would leave a caller that already spent a wake-up with nothing; truncating leaves it with the front of the change and an honest measure of the rest.
+         *
+         *     **Path-scoped**: the diff and the stats cover this document's file alone, so commits in the range that touched other documents contribute nothing — the range may be a commit range, but the answer is about one document.
+         *
+         *     **The range.** `from` is exclusive and `to` inclusive (`git diff from..to`). Both are optional: `to` defaults to the newest commit that touched this document and `from` to the parent of `to`, so the bare `corpus doc diff <id>` of §4's own sentence reads as *what changed in this document's last commit*, while the pair carried by a `doc.edited` event reads as *what changed in that session*. The resolved values come back in the response, because a caller that omitted one must be able to say what it read.
+         *
+         *     **Only commit shas.** A syntactically invalid revision — `HEAD~1`, a tag, anything leading with `-` — is a `400` naming the parameter, before a handler and therefore before a `git` process exists. A well-formed sha this repository does not contain is *also* a `400` naming the parameter, never a `404`: the `404` on this route means the **document** is unknown, and conflating the two would have a caller believe its document had been deleted when it had merely mistyped a range.
+         *
+         *     A document the workspace has never committed — a file not yet committed, or a workspace with no git (SPEC.md §14) — answers `200` with a null range, an empty diff and zero stats: an answer, not an error. Read-only; no acting party.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Base of the range, **exclusive** — `git diff from..to`. Omit it to use the parent of `to`, which reads as that single commit's own change; a `to` with no parent falls back to git's empty tree, so a document introduced by the repository's root commit diffs as wholly added. Must be a commit sha: a named revision is a `400` naming this parameter. */
+                    from?: string;
+                    /** @description Head of the range, **inclusive**. Omit it to use the newest commit that touched this document. Must be a commit sha, like `from`. */
+                    to?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The resolved range, the change stats, and the diff — truncated to the published bound when the change is larger than it. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocDiff"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/{id}/move": {
         parameters: {
             query?: never;
@@ -3948,6 +4032,41 @@ export interface components {
              */
             relation: "linked" | "similar" | "both";
         };
+        DocDiff: {
+            /**
+             * @description The document the diff is for.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /** @description Workspace-relative path of the document's file, e.g. `data/docs/finance/mortgage.md` — the path the diff was taken at, and what a `--- a/… +++ b/…` header in `diff` names. */
+            path: string;
+            /**
+             * @description The resolved base of the range, exclusive — the value used, whether supplied or defaulted. `EMPTY_TREE_OBJECT_ID` when `to` has no parent. `null` only in the no-history case below, where `to` is null too.
+             * @example 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+             */
+            from: string | null;
+            /**
+             * @description The resolved head of the range, inclusive. **`null` exactly when the workspace has no committed history for this document** — a file written but not yet committed, or a workspace with no git at all (SPEC.md §14). In that case `from` is null too, `diff` is empty, `stats` are zero and `truncated` is false: an answer, not an error, because a document that has never been committed genuinely has no change to show.
+             * @example 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+             */
+            to: string | null;
+            stats: components["schemas"]["DocChangeStats"];
+            /** @description The unified diff of this document's file across the range, at most 16000 characters (`DOC_DIFF_MAX_CHARS`). Path-scoped, so commits in the range that touched other documents contribute nothing. Plain text, rendered as-is and never interpreted — a diff of a markdown document contains markdown, and a client that renders it would be rendering the user's document instead of showing the change to it. Empty when nothing changed in the range, which is a legitimate answer. */
+            diff: string;
+            /** @description `true` when the diff was cut to `DOC_DIFF_MAX_CHARS`. The cut is **hunk-aligned**: whole hunks are dropped from the end so that what is returned is always a valid unified diff a person or a tool can read, rather than a fragment ending mid-line. A single hunk larger than the whole bound is the one exception — it is cut at a line boundary, never mid-line. Stated rather than silent (the rule the context pack's own `truncated` sets): an agent acting on half a change while believing it saw all of it is the failure this flag exists to prevent, and `stats` plus `totalChars` say how much is missing. */
+            truncated: boolean;
+            /** @description Length in characters of the **full** diff before truncation; equal to `diff`'s length whenever `truncated` is false. Lets a caller report the scale of what it did not get (`showing 16000 of 42311 characters`) and decide whether to narrow the range and ask again. */
+            totalChars: number;
+        };
+        /** @description How much changed across the **whole** range, even when `diff` below was truncated. The same shape a `doc.edited` event carries, so a caller can compare what it was told with what it fetched. */
+        DocChangeStats: {
+            /** @description Commits in the range that touched this document. Normally **1**: §4 folds an editing session's repeated autosaves into a single auto-commit, so a session is usually one commit and its range is a range of one. More than one means the squash did not fold them — saves either side of the squash idle window, or a save that started a fresh commit for another of §4's reasons. `0` is reachable only on `GET /api/docs/{id}/diff` for a document with no committed history; a `doc.edited` event never carries it, because a session that produced no commit produces no event. */
+            commits: number;
+            /** @description Lines added across the range, path-scoped to this document's file. */
+            insertions: number;
+            /** @description Lines removed across the range, path-scoped to this document's file. */
+            deletions: number;
+        };
         UpdateDocResponse: {
             doc: components["schemas"]["Doc"];
             anchors: components["schemas"]["AnchorReconciliation"];
@@ -4525,7 +4644,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description Event type. Core values: comment.created, form.respond, agent.done. Plugins define their own. */
+            /** @description Event type. Core values: comment.created, form.respond, doc.edited, agent.done. Plugins define their own. */
             type: string;
             /**
              * Format: date-time
@@ -4614,7 +4733,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
-            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
+            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
             type: string;
             /**
              * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and could not proceed because the user holds the edit lock on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that lock is released, broken or reaped.

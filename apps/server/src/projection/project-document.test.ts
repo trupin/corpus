@@ -381,7 +381,7 @@ describe("projectDocument — links", () => {
   });
 });
 
-describe("projectDocument — anchors (Sprint-003 Adjudication 1: exact-only)", () => {
+describe("projectDocument — anchors (SERVER-055: the whole §6 ladder, context-gated)", () => {
   it("resolves a live anchor to an offset that slices back to its quoted text", () => {
     const body = "\nLet us assume a 30-year fixed at 6.1% for the base case.\n";
     project(
@@ -440,17 +440,17 @@ describe("projectDocument — anchors (Sprint-003 Adjudication 1: exact-only)", 
     expect(row.resolved_offset).not.toBe(after.indexOf("- milk from the corner bakery"));
   });
 
-  it("does not let fuzzy similarity produce an offset at projection time", () => {
+  it("projects the fuzzy rung's offset for a selector edited out of band (SERVER-055)", () => {
     const selector = {
       exact: "assume a 30-year fixed at 6.1%",
       prefix: "Let us ",
       suffix: " for the base case.",
     };
     // Edited out of band: no reconciliation has run, so the selector still
-    // quotes the old rate while the body carries the new one.
+    // quotes the old rate while the body carries the new one. Until SERVER-055
+    // this column was exact-only and reported the thread detached, disagreeing
+    // with nothing less than the reader's own answer.
     const body = "\nLet us assume a 30-year fixed at 6.4% for the base case.\n";
-    // The full §6 ladder *would* find it — which is exactly why projection must
-    // not run the full ladder.
     expect(resolveAnchor(body, selector)).not.toBeNull();
 
     project(
@@ -458,7 +458,7 @@ describe("projectDocument — anchors (Sprint-003 Adjudication 1: exact-only)", 
       `---\nid: doc_rate\ntype: note\ntitle: R\nanchors: ${JSON.stringify({ anc_r: selector })}\n---\n${body}`,
     );
     expect(db.prepare("SELECT resolved_offset FROM anchors").get()).toEqual({
-      resolved_offset: null,
+      resolved_offset: body.indexOf("assume a 30-year fixed at 6.4%"),
     });
   });
 

@@ -51,7 +51,7 @@ import {
   type CheckFinding,
   type CheckOptions,
 } from "../core/index.js";
-import { resolveAnchorExact } from "../anchors/index.js";
+import { resolveAnchor } from "../anchors/index.js";
 import { badRequest } from "../errors.js";
 import type { InvalidationBus } from "../events/index.js";
 import { TREE_KEY, dedupeKeys } from "../events/index.js";
@@ -114,7 +114,11 @@ const WARNING_CODE_BY_CHECK: Partial<Record<CheckCode, WarningCode>> = {
  * `corpus doc check --staged` sends.
  */
 export const checkSeams = (projection: ProjectionDb): CheckOptions => ({
-  resolveAnchor: resolveAnchorExact,
+  // The full §6 ladder — the same call `docs/read.ts` and the projector make
+  // (SERVER-055). §14's `orphaned_anchor` warning has to mean what the reader
+  // means by orphaned, or a save reports a detached thread the board then draws
+  // a highlight for.
+  resolveAnchor,
   documentExists: (id) => isIdTaken(projection, id),
   anchorClaimants: (docId, anchorId) => anchorClaimantIds(projection, docId, anchorId),
 });

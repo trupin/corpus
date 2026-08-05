@@ -111,6 +111,53 @@ describe("findFuzzyRange", () => {
     expect(findFuzzyRange("", noContext("needle"))).toBeNull();
   });
 
+  it("refuses a deleted bullet's parallel sibling, which the quote alone would accept", () => {
+    // The exact reason rung 3 was kept off the read path before SERVER-055.
+    const exact = "- bread from the corner bakery";
+    const sibling = "- milk from the corner bakery";
+    const body = `Groceries:\n\n${sibling}\n`;
+    // Quote similarity alone is comfortably above the threshold: five edits on a
+    // 30-unit needle, against a budget of floor(30 × 0.25) = 7.
+    expect(boundedLevenshtein(sibling, exact, 7)).toBeLessThanOrEqual(7);
+    expect(findFuzzyRange(body, noContext(exact))).not.toBeNull();
+    // With the selector's own context, the sibling's neighbours give it away.
+    expect(
+      findFuzzyRange(body, {
+        exact,
+        prefix: "Groceries:\n\n",
+        suffix: `\n${sibling}`,
+        hint: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it("accepts an in-place edit of the quote, whose surroundings are intact", () => {
+    const exact = "assume a 30-year fixed at 6.1%";
+    const body =
+      "The model we use here: let us assume a 30-year fixed at 6.4% for the base case.\n";
+    const range = findFuzzyRange(body, {
+      exact,
+      prefix: "here: let us ",
+      suffix: " for the base case.",
+      hint: 0,
+    });
+    expect(body.slice(range?.start, range?.end)).toBe("assume a 30-year fixed at 6.4%");
+  });
+
+  it("refuses a candidate whose quote matches but whose context is a different passage", () => {
+    // Same sentence twice; only the second carries the declared surroundings,
+    // and the second is the one the edit corrupted. The first is a lookalike.
+    const exact = "the rate is reviewed every quarter";
+    const body = `Appendix A. ${exact}. End of appendix.\n\nPolicy: the rate is reviewd every quarter, per the board.`;
+    const range = findFuzzyRange(body, {
+      exact,
+      prefix: "Policy: ",
+      suffix: ", per the board.",
+      hint: 0,
+    });
+    expect(range?.start).toBe(body.indexOf("the rate is reviewd"));
+  });
+
   it("never returns a range splitting a surrogate pair", () => {
     const body = `🎉🎊🎈 anchred sentence with a typo 🚀 and trailing emoji 🌍`;
     const exact = "anchored sentence with a typo";

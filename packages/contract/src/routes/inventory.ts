@@ -39,6 +39,19 @@
  * into CONTRACT-024's E2E log and walked phrase by phrase against the route
  * definition by hand, because nothing here parses `SPEC.md`.
  *
+ * `GET /api/docs/{id}/diff` (CONTRACT-028) is derived exactly as `POST
+ * /api/skills` was, and the derivation is worth stating because §9.2 does not
+ * yet list it. SPEC.md §4's edit-acknowledgment rider (signed 2026-08-02) names
+ * the CLI verb — "a new CLI verb (`corpus doc diff <id>`) fetches the actual
+ * diff on demand" — and the CLI is a thin HTTP client that performs no direct
+ * file reads of git history (CLAUDE.md Architecture Decision 2), so the verb is
+ * a server endpoint by construction. It sits immediately after
+ * `GET /api/docs/{id}/related` because both are one-segment reads off a
+ * document. A §9.2 bullet and a §7 "Core event types" clause for the
+ * accompanying `doc.edited` type are **drafted and held for user sign-off**
+ * (CONTRACT-028's E2E log) rather than applied here: this package never edits
+ * SPEC.md, and the rider that authorises both is already signed.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -59,6 +72,7 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/docs",
   "GET /api/docs/{id}",
   "GET /api/docs/{id}/related",
+  "GET /api/docs/{id}/diff",
   "PUT /api/docs/{id}",
   "DELETE /api/docs/{id}",
   "POST /api/docs/{id}/move",

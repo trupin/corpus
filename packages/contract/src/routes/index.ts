@@ -2,6 +2,7 @@ import { getAttachment } from "./attachments.js";
 import { capture } from "./capture.js";
 import { checkDocuments } from "./check.js";
 import { doctorDb, rebuildDb } from "./db.js";
+import { getDocDiff } from "./doc-diff.js";
 import {
   archiveDoc,
   createDoc,
@@ -49,6 +50,7 @@ export * from "./attachments.js";
 export * from "./capture.js";
 export * from "./check.js";
 export * from "./db.js";
+export * from "./doc-diff.js";
 export * from "./docs.js";
 export * from "./events.js";
 export * from "./forms.js";
@@ -81,11 +83,11 @@ export * from "./turn-append.js";
  * than a comment alone. It also fixes the path order of the generated document,
  * which is what makes `openapi.json` byte-stable across runs.
  *
- * `relatedDocs` sits next to `getDoc` for readability rather than for routing:
- * it is a `GET` one segment deeper than `/api/docs/{id}`, and the three routes
- * at its depth (`move`, `archive`, `unarchive`) are `POST`s, so no static
- * segment competes with `{id}` here. `searchCorpus` follows the document group,
- * where §9.2 lists it.
+ * `relatedDocs` and `getDocDiff` sit next to `getDoc` for readability rather
+ * than for routing: both are `GET`s one segment deeper than `/api/docs/{id}`,
+ * and the three routes at that depth (`move`, `archive`, `unarchive`) are
+ * `POST`s, so no static segment competes with `{id}` here. `searchCorpus`
+ * follows the document group, where §9.2 lists it.
  *
  * `getThreadContext` sits directly after `getThread` for the same reason — §9.2
  * lists the context pack in the bullet immediately below the thread read — and
@@ -100,6 +102,7 @@ export const contractRoutes = {
   createDoc,
   getDoc,
   relatedDocs,
+  getDocDiff,
   updateDoc,
   deleteDoc,
   moveDoc,

@@ -147,6 +147,43 @@ function candidateOffsets(body: string, exact: string, hint: number): number[] {
   return candidates;
 }
 
+/**
+ * Rung 3's corroboration test, and the reason the rung is safe to run at read
+ * time (SERVER-055).
+ *
+ * Similarity of the quote alone cannot tell "your sentence was edited in place"
+ * apart from "your sentence was deleted and this parallel sibling is what is
+ * left" — a list of near-identical bullets, a table of parallel rows and a set
+ * of boilerplate paragraphs all score far above the threshold against each
+ * other. What separates them is *where* the candidate sits: an in-place edit
+ * leaves the passage's surroundings largely intact, while a sibling has its own
+ * different neighbours. So a candidate is accepted only when the passage **with
+ * its declared context** — `prefix + exact + suffix`, the very string rung 1
+ * matches literally — is still within `FUZZY_THRESHOLD` of the body at that
+ * spot. Rung 3 is then the exact fuzzy analogue of rung 1 rather than a
+ * free-floating "match something nearby", and it introduces no constant of its
+ * own.
+ *
+ * A selector carrying no context at all has nothing to corroborate; it is
+ * governed by the quote-similarity test alone, exactly as rung 1 is skipped for
+ * such a selector and rung 2 demands uniqueness instead.
+ */
+function contextCorroborates(
+  body: string,
+  offset: number,
+  windowLength: number,
+  query: FuzzyQuery,
+): boolean {
+  const { exact, prefix, suffix } = query;
+  if (prefix.length === 0 && suffix.length === 0) return true;
+  const declared = prefix + exact + suffix;
+  const from = Math.max(0, offset - prefix.length);
+  const to = Math.min(body.length, offset + windowLength + suffix.length);
+  const window = body.slice(from, to);
+  const maxDistance = Math.floor(Math.max(window.length, declared.length) * (1 - FUZZY_THRESHOLD));
+  return boundedLevenshtein(window, declared, maxDistance) <= maxDistance;
+}
+
 type ScoredCandidate = {
   offset: number;
   score: number;
@@ -156,10 +193,12 @@ type ScoredCandidate = {
 
 /**
  * Rung 3 of the resolution ladder: score fixed-length windows at candidate
- * offsets by normalized Levenshtein similarity and accept the best window at
- * or above `FUZZY_THRESHOLD`. Ties break by (a) prefix/suffix agreement with
- * the window's actual surroundings, (b) proximity to `hint`, (c) earliest
- * offset — in that order, so the result is deterministic.
+ * offsets by normalized Levenshtein similarity and accept the best window that
+ * is at or above `FUZZY_THRESHOLD` **and** whose surroundings corroborate the
+ * selector's declared context ({@link contextCorroborates}). Ties break by
+ * (a) prefix/suffix agreement with the window's actual surroundings,
+ * (b) proximity to `hint`, (c) earliest offset — in that order, so the result
+ * is deterministic.
  */
 export function findFuzzyRange(body: string, query: FuzzyQuery): Range | null {
   const { exact, prefix, suffix, hint } = query;
@@ -175,6 +214,7 @@ export function findFuzzyRange(body: string, query: FuzzyQuery): Range | null {
     const maxDistance = Math.floor(maxLen * (1 - FUZZY_THRESHOLD));
     const distance = boundedLevenshtein(window, exact, maxDistance);
     if (distance > maxDistance) continue;
+    if (!contextCorroborates(body, offset, window.length, query)) continue;
     const candidate: ScoredCandidate = {
       offset,
       score: 1 - distance / maxLen,

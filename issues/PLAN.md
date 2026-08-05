@@ -269,8 +269,8 @@ never auto-merged. The audience for that report is the agent.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-008 | Edit-acknowledgment spec rider — apply at phase kickoff (orchestrator) | todo | P1 | — |
-| CONTRACT-028 | doc.edited queue event + bounded doc-diff route | todo | P1 | SHARED-008 |
+| SHARED-008 | Edit-acknowledgment spec rider — apply at phase kickoff (orchestrator) | done | P1 | — |
+| CONTRACT-028 | doc.edited queue event + bounded doc-diff route | done | P1 | SHARED-008 |
 | SERVER-052 | Edit-session end detection (close flush + 3m inactivity) → actor-scoped emission | todo | P1 | CONTRACT-028 |
 | CLI-026 | `corpus doc diff` verb | todo | P1 | CONTRACT-028, SERVER-052 |
 | UI-044 | Reader close flushes the edit session | todo | P1 | SERVER-052 |
@@ -375,5 +375,8 @@ belongs to the same fix wave.
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | todo | P1 | — |
 | UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
-| UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | todo | P1 | UI-062 |
+| UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
+| UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | todo | P1 | — |
+| UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | todo | P1 | — |
+| SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | done | P1 | — |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

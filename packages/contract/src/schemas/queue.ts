@@ -6,8 +6,26 @@ import { IsoDateTimeSchema } from "./time.js";
  * Event types the product itself handles (SPEC.md §7). The wire type stays an
  * open string because plugins define their own event types; consumers that only
  * handle core types narrow with {@link CoreQueueEventTypeSchema}.
+ *
+ * Ordered by producer, with the one type nothing produces yet last:
+ * `comment.created` (a turn that requests the agent), `form.respond` (a form
+ * answer, §6), `doc.edited` (a user edit session that ended, §4's
+ * edit-acknowledgment rider — payload and dedupe rule in `./edit.ts`), and
+ * `agent.done`, which §7 marks reserved.
+ *
+ * **`doc.edited` is a core type rather than a plugin one** because the core loop
+ * owns both ends of it: the server emits it, and the shipped orchestrate skill
+ * handles it. §7's own "Core event types" sentence predates the rider and does
+ * not yet name it — a SPEC amendment is drafted and held for sign-off
+ * (CONTRACT-028); this constant is what the shipped surfaces read, and the
+ * generated document publishes the whole set wherever an event type appears.
  */
-export const CORE_QUEUE_EVENT_TYPES = ["comment.created", "form.respond", "agent.done"] as const;
+export const CORE_QUEUE_EVENT_TYPES = [
+  "comment.created",
+  "form.respond",
+  "doc.edited",
+  "agent.done",
+] as const;
 
 export const CoreQueueEventTypeSchema = z.enum(CORE_QUEUE_EVENT_TYPES);
 

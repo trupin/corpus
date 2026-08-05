@@ -48,8 +48,20 @@ export function resolveAnchorExact(body: string, selector: TextQuoteSelectorInpu
  * Resolve a text-quote selector against a body via the SPEC.md §6 ladder:
  *
  * 1–2. The exactness tier ({@link resolveAnchorExact}).
- * 3. Fuzzy: highest-similarity window at or above `FUZZY_THRESHOLD`.
+ * 3. Fuzzy: highest-similarity window at or above `FUZZY_THRESHOLD` **whose
+ *    surroundings corroborate the selector's declared context** — see
+ *    `fuzzy.ts`. That gate is what makes the rung safe to run wherever the
+ *    question is asked, including at render time (SERVER-055): a deleted
+ *    bullet's parallel sibling scores far above the threshold on the quote
+ *    alone and fails on its neighbours.
  * 4. Unresolved → `null` (the thread is orphaned, never guessed at).
+ *
+ * This is **the** answer to "where does this selector point in this body" —
+ * the reader, the projector, §14's checker and reconciliation's own lookup in
+ * `oldBody` all call it, so none of them can disagree about what resolves.
+ * {@link resolveAnchorExact} is not a cheaper variant of it: it answers the
+ * different, diff-backed question reconciliation asks when it must *disprove* a
+ * deletion, where similarity is inadmissible evidence.
  */
 export function resolveAnchor(
   body: string,

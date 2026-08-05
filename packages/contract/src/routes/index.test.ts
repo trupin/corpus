@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { CONTRACT_VERSION } from "../openapi.js";
+import { EMPTY_TREE_OBJECT_ID } from "../schemas/edit.js";
 import { FormSchema, validateFormAnswer } from "../schemas/form.js";
 import { HEADING_PATH_SEPARATOR } from "../schemas/retrieval.js";
 import { ALL_CONTRACT_ROUTES, contractRoutes } from "./index.js";
@@ -33,6 +34,9 @@ const frontmatter = {
 };
 
 const doc = { frontmatter, body: "Body.", path: "data/docs/mortgage.md", anchors: [] };
+
+/** Stands in for "the newest commit that touched this document" on the diff route. */
+const DEFAULT_HEAD_SHA = "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456";
 
 const row = {
   id: "doc_a1b2c3",
@@ -282,6 +286,27 @@ function createStubApp() {
             relation: "linked" as const,
           },
         ],
+      },
+      200,
+    );
+  });
+  // The third one-segment read off a document (CONTRACT-028), and the same
+  // routing hazard: the echoed range proves the request reached *this* handler
+  // rather than the document read, and proves which defaults the validator left
+  // for the server to fill in.
+  app.openapi(contractRoutes.getDocDiff, (c) => {
+    const { id } = c.req.valid("param");
+    const { from, to } = c.req.valid("query");
+    return c.json(
+      {
+        id,
+        path: doc.path,
+        from: from ?? EMPTY_TREE_OBJECT_ID,
+        to: to ?? DEFAULT_HEAD_SHA,
+        stats: { commits: 1, insertions: 3, deletions: 1 },
+        diff: `from=${from ?? "default"} to=${to ?? "default"}`,
+        truncated: false,
+        totalChars: 24,
       },
       200,
     );
@@ -709,6 +734,27 @@ describe("routes mounted on a Hono app", () => {
     const read = (await (await app.request("/api/docs/doc_a1b2c3")).json()) as {
       body: string;
     };
+    expect(read.body).toBe("Body.");
+  });
+
+  /**
+   * The same routing hazard once more (CONTRACT-028): `/api/docs/{id}/diff` is
+   * a `GET` a segment below `/api/docs/{id}`, and both answer `200` on the same
+   * id, so the *answer* is the assertion. It also pins the shape of the bare
+   * call SPEC.md §4 spells — `corpus doc diff <id>` with no range — reaching the
+   * handler with both query values absent, for the server to default.
+   */
+  it("routes /api/docs/{id}/diff to the diff handler, not the document read", async () => {
+    const app = createStubApp();
+    const response = await app.request("/api/docs/doc_a1b2c3/diff");
+    expect(response.status).toBe(200);
+
+    const body = (await response.json()) as { id: string; diff: string; from: string };
+    expect(body.id).toBe("doc_a1b2c3");
+    expect(body.diff).toBe("from=default to=default");
+    expect(body.from).toBe(EMPTY_TREE_OBJECT_ID);
+
+    const read = (await (await app.request("/api/docs/doc_a1b2c3")).json()) as { body: string };
     expect(read.body).toBe("Body.");
   });
 

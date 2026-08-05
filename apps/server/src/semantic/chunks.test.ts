@@ -91,7 +91,10 @@ const project = (ws: Workspace, relativePath: string): void => {
 describe("schema registration", () => {
   // TEST-832
   it("registers the three tables in the lists that make them visible", () => {
-    expect(SCHEMA_VERSION).toBe(9);
+    // The semantic tables arrived at stamp 9; the stamp moves on (SERVER-055
+    // took it to 10) without ever un-registering them, which is what this
+    // asserts. Pinning the literal here only ever meant editing this line.
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(9);
     expect(PROJECTION_TABLES).toContain("chunks");
     expect(PROJECTION_TABLES).toContain("chunk_search");
     expect(PROJECTION_TABLES).toContain("chunk_embeddings");
@@ -111,16 +114,18 @@ describe("schema registration", () => {
   });
 });
 
-describe("the 8 → 9 stamp change", () => {
+describe("a stale schema stamp", () => {
   // TEST-833: there is no migration code, and there is not meant to be. A
-  // database stamped 8 is wiped and rebuilt from files; a read-only handle,
-  // which cannot do that, refuses and names the repair.
-  it("wipes and rebuilds a v8 database read-write, and refuses it read-only", () => {
+  // database stamped one version back is wiped and rebuilt from files; a
+  // read-only handle, which cannot do that, refuses and names the repair.
+  it("wipes and rebuilds a previous-version database read-write, and refuses it read-only", () => {
     const ws = seedTenSections("chunks-stamp");
     try {
       // Stamp the projection as the previous schema version, as an installed
       // build one commit older would have left it.
-      ws.db.prepare("UPDATE meta SET value = '8' WHERE key = 'schema_version'").run();
+      ws.db
+        .prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'")
+        .run(String(SCHEMA_VERSION - 1));
       ws.db.close();
 
       expect(() => openProjectionReadonly(ws.config)).toThrow(/corpus db rebuild/);
@@ -137,7 +142,7 @@ describe("the 8 → 9 stamp change", () => {
         expect(lines).toContain("projection schema changed; rebuilding from files");
         expect(
           reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get(),
-        ).toEqual({ value: "9" });
+        ).toEqual({ value: String(SCHEMA_VERSION) });
         // The boot repopulation re-derived every chunk from the files.
         expect(reopened.prepare("SELECT COUNT(*) AS n FROM chunks").get() as { n: number }).toEqual(
           { n: 10 },
