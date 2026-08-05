@@ -61,7 +61,14 @@ export { useTree } from "./query/useTree.js";
 // which endpoint a surface reads from is a product decision, not a parameter.
 export { useRelatedDocs } from "./query/useRelatedDocs.js";
 export { useCorpusSearch } from "./query/useCorpusSearch.js";
-export { useJobs } from "./query/useJobs.js";
+export { useJobs, type JobsQueryOptions } from "./query/useJobs.js";
+// The queue's unfinished work, as one query every surface shares (UI-075).
+export {
+  OUTSTANDING_JOB_STATUSES,
+  OUTSTANDING_JOB_STATUS_PARAM,
+  useOutstandingJobs,
+  type OutstandingJobs,
+} from "./query/useOutstandingJobs.js";
 export {
   capLogLines,
   EMPTY_JOB_LOG,

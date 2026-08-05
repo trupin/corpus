@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { DEFAULT_RECENT_JOBS, type Job } from "@corpus/contract";
+import { DEFAULT_RECENT_JOBS, MAX_RECENT_JOBS, type Job } from "@corpus/contract";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -104,7 +104,8 @@ describe("pickOutstandingJob", () => {
 });
 
 /**
- * UI-069, and the reason CONTRACT-030 and SERVER-056 were filed.
+ * UI-069, and the reason CONTRACT-030 and SERVER-056 were filed; UI-075, and the
+ * reason the question is no longer asked per thread.
  *
  * This used to read the console's unfiltered `useJobs({})` and scan it, so the
  * answer was bounded by `DEFAULT_RECENT_JOBS`. A deferred job waits indefinitely
@@ -112,11 +113,17 @@ describe("pickOutstandingJob", () => {
  * moves; one window of newer traffic later it was off the end of the response,
  * the "working…" row vanished, and the reply was still coming.
  *
+ * What fixes that is asking the **status** on the wire, which costs one shared
+ * request rather than one per card: settled jobs are not in the outstanding list
+ * at all, so no amount of finished traffic can bury anything in it. The exact
+ * `?originId=` question is kept for the only case that list can still be short —
+ * more unfinished events at one instant than a response carries.
+ *
  * Asserted at the **transport**, not the scan: `readerTransport` answers
- * `/api/jobs` the way the server does — `recent` bounds the console list and is
- * ignored once `originId` is given — so a caller that went back to scanning
- * would fail these, while a test over `pickOutstandingJob` alone could not tell
- * the two apart.
+ * `/api/jobs` the way the server does — the filters are a `WHERE`, `recent`
+ * bounds what is left, and is ignored once `originId` is given — so a caller
+ * that went back to scanning the console list would fail these, while a test
+ * over `pickOutstandingJob` alone could not tell the two apart.
  */
 describe("useOutstandingAgentJob", () => {
   const deferred = jobFixture({
@@ -142,10 +149,60 @@ describe("useOutstandingAgentJob", () => {
       expect(result.current?.eventId).toBe("evt_deferred");
     });
 
-    // …because the question went to the server, rather than being scanned here.
+    // …because the statuses went to the server, rather than being scanned here.
     const asked = wire.of("GET", "/api/jobs").at(-1);
-    expect(asked?.search).toContain(`originId=${THREAD}`);
     expect(asked?.search).toContain("status=pending%2Cin-progress%2Cdeferred");
+    // …and without naming the thread, so every card on the document shares it.
+    expect(asked?.search).not.toContain("originId");
+  });
+
+  /**
+   * Three cards, one request. The fan-out UI-075 is about is per **thread**, and
+   * a hook that shares its key cannot have one: the ids differ and the query
+   * does not.
+   */
+  it("costs one request however many threads ask", async () => {
+    const wire = readerTransport({ jobs: [deferred] });
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const view = renderHook(
+      () => [
+        useOutstandingAgentJob(THREAD),
+        useOutstandingAgentJob("thread-other-1"),
+        useOutstandingAgentJob("thread-other-2"),
+      ],
+      { wrapper: harness.Wrapper },
+    );
+
+    await waitFor(() => {
+      expect(view.result.current[0]?.eventId).toBe("evt_deferred");
+    });
+    expect(view.result.current[1]).toBeNull();
+    expect(view.result.current[2]).toBeNull();
+    expect(wire.of("GET", "/api/jobs")).toHaveLength(1);
+  });
+
+  /**
+   * The completeness UI-069 bought, kept. When the shared list comes back at the
+   * cap it may be short, and the thread asks its own `?originId=` question —
+   * which the server answers with no window at all, so the deferral behind two
+   * hundred newer *unfinished* jobs is still found.
+   */
+  it("escalates to the exact question when the shared list is at the cap", async () => {
+    const saturating = Array.from({ length: MAX_RECENT_JOBS }, (_, index) =>
+      jobFixture({
+        eventId: `evt_busy_${String(index)}`,
+        status: "pending",
+        originId: `thread-busy-${String(index)}`,
+      }),
+    );
+    const { result, wire } = setup([...saturating, deferred]);
+
+    await waitFor(() => {
+      expect(result.current?.eventId).toBe("evt_deferred");
+    });
+    const filtered = wire.of("GET", "/api/jobs").filter((call) => call.search.includes("originId"));
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.search).toContain(`originId=${THREAD}`);
   });
 
   it("reports nothing when the thread has no outstanding job", async () => {

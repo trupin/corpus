@@ -1,5 +1,10 @@
-import type { Job, QueueEventStatus } from "@corpus/contract";
-import { useJobs } from "@corpus/kit";
+import type { Job } from "@corpus/contract";
+import {
+  OUTSTANDING_JOB_STATUSES,
+  OUTSTANDING_JOB_STATUS_PARAM,
+  useJobs,
+  useOutstandingJobs,
+} from "@corpus/kit";
 
 /**
  * Whether an agent response is **outstanding** for a thread — the one question
@@ -44,39 +49,41 @@ import { useJobs } from "@corpus/kit";
  * wait indefinitely on an edit lock — and a `pending` job behind a long backlog
  * reaches the same place.
  *
- * `GET /api/jobs?originId=…&status=…` now answers that question directly and
- * **completely**: the filters are a `WHERE`, and `recent` bounds the console
- * list only. So a job buried behind any amount of unrelated queue activity is
- * still found, which is the whole point.
+ * Asking the **status** on the wire is what fixes that, and it is asked once for
+ * the whole app: `useOutstandingJobs()` (kit) is the queue's unfinished work
+ * under a single cache key, and the console's window cannot bury anything in it
+ * because settled jobs are no longer in the list at all. A deferred job waiting
+ * indefinitely behind any amount of *finished* traffic is still there.
  *
- * **What it costs.** A filtered call is a different cache entry from the
- * console's — one request per thread that asks, not one for the board. That is
- * the right trade *here* and the wrong one for a board row, which is why
- * `packages/kit/src/row/useRowSignals.ts` deliberately keeps the shared query;
- * its own docblock says why. This hook runs in an open thread reader, of which
- * there are as many as the user has columns open, and each still repaints live
- * on the SSE invalidation the queue emits on every transition.
+ * ---
+ *
+ * **What this hook must not do is ask per thread** (UI-075). UI-069 answered the
+ * completeness problem with `?originId=…`, which is answered completely — and
+ * put the request on a cache key per thread id. The claim that paid for it, "this
+ * hook runs in an open thread reader, of which there are as many as the user has
+ * columns open", was simply false: `ThreadCard` mounts once per **thread** —
+ * `anchors/AnchoredThreads.tsx`'s margin column maps one card per anchored
+ * thread, which is SPEC.md §11's placement for focus mode and wide readers, and
+ * child threads mount recursively under their parent. A document with thirty
+ * anchored comments therefore issued thirty concurrent `/api/jobs` requests,
+ * each an unindexed scan over a `json_extract` `CASE`, all refetching on every
+ * `["jobs"]` invalidation the queue emits — on every transition.
+ *
+ * So the shared query is the ordinary path, and the exact one is kept for the
+ * only case that can still be short: more unfinished events at one instant than
+ * a single response carries (`OutstandingJobs.truncated`). That is a bound on
+ * *concurrent* work rather than on history, the escalation is per thread only
+ * while it holds, and the completeness UI-069 bought is not given back.
  */
 
 /**
- * Queue states in which the agent still owes this thread an answer.
- *
- * `deferred` counts: SPEC.md §7 makes it the one **non-terminal** outcome —
- * claimed work parked on a document's edit lock, returned to `pending`
- * automatically when that lock is released, broken or reaped. The reply is still
- * coming, so the wait is real and saying nothing about it would be the same lie
- * in the other direction. `processed`, `failed` and `abandoned` are terminal:
- * nothing more arrives without someone asking again.
+ * Queue states in which the agent still owes this thread an answer — SPEC.md
+ * §7's three non-terminal outcomes, taken from the kit rather than restated so
+ * the filter that goes to the server and the predicate applied to its answer
+ * cannot drift apart. `OUTSTANDING_JOB_STATUSES`' own docblock says why
+ * `deferred` is one of them.
  */
-const OUTSTANDING_STATUSES: readonly QueueEventStatus[] = ["pending", "in-progress", "deferred"];
-
-/**
- * The same three states as the `status` query parameter spells them. Derived
- * from the list above rather than written out, so the filter sent to the server
- * and the predicate applied to its answer can never disagree about what
- * "outstanding" means.
- */
-const OUTSTANDING_STATUS_PARAM = OUTSTANDING_STATUSES.join(",");
+const OUTSTANDING_STATUSES = OUTSTANDING_JOB_STATUSES;
 
 /** Sorting key that never throws a job out of the list for an unreadable stamp. */
 function startedAt(job: Job): number {
@@ -92,10 +99,11 @@ function startedAt(job: Job): number {
  *
  * Split out from the hook because picking the oldest is this module's own rule,
  * not the server's: `GET /api/jobs` orders by most-recently-active, and no query
- * parameter asks for "the one that has been waiting longest". The origin and
- * status checks below are now also the server's, and are kept rather than
- * dropped — they cost a comparison over a handful of rows and they make this
- * function total over any list, including the ones its tests hand it directly.
+ * parameter asks for "the one that has been waiting longest". The **origin check
+ * is this module's too** on the ordinary path, where the list is every
+ * outstanding job in the corpus rather than this thread's; the status check is
+ * the server's as well, and is kept rather than dropped so the function is total
+ * over any list, including the ones its tests hand it directly.
  *
  * Exhaustive over what it is given: no cap, no early exit, a match at position
  * 500 is found.
@@ -113,13 +121,28 @@ export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job 
 /**
  * The oldest unfinished job this thread is waiting on, or `null`.
  *
- * No window and no caveat: the origin and the statuses go to the server, which
- * answers completely (CONTRACT-030). What is left to do here is pick the oldest
- * of what came back.
+ * **One request for every card on the screen, and a complete answer anyway.**
+ * The ordinary read is the shared outstanding query — one cache entry for the
+ * whole app, whatever the document's comment count — and the per-thread
+ * `?originId=` question is issued only while that answer reports itself
+ * possibly short, which takes `MAX_RECENT_JOBS` events unfinished at the same
+ * instant.
+ *
+ * The fallback is read only while `truncated` holds, rather than whenever it has
+ * data: TanStack keeps a parked query's last answer cached, and a queue that has
+ * drained back under the cap would otherwise be answered from a snapshot of when
+ * it was over it. While the escalation is in flight the shared list still
+ * answers — the best available reading, and never a worse one than the caller
+ * had a moment ago.
  */
 export function useOutstandingAgentJob(threadId: string): Job | null {
-  const jobs = useJobs({ originId: threadId, status: OUTSTANDING_STATUS_PARAM });
-  return pickOutstandingJob(jobs.data?.jobs ?? [], threadId);
+  const outstanding = useOutstandingJobs();
+  const exact = useJobs(
+    { originId: threadId, status: OUTSTANDING_JOB_STATUS_PARAM },
+    { enabled: outstanding.truncated },
+  );
+  const jobs = outstanding.truncated ? (exact.data?.jobs ?? outstanding.jobs) : outstanding.jobs;
+  return pickOutstandingJob(jobs, threadId);
 }
 
 /** The one field of a turn this module needs: when it was posted. */
