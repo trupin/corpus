@@ -45,7 +45,7 @@ describe("generateCliDocs", () => {
     expect(docs).toContain("**Flags**");
     expect(docs).toContain("`--tag <string>`");
     expect(docs).toContain("string (repeatable)");
-    expect(docs).toContain("Runs outside a workspace; it does not contact the server.");
+    expect(docs).toContain("Runs outside a workspace: this command does not require one.");
   });
 
   it("lists every global flag", () => {

@@ -9,6 +9,8 @@ import {
   serverPidfilePath,
   templateManifestPath,
   templateRootCandidates,
+  UPGRADE_LOG_RELATIVE_PATH,
+  upgradeLogPath,
 } from "./paths.js";
 import { makeTempDir, removeTempDirs } from "./testing/temp.js";
 import { cliPackageRoot } from "./version.js";
@@ -21,6 +23,13 @@ describe("workspace paths", () => {
     expect(serverPidfilePath("/ws")).toBe(join("/ws", ".corpus", "server.pid"));
     expect(serverLogPath("/ws")).toBe(join("/ws", ".corpus", "server.log"));
     expect(templateManifestPath("/ws")).toBe(join("/ws", ".corpus", "template-manifest.json"));
+    expect(upgradeLogPath("/ws")).toBe(join("/ws", ".corpus", "upgrade.log"));
+  });
+
+  it("spells the upgrade report workspace-relative, the way a client is told about it", () => {
+    // CONTRACT-027 publishes this string as `UpgradeStarted.logPath`, so it is
+    // POSIX-separated whatever platform wrote the file.
+    expect(UPGRADE_LOG_RELATIVE_PATH).toBe(".corpus/upgrade.log");
   });
 });
 

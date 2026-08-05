@@ -1,8 +1,9 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
+import { QUEUE_EVENT_STATUSES, type Actor } from "@corpus/contract";
 import { InternalError } from "../../errors.js";
 import { plural } from "../../input.js";
+import type { Output } from "../../output.js";
 import { TEMPLATE_MANIFEST_FILE, templateManifestPath } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { collectIncoming, shaOnDisk, type ToolRoots } from "../../template/incoming.js";
@@ -150,6 +151,13 @@ export interface UpgradeReport {
   readonly fromVersion: string | null;
   readonly toVersion: string;
   readonly dryRun: boolean;
+  /**
+   * Nothing to report and nothing to write: the run made no commit, not even an
+   * empty one. A field rather than an inference from four other fields, because
+   * `corpus upgrade` (SPEC.md §2.4) folds this report into its own and has to be
+   * able to say "the workspace was already current" without re-deriving it.
+   */
+  readonly upToDate: boolean;
   /** True when the workspace has no manifest: nothing is overwritten, whatever the plan says. */
   readonly withoutBaseline: boolean;
   readonly changes: readonly ReportedChange[];
@@ -184,14 +192,55 @@ export interface UpgradeReport {
  */
 export type UpgradeDependencies = ToolRoots;
 
+/**
+ * Everything the sync needs, with no `Output` among it.
+ *
+ * The verb used to read its inputs off a `WorkspaceCommandContext` and write its
+ * findings straight to `context.out`, which made it uncallable from anywhere
+ * else: `corpus upgrade` (SPEC.md §2.4) performs this same sync as one step of a
+ * larger run, and needs the report as a *value* to fold into its own — not a
+ * second JSON document on stdout. Splitting the decision from the rendering is
+ * what makes §2.4's "the same code path, called, not reimplemented" literally
+ * true rather than aspirational.
+ */
+export interface WorkspaceUpgradeRequest {
+  readonly root: string;
+  /** Version of the tool doing the installing — recorded in the manifest. */
+  readonly version: string;
+  /** Git author of the single commit this run makes. */
+  readonly actor: Actor;
+  readonly dryRun?: boolean;
+  readonly restore?: boolean;
+  readonly adopt?: boolean;
+}
+
 export async function runWorkspaceUpgrade(
   context: WorkspaceCommandContext,
   dependencies: UpgradeDependencies = {},
 ): Promise<void> {
-  const root = context.workspace.root;
-  const dryRun = context.flags.boolean("dry-run");
-  const restore = context.flags.boolean("restore");
-  const adopt = context.flags.boolean("adopt");
+  const report = await applyWorkspaceUpgrade(
+    {
+      root: context.workspace.root,
+      version: context.version,
+      actor: context.actor,
+      dryRun: context.flags.boolean("dry-run"),
+      restore: context.flags.boolean("restore"),
+      adopt: context.flags.boolean("adopt"),
+    },
+    dependencies,
+  );
+  context.out.emit(report);
+  renderUpgradeReport(context.out, report);
+}
+
+export async function applyWorkspaceUpgrade(
+  request: WorkspaceUpgradeRequest,
+  dependencies: UpgradeDependencies = {},
+): Promise<UpgradeReport> {
+  const root = request.root;
+  const dryRun = request.dryRun ?? false;
+  const restore = request.restore ?? false;
+  const adopt = request.adopt ?? false;
 
   const manifest = readTemplateManifest(templateManifestPath(root));
   // Without a manifest there is no baseline, so "the workspace never touched
@@ -210,8 +259,9 @@ export async function runWorkspaceUpgrade(
   const report: UpgradeReport = {
     workspace: root,
     fromVersion: manifest?.tool ?? null,
-    toVersion: context.version,
+    toVersion: request.version,
     dryRun,
+    upToDate: false,
     withoutBaseline,
     changes: describe(decisions, root, incoming, withoutBaseline),
     queueSkeleton,
@@ -231,9 +281,7 @@ export async function runWorkspaceUpgrade(
   ) {
     // An empty commit every time somebody checks would be noise in the one
     // history that is supposed to mean something.
-    context.out.emit(report);
-    context.out.line("already up to date.");
-    return;
+    return { ...report, upToDate: true };
   }
 
   if (dryRun) {
@@ -244,13 +292,10 @@ export async function runWorkspaceUpgrade(
     // TEST 31: this was hard-coded empty, so `--dry-run` promised a repair the
     // real run then declined to commit).
     const trackable = await trackableMarkers(root, queueSkeleton);
-    const planned: UpgradeReport = {
+    return {
       ...report,
       queueSkeletonIgnored: queueSkeleton.filter((marker) => !trackable.includes(marker)),
     };
-    context.out.emit(planned);
-    render(context, planned);
-    return;
   }
 
   if (withoutBaseline && !adopt) {
@@ -264,11 +309,8 @@ export async function runWorkspaceUpgrade(
       written: healed,
       queueSkeletonIgnored: healed.filter((marker) => !trackable.includes(marker)),
     };
-    const commit = trackable.length === 0 ? null : await commitUpgrade(context, trackable, partial);
-    const done: UpgradeReport = { ...partial, commit };
-    context.out.emit(done);
-    render(context, done);
-    return;
+    const commit = trackable.length === 0 ? null : await commitUpgrade(request, trackable, partial);
+    return { ...partial, commit };
   }
 
   // The plan runs first so that a workspace whose `.gitignore` this run
@@ -280,7 +322,7 @@ export async function runWorkspaceUpgrade(
   const written = [...applied, ...healed];
   const nextManifest: TemplateManifest = {
     version: 1,
-    tool: context.version,
+    tool: request.version,
     installedAt: new Date().toISOString(),
     // What was written, never what was planned: under `--adopt` the plan is not
     // applied at all, and recording its incoming shas would put paths in the
@@ -307,11 +349,8 @@ export async function runWorkspaceUpgrade(
     manifestWritten: true,
     manifestCommitted,
   };
-  const commit = staged.length === 0 ? null : await commitUpgrade(context, staged, result);
-  const finished: UpgradeReport = { ...result, commit };
-
-  context.out.emit(finished);
-  render(context, finished);
+  const commit = staged.length === 0 ? null : await commitUpgrade(request, staged, result);
+  return { ...result, commit };
 }
 
 /**
@@ -453,19 +492,19 @@ function countMissing(from: readonly string[], against: readonly string[]): numb
 }
 
 async function commitUpgrade(
-  context: WorkspaceCommandContext,
+  request: WorkspaceUpgradeRequest,
   paths: readonly string[],
   report: UpgradeReport,
 ): Promise<string | null> {
   const message =
     `workspace: upgrade template files ${report.fromVersion ?? "(no baseline)"} → ` +
-    `${report.toVersion} by ${context.actor}`;
+    `${report.toVersion} by ${request.actor}`;
   try {
     return await commitPaths({
       dir: report.workspace,
       message,
       paths,
-      identity: identityFor(context.actor),
+      identity: identityFor(request.actor),
     });
   } catch (cause) {
     // Loudly, and without undoing anything: the files are already correct on
@@ -482,32 +521,77 @@ async function commitUpgrade(
   }
 }
 
-function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
+/**
+ * The verdict that means **conflict** — the workspace edited this file and the
+ * tool changed it too, so the upgrade wrote nothing and the difference is
+ * somebody's to resolve (SPEC.md §2.4).
+ *
+ * Named once, from `decide()`'s own vocabulary, and read by both verbs that have
+ * to agree about it: this one, and `corpus upgrade`. A second spelling of "which
+ * of these is unresolved work" is precisely the drift the shared three-way rule
+ * exists to prevent.
+ */
+export const CONFLICT_ACTION: UpgradeAction = "keep-modified";
+
+export function conflictsOf(report: UpgradeReport): readonly ReportedChange[] {
+  return report.changes.filter((change) => change.action === CONFLICT_ACTION);
+}
+
+/**
+ * The command §2.4 names as the one that shows the difference behind a conflict
+ * (`corpus workspace diff <path>`, CLI-027). Built here rather than written out
+ * at each call site so the report and the verb cannot disagree about the
+ * spelling — a conflict report whose command does not run is worse than none.
+ */
+export function conflictResolutionCommand(path: string): string {
+  return `corpus workspace diff ${path}`;
+}
+
+/**
+ * A report as text. Exported because `corpus upgrade` performs this sync as one
+ * step of a larger run and renders the same report inside its own output — the
+ * alternative being a second rendering of the same verdicts, which would drift.
+ */
+export function renderUpgradeReport(out: Output, report: UpgradeReport): void {
+  if (report.upToDate) {
+    out.line("already up to date.");
+    return;
+  }
+  renderUpgradeReportBody(out, report);
+}
+
+function renderUpgradeReportBody(out: Output, report: UpgradeReport): void {
   if (report.withoutBaseline) {
-    context.out.line(
+    out.line(
       `no ${MANIFEST_RELATIVE_PATH} in this workspace — without the baseline it recorded, an ` +
         "unmodified file cannot be told from an edited one, so nothing will be overwritten.",
     );
   }
-  context.out.line(
+  out.line(
     `${report.dryRun ? "plan" : "upgrade"} (tool ${report.fromVersion ?? "unknown"} → ${report.toVersion}):`,
   );
   for (const change of report.changes) {
     const provenance = change.source === "template" ? "" : ` [${change.source}]`;
     const detail = change.detail === undefined ? "" : ` — ${change.detail}`;
-    context.out.line(
+    out.line(
       `  ${labelFor(change.action, report.withoutBaseline).padEnd(7)} ${change.path}${provenance}${detail}`,
     );
+    // A conflict is unresolved work rather than a notice (SPEC.md §2.4), and
+    // unresolved work needs the one thing this line cannot carry: what actually
+    // changed upstream. So every one of them names the verb that shows it.
+    if (change.action === CONFLICT_ACTION) {
+      out.line(`${" ".repeat(10)}unresolved — ${conflictResolutionCommand(change.path)}`);
+    }
   }
   for (const marker of report.queueSkeleton) {
-    context.out.line(
+    out.line(
       `  ${(report.dryRun ? "pending" : "create").padEnd(7)} ${marker} — queue status directory ` +
         "this workspace predates; it has to be tracked or a clone arrives without it",
     );
   }
   if (report.queueSkeletonIgnored.length > 0) {
     const one = report.queueSkeletonIgnored.length === 1;
-    context.out.line(
+    out.line(
       `  ${plural(report.queueSkeletonIgnored.length, "marker")} above ` +
         `${one ? "is" : "are"} excluded by this workspace's .gitignore, so ` +
         (report.dryRun
@@ -519,12 +603,12 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
   }
 
   if (report.dryRun) {
-    context.out.line("nothing was written (--dry-run).");
+    out.line("nothing was written (--dry-run).");
     return;
   }
   if (report.withoutBaseline) {
     if (!report.manifestWritten) {
-      context.out.line(
+      out.line(
         (report.queueSkeleton.length === 0
           ? "nothing was written"
           : `${plural(report.queueSkeleton.length, "queue status directory", "queue status directories")} ` +
@@ -535,7 +619,7 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
       );
       return;
     }
-    context.out.line(
+    out.line(
       "wrote a fresh baseline manifest; files that already match the tool's copies are now " +
         "tracked, and the ones that differ stay untracked because nothing can tell an old copy " +
         "from an edited one." +
@@ -543,7 +627,7 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
     );
     const pending = report.changes.filter((change) => change.action === "install").length;
     if (pending > 0) {
-      context.out.line(
+      out.line(
         `  --adopt installs nothing, so ${plural(pending, "file")} the tool carries and this ` +
           "workspace does not have stayed out of the manifest as well as off the disk. Run " +
           "`corpus workspace upgrade` again, now that there is a baseline, to install " +
@@ -552,7 +636,7 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
     }
     return;
   }
-  context.out.line(
+  out.line(
     report.commit === null
       ? // Restoring a file that was deleted but never committed puts the tree
         // back exactly as HEAD already has it; there is genuinely nothing to record.
@@ -560,7 +644,7 @@ function render(context: WorkspaceCommandContext, report: UpgradeReport): void {
       : `wrote ${plural(report.written.length, "file")} in commit ${report.commit}.`,
   );
   if (!report.manifestCommitted) {
-    context.out.line(
+    out.line(
       `  ${MANIFEST_RELATIVE_PATH} was updated but is not tracked by this workspace's .gitignore, ` +
         "so it is not in that commit — the same state `corpus init` leaves it in.",
     );

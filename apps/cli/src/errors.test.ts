@@ -4,6 +4,7 @@ import {
   EXIT_CODES,
   ExitCode,
   InternalError,
+  RefusedError,
   ServerResponseError,
   ServerUnreachableError,
   UsageError,
@@ -45,8 +46,17 @@ describe("exit codes", () => {
     expect(isCliError(new Error("boom"))).toBe(false);
   });
 
-  it("documents every code from 0 to 6 exactly once", () => {
-    expect(EXIT_CODES.map((entry) => entry.code)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  it("carries the refusal's own reason code", () => {
+    const error = new RefusedError("the release publishes no checksum", {
+      code: "upgrade_unverifiable",
+    });
+    expect(exitCodeFor(error)).toBe(ExitCode.refused);
+    expect(error.code).toBe("upgrade_unverifiable");
+    expect(error.name).toBe("RefusedError");
+  });
+
+  it("documents every code from 0 to 7 exactly once", () => {
+    expect(EXIT_CODES.map((entry) => entry.code)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     for (const entry of EXIT_CODES) expect(entry.meaning.length).toBeGreaterThan(0);
   });
 });

@@ -13,6 +13,7 @@ export const ExitCode = {
   serverUnreachable: 4,
   serverError: 5,
   checkFailed: 6,
+  refused: 7,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
@@ -34,6 +35,10 @@ export const EXIT_CODES: readonly { readonly code: ExitCode; readonly meaning: s
   {
     code: ExitCode.checkFailed,
     meaning: "A check-style command reported a failure (its work succeeded).",
+  },
+  {
+    code: ExitCode.refused,
+    meaning: "Refused — a precondition was not met, and nothing was changed.",
   },
 ];
 
@@ -113,6 +118,32 @@ export class ServerResponseError extends CliError {
 export class CheckFailedError extends CliError {
   override readonly exitCode = ExitCode.checkFailed;
   override readonly code = "check_failed";
+}
+
+/**
+ * The command declined to act, and **nothing was changed**.
+ *
+ * Distinct from every code above it because the three obvious alternatives all
+ * say something false. `internal_error` claims an unexpected exception, when a
+ * refusal is the most deliberate thing the command does; `check_failed` claims
+ * the work succeeded and its answer was "no", when here no work was attempted;
+ * and a `0` would tell a caller that what it asked for happened.
+ *
+ * Introduced for `corpus upgrade` (SPEC.md §2.4), whose whole safety story is
+ * refusing rather than guessing — an unverifiable release, an install method it
+ * cannot detect, a checksum that does not match — and every one of those must be
+ * distinguishable by a caller from "corpus crashed". Nothing about it is
+ * upgrade-specific: it is the general "your preconditions were not met, and I
+ * left everything alone" answer, and `code` names which precondition.
+ */
+export class RefusedError extends CliError {
+  override readonly exitCode = ExitCode.refused;
+  override readonly code: string;
+
+  constructor(message: string, options: CliErrorOptions & { readonly code: string }) {
+    super(message, options);
+    this.code = options.code;
+  }
 }
 
 /** Anything thrown that is not a `CliError` is reported as this. */

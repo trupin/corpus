@@ -1,0 +1,636 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { ExitCode, isCliError, RefusedError } from "../../errors.js";
+import { upgradeLogPath } from "../../paths.js";
+import { createTestContext, type TestContextOptions } from "../../registry/fixtures.js";
+import { stubFetch } from "../../testing/fetch.js";
+import { collectRegistryProblems } from "../../registry/validate.js";
+import { commitAll, initRepository } from "../init/git.js";
+import { generateToken, scaffoldWorkspace } from "../init/scaffold.js";
+import { REPORT_MARKER } from "./journal.js";
+import type { InstallMethod } from "./install.js";
+import { runUpgrade, upgradeCommand, type UpgradeResult } from "./index.js";
+
+/**
+ * `corpus upgrade` end to end, against a real workspace, a real git repository
+ * and a scripted release — and never against GitHub, npm, or anything installed
+ * on the machine running the suite. The two effects that would be destructive
+ * (the install and the server lifecycle) are injected; everything else is real,
+ * because everything else is where this verb can be wrong: which files moved,
+ * which were refused, what the report says, and what was written down.
+ *
+ * "The operator's npm replaced the package" is simulated the way the rest of the
+ * CLI simulates it — by editing the tool-side template tree between the install
+ * step and the sync — which is exactly what an install does to the directory the
+ * running process resolves its template from.
+ */
+
+const scratch: string[] = [];
+afterEach(() => {
+  for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+function tempDir(label: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `corpus-cli025-${label}-`));
+  scratch.push(dir);
+  return dir;
+}
+
+function write(root: string, relative: string, contents: string): void {
+  const absolute = join(root, ...relative.split("/"));
+  mkdirSync(dirname(absolute), { recursive: true });
+  writeFileSync(absolute, contents, "utf8");
+}
+
+function read(root: string, relative: string): string {
+  return readFileSync(join(root, ...relative.split("/")), "utf8");
+}
+
+function makeTemplate(): string {
+  const root = tempDir("template");
+  write(root, "claude/skills/orchestrate/SKILL.md", "orchestrate v1\n");
+  write(root, "claude/skills/comment/SKILL.md", "comment v1\n");
+  write(root, "claude/agents/.gitkeep", "");
+  write(
+    root,
+    "gitignore",
+    ".corpus/*\n!.corpus/template-manifest.json\n!.corpus/queue/\n.corpus/queue/*/*.json\n",
+  );
+  write(root, "README.md", "readme v1\n");
+  return root;
+}
+
+async function makeWorkspace(templateRoot: string): Promise<string> {
+  const root = tempDir("ws");
+  scaffoldWorkspace({
+    root,
+    templateRoot,
+    pluginsRoot: undefined,
+    port: 9210,
+    token: generateToken(),
+    toolVersion: "0.3.0",
+  });
+  await initRepository(root);
+  await commitAll({ dir: root, message: "workspace: initialize corpus workspace by user" });
+  return root;
+}
+
+const TARBALL = Buffer.from("corpus tarball bytes");
+const DIGEST = "5b6d2b6a2a4e7f1f3a5f04e2a3d9f7d1e2c4b6a8d0f2e4c6a8b0d2f4e6c8a0b2";
+
+/** The bytes and the digest that actually agree, computed once. */
+async function digestOf(bytes: Buffer): Promise<string> {
+  const { createHash } = await import("node:crypto");
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+interface ReleaseFixture {
+  readonly assets?: readonly string[];
+  readonly version?: string;
+  /** Serve a digest that does not match the tarball. */
+  readonly corruptChecksum?: boolean;
+  /** Answer nothing at all, as an offline machine does. */
+  readonly offline?: boolean;
+}
+
+async function releaseFetch(fixture: ReleaseFixture = {}): Promise<typeof globalThis.fetch> {
+  const version = fixture.version ?? "0.4.0";
+  const names = fixture.assets ?? [`corpus-${version}.tgz`, `corpus-${version}.tgz.sha256`];
+  const digest = fixture.corruptChecksum === true ? DIGEST : await digestOf(TARBALL);
+
+  return stubFetch((url) => {
+    if (fixture.offline === true) throw new TypeError("fetch failed");
+    if (url.endsWith("/releases/latest")) {
+      return Response.json({
+        tag_name: `v${version}`,
+        html_url: `https://github.test/releases/v${version}`,
+        assets: names.map((name) => ({
+          name,
+          browser_download_url: `https://example.test/${name}`,
+        })),
+      });
+    }
+    if (url.endsWith(".sha256")) return new Response(`${digest}  corpus-${version}.tgz\n`);
+    return new Response(new Uint8Array(TARBALL));
+  });
+}
+
+/**
+ * A real, writable npm prefix in a temporary directory. The writability check is
+ * a genuine `access(W_OK)` against the real filesystem — the refusal it produces
+ * is the one that keeps `sudo` out of the upgrade — so the fixture has to be a
+ * directory that really exists and that this user really owns.
+ */
+function npmGlobal(): InstallMethod & { kind: "npm-global" } {
+  const prefix = tempDir("prefix");
+  const globalRoot = join(prefix, "lib", "node_modules");
+  mkdirSync(globalRoot, { recursive: true });
+  return {
+    kind: "npm-global",
+    packageRoot: join(globalRoot, "corpus"),
+    packageName: "corpus",
+    prefix,
+    globalRoot,
+  };
+}
+
+interface Harness {
+  readonly stdout: () => string;
+  readonly result: () => UpgradeResult;
+  readonly lifecycle: string[];
+  readonly installs: string[];
+}
+
+interface RunOptions extends ReleaseFixture {
+  readonly root: string | null;
+  readonly template: string;
+  readonly json?: boolean;
+  readonly flags?: TestContextOptions["flags"];
+  readonly serverRunning?: boolean;
+  /** Runs when the install "happens" — the seam for "the new tool ships this". */
+  readonly onInstall?: () => void;
+  readonly undetectable?: boolean;
+  readonly installMethod?: InstallMethod;
+}
+
+async function run(options: RunOptions): Promise<Harness> {
+  const base = createTestContext({
+    flags: options.flags ?? {},
+    json: options.json ?? true,
+    cwd: options.root ?? tempDir("nowhere"),
+    version: "0.3.0",
+  });
+  const lifecycle: string[] = [];
+  const installs: string[] = [];
+
+  await runUpgrade(base.context, {
+    fetch: await releaseFetch(options),
+    template: { templateRoot: options.template, pluginsRoot: undefined },
+    installMethod:
+      options.undetectable === true
+        ? {
+            kind: "undetectable",
+            packageRoot: "/home/me/code/corpus/apps/cli",
+            reason: "a source checkout",
+          }
+        : (options.installMethod ?? npmGlobal()),
+    npm: (npmOptions) => {
+      installs.push(npmOptions.tarballPath);
+      options.onInstall?.();
+      return Promise.resolve({ command: "npm install --global …", output: "" });
+    },
+    serverRunning: () => Promise.resolve(options.serverRunning ?? false),
+    stopServer: () => {
+      lifecycle.push("stop");
+      return Promise.resolve();
+    },
+    startServer: () => {
+      lifecycle.push("start");
+      return Promise.resolve();
+    },
+  });
+
+  return {
+    lifecycle,
+    installs,
+    stdout: () => base.stdout(),
+    result: () => JSON.parse(base.stdout()) as UpgradeResult,
+  };
+}
+
+describe("corpus upgrade --check", () => {
+  it("reports the release and writes absolutely nothing", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
+
+    const harness = await run({ root, template, flags: { check: true } });
+    const result = harness.result();
+
+    expect(result.mode).toBe("check");
+    expect(result.check).toMatchObject({
+      installed: "0.3.0",
+      latest: "0.4.0",
+      upgradeAvailable: true,
+      verifiable: true,
+      reachable: true,
+      notesUrl: "https://github.test/releases/v0.4.0",
+    });
+    expect(result.tool.installed).toBe(false);
+    expect(harness.installs).toEqual([]);
+    // Side-effect free means side-effect free: no install, no template write,
+    // and not even the report file.
+    expect(read(root, ".claude/skills/orchestrate/SKILL.md")).toBe("orchestrate v1\n");
+    expect(existsSync(upgradeLogPath(root))).toBe(false);
+    expect(result.reportPath).toBeNull();
+  });
+
+  it("says which template changes are pending, without applying them", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
+
+    const result = (await run({ root, template, flags: { check: true } })).result();
+    expect(result.template?.dryRun).toBe(true);
+    expect(result.template?.changes.map((change) => change.path)).toContain(
+      ".claude/skills/orchestrate/SKILL.md",
+    );
+  });
+
+  it("lists a conflict as unresolved work with the command that shows it", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(root, ".claude/skills/comment/SKILL.md", "comment v1\nthe agent's own paragraph\n");
+    write(template, "claude/skills/comment/SKILL.md", "comment v2\n");
+
+    const result = (await run({ root, template, flags: { check: true } })).result();
+    expect(result.conflicts).toHaveLength(1);
+    const conflict = result.conflicts[0];
+    expect(conflict?.path).toBe(".claude/skills/comment/SKILL.md");
+    expect(conflict?.source).toBe("template");
+    expect(conflict?.detail).toContain("modified here");
+    expect(conflict?.resolve).toBe("corpus workspace diff .claude/skills/comment/SKILL.md");
+  });
+
+  it("exits 0 and says so when GitHub cannot be reached", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const harness = await run({
+      root,
+      template,
+      flags: { check: true },
+      offline: true,
+      json: false,
+    });
+    expect(harness.stdout()).toContain("could not check");
+  });
+
+  it("warns that a newer release is not installable from here", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const harness = await run({
+      root,
+      template,
+      flags: { check: true },
+      json: false,
+      undetectable: true,
+    });
+    expect(harness.stdout()).toContain("NOT installable here");
+  });
+
+  it("warns that a newer release publishes no checksum", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const harness = await run({
+      root,
+      template,
+      flags: { check: true },
+      json: false,
+      assets: ["corpus-0.4.0.tgz"],
+    });
+    expect(harness.stdout()).toContain("NOT installable");
+    expect(harness.stdout()).toContain("nothing was downloaded, installed or written (--check).");
+  });
+});
+
+describe("corpus upgrade", () => {
+  it("installs, syncs the template, restarts, and reports all three", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+
+    const harness = await run({
+      root,
+      template,
+      serverRunning: true,
+      // The install is what makes the new template appear on disk, so the sync
+      // that follows compares against the *new* tool's files.
+      onInstall: () => {
+        write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
+      },
+    });
+    const result = harness.result();
+
+    expect(result.tool).toMatchObject({
+      installed: true,
+      from: "0.3.0",
+      to: "0.4.0",
+      method: "npm-global",
+    });
+    expect(result.tool.tarball?.name).toBe("corpus-0.4.0.tgz");
+    expect(read(root, ".claude/skills/orchestrate/SKILL.md")).toBe("orchestrate v2\n");
+    expect(result.template?.written).toContain(".claude/skills/orchestrate/SKILL.md");
+    expect(result.template?.commit).not.toBeNull();
+    expect(result.server).toMatchObject({ wasRunning: true, stopped: true, restarted: true });
+    // Stopped before the install, restarted after the sync: the server that
+    // comes back is the same generation as the files on disk.
+    expect(harness.lifecycle).toEqual(["stop", "start"]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("reports the version the installed package declares, not the one the release claimed", async () => {
+    // The release's tag and the tarball's own manifest are two claims. Only the
+    // second one is what the operator ends up running, so it is the one read
+    // back — and a disagreement is said out loud rather than papered over.
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const method = npmGlobal();
+    mkdirSync(method.packageRoot, { recursive: true });
+
+    const harness = await run({
+      root,
+      template,
+      installMethod: method,
+      json: false,
+      onInstall: () => {
+        writeFileSync(
+          join(method.packageRoot, "package.json"),
+          JSON.stringify({ name: "corpus", version: "0.4.1" }),
+          "utf8",
+        );
+      },
+    });
+    expect(harness.stdout()).toContain("installed 0.4.1");
+    expect(harness.stdout()).toContain(
+      "the release was published as 0.4.0 but its package declares",
+    );
+  });
+
+  it("leaves a stopped server stopped", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const harness = await run({ root, template, serverRunning: false });
+    expect(harness.lifecycle).toEqual([]);
+    expect(harness.result().server).toMatchObject({ wasRunning: false, restarted: false });
+  });
+
+  it("never overwrites an edited file, and reports it as unresolved work", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(root, ".claude/skills/comment/SKILL.md", "comment v1\nthe agent's own paragraph\n");
+    await commitAll({ dir: root, message: "agent evolved the comment skill" });
+    const edited = read(root, ".claude/skills/comment/SKILL.md");
+
+    const harness = await run({
+      root,
+      template,
+      onInstall: () => {
+        write(template, "claude/skills/comment/SKILL.md", "comment v2\n");
+        write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
+      },
+    });
+    const result = harness.result();
+
+    expect(read(root, ".claude/skills/comment/SKILL.md")).toBe(edited);
+    expect(result.conflicts).toHaveLength(1);
+    const conflict = result.conflicts[0];
+    expect(conflict?.path).toBe(".claude/skills/comment/SKILL.md");
+    expect(conflict?.source).toBe("template");
+    expect(conflict?.detail).toContain("only here");
+    expect(conflict?.resolve).toBe("corpus workspace diff .claude/skills/comment/SKILL.md");
+    // Distinct from what merely happened: the file that *was* updated is in
+    // `template.written`, and the conflict is not.
+    expect(result.template?.written).toEqual([".claude/skills/orchestrate/SKILL.md"]);
+  });
+
+  it("sets the conflicts apart in the human report too", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(root, ".claude/skills/comment/SKILL.md", "edited here\n");
+    await commitAll({ dir: root, message: "agent evolved the comment skill" });
+
+    const harness = await run({
+      root,
+      template,
+      json: false,
+      onInstall: () => {
+        write(template, "claude/skills/comment/SKILL.md", "comment v2\n");
+      },
+    });
+    expect(harness.stdout()).toContain("1 conflict to resolve");
+    expect(harness.stdout()).toContain("corpus workspace diff .claude/skills/comment/SKILL.md");
+    expect(harness.stdout()).toContain("nothing was overwritten and nothing was merged");
+  });
+
+  it("writes the whole report where it can be read after the server restarts", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(root, ".claude/skills/comment/SKILL.md", "edited here\n");
+    await commitAll({ dir: root, message: "agent evolved the comment skill" });
+
+    const harness = await run({
+      root,
+      template,
+      serverRunning: true,
+      onInstall: () => {
+        write(template, "claude/skills/comment/SKILL.md", "comment v2\n");
+      },
+    });
+    expect(harness.result().reportPath).toBe(".corpus/upgrade.log");
+
+    const log = readFileSync(upgradeLogPath(root), "utf8");
+    expect(log).toContain("corpus upgrade 0.3.0 → 0.4.0");
+    expect(log).toContain("installed 0.4.0");
+    expect(log).toContain("corpus workspace diff .claude/skills/comment/SKILL.md");
+    const last = log.trimEnd().split("\n").at(-1) ?? "";
+    const recorded = JSON.parse(last.slice(REPORT_MARKER.length + 1)) as UpgradeResult;
+    expect(recorded.conflicts).toHaveLength(1);
+    expect(recorded.tool.installed).toBe(true);
+    expect(recorded.server).toMatchObject({ wasRunning: true, restarted: true });
+  });
+
+  it("touches nothing when the installed version is already the latest", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
+
+    const harness = await run({ root, template, version: "0.3.0", serverRunning: true });
+    const result = harness.result();
+
+    expect(result.tool.installed).toBe(false);
+    expect(harness.installs).toEqual([]);
+    expect(harness.lifecycle).toEqual([]);
+    // The pending template change is *reported*, not applied: the operator asked
+    // to upgrade the tool, and there was no tool upgrade to perform.
+    expect(read(root, ".claude/skills/orchestrate/SKILL.md")).toBe("orchestrate v1\n");
+    expect(result.template?.dryRun).toBe(true);
+    expect(result.template?.changes).toHaveLength(1);
+  });
+
+  it("upgrades the tool outside a workspace, and says what it skipped", async () => {
+    const template = makeTemplate();
+    const harness = await run({ root: null, template });
+    const result = harness.result();
+
+    expect(result.tool.installed).toBe(true);
+    expect(result.workspace).toBeNull();
+    expect(result.workspaceDetail).toContain("no template sync and no server restart");
+    expect(result.template).toBeNull();
+    expect(result.reportPath).toBeNull();
+  });
+});
+
+describe("corpus upgrade refuses rather than guessing", () => {
+  async function refusal(options: RunOptions): Promise<{ code: string; exitCode: number }> {
+    const error: unknown = await run(options).catch((cause: unknown) => cause);
+    if (!isCliError(error)) throw new Error(`expected a CliError, got ${String(error)}`);
+    return { code: error.code, exitCode: error.exitCode };
+  }
+
+  it("refuses a release that publishes no checksum, and installs nothing", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    expect(await refusal({ root, template, assets: ["corpus-0.4.0.tgz"] })).toEqual({
+      code: "upgrade_unverifiable",
+      exitCode: ExitCode.refused,
+    });
+  });
+
+  it("refuses a tarball whose bytes do not match the published checksum", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    expect(await refusal({ root, template, corruptChecksum: true })).toEqual({
+      code: "upgrade_checksum_mismatch",
+      exitCode: ExitCode.refused,
+    });
+  });
+
+  it("refuses when it cannot tell how this copy was installed", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    expect(await refusal({ root, template, undetectable: true })).toEqual({
+      code: "upgrade_install_method_unknown",
+      exitCode: ExitCode.refused,
+    });
+  });
+
+  it("refuses a full run it could not check", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    expect(await refusal({ root, template, offline: true })).toEqual({
+      code: "upgrade_unreachable",
+      exitCode: ExitCode.refused,
+    });
+  });
+
+  it("records the refusal in the report file, which is a detached run's only witness", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    await run({ root, template, assets: ["corpus-0.4.0.tgz"] }).catch(() => undefined);
+
+    const log = readFileSync(upgradeLogPath(root), "utf8");
+    expect(log).toContain("failed: release 0.4.0 cannot be verified");
+    expect(log).toContain(`${REPORT_MARKER} {"error"`);
+  });
+
+  it("refuses an npm prefix it cannot write to, rather than elevating itself", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    expect(
+      await refusal({
+        root,
+        template,
+        installMethod: {
+          kind: "npm-global",
+          packageRoot: "/nonexistent/lib/node_modules/corpus",
+          packageName: "corpus",
+          prefix: "/nonexistent",
+          globalRoot: "/nonexistent/lib/node_modules",
+        },
+      }),
+    ).toEqual({ code: "upgrade_prefix_unwritable", exitCode: ExitCode.refused });
+  });
+
+  it("brings the server back when the install itself fails", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const lifecycle: string[] = [];
+
+    const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
+    const failure: unknown = await runUpgrade(base.context, {
+      fetch: await releaseFetch(),
+      template: { templateRoot: template, pluginsRoot: undefined },
+      installMethod: npmGlobal(),
+      npm: () => {
+        throw new RefusedError("the install command failed", { code: "upgrade_install_failed" });
+      },
+      serverRunning: () => Promise.resolve(true),
+      stopServer: () => {
+        lifecycle.push("stop");
+        return Promise.resolve();
+      },
+      startServer: () => {
+        lifecycle.push("start");
+        return Promise.resolve();
+      },
+    }).catch((cause: unknown) => cause);
+
+    expect(isCliError(failure) && failure.code).toBe("upgrade_install_failed");
+    expect(lifecycle).toEqual(["stop", "start"]);
+    // No template file was touched: the sync never ran.
+    expect(read(root, ".claude/skills/orchestrate/SKILL.md")).toBe("orchestrate v1\n");
+  });
+
+  it("does not stop the server for an upgrade it is about to refuse", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const harness = await run({
+      root,
+      template,
+      serverRunning: true,
+      assets: ["corpus-0.4.0.tgz"],
+    }).catch(() => undefined);
+    expect(harness).toBeUndefined();
+    // Nothing was written, so nothing had to be restarted.
+    expect(existsSync(join(root, ".corpus", "server.pid"))).toBe(false);
+  });
+});
+
+describe("when the tool moves and the workspace cannot follow", () => {
+  it("says so plainly, restarts the server anyway, and still fails", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const lifecycle: string[] = [];
+
+    const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
+    const failure: unknown = await runUpgrade(base.context, {
+      fetch: await releaseFetch(),
+      // A template root that vanishes with the install is what a half-written
+      // package looks like from here.
+      template: { templateRoot: join(template, "gone"), pluginsRoot: undefined },
+      installMethod: npmGlobal(),
+      npm: () => Promise.resolve({ command: "npm install --global …", output: "" }),
+      serverRunning: () => Promise.resolve(true),
+      stopServer: () => {
+        lifecycle.push("stop");
+        return Promise.resolve();
+      },
+      startServer: () => {
+        lifecycle.push("start");
+        return Promise.resolve();
+      },
+    }).catch((cause: unknown) => cause);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(base.stdout()).toContain("were NOT updated");
+    expect(base.stdout()).toContain("corpus workspace upgrade");
+    // The server comes back regardless: a broken sync is a reason to tell
+    // somebody, not a reason to leave the board down.
+    expect(lifecycle).toEqual(["stop", "start"]);
+    const log = readFileSync(upgradeLogPath(root), "utf8");
+    expect(log).toContain("were NOT updated");
+  });
+});
+
+describe("the registry entry", () => {
+  it("declares a valid command", () => {
+    expect(
+      collectRegistryProblems({ summary: "test", commands: [upgradeCommand], topics: [] }),
+    ).toEqual([]);
+  });
+
+  it("runs without a workspace, because the tool is installed once per machine", () => {
+    expect(upgradeCommand.requiresWorkspace).toBe(false);
+  });
+});

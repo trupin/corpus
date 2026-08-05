@@ -180,6 +180,28 @@ describe("corpus workspace upgrade", () => {
     expect(harness.stdout()).toContain("update  .claude/skills/orchestrate/SKILL.md");
     expect(harness.stdout()).toContain("keep    .claude/skills/comment/SKILL.md");
     expect(harness.stdout()).toContain("only here");
+    // A conflict is unresolved work rather than a notice (SPEC.md §2.4), so it
+    // names the verb that shows what moved upstream — and only a conflict does.
+    expect(harness.stdout()).toContain(
+      "unresolved — corpus workspace diff .claude/skills/comment/SKILL.md",
+    );
+    expect(harness.stdout()).not.toContain(
+      "unresolved — corpus workspace diff .claude/skills/orchestrate/SKILL.md",
+    );
+  });
+
+  it("reports an unchanged workspace as up to date, as a value and as a line", async () => {
+    const template = makeTemplate();
+    const plugins = makePlugins();
+    const root = await makeWorkspace(template, plugins);
+
+    const harness = harnessFor(root, { json: true });
+    await upgrade(harness, { template, plugins });
+    expect(harness.report().upToDate).toBe(true);
+
+    const human = harnessFor(root);
+    await upgrade(human, { template, plugins });
+    expect(human.stdout()).toContain("already up to date.");
   });
 
   it("keeps the edited file's original baseline, so a second upgrade still refuses it", async () => {

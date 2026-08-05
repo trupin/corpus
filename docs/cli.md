@@ -16,6 +16,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [`corpus health`](#corpus-health)
 - [`corpus init`](#corpus-init)
 - [`corpus search`](#corpus-search)
+- [`corpus upgrade`](#corpus-upgrade)
 - [`corpus db`](#corpus-db)
   - [`corpus db doctor`](#corpus-db-doctor)
   - [`corpus db rebuild`](#corpus-db-rebuild)
@@ -145,13 +146,13 @@ corpus health --workspace ~/notes --timeout 1000
 
 Create a Corpus workspace here (document tree, config, git repository, agent skills).
 
-Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the current directory — in that order, so a positional always wins and naming two targets warns rather than picking one quietly. Refuses a directory that already holds a workspace, which `--force` never overrides. Refuses **before writing anything** a directory that holds unrelated content — existing files, a git repository or worktree, or any directory inside one — naming what it found; `--force` proceeds there and reports what it overwrote. Refusing first is the whole safety property: the template replaces same-named files such as `README.md` and `.gitignore`, and nothing can put them back.
+Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the current directory — in that order, so a positional always wins and naming two targets warns rather than picking one quietly. Refuses a directory that already holds a workspace, which `--force` never overrides. Refuses **before writing anything** a directory that holds unrelated content — existing files, a git repository or worktree, or any directory inside one — naming what it found; `--force` proceeds there and reports what it overwrote. Refusing first is the whole safety property: the template replaces same-named files such as `README.md` and `.gitignore`, and nothing can put them back. It contacts no server — there is not yet one to contact.
 
 ```
 corpus init [path] [flags]
 ```
 
-Runs outside a workspace; it does not contact the server.
+Runs outside a workspace: this command does not require one.
 
 **Arguments**
 
@@ -266,6 +267,56 @@ One JSON value: `{"hits":[{"id":"doc_a1b2c3","title":"Mortgage options","heading
 
 ```
 corpus search "deadline" --json
+```
+
+## `corpus upgrade`
+
+Install the latest release, bring this workspace's template files with it, and restart.
+
+Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). One run: query the GitHub Releases API, download the release tarball over HTTPS, **verify its published checksum**, reinstall through the same npm-global path this copy was installed with, bring the workspace's template files up to the new tool's, and restart the workspace's server — **if and only if** it was running when the upgrade began.
+
+**On demand, always.** Corpus never checks for, downloads, or installs anything in the background, and never phones home. Nothing here runs unless it is typed.
+
+**It refuses rather than guesses.** A release with no published checksum is not an upgrade target and is not installed. A copy of corpus whose install method cannot be detected — a source checkout, a project-local `node_modules`, an `npx` cache — is not upgraded either: the refusal names what it could not establish and gives the command to run by hand. It never elevates itself, and an unwritable npm prefix is a refusal, not a `sudo`. Every refusal leaves the installation exactly as it found it and exits 7.
+
+**The workspace half is not optional.** `corpus init` copies the agent's skills into the workspace and from that moment they are the workspace's own documents, so a tool update that ignored them would leave the loop running last version's instructions. The sync is the same three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a file the workspace never touched is updated, a file the workspace edited is **never** overwritten, and everything written lands in one attributed commit, so `corpus skill rollback` undoes a bad upgrade like any other change.
+
+**A conflict is unresolved work, not a notice.** A file this workspace edited that the tool also changed is reported apart from everything that merely happened, each entry naming `corpus workspace diff <path>` — the verb that shows what moved upstream. Corpus never merges them: a skill is prose that instructs the agent, and a plausible-looking auto-merge would corrupt the instructions the loop runs on. Under `--json` they are the `conflicts` array, so an agent can tell what it still owes without reading prose. Conflicts do not fail the run: the upgrade succeeded, and exits 0 with the list.
+
+**The report is written to `.corpus/upgrade.log`**, not only printed. An upgrade started from the board runs detached and its last act restarts the server the browser was talking to, so the file is the only place the answer can still be read afterwards. It is truncated at the start of every run and ends in one `report:` line carrying the whole result as JSON.
+
+Run outside a workspace it still upgrades the tool, and says that the template sync and the restart were skipped. `CORPUS_RELEASES_API` and `CORPUS_RELEASES_REPO` point it at a fork or a mirror instead of `trupin/corpus`.
+
+```
+corpus upgrade [flags]
+```
+
+Runs outside a workspace: this command does not require one.
+
+**Flags**
+
+| Flag      | Type    | Default | Description                                                                                                                                                                                                                                                                                                                        |
+| --------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--check` | boolean | `false` | Report only: what is installed, what the newest release is, whether it can be verified and installed here, and which workspace template changes are pending. Downloads nothing, installs nothing, writes nothing — not even the report file. Exits 0 whether or not an upgrade exists, and whether or not GitHub could be reached. |
+
+**Examples**
+
+Ask once whether a newer release exists, and whether it could be installed here.
+
+```
+corpus upgrade --check
+```
+
+Install the latest release, sync this workspace's template files, and restart the server if it was running.
+
+```
+corpus upgrade
+```
+
+One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest":"0.4.0","upgradeAvailable":true,"verifiable":true,…}`), `tool` what was installed, `template` the sync report, `server` whether it was restarted, `reportPath` where the written report is — and `conflicts` the unresolved work: `[{"path":".claude/skills/comment/SKILL.md","source":"template","detail":"modified here — 3 lines only here, 1 line only in the new copy","resolve":"corpus workspace diff .claude/skills/comment/SKILL.md"}]`.
+
+```
+corpus upgrade --json
 ```
 
 ## `corpus db`
@@ -2233,3 +2284,4 @@ corpus workspace upgrade --json
 | `4`  | The workspace server is unreachable.                           |
 | `5`  | The server returned an error response.                         |
 | `6`  | A check-style command reported a failure (its work succeeded). |
+| `7`  | Refused — a precondition was not met, and nothing was changed. |

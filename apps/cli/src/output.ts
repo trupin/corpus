@@ -84,3 +84,63 @@ export function createOutput(options: OutputOptions): Output {
     },
   };
 }
+
+/**
+ * An `Output` for a command run as a **step of another command**.
+ *
+ * `corpus upgrade` (SPEC.md §2.4) is one verb that performs several: it calls
+ * `corpus server stop`, the workspace template sync, and `corpus server start`,
+ * all of which are ordinary handlers that emit their own single JSON value and
+ * print their own one-liners. Handed the real output, the second `emit` would
+ * throw — `--json` guarantees exactly one value — and the composite command
+ * would be defeated by its own invariant.
+ *
+ * So a nested output keeps the invariant instead of relaxing it: the step's JSON
+ * value is **captured** for the caller to fold into its own report, and the
+ * step's human lines are passed through indented, because a person watching an
+ * upgrade wants to see `stopped (pid 4711)` as it happens. Nothing reaches
+ * stdout that the parent did not choose to put there.
+ */
+export interface NestedOutput {
+  readonly output: Output;
+  /** The single value the nested command emitted, or `undefined` if it emitted none. */
+  value(): unknown;
+  /** Every human line the nested command produced, unprefixed. */
+  lines(): readonly string[];
+}
+
+export function createNestedOutput(parent: Output, prefix = "  "): NestedOutput {
+  const lines: string[] = [];
+  let value: unknown;
+
+  return {
+    value: () => value,
+    lines: () => lines,
+    output: {
+      // The nested command must not decide to print JSON: whether this run has a
+      // machine-readable result is the *parent's* question, and its answer is
+      // one value for the whole composite.
+      json: false,
+      color: parent.color,
+      emit(next: unknown): void {
+        value = next;
+      },
+      line(text: string): void {
+        lines.push(text);
+        parent.line(`${prefix}${text}`);
+      },
+      write(text: string): void {
+        for (const line of text.split("\n")) {
+          if (line !== "") this.line(line);
+        }
+      },
+      fail(error: unknown, failOptions: { readonly verbose: boolean }): void {
+        // Nested handlers report failure by throwing, which the parent catches.
+        // Reaching here would mean a step wrote a failure the composite report
+        // never learned about, so it is surfaced rather than swallowed.
+        parent.fail(error, failOptions);
+      },
+      bold: (text: string) => parent.bold(text),
+    },
+  };
+}

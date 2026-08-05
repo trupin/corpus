@@ -219,7 +219,8 @@ export const initCommand: StandaloneCommandSpec = {
     "directory that holds unrelated content — existing files, a git repository or worktree, or " +
     "any directory inside one — naming what it found; `--force` proceeds there and reports what " +
     "it overwrote. Refusing first is the whole safety property: the template replaces " +
-    "same-named files such as `README.md` and `.gitignore`, and nothing can put them back.",
+    "same-named files such as `README.md` and `.gitignore`, and nothing can put them back. " +
+    "It contacts no server — there is not yet one to contact.",
   args: [
     {
       name: "path",

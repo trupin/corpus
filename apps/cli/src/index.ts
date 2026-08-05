@@ -29,6 +29,7 @@ export {
   ExitCode,
   EXIT_CODES,
   InternalError,
+  RefusedError,
   ServerResponseError,
   ServerUnreachableError,
   UsageError,

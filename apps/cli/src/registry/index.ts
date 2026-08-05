@@ -10,6 +10,7 @@ import { searchCommand } from "../commands/search.js";
 import { serverTopic } from "../commands/server/index.js";
 import { skillTopic } from "../commands/skill/index.js";
 import { threadTopic } from "../commands/thread/index.js";
+import { upgradeCommand } from "../commands/upgrade/index.js";
 import { workspaceTopic } from "../commands/workspace/index.js";
 import { discoverPluginTopics } from "./plugins.js";
 import type { Registry } from "./types.js";
@@ -43,7 +44,7 @@ export const registry: Registry = validateRegistry({
   // `search` is top-level rather than a `doc` verb because it retrieves across
   // the corpus — documents, threads and turns alike (SPEC.md §7, §9.2) — and it
   // is the first thing the agent runs, not a document operation.
-  commands: [healthCommand, initCommand, searchCommand],
+  commands: [healthCommand, initCommand, searchCommand, upgradeCommand],
   topics: [
     workspaceTopic,
     serverTopic,
