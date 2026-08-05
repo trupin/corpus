@@ -1,4 +1,11 @@
 import type { Page, Route } from "@playwright/test";
+import {
+  canonicalInstant,
+  parseThreadTurns,
+  renderTurn,
+  resolveAnchorExact,
+  type StubTurn,
+} from "./serverParity";
 
 /**
  * A corpus, in the browser, for the specs that need one.
@@ -22,6 +29,15 @@ export interface StubRow {
   readonly type?: string;
   readonly title?: string;
   readonly path?: string;
+  /**
+   * The document's markdown, exactly as the file holds it.
+   *
+   * For a `type: thread` document that means the **turn format** (SPEC.md §6):
+   * `## <author> · <ISO instant>` H2 headings, seconds precision, U+00B7 as the
+   * separator. `GET /api/threads/{id}` reports the turns this body parses to, so
+   * a body with no headings is a thread with no turns — which is what the server
+   * says about it too.
+   */
   readonly body?: string;
   readonly status?: string;
   readonly pinned?: boolean;
@@ -94,6 +110,11 @@ interface StoredDoc {
    * `updated` would make such a query look correct while pinning nothing.
    */
   updated: string;
+  /**
+   * Whether the agent is in this thread (SPEC.md §8) — `none` until a turn asks
+   * for it. Meaningless on a non-thread document, and reported as `null` there.
+   */
+  agent: "none" | "requested" | "engaged";
   /** Resolved anchors, as `GET /api/docs/{id}` reports them. */
   anchors: StoredAnchor[];
   /** A seeded related answer, or `null` to derive one from the ref graph. */
@@ -148,6 +169,7 @@ function seeded(row: StubRow): StoredDoc {
     extra: { ...(row.extra ?? {}) },
     stale: row.stale ?? null,
     updated: SEEDED_AT,
+    agent: "none",
     related: row.related ?? null,
     anchors: (row.anchors ?? []).map((anchor) => ({
       anchorId: anchor.anchorId,
@@ -159,23 +181,27 @@ function seeded(row: StubRow): StoredDoc {
 }
 
 /**
- * Resolves one anchor against the body it lives in — §6's rung 2, the useful
- * half for a stub: a unique `exact` resolves, anything else orphans. Enough to
- * make a highlight a **persistent** fact about the document rather than the
- * optimistic decoration a creation briefly shows, which is the difference
- * between pinning the anchor layer and pinning a race.
+ * Resolves one anchor against the body it lives in, by **the server's own
+ * rules** — SPEC.md §6's rungs 1–2, ported and pinned in `serverParity.ts`.
+ *
+ * It used to be rung 2 alone (a unique `exact`), which made a framed selector
+ * for a duplicated phrase — the case the framing exists to serve — resolve
+ * against the real server and orphan here (UI-051's finding, UI-056). A spec
+ * written against that would have encoded a lie about the product.
+ *
+ * Resolution happens on every read, which is what makes a highlight a
+ * **persistent** fact about the document rather than the optimistic decoration a
+ * creation briefly shows.
  */
 function resolveAnchor(doc: StoredDoc, anchor: StoredAnchor): unknown {
-  const start = doc.body.indexOf(anchor.selector.exact);
-  const unique =
-    start >= 0 && doc.body.indexOf(anchor.selector.exact, start + 1) === -1 ? start : -1;
+  const range = resolveAnchorExact(doc.body, anchor.selector);
   return {
     anchorId: anchor.anchorId,
     threadId: anchor.threadId,
     threadStatus: anchor.threadStatus,
     selector: anchor.selector,
-    range: unique < 0 ? null : { start: unique, end: unique + anchor.selector.exact.length },
-    orphaned: unique < 0,
+    range,
+    orphaned: range === null,
   };
 }
 
@@ -225,38 +251,53 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     });
   };
 
-  const asRow = (doc: StoredDoc): unknown => ({
-    id: doc.id,
-    type: doc.type,
-    title: doc.title,
-    path: doc.path,
-    status: doc.status,
-    tags: [],
-    created: SEEDED_AT,
-    updated: doc.updated,
-    due: null,
-    reviewed: null,
-    evergreen: false,
-    excerpt: doc.body.slice(0, 120),
-    stale: doc.stale,
-    parent: doc.parent,
-    agent: null,
-    anchorQuote: null,
-    turnCount: doc.type === "thread" ? 1 : null,
-    lastAuthor: doc.type === "thread" ? "user" : null,
-    lastTurn: doc.type === "thread" ? doc.body : null,
-    unread: doc.type === "thread" ? false : null,
-    awaitingAgent: doc.type === "thread" ? false : null,
-    unreadThreads: 0,
-    attention: [],
-    snippets: [],
-    parentTitle: null,
-    pinned: doc.pinned,
-    order: doc.order,
-    query: doc.query,
-    column: doc.column,
-    extra: doc.extra,
-  });
+  /** The turns of a thread document, as its own body spells them out. */
+  const turnsOf = (doc: StoredDoc): readonly StubTurn[] =>
+    doc.type === "thread" ? parseThreadTurns(doc.body) : [];
+
+  const asRow = (doc: StoredDoc): unknown => {
+    const turns = turnsOf(doc);
+    const last = turns.at(-1);
+    return {
+      id: doc.id,
+      type: doc.type,
+      title: doc.title,
+      path: doc.path,
+      status: doc.status,
+      tags: [],
+      created: SEEDED_AT,
+      updated: doc.updated,
+      due: null,
+      reviewed: null,
+      evergreen: false,
+      excerpt: doc.body.slice(0, 120),
+      stale: doc.stale,
+      parent: doc.parent,
+      agent: doc.type === "thread" ? doc.agent : null,
+      anchorQuote: null,
+      /*
+       * The conversation columns of the projection (SPEC.md §9.1), read off the
+       * thread's own body rather than asserted: a body whose turns the server
+       * would count as two must not be a row claiming one. A body carrying no
+       * turn headings has no turns, and the row says so — the same answer
+       * `GET /api/threads/{id}` gives for it.
+       */
+      turnCount: doc.type === "thread" ? turns.length : null,
+      lastAuthor: doc.type === "thread" ? (last?.author ?? "user") : null,
+      lastTurn: doc.type === "thread" ? (last?.body ?? null) : null,
+      unread: doc.type === "thread" ? false : null,
+      awaitingAgent: doc.type === "thread" ? false : null,
+      unreadThreads: 0,
+      attention: [],
+      snippets: [],
+      parentTitle: null,
+      pinned: doc.pinned,
+      order: doc.order,
+      query: doc.query,
+      column: doc.column,
+      extra: doc.extra,
+    };
+  };
 
   const asDoc = (doc: StoredDoc): unknown => ({
     body: doc.body,
@@ -380,9 +421,23 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
         type: "thread",
         title: "Re: comment",
         path: `data/docs/threads/th_new${String(created)}.md`,
-        body: typeof input["body"] === "string" ? input["body"] : "",
-        parent: parentId,
+        // A standalone thread — the global composer's *Ask* — has **no** parent,
+        // and the wire word for that is `null`, not the empty id.
+        parent: parentId === "" ? null : parentId,
       });
+      /*
+       * The thread's **file**, in §6's turn format — not the bare text of the
+       * first turn. The distinction is load-bearing: the turns this thread
+       * reports are parsed back out of this body, and a comment on one of *its*
+       * turns anchors into these very bytes.
+       */
+      const firstTurn: StubTurn = {
+        author: "user",
+        ts: canonicalInstant(thread.updated),
+        body: typeof input["body"] === "string" ? input["body"] : "",
+      };
+      thread.body = renderTurn(firstTurn);
+      thread.agent = input["requestsAgent"] === true ? "requested" : "none";
       store.set(thread.id, thread);
 
       const selector = input["selector"] as StoredAnchor["selector"] | undefined;
@@ -406,16 +461,61 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
             updated: thread.updated,
             status: "open",
             tags: [],
-            parent: parentId,
+            parent: thread.parent,
             anchor: selector === undefined ? null : anchorId,
-            agent: input["requestsAgent"] === true ? "requested" : null,
-            turns: [{ author: "user", ts: thread.updated, body: thread.body }],
+            agent: thread.agent,
+            turns: [firstTurn],
           },
-          ...(selector === undefined ? {} : { anchorId }),
+          anchorId: selector === undefined ? null : anchorId,
+          /*
+           * The enqueue signal (SPEC.md §8), reported the way the contract
+           * defines it: an event only when the turn asked for the agent. The
+           * stub does not read mentions or skill invocations out of the body, so
+           * an *omitted* `requestsAgent` never enqueues here — the case that
+           * matters to a board is the explicit one the composer's toggle sends.
+           */
+          eventId: input["requestsAgent"] === true ? `evt_new${String(created)}` : null,
           warnings: [],
         },
         201,
       );
+    }
+
+    /*
+     * `GET /api/threads/{id}` — one conversation and its turns (SPEC.md §6).
+     *
+     * The turns are **parsed out of the thread document's own body**, not stored
+     * beside it, because that is the relationship the product depends on: a
+     * turn's text is a contiguous slice of the file, so an anchor written into
+     * the thread's frontmatter has offsets that fall inside a turn, and that is
+     * what places a child card under the right turn and paints the highlight
+     * over the right words (UI-051). A stub keeping turns as separate strings
+     * could not be wrong about that, and could not be right about it either.
+     *
+     * Absent before UI-056, which is why a `ThreadCard` never rendered a turn
+     * under the stub and turn-level commenting had no Playwright coverage.
+     */
+    const threadRead = /^\/api\/threads\/([^/]+)$/.exec(url.pathname);
+    if (threadRead !== null && method === "GET") {
+      const id = decodeURIComponent(threadRead[1] ?? "");
+      const doc = store.get(id);
+      if (doc === undefined || doc.type !== "thread") {
+        return json(route, { code: "not_found", message: id }, 404);
+      }
+      const parent = doc.parent === null ? undefined : store.get(doc.parent);
+      return json(route, {
+        id: doc.id,
+        title: doc.title,
+        created: SEEDED_AT,
+        updated: doc.updated,
+        status: doc.status === "resolved" ? "resolved" : "open",
+        tags: [],
+        parent: doc.parent,
+        // The anchor entry lives on the **parent**, and the thread names it.
+        anchor: parent?.anchors.find((anchor) => anchor.threadId === id)?.anchorId ?? null,
+        agent: doc.agent,
+        turns: parseThreadTurns(doc.body),
+      });
     }
 
     /*
