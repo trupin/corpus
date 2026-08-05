@@ -201,6 +201,165 @@ workspace under `mkdtemp`, whose own `corpus init` created a repository there;
 it and every process started (server pid 27124, Vite pid 27473) were stopped and
 removed, and ports 6040 and 9414 verified free.
 
+---
+
+## E2E Verification Log — PR #22 review follow-up (MAJOR + two MINORs)
+
+**Model: Opus 5 (1M context)** (`claude-opus-5[1m]`), 2026-08-05, branch
+`phase-11-edit-ack`. Files written: `apps/ui/src/editor/useAutosave.ts`,
+`apps/ui/src/editor/useAutosave.test.tsx`, `apps/ui/src/editor/editor.css`,
+`apps/ui/src/reader/DocView.tsx`, `apps/ui/src/reader/DocView.test.tsx`,
+`apps/ui/e2e/edit-session-close.spec.ts` (new),
+`apps/ui/e2e/plugin-late-arrival.spec.ts`, plus this issue file. Nothing under
+`apps/server/`. No git command was run.
+
+### 1. Reproduction — the double session, before the fix
+
+The reviewer's sequence, driven deterministically rather than raced. **Two
+independent reproductions, both taken with the fix removed and no other change.**
+
+**a. Integration, fake clock** (`apps/ui/src/editor/useAutosave.test.tsx`, the
+real `@corpus/kit` client over a stub `fetch`, the real
+`editSessionFlush` registry, a surface retained through `useEditSurface`
+exactly as `DocEditor` does). Type → `PUT` #1 lands (session open) → type again
+→ unmount → the teardown `PUT` is refused (500) → advance the sweep window →
+advance past `RETRY_DELAY_MS`:
+
+```
+AssertionError: expected [ [ 'doc_a1b2c3' ], [ 'doc_a1b2c3' ] ]
+                to deeply equal [ [ 'doc_a1b2c3' ] ]
+- Expected            + Received
+  [                     [
+    [ "doc_a1b2c3" ],     [ "doc_a1b2c3" ],
+  ]                     +  [ "doc_a1b2c3" ],
+                        ]
+```
+
+Two `flushEditSession("doc_a1b2c3")` calls — two acknowledgments for one
+sitting — plus a third `PUT` (`expected … to have a length of 2 but got 3`).
+
+**b. Real browser, real timers** (`apps/ui/e2e/edit-session-close.spec.ts`,
+headless Chromium via Playwright against the real Vite dev server on
+**`CORPUS_UI_PORT=6050`**; never 5173, never 8765). A note is opened in a column
+reader, typed into, the save is allowed to land; the next `PUT` is armed to
+answer `500`; the last sentence is typed and the reader is closed with Back
+inside the debounce window. Then five seconds pass — past `RETRY_DELAY_MS`
+(3 s) plus the flush sweep (300 ms):
+
+```
+✘ a save refused as the reader closes still ends the sitting exactly once
+  Error: one sitting, one acknowledgment
+  Expected: 1
+  Received: 2
+```
+
+and with that assertion removed, `a third PUT means a retry outlived its
+surface — Expected: 2, Received: 3`. The orphaned retry, the second session,
+the second acknowledgment: all three observed in a real browser.
+
+### 2. The shape chosen, and why the alternatives lose
+
+**A retry belongs to the surface that would report it, and dies with it.** The
+failure handler now returns before arming anything when the hook has been
+retired (its surface unmounted) or when the response is about a document the
+hook is no longer bound to. `endEditWrite(…, false)` still runs first, so the
+close path is never left waiting; the sweep ends the session over the range that
+actually committed, and nothing lands behind it. The property the module claims
+— *a flush never ends a session while a write for that document may still land*
+— now holds because **no write can be started after the last surface for the
+document is gone**. Nothing is surfaced on failure, as before: there is no chip
+left, and §4's inactivity window remains the backstop for the flush itself.
+
+Rejected, with reasons:
+
+- **Keep the write counted until the retry resolves or is abandoned.** Holds the
+  invariant, and would even save the text — but it parks the acknowledgment three
+  seconds behind the close (`EDIT_SESSION_SETTLE_MS`'s own docstring asks that "I
+  closed the document" and "the agent knows" stay the same moment), for a request
+  nobody is waiting on. Worse, the hold must be released down *every* path that
+  cancels the retry — the retry shares the debounce ref precisely so a keystroke
+  supersedes it — and one missed release wedges that document's flush for the
+  life of the tab. A stuck acknowledgment is a worse failure than a lost debounce
+  window.
+- **Have the cleanup adopt the retry.** The cleanup is synchronous and the timer
+  is armed later, from a promise it cannot see; adopting it means a module-level
+  registry of pending retries — more machinery for the same outcome.
+- **Gate on `hasEditSurface(docId)` in the flush registry** instead of on the
+  hook's own lifecycle. Rejected as a hidden coupling: `useAutosave` would
+  silently stop retrying for any caller that did not also mount
+  `useEditSurface`.
+
+What the chosen shape costs is one debounce window of text when a save fails at
+the exact moment the reader closes. Nothing could have rescued it: there is no
+chip left to report the failure and no user left to press retry, and parking the
+body somewhere that outlives its surface is the second source of truth for a
+document body that SPEC.md §5 is most careful about — the same reason a buffer
+parked behind a foreign lock is not rescued either. The acknowledgment then
+describes what the server actually has.
+
+### 3. Verification after the fix
+
+- Both reproductions above pass. In the browser: `2` saves, `1` flush, and the
+  refused sentence is absent from the corpus — the range the acknowledgment
+  describes is the range that committed.
+- The mounted retry is unaffected: `failure > keeps the buffer, shows the signal
+  state and retries once by itself` and `re-sends the buffer when the retry
+  affordance is used` still pass, as does `sends the tail edit even when the
+  surface went away mid-flight` (the success handler's chained send, which is
+  registry-counted and must keep working).
+
+### 4. MINOR — `DocView.tsx` blind-paint mark
+
+Fixed the **behaviour**, not the comment: the mark is dropped as soon as the
+reader shows another document, so it describes one painted body rather than the
+component. A reader is not keyed by document id, so the old mark followed the
+column for the life of the tab — a `[[ref]]` opened long after discovery settled
+was drawn without its panel, and so was the original document on the way Back,
+with nothing on screen either time for a late arrival to move. Real-browser
+proof, `apps/ui/e2e/plugin-late-arrival.spec.ts` (new test, manifests held past
+`DISCOVERY_BUDGET_MS`, released, then navigated by `[[ref]]` and Back):
+
+```
+✘ keeps a body painted blind unadorned, and only that body
+  waiting for locator('[data-todo-panel]') to be visible   (before the fix)
+✓ keeps a body painted blind unadorned, and only that body (3.6s)  (after)
+```
+
+The test waits for the plugin's own aggregate request before navigating — the
+only honest signal that discovery has *settled*, since releasing the manifest
+merely starts the import. Waiting on the release instead made the test race the
+phase it is about (observed: it passed warm and failed cold).
+
+### 5. MINOR — `editor.css` misattribution
+
+Corrected. The competing `.ProseMirror [contenteditable="false"] { white-space:
+normal }` is in the stylesheet **TipTap** injects at import time
+(`node_modules/@tiptap/core/dist/index.js:4332-4334`, read directly).
+`prosemirror-view/style/prosemirror.css` contains only
+`.ProseMirror [draggable][contenteditable=false] { user-select: text }` and is
+not imported anywhere in the repo (`grep` over `apps/`, `packages/`, `plugins/`
+returns nothing). The restatement itself was already correct and stays.
+
+### 6. Gates
+
+- `VITEST_MAX_THREADS=4 vitest run apps/ui/src` → **129 files, 2137 tests, all
+  passing**. **+3 tests**: 2 in `useAutosave.test.tsx` (the sitting's single
+  acknowledgment; no retry for a document a reader rebound away from), 1 in
+  `DocView.test.tsx` (chrome on the next document and on the way Back). The
+  autosave harness now retains an edit surface in `DocEditor`'s declaration
+  order, and the suite resets the flush registry between tests.
+- Playwright on `CORPUS_UI_PORT=6050`: `edit-session-close.spec.ts` (new),
+  `plugin-late-arrival.spec.ts` (+1 test, 6 total), `abandon.spec.ts`,
+  `editor.spec.ts`, `reader.spec.ts` → **29 passed**. The new close spec was run
+  three times, and the plugin spec twice in isolation and twice in-file, to rule
+  out the timing flake the first draft had.
+- `eslint --max-warnings 0` on the seven touched source/spec files → clean, no
+  rule disabled. `prettier --check` → clean. `tsc --noEmit` in `apps/ui` → clean.
+- The repo-wide suite and `npm run coverage` were **not** run (machine-load
+  discipline; two other agents were live in `apps/server`). Ports 5173 and 8765
+  were never touched; 6050 was released — Playwright starts and stops its own
+  Vite, and no process was left behind.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

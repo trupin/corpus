@@ -21,7 +21,7 @@ import {
   type TextQuoteSelector,
   type ThreadStatus,
 } from "@corpus/contract";
-import { resolveAnchor } from "../anchors/index.js";
+import { resolveAnchorExact } from "../anchors/index.js";
 import {
   DocumentParseError,
   parseDocument,
@@ -204,31 +204,29 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
 type AnchorThreadRow = { readonly anchor_id: string; readonly id: string; readonly status: string };
 
 /**
- * Resolve every anchor of a document against its current body — the **whole**
- * §6 ladder, fuzzy rung included (SERVER-055).
+ * Resolve every anchor of a document against its current body — the exactness
+ * tier of the §6 ladder, rungs 1–2, and deliberately not rung 3
+ * (sprint-003 Adjudication 1; SERVER-055 wired the fuzzy rung in here and was
+ * reverted, see `anchors/resolve.ts`).
  *
- * This used to stop at the exactness tier (sprint-003 Adjudication 1, whose
- * premise was that reconciliation keeps every live selector byte-fresh, so rung
- * 3 could only ever fire wrong). Reconciliation does keep selectors fresh *on
- * the paths it runs on*, but three states reach a reader without it: a selector
- * a client captured against a re-printed spelling of the file and that never
- * byte-matched (UI-068 — an anchor born orphaned, which no later save repairs,
- * because reconciliation leaves an anchor that does not resolve in `oldBody`
- * exactly as it found it); an out-of-band edit inside the watcher's debounce and
- * flush budget; and a thread document whose turns were appended or deleted,
- * which changes a body no reconciliation pass ever sees. In every one of them
- * the reader is asking precisely the question reconciliation itself asks with
- * the full ladder (`reconcileAnchors` resolves each selector in `oldBody` via
- * `resolveAnchor`), so answering it with a weaker ladder made the write path and
- * the read path disagree about what resolves.
+ * A reader holds one body. It cannot see what an edit did, and rung 3's
+ * similarity score is evidence of survival only for a caller that can: in a
+ * list, a table or a boilerplate template the passage most similar to a deleted
+ * item is its surviving sibling, with near-identical neighbours to match, so
+ * neither the quote nor its declared context separates "edited in place" from
+ * "deleted, and this is what is left". Wired in, the rung landed threads on the
+ * neighbouring bullet, the next table row and the parallel paragraph — the
+ * silent misattachment §6 forbids, and worse than the detachment it was meant
+ * to spare the reader. `resolveAnchorExact` reports orphaned instead, which is
+ * §6's stated answer whenever survival cannot be proved.
  *
- * The safety property that made the old adjudication right is kept by rung 3
- * itself, not by refusing to call it: a fuzzy candidate must carry its declared
- * context (`anchors/fuzzy.ts`), so a deleted bullet's parallel sibling — same
- * words, different neighbours — fails the rung and the thread orphans. Fuzzy
- * remains banned where reconciliation bans it: verifying a *deletion claim*
- * against diff evidence is a different question from "where does this selector
- * point", and only the exactness tier may answer it.
+ * The cost is real and known: an anchor whose quote was edited under it reads
+ * detached until the next save's reconciliation — which *does* hold a diff —
+ * rewrites the selector to the bytes on the page, after which rung 1 carries it
+ * (see the round trip in `read.test.ts`). Three states never get that save: a
+ * selector that never byte-matched (UI-068), an out-of-band edit inside the
+ * watcher's debounce, and a thread document whose turns changed. They read
+ * orphaned, visibly, with the selector intact.
  *
  * An anchor entry no thread claims is omitted rather than reported with a
  * fabricated thread id: `ResolvedAnchor` requires one. §14 already reports the
@@ -255,7 +253,7 @@ export function resolveDocumentAnchors(
     const selector = anchors[anchorId];
     const thread = byAnchor.get(anchorId);
     if (selector === undefined || thread === undefined) continue;
-    const range = resolveAnchor(parsed.body, selector);
+    const range = resolveAnchorExact(parsed.body, selector);
     resolved.push({
       anchorId,
       selector,

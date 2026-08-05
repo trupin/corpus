@@ -160,9 +160,31 @@ export interface BoundedDiff {
  * bigger than the whole budget, so the alternative to a prefix of it is nothing
  * of it.
  *
- * A hunk that *would* fit within the bound is still dropped whole — the waste is
- * then bounded by that hunk's own size, and what comes back is a diff whose every
- * hunk is complete.
+ * **A hunk that would fit the bound, but not the budget left where it sits, is
+ * still dropped whole — and that can cost nearly all of the budget.** The answer
+ * is then the boundary itself: `cut` characters of `max`, of which `max - cut`
+ * goes unspent. SERVER-058's own shape reaches the worst of it — a 231-character
+ * frontmatter hunk followed by a body hunk of 15 770 returns **231 of 16 000**,
+ * the reported symptom verbatim, for a body hunk one character *under* the bound
+ * rather than over it (PR #22 review, measured on this function). Nor is it
+ * confined to diffs that barely overrun: with a third hunk after it the same
+ * input totals 21 001 and still answers 231.
+ *
+ * That is left standing, deliberately, because within the published contract
+ * there is no better answer for that input. "Keep whole hunks, then a line-prefix
+ * of the next" is *exactly* the degenerate `max(hunk, line)` rule described
+ * below, and `DocDiffSchema.truncated` promises the narrower thing: "whole hunks
+ * are dropped from the end. A single hunk larger than the whole bound is the one
+ * exception." Widening the exception to a hunk larger than the *remaining* budget
+ * would abolish hunk alignment and contradict that sentence — a contract change,
+ * not a change here.
+ *
+ * What bounds the damage is that the waste and its likelihood are the same
+ * number. The poor answer needs the straddling hunk's size to fall in
+ * `(max - cut, max]` — a window exactly `cut` wide — so answering with 231
+ * characters requires a body hunk within 231 characters of the cap, while a cut
+ * at 8 231 is easy to land on and wastes less than half the budget. The largest
+ * waste is the rarest, and every hunk that does come back is complete.
  *
  * With no admissible hunk boundary at all — one hunk bigger than the bound, a
  * second hunk starting past it, or a preamble larger than the whole cap — the

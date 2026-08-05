@@ -198,6 +198,53 @@ describe("truncateDiff", () => {
     expect(max - bounded.diff.length).toBeLessThan(hunkSize);
   });
 
+  it("spends only the first boundary when the body hunk lands just under the bound — the known notch", () => {
+    // The gap PR #22's review found in SERVER-058, pinned rather than fixed: a
+    // body hunk *within* the bound but past the budget left for it is dropped
+    // whole, so the answer is the frontmatter hunk alone. Closing it means
+    // widening `DocDiffSchema.truncated`'s published exception — a contract
+    // change — because "whole hunks from the end, one exception for a hunk
+    // larger than the whole bound" admits no better answer for this input.
+    const max = 16_000;
+    const preamble = [
+      "diff --git a/data/docs/n.md b/data/docs/n.md",
+      "index 1905e09..d0b3a1c 100644",
+      "--- a/data/docs/n.md",
+      "+++ b/data/docs/n.md",
+      "@@ -3,7 +3,7 @@ id: doc_a1b2c3",
+      "-updated: 2026-08-01T09:00:00Z",
+      "+updated: 2026-08-04T11:20:00Z",
+      "",
+    ].join("\n");
+    const bodyHeader = "@@ -20,3 +20,300 @@";
+    const line = `+a rewritten paragraph of prose that is fifty-nine\n`;
+    const body = (chars: number): string =>
+      `${bodyHeader}\n${line.repeat(Math.floor((chars - bodyHeader.length - 1) / line.length))}`;
+    // Sized so the body hunk is inside the bound while the whole diff is not.
+    const bodyHunk = body(max - preamble.length + 50);
+    expect(bodyHunk.length).toBeLessThanOrEqual(max);
+
+    const notch = truncateDiff(preamble + bodyHunk, max);
+    expect(notch.truncated).toBe(true);
+    expect(notch.diff).toBe(preamble);
+    expect(notch.diff).not.toContain(bodyHeader);
+    // The waste is real, and it is exactly the width of the window that produces
+    // it: a body hunk within `preamble.length` characters of the cap.
+    expect(max - notch.diff.length).toBeGreaterThan(max - preamble.length - 1);
+
+    // Either side of that window the answer is good, which is what makes the
+    // notch tolerable. One character smaller and nothing is dropped at all…
+    const under = truncateDiff(preamble + body(max - preamble.length), max);
+    expect(under.truncated).toBe(false);
+    expect(under.diff).toContain(bodyHeader);
+    // …and one line larger than the bound and the over-sized-hunk rule cuts
+    // inside it, spending the budget.
+    const over = truncateDiff(preamble + body(max + line.length), max);
+    expect(over.truncated).toBe(true);
+    expect(over.diff.length).toBeGreaterThan(max - line.length);
+    expect(over.diff).toContain("+a rewritten paragraph of prose");
+  });
+
   it("keeps a whole hunk that exactly fills the bound, and cuts inside one that overruns it", () => {
     // The rule's own boundary: `dropped <= max` keeps, `dropped > max` cuts. A
     // hunk of exactly `max` is still dropped whole — the contract's exception is

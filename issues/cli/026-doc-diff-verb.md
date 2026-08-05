@@ -4,7 +4,7 @@
 cli
 
 ## Status
-todo
+done
 
 ## Priority
 P1

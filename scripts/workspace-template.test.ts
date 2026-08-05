@@ -615,12 +615,30 @@ describe("orchestrate skill body", () => {
     it("restates the actor guarantee so the reflection cannot cascade or self-suppress", () => {
       expect(body).toMatch(/\*\*Your own edits never wake you\.\*\*/);
       expect(body).toMatch(/The payload's actor is always `user`/);
-      expect(body).toMatch(
-        /an agent turn enqueues nothing unless\s+it carries an explicit request/,
-      );
       expect(body).toMatch(/nothing here feeds itself/);
       // The dedupe key is named, and dropping a repeat is a completion.
       expect(body).toMatch(/at most one event exists per `sessionId`/);
+    });
+
+    /**
+     * PR #22 review, MINOR 6. The first version of this section told the model an
+     * agent turn "enqueues nothing unless it carries an explicit request", and
+     * then to "edit and comment freely… there is no reason to suppress a change
+     * out of caution about a loop that cannot happen". The loop *can* happen:
+     * `shouldEnqueue` tests the turn's **body** before it tests the author, so a
+     * turn mentioning `@agent` enqueues whoever wrote it.
+     *
+     * The path is not hypothetical — a ripple comment or an acknowledgment that
+     * quotes a user's line carries whatever that line said. So the guarantee is
+     * pinned as two obligations rather than one, and the quoting hazard by name,
+     * because that is the one a careful model would otherwise walk into.
+     */
+    it("names both obligations, and the quoting hazard that reaches past them", () => {
+      expect(body).toMatch(/no `--requests-agent`\s*\n?\s*and no `@agent` in the body/);
+      expect(body).toMatch(/checks the turn's \*body\* before it checks the author/);
+      expect(body).toMatch(/quotes a user's line/);
+      // And it must not tell the model the loop is impossible.
+      expect(body).not.toMatch(/a loop that cannot happen/);
     });
 
     it("refuses to reason about a cut diff as a whole one", () => {

@@ -381,7 +381,7 @@ describe("projectDocument — links", () => {
   });
 });
 
-describe("projectDocument — anchors (SERVER-055: the whole §6 ladder, context-gated)", () => {
+describe("projectDocument — anchors (the §6 exactness tier, rungs 1–2)", () => {
   it("resolves a live anchor to an offset that slices back to its quoted text", () => {
     const body = "\nLet us assume a 30-year fixed at 6.1% for the base case.\n";
     project(
@@ -440,16 +440,19 @@ describe("projectDocument — anchors (SERVER-055: the whole §6 ladder, context
     expect(row.resolved_offset).not.toBe(after.indexOf("- milk from the corner bakery"));
   });
 
-  it("projects the fuzzy rung's offset for a selector edited out of band (SERVER-055)", () => {
+  it("projects NULL for a selector edited out of band, where the fuzzy rung would guess", () => {
     const selector = {
       exact: "assume a 30-year fixed at 6.1%",
       prefix: "Let us ",
       suffix: " for the base case.",
     };
     // Edited out of band: no reconciliation has run, so the selector still
-    // quotes the old rate while the body carries the new one. Until SERVER-055
-    // this column was exact-only and reported the thread detached, disagreeing
-    // with nothing less than the reader's own answer.
+    // quotes the old rate while the body carries the new one. Rung 3 finds the
+    // edited sentence here — and, in a list or a table, finds the *sibling* of a
+    // deleted one just as readily (`anchors/resolve.test.ts`). This column is
+    // read by `corpus thread context`, so it answers with proof of survival or
+    // it answers NULL; the repair is the next save's reconciliation, which holds
+    // the diff.
     const body = "\nLet us assume a 30-year fixed at 6.4% for the base case.\n";
     expect(resolveAnchor(body, selector)).not.toBeNull();
 
@@ -458,7 +461,29 @@ describe("projectDocument — anchors (SERVER-055: the whole §6 ladder, context
       `---\nid: doc_rate\ntype: note\ntitle: R\nanchors: ${JSON.stringify({ anc_r: selector })}\n---\n${body}`,
     );
     expect(db.prepare("SELECT resolved_offset FROM anchors").get()).toEqual({
-      resolved_offset: body.indexOf("assume a 30-year fixed at 6.4%"),
+      resolved_offset: null,
+    });
+  });
+
+  it("projects NULL rather than a deleted row's surviving table sibling", () => {
+    // The misattachment class that took rung 3 back off this path: four
+    // near-identical rows, one deleted, and the fuzzy rung lands on the next.
+    const selector = {
+      exact: "| north-2 | alice | green |",
+      prefix: "| north-1 | alice | green |\n",
+      suffix: "\n| north-3 | alice | green |",
+    };
+    const body =
+      "\n| region | owner | status |\n| --- | --- | --- |\n| north-1 | alice | green |\n| north-3 | alice | green |\n| north-4 | alice | green |\n";
+    const guess = resolveAnchor(body, selector);
+    expect(body.slice(guess?.start, guess?.end)).toBe("| north-3 | alice | green |");
+
+    project(
+      "data/docs/regions.md",
+      `---\nid: doc_reg\ntype: note\ntitle: R\nanchors: ${JSON.stringify({ anc_row: selector })}\n---\n${body}`,
+    );
+    expect(db.prepare("SELECT resolved_offset FROM anchors").get()).toEqual({
+      resolved_offset: null,
     });
   });
 

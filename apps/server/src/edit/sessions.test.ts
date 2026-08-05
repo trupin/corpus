@@ -89,6 +89,8 @@ interface Harness {
   readonly tracker: EditSessionTracker;
   readonly enqueued: EditEnqueueInput[];
   readonly git: Git & { readonly calls: string[][] };
+  /** Shas handed back to §4's squash as "never amend this", in order. */
+  readonly sealed: string[];
   advance(ms: number): Promise<void>;
   settle(): Promise<void>;
 }
@@ -97,6 +99,7 @@ let clock = 1_000_000;
 
 function harness(repo: FakeRepo, enqueue?: () => Promise<{ id: string }>): Harness {
   const enqueued: EditEnqueueInput[] = [];
+  const sealed: string[] = [];
   const git = fakeGit(repo);
   let minted = 0;
   const tracker = createEditSessionTracker({
@@ -105,6 +108,9 @@ function harness(repo: FakeRepo, enqueue?: () => Promise<{ id: string }>): Harne
       enqueued.push(input);
       minted += 1;
       return enqueue?.() ?? Promise.resolve({ id: `evt_${String(minted)}` });
+    },
+    endSquashSession: (sha) => {
+      sealed.push(sha);
     },
     now: () => clock,
     idleMs: IDLE_MS,
@@ -119,6 +125,7 @@ function harness(repo: FakeRepo, enqueue?: () => Promise<{ id: string }>): Harne
     tracker,
     enqueued,
     git,
+    sealed,
     async advance(ms) {
       clock += ms;
       await vi.advanceTimersByTimeAsync(ms);
@@ -523,6 +530,75 @@ describe("edit session tracker — interleaving (CONTRACT-028's range rule)", ()
     expect(h.enqueued[1]?.payload).toMatchObject({ from: "7beef01", to: "0d0d012" });
   });
 
+  it("does not seal on the user's own non-editor write to the document they are editing", async () => {
+    // Commenting on the document you are editing stages that document's
+    // frontmatter (the anchor) under the *thread's* id — same party, same file.
+    // That commit belongs to the sitting: `readRangeStats` counts it with
+    // `rev-list`, so splitting the session here would produce two
+    // acknowledgments of one sitting and no more truth than one.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["0d0d011", "ba5e001"],
+        ["7beef01", "0d0d011"],
+        ["0d0d012", "7beef01"],
+      ]),
+      counts: new Map([["ba5e001..0d0d012", "3"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("0d0d011") }));
+    h.tracker.observeCommit({
+      docId: "th_zzzzzzzz",
+      actor: "user",
+      paths: ["data/threads/t.md", PATH],
+      editPath: null,
+      outcome: committed("7beef01"),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("0d0d012") }));
+
+    await h.tracker.close();
+    expect(h.enqueued).toHaveLength(1);
+    expect(h.enqueued[0]?.payload).toMatchObject({
+      from: "ba5e001",
+      to: "0d0d012",
+      stats: { commits: 3, insertions: 3, deletions: 1 },
+    });
+  });
+
+  it("follows the document to its new path when a move lands between two saves", async () => {
+    // `docs/move.ts` commits as the user with no `editPath`, so it neither opens
+    // a session nor seals one; the save after it carries the new path, and the
+    // range has to be read there because that is the only path `git diff` will
+    // report the file under.
+    const moved = "data/docs/archive/notes.md";
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["0d0d011", "ba5e001"],
+        ["3010e01", "0d0d011"],
+        ["0d0d012", "3010e01"],
+      ]),
+      counts: new Map([["ba5e001..0d0d012", "3"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("0d0d011") }));
+    h.tracker.observeCommit({
+      docId: DOC,
+      actor: "user",
+      paths: [PATH, moved],
+      editPath: null,
+      outcome: committed("3010e01"),
+    });
+    h.tracker.observeCommit(
+      save({ paths: [moved], editPath: moved, outcome: committed("0d0d012") }),
+    );
+
+    await h.tracker.close();
+    expect(h.enqueued).toHaveLength(1);
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "0d0d012" });
+    const diffs = h.git.calls.filter((argv) => argv[0] === "diff");
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0]?.at(-1)).toBe(moved);
+  });
+
   it("leaves a session on another document alone", async () => {
     const h = harness({
       parents: new Map([
@@ -566,6 +642,65 @@ describe("edit session tracker — interleaving (CONTRACT-028's range rule)", ()
     await h.advance(IDLE_MS);
     expect(h.enqueued).toHaveLength(1);
     expect(h.enqueued[0]?.payload).toMatchObject({ endedBy: "idle", to: "0d0d011" });
+  });
+});
+
+describe("edit session tracker — a named commit leaves the squash session", () => {
+  const repo = {
+    parents: new Map([
+      ["ba5e001", null],
+      ["c0ffee1", "ba5e001"],
+      ["c0ffee2", "c0ffee1"],
+    ]),
+    counts: new Map([["ba5e001..c0ffee2", "2"]]),
+  };
+
+  it("hands the session's last commit back before the flush names it", async () => {
+    const h = harness(repo);
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    expect(h.sealed).toEqual([]);
+
+    // Synchronous with the flush, so it lands before the emitter's git reads
+    // resolve — the save that has to be got in front of is one arriving while
+    // those reads are in flight.
+    h.tracker.flush(DOC);
+    expect(h.sealed).toEqual(["c0ffee1"]);
+    await h.settle();
+    expect(h.enqueued).toHaveLength(1);
+  });
+
+  it("hands it back on the idle path and at shutdown too", async () => {
+    const idle = harness(repo);
+    idle.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    await idle.advance(IDLE_MS);
+    expect(idle.sealed).toEqual(["c0ffee1"]);
+
+    const shutdown = harness(repo);
+    shutdown.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    await shutdown.tracker.close();
+    expect(shutdown.sealed).toEqual(["c0ffee1"]);
+  });
+
+  it("names only the session's newest commit, not every commit it accumulated", async () => {
+    const h = harness(repo);
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee2") }));
+
+    h.tracker.flush(DOC);
+    await h.settle();
+    // Only `to` is published as a rewritable head — the earlier commits already
+    // have a commit sitting on them, which §4's squash never rewrites.
+    expect(h.sealed).toEqual(["c0ffee2"]);
+  });
+
+  it("says nothing to the squash for a session that never landed a commit", async () => {
+    const h = harness({ parents: new Map() });
+    h.tracker.observeCommit(
+      save({ outcome: { kind: "skipped", reason: "the workspace is not a git repository" } }),
+    );
+    h.tracker.flush(DOC);
+    await h.advance(IDLE_MS * 2);
+    expect(h.sealed).toEqual([]);
   });
 });
 

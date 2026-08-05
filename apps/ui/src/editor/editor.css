@@ -102,9 +102,13 @@
 
 /*
  * The same declaration, restated where it can win. A raw block is a node view
- * and therefore `contenteditable="false"`, which prosemirror-view's own
- * `.ProseMirror [contenteditable="false"] { white-space: normal }` catches — and
- * that outranks the rule above. Measured live while verifying UI-072: a
+ * and therefore `contenteditable="false"`, which the stylesheet TipTap injects
+ * into the document at import time catches with
+ * `.ProseMirror [contenteditable="false"] { white-space: normal }`
+ * (`@tiptap/core/dist/index.js`) — and that outranks the rule above.
+ * prosemirror-view's own `style/prosemirror.css` has no such rule and is not
+ * imported anywhere here, so it is not the competitor (PR #22 review, MINOR).
+ * Measured live while verifying UI-072: a
  * multi-line `<section>` block was drawn collapsed onto one line, so the
  * construct the schema keeps *verbatim* was the one construct not shown
  * verbatim.

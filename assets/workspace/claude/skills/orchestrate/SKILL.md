@@ -244,12 +244,19 @@ straight back.
 
 **Your own edits never wake you.** The payload's actor is always `user`: the server emits
 nothing for an agent-authored write, and a payload claiming otherwise is dropped before it
-reaches you. Neither can the reflection wake itself — an agent turn enqueues nothing unless
-it carries an explicit request for the agent, and none of the turns below do. So edit and
-comment freely while reflecting; nothing here feeds itself, and there is no reason to
-suppress a change out of caution about a loop that cannot happen. The one thing to drop is a
-repeat: at most one event exists per `sessionId`, so a second carrying an id you already
-handled is completed without acting on it.
+reaches you.
+
+**But an agent turn can still wake the loop, so this needs care rather than confidence.**
+The server checks the turn's *body* before it checks the author: a turn mentioning `@agent`
+enqueues whoever wrote it. So the rule is two things, not one — post **no `--requests-agent`
+and no `@agent` in the body**, in every turn you write here. That matters most where you are
+least thinking about it: a ripple comment or an acknowledgment that **quotes a user's line**
+carries whatever that line said, and a quoted `@agent` wakes the loop exactly as a written
+one does. Quote the passage you mean, and drop the mention if it carries one.
+
+Get those two right and nothing here feeds itself. The one other thing to drop is a repeat:
+at most one event exists per `sessionId`, so a second carrying an id you already handled is
+completed without acting on it.
 
 **1 — Read the change, always, exactly once.** The event's `from` and `to` go in as
 `--from-rev` and `--to-rev` unchanged — no conversion, no resolution, including the

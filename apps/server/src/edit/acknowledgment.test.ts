@@ -333,6 +333,56 @@ describe("POST /api/docs/{id}/edit-session/flush", () => {
     expect(acknowledgments(ws)[0]?.endedBy).toBe("close");
   });
 
+  it("does not re-acknowledge the flushed change when the reader reopens inside the squash window", async () => {
+    // "Close the document, reopen within 30 seconds, fix a typo" — an ordinary
+    // sitting, and before SERVER-052's review (PR #22) it produced two events
+    // whose ranges overlapped: §4's squash amended the very commit the first
+    // event had just named, so the second session opened at the *same* parent
+    // and re-described the first session's change under a second `sessionId`
+    // that no dedupe rule can match. The first event's `to` was left dangling
+    // as well.
+    const ws = workspace("ack-reopen");
+    const doc = await createDoc(ws, { type: "note", title: "Reopened", body: "one\n" });
+    pastTheSquashWindow(ws);
+
+    await edit(ws, doc.id, "one\ntwo\n");
+    const named = ws.head();
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+
+    // The clock does not move: the reopened reader is inside §4's 30 s squash
+    // window, which is exactly the state that used to amend.
+    await edit(ws, doc.id, "one\ntwo\nthree\n");
+    expect(ws.head()).not.toBe(named);
+    // The acknowledged commit is still on the branch, not rewritten under the
+    // event that named it.
+    expect(ws.log("%H")).toContain(named);
+    expect(ws.git("rev-parse", "HEAD^").trim()).toBe(named);
+
+    await ws.server.close();
+
+    const payloads = acknowledgments(ws);
+    expect(payloads).toHaveLength(2);
+    // Adjacent, not overlapping: the second range starts where the first ended.
+    const first = payloads.find((entry) => entry.to === named);
+    const second = payloads.find((entry) => entry.from === named);
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(second?.to).toBe(ws.head());
+    expect(new Set(payloads.map((entry) => entry.sessionId)).size).toBe(2);
+    // And each range names exactly its own session's commit.
+    for (const payload of payloads) {
+      const commits = ws
+        .git("rev-list", `${payload.from}..${payload.to}`)
+        .trim()
+        .split("\n")
+        .filter((line) => line !== "");
+      expect(commits).toHaveLength(1);
+    }
+  });
+
   it("answers 204 with no session open — never a 409 or a 'nothing to flush' 404", async () => {
     // The idempotence the contract publishes. A document that was only read has
     // no session, and the caller cannot know that: sessions open on the server's

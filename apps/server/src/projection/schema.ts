@@ -53,8 +53,15 @@
  * writes. Nothing migrates them (an offset is derived from the file), and
  * without the bump a workspace would keep reporting threads detached that the
  * reader resolves until something happened to touch each file.
+ *
+ * 10 → 11 (SERVER-055 revert): no DDL change — the ladder above was reverted to
+ * its exactness tier, because rung 3 pointed threads at lookalike siblings on
+ * every read path (`anchors/resolve.ts`). The bump is forward, never back to 9:
+ * a v10 database holds fuzzy offsets this projector would never write, some of
+ * them on a passage the anchor's author never commented on, and only a rebuild
+ * clears them. A workspace that never ran v10 pays one extra rebuild.
  */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";

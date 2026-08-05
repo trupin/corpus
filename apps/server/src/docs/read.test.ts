@@ -230,13 +230,19 @@ describe("GET /api/docs/{id}", () => {
 });
 
 /**
- * SPEC.md §6's resolution ladder, end to end on the read path (SERVER-055).
+ * SPEC.md §6's resolution ladder, end to end on the read path.
  *
  * Every case here edits the file **out of band** — the state where the ladder is
  * the only thing standing between a comment and detachment, because no
- * reconciliation pass has refreshed the selector. Before SERVER-055 this path
- * stopped at rungs 1–2, so the two shapes that touch the quote itself came back
- * `orphaned` although the commented sentence is plainly still on the page.
+ * reconciliation pass has refreshed the selector. The read path runs rungs 1–2:
+ * an edit *around* the quote keeps the comment attached, an edit *inside* it
+ * detaches the comment until the next save reconciles the selector (the round
+ * trip at the bottom of this block), and a lookalike never captures a thread.
+ *
+ * SERVER-055 wired rung 3 in here so the "edited inside" shapes would resolve
+ * too, and was reverted: in a list, a table or a template the rung answered with
+ * a *sibling* of the anchored passage — including for the edited-in-place case
+ * it was meant to serve. `anchors/resolve.test.ts` holds those shapes.
  */
 describe("GET /api/docs/{id} — the §6 ladder against an edited body", () => {
   const QUOTE = "assume a 30-year fixed at 6.1%";
@@ -333,13 +339,14 @@ describe("GET /api/docs/{id} — the §6 ladder against an edited body", () => {
     expect(body.slice(range?.start, range?.end)).toBe(QUOTE);
   });
 
-  it("resolves after an insertion inside the quote", async () => {
-    // Both exact rungs are gone — the quoted characters no longer occur — and
-    // this is the shape that used to detach the comment.
+  it("orphans after an insertion inside the quote, visibly and with the selector intact", async () => {
+    // Both exact rungs are gone — the quoted characters no longer occur — so
+    // survival cannot be proved and §6 detaches the thread rather than guess.
+    // The next save repairs it (see the round trip below).
     const edited = ORIGINAL.replace("a 30-year fixed", "a 30-year fixed-rate");
-    const { range, orphaned, body } = await readAnchor("ladder-insert-inside", edited);
-    expect(orphaned).toBe(false);
-    expect(body.slice(range?.start, range?.end)).toContain("30-year fixed-rate");
+    const { range, orphaned } = await readAnchor("ladder-insert-inside", edited);
+    expect(orphaned).toBe(true);
+    expect(range).toBeNull();
   });
 
   it("resolves after a deletion following the quote", async () => {
@@ -349,13 +356,14 @@ describe("GET /api/docs/{id} — the §6 ladder against an edited body", () => {
     expect(body.slice(range?.start, range?.end)).toBe(QUOTE);
   });
 
-  it("resolves after a whitespace change inside the quote", async () => {
+  it("orphans after a whitespace change inside the quote", async () => {
     // Reflowed by an external editor: the quote now carries a newline where it
-    // carried a space, so no literal occurrence of it is left either.
+    // carried a space, so no literal occurrence of it is left either. §6's
+    // selectors are byte-exact by design — the price of never guessing.
     const edited = ORIGINAL.replace("a 30-year fixed at 6.1%", "a 30-year fixed\nat 6.1%");
-    const { range, orphaned, body } = await readAnchor("ladder-whitespace", edited);
-    expect(orphaned).toBe(false);
-    expect(body.slice(range?.start, range?.end)).toContain("30-year fixed\nat 6.1%");
+    const { range, orphaned } = await readAnchor("ladder-whitespace", edited);
+    expect(orphaned).toBe(true);
+    expect(range).toBeNull();
   });
 
   it("orphans a quote that is genuinely gone", async () => {
@@ -368,44 +376,37 @@ describe("GET /api/docs/{id} — the §6 ladder against an edited body", () => {
     expect(range).toBeNull();
   });
 
-  it("orphans rather than jumping to a near-identical sibling of the deleted line", async () => {
-    // The rung's whole risk, in the shape that motivated keeping it off this
-    // path: delete the commented line and leave a sibling that scores well above
-    // the similarity threshold against it. Its neighbours are not the declared
-    // ones, so the rung refuses it and the thread detaches honestly.
-    const bullets = [
-      "",
-      "# Renewals",
-      "",
-      "- Ship the Q3 renewal report by Friday afternoon",
-      "- Ship the Q4 renewal report by Friday afternoon",
-      "",
-    ].join("\n");
-    const doomed = "- Ship the Q3 renewal report by Friday afternoon";
-    const start = bullets.indexOf(doomed);
-    const bulletSelector = {
-      exact: doomed,
-      ...computeContext(bullets, start, start + doomed.length),
-    };
+  /**
+   * Seed a document whose anchor was captured against `before` while the file on
+   * disk holds `after`, and read the anchor back through the API.
+   */
+  const readAnchorAcross = async (
+    name: string,
+    before: string,
+    quoted: string,
+    after: string,
+  ): Promise<{ orphaned: boolean; range: { start: number } | null; exact: string | undefined }> => {
+    const start = before.indexOf(quoted);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const captured = { exact: quoted, ...computeContext(before, start, start + quoted.length) };
 
-    ws = createWriteWorkspace("ladder-sibling");
-    const after = bullets.replace(`${doomed}\n`, "");
+    ws = createWriteWorkspace(name);
     ws.write(
       "data/docs/model.md",
       [
         "---",
         `id: ${DOC_ID}`,
         "type: note",
-        "title: Renewals",
+        "title: Parallel items",
         "created: 2026-07-01T00:00:00Z",
         "updated: 2026-07-01T00:00:00Z",
         "tags: []",
         "status: open",
         "anchors:",
         `  ${ANCHOR}:`,
-        `    exact: ${JSON.stringify(bulletSelector.exact)}`,
-        `    prefix: ${JSON.stringify(bulletSelector.prefix)}`,
-        `    suffix: ${JSON.stringify(bulletSelector.suffix)}`,
+        `    exact: ${JSON.stringify(captured.exact)}`,
+        `    prefix: ${JSON.stringify(captured.prefix)}`,
+        `    suffix: ${JSON.stringify(captured.suffix)}`,
         "due: null",
         "reviewed: null",
         "evergreen: false",
@@ -418,32 +419,138 @@ describe("GET /api/docs/{id} — the §6 ladder against an edited body", () => {
 
     const doc = DocSchema.parse(await (await ws.request(`/api/docs/${DOC_ID}`)).json());
     const anchor = doc.anchors.find((candidate) => candidate.anchorId === ANCHOR);
-    expect(anchor?.orphaned).toBe(true);
-    expect(anchor?.range).toBeNull();
-    // And the selector is still readable on the detached thread, byte for byte.
-    expect(anchor?.selector.exact).toBe(doomed);
+    return {
+      orphaned: anchor?.orphaned ?? false,
+      range: anchor?.range ?? null,
+      exact: anchor?.selector.exact,
+    };
+  };
+
+  /**
+   * The shapes that decided the policy, through the real API.
+   *
+   * Each has **four** parallel items, not two. At two items a deletion shortens
+   * the body by a whole item, so a length comparison rejects the sibling for
+   * free and a fixture at that size will certify an unsafe resolver as safe —
+   * how SERVER-055's own safety tests passed while the rung it wired in was
+   * landing threads on neighbours.
+   */
+  const RENEWALS = [
+    "",
+    "# Renewals",
+    "",
+    "- Ship the Q1 renewal report by Friday afternoon",
+    "- Ship the Q2 renewal report by Friday afternoon",
+    "- Ship the Q3 renewal report by Friday afternoon",
+    "- Ship the Q4 renewal report by Friday afternoon",
+    "",
+  ].join("\n");
+  const REGIONS = [
+    "",
+    "| region | owner | status |",
+    "| --- | --- | --- |",
+    "| north-1 | alice | green |",
+    "| north-2 | alice | green |",
+    "| north-3 | alice | green |",
+    "| north-4 | alice | green |",
+    "",
+  ].join("\n");
+  const MINUTES = [
+    "",
+    "# Minutes",
+    "",
+    "Attendees agreed to revisit the pricing model in Q1.",
+    "",
+    "Attendees agreed to revisit the staffing model in Q2.",
+    "",
+    "Attendees agreed to revisit the roadmap model in Q3.",
+    "",
+  ].join("\n");
+
+  it.each([
+    [
+      "a bulleted list",
+      "sibling-bullets",
+      RENEWALS,
+      "- Ship the Q2 renewal report by Friday afternoon",
+    ],
+    ["a table", "sibling-table", REGIONS, "| north-2 | alice | green |"],
+    [
+      "parallel prose",
+      "sibling-prose",
+      MINUTES,
+      "Attendees agreed to revisit the staffing model in Q2.",
+    ],
+  ])(
+    "orphans rather than jumping to a near-identical sibling in %s",
+    async (_shape, name, before, quoted) => {
+      const { orphaned, range, exact } = await readAnchorAcross(
+        name,
+        before,
+        quoted,
+        before.replace(`${quoted}\n`, ""),
+      );
+      expect(orphaned).toBe(true);
+      expect(range).toBeNull();
+      // And the selector is still readable on the detached thread, byte for byte.
+      expect(exact).toBe(quoted);
+    },
+  );
+
+  it("orphans an edited table row rather than pointing the thread at the row below", async () => {
+    // The reason the policy is not merely conservative: with the fuzzy rung on
+    // this path, the anchored row is *still on the page*, edited, and the reader
+    // answers with its untouched neighbour — a comment silently moved onto text
+    // its author never wrote about.
+    const { orphaned, range } = await readAnchorAcross(
+      "sibling-edited-row",
+      REGIONS,
+      "| north-2 | alice | green |",
+      REGIONS.replace("| north-2 | alice | green |", "| north-2 | alice | amber |"),
+    );
+    expect(orphaned).toBe(true);
+    expect(range).toBeNull();
   });
 
   it("agrees with the projection column the agent's context pack reads", async () => {
-    const edited = ORIGINAL.replace("a 30-year fixed", "a 30-year fixed-rate");
-    const { range } = await readAnchor("ladder-projection-agreement", edited);
-    const row = ws.db
-      .prepare("SELECT resolved_offset FROM anchors WHERE anchor_id = ?")
-      .get(ANCHOR) as { resolved_offset: number | null };
-    expect(row.resolved_offset).toBe(range?.start ?? null);
+    // Both when the anchor holds…
+    const kept = ORIGINAL.replace("We assume", "For now we deliberately assume");
+    const attached = await readAnchor("ladder-projection-agreement", kept);
+    expect(attached.orphaned).toBe(false);
+    const readRow = (): number | null =>
+      (
+        ws.db.prepare("SELECT resolved_offset FROM anchors WHERE anchor_id = ?").get(ANCHOR) as {
+          resolved_offset: number | null;
+        }
+      ).resolved_offset;
+    expect(readRow()).toBe(attached.range?.start ?? null);
+
+    // …and when it does not: the agent must not be told a thread is detached
+    // while the board draws a highlight for it, nor the reverse.
+    const detached = await readAnchor(
+      "ladder-projection-agreement-orphan",
+      ORIGINAL.replace("a 30-year fixed", "a 30-year fixed-rate"),
+    );
+    expect(detached.orphaned).toBe(true);
+    expect(readRow()).toBeNull();
   });
 
   /**
-   * The divergence the issue names as worse than either half alone: an anchor
-   * that reconciles cleanly on save and then reads back orphaned. Both sides now
-   * ask `resolveAnchor`, so a selector the reader resolves fuzzily is a selector
-   * reconciliation locates too — and the save rewrites it to the edited bytes,
-   * after which the reader is back on rung 1.
+   * How an out-of-band edit inside the quote is actually repaired, and the sense
+   * in which the read path and the write path agree.
+   *
+   * They agree on the question "is this text demonstrably still here": both ask
+   * the exactness tier, so neither ever claims a passage the other calls gone.
+   * Reconciliation answers *more* because it holds the diff — it can see this
+   * edit rewrite the anchored bytes — and what it does with that is rewrite the
+   * selector to the bytes now on the page. So the reader's orphan is temporary
+   * by construction: one save later, rung 1 carries the anchor again. What the
+   * reader never does is anticipate that repair by guessing at it.
    */
-  it("round-trips a fuzzy-resolved anchor through the real save path", async () => {
+  it("repairs a reader-orphaned anchor on the next save, and reads back attached", async () => {
     const edited = ORIGINAL.replace("a 30-year fixed", "a 30-year fixed-rate");
     const before = await readAnchor("ladder-round-trip", edited);
-    expect(before.orphaned).toBe(false);
+    expect(before.orphaned).toBe(true);
 
     const saved = ORIGINAL.replace(
       "a 30-year fixed at 6.1%",

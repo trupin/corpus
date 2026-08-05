@@ -276,6 +276,7 @@ never auto-merged. The audience for that report is the agent.
 | CONTRACT-031 | Explicit edit-session flush route (SERVER-052 disproved the lock-release premise) | done | P1 | CONTRACT-028, SERVER-052 |
 | SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | done | P1 | CONTRACT-031, SERVER-052 |
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
+| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | todo | P2 | SERVER-058 |
 | CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SERVER-058 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
@@ -384,5 +385,6 @@ belongs to the same fix wave.
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
 | UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | todo | P2 | UI-073 |
 | INFRA-020 | Three tests fail under gate load and pass in isolation (pattern, 3 cycles lost) | todo | P2 | — |
-| SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | done | P1 | — |
+| SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
+| SERVER-059 | Orphan repair, not fuzzy resolution — the read path provably cannot decide | todo | P1 | — |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

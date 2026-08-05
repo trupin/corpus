@@ -19,7 +19,7 @@ import {
   type TextQuoteSelector,
 } from "@corpus/contract";
 import { z } from "zod";
-import { resolveAnchor } from "../anchors/index.js";
+import { resolveAnchorExact } from "../anchors/index.js";
 import { DocumentParseError, parseDocument, type ParsedDocument } from "../core/document.js";
 import { readThreadForms } from "../core/form.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
@@ -379,15 +379,15 @@ function insertAnchors(
   for (const anchorId of ids) {
     const selector = fields.anchors[anchorId];
     if (selector === undefined) continue;
-    // The **whole** §6 ladder, exactly as `docs/read.ts` runs it (SERVER-055,
-    // superseding sprint-003 Adjudication 1's exact-only rule). This column is
+    // The §6 exactness tier, exactly as `docs/read.ts` runs it. This column is
     // what `corpus thread context` calls a thread anchored or orphaned; the
-    // wire `Doc.anchors` is what the board draws. One definition of "resolves"
-    // or the agent is told a thread is detached while the reader highlights it.
-    // NULL is the §9.1 orphan state: rung 3 is context-corroborated
-    // (`anchors/fuzzy.ts`), so a deleted passage's look-alike sibling does not
-    // capture the anchor here any more than it does on the write path.
-    const range = resolveAnchor(body, selector);
+    // wire `Doc.anchors` is what the board draws. One definition of "resolves",
+    // or the agent is told a thread is detached while the reader highlights it
+    // — so this call and the reader's must stay the same call. NULL is the
+    // §9.1 orphan state. Rung 3 belongs to reconciliation alone: it scores
+    // similarity, and a reader has no diff to turn similarity into evidence of
+    // survival (`anchors/resolve.ts`).
+    const range = resolveAnchorExact(body, selector);
     insert.run(
       docId,
       anchorId,

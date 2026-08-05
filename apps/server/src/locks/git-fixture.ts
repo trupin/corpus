@@ -14,12 +14,15 @@ export const FIXTURE_COMMIT: CommitOutcome = { kind: "committed", sha: "01234567
 export interface RecordingCommitter extends AutoCommitter {
   /** Every request handed to `commit`, in order. */
   readonly commits: CommitRequest[];
+  /** Every sha §4's acknowledgment took out of the squash session, in order. */
+  readonly sealed: string[];
   /** Makes the next commits report `next` — a hookless workspace, a refusing hook. */
   setOutcome(next: CommitOutcome): void;
 }
 
 export function createRecordingCommitter(): RecordingCommitter {
   const commits: CommitRequest[] = [];
+  const sealed: string[] = [];
   let outcome: CommitOutcome = FIXTURE_COMMIT;
   // The real committer runs every commit inside its own `.git/index` lock and so
   // does this one — nothing here contends, so running inline keeps the tests'
@@ -27,8 +30,12 @@ export function createRecordingCommitter(): RecordingCommitter {
   const withGitLock = <T>(run: () => Promise<T>): Promise<T> => run();
   return {
     commits,
+    sealed,
     setOutcome(next) {
       outcome = next;
+    },
+    endSquashSession(sha) {
+      sealed.push(sha);
     },
     commit: (request) =>
       withGitLock(() => {

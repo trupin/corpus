@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { computeContext } from "./context.js";
 import { resolveAnchor, resolveAnchorExact, resolveAnchors, sortedEntries } from "./resolve.js";
+import type { TextQuoteSelectorInput } from "./types.js";
 
 describe("resolveAnchor — rung 1: contextual exact", () => {
   // "the rate" occurs three times; only the context disambiguates.
@@ -146,6 +148,126 @@ describe("resolveAnchorExact — the exactness tier stops before fuzzy", () => {
   it("returns null for an empty body or an empty exact", () => {
     expect(resolveAnchorExact("", { exact: "needle" })).toBeNull();
     expect(resolveAnchorExact("body", { exact: "" })).toBeNull();
+  });
+});
+
+/**
+ * Why rung 3 is reconciliation's alone, in the shapes that decide it.
+ *
+ * Every case here builds its selector the way a real comment does — the quoted
+ * range plus `computeContext`'s real `prefix`/`suffix` — edits the body, and
+ * asks both resolvers. The assertions are deliberately two-sided: the reader's
+ * `resolveAnchorExact` must orphan, and the full ladder must be shown *landing
+ * somewhere it should not*, because that is the fact the policy rests on. If a
+ * future change makes rung 3 safe on these shapes, these tests fail loudly and
+ * ask to be revisited rather than quietly permitting a rewiring.
+ *
+ * Every list here has three or more parallel items on purpose. At two items a
+ * deletion shortens the body by a whole item, and the length term of any
+ * context comparison rejects the sibling for free — which is exactly how a
+ * two-item fixture can make an unsafe gate look safe (the SERVER-055 revert's
+ * finding).
+ */
+describe("rung 3 is inadmissible on a read path", () => {
+  const selectorFor = (body: string, exact: string): TextQuoteSelectorInput => {
+    const start = body.indexOf(exact);
+    expect(start).toBeGreaterThanOrEqual(0);
+    return { exact, ...computeContext(body, start, start + exact.length) };
+  };
+
+  const GROCERIES =
+    "# Shopping\n\n- eggs from the corner bakery\n- bread from the corner bakery\n- milk from the corner bakery\n- jam from the corner bakery\n";
+  const QUARTERS =
+    "# Weekly\n\n- Review the Q1 report by Friday\n- Review the Q2 report by Friday\n- Review the Q3 report by Friday\n- Review the Q4 report by Friday\n";
+  const TABLE =
+    "| region | owner | status |\n| --- | --- | --- |\n| north-1 | alice | green |\n| north-2 | alice | green |\n| north-3 | alice | green |\n| north-4 | alice | green |\n";
+  const TASKS =
+    "# Sprint\n\n- [ ] write the quarterly report draft\n- [ ] write the quarterly report notes\n- [ ] write the quarterly report deck\n- [ ] write the quarterly report memo\n";
+  const PROSE =
+    "# Notes\n\nAttendees agreed to revisit the pricing model in Q1.\n\nAttendees agreed to revisit the staffing model in Q2.\n\nAttendees agreed to revisit the roadmap model in Q3.\n";
+  const STEPS =
+    "1. first configure the gateway service\n2. next configure the gateway service\n3. then configure the gateway service\n4. last configure the gateway service\n";
+
+  it.each([
+    ["homogeneous bullets", GROCERIES, "- bread from the corner bakery"],
+    ["a one-character-apart list, middle item", QUARTERS, "- Review the Q2 report by Friday"],
+    ["a one-character-apart list, first item", QUARTERS, "- Review the Q1 report by Friday"],
+    ["a one-character-apart list, last item", QUARTERS, "- Review the Q4 report by Friday"],
+    ["parallel table rows", TABLE, "| north-2 | alice | green |"],
+    ["a task list", TASKS, "- [ ] write the quarterly report notes"],
+    ["parallel prose paragraphs", PROSE, "Attendees agreed to revisit the pricing model in Q1."],
+    ["numbered steps", STEPS, "2. next configure the gateway service"],
+  ])(
+    "orphans a deleted item of %s, which the fuzzy rung hands a sibling",
+    (_shape, body, exact) => {
+      const selector = selectorFor(body, exact);
+      const edited = body.replace(`${exact}\n`, "");
+
+      // The quoted text is gone from the page, verbatim and entirely.
+      expect(edited).not.toContain(exact);
+      // The reader's answer: gone is gone.
+      expect(resolveAnchorExact(edited, selector)).toBeNull();
+
+      // The full ladder's answer, and the reason it stays off this path: a range,
+      // over text the anchor's author never commented on.
+      const guessed = resolveAnchor(edited, selector);
+      expect(guessed).not.toBeNull();
+      expect(edited.slice(guessed?.start, guessed?.end)).not.toBe(exact);
+    },
+  );
+
+  it("orphans an *edited* row rather than pointing at the row below it", () => {
+    // The failure that is worse than detaching: the anchored row is still on the
+    // page, edited in place, and rung 3 answers with its untouched neighbour.
+    const selector = selectorFor(TABLE, "| north-2 | alice | green |");
+    const edited = TABLE.replace("| north-2 | alice | green |", "| north-2 | alice | amber |");
+
+    // `amber` occurs only on the anchored row, so "the answer does not contain
+    // it" is exactly "the answer is some other row".
+    const guessed = resolveAnchor(edited, selector);
+    expect(guessed).not.toBeNull();
+    expect(edited.slice(guessed?.start, guessed?.end)).not.toContain("amber");
+    expect(resolveAnchorExact(edited, selector)).toBeNull();
+  });
+
+  it("orphans an edited list item rather than pointing at the item below it", () => {
+    const selector = selectorFor(QUARTERS, "- Review the Q2 report by Friday");
+    const edited = QUARTERS.replace(
+      "- Review the Q2 report by Friday",
+      "- Review the Q2 revenue report by Friday",
+    );
+
+    // `revenue` occurs only on the anchored item.
+    const guessed = resolveAnchor(edited, selector);
+    expect(guessed).not.toBeNull();
+    expect(edited.slice(guessed?.start, guessed?.end)).not.toContain("revenue");
+    expect(resolveAnchorExact(edited, selector)).toBeNull();
+  });
+
+  it("has no answer to find: two intents share one before-and-after pair", () => {
+    // Deleting the Q2 line, and renaming it to Q3 while deleting the old Q3
+    // line, produce the same `newBody` from the same `oldBody` with the same
+    // selector — and want opposite outcomes. Nothing computed from these bodies
+    // can be right about both, so §6 breaks the tie one way: orphan.
+    const selector = selectorFor(QUARTERS, "- Review the Q2 report by Friday");
+    const deleted = QUARTERS.replace("- Review the Q2 report by Friday\n", "");
+    const renamed = QUARTERS.replace(
+      "- Review the Q2 report by Friday\n- Review the Q3 report by Friday\n",
+      "- Review the Q3 report by Friday\n",
+    );
+    expect(renamed).toBe(deleted);
+    expect(resolveAnchorExact(deleted, selector)).toBeNull();
+  });
+
+  it("still resolves a genuinely unique edited passage — the cost of the policy", () => {
+    // Not a lookalike in sight: rung 3 gets this right, and the reader gives it
+    // up anyway, because the reader cannot tell this body from the ones above.
+    // Reconciliation, which holds the diff, repairs the selector on the next
+    // save (`docs/read.test.ts` round-trips it).
+    const body = "# Mortgage\n\nWe assume a 30-year fixed at 6.4% and no refinancing.\n";
+    const selector = { exact: "assume a 30-year fixed at 6.1%", prefix: "We ", suffix: " and no" };
+    expect(resolveAnchor(body, selector)).not.toBeNull();
+    expect(resolveAnchorExact(body, selector)).toBeNull();
   });
 });
 

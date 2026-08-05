@@ -282,6 +282,144 @@ frame among the document frames. The subscription now ignores frames carrying
 **10. Cleanup.** Server stopped, port 9471 verified free (`lsof` empty), scratch
 workspace removed, no vitest workers alive.
 
+## Round 2 — PR #22 review findings (server-dev, 2026-08-05)
+
+**Model: Opus 5 (1M context)** (`claude-opus-5[1m]`), branch `phase-11-edit-ack`.
+Real server from source (`tsx apps/server/src/main.ts`) over a real `corpus init`
+workspace at `/tmp/corpus-s052-fix`, **port 9481** (never 8765, never 5173),
+`editAcknowledgment.idleMs` = 5000. Only `apps/server/` and these issue files were
+touched; `apps/server/src/anchors/` was left alone (another agent holds it).
+
+### MAJOR 1 — the squash-amend after a flush: **reproduced, then fixed**
+
+The reviewer derived this from two code paths without executing it. It executes.
+Sitting: save → reader closes (flush) → reopen inside §4's 30 s squash window →
+fix a typo.
+
+**Before the fix** (real server, real git, real queue files):
+
+```
+save 1 200  HEAD(A) = 2d668c489f7e45432fd95aee10a0834d1177bcc7
+flush 204   → 1 doc.edited
+save 2 200  HEAD(A') = a94ff9de0b3c41bfad9d82949866ae89503cfab7   (an amend)
+A still reachable from any branch: false
+
+doc.edited for this document: 2
+  es_b66bbdb24378dc14 close 6b610e9a..2d668c48 {"commits":1,"insertions":2,"deletions":1}
+  es_522f67f6d9fbda12 idle  6b610e9a..a94ff9de {"commits":1,"insertions":3,"deletions":1}
+```
+
+Exactly as filed: the **same `from`**, the second range strictly containing the
+first, two `sessionId`s so the skill's "drop a repeat by `sessionId`" cannot
+suppress it, and the first event's `to` left dangling (`rev-list --all` no longer
+lists it, though `rev-parse --verify` still resolves the object).
+
+**The fix — an acknowledged commit leaves the squash session.** `AutoCommitter`
+gains `endSquashSession(sha)`: it forgets the squash record when the record sits
+on that sha, so the next save makes a *fresh* commit. `EditSessionTracker.end()`
+calls it with the session's `lastSha`, synchronously, *before* the emitter's first
+git read.
+
+Why this rather than teaching the tracker to recognise the amend: the tracker
+cannot. `ObservedCommit` carries no pre-amend sha, and once the amend has landed
+there is **no sha between** the acknowledged change and the new one to draw a
+range at — any second event must re-cover the first. Prevention is the only place
+the problem is soluble, and it also fixes the dangling `to`, which no
+tracker-side rule could. It is the rule `isPublished()` already applies to a
+commit a remote has seen, applied to the other way a sha gets out.
+
+Three deliberate details: the seal is **by sha**, not by document, so a stale
+acknowledgment cannot break an unrelated live session (tested); it is
+**unconditional**, not conditional on an event actually following, because a
+session that ended is a boundary in the history either way and the cost of being
+wrong is one commit that did not fold; and it is **synchronous**, which is what
+gets it in front of a save landing while the emitter's git reads are in flight.
+
+**Residual, stated rather than hidden.** A flush arriving *after* an in-flight
+save's `amendTarget` has already read the squash record still amends. That window
+is one `git commit --amend` wide, and closing it means ordering `flush` behind the
+git lock — making a route that publishes a synchronous `204` wait on the write
+path's contention. Not done.
+
+**After the fix**, same script, same workspace:
+
+```
+save 1 200  HEAD(A) = 62ae5b88679d91ece3e669524884845035b6f035
+flush 204   → 1 doc.edited
+save 2 200  HEAD = 029c4ed84edc099728b5126d350a2d19af6c606c   (a fresh commit)
+A still reachable from any branch: true
+
+doc.edited for this document: 2
+  es_0c98c2778bfe221b close 7a1e6bf4..62ae5b88 commits=[62ae5b88] {"commits":1,...}
+  es_5aff19c4cd91b488 idle  62ae5b88..029c4ed8 commits=[029c4ed8] {"commits":1,...}
+```
+
+Adjacent, not overlapping: the second range **starts** where the first ended, each
+holds exactly its own session's commit, and both `to`s are on the branch.
+
+### MINOR 1 — `touches` was actor-blind: **fixed**
+
+The reviewer is right, and `edit/diff.ts:88-95` was the contradicted party:
+`commits` comes from `rev-list` precisely because "a user session interleaved with
+the user's *own* non-editor writes to the same file has those commits in its
+range". Sealing on them made that false. Now only a commit by **the other party**
+seals; the seal loop is skipped entirely for `commit.actor === SESSION_ACTOR`.
+An agent write still seals exactly as before (its own test is unchanged).
+
+Live, the reported case — commenting on the document you are editing, which
+stages that document's frontmatter under the *thread's* id:
+
+```
+[MINOR 1] doc_kzxaic73
+  save 1 200 · thread create 201 · save 2 200
+  result: 1 doc.edited
+    es_fc9873a4 idle f0203614..cea3d153 commits=[cea3d153,f17b5ac1,3c10303e]
+      stats={"commits":3,"insertions":13,"deletions":2}
+```
+
+One acknowledgment for one sitting, and its range holds all three of the user's
+own commits — the comment among them — which is what `readRangeStats` always
+claimed to count.
+
+### MINOR 2 — the rename branch: **made reachable, not deleted**
+
+The reviewer's reachability argument was correct *under the old sealing rule*: a
+move sealed the session on the docId arm, so `own.path` could never be refreshed.
+Fixing MINOR 1 removes exactly that seal — `docs/move.ts` commits as the user —
+so the branch is now the mechanism that makes a session survive a move. Kept,
+with the comment rewritten to say why, and covered both by a unit case (three
+fresh commits, asserting the emitter diffs at the *new* path) and live:
+
+```
+[MINOR 2] doc_5ukwofe3  data/docs/inbox/moved-mid-session.md
+  save 1 200 · move 200 → data/docs/projects/moved-mid-session.md · save 2 200
+  result: 1 doc.edited  es_6294f540 idle d5cd4f4f..1694c537 {"commits":1,"insertions":17}
+  git diff --shortstat <from>..<to> -- data/docs/projects/moved-mid-session.md
+    1 file changed, 17 insertions(+)
+```
+
+One acknowledgment, and the stats agree with git *at the path the document now
+holds* — which is the only path `git diff` reports it under, and the rule
+`readDocDiff` already documents. Had the path not been refreshed the range would
+have been read at the old path and reported the document as deleted.
+
+### Tests and gates (round 2)
+
+- `apps/server/src/edit/sessions.test.ts` +6: four for "a named commit leaves the
+  squash session" (flush, idle, shutdown; only the newest sha; nothing for a
+  session that never landed a commit) and two for the MINORs.
+- `apps/server/src/git/commit.test.ts` +2: a real repository proving the next save
+  inside the window is a **fresh** commit with the named one still on the branch,
+  and that sealing an unknown sha leaves the live session foldable.
+- `apps/server/src/edit/acknowledgment.test.ts` +1: the whole sitting over the real
+  write path. Verified to **fail before the fix** (the acknowledged sha is absent
+  from `git log` once the amend lands) and pass after.
+- `VITEST_MAX_THREADS=4 vitest run apps/server` → **168 files, 3286 tests, all
+  passing**.
+- `tsc --noEmit -p apps/server/tsconfig.json` → clean.
+- `eslint … --max-warnings 0` → clean, no rule disabled. `prettier --check` → clean.
+- Server stopped, port 9481 verified free, scratch workspace removed.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes

@@ -206,6 +206,212 @@ The workspace server on 8791 was started and stopped for each build; 8791
 verified free at the end, no vitest workers left. Ports **8765** and **5173** were
 never touched. Scratch workspaces removed.
 
+---
+
+## REVERTED (2026-08-05) — the read-path wiring is withdrawn
+
+**Model: Opus 5 (1M context)**, server-dev agent. Triggered by the Fable review of
+PR #22, which found the corroboration gate above does not hold. It does not, and
+the failure is larger than the review measured. The wiring is reverted;
+`findFuzzyRange` stays where it was before this issue: reconciliation only.
+
+Acceptance criteria 1, 2 and 6 above are **withdrawn as written** — they asked for
+a behaviour §6 forbids. Criteria 3, 4 and 5 stand and are what the revert keeps.
+
+### 1. The reviewer's three cases, reproduced against PR-head sources
+
+Driving the real `resolveAnchor(newBody, selector)` with `prefix`/`suffix` from
+the real `computeContext`, and `reconcileAnchors` alongside it:
+
+```
+A. bullets — eggs / bread / milk / jam; the anchored "- bread from the corner bakery" deleted
+   reconcile:     {"unchanged":[],"remapped":[],"orphaned":["anc_1"]}
+   resolveAnchor: [41,71) -> "\n- milk from the corner bakery"          ← the sibling
+
+B. parallel prose — three "Attendees agreed to revisit the X model in Qn." paragraphs; first deleted
+   reconcile:     {"orphaned":["anc_1"]}
+   resolveAnchor: [9,61) -> "Attendees agreed to revisit the staffing model in Q2"   ← the sibling
+
+C. two threads, bread deleted, milk kept
+   reconcile:     {"remapped":["anc_milk"],"orphaned":["anc_bread"]}
+   resolveAnchor: anc_bread -> [41,71)      anc_milk -> [42,71)   ← overlapping claims
+```
+
+All three confirmed, including case C's overlapping claims on disjoint old text —
+§6's "two threads anchored to disjoint text never end up claiming overlapping
+text after a save", violated verbatim.
+
+### 2. Five further shapes, and a class the review did not reach
+
+Twelve deletion shapes were built (every selector via `computeContext`, every
+list ≥ 3 items). **Eight misattach**: homogeneous bullets; a one-character-apart
+`Q1–Q4` list at the middle, first and last item; parallel table rows; a task
+list; parallel prose; numbered steps. Two orphan correctly (template prose whose
+neighbours differ; a two-item list) and both do so on the **length** term, which
+is what made the shipped two-item safety tests pass.
+
+Worse, and new: **the rung is wrong on genuine edits too.**
+
+```
+edit "| north-2 | alice | green |" -> "| north-2 | alice | amber |"
+  resolveAnchor -> "| north-3 | alice | green |"      ← the untouched row below
+edit "- Review the Q2 report by Friday" -> "- Review the Q2 revenue report by Friday"
+  resolveAnchor -> "- Review the Q3 report by Friday" ← the untouched item below
+```
+
+The anchored passage is still on the page, edited, and the reader answers with a
+neighbour. This is the case the feature was filed to serve.
+
+### 3. On a real server — the misattachment is permanent, not a debounce window
+
+Real `corpus init` workspace, real server on port **8793** (8765 and 5173 never
+touched), real HTTP, files edited out of band, real watcher. Two runs of one
+script, PR-head sources and reverted sources, with selectors carrying context —
+the shape the UI writes and the only shape the gate ever examined:
+
+```
+PR-HEAD    [delete] at creation:      orphaned=False quote="- Ship the Q2 renewal report by Friday afternoon"
+           [delete] read immediately: orphaned=False quote="- Ship the Q3 renewal report by Friday afternoon"
+           [delete] after reconcile:  orphaned=False quote="- Ship the Q3 renewal report by Friday afternoon"
+           [edit]   read immediately: orphaned=False quote="- Ship the Q3 renewal report by Friday afternoon"
+           [edit]   after reconcile:  orphaned=False quote="- Ship the Q2 revenue renewal report by Friday afternoon"
+
+REVERTED   [delete] read immediately: orphaned=True  quote=null
+           [delete] after reconcile:  orphaned=True  quote=null
+           [edit]   read immediately: orphaned=True  quote=null
+           [edit]   after reconcile:  orphaned=False quote="- Ship the Q2 revenue renewal report by Friday afternoon"
+```
+
+The deleted-bullet line is the finding: reconciliation orphans the anchor and
+preserves the selector, and the reader then re-guesses that preserved selector
+onto the Q3 bullet **on every read, forever**. Nothing repairs it. A comment
+sits on text its author never wrote about, permanently, with no warning anywhere
+— `corpus doc check` reported no `anchor-unresolved` for it under PR-head.
+
+Also measured: `corpus thread create` stores `prefix`/`suffix` exactly as sent,
+so a CLI-created anchor is **context-free** and `contextCorroborates` returns
+`true` at its first line. The gate was inert for every anchor the agent opens.
+
+### 4. Why no gate was landed
+
+Three candidate gates were scored over all 18 shapes:
+
+| gate | shapes it gets wrong |
+| --- | --- |
+| unique quote-plausible site + corroboration | the three in-list *edit* cases |
+| unique corroborated site | 8 |
+| candidate must fit `exact` better than the declared suffix | 4 |
+
+The first is the only one that rejects every deletion shape, and it does so by
+rejecting every **edit** inside a list or table as well — the shapes where the
+rung is most wanted. Its uniqueness test is also computed over a heuristic
+candidate generator (a bitap seed plus five sampled 16-unit shingles, capped at
+64 — measured returning 64 sites for a body holding 80), so "no second plausible
+site exists" is not a property it can certify; making it sound needs
+pigeonhole-complete seeding, i.e. a redesign of candidate generation.
+
+Underneath all three sits a fact no gate can get around. Deleting
+`- Review the Q2 report by Friday` from a Q1–Q4 list, and renaming that line to
+`Q3` while deleting the old Q3 line, produce **the same `newBody` from the same
+`oldBody` with the same selector**, and want opposite outcomes (asserted in
+`resolve.test.ts`). The bodies do not carry the answer, so no function of them
+is right about both, and §6 breaks that tie one way: orphan. Any similarity
+measure will keep saying parallel items are similar, because they are.
+
+### 5. What was reverted, and what stayed
+
+- `docs/read.ts`, `projection/project-document.ts`, `docs/write.ts`
+  (`checkSeams`) → `resolveAnchorExact`, rungs 1–2.
+- `anchors/fuzzy.ts` → `contextCorroborates` removed; `findFuzzyRange` is
+  byte-for-byte its pre-SERVER-055 self. Reverting *only* the wiring would have
+  left reconciliation's `oldBody` lookup running a gate nothing reviewed for that
+  question.
+- `reconcileAnchors` is untouched — it keeps the full ladder for `oldBody`, where
+  a fuzzy hit means "this selector has drifted from its own text" and the diff
+  adjudicates what follows.
+
+**`SCHEMA_VERSION` 10 → 11**, not back to 9. A v10 projection holds
+`anchors.resolved_offset` values this projector would never write — some of them
+pointing at a passage the anchor's author never commented on — and only a rebuild
+clears them. Going back to 9 would also rebuild (the check is a mismatch, not an
+ordering), but it would leave two different databases stamped 9, which is a trap.
+A workspace that never ran v10 pays one extra rebuild.
+
+**SERVER-014 cannot disagree with this outcome.** Its rule is that uniqueness
+adjudication runs only when the engine has lost the anchor's own bytes and must
+prove survival, and that a mapped slice byte-identical to the `exact` is the diff
+demonstrating where the text went. Both halves live inside `reconcileAnchors`,
+on the diff-backed path, which this change does not touch. The read path holds
+no diff, so it is always "must prove survival" territory — exactly where
+SERVER-014 says verbatim evidence is required — and `resolveAnchorExact` is that
+evidence. The duplicate-survivor fast path is a statement about `equal`
+classifications, which only exist where there is a diff.
+
+### 6. Tests
+
+- `anchors/resolve.test.ts` → new block **"rung 3 is inadmissible on a read
+  path"**: eight deletion shapes (bullets, a one-character-apart list at three
+  positions, table rows, a task list, parallel prose, numbered steps) asserting
+  the reader orphans *and* the full ladder lands on something that is not the
+  quote; the two edited-in-place cases; the two-intent construction; and the
+  unique-passage case rung 3 gets right, kept as the stated cost. Every list
+  carries **four** parallel items — at two, a deletion shortens the body by a
+  whole item and a length term rejects the sibling for free, which is how the
+  shipped safety tests passed while the rung was misattaching.
+- `docs/read.test.ts` → the ladder block now pins orphan-on-edit-inside-the-quote
+  and the save that repairs it; the sibling test is parameterised over bullets, a
+  table and parallel prose at four items; a new case pins that an *edited* table
+  row orphans rather than pointing at the row below; the projection-agreement
+  test now checks both the attached and the orphaned direction.
+- `anchors/fuzzy.test.ts` → the two gate-dependent tests are replaced by tests
+  that pin the rung's actual behaviour (it accepts a deleted bullet's sibling,
+  and it ranks by quote similarity ahead of declared context), so the reason the
+  rung stays off read paths is recorded where the rung lives.
+- `projection/project-document.test.ts` → the fuzzy-offset test asserts NULL; a
+  new test pins NULL for the deleted-table-row shape.
+
+### 7. Gates
+
+- `apps/server` suite: **3286 passed / 168 files**, 0 failed
+  (`VITEST_MAX_THREADS=4 vitest run apps/server`).
+- `npx tsc --noEmit -p apps/server/tsconfig.json`, `npx eslint … --max-warnings
+  0`, `npx prettier --check` over the touched files: clean.
+- Live workspace afterwards: `db doctor` → `projection is clean — 33 documents
+  from 33 files (6ms)`; `schema_version` = **11**; 12 anchors, 5 NULL, matching
+  `corpus doc check`'s five `anchor-unresolved` warnings exactly — the reader,
+  the projection column and §14 give one answer.
+- Server on 8793 stopped, port verified free, scratch workspaces removed, no
+  vitest workers left. 8765 and 5173 untouched.
+
+### 8. What a re-filed issue must solve
+
+The gap SERVER-055 identified is real and unaddressed: a selector that never
+byte-matched (UI-068's canonical-mismatch class) reads orphaned forever, because
+reconciliation leaves an anchor it cannot locate in `oldBody` exactly as it found
+it. That class is worth fixing — but it is a *repair* problem, not a resolution
+problem, and it should not be fixed by making every read fuzzy.
+
+A future attempt has to answer the question this one could not: **what evidence,
+available to a reader, distinguishes "this passage was edited" from "this passage
+was deleted and a sibling remains"?** Similarity is not it, in either direction —
+parallel items are supposed to look alike, and the two-intent construction shows
+the bodies are genuinely silent. Directions that do not require that answer:
+
+1. **Repair at the source, not at read time.** Give the canonical-mismatch class
+   its own pass — a one-off, diff-free re-resolution attempt recorded *in the
+   file* (rewriting the selector once, with a visible provenance) rather than a
+   guess recomputed on every read. A wrong answer then appears once, in a commit,
+   where it can be seen and reverted.
+2. **Make the reader's honesty cheap to recover from.** An orphaned thread that
+   offers "re-attach to…" candidates in the UI turns the ambiguity into a
+   one-click user decision, which is the only party that actually knows which
+   intent produced the body.
+3. **If a fuzzy read rung is attempted again**, it needs (a) pigeonhole-complete
+   candidate generation, so "unique" means unique; (b) a rule that orphans on any
+   ambiguity, accepting that in-list edits orphan; and (c) adversarial fixtures at
+   ≥ 3 parallel items in every shape, since two-item fixtures certify unsafe
+   resolvers as safe.
+
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing
 - [x] `/lint` passes (scoped: eslint, prettier, tsc over the touched files)

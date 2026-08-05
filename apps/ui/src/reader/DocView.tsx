@@ -86,14 +86,26 @@ export function DocView({
   const discovery = usePluginDiscovery();
 
   /**
-   * The document, if any, whose body this reader painted while discovery was
-   * `abandoned` — see the gate below. Its body is on screen with no plugin
-   * chrome and must not acquire any: a panel appearing over it now is the
-   * defect, arriving late instead of early. Written during render because it is
-   * a cache of a render's own outcome and re-deriving it in an effect would
-   * cost the frame this exists to prevent; the write is idempotent.
+   * The document, if any, whose body this reader is *currently showing* and
+   * painted while discovery was `abandoned` — see the gate below. Its body is on
+   * screen with no plugin chrome and must not acquire any: a panel appearing
+   * over it now is the defect, arriving late instead of early. Written during
+   * render because it is a cache of a render's own outcome and re-deriving it in
+   * an effect would cost the frame this exists to prevent; the write is
+   * idempotent.
+   *
+   * The mark is dropped the moment the reader moves onto another document,
+   * which is what makes it a property of one painted body rather than of this
+   * component (PR #22 review, MINOR). `DocView` is not keyed by document id, so
+   * a reader lives across every navigation in its stack: a mark kept past the
+   * document it describes would paint blind for a `[[ref]]` followed an hour
+   * after discovery settled, and again for the original document on the way
+   * Back — neither of which is a late arrival over anything. There is nothing on
+   * screen at that point to protect; the incoming body's first paint carries its
+   * chrome, which is exactly the ordering this whole gate is for.
    */
   const paintedBlind = useRef<string | null>(null);
+  if (paintedBlind.current !== reader.docId) paintedBlind.current = null;
   if (doc !== undefined && discovery === "abandoned") paintedBlind.current = reader.docId;
   const blind = paintedBlind.current === reader.docId;
 

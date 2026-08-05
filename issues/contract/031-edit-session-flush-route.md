@@ -61,7 +61,8 @@ likely than a missed one.
 - [x] A flush for a document the workspace does not have is a `404`; that is the
       only 404
 - [x] `openapi.json` and the typed client regenerated, never hand-edited
-- [ ] §9.3 gains the route — **drafted below, held for user sign-off** (this
+- [x] §9.2 gains the route — drafted below, applied by the orchestrator and
+      signed by the user 2026-08-05 (this
       package never edits SPEC.md). Note the section: every route in the API is
       listed in **§9.2**, and §9.3 is the contract-first *mechanism* that makes
       adding one a contract change. The bullet is drafted for §9.2.

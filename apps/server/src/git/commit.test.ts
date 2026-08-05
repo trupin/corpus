@@ -271,6 +271,72 @@ describe("createAutoCommitter", () => {
     }
   });
 
+  it("never amends a commit the edit acknowledgment has named", async () => {
+    // §4's acknowledgment publishes a commit range in a queue event, and from
+    // there it reaches the agent. `endSquashSession` is how it says so; the next
+    // save inside the window must then make a *fresh* commit, or the published
+    // `to` would name an object no branch holds (SERVER-052 review, PR #22).
+    const r = makeRepo("squash-sealed");
+    const base = r.git("rev-parse", "HEAD").trim();
+
+    r.touch(DOC, "first edit");
+    const first = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    expect(first.kind).toBe("committed");
+    const named = first.kind === "committed" ? first.sha : "";
+
+    // The reader closed; the acknowledgment named this commit.
+    r.committer.endSquashSession(named);
+
+    // The reader reopens and the person fixes a typo — well inside the window
+    // that would otherwise fold.
+    r.clock += 100;
+    r.touch(DOC, "second edit");
+    const second = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    expect(second.kind).toBe("committed");
+    const made = r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n");
+    expect(made).toHaveLength(2);
+    // The named commit is still on the branch, so the range that named it still
+    // resolves and the next session's range starts *after* it.
+    expect(made).toContain(named);
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(named);
+  });
+
+  it("seals only the commit it is given, and forgets nothing else", async () => {
+    const r = makeRepo("squash-seal-other");
+    r.touch(DOC, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+
+    // A sha this repository never had — a stale acknowledgment, a session whose
+    // commit was itself amended away. It must not break the live session.
+    r.committer.endSquashSession("0".repeat(40));
+
+    r.clock += 100;
+    r.touch(DOC, "two");
+    const second = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [DOC],
+    });
+    expect(second.kind).toBe("amended");
+  });
+
   it("never amends a detached HEAD, a mid-merge repository, or published history", async () => {
     for (const state of ["detached", "merging", "published"] as const) {
       const r = makeRepo(`squash-safe-${state}`);

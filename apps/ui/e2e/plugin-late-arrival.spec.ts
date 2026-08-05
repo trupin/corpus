@@ -58,6 +58,35 @@ const FIXTURE_DOC = {
   body: "Prose the fixture plugin renders.",
 };
 
+/** A second pinned column, so a list is still on screen while a reader is open. */
+const SECOND_VIEW = {
+  id: "doc_view_later",
+  type: "view",
+  title: "Later",
+  path: "data/docs/views/later.md",
+  pinned: true,
+  order: 2,
+  query: { folder: "inbox" },
+};
+
+/** A todo whose body carries a `[[ref]]`, so a reader can navigate without closing. */
+const LINKING_TODO = {
+  id: "doc_choresa",
+  type: "todo",
+  title: "Chores with a reference",
+  path: "data/docs/inbox/chores-with-a-reference.md",
+  body: ["- [ ] Read [[doc_choresb]] first", "- [ ] Book the passport appointment", ""].join("\n"),
+};
+
+/** Where that reference goes: another panelled document, in the same reader. */
+const LINKED_TODO = {
+  id: "doc_choresb",
+  type: "todo",
+  title: "Later chores",
+  path: "data/docs/inbox/later-chores.md",
+  body: "- [ ] Renew the lease\n",
+};
+
 /** A core note: nothing registers anything for it, and nothing may cost it space. */
 const NOTE = {
   id: "doc_note",
@@ -102,15 +131,27 @@ async function holdDiscovery(page: Page): Promise<HeldDiscovery> {
   };
 }
 
-/** The todos plugin's own aggregate, answered so a todo row never renders degraded. */
-async function stubTodosAggregate(page: Page): Promise<void> {
+/**
+ * The todos plugin's own aggregate, answered so a todo row never renders
+ * degraded.
+ *
+ * The returned counter doubles as the one honest signal that **discovery has
+ * settled**: nothing but plugin code asks for this route, so a request on it
+ * means the registry is live. Releasing the manifest is not that signal — it
+ * only starts the import — and a test that navigated on the release instead
+ * would race the very phase it is about.
+ */
+async function stubTodosAggregate(page: Page): Promise<{ hits: () => number }> {
+  let hits = 0;
   await page.route("**/api/x/todos/**", async (route) => {
+    hits += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ lists: [] }),
     });
   });
+  return { hits: () => hits };
 }
 
 /** A sub-pixel box, as the layout reports it — what a mouse drag has to aim at. */
@@ -292,5 +333,51 @@ test.describe("a plugin arriving after the reader opened", () => {
     expect(shape).not.toBeNull();
     expect(shape?.panels).toBe(0);
     expect(shape?.precededBy).toContain("title-grow");
+  });
+
+  /**
+   * Past the budget the body paints unadorned and *stays* that way — but only
+   * that body (PR #22 review, MINOR).
+   *
+   * A reader is not keyed by document id, so it outlives every navigation in its
+   * stack. Suppression that belonged to the component rather than to the painted
+   * body would follow the column for the life of the tab: a `[[ref]]` opened
+   * long after discovery settled would be drawn without its panel, and so would
+   * the original document on the way Back — with nothing on screen either time
+   * for a late arrival to move. Measured here rather than in jsdom because the
+   * thing being protected is geometry.
+   */
+  test("keeps a body painted blind unadorned, and only that body", async ({ page }) => {
+    const held = await holdDiscovery(page);
+    // Two columns, because the reader has to stay mounted throughout: the second
+    // one keeps a list on screen, and a list is what asks for the aggregate that
+    // says discovery has settled.
+    await stubCorpus(page, [VIEW, SECOND_VIEW, LINKING_TODO, LINKED_TODO]);
+    const aggregate = await stubTodosAggregate(page);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator(`.col`).first().locator(`.row[data-row-doc="${LINKING_TODO.id}"]`).click();
+    await page.locator(`.reader[data-reader-doc="${LINKING_TODO.id}"]`).waitFor();
+
+    // The budget elapses with discovery still held: the document is worth more
+    // than the chrome, so the body arrives without it.
+    await page.locator(".reader .ProseMirror").waitFor({ timeout: 15_000 });
+    expect(await page.locator("[data-todo-panel]").count()).toBe(0);
+
+    // Discovery finishes late. This body keeps what it was painted with.
+    held.release();
+    await expect.poll(() => aggregate.hits(), { timeout: 15_000 }).toBeGreaterThan(0);
+    expect(await page.locator("[data-todo-panel]").count()).toBe(0);
+
+    // The reference, followed in the same reader: a first paint, panel included.
+    await page.locator(`[data-corpus-ref="${LINKED_TODO.id}"]`).click();
+    await page.locator(`.reader[data-reader-doc="${LINKED_TODO.id}"]`).waitFor();
+    await page.locator("[data-todo-panel]").waitFor();
+
+    // And Back onto the document that was painted blind — a first paint too.
+    await page.locator(".reader .back").click();
+    await page.locator(`.reader[data-reader-doc="${LINKING_TODO.id}"]`).waitFor();
+    await page.locator("[data-todo-panel]").waitFor();
+    expect(held.hits()).toBeGreaterThan(0);
   });
 });

@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
-import type { Doc } from "@corpus/contract";
+import type { Doc, DocRow } from "@corpus/contract";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildRegistry, EMPTY_REGISTRY, setPluginRegistry } from "../plugins/registry";
 import { resetSlotCache } from "../plugins/slots";
@@ -14,6 +14,7 @@ import {
   type ReaderTransport,
 } from "../testing/readerFixture";
 import { Reader } from "./Reader";
+import type { NavEntry } from "./useNavStack";
 import { resetEscapeLayers } from "./useEscapeStack";
 
 /**
@@ -49,6 +50,12 @@ const VIEW_DOC = docFixture({
 const PANEL_DOC = docFixture({
   frontmatter: { id: "doc_pn", type: PANEL_TYPE, title: "A panelled note" },
   body: "Prose with a plugin panel above it.",
+});
+
+/** A second panelled document, to navigate a reader onto and back from. */
+const OTHER_PANEL_DOC = docFixture({
+  frontmatter: { id: "doc_pn2", type: PANEL_TYPE, title: "Another panelled note" },
+  body: "More prose with a panel of its own.",
 });
 
 /** The registry the fixture plugin produces once it has loaded. */
@@ -87,11 +94,13 @@ function installPlugin(): void {
   setPluginRegistry(fixtureRegistry());
 }
 
-function wireFor(doc: Doc): ReaderTransport {
-  return readerTransport({
-    docs: [doc],
-    rows: { [threadsSearch(doc.frontmatter.id)]: [], [backlinksSearch(doc.frontmatter.id)]: [] },
-  });
+function wireFor(...docs: readonly Doc[]): ReaderTransport {
+  const rows: Record<string, readonly DocRow[]> = {};
+  for (const doc of docs) {
+    rows[threadsSearch(doc.frontmatter.id)] = [];
+    rows[backlinksSearch(doc.frontmatter.id)] = [];
+  }
+  return readerTransport({ docs, rows });
 }
 
 function open(doc: Doc, wire: ReaderTransport): ReactElement {
@@ -104,6 +113,48 @@ function open(doc: Doc, wire: ReaderTransport): ReactElement {
           columnTitle="Finance"
           nav={[{ docId: doc.frontmatter.id, scrollY: 0 }]}
           setNav={() => undefined}
+          selectTitle={false}
+          isActive
+          onFocusMode={() => undefined}
+          onNotify={() => undefined}
+        />
+      </div>
+    </harness.Wrapper>
+  );
+}
+
+/**
+ * The same reader, with a navigation stack the test can drive — a `[[ref]]`
+ * followed and then Back. `open` above pins its stack, which is enough for
+ * everything that renders one document; this is for what a reader carries
+ * *across* documents, since it is not keyed by document id.
+ */
+let navigateTo: (docId: string) => void = () => undefined;
+let goBack: () => void = () => undefined;
+
+function Column({
+  start,
+  wire,
+}: {
+  readonly start: string;
+  readonly wire: ReaderTransport;
+}): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: wire.fetch }));
+  const [nav, setNav] = useState<readonly NavEntry[]>([{ docId: start, scrollY: 0 }]);
+  navigateTo = (docId: string): void => {
+    setNav([...nav, { docId, scrollY: 0 }]);
+  };
+  goBack = (): void => {
+    setNav(nav.slice(0, -1));
+  };
+  return (
+    <harness.Wrapper>
+      <div className="col reading">
+        <Reader
+          columnId="doc_col"
+          columnTitle="Finance"
+          nav={nav}
+          setNav={setNav}
           selectTitle={false}
           isActive
           onFocusMode={() => undefined}
@@ -247,5 +298,46 @@ describe("a reader open while plugin discovery is in flight", () => {
       expect(editorFor("doc_pn")?.getAttribute("data-editable")).toBe("true");
     });
     expect(document.querySelector("[data-fx-panel]")).toBeNull();
+  });
+
+  /**
+   * And *only* that body (PR #22 review, MINOR). A reader is not keyed by
+   * document id, so it outlives every navigation in its stack: the suppression
+   * belongs to the painted body, not to the component, or a document opened
+   * long after discovery settled would be drawn blind for the life of the
+   * column — a bug wearing the fix's clothes.
+   */
+  it("paints the next document's chrome, and the same document's on the way Back", async () => {
+    setPluginRegistry(EMPTY_REGISTRY, "abandoned");
+    render(<Column start="doc_pn" wire={wireFor(PANEL_DOC, OTHER_PANEL_DOC)} />);
+    await waitFor(() => {
+      expect(editorFor("doc_pn")).not.toBeNull();
+    });
+    expect(document.querySelector("[data-fx-panel]")).toBeNull();
+
+    // Discovery finishes late — too late for the body already on screen.
+    setPluginRegistry(fixtureRegistry());
+    await waitFor(() => {
+      expect(editorFor("doc_pn")).not.toBeNull();
+    });
+    expect(document.querySelector("[data-fx-panel]")).toBeNull();
+
+    // A `[[ref]]` followed in the same reader: nothing of this document is on
+    // screen to be moved, so its panel arrives with its first paint.
+    act(() => {
+      navigateTo("doc_pn2");
+    });
+    await waitFor(() => {
+      expect(screen.getByText("panel over Another panelled note")).toBeTruthy();
+    });
+
+    // And Back onto the document that was painted blind, which is a first paint
+    // too — the suppression died with the body it described.
+    act(() => {
+      goBack();
+    });
+    await waitFor(() => {
+      expect(screen.getByText("panel over A panelled note")).toBeTruthy();
+    });
   });
 });

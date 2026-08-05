@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import type { CorpusClient } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
@@ -10,6 +11,12 @@ import {
   snapshotOf,
 } from "../abandon/registry.js";
 import { docFixture } from "../testing/readerFixture";
+import {
+  EDIT_SESSION_SETTLE_MS,
+  resetEditSessionFlush,
+  setEditSessionClient,
+  useEditSurface,
+} from "./editSessionFlush.js";
 import { editingCount, isEditing, resetEditingRegistry } from "./editingRegistry.js";
 import { saveChipClass, saveChipText } from "./SaveChip.js";
 import {
@@ -127,6 +134,9 @@ let retry: () => void = () => undefined;
 
 function Surface({ docId, locked, savedBody, onAnchors }: SurfaceProps): ReactElement {
   const autosave = useAutosave({ docId, savedBody, locked, onAnchors });
+  // In the order `DocEditor` declares them, which is the order the cleanups
+  // run in: autosave sends its final `PUT`, *then* the surface count drops.
+  useEditSurface(docId);
   type = autosave.change;
   retry = autosave.retry;
   return (
@@ -148,6 +158,7 @@ afterEach(() => {
   cleanup();
   resetEditingRegistry();
   resetAbandonRegistry();
+  resetEditSessionFlush();
   vi.useRealTimers();
 });
 
@@ -615,6 +626,93 @@ describe("failure", () => {
       expect(transport.puts()).toHaveLength(3);
     });
     expect(transport.puts()[2]?.body).toEqual({ body: "start typed\n" });
+  });
+});
+
+/**
+ * The retry belongs to the surface, and dies with it (PR #22 review, MAJOR).
+ *
+ * A timer armed from the failure handler can only be cleared by this hook's
+ * cleanup, so one armed *after* that cleanup can never be cleared — and it is
+ * not a harmless stray. `editSessionFlush` has been told the write settled, so
+ * its sweep ends the session over what committed; the retry landing three
+ * seconds later opens a second session nobody is left to close, and one sitting
+ * produces two `doc.edited` events and two acknowledgment threads.
+ */
+describe("a save refused after the surface has gone", () => {
+  function flushSpy(): ReturnType<typeof vi.fn> {
+    const flushEditSession = vi.fn(() => Promise.resolve());
+    setEditSessionClient({ flushEditSession } as unknown as CorpusClient);
+    return flushEditSession;
+  }
+
+  /** Advance the fake clock with the promise chains drained between timers. */
+  async function elapse(ms: number): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  it("ends the sitting with exactly one acknowledgment", async () => {
+    const flushEditSession = flushSpy();
+    const transport = wire();
+    const view = render(<Host transport={transport} />);
+
+    // The save that lands: this is what opens the session on the server.
+    act(() => {
+      type("start one\n");
+    });
+    await elapse(AUTOSAVE_DEBOUNCE_MS);
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(1);
+    });
+
+    // The last sentence, typed inside the debounce window — and then the reader
+    // closes and the teardown flush is refused (a 500, a network blip).
+    transport.fail = 1;
+    act(() => {
+      type("start one two\n");
+    });
+    view.unmount();
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(2);
+    });
+
+    // The close path ends the session over the range that actually committed.
+    await elapse(EDIT_SESSION_SETTLE_MS + 1);
+    await waitFor(() => {
+      expect(flushEditSession.mock.calls).toEqual([["doc_a1b2c3"]]);
+    });
+
+    // The window the orphaned retry used to fire in, plus the sweep behind it.
+    await elapse(RETRY_DELAY_MS + EDIT_SESSION_SETTLE_MS + 1);
+    // No third `PUT`, so no second session and no second acknowledgment.
+    expect(flushEditSession.mock.calls).toEqual([["doc_a1b2c3"]]);
+    expect(transport.puts()).toHaveLength(2);
+  });
+
+  it("arms no retry for the document a reader rebound away from", async () => {
+    const flushEditSession = flushSpy();
+    const transport = wire();
+    transport.fail = 1;
+    const view = render(<Host transport={transport} docId="doc_outgoing" />);
+
+    act(() => {
+      type("outgoing text\n");
+    });
+    view.rerender(<Host transport={transport} docId="doc_incoming" />);
+    await waitFor(() => {
+      expect(transport.puts()).toHaveLength(1);
+    });
+    expect(transport.puts()[0]?.path).toBe("/api/docs/doc_outgoing");
+
+    // The hook is still mounted, so only the *document* the response is about
+    // marks it as answering to nothing: a retry here would `PUT` the outgoing
+    // body from a surface that is now editing something else.
+    await elapse(RETRY_DELAY_MS + EDIT_SESSION_SETTLE_MS + 1);
+    expect(transport.puts()).toHaveLength(1);
+    // Refused, so nothing committed, so there is no session to acknowledge.
+    expect(flushEditSession).not.toHaveBeenCalled();
   });
 });
 

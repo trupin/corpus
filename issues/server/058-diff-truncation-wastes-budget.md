@@ -4,7 +4,7 @@
 server
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -52,8 +52,10 @@ diff, and the contract already permits the line-boundary exception.
       the before/after character counts recorded
 - [x] The result is still a valid unified diff that a reader can parse
 - [x] `truncated` and `totalChars` remain honest
-- [x] The frontmatter-only outcome is impossible when there is body change within
+- [ ] The frontmatter-only outcome is impossible when there is body change within
       budget — assert exactly that shape, since it is the reported one
+      — **not met; waived on the record, see "Round 2" below. Closing it needs a
+      CONTRACT change to `DocDiffSchema.truncated`, not a server change.**
 - [x] SERVER-052's first-hunk-header fix is not regressed (it has tests)
 - [x] A test at the shape level: tiny leading hunk, oversized following hunk
 
@@ -162,6 +164,80 @@ tiny-hunk-then-over-sized shape, asserting the frontmatter-only outcome is
 impossible; the straddling-hunk-that-fits case, asserting a hunk-aligned cut with
 waste bounded by that hunk; and the rule's own `dropped <= max` boundary. All
 seven pre-existing `truncateDiff` cases pass unmodified.
+
+## Round 2 — PR #22 review: criterion 4 is not met, and is waived
+
+**Model: Opus 5 (1M context)** (`claude-opus-5[1m]`), server-dev, 2026-08-05.
+
+### Confirmed, and worse than filed
+
+The reviewer's arithmetic holds. `truncateDiff` fires its line-cut only when the
+straddling hunk is larger than the **whole** bound (`dropped <= max` keeps it),
+so a hunk *within* budget whose end sits past the cap is still dropped whole.
+Measured on the function at `max = 16 000`:
+
+```
+two hunks, body 15770 (total 16001)   → returned 231 of 16000, 0 body lines
+two hunks, body 15769 (total 16000)   → returned 16000, not truncated
+two hunks, body 16001 (total 16232)   → returned 15971 of 16000, 262 body lines
+```
+
+And **the window is not only `(max, max + headLength]`** as filed. Add a third
+hunk and the same poor answer survives an arbitrarily large diff:
+
+```
+three hunks, second 15770, third 5000 (total 21001) → returned 231 of 16000
+three hunks, second 8000,  third 8100 (total 16331) → returned 8231 of 16000
+```
+
+The true condition is: the answer is `cut` characters whenever the straddling
+hunk's size falls in `(max - cut, max]`.
+
+**On the real route**, `GET /api/docs/{id}/diff` against the running server
+(port 9481, real workspace, real git), a document whose body hunk lands just
+under the cap:
+
+```
+totalChars 16044  returned 401 of 16000  carries body change: false
+answer: "diff --git … @@ -3,7 +3,7 @@ id: doc_dgzvp3u3 … -updated: …14:27:13Z
+         +updated: …14:27:44Z  tags: []  status: open  anchors: {}"
+```
+
+**401 of 16 000 — the same number this issue was filed with**, now for a body hunk
+one character *under* the bound rather than over it.
+
+### Waived, and why
+
+Within the published contract there is no better answer for that input.
+`DocDiffSchema.truncated` reads: "whole hunks are dropped from the end. A single
+hunk larger than the whole bound is the one exception — it is cut at a line
+boundary." Widening that exception to a hunk larger than the *remaining* budget is
+precisely the degenerate `max(hunk, line)` rule this issue's round 1 rejected: it
+abolishes hunk alignment, cutting mid-hunk even where whole hunks fit. So the
+options are (a) keep the promise and accept the notch, or (b) change the promise —
+which is a `packages/contract` change plus SPEC.md §9.2's "truncated at a hunk
+boundary", **not** something `apps/server` may decide. Escalated to the
+orchestrator rather than done here.
+
+What makes (a) tolerable is that the waste and its likelihood are the same number.
+The poor answer needs the straddling hunk's size to land in `(max - cut, max]` — a
+window exactly `cut` wide — so a 401-character answer requires a body hunk within
+401 characters of the cap (2.5 % of hunk sizes), while a cut at 8 231 is easy to
+land on and still spends over half the budget. The largest waste is the rarest.
+Either side of the window the answer is good, which the new test pins.
+
+### Changed
+
+- `edit/diff.ts` docblock: the sentence "the waste is then bounded by that hunk's
+  own size" now states the bound honestly — worst case ~1 % of the budget, the
+  three-hunk generalisation, why it is not fixed here, and the
+  waste-equals-likelihood argument.
+- `edit/diff.test.ts` +1 case, "spends only the first boundary when the body hunk
+  lands just under the bound — the known notch": asserts the frontmatter-only
+  answer *is* what comes back for that input (pinned, so a future change to the
+  rule is a deliberate one), and that one character either side of the window the
+  answer carries body change. `truncateDiff` 10 → 11 cases, file 15 → 16.
+- No behaviour changed. All pre-existing cases pass unmodified.
 
 ## Completion Checklist (domain agent)
 - [x] Tests written and passing

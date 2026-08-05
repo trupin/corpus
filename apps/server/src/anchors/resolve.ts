@@ -16,11 +16,13 @@ export type ResolveOptions = {
  *    first-occurrence guess and defeat rung 2's uniqueness requirement.
  * 2. `exact` alone, when it occurs exactly once (overlapping occurrences count).
  *
- * Split out from {@link resolveAnchor} because reconciliation's deleted-claim
- * verification must stop here: exact rungs prove *verbatim* survival, which is
- * the only evidence strong enough to overrule the diff's word that a range was
- * deleted. Fuzzy similarity would "find" a deleted paragraph's look-alike
- * sibling and silently re-attach its thread.
+ * This is **the reader's resolver** — `docs/read.ts`, the projector's
+ * `anchors.resolved_offset` and §14's `checkSeams` all stop here, and
+ * reconciliation's deleted-claim verification does too. Exact rungs prove
+ * *verbatim* survival, which is the only evidence admissible when the caller
+ * cannot see what the edit did (a reader never can) or must overrule the diff's
+ * word that a range was deleted. See {@link resolveAnchor} for why fuzzy
+ * similarity is not evidence of survival.
  */
 export function resolveAnchorExact(body: string, selector: TextQuoteSelectorInput): Range | null {
   const { exact } = selector;
@@ -48,20 +50,35 @@ export function resolveAnchorExact(body: string, selector: TextQuoteSelectorInpu
  * Resolve a text-quote selector against a body via the SPEC.md §6 ladder:
  *
  * 1–2. The exactness tier ({@link resolveAnchorExact}).
- * 3. Fuzzy: highest-similarity window at or above `FUZZY_THRESHOLD` **whose
- *    surroundings corroborate the selector's declared context** — see
- *    `fuzzy.ts`. That gate is what makes the rung safe to run wherever the
- *    question is asked, including at render time (SERVER-055): a deleted
- *    bullet's parallel sibling scores far above the threshold on the quote
- *    alone and fails on its neighbours.
+ * 3. Fuzzy: highest-similarity window at or above `FUZZY_THRESHOLD` (`fuzzy.ts`).
  * 4. Unresolved → `null` (the thread is orphaned, never guessed at).
  *
- * This is **the** answer to "where does this selector point in this body" —
- * the reader, the projector, §14's checker and reconciliation's own lookup in
- * `oldBody` all call it, so none of them can disagree about what resolves.
- * {@link resolveAnchorExact} is not a cheaper variant of it: it answers the
- * different, diff-backed question reconciliation asks when it must *disprove* a
- * deletion, where similarity is inadmissible evidence.
+ * **Callers: reconciliation only.** The one caller is `reconcileAnchors`, which
+ * uses it to locate a selector in `oldBody` — the body the selector was written
+ * against, where a fuzzy hit means "the selector has drifted from its own text",
+ * and where the answer is then checked against the diff before anything moves.
+ * No reader may call this. `docs/read.ts`, the projector and §14's checker stop
+ * at {@link resolveAnchorExact}.
+ *
+ * That split is not a performance choice, and it is not the accident SERVER-055
+ * took it for. Rung 3 measures *similarity*, and similarity is evidence of
+ * survival only for a caller that can also see what the edit did. A reader sees
+ * one body. Given a list, a table or a template — text whose items are
+ * *supposed* to look alike — the passage most similar to a deleted item is its
+ * surviving sibling, and the sibling's declared context is near-identical too,
+ * so no context test separates them either. Measured on the shapes in
+ * `resolve.test.ts` → "rung 3 is inadmissible on a read path": deleting one item
+ * from a four-item list lands the thread on its neighbour, and *editing* one row
+ * of a parallel table lands it on the row below. Both are the silent
+ * misattachment SPEC §6 forbids outright ("a visible orphan beats a silent
+ * misattachment… never to a lookalike"), and the second is worse than orphaning
+ * the very case rung 3 would have been wired in to serve.
+ *
+ * The bodies do not carry the answer. Deleting `- Review the Q2 report by
+ * Friday` from a Q1–Q4 list, and renaming that same line to `Q3` while deleting
+ * the old Q3 line, produce the **same** `oldBody`, the same `newBody` and the
+ * same selector, with opposite correct outcomes. §6 resolves the tie in one
+ * direction: orphan.
  */
 export function resolveAnchor(
   body: string,
@@ -85,6 +102,10 @@ export function resolveAnchor(
 /**
  * Resolve a whole document's anchors in one pass. Iteration is in sorted-id
  * order so the result is deterministic regardless of the map's insertion order.
+ *
+ * Inherits {@link resolveAnchor}'s caller restriction: this runs the fuzzy rung,
+ * so it is not the function a reader wants. `docs/read.ts` resolves a document's
+ * anchors with {@link resolveAnchorExact}, per-anchor, for that reason.
  */
 export function resolveAnchors(body: string, anchors: AnchorsMap): Record<string, Range | null> {
   const resolved: Record<string, Range | null> = {};

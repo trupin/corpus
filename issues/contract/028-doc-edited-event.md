@@ -126,7 +126,11 @@ the user's editor session releases its edit lock on close
 SERVER-052/UI-044 find they need a call the contract does not carry, that is a
 contract change here, not a server-local addition (§9.3).
 
-## SPEC amendments drafted — HELD for user sign-off
+## SPEC amendments — DRAFTED HERE, APPLIED BY THE ORCHESTRATOR (signed 2026-08-05)
+
+Both were applied to SPEC.md and signed by the user on 2026-08-05, after the
+PR #22 review flagged that this file and `routes/inventory.ts` still described
+them as held. The text below is what shipped.
 
 The signed rider landed in §4 only. Two places still describe a world without
 `doc.edited`; both are consequences of already-signed text, so they are drafted

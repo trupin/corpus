@@ -143,6 +143,14 @@ export interface EditSessionTracker {
 export interface EditSessionTrackerOptions {
   readonly git: Git;
   readonly enqueue: EditEnqueue;
+  /**
+   * `AutoCommitter.endSquashSession` — the one thing this module says *back* to
+   * the write path, and the reason it is a required option rather than an
+   * optional one: a tracker built without it publishes commit ranges that §4's
+   * squash is still free to rewrite, and no assertion about this module's own
+   * output can see that.
+   */
+  readonly endSquashSession: (sha: string) => void;
   readonly logger?: Logger | undefined;
   readonly now?: (() => number) | undefined;
   readonly idleMs?: number | undefined;
@@ -151,7 +159,13 @@ export interface EditSessionTrackerOptions {
 interface OpenSession {
   readonly id: string;
   readonly docId: string;
-  /** Refreshed on every save, so a document renamed between saves diffs at its current path. */
+  /**
+   * Refreshed on every save, so a session survives the document being renamed
+   * under it. `docs/move.ts` commits as the *user* and carries no `editPath`, so
+   * it neither opens a session nor (being the same party) seals one; the next
+   * save then arrives with the new path and the emitter diffs the file where it
+   * now is, which is the only path `git diff` will report it under.
+   */
   path: string;
   /** The session's earliest commit — the one whose parent becomes `from`. */
   firstSha: string;
@@ -166,9 +180,9 @@ interface OpenSession {
   single: boolean;
   lastWriteAt: number;
   /**
-   * Set when a commit that is not this session's own touched this document. A
-   * sealed session accepts no further saves — the next one opens a *new*
-   * session — so its range can never grow across the interloping commit.
+   * Set when a commit by **the other party** touched this document. A sealed
+   * session accepts no further saves — the next one opens a *new* session — so
+   * its range can never grow across the interloping commit.
    *
    * Sealing does not *end* the session: §4 gives a session exactly two ends, and
    * "somebody else wrote here" is neither, so it still waits for its own `close`
@@ -195,17 +209,28 @@ const landed = (outcome: CommitOutcome | null): { sha: string; amended: boolean 
 };
 
 /**
+ * §4's sessions are the **user's** ("Every *user* edit session on a document…"),
+ * which `observeCommit` enforces by ignoring any other actor's `editPath`. So
+ * every open session belongs to this party, and every commit by another one is
+ * the interloper the sealing rule is about.
+ */
+const SESSION_ACTOR = "user" satisfies Actor;
+
+/**
  * Does this commit touch the file `session` is about? By path, not only by
  * document id: an anchored thread creation stages its **parent document's**
  * frontmatter under the *thread's* id, so a `docId` comparison alone would let
- * another author's commit slip inside a user's range.
+ * the other party's commit slip inside a user's range.
+ *
+ * Only ever asked about a commit by the other party — see the sealing rule in
+ * `observeCommit`.
  */
 const touches = (commit: ObservedCommit, session: OpenSession): boolean =>
   commit.docId === session.docId ||
   commit.paths.some((path) => session.path === path || session.path.startsWith(`${path}/`));
 
 export function createEditSessionTracker(options: EditSessionTrackerOptions): EditSessionTracker {
-  const { git, enqueue } = options;
+  const { git, enqueue, endSquashSession } = options;
   const logger = options.logger ?? silentLogger;
   const now = options.now ?? Date.now;
   const idleMs = options.idleMs ?? EDIT_ACK_IDLE_MS;
@@ -272,7 +297,7 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
     const payload: DocEditedPayload = {
       docId: session.docId,
       sessionId: session.id,
-      actor: "user",
+      actor: SESSION_ACTOR,
       endedBy,
       from,
       to,
@@ -294,6 +319,19 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
   /** Ends a session. Removed from the map first, so no second trigger reaches it. */
   function end(session: OpenSession, endedBy: EditSessionEndReason): void {
     sessions.delete(session.id);
+    // The session's last commit is about to be named outside the repository, so
+    // §4's squash may no longer fold into it: an amend would leave that `to`
+    // dangling *and* — since amending a one-commit session moves its base — would
+    // open the next session at the very same parent, announcing this change a
+    // second time under a second `sessionId` that no dedupe rule can match
+    // (SERVER-052 review, PR #22).
+    //
+    // Synchronous and before the emitter's first git read, because the save this
+    // has to get in front of is precisely one that lands while those reads are in
+    // flight. Unconditional rather than conditional on an event actually
+    // following: a session that ended is a boundary in the history either way,
+    // and being wrong costs one commit that did not fold.
+    endSquashSession(session.lastSha);
     const pending = emit(session, endedBy)
       .catch((error: unknown) => {
         // An acknowledgment that could not be enqueued is a lost wake-up, never
@@ -324,10 +362,10 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
     observeCommit(commit) {
       const result = landed(commit.outcome);
       if (result === null || closed) return;
-      const editPath = commit.actor === "user" ? commit.editPath : null;
+      const editPath = commit.actor === SESSION_ACTOR ? commit.editPath : null;
 
-      // The session this write belongs to, resolved *before* sealing, because it
-      // is the one session this commit must not seal.
+      // The session this write belongs to. Only the user's editor save has one;
+      // every other write either seals a session or passes through.
       let own: OpenSession | undefined;
       if (editPath !== null) {
         for (const session of sessions.values()) {
@@ -335,14 +373,23 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
         }
       }
 
-      // CONTRACT-028's interleaving rule: a range never spans another author's
-      // commit on this document. Sealing enforces it — the open session stops
-      // growing here, so the interloping commit can only ever sit *after* its
-      // `to`, and the user's next save starts a second session with its own
-      // range rather than one range crediting them with the agent's work.
-      for (const session of sessions.values()) {
-        if (session === own) continue;
-        if (touches(commit, session)) session.sealed = true;
+      // CONTRACT-028's interleaving rule: a range never spans **the other
+      // party's** commit on this document. Sealing enforces it — the open
+      // session stops growing here, so the agent's commit can only ever sit
+      // *after* its `to`, and the user's next save starts a second session with
+      // its own range rather than one range crediting them with the agent's work.
+      //
+      // Scoped to the other party on purpose. The user's own non-editor writes to
+      // the document they are editing — a thread anchoring into its frontmatter,
+      // an archive, a move — are part of that sitting, and `readRangeStats`
+      // counts them in the range by design (`edit/diff.ts`: `commits` comes from
+      // `rev-list`, not from the saves this tracker observed). Sealing on them
+      // would split one sitting into two acknowledgments while the ranges stayed
+      // correct — a user-visible split with nothing to show for it.
+      if (commit.actor !== SESSION_ACTOR) {
+        for (const session of sessions.values()) {
+          if (touches(commit, session)) session.sealed = true;
+        }
       }
 
       if (editPath === null) {

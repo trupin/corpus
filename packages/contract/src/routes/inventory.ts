@@ -40,17 +40,17 @@
  * definition by hand, because nothing here parses `SPEC.md`.
  *
  * `GET /api/docs/{id}/diff` (CONTRACT-028) is derived exactly as `POST
- * /api/skills` was, and the derivation is worth stating because §9.2 does not
- * yet list it. SPEC.md §4's edit-acknowledgment rider (signed 2026-08-02) names
+ * /api/skills` was, and the derivation is worth stating even though §9.2 now
+ * lists it. SPEC.md §4's edit-acknowledgment rider (signed 2026-08-02) names
  * the CLI verb — "a new CLI verb (`corpus doc diff <id>`) fetches the actual
  * diff on demand" — and the CLI is a thin HTTP client that performs no direct
  * file reads of git history (CLAUDE.md Architecture Decision 2), so the verb is
  * a server endpoint by construction. It sits immediately after
  * `GET /api/docs/{id}/related` because both are one-segment reads off a
- * document. A §9.2 bullet and a §7 "Core event types" clause for the
- * accompanying `doc.edited` type are **drafted and held for user sign-off**
- * (CONTRACT-028's E2E log) rather than applied here: this package never edits
- * SPEC.md, and the rider that authorises both is already signed.
+ * document. The §9.2 bullet and the §7 "Core event types" clause for the
+ * accompanying `doc.edited` type were drafted here and applied to SPEC.md by
+ * the orchestrator, signed by the user 2026-08-05: this package never edits
+ * SPEC.md itself.
  *
  * `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031) is the other half of
  * that same rider, and it is here because a premise stated in CONTRACT-028 was
@@ -63,8 +63,8 @@
  * be reached. A close signal of its own is therefore what the signed rider
  * requires, and §9.3 makes it a route declared here rather than one invented in
  * the server. It sits immediately after `GET /api/docs/{id}/diff` because those
- * two are §4's whole surface. A §9.2 bullet for it is **drafted and held for
- * user sign-off** (CONTRACT-031's issue file), like the two above.
+ * two are §4's whole surface. Its §9.2 bullet was drafted here and applied by
+ * the orchestrator, signed 2026-08-05, like the two above.
  *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so

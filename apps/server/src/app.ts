@@ -395,6 +395,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     editSessions = createEditSessionTracker({
       git: gitCommands,
       enqueue: (input) => queue.enqueue(input),
+      // The one thing the acknowledgment says back to the write path: a commit
+      // its event has named must not be amended afterwards, or the published
+      // range dangles and the next session re-announces the same change.
+      endSquashSession: (sha) => {
+        git.endSquashSession(sha);
+      },
       logger,
       now,
       idleMs: config.editAcknowledgment?.idleMs ?? EDIT_ACK_IDLE_MS,
