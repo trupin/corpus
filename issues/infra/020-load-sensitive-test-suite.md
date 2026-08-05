@@ -1,4 +1,4 @@
-# [INFRA-020] Three tests fail under gate load and pass in isolation
+# [INFRA-020] Two tests fail under gate load and pass in isolation
 
 ## Domain
 infra
@@ -20,28 +20,26 @@ opus
 - —
 
 ## Summary
-Filed as a pattern, not a third annoyance. Three distinct tests have now failed
-inside a full gate and passed in isolation on the same commit, each costing a
-complete gate cycle (10–20 minutes with e2e):
+Filed as a pattern, not a third annoyance. Distinct tests have failed inside a
+full gate and passed in isolation on the same commit, each costing a complete
+gate cycle (10–20 minutes with e2e):
 
 | Test | Observed | In isolation |
 | --- | --- | --- |
-| `apps/server/src/queue/service.test.ts` → `requeueDeferredFor` | **three times** (2026-08-03, 2026-08-05 ×2) — one event returned where two were expected | 56/56 |
 | `apps/server/src/skills/rollback.test.ts` → "nothing to restore" | timed out at 5000 ms | passes in **1036 ms** (SERVER-053) |
 | `apps/ui/e2e/todos.spec.ts` → "comments on the item the pointer chose" | 3× consecutive under load | 7/7 clean (noted in UI-073) |
 
-**Sharpened 2026-08-05, and the queue one may not belong on this list.** Its
-third failure came on a run whose test time was **355s — normal**, not the 3511s
-of a genuinely loaded gate. A test that fails without contention is not
-load-sensitive; it is racy, and possibly the code is.
+**Resolved 2026-08-05 — the third entry was not one of these.** The
+`requeueDeferredFor` failures (four in the end) were **the code**, and this issue
+asking "establish which before fixing the test" is the only reason that was
+found rather than papered over with a longer timeout: its assertion was true and
+the queue's availability read was torn. Split out and fixed as **SERVER-060**.
 
-Read the assertion before assuming the test is at fault: `requeueDeferredFor`
-claims to return **every** event deferred on a document to `pending` and wake a
-parked poll, and it returned one of two. If that under-return is reachable in
-production, a deferred event stays deferred when its lock clears — the queue
-quietly holding work it promised to release, which no user would ever see as
-anything but the agent not responding. **Establish which before fixing the
-test**, and if it is the code, this becomes a SERVER issue and leaves this one.
+The lesson generalizes and belongs here: the tell was that one of its failures
+came on a run whose test time was **355 s — normal**, not the 3511 s of a
+genuinely loaded gate. *A test that fails without contention is not
+load-sensitive; it is racy, and the code may be too.* Check the duration of the
+run before adding a test to this list.
 
 The other two remain a load story.
 
@@ -59,7 +57,7 @@ and the only reason it was caught rather than retried away was a deliberate
 decision to re-run in isolation first.
 
 ## Acceptance Criteria
-- [ ] Each of the three is diagnosed: what it waits on, and why the margin is
+- [ ] Each of the two is diagnosed: what it waits on, and why the margin is
       thin — not simply given a longer timeout
 - [ ] Where the wait is genuine work, make it cheaper (SERVER-053 already notes
       the rollback test walks fifteen revisions)
@@ -73,8 +71,7 @@ decision to re-run in isolation first.
 
 ## Technical Design
 ### Files to Create/Modify
-- `apps/server/src/queue/service.test.ts`, `apps/server/src/skills/rollback.test.ts`,
-  `apps/ui/e2e/todos.spec.ts`
+- `apps/server/src/skills/rollback.test.ts`, `apps/ui/e2e/todos.spec.ts`
 
 ### Notes
 - SERVER-053 covers the rollback test alone and should be folded in or closed as

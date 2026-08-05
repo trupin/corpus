@@ -384,7 +384,8 @@ belongs to the same fix wave.
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
 | UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
 | UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | todo | P2 | UI-073 |
-| INFRA-020 | Three tests fail under gate load and pass in isolation (pattern, 3 cycles lost) | todo | P2 | — |
+| INFRA-020 | Two tests fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
+| SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — the read path provably cannot decide | todo | P1 | — |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
