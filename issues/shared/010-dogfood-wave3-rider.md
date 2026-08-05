@@ -4,8 +4,7 @@
 shared
 
 ## Status
-todo — signed by the user 2026-08-04; apply to SPEC.md at phase kickoff
-(orchestrator), before UI-063 and UI-066 start.
+done — all three amendments applied to SPEC.md §11 on 2026-08-05.
 
 ## Priority
 P1
@@ -110,9 +109,9 @@ APPEND to §11 Document view, after the comments-list sentence from Amendment 1:
 > conversations, each continuing where it began.
 
 ## Acceptance Criteria
-- [ ] All three amendments applied to SPEC.md verbatim at phase kickoff, each
+- [x] All three amendments applied to SPEC.md verbatim at phase kickoff, each
       with a signed-2026-08-04 marker
-- [ ] Amendment 1 replaces the below-the-body clause rather than duplicating it
+- [x] Amendment 1 replaces the below-the-body clause rather than duplicating it
 - [ ] UI-063, UI-066 and UI-067 do not start before the text is in place
 - [ ] UI-063 and UI-067 are sequenced or shipped together — they are one surface
       seen from two angles (finding comments, writing them), and building the tab
@@ -129,5 +128,5 @@ None — spec text. The domain issues carry the tests.
 _N/A — spec change._
 
 ## Completion Checklist (orchestrator)
-- [ ] SPEC.md updated
+- [x] SPEC.md updated
 - [ ] Committed with `[SHARED-010]` prefix

@@ -252,7 +252,7 @@ Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-0
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-007 | Self-upgrade spec rider — apply to SPEC.md at phase kickoff (orchestrator) | todo | P1 | — |
+| SHARED-007 | Self-upgrade spec rider — apply to SPEC.md at phase kickoff (orchestrator) | done | P1 | — |
 | INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | todo | P1 | SHARED-007 |
 | CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | todo | P1 | SHARED-007, INFRA-016, CLI-027 |
 | CONTRACT-027 | Upgrade routes: check + trigger | todo | P1 | SHARED-007 |
@@ -372,13 +372,13 @@ belongs to the same fix wave.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
+| SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | done | P1 | — |
 | UI-064 | `<br>` inside a table cell renders as literal text | done | P1 | — |
 | UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
 | UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
 | UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
-| SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | todo | P1 | — |
+| SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | done | P1 | — |
 | UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
 | UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |

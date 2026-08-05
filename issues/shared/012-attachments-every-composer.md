@@ -4,7 +4,7 @@
 shared
 
 ## Status
-todo — signed by the user 2026-08-05; apply to SPEC.md at phase kickoff.
+done — applied to SPEC.md §11 (Thread view) on 2026-08-05.
 
 ## Priority
 P1
@@ -75,7 +75,7 @@ state it once for all composers rather than per surface:
   already exist; do not invent a third.
 
 ## Acceptance Criteria
-- [ ] The §11 replacement applied verbatim at phase kickoff
+- [x] The §11 replacement applied verbatim at phase kickoff
 - [ ] The chain does not start before the text is in place
 
 ## Technical Design
@@ -89,5 +89,5 @@ None — spec text.
 _N/A — spec change._
 
 ## Completion Checklist (orchestrator)
-- [ ] SPEC.md updated
+- [x] SPEC.md updated
 - [ ] Committed with `[SHARED-012]` prefix
