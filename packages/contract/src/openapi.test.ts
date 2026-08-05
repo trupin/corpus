@@ -1387,8 +1387,8 @@ describe("DocRow.unreadThreads (CONTRACT-012)", () => {
 
 describe("author attribution", () => {
   /**
-   * The two `POST`s with no git author to attribute, and they are unattributed
-   * for two different reasons — which is why this is a named set rather than a
+   * The `POST`s with no git author to attribute, and they are unattributed for
+   * different reasons — which is why this is a named set rather than a
    * predicate over the path.
    *
    * - `POST /api/check` is a `POST` because a request body is the only way to
@@ -1410,13 +1410,27 @@ describe("author attribution", () => {
    *   (`actor: "user"`, always), so the caller could not change the attribution
    *   even by naming itself.
    *
-   * In all three cases declaring the header would advertise a commit that never
-   * happens.
+   * - `POST /api/upgrade` (CONTRACT-027) is the odd one out, and the only one
+   *   where a commit really does follow: SPEC.md §2.4's upgrade syncs the
+   *   workspace's template files and lands them in "a single attributed
+   *   commit". It is exempt because of *who* commits. The server's entire
+   *   contribution is `spawn`; the writes happen in a detached process, minutes
+   *   later, after a download, and after this server has been stopped and
+   *   replaced — the upgrade restarts it, so it must outlive it. The header
+   *   exists so that a request's caller becomes the git author of the commit
+   *   *that request* makes (§9.2), and this request makes none. Declaring it
+   *   would publish an input this server cannot honour and the committing
+   *   process is not bound by. It stays additive if a later revision wires the
+   *   attribution through to the spawn.
+   *
+   * In every case declaring the header would advertise a commit that this
+   * request never makes.
    */
   const UNATTRIBUTED_POSTS = new Set([
     "POST /api/check",
     "POST /api/index/rebuild",
     "POST /api/docs/{id}/edit-session/flush",
+    "POST /api/upgrade",
   ]);
 
   it("declares the optional actor header on every mutating operation", () => {

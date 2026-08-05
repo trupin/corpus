@@ -66,6 +66,22 @@
  * two are §4's whole surface. Its §9.2 bullet was drafted here and applied by
  * the orchestrator, signed 2026-08-05, like the two above.
  *
+ * `GET /api/upgrade/check` and `POST /api/upgrade` (CONTRACT-027) are derived
+ * the same way, from SPEC.md §2.4's UI sentence (signed 2026-08-02, workspace
+ * half 2026-08-03, applied 2026-08-05): "The UI offers the same flow on demand:
+ * a check affordance, and when a newer release exists, an 'Upgrade & restart'
+ * action that asks the server to spawn the detached CLI upgrade." A UI
+ * affordance that *asks the server* is a server endpoint by construction, and
+ * §9.3 makes it one declared here rather than invented in the server. Two
+ * endpoints rather than one because §2.4 describes two acts and keeps them
+ * apart — `corpus upgrade --check` "queries … compares … and reports", while
+ * `corpus upgrade` installs — and the whole point of an on-demand posture is
+ * being able to look without committing. §9.2 does not yet list them: unlike the
+ * entries above, whose bullets were drafted here and applied to SPEC.md by the
+ * orchestrator, this pair's bullet is drafted in CONTRACT-027's report and
+ * awaits the same sign-off. The derivation is recorded here so the gap is a
+ * pending amendment rather than an undocumented route.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -142,6 +158,9 @@ export const ENDPOINT_INVENTORY = [
 
   "POST /api/skills",
   "POST /api/skills/{name}/rollback",
+
+  "GET /api/upgrade/check",
+  "POST /api/upgrade",
 
   "GET /events",
   "GET /attachments/{path}",

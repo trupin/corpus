@@ -46,6 +46,7 @@ import {
 } from "./threads.js";
 import { appendTurn } from "./turn-append.js";
 import { getTree } from "./tree.js";
+import { checkUpgrade, startUpgrade } from "./upgrade.js";
 
 export * from "./attachments.js";
 export * from "./capture.js";
@@ -70,6 +71,7 @@ export * from "./thread-create.js";
 export * from "./threads.js";
 export * from "./tree.js";
 export * from "./turn-append.js";
+export * from "./upgrade.js";
 
 /**
  * Every route the contract declares, by name. The server registers handlers
@@ -164,6 +166,9 @@ export const contractRoutes = {
 
   createSkill,
   rollbackSkill,
+
+  checkUpgrade,
+  startUpgrade,
 
   streamEvents,
   getAttachment,
