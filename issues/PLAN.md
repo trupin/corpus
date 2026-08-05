@@ -276,8 +276,9 @@ never auto-merged. The audience for that report is the agent.
 | CONTRACT-031 | Explicit edit-session flush route (SERVER-052 disproved the lock-release premise) | done | P1 | CONTRACT-028, SERVER-052 |
 | SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | done | P1 | CONTRACT-031, SERVER-052 |
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
-| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | todo | P2 | SERVER-058 |
-| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SERVER-058 |
+| SHARED-013 | Diff truncation is line-aligned, not hunk-aligned — DRAFT, awaiting sign-off | blocked | P2 | SERVER-058 |
+| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | blocked | P2 | SHARED-013 |
+| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | blocked | P2 | SHARED-013 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
 
