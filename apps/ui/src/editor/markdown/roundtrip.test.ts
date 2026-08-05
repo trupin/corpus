@@ -47,13 +47,14 @@ describe("the fixture corpus", () => {
       "lists-ordered.md",
       "mixed-note.md",
       "mixed-spec.md",
+      "nested-fences.md",
       "raw-constructs.md",
       "refs.md",
       "rules-and-breaks.md",
       "tables.md",
       "task-lists.md",
     ]);
-    expect(names).toHaveLength(15);
+    expect(names).toHaveLength(16);
   });
 
   it.each(names)("%s round-trips byte for byte", (name) => {

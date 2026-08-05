@@ -4,7 +4,7 @@
 ui
 
 ## Status
-todo
+done
 
 ## Priority
 P2
@@ -43,12 +43,12 @@ that hand-rolls part of that path, or a printer option that turns widening off,
 breaking documents with no test failing.
 
 ## Acceptance Criteria
-- [ ] A round-trip test with a fence whose payload contains a shorter fence:
+- [x] A round-trip test with a fence whose payload contains a shorter fence:
       one code block in, one out, delimiter still wide enough
-- [ ] The general case, not just three-into-four — a payload containing ````
+- [x] The general case, not just three-into-four — a payload containing ````
       must round-trip inside a five-backtick fence
-- [ ] Placed with the other round-trip fixtures so it runs with them
-- [ ] `serialize.ts`'s normalisation comment says the fence widens as needed,
+- [x] Placed with the other round-trip fixtures so it runs with them
+- [x] `serialize.ts`'s normalisation comment says the fence widens as needed,
       so the docblock stops implying a fixed three
 
 ## Technical Design
@@ -60,13 +60,29 @@ breaking documents with no test failing.
 Fixture-driven, alongside the existing round-trip cases.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model._
+Ran on **opus** (orchestrator, directly — the session's subagent limit was reached).
+
+- **New fixture** `fixtures/nested-fences.md`, in the corpus that round-trips
+  byte for byte, covering three-into-four, four-into-five, and a backtick run in
+  mid-line prose. `roundtrip.test.ts` 136/136 (the fixture list and its exact
+  count were updated, which is what keeps a deleted fixture from going unnoticed).
+- **The fixture caught an error while being written.** The third case was drafted
+  with a three-backtick fence and prose claiming a mid-line run "does not widen
+  anything". The printer widened it to four and the byte-identity assertion
+  failed — so the fixture is canonical *and* the prose is now correct.
+- **Explicit block-count assertions** in `serialize.test.ts` (3 new tests, 57/57):
+  one block in, one block out, delimiter asserted exactly, for both the
+  three-into-four and four-into-five cases plus a full canonicalize round trip.
+- `serialize.ts`'s normalisation list no longer reads as a cap: it now states the
+  fence widens to one past the longest run, and says the widening is the
+  printer's, which is why the test exists.
+- ESLint and Prettier clean.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix

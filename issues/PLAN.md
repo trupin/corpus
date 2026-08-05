@@ -348,8 +348,8 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | PLUGINS-011 | Todos item composer adopts the composer key contract | done | P2 | UI-052 |
 | UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | todo | P2 | UI-052 |
 | UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | todo | P1 | UI-051 |
-| AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | todo | P1 | AGENT-010 |
-| UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | todo | P2 | — |
+| AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | done | P1 | AGENT-010 |
+| UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | done | P2 | — |
 | UI-058 | A "note only" turn still shows "agent is working" (dogfood) | done | P1 | — |
 | UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | done | P1 | — |
 | UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P1 | UI-051 |
