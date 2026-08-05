@@ -26,9 +26,24 @@ complete gate cycle (10–20 minutes with e2e):
 
 | Test | Observed | In isolation |
 | --- | --- | --- |
-| `apps/server/src/queue/service.test.ts` → `requeueDeferredFor` | **twice** (2026-08-03, 2026-08-05) — one event returned where two were expected | 56/56 |
+| `apps/server/src/queue/service.test.ts` → `requeueDeferredFor` | **three times** (2026-08-03, 2026-08-05 ×2) — one event returned where two were expected | 56/56 |
 | `apps/server/src/skills/rollback.test.ts` → "nothing to restore" | timed out at 5000 ms | passes in **1036 ms** (SERVER-053) |
 | `apps/ui/e2e/todos.spec.ts` → "comments on the item the pointer chose" | 3× consecutive under load | 7/7 clean (noted in UI-073) |
+
+**Sharpened 2026-08-05, and the queue one may not belong on this list.** Its
+third failure came on a run whose test time was **355s — normal**, not the 3511s
+of a genuinely loaded gate. A test that fails without contention is not
+load-sensitive; it is racy, and possibly the code is.
+
+Read the assertion before assuming the test is at fault: `requeueDeferredFor`
+claims to return **every** event deferred on a document to `pending` and wake a
+parked poll, and it returned one of two. If that under-return is reachable in
+production, a deferred event stays deferred when its lock clears — the queue
+quietly holding work it promised to release, which no user would ever see as
+anything but the agent not responding. **Establish which before fixing the
+test**, and if it is the code, this becomes a SERVER issue and leaves this one.
+
+The other two remain a load story.
 
 Individually each looks like bad luck. Together they say the suite has a class of
 tests whose **budget is sized for an idle machine** — a 5 s timeout on work that
