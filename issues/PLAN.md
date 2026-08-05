@@ -278,7 +278,7 @@ never auto-merged. The audience for that report is the agent.
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
 | CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SERVER-058 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
-| AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | todo | P1 | CLI-026 |
+| AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
 
 ## Phase 7b — React 19, router 8, CI directives (branch `phase-7b-upgrades-ci`)
 

@@ -39,6 +39,20 @@ Cosmetic, and worth fixing precisely because the notice exists to stop the agent
 reading a partial diff as whole — a sentence that misdescribes the cut
 undermines the one job it has.
 
+## Second wording fix, same file (AGENT-011, 2026-08-05)
+
+`docs/cli.md`'s `doc diff` topic prose says the agent "triages on the stats and
+comes here when the change looks like it could ripple". AGENT-011 established
+there is no safe stats-only skip and wrote the skill to fetch on every event —
+proven in a drill where a substantive edit and a typo fix produced **byte-identical**
+payloads (`1 commit, +2 -2`). The signed rider says only "on demand", which
+always-fetch satisfies, so the skill is right and the prose is now a narrowing
+that misdescribes the loop.
+
+- [ ] The topic prose no longer claims the agent triages on stats before fetching
+- [ ] It is edited at its source, not in the generated `docs/cli.md`, and the
+      file is regenerated
+
 ## Acceptance Criteria
 - [ ] The notice describes the cut that actually happened, both cases
 - [ ] It stays one line and keeps saying plainly not to read the diff as the
