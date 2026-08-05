@@ -17,6 +17,15 @@
   font-size: 15px;
   line-height: 1.62;
   max-width: 62ch;
+  /*
+   * The prose half of the wrap `.doc-body pre` already does for fences
+   * (UI-050 — the argument is stated there and not repeated). A pasted URL is
+   * one token with nowhere to break, and the measure is 62ch, so without this
+   * it is painted straight out of the card. Declared here rather than per
+   * element so it reaches every descendant that holds text — paragraphs, list
+   * items, table cells, headings and the links inside them.
+   */
+  overflow-wrap: anywhere;
 }
 
 .doc-body > :first-child {
@@ -244,6 +253,47 @@
  */
 .doc-body li.task-list-item > * {
   text-indent: 0;
+}
+
+/*
+ * ── Links (UI-059) ───────────────────────────────────────────────────
+ *
+ * `design/index.html` states **no** rule for an ordinary link: every `<a>` in
+ * the mockup is a `[[ref]]` or a button, so the only link treatment it gives is
+ * `.ref` below — accent ink, `text-decoration: none`, and a hairline
+ * `--accent-wash` bottom border that goes to `--accent` on hover. This takes
+ * that vocabulary rather than inventing one, and reads the mockup's *removal*
+ * of the underline from refs as the distinction to keep: a ref opens a document
+ * in this corpus and is not underlined; a link leaves the app and is. The
+ * reader can tell which before clicking, and `:not(.ref)` is what keeps that
+ * mechanical rather than a convention someone has to remember.
+ *
+ * `:visited` is deliberately absent: a body is not a browsing history, and the
+ * user agent's purple is not in the palette. `:focus-visible` restates
+ * `apps/ui/src/app/global.css`'s one focus treatment, which covers buttons,
+ * inputs and `[tabindex]` but not links — and a link in a body is reachable by
+ * keyboard on every surface.
+ *
+ * The editor gets this for free: `DocEditor` puts `doc-body` on its
+ * contenteditable, which is what makes "there is no edit mode" true of links
+ * as well as of type.
+ */
+.doc-body a:not(.ref) {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.doc-body a:not(.ref):hover {
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+}
+
+.doc-body a:not(.ref):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .ref {

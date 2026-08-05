@@ -120,6 +120,40 @@ describe("inline", () => {
     expect(inlineOf("a\\\nb\n")[1]?.type).toBe(NODE.hardBreak);
   });
 
+  /**
+   * UI-064. The editor and `MarkdownView` run the same kit plugin, so the two
+   * readings of one file agree — including on what stays raw.
+   */
+  describe("`<br>` in a table cell", () => {
+    function cellContent(cell: string): readonly PmNode[] {
+      const table = first(`| a | b |\n| - | - |\n| ${cell} | x |\n`);
+      return table.content?.[1]?.content?.[0]?.content?.[0]?.content ?? [];
+    }
+
+    it.each([["<br>"], ["<br/>"], ["<br />"], ["<BR>"]])("reads %s as a hard break", (tag) => {
+      const content = cellContent(`one${tag}two`);
+      expect(content.map((node) => node.type)).toEqual([NODE.text, NODE.hardBreak, NODE.text]);
+    });
+
+    it("keeps a tag with attributes as raw source", () => {
+      const content = cellContent(`x<br class="y">z`);
+      expect(content[1]?.type).toBe(NODE.rawInline);
+      expect(content[1]?.attrs?.["text"]).toBe(`<br class="y">`);
+    });
+
+    it("keeps other markup in a cell as raw source", () => {
+      const content = cellContent("x<script>alert(1)</script>z");
+      expect(content.some((node) => node.type === NODE.rawInline)).toBe(true);
+      expect(content.some((node) => node.type === NODE.hardBreak)).toBe(false);
+    });
+
+    it("leaves a `<br>` in prose raw, where markdown has its own spelling", () => {
+      const content = first("one<br>two\n").content ?? [];
+      expect(content[1]?.type).toBe(NODE.rawInline);
+      expect(content[1]?.attrs?.["text"]).toBe("<br>");
+    });
+  });
+
   it("reads an image as an inline node", () => {
     const image = inlineOf("![alt](x.png)\n")[0];
     expect(image?.type).toBe(NODE.image);

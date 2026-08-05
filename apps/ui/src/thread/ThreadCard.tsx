@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 import { NewChildThread } from "./NewChildThread";
+import { agentWaitSince, useOutstandingAgentJob } from "./outstandingAgentRequest";
 import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
 import { ThreadComposer } from "./ThreadComposer";
@@ -113,7 +114,6 @@ export function ThreadCard({
 
   const data = thread.data;
   const turns: readonly ThreadTurn[] = data?.turns ?? [];
-  const lastTurn = turns.at(-1);
   /**
    * The last turn the **server** has. An optimistic append carries a provisional
    * client timestamp, and marking the thread read up to a turn the server has
@@ -201,9 +201,19 @@ export function ThreadCard({
 
   const status = data?.status ?? row?.status ?? "open";
   const resolved = status === "resolved";
-  const agentState = data?.agent ?? row?.agent ?? "none";
-  const awaiting =
-    !resolved && agentState !== "none" && lastTurn !== undefined && lastTurn.author !== "agent";
+  /**
+   * SPEC.md §8's pending row, off the **queue** rather than off the thread's
+   * `agent` field (UI-058 — the reasoning is in `outstandingAgentRequest.ts`).
+   *
+   * Nothing else gates it, and deliberately: `resolved` used to, and it has no
+   * business here now that the answer is a fact rather than an inference.
+   * Resolving stops the *re-trigger* (SPEC.md §8), it does not cancel an event
+   * already in the queue — the agent will still reply — so hiding the row there
+   * would drop a wait the person is genuinely in the middle of. A resolved thread
+   * with nothing queued has no job, which is the ordinary case and already says
+   * nothing.
+   */
+  const outstanding = useOutstandingAgentJob(threadId);
 
   const classes = [
     "thread-card",
@@ -353,7 +363,9 @@ export function ThreadCard({
         onNotify={onNotify}
       />
 
-      {awaiting && lastTurn !== undefined ? <PendingIndicator since={lastTurn.ts} /> : null}
+      {outstanding === null ? null : (
+        <PendingIndicator since={agentWaitSince(outstanding, turns)} />
+      )}
 
       <ThreadComposer threadId={threadId} resolved={resolved} onNotify={onNotify} />
       {turnComments.popover}

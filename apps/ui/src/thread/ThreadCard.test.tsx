@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import type { Thread } from "@corpus/contract";
+import type { Job, Thread } from "@corpus/contract";
 import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeLayers } from "../reader/useEscapeStack";
 import {
   docFixture,
+  jobFixture,
   readerTransport,
   threadFixture,
   threadRowFixture,
@@ -15,6 +16,7 @@ import {
 } from "../testing/readerFixture";
 import { DELETE_ARMED_LABEL } from "./Turn";
 import { ThreadCard, type ThreadHost } from "./ThreadCard";
+import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL, SEND_LABEL } from "./ThreadComposer";
 
 afterEach(() => {
   cleanup();
@@ -30,6 +32,13 @@ const TURNS = [
     body: "6.4% is closer.\n↳ edited the model doc — 3 lines",
   },
 ];
+
+/** A "note only" reply: a user turn that asked the agent for nothing. */
+const NOTE = {
+  author: "user" as const,
+  ts: "2026-07-01T10:12:00.000Z",
+  body: "filing this away — no need to look at it",
+};
 
 const PARENT = docFixture({
   frontmatter: { id: "doc_m", title: "Mortgage options" },
@@ -433,32 +442,201 @@ describe("the turns", () => {
   });
 });
 
+/**
+ * SPEC.md §8's row reports an outstanding agent response **and nothing else**.
+ * Its four corners are (ask · note) × (outstanding · settled), and the pair that
+ * used to be got wrong sit on the diagonal: a note while the queue is quiet must
+ * say nothing, and a note while the queue still holds a request must keep saying
+ * it (UI-058).
+ */
 describe("the pending indicator", () => {
-  it("appears only while the agent owes a reply on an open thread", async () => {
-    const engaged = render(
-      <Host transport={wire({ agent: "engaged", turns: [TURNS[0] as never] })} />,
+  /**
+   * The asking turn's timestamp — the instant the clock must report, since a
+   * later note must not restart it. Read once through the index guard rather
+   * than at four call sites.
+   */
+  const ASKED_AT = TURNS[0]?.ts ?? "";
+
+  /** The queue event a thread's ask enqueued, as `GET /api/jobs` shows it. */
+  const askJob = (overrides: Partial<Job> = {}): Job =>
+    jobFixture({ originId: "th_a", started: ASKED_AT, ...overrides });
+
+  it("stays quiet after a note-only turn, whatever the thread's agent field says", async () => {
+    // `agent: engaged` and a user turn last — the exact shape a "note only" reply
+    // leaves behind, and what used to paint the row. Nothing is queued.
+    const { container } = render(
+      <Host transport={wire({ agent: "engaged", turns: [...TURNS, NOTE] })} />,
     );
-    await loaded(engaged.container);
-    expect(engaged.container.querySelector(".working")).not.toBeNull();
+    await loaded(container);
+    expect(container.querySelector(".working")).toBeNull();
+  });
+
+  it("appears while the queue still holds this thread's request", async () => {
+    const { container } = render(
+      <Host
+        transport={wire({ agent: "requested", turns: [TURNS[0] as never] }, { jobs: [askJob()] })}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+    expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
+  });
+
+  it("keeps reporting a genuinely outstanding request when a note is added to it", async () => {
+    const { container } = render(
+      <Host
+        transport={wire(
+          { agent: "engaged", turns: [TURNS[0] as never, NOTE] },
+          {
+            jobs: [askJob()],
+          },
+        )}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+    // Measured from the turn that asked, not from the note that followed it.
+    expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
+  });
+
+  /**
+   * A real console list is not one row. The lookup scans everything the server
+   * returned, so a busy queue must not bury this thread's request — the answer
+   * has to be as good at row 50 as at row 1. (What it *cannot* survive is the
+   * server truncating the row away entirely; that bound is
+   * `outstandingAgentRequest.test.ts`'s subject and CONTRACT-030's.)
+   */
+  it("finds this thread's request among a full window of other work", async () => {
+    const others = Array.from({ length: 49 }, (_, index) =>
+      jobFixture({
+        eventId: `evt_other_${String(index)}`,
+        status: index % 2 === 0 ? "processed" : "in-progress",
+        originId: `th_other_${String(index)}`,
+        started: `2026-07-01T11:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      }),
+    );
+    const { container } = render(
+      <Host
+        transport={wire(
+          { agent: "requested", turns: [TURNS[0] as never] },
+          { jobs: [...others, askJob()] },
+        )}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+    expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
+  });
+
+  /**
+   * `Job.started` flips from the enqueue instant to the first log line's
+   * (CONTRACT-029). A note-only turn landing after that flip used to drag the
+   * clock forward with it — the displayed wait jumping *down* by however long the
+   * job had been queued. The ask is at 10:05, the first log at 10:07, the note at
+   * 10:12, and the row still counts from 10:05.
+   */
+  it("does not restart the clock when a note follows the job's first log line", async () => {
+    const { container } = render(
+      <Host
+        transport={wire(
+          { agent: "engaged", turns: [TURNS[0] as never, NOTE] },
+          { jobs: [askJob({ status: "in-progress", started: "2026-07-01T10:07:00.000Z" })] },
+        )}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+    expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
+  });
+
+  it("goes quiet once the job is settled, and never speaks for another thread's", async () => {
+    const settled = render(
+      <Host
+        transport={wire(
+          { agent: "engaged", turns: [TURNS[0] as never] },
+          {
+            jobs: [askJob({ status: "processed" })],
+          },
+        )}
+      />,
+    );
+    await loaded(settled.container);
+    expect(settled.container.querySelector(".working")).toBeNull();
 
     cleanup();
     resetSeenMarks();
-    const answered = render(<Host transport={wire({ agent: "engaged" })} />);
-    await loaded(answered.container);
-    expect(answered.container.querySelector(".working")).toBeNull();
+    const elsewhere = render(
+      <Host
+        transport={wire(
+          { agent: "engaged", turns: [TURNS[0] as never] },
+          {
+            jobs: [askJob({ originId: "th_other" })],
+          },
+        )}
+      />,
+    );
+    await loaded(elsewhere.container);
+    expect(elsewhere.container.querySelector(".working")).toBeNull();
+  });
 
-    cleanup();
-    resetSeenMarks();
-    const quiet = render(<Host transport={wire({ agent: "none", turns: [TURNS[0] as never] })} />);
-    await loaded(quiet.container);
-    expect(quiet.container.querySelector(".working")).toBeNull();
+  it("still reports work parked on an edit lock — deferred is not finished", async () => {
+    const { container } = render(
+      <Host
+        transport={wire(
+          { agent: "engaged", turns: [TURNS[0] as never] },
+          {
+            jobs: [askJob({ status: "deferred", blockedOn: "doc_m" })],
+          },
+        )}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+  });
+
+  it("sends a note only, and says nothing about an agent that was never asked", async () => {
+    const transport = wire({ agent: "engaged" });
+    const { container } = render(<Host transport={transport} />);
+    await loaded(container);
+
+    fireEvent.click(screen.getByText(ASK_AGENT_LABEL));
+    expect(screen.getByText(NOTE_ONLY_LABEL)).not.toBeNull();
+    fireEvent.change(screen.getByLabelText("Reply"), { target: { value: "filing this away" } });
+    fireEvent.click(screen.getByText(SEND_LABEL));
+
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads/th_a/turns")).toHaveLength(1);
+    });
+    const sent = transport.of("POST", "/api/threads/th_a/turns")[0]?.body as {
+      requestsAgent?: boolean;
+    };
+    expect(sent.requestsAgent).toBe(false);
+    await waitFor(() => {
+      expect(container.querySelectorAll(".turn")).toHaveLength(3);
+    });
+    expect(container.querySelector(".working")).toBeNull();
   });
 
   it("shows no progress bar, no percentage, no stream", async () => {
     const { container } = render(
-      <Host transport={wire({ agent: "engaged", turns: [TURNS[0] as never] })} />,
+      <Host
+        transport={wire({ agent: "requested", turns: [TURNS[0] as never] }, { jobs: [askJob()] })}
+      />,
     );
     await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
     expect(container.querySelector("progress")).toBeNull();
     expect(container.querySelector("[role='progressbar']")).toBeNull();
     expect(container.querySelector(".working")?.textContent).toContain("working");

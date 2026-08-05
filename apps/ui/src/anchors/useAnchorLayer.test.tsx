@@ -607,7 +607,10 @@ describe("the reconciliation report", () => {
     await waitFor(() => {
       expect(app.layer().orphaned.map((thread) => thread.id)).toEqual(["th_1"]);
     });
-    expect(app.layer().anchored[0]?.placement.segments).toEqual([]);
+    // …and it stops being an anchored thread at all: it is listed below the
+    // body, never drawn at a position it no longer has (UI-062).
+    expect(app.layer().anchored).toHaveLength(0);
+    expect(app.layer().unplaced).toHaveLength(0);
   });
 
   it("ignores a report from an older revision", async () => {
@@ -671,6 +674,23 @@ describe("the highlights themselves", () => {
     });
     expect(anchorState(app.editorState())?.anchors[0]?.segments).toEqual(before);
     spy.mockRestore();
+  });
+
+  /**
+   * UI-062. An anchor with nothing to sit beside is reported separately, so the
+   * surfaces that place things by position never see it: no chip, no margin
+   * card, and above all no card dropped at the top of the document.
+   */
+  it("keeps an anchor it cannot point at out of the anchored set", async () => {
+    const stale = anchorFixture({ range: { start: 900, end: 910 } });
+    const app = mount([stale], [threadRowFixture({ id: "th_1", parent: "doc_m" })]);
+    await waitFor(() => {
+      expect(app.layer().unplaced.map((thread) => thread.id)).toEqual(["th_1"]);
+    });
+    expect(app.layer().anchored).toHaveLength(0);
+    expect(app.layer().orphaned).toHaveLength(0);
+    expect(app.layer().marginMode).toBe(false);
+    expect(anchorState(app.editorState())?.anchors).toHaveLength(0);
   });
 });
 

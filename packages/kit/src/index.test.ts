@@ -129,6 +129,8 @@ const RUNTIME_SURFACE = [
   "REF_ID_ATTRIBUTE",
   "REF_NODE_TYPE",
   "REF_PATTERN",
+  "isLineBreakTag",
+  "remarkTableCellBreaks",
   // images: one renderer, and the door to the app's viewer
   "attachmentTarget",
   "ATTACHMENT_PREFIX",

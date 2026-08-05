@@ -6,6 +6,7 @@ import { createCorpusTestHarness, type CorpusTestHarness } from "../testing/inde
 import { threadKey } from "./keys.js";
 import { isPendingTurn, type ThreadTurn, type ThreadView } from "./pendingTurns.js";
 import { useAppendTurn } from "./useAppendTurn.js";
+import { useJobs } from "./useJobs.js";
 import { useThread } from "./useThread.js";
 
 const THREAD_ID = "th_a";
@@ -36,6 +37,10 @@ interface Script {
   turns: { author: string; ts: string; body: string }[];
   append: AppendOutcome;
   appends: number;
+  /** What the server says it enqueued — `null` for a "note only" turn (SPEC.md §8). */
+  eventId: string | null;
+  /** How many times `GET /api/jobs` was read, which is the queue's console feed. */
+  jobsReads: number;
   /** When set, the POST waits on it — so a refetch can be raced against it. */
   gate: Promise<void> | undefined;
 }
@@ -49,11 +54,17 @@ function scripted(): Script {
     turns: [...(SERVER_THREAD.turns as unknown as { author: string; ts: string; body: string }[])],
     append: { kind: "ok" },
     appends: 0,
+    eventId: null,
+    jobsReads: 0,
     gate: undefined,
   };
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
+    if (new URL(request.url).pathname === "/api/jobs") {
+      script.jobsReads += 1;
+      return json({ jobs: [] }, 200);
+    }
     if (request.method !== "POST") return json({ ...SERVER_THREAD, turns: script.turns }, 200);
 
     script.appends += 1;
@@ -63,7 +74,7 @@ function scripted(): Script {
       return json({ code: script.append.code, message: "refused" }, script.append.status);
     }
     script.turns = [...script.turns, { ...SERVER_TURN }];
-    return json({ thread: {}, turn: SERVER_TURN, eventId: null, warnings: [] }, 201);
+    return json({ thread: {}, turn: SERVER_TURN, eventId: script.eventId, warnings: [] }, 201);
   });
 
   return Object.assign(script, { fetch: fetchMock });
@@ -174,6 +185,56 @@ describe("optimistic append", () => {
 
     expect(cachedTurns(harness).filter((turn) => turn.body === "Mine.")).toHaveLength(1);
     expect(pendingCount(cachedTurns(harness))).toBe(0);
+  });
+});
+
+/**
+ * The queue is where "is an agent response outstanding?" is answered — the
+ * console's rows and the thread card's pending indicator both read it (SPEC.md
+ * §8, UI-058) — so a turn that enqueued has to drop it, and a turn that enqueued
+ * nothing has to leave it alone.
+ */
+describe("the job feed", () => {
+  async function mountWithJobs(script: Script) {
+    const harness = createCorpusTestHarness({ fetch: script.fetch });
+    const { result } = renderHook(() => ({ jobs: useJobs({}), append: useAppendTurn(THREAD_ID) }), {
+      wrapper: harness.Wrapper,
+    });
+    await waitFor(() => {
+      expect(result.current.jobs.isSuccess).toBe(true);
+    });
+    return result;
+  }
+
+  it("is refetched when the turn enqueued an event", async () => {
+    const script = scripted();
+    script.eventId = "evt_1";
+    const result = await mountWithJobs(script);
+    const before = script.jobsReads;
+
+    await act(async () => {
+      await result.current.append.mutateAsync({ body: "Mine.", requestsAgent: true });
+    });
+
+    await waitFor(() => {
+      expect(script.jobsReads).toBeGreaterThan(before);
+    });
+  });
+
+  it("is left alone by a note-only turn, which enqueued nothing", async () => {
+    const script = scripted();
+    const result = await mountWithJobs(script);
+    const before = script.jobsReads;
+
+    await act(async () => {
+      await result.current.append.mutateAsync({ body: "Mine.", requestsAgent: false });
+    });
+    // Long enough for an invalidation to have produced a fetch had one fired.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    expect(script.jobsReads).toBe(before);
   });
 });
 

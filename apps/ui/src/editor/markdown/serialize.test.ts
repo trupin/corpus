@@ -120,6 +120,56 @@ describe("nodes", () => {
     expect(serializeDoc(source)).toBe("a\\\nb\n");
   });
 
+  /**
+   * UI-064. Not a stylistic choice: the printer's default answer inside a cell
+   * is a *space*, because every markdown spelling of a break is a newline and a
+   * newline ends the row — so before this rule the user's line break was
+   * silently deleted on the next save.
+   */
+  describe("a hard break inside a table cell", () => {
+    function cellTable(...cell: readonly PmNode[]): PmNode {
+      const td = (content: readonly PmNode[]): PmNode => ({
+        type: NODE.tableCell,
+        attrs: { colspan: 1, rowspan: 1, colwidth: null },
+        content: [{ type: NODE.paragraph, content }],
+      });
+      return doc({
+        type: NODE.table,
+        attrs: { align: [null] },
+        content: [
+          { type: NODE.tableRow, content: [td([text("h")])] },
+          { type: NODE.tableRow, content: [td(cell)] },
+        ],
+      });
+    }
+
+    it("is written as `<br>`", () => {
+      const source = cellTable(text("a"), { type: NODE.hardBreak }, text("b"));
+      expect(serializeDoc(source)).toContain("| a<br>b |");
+    });
+
+    it("is written as `<br>` when it is nested inside a mark", () => {
+      // The break carries the mark, so it stays *inside* the emphasis run —
+      // which is the case a non-recursive rewrite would miss.
+      const source = cellTable(
+        text("a", "bold"),
+        { type: NODE.hardBreak, marks: [{ type: "bold" }] },
+        text("b", "bold"),
+      );
+      expect(serializeDoc(source)).toContain("**a<br>b**");
+    });
+
+    it("round-trips through the parser unchanged", () => {
+      const markdown = "| h      |\n| ------ |\n| a<br>b |\n";
+      expect(serializeDoc(parseMarkdown(markdown))).toBe(markdown);
+    });
+
+    it("leaves a break outside a table as a trailing backslash", () => {
+      const source = doc(paragraph(text("a"), { type: NODE.hardBreak }, text("b")));
+      expect(serializeDoc(source)).not.toContain("<br>");
+    });
+  });
+
   it("serialises a task list with its checked state", () => {
     expect(canonicalizeMarkdown("- [x] done\n- [ ] open\n")).toBe("- [x] done\n- [ ] open\n");
   });

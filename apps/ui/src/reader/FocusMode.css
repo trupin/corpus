@@ -71,7 +71,11 @@
   display: none;
 }
 
-.focus .doc-title {
+/* The wrapper, not the field: `.title-grow` sets the type both the textarea and
+   its measuring mirror inherit (see `Reader.css`). Resizing only the field left
+   the mirror at the column's 24px, so the grid row was too short for 30px text
+   and focus mode clipped the second line — UI-065's own bug, one surface over. */
+.focus .title-grow {
   font-size: 30px;
   max-width: 66ch;
 }

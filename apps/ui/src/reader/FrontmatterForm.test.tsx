@@ -178,7 +178,7 @@ describe("FrontmatterForm", () => {
     expect(screen.getByText("unsaved changes")).toBeDefined();
 
     fireEvent.keyDown(title, { key: "Escape" });
-    expect((title as HTMLInputElement).value).toBe("Mortgage options");
+    expect((title as HTMLTextAreaElement).value).toBe("Mortgage options");
     expect(wire.of("PUT")).toHaveLength(0);
   });
 
@@ -265,7 +265,7 @@ describe("FrontmatterForm", () => {
     render(<FrontmatterForm doc={DOC} selectTitle locked={false} onNotify={() => undefined} />, {
       wrapper: harness.Wrapper,
     });
-    const title = screen.getByLabelText<HTMLInputElement>("Document title");
+    const title = screen.getByLabelText<HTMLTextAreaElement>("Document title");
     expect(document.activeElement).toBe(title);
     expect(title.selectionStart).toBe(0);
     expect(title.selectionEnd).toBe(title.value.length);
@@ -291,7 +291,7 @@ describe("FrontmatterForm", () => {
     await waitFor(() => {
       expect(notices[0]).toContain("error:Save failed");
     });
-    expect((title as HTMLInputElement).value).toBe("Renamed");
+    expect((title as HTMLTextAreaElement).value).toBe("Renamed");
   });
 
   it("narrates a successful save", async () => {

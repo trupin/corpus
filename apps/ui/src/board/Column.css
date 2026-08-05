@@ -372,10 +372,16 @@
   padding: 12px 14px;
 }
 
-.col .doc-title {
-  font-family: var(--serif);
+/* The type goes on the wrapper so the field and its measuring mirror stay in
+   step (see `reader/Reader.css`); resizing only the field made the mirror the
+   taller of the two and reserved a blank line under every title. The rest is the
+   field's own chrome and stays where it is. */
+.col .title-grow {
   font-size: 20px;
   font-weight: 600;
+}
+
+.col .doc-title {
   color: inherit;
   background: none;
   border: none;

@@ -139,7 +139,7 @@ function Stacked({
 }
 
 function titleOf(root: ParentNode): string {
-  return root.querySelector<HTMLInputElement>(".focus .doc-title")?.value ?? "";
+  return root.querySelector<HTMLTextAreaElement>(".focus .doc-title")?.value ?? "";
 }
 
 describe("FocusMode", () => {

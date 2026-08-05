@@ -306,3 +306,81 @@ test.describe("an anchor whose quote has left the body", () => {
     await expect(page.locator('[data-thread-section="detached"] .t-chip')).toHaveCount(1);
   });
 });
+
+/**
+ * UI-062, in the browser.
+ *
+ * Reported live: commenting on a selection that began inside `**bold**` left a
+ * thread card pinned to the **top** of the document instead of beside the words.
+ * The quote on the card carried the closing asterisks — which is correct, the
+ * selector quotes the file and not the screen — but the file itself was one the
+ * editor prints differently: it kept the blank line every editor leaves after
+ * the frontmatter fence, so every offset in it was one past where the editor's
+ * own text puts it. The anchor resolved, no highlight could be drawn from its
+ * offsets, and a margin card with no highlight to measure fell to zero.
+ *
+ * Both halves are asserted here because only a browser has the layout the
+ * second one is about: a card's `top` is written by the cascade after measuring
+ * a live `getBoundingClientRect`.
+ */
+test.describe("a comment whose selection began inside inline markup", () => {
+  /** The file as it sits on disk: a leading blank line, and a bold run. */
+  const STANDUP: StubRow = {
+    id: "doc_note",
+    title: "Standup",
+    body: "\n# Standup\n\n**Moushmi Verma** on repositioning Fernando under Mesbah, from Monday.\n\nA closing paragraph, so the document is taller than one line.\n",
+    anchors: [
+      {
+        anchorId: "anc_1",
+        threadId: "th_1",
+        exact: "Moushmi Verma** on repositioning Fernando under Mesbah",
+        prefix: "# Standup\n\n**",
+        suffix: ", from Monday.",
+      },
+    ],
+  };
+
+  const STANDUP_THREAD: StubRow = {
+    ...THREAD,
+    title: 'Re: "Moushmi Verma** on repositioning Fernando under Mesbah"',
+  };
+
+  test("highlights the selected words, and none of the markup", async ({ page }) => {
+    await openNote(page, [VIEW, STANDUP, STANDUP_THREAD]);
+
+    const highlights = page.locator(".reader .doc-body .anchor-hl");
+    // Two spans, because the `**` between them has no position to be inside of.
+    await expect(highlights).toHaveCount(2);
+    await expect(highlights.first()).toHaveText("Moushmi Verma");
+    await expect(highlights.nth(1)).toHaveText(" on repositioning Fernando under Mesbah");
+    const drawn = await highlights.allInnerTexts();
+    expect(drawn.join("")).not.toContain("*");
+    await expect(page.locator(".reader .anchor-pip")).toHaveCount(1);
+    // Nothing was demoted to the list below the body.
+    await expect(page.locator("[data-thread-section]")).toHaveCount(0);
+  });
+
+  test("puts the card beside its anchor, not at the top of the document", async ({ page }) => {
+    await openNote(page, [VIEW, STANDUP, STANDUP_THREAD]);
+    await page.locator(".reader .anchor-hl").first().waitFor();
+
+    await page.locator('.reader[data-reader-doc="doc_note"] [data-expand]').click();
+    const focus = page.locator(".focus.open");
+    await expect(focus.locator(".with-margin")).toHaveCount(1);
+
+    const offsets = await focus.evaluate((root) => {
+      const main = root.querySelector(".doc-main");
+      const origin = main?.getBoundingClientRect().top ?? 0;
+      const anchor = main?.querySelector('.anchor-hl[data-thread="th_1"]') ?? null;
+      const card = root.querySelector('.focus-margin > .thread-card[data-thread="th_1"]');
+      return {
+        anchorTop: anchor === null ? null : Math.round(anchor.getBoundingClientRect().top - origin),
+        cardTop: card === null ? null : Math.round(card.getBoundingClientRect().top - origin),
+      };
+    });
+    expect(offsets.anchorTop).not.toBeNull();
+    // The failure this pins: a card at 0 while its anchor is well down the page.
+    expect(offsets.anchorTop).toBeGreaterThan(0);
+    expect(offsets.cardTop).toBe(offsets.anchorTop);
+  });
+});

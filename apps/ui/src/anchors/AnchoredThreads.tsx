@@ -16,8 +16,9 @@ import "./anchors.css";
  *   it. The slot itself is UI-008's; this decides *where*.
  * - **A card in the margin**, in focus mode or a wide reader, cascaded beside
  *   its highlight.
- * - **Below the body**, for whole-document threads and for threads whose anchor
- *   the server could no longer resolve.
+ * - **Below the body**, for whole-document threads, for threads whose anchor the
+ *   server could no longer resolve, and for the ones it did resolve that this
+ *   view cannot point at (`anchorPlacement.segmentsOf`).
  */
 
 export interface AnchorThreadsProps {
@@ -106,6 +107,8 @@ export function MarginColumn({
 export interface DetachedThreadsProps {
   readonly wholeDocument: readonly DocRow[];
   readonly orphaned: readonly DocRow[];
+  /** Anchored, resolved, but with nothing on this screen to sit beside. */
+  readonly unplaced?: readonly DocRow[];
   readonly expandedThreads: readonly string[];
   readonly flashThread: string | null;
   readonly onToggleThread: (threadId: string) => void;
@@ -115,26 +118,38 @@ export interface DetachedThreadsProps {
 
 export const DETACHED_LABEL = "Detached threads";
 export const WHOLE_DOCUMENT_LABEL = "Whole-document threads";
+export const UNPLACED_LABEL = "Threads without a place in this view";
 
 /**
- * Threads that hang off no text: the ones that never did, and the ones whose
- * quote the last save removed.
+ * Threads that hang off no text on this screen: the ones that never did, the
+ * ones whose quote the last save removed, and the ones whose anchor is live but
+ * unplaceable here.
  *
  * An orphaned thread is **not** damaged — SPEC.md §6 keeps its selector
  * byte-for-byte, so it still knows what it was about and is still fully
  * repliable. It has simply lost its place in the document, which is why it is
  * listed rather than hidden.
+ *
+ * The third group is separate from the second on purpose, because the two say
+ * different things. "Detached" is the server's verdict about the file: the
+ * quoted text is gone. "Without a place in this view" is *this screen's*
+ * admission that it cannot show where a live anchor points — the quote is still
+ * in the document, and the thread returns to it as soon as the view can say
+ * where. Filing the second under the first would report a data loss that has not
+ * happened; drawing it at the top of the margin instead, which is what used to
+ * happen, reported a comment on the title (UI-062).
  */
 export function DetachedThreads({
   wholeDocument,
   orphaned,
+  unplaced = [],
   expandedThreads,
   flashThread,
   onToggleThread,
   onOpenDoc,
   onNotify,
 }: DetachedThreadsProps): ReactElement | null {
-  if (wholeDocument.length === 0 && orphaned.length === 0) return null;
+  if (wholeDocument.length === 0 && orphaned.length === 0 && unplaced.length === 0) return null;
 
   const section = (label: string, rows: readonly DocRow[], kind: string): ReactElement | null =>
     rows.length === 0 ? null : (
@@ -159,6 +174,7 @@ export function DetachedThreads({
   return (
     <>
       {section(WHOLE_DOCUMENT_LABEL, wholeDocument, "whole-document")}
+      {section(UNPLACED_LABEL, unplaced, "unplaced")}
       {section(DETACHED_LABEL, orphaned, "detached")}
     </>
   );

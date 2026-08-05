@@ -120,7 +120,7 @@ function docFixtureRow() {
 
 /** The title is an input (it is editable), so it is read by value, not by text. */
 function titleOf(container: HTMLElement): string {
-  return container.querySelector<HTMLInputElement>(".doc-title")?.value ?? "";
+  return container.querySelector<HTMLTextAreaElement>(".doc-title")?.value ?? "";
 }
 
 async function showsTitle(container: HTMLElement, text: string): Promise<void> {
@@ -307,7 +307,7 @@ describe("Reader", () => {
     const { container } = render(<Host wire={fullWire()} />);
     await showsTitle(container, "Mortgage options");
 
-    const title = container.querySelector(".doc-title") as HTMLInputElement;
+    const title = container.querySelector(".doc-title") as HTMLTextAreaElement;
     fireEvent.change(title, { target: { value: "Half a thought" } });
     fireEvent.keyDown(title, { key: "Escape" });
 
