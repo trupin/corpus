@@ -84,11 +84,43 @@ jobs:
           echo "path=dist-package/$tarball" >> "$GITHUB_OUTPUT"
           ls -l "$tarball"
 
+      # The checksum `corpus upgrade` verifies before it installs anything
+      # (SPEC.md §2.4: "verifies its published checksum"). INFRA-016.
+      #
+      # Computed from the **exact bytes just packed**, in this same job, with no
+      # second `npm pack`: a checksum of a re-created tarball would attest to an
+      # artifact nobody downloads, and `npm pack` has no reproducibility promise
+      # that would make the two the same file.
+      #
+      # Written in `shasum`'s own two-field format — `<hash>  <name>` — so
+      # `shasum -a 256 -c <file>.sha256` verifies it with no parsing, and
+      # deliberately from *inside* `dist-package` so the recorded name is the
+      # bare tarball name a release downloader will have on disk. Recording a
+      # path would make `-c` fail for everyone who did not reproduce this
+      # directory layout.
+      - name: checksum the packed tarball
+        id: checksum
+        working-directory: dist-package
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          shasum -a 256 "$TARBALL" > "$TARBALL.sha256"
+          echo "path=dist-package/$TARBALL.sha256" >> "$GITHUB_OUTPUT"
+          cat "$TARBALL.sha256"
+          # Proves the pair verifies here, so a failure is this job's rather
+          # than a user's first upgrade.
+          shasum -a 256 -c "$TARBALL.sha256"
+
       # The terminal step. It creates a GitHub Release for the tag that
-      # triggered this run, attaches the installable tarball, and generates the
-      # notes since the previous tag. `gh` uses GITHUB_TOKEN with the job's
-      # `contents: write`; no third-party action, no registry, no secret beyond
-      # the one GitHub issues to the run.
+      # triggered this run, attaches the installable tarball **and its
+      # checksum**, and generates the notes since the previous tag. `gh` uses
+      # GITHUB_TOKEN with the job's `contents: write`; no third-party action, no
+      # registry, no secret beyond the one GitHub issues to the run.
+      #
+      # Both assets go up in one `gh release create` rather than an upload
+      # afterwards: a release that exists with a tarball and no checksum is a
+      # release `corpus upgrade` must refuse, and this way there is no window in
+      # which one is published without the other.
       #
       # Re-running on an already-released tag fails cleanly rather than
       # half-releasing: `gh release create` rejects an existing release for the
@@ -103,8 +135,10 @@ jobs:
           # value). PR #16 review finding 1.
           RELEASE_TAG: ${{ github.ref_name }}
           TARBALL_PATH: ${{ steps.pack.outputs.path }}
+          CHECKSUM_PATH: ${{ steps.checksum.outputs.path }}
         run: |
           gh release create "$RELEASE_TAG" \
             "$TARBALL_PATH" \
+            "$CHECKSUM_PATH" \
             --title "$RELEASE_TAG" \
             --generate-notes

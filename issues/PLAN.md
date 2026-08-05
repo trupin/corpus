@@ -253,7 +253,7 @@ Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-0
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-007 | Self-upgrade spec rider — apply to SPEC.md at phase kickoff (orchestrator) | done | P1 | — |
-| INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | todo | P1 | SHARED-007 |
+| INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | done | P1 | SHARED-007 |
 | CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | todo | P1 | SHARED-007, INFRA-016, CLI-027 |
 | CONTRACT-027 | Upgrade routes: check + trigger | todo | P1 | SHARED-007 |
 | SERVER-050 | Upgrade endpoints: check proxy + detached upgrade trigger | todo | P1 | CONTRACT-027, CLI-025 |
