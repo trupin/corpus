@@ -136,14 +136,18 @@ export const DocChangeStatsSchema = z
  * put the document down" from "the user walked away from it" reads this rather
  * than guessing from timing.
  *
- * - `close` — **the reader closed and the UI flushed the session.** In the
- *   shipped UI that flush is the release of the user's edit lock on the document
- *   (`DELETE /api/locks/{docId}`, SPEC.md §7: the editor session "holds the lock
- *   while actively editing… released on blur, idle, or close"), which is a signal
- *   the server already receives. No flush endpoint is declared for this, on
- *   purpose — if SERVER-052 or UI-044 finds it needs a call the contract does not
- *   already carry, that is a contract change here, not a server-local addition
- *   (SPEC.md §9.3).
+ * - `close` — **the reader closed and the UI flushed the session**, by calling
+ *   `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031). A signal of its
+ *   own, and it has to be: CONTRACT-028 originally read §4's flush as the
+ *   release of the user's edit lock (`DELETE /api/locks/{docId}`, SPEC.md §7,
+ *   "released on blur, idle, or close"), which the server already receives, and
+ *   SERVER-052 measured that against the shipped editor — which drops the lease
+ *   on blur and after ten seconds of not typing, against this session's three
+ *   minutes. Binding the close path to it would have ended a session inside
+ *   every pause, making the `idle` window below unreachable in every session and
+ *   fragmenting one sitting at a document into an event per typing burst. The
+ *   two signals answer different questions ("may somebody else write here" and
+ *   "has the person put this document down"), so they are two calls.
  * - `idle` — the acknowledgment window elapsed with the document open and no user
  *   write (default 3 minutes, and §4 is explicit that this is "a distinct and
  *   longer window than the commit-squash idle").

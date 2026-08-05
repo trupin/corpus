@@ -24,6 +24,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus doc check`](#corpus-doc-check)
   - [`corpus doc create`](#corpus-doc-create)
   - [`corpus doc delete`](#corpus-doc-delete)
+  - [`corpus doc diff`](#corpus-doc-diff)
   - [`corpus doc edit`](#corpus-doc-edit)
   - [`corpus doc list`](#corpus-doc-list)
   - [`corpus doc move`](#corpus-doc-move)
@@ -330,7 +331,7 @@ corpus db rebuild --json
 
 List, read, check, create, edit, move, archive, unarchive and delete documents.
 
-The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — expands from a document it already holds through `related`, the follow-up move to `corpus search` (SPEC.md §7) — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
+The stewardship surface (SPEC.md §7): the agent surveys the corpus through `list` — the collection query behind the board's own columns, filters, Attention and search — expands from a document it already holds through `related`, the follow-up move to `corpus search` (SPEC.md §7) — reads documents through `show` — anchors resolve against the current body server-side, so reading the file would answer differently — reads what a user's edit session changed through `diff`, which is where a `doc.edited` event's stats are cashed in for the change itself (SPEC.md §4) — and creates, edits, moves and archives them on its own initiative, **archiving where a person would delete** and unarchiving to bring one back. Bodies come from `-m`, `--file` or stdin, so a heredoc is the normal way to pass prose. Every mutation is attributed with `--from user|agent`, which becomes the git author of the server's auto-commit — `git log` is the audit trail of who changed what. `check` is the same topic's read-only verdict: SPEC.md §14's validator, run server-side over documents, the whole workspace, or what is staged in git.
 
 ### `corpus doc archive`
 
@@ -509,6 +510,59 @@ One JSON value — `{"deletedId":"doc_a1b2c3","orphanedThreadIds":["th_x9y8"],"w
 
 ```
 corpus doc delete doc_a1b2c3 --yes --json
+```
+
+### `corpus doc diff`
+
+Read what changed in a document across a commit range.
+
+Reads `GET /api/docs/{id}/diff` (SPEC.md §4, §9.2) and prints the document's id and path, the revision range that was actually read, what changed in numbers, and the unified diff itself.
+
+**This is the follow-up to a `doc.edited` event.** That event announces that a user's edit session ended and carries the session's commit range and its change stats — never the diff body. The agent triages on the stats and comes here when the change looks like it could ripple into other documents. The event's `from` and `to` are passed through **verbatim** as `--from-rev` and `--to-rev` — including the empty-tree sha an event carries when the document was introduced by the repository's very first commit, which diffs as wholly added. Nothing needs converting.
+
+**Both halves are optional and default independently**: `to` to the newest commit that touched this document, `from` to the parent of `to`. So bare `corpus doc diff <id>` reads as _what changed in this document's last commit_, and the two together read as _what changed in that session_. The resolved shas are printed back on their own line, unabbreviated, so the same range can be pinned again later.
+
+**The diff is bounded and the cut is stated twice.** At most 16000 characters come back; a larger change is truncated at a hunk boundary — so what arrives is still a valid diff — never refused. The size line always says how much of the diff is shown (`showing 16000 of 61200 characters`), and a `#` notice after the body says the text was cut and how much is missing. Acting on half a change while believing it whole is the one failure this verb can cause, so it is said before the body and again where the body stops.
+
+**Nothing normal here is an error.** A range in which this document did not change prints one line and exits 0; a document with no committed history — never committed, or a workspace with no version control (SPEC.md §14) — prints that and exits 0.
+
+Revisions are commit shas only. A `--from-rev`/`--to-rev` that is not a sha at all is a usage error (exit 2) and no request is sent; a well-formed sha this workspace does not contain is the server's `400` naming the parameter (exit 5). The `404` on this route means the **document** is unknown, never the revision. `--json` emits the server's envelope unchanged, whose `truncated` and `totalChars` are what a machine reader branches on.
+
+```
+corpus doc diff <id> [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                        |
+| -------- | -------- | ---------------------------------- |
+| `id`     | yes      | The document whose change to read. |
+
+**Flags**
+
+| Flag               | Type   | Default | Description                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--from-rev <sha>` | string | —       | Base of the range, **exclusive**. Defaults to the parent of the head, which reads as that one commit's own change. Named revisions are rejected — a commit sha only, exactly as a `doc.edited` event carries it. Spelled with the `-rev` suffix because `--from` is the global flag naming the acting party. |
+| `--to-rev <sha>`   | string | —       | Head of the range, **inclusive**. Defaults to the newest commit that touched this document. A commit sha, like its base half.                                                                                                                                                                                |
+
+**Examples**
+
+What changed in this document's last commit — the range the server picks when neither half is given.
+
+```
+corpus doc diff doc_a1b2c3
+```
+
+The range from a `doc.edited` event, passed through unchanged: what that edit session did.
+
+```
+corpus doc diff doc_a1b2c3 --from-rev 0a1b2c3d4e5f6a7b8c9d --to-rev 9f1c2ab3d4e5f6071829
+```
+
+One JSON value: `{"id":"doc_a1b2c3","path":"data/docs/finance/mortgage-options.md","from":"0a1b2c3d4e5f6a7b8c9d","to":"9f1c2ab3d4e5f6071829","stats":{"commits":1,"insertions":12,"deletions":3},"diff":"@@ -1,3 +1,12 @@\n…","truncated":false,"totalChars":812}`.
+
+```
+corpus doc diff doc_a1b2c3 --json
 ```
 
 ### `corpus doc edit`

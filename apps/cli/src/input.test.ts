@@ -4,7 +4,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ExitCode, exitCodeFor, UsageError } from "./errors.js";
+import { ExitCode, exitCodeFor, isCliError, UsageError } from "./errors.js";
 import {
   parseTriStateBoolean,
   plural,
@@ -55,6 +55,27 @@ describe("resolveActor", () => {
     }
     expect(thrown).toBeInstanceOf(UsageError);
     expect(exitCodeFor(thrown)).toBe(ExitCode.usageError);
+  });
+
+  it("points a commit sha at the range flags it was meant for", () => {
+    // The likely mistake, not a hypothetical one: a `doc.edited` event calls its
+    // range halves `from`/`to`, and `--from` is this global actor flag.
+    const hintFor = (from: string): string | undefined => {
+      let thrown: unknown;
+      try {
+        resolveActor(flagsOf({ from }), {});
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(UsageError);
+      return isCliError(thrown) ? thrown.hint : undefined;
+    };
+
+    expect(hintFor("b01ab0f78339e6cab716bf37db575f4cde8a123c")).toContain(
+      "corpus doc diff <id> --from-rev <sha>",
+    );
+    // Everything that is not a sha keeps the attribution hint it always had.
+    expect(hintFor("robot")).toContain("Writes are attributed to");
   });
 });
 

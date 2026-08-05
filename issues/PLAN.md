@@ -272,9 +272,11 @@ never auto-merged. The audience for that report is the agent.
 | SHARED-008 | Edit-acknowledgment spec rider — apply at phase kickoff (orchestrator) | done | P1 | — |
 | CONTRACT-028 | doc.edited queue event + bounded doc-diff route | done | P1 | SHARED-008 |
 | SERVER-052 | Edit-session end detection (close flush + 3m inactivity) → actor-scoped emission | done | P1 | CONTRACT-028 |
-| CLI-026 | `corpus doc diff` verb | todo | P1 | CONTRACT-028, SERVER-052 |
-| CONTRACT-031 | Explicit edit-session flush route (SERVER-052 disproved the lock-release premise) | todo | P1 | CONTRACT-028, SERVER-052 |
-| UI-044 | Reader close flushes the edit session | todo | P1 | SERVER-052, CONTRACT-031 |
+| CLI-026 | `corpus doc diff` verb | done | P1 | CONTRACT-028, SERVER-052 |
+| CONTRACT-031 | Explicit edit-session flush route (SERVER-052 disproved the lock-release premise) | done | P1 | CONTRACT-028, SERVER-052 |
+| SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | todo | P1 | CONTRACT-031, SERVER-052 |
+| SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | todo | P1 | SERVER-052 |
+| UI-044 | Reader close flushes the edit session | todo | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | todo | P1 | CLI-026 |
 
 ## Phase 7b — React 19, router 8, CI directives (branch `phase-7b-upgrades-ci`)

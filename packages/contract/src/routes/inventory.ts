@@ -52,6 +52,20 @@
  * (CONTRACT-028's E2E log) rather than applied here: this package never edits
  * SPEC.md, and the rider that authorises both is already signed.
  *
+ * `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031) is the other half of
+ * that same rider, and it is here because a premise stated in CONTRACT-028 was
+ * measured and found false. §4 names two ends for a user edit session, one of
+ * them "the reader closes (the UI flushes the session)"; CONTRACT-028 read that
+ * flush as §7's edit-lock release and declared no endpoint for it. SERVER-052
+ * checked that against the shipped editor, which drops the lease on blur and
+ * after ten seconds of not typing against the session's three minutes — so the
+ * lock always wins and §4's explicitly "distinct and longer window" would never
+ * be reached. A close signal of its own is therefore what the signed rider
+ * requires, and §9.3 makes it a route declared here rather than one invented in
+ * the server. It sits immediately after `GET /api/docs/{id}/diff` because those
+ * two are §4's whole surface. A §9.2 bullet for it is **drafted and held for
+ * user sign-off** (CONTRACT-031's issue file), like the two above.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -73,6 +87,7 @@ export const ENDPOINT_INVENTORY = [
   "GET /api/docs/{id}",
   "GET /api/docs/{id}/related",
   "GET /api/docs/{id}/diff",
+  "POST /api/docs/{id}/edit-session/flush",
   "PUT /api/docs/{id}",
   "DELETE /api/docs/{id}",
   "POST /api/docs/{id}/move",

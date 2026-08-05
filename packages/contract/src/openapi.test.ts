@@ -1158,6 +1158,98 @@ describe("the edit-acknowledgment surface (CONTRACT-028)", () => {
 });
 
 /**
+ * CONTRACT-031: the other half of §4's rider — the `close` path made into a
+ * call. CONTRACT-028 declared no such route on the premise that §7's edit-lock
+ * release already signalled a reader close; SERVER-052 measured that against the
+ * shipped editor (lease dropped on blur and after ten seconds of not typing,
+ * against the session's three minutes) and disproved it.
+ *
+ * The prose assertions below are not decoration. UI-044 will write its
+ * reader-close path against the generated document alone, and the two things it
+ * must not have to discover by experiment are whether a duplicate call is safe
+ * and whether the route survives a page unload.
+ */
+describe("the edit-session flush (CONTRACT-031)", () => {
+  const FLUSH_PATH = "/api/docs/{id}/edit-session/flush";
+
+  it("adds exactly one endpoint to the inventory", () => {
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("edit-session"))).toEqual([
+      "POST /api/docs/{id}/edit-session/flush",
+    ]);
+  });
+
+  it("requires the workspace bearer token and declares only the codes a flush can produce", () => {
+    const op = operation(FLUSH_PATH, "post");
+    expect(op.security).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["204", "400", "401", "404"]);
+  });
+
+  /**
+   * A `204` with a body would be a contradiction; a `200` with one would invite
+   * the client to branch on whether a session was open, which is a race against
+   * the inactivity timer and, worse, is not yet decided when the response is
+   * written (a session with an empty path-scoped range emits nothing).
+   */
+  it("answers 204 with no content, so there is nothing to branch on", () => {
+    const success = operation(FLUSH_PATH, "post").responses?.["204"];
+    expect(success?.content).toBeUndefined();
+    expect(success?.description).toContain("postcondition");
+    expect(operation(FLUSH_PATH, "post").responses?.["200"]).toBeUndefined();
+  });
+
+  it("takes the document id and nothing else — no body, no query, no header", () => {
+    const op = operation(FLUSH_PATH, "post");
+    expect(op.parameters?.map((entry) => `${entry.in}:${entry.name}`)).toEqual(["path:id"]);
+    expect(op.requestBody).toBeUndefined();
+  });
+
+  it("states that a flush with no open session is a no-op rather than an error", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain("Idempotent");
+    expect(description).toContain("The answer is `204` whether or not a session was open");
+    expect(description).toContain("is a no-op");
+  });
+
+  /**
+   * The reachability answer, published rather than left to be found at
+   * implementation time: `keepalive` works and `sendBeacon` does not, and the
+   * reason is the bearer header rather than the method or the body.
+   */
+  it("says which unload-path spelling works, and why the other does not", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain("keepalive: true");
+    expect(description).toContain("navigator.sendBeacon");
+    expect(description).toContain("sets no request headers at all");
+    expect(description).toContain("pagehide");
+  });
+
+  it("carries CONTRACT-028's one-event-per-session invariant onto the flush path", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain("whichever fires first removes it");
+    expect(description).toContain("At most one `doc.edited` may ever exist per `sessionId`");
+    expect(description).toContain('endedBy: "close"');
+  });
+
+  it("reserves its 404 for an unknown document, like every other route on a document", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain(
+      "**The `404` means the document is unknown, and it is the only one**",
+    );
+    expect(description).toContain("never *no session here*");
+  });
+
+  /**
+   * §4's surface is two routes, and the registry keeps them adjacent — which is
+   * also the path order of the generated document, so a reader of the document
+   * alone finds the acknowledgment and its escalation together.
+   */
+  it("sits beside the diff route it shares SPEC.md §4 with", () => {
+    const paths = Object.keys(document.paths ?? {});
+    expect(paths.indexOf(FLUSH_PATH)).toBe(paths.indexOf("/api/docs/{id}/diff") + 1);
+  });
+});
+
+/**
  * CONTRACT-011: the extra-frontmatter surface and the first-class §11 view
  * keys. The schema descriptions here ARE the plugin contract — a plugin author
  * reads only the generated document — so these invariants pin the published
@@ -1310,10 +1402,22 @@ describe("author attribution", () => {
    *   *does* carry the header, and the pair is the clearest statement of what
    *   the header is for.
    *
-   * In both cases declaring the header would advertise a commit that never
+   * - `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031) writes no
+   *   workspace file either: it ends an in-memory edit session and lets the
+   *   acknowledgment for it be enqueued. The commits that session is *about*
+   *   landed minutes earlier, on the editor's own save path, already authored by
+   *   the user — and the event's own actor is fixed by its payload schema
+   *   (`actor: "user"`, always), so the caller could not change the attribution
+   *   even by naming itself.
+   *
+   * In all three cases declaring the header would advertise a commit that never
    * happens.
    */
-  const UNATTRIBUTED_POSTS = new Set(["POST /api/check", "POST /api/index/rebuild"]);
+  const UNATTRIBUTED_POSTS = new Set([
+    "POST /api/check",
+    "POST /api/index/rebuild",
+    "POST /api/docs/{id}/edit-session/flush",
+  ]);
 
   it("declares the optional actor header on every mutating operation", () => {
     const problems: string[] = [];

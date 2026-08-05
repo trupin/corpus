@@ -3,6 +3,7 @@ import { capture } from "./capture.js";
 import { checkDocuments } from "./check.js";
 import { doctorDb, rebuildDb } from "./db.js";
 import { getDocDiff } from "./doc-diff.js";
+import { flushEditSession } from "./edit-session.js";
 import {
   archiveDoc,
   createDoc,
@@ -52,6 +53,7 @@ export * from "./check.js";
 export * from "./db.js";
 export * from "./doc-diff.js";
 export * from "./docs.js";
+export * from "./edit-session.js";
 export * from "./events.js";
 export * from "./forms.js";
 export * from "./health.js";
@@ -85,9 +87,13 @@ export * from "./turn-append.js";
  *
  * `relatedDocs` and `getDocDiff` sit next to `getDoc` for readability rather
  * than for routing: both are `GET`s one segment deeper than `/api/docs/{id}`,
- * and the three routes at that depth (`move`, `archive`, `unarchive`) are
- * `POST`s, so no static segment competes with `{id}` here. `searchCorpus`
- * follows the document group, where §9.2 lists it.
+ * and the routes at that depth (`move`, `archive`, `unarchive`,
+ * `edit-session/flush`) are `POST`s, so no static segment competes with `{id}`
+ * here. `flushEditSession` follows `getDocDiff` for the same readability
+ * reason: SPEC.md §4's edit-acknowledgment surface is those two routes — the
+ * signal that ends a session and the read that explains it — and keeping them
+ * adjacent is how the pair is found. `searchCorpus` follows the document group,
+ * where §9.2 lists it.
  *
  * `getThreadContext` sits directly after `getThread` for the same reason — §9.2
  * lists the context pack in the bullet immediately below the thread read — and
@@ -103,6 +109,7 @@ export const contractRoutes = {
   getDoc,
   relatedDocs,
   getDocDiff,
+  flushEditSession,
   updateDoc,
   deleteDoc,
   moveDoc,

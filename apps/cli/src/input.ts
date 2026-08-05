@@ -1,7 +1,7 @@
 import { fstatSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import { ACTORS, DEFAULT_ACTOR, type Actor, type Warning } from "@corpus/contract";
+import { ACTORS, CommitShaSchema, DEFAULT_ACTOR, type Actor, type Warning } from "@corpus/contract";
 import { UsageError } from "./errors.js";
 import type { ParsedFlags } from "./parse-args.js";
 import type { CommandContext } from "./registry/types.js";
@@ -61,10 +61,21 @@ export function resolveActor(
   return validateActor(fromEnv, ACTOR_ENV_VAR);
 }
 
+/**
+ * A `--from` that is a **commit sha** is not a misspelled actor: it is one half
+ * of a `doc.edited` event's range aimed at the wrong flag, because that event
+ * calls it `from` and this global name is already taken. `corpus doc diff`
+ * spells its range halves `--from-rev`/`--to-rev` for exactly that reason, and
+ * the sentence saying so belongs where the mistake actually surfaces — the
+ * dispatcher rejects the value before the verb it was meant for ever runs.
+ */
 function validateActor(value: string, source: string): Actor {
   if (isActor(value)) return value;
   throw new UsageError(`${source} must be one of: ${ACTORS.join(", ")} — got "${value}".`, {
-    hint: `Writes are attributed to \`${DEFAULT_ACTOR}\` unless ${source} says otherwise.`,
+    hint: CommitShaSchema.safeParse(value).success
+      ? "That is a commit sha. A revision range belongs to `corpus doc diff <id> --from-rev " +
+        "<sha> --to-rev <sha>`; `--from` names the acting party on every verb."
+      : `Writes are attributed to \`${DEFAULT_ACTOR}\` unless ${source} says otherwise.`,
   });
 }
 

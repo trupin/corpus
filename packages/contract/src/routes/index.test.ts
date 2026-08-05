@@ -311,6 +311,13 @@ function createStubApp() {
       200,
     );
   });
+  // §4's other end (CONTRACT-031). Body-less in both directions, so the status
+  // is the whole answer; what the flush does to a session is exercised against a
+  // real tracker's semantics in `./edit-session.test.ts`.
+  app.openapi(contractRoutes.flushEditSession, (c) => {
+    c.req.valid("param");
+    return c.body(null, 204);
+  });
   app.openapi(contractRoutes.searchCorpus, (c) => {
     const { q, limit, type } = c.req.valid("query");
     return c.json(
@@ -756,6 +763,26 @@ describe("routes mounted on a Hono app", () => {
 
     const read = (await (await app.request("/api/docs/doc_a1b2c3")).json()) as { body: string };
     expect(read.body).toBe("Body.");
+  });
+
+  /**
+   * The static segment below `{id}` (CONTRACT-031) shares its depth with `move`,
+   * `archive` and `unarchive`, so nothing competes with the parameter — but
+   * misrouting here would be silent, and the flush answers `204` where the
+   * document read answers `200`, so the status alone separates them.
+   */
+  it("routes /api/docs/{id}/edit-session/flush to the flush, not the document read", async () => {
+    const app = createStubApp();
+
+    const flushed = await app.request("/api/docs/doc_a1b2c3/edit-session/flush", {
+      method: "POST",
+    });
+    expect(flushed.status).toBe(204);
+    expect(await flushed.text()).toBe("");
+
+    const read = await app.request("/api/docs/doc_a1b2c3");
+    expect(read.status).toBe(200);
+    expect(((await read.json()) as { body: string }).body).toBe("Body.");
   });
 
   it("applies the retrieval caps and rejects a limit past the maximum", async () => {
