@@ -572,6 +572,33 @@ describe("requeueDeferredFor", () => {
     expect(pending).toMatchObject({ attempts: 1 });
   });
 
+  it("never reports a half-applied batch to a poll that ticks mid-requeue", async () => {
+    const service = makeService();
+    const first = await deferOn(service, "doc_locked01");
+    const second = await deferOn(service, "doc_locked01");
+
+    // The 10 ms poll tick hits this window by luck; here it is forced, because a
+    // test that reproduces one time in twenty is how INFRA-020's four gate
+    // cycles were spent. The delay sits between the two pending writes, so any
+    // reader that is not serialized against the requeue sees exactly one of them.
+    const realWrite = service.store.writeEvent.bind(service.store);
+    let pendingWrites = 0;
+    vi.spyOn(service.store, "writeEvent").mockImplementation(async (status, event) => {
+      await realWrite(status, event);
+      if (status === "pending") {
+        pendingWrites += 1;
+        if (pendingWrites === 1) await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+    });
+
+    const parked = service.idle({ timeoutMs: 2000 });
+    const requeued = await service.requeueDeferredFor("doc_locked01");
+
+    expect(requeued.sort()).toEqual([first.id, second.id].sort());
+    // Waits on the condition — both events available — not on a duration.
+    expect((await parked)?.map((event) => event.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
   it("quarantines a corrupt file in deferred/ rather than skipping it forever", async () => {
     const service = makeService();
     writeFileSync(service.store.pathFor("deferred", "evt_bad000000000"), "not json");

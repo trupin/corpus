@@ -142,7 +142,7 @@ export class QueueService {
     this.staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.waiters = new WaiterRegistry({
-      probe: async () => (await this.availablePending()).length > 0,
+      probe: async () => (await this.settledPending()).length > 0,
       ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
       onProbeError: (error: unknown) => {
         this.logger.error("queue poll failed", { error: String(error) });
@@ -228,7 +228,7 @@ export class QueueService {
     // the *instants written into files* deterministic in tests.
     const deadline = Date.now() + request.timeoutMs;
     for (;;) {
-      const available = await this.availablePending();
+      const available = await this.settledPending();
       if (available.length > 0) return available;
 
       const remaining = deadline - Date.now();
@@ -597,8 +597,33 @@ export class QueueService {
   }
 
   /**
-   * One writer at a time inside this process. Rejections must not poison the
-   * chain, so the tail is always a resolved promise.
+   * `availablePending`, but never mid-batch.
+   *
+   * The two readers that answer "is there work?" — the long poll and the parked
+   * waiter's tick — both used to scan `pending/` off the chain, while
+   * `requeueDeferredFor` writes its files **one at a time** on it. A reader
+   * landing between two of those writes saw half the batch and reported it as
+   * the whole of it: a release that returned two deferred events could wake an
+   * agent with one (INFRA-020; four gate cycles were spent deciding whether this
+   * was a flaky test — it was not).
+   *
+   * Nothing was ever lost — the unreported event stays `pending/` and the very
+   * next poll returns it — but "the queue told you what is there" is the whole
+   * of what these two entry points promise, and a torn read breaks it.
+   *
+   * Taking the writer's chain is the cheapest way to say *between* batches
+   * rather than *during* one, and it cannot deadlock: `notify()` fires from
+   * inside a write's turn, but the woken reader only *queues* behind it.
+   */
+  private settledPending(): Promise<StoredEvent[]> {
+    return this.serialize(() => this.availablePending());
+  }
+
+  /**
+   * One turn at a time inside this process: every writer, and the two readers
+   * that must not observe a partial one (see {@link settledPending}).
+   * Rejections must not poison the chain, so the tail is always a resolved
+   * promise.
    */
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const result = this.claimChain.then(work, work);
