@@ -136,31 +136,65 @@
  * is the document itself and has a whole column to spend; a title in a row is a
  * label in a list.
  */
+/* The title wraps to as many lines as it needs (UI-065), and it is an editable
+   field, so it is a textarea — an `<input>` cannot wrap by construction and
+   hides exactly the tail that distinguishes one dated report from the next.
+
+   A textarea has rows rather than a content height, so something has to supply
+   one. This wrapper does it the way `.composer-grow` does (see
+   `thread/GrowingTextarea.tsx`): a hidden copy of the value stacked in the same
+   grid cell, so the row is as tall as the text and the field stretches to it.
+
+   It replaced a `scrollHeight` measurement. That worked, and writing
+   `height: auto` to measure — then writing the result back — momentarily
+   shortened the document, which made the reader's scroll container clamp
+   `scrollTop` to 0: an item revealed by a click stopped being scrolled into
+   view, caught by five reveal specs. Layout cannot do that to itself. */
+.title-grow {
+  display: grid;
+  margin: 0 0 4px;
+  width: 100%;
+  max-width: 62ch;
+}
+
+/* The mirror measures right only while it wraps exactly as the field does, so
+   everything that decides a line break is set on both. */
+.title-grow::after,
 .doc-title {
+  grid-area: 1 / 1 / 2 / 2;
   font-family: var(--serif);
   font-size: 24px;
   font-weight: 700;
   /* `1.25`, not the body's `1.45`: display type set at 24px needs its lines
-     closer, and the field's height is now a multiple of this. */
+     closer. */
   line-height: 1.25;
-  margin: 0 0 4px;
   text-wrap: balance;
-  color: inherit;
-  background: none;
-  border: none;
   padding: 0;
+  border: none;
   width: 100%;
-  max-width: 62ch;
-  display: block;
-  /* The height is measured, so a drag handle offering another one is a way to
-     put the field out of step with its content. */
-  resize: none;
-  /* `useTitleFit` sizes the box to hold every line; a scrollbar here would mean
-     it had failed, and a scrolled-away line is the defect this rule set fixes. */
-  overflow: hidden;
+  min-width: 0;
+  white-space: pre-wrap;
   /* A title can be one long token — a URL, a path, an id. Same reasoning as
      `.doc-body` in `@corpus/kit/markdown.css`. */
   overflow-wrap: anywhere;
+}
+
+.title-grow::after {
+  content: attr(data-replicated-value) " ";
+  visibility: hidden;
+}
+
+.doc-title {
+  margin: 0;
+  color: inherit;
+  background: none;
+  display: block;
+  /* The wrapper decides the height, so a drag handle offering another one is a
+     way to put the field out of step with its content. */
+  resize: none;
+  /* The grid row is already as tall as the text; a scrollbar here would mean the
+     mirror and the field had stopped agreeing. */
+  overflow: hidden;
 }
 
 .doc-title:read-only {

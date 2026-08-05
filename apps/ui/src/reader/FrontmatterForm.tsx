@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState, type ReactElement, type React
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
-import { useTitleFit } from "./useTitleFit";
 
 /**
  * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
@@ -143,13 +142,13 @@ export function FrontmatterForm({
   });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState(false);
-  // A textarea, not an input: the title wraps (UI-065). See `useTitleFit`.
+  // A textarea, not an input: the title wraps (UI-065). The `.title-grow`
+  // wrapper in `Reader.css` gives it its height.
   const field = useRef<HTMLTextAreaElement>(null);
   const selected = useRef(false);
 
   const current = draftOf(doc);
   const value = draft ?? current;
-  useTitleFit(field, value.title);
   const changes = draft === null ? {} : changedFields(doc, draft);
   const isDirty = Object.keys(changes).length > 0;
 
@@ -286,32 +285,47 @@ export function FrontmatterForm({
 
       {banner}
 
-      <textarea
-        ref={field}
-        className="doc-title"
-        aria-label="Document title"
-        // The field grows by wrapping, never by the user adding rows: `↵` is
-        // save (below), so no newline can reach the value and one row is always
-        // the floor.
-        rows={1}
-        value={value.title}
-        readOnly={locked}
-        onChange={(event) => {
-          patch({ title: event.target.value });
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            save();
-          }
-          if (event.key === "Escape" && draft !== null) {
-            // Consumed here rather than by the escape chain: reverting a draft is
-            // what Escape means while a field holds unsaved text.
-            event.stopPropagation();
-            setDraft(null);
-          }
-        }}
-      />
+      {/*
+       * The wrapper is what makes the title wrap (UI-065): a hidden copy of the
+       * value stacked in the same grid cell, so the row is as tall as the text
+       * and the field stretches to it — the browser laying out the same string
+       * in the same font.
+       *
+       * It replaced a `scrollHeight` measurement, which worked and cost too
+       * much: writing `height: auto` to measure, then writing the result back,
+       * momentarily shortened the document and made the reader's scroll
+       * container clamp `scrollTop` to 0. Five reveal specs caught it — an
+       * item revealed by a click stopped being scrolled into view. Measuring
+       * by layout instead of by mutation cannot do that.
+       */}
+      <div className="title-grow" data-replicated-value={value.title}>
+        <textarea
+          ref={field}
+          className="doc-title"
+          aria-label="Document title"
+          // The field grows by wrapping, never by the user adding rows: `↵` is
+          // save (below), so no newline can reach the value and one row is
+          // always the floor.
+          rows={1}
+          value={value.title}
+          readOnly={locked}
+          onChange={(event) => {
+            patch({ title: event.target.value });
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              save();
+            }
+            if (event.key === "Escape" && draft !== null) {
+              // Consumed here rather than by the escape chain: reverting a draft
+              // is what Escape means while a field holds unsaved text.
+              event.stopPropagation();
+              setDraft(null);
+            }
+          }}
+        />
+      </div>
 
       {editing ? (
         <div className="fm-form" aria-label="Frontmatter">
