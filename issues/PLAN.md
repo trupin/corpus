@@ -375,4 +375,5 @@ belongs to the same fix wave.
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | todo | P1 | — |
 | UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
+| UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | todo | P1 | UI-062 |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
