@@ -19,8 +19,9 @@ a payload that itself hands over a fenced payload
 ````
 `````
 
-A run in the middle of a line counts exactly as much as one that opens a block,
-so this widens too:
+A run in the middle of a line closes nothing — only a line that is nothing but
+the run does. The printer still widens for it, being conservative rather than
+minimal, and that is what this pins:
 
 ````
 a ``` inside a line of text
