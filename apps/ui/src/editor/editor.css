@@ -34,10 +34,31 @@
   user-select: text;
 }
 
+/* prosemirror-view's own rule, and it stays: `pre-wrap` is what keeps a run of
+   typed spaces, a tab and a trailing space on a line visible, which is what
+   keeps the DOM matching the document ProseMirror reads changes back out of.
+   Its `checkCSS` warns outright on any value that collapses spaces. */
 .doc-editor .ProseMirror {
   min-height: 1.62em;
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+/*
+ * The one character that must *not* be preserved: markdown's soft line break
+ * (UI-072). `softWrap.ts` wraps each newline the file hard-wrapped a paragraph
+ * at in this span, and a collapsing span inside a preserving surface turns that
+ * segment break into the space CommonMark says it is — while every space, tab
+ * and indent around it stays `pre-wrap`'s.
+ *
+ * Nothing here touches the bytes: the newline is still in the document and
+ * still in the DOM's text, so the file round-trips unchanged and a comment
+ * anchor spanning a wrapped line still matches the source (SPEC.md §6).
+ * A deliberate break — markdown's two trailing spaces or a backslash — is a
+ * `hardBreak` node and a real `<br>`, which this cannot reach.
+ */
+.doc-editor .ProseMirror .md-soft-wrap {
+  white-space: normal;
 }
 
 /* ProseMirror's placeholder for a document that is only frontmatter: an empty
@@ -76,6 +97,19 @@
   padding: 8px 10px;
   margin: 10px 0;
   overflow-x: auto;
+  white-space: pre;
+}
+
+/*
+ * The same declaration, restated where it can win. A raw block is a node view
+ * and therefore `contenteditable="false"`, which prosemirror-view's own
+ * `.ProseMirror [contenteditable="false"] { white-space: normal }` catches — and
+ * that outranks the rule above. Measured live while verifying UI-072: a
+ * multi-line `<section>` block was drawn collapsed onto one line, so the
+ * construct the schema keeps *verbatim* was the one construct not shown
+ * verbatim.
+ */
+.doc-editor .ProseMirror pre.md-raw {
   white-space: pre;
 }
 

@@ -28,6 +28,9 @@ import { resetEscapeLayers } from "./useEscapeStack";
 
 const PLUGIN_TYPE = "fixture-note";
 
+/** A doc type the plugin owns with a `DocPanel` — the slot that renders above the body. */
+const PANEL_TYPE = "fixture-panelled";
+
 const PLUGIN_DOC = docFixture({
   frontmatter: { id: "doc_fx", type: PLUGIN_TYPE, title: "A fixture note" },
   body: "The body a plugin owns.",
@@ -43,31 +46,45 @@ const VIEW_DOC = docFixture({
   body: "The description of a view.",
 });
 
-function installPlugin(): void {
-  setPluginRegistry(
-    buildRegistry([
-      {
-        dir: "fx",
-        loaded: {
-          module: {
-            default: {
-              id: "fx",
-              name: "FX",
-              docTypes: [
-                {
-                  type: PLUGIN_TYPE,
-                  View: ({ doc }: { readonly doc: Doc }) => (
-                    <p data-fx-view="">plugin view of {doc.frontmatter.title}</p>
-                  ),
-                },
-              ],
-              columns: [],
-            },
+const PANEL_DOC = docFixture({
+  frontmatter: { id: "doc_pn", type: PANEL_TYPE, title: "A panelled note" },
+  body: "Prose with a plugin panel above it.",
+});
+
+/** The registry the fixture plugin produces once it has loaded. */
+function fixtureRegistry(): ReturnType<typeof buildRegistry> {
+  return buildRegistry([
+    {
+      dir: "fx",
+      loaded: {
+        module: {
+          default: {
+            id: "fx",
+            name: "FX",
+            docTypes: [
+              {
+                type: PLUGIN_TYPE,
+                View: ({ doc }: { readonly doc: Doc }) => (
+                  <p data-fx-view="">plugin view of {doc.frontmatter.title}</p>
+                ),
+              },
+              {
+                type: PANEL_TYPE,
+                DocPanel: ({ doc }: { readonly doc: Doc }) => (
+                  <p data-fx-panel="">panel over {doc.frontmatter.title}</p>
+                ),
+              },
+            ],
+            columns: [],
           },
         },
       },
-    ]),
-  );
+    },
+  ]);
+}
+
+function installPlugin(): void {
+  setPluginRegistry(fixtureRegistry());
 }
 
 function wireFor(doc: Doc): ReaderTransport {
@@ -152,5 +169,83 @@ describe("the body renderer a document gets", () => {
       expect(screen.getByText("The description of a view.")).toBeTruthy();
     });
     expect(editorFor("doc_v")).toBeNull();
+  });
+});
+
+/**
+ * UI-073 — what the reader does while plugin discovery is still in flight.
+ *
+ * The geometry itself is jsdom's blind spot, so the pixels are pinned in
+ * `e2e/plugin-late-arrival.spec.ts` (77.86px, in a real browser). What is
+ * asserted here is the *rule* that makes the shift impossible: no part of the
+ * document body reaches the DOM while discovery is pending, so there is never a
+ * frame in which a panel or a `View` can arrive over something already painted.
+ */
+describe("a reader open while plugin discovery is in flight", () => {
+  it("paints no body at all — nothing on screen for a late panel to move", async () => {
+    setPluginRegistry(EMPTY_REGISTRY, "pending");
+    render(open(PANEL_DOC, wireFor(PANEL_DOC)));
+    await waitFor(() => {
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    });
+    expect(editorFor("doc_pn")).toBeNull();
+    expect(document.querySelector("[data-fx-panel]")).toBeNull();
+  });
+
+  it("brings the panel and the body in together when discovery settles", async () => {
+    setPluginRegistry(EMPTY_REGISTRY, "pending");
+    render(open(PANEL_DOC, wireFor(PANEL_DOC)));
+    await waitFor(() => {
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    });
+
+    setPluginRegistry(fixtureRegistry());
+    await waitFor(() => {
+      expect(editorFor("doc_pn")).not.toBeNull();
+    });
+    // The same commit: the body's first appearance already has the panel above
+    // it, which is the whole property. A body that arrived first would have
+    // moved when this appeared.
+    expect(document.querySelector("[data-fx-panel]")).not.toBeNull();
+  });
+
+  /**
+   * A plugin `View` is the same defect with a bigger jump — it replaces the
+   * body wholesale — and reserving a slot's height could never have covered it.
+   */
+  it("never shows the core editor under a document a plugin View owns", async () => {
+    setPluginRegistry(EMPTY_REGISTRY, "pending");
+    render(open(PLUGIN_DOC, wireFor(PLUGIN_DOC)));
+    await waitFor(() => {
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    });
+    expect(editorFor("doc_fx")).toBeNull();
+
+    setPluginRegistry(fixtureRegistry());
+    await waitFor(() => {
+      expect(screen.getByText("plugin view of A fixture note")).toBeTruthy();
+    });
+    expect(editorFor("doc_fx")).toBeNull();
+  });
+
+  /**
+   * The bound (`DISCOVERY_BUDGET_MS`). Past it the document is worth more than
+   * the chrome, so the body paints — and then it is *kept* unadorned, because
+   * a panel arriving over a body that is already on screen is the defect
+   * itself, merely later.
+   */
+  it("paints without plugin chrome once the wait is abandoned, and keeps it that way", async () => {
+    setPluginRegistry(EMPTY_REGISTRY, "abandoned");
+    render(open(PANEL_DOC, wireFor(PANEL_DOC)));
+    await waitFor(() => {
+      expect(editorFor("doc_pn")).not.toBeNull();
+    });
+    expect(document.querySelector("[data-fx-panel]")).toBeNull();
+
+    setPluginRegistry(fixtureRegistry());
+    await waitFor(() => {
+      expect(editorFor("doc_pn")?.getAttribute("data-editable")).toBe("true");
+    });
+    expect(document.querySelector("[data-fx-panel]")).toBeNull();
   });
 });

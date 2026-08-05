@@ -12,6 +12,7 @@ import {
   DEFAULT_MAX_REQUEST_BYTES,
   type AttachmentLimits,
 } from "./attachments/index.js";
+import { EDIT_ACK_IDLE_MS } from "./edit/index.js";
 import { ConfigError } from "./errors.js";
 import { LogLevelSchema, type LogLevel } from "./logger.js";
 import {
@@ -85,6 +86,24 @@ export const AttachmentConfigSchema = z.object({
   maxRequestBytes: z.number().int().min(0).default(DEFAULT_MAX_REQUEST_BYTES),
 });
 
+/**
+ * SPEC.md §4's edit-acknowledgment window — how long a document may sit with no
+ * user save before the session on it ends and a `doc.edited` is enqueued.
+ *
+ * A nested block on the `attachments` precedent rather than a bare
+ * `editAckIdleMs`, so the acknowledgment has somewhere to grow (a workspace that
+ * later wants to opt out entirely, or to scope the window per document type, adds
+ * a key here rather than a second top-level one).
+ *
+ * The floor is one second, not zero: a window of zero would end a session on the
+ * same tick as the save that opened it, which is not a shorter acknowledgment but
+ * a different feature — one event per autosave, which is what §4's window exists
+ * to prevent.
+ */
+export const EditAcknowledgmentConfigSchema = z.object({
+  idleMs: z.number().int().min(1_000).default(EDIT_ACK_IDLE_MS),
+});
+
 export const WorkspaceConfigSchema = z.object({
   version: z.literal(1),
   port: z.number().int().min(1).max(65535).default(DEFAULT_PORT),
@@ -105,6 +124,7 @@ export const WorkspaceConfigSchema = z.object({
    * wrote stays readable.
    */
   embedding: EmbeddingConfigSchema.optional(),
+  editAcknowledgment: EditAcknowledgmentConfigSchema.default({ idleMs: EDIT_ACK_IDLE_MS }),
 });
 
 /**
@@ -169,6 +189,16 @@ export interface ServerConfig {
    * a boot warning in {@link warnings} naming the file and the key.
    */
   readonly embedding: EmbeddingSettings;
+  /**
+   * SPEC.md §4's edit-acknowledgment window (SERVER-052). The one optional key on
+   * this interface, and it earns the exception: `loadServerConfig` always
+   * supplies it, so no *running* server is ever without a value — but a
+   * `ServerConfig` is also a literal in two dozen test fixtures, none of which
+   * has an opinion about the window, and making every one of them restate the
+   * shipped default would state it two dozen times. Omitted means
+   * {@link EDIT_ACK_IDLE_MS}, resolved at the one place that builds the tracker.
+   */
+  readonly editAcknowledgment?: { readonly idleMs: number } | undefined;
   /** Warnings worth surfacing at boot that are not fatal (e.g. a weak token). */
   readonly warnings: readonly string[];
 }
@@ -369,6 +399,7 @@ export function loadServerConfig(options: LoadServerConfigOptions): ServerConfig
     logLevel: resolveLogLevel(options.env),
     uiDistDir: resolveUiDistDir(options.env, packageRoot),
     embedding: embedding.settings,
+    editAcknowledgment: config.editAcknowledgment,
     warnings,
   };
 }

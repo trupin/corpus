@@ -177,14 +177,20 @@ const SELECT_ATTEMPTS = 3;
  * **The drag is checked against what it actually selected** (UI-071). A rect
  * measured in one layout and dragged in another puts the pointer on a different
  * line, and the drag then selects whatever moved under it — silently, because
- * the browser has no idea which words were meant. The document surface *does*
- * move after the editor first paints: plugin discovery is a dynamic `import()`
- * that settles late, and the `DocPanel` it registers renders **above** the body,
- * pushing it down 78px in this fixture. Measure "Call the plumber" before that
- * and release the mouse after it and the same x-span lands three lines up, on
- * `ores that landed ` — 17 characters out of "Chores that landed in the inbox."
- * That is the state the v0.3.0 pre-push gate caught, four assertions later, as a
- * highlight over the wrong sentence.
+ * the browser has no idea which words were meant. The document surface *used
+ * to* move after the editor first paints: plugin discovery is a dynamic
+ * `import()` that settles late, and the `DocPanel` it registers renders
+ * **above** the body, pushing it down 77.9px in this fixture. Measure "Call the
+ * plumber" before that and release the mouse after it and the same x-span lands
+ * three lines up, on `ores that landed ` — 17 characters out of "Chores that
+ * landed in the inbox." That is the state the v0.3.0 pre-push gate caught, four
+ * assertions later, as a highlight over the wrong sentence.
+ *
+ * **UI-073 closed that at the source**: `DocView` paints no body until discovery
+ * has settled, so no frame exists any more in which this document is on screen
+ * and a panel is still on its way (`plugin-late-arrival.spec.ts` holds the
+ * manifest modules at the route level and pins it). The loop below stays: it
+ * costs one comparison, and it is what would catch the *next* thing that moves.
  *
  * Re-measuring is what makes a shifted attempt recoverable; the equality check
  * is what makes it *safe*, and it is the half that matters. A spec may fail to

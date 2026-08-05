@@ -69,9 +69,21 @@ export interface WriteWorkspaceOptions {
    * values, so no other fixture has to know they exist.
    */
   readonly attachments?: AttachmentLimits | undefined;
+  /**
+   * SPEC.md §4's edit-acknowledgment window (SERVER-052). Shortened by the
+   * suites that have to watch a session *idle out*, which at the shipped three
+   * minutes no test can wait for. Omitted, the server resolves the default, so
+   * no other fixture has to know the window exists.
+   */
+  readonly editAckIdleMs?: number | undefined;
 }
 
-const serverConfig = (workspaceRoot: string, attachments: AttachmentLimits): ServerConfig => ({
+const serverConfig = (
+  workspaceRoot: string,
+  attachments: AttachmentLimits,
+  editAckIdleMs: number | undefined,
+): ServerConfig => ({
+  ...(editAckIdleMs === undefined ? {} : { editAcknowledgment: { idleMs: editAckIdleMs } }),
   workspaceRoot,
   corpusDir: join(workspaceRoot, ".corpus"),
   attachments,
@@ -127,7 +139,11 @@ export function createWriteWorkspace(
     );
   }
 
-  const config = serverConfig(workspaceRoot, options.attachments ?? DEFAULT_ATTACHMENT_LIMITS);
+  const config = serverConfig(
+    workspaceRoot,
+    options.attachments ?? DEFAULT_ATTACHMENT_LIMITS,
+    options.editAckIdleMs,
+  );
   const db = openProjection(config, { populate: false });
 
   const state = { clock: FIXTURE_NOW };

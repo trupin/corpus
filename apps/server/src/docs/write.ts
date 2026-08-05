@@ -52,6 +52,7 @@ import {
   type CheckOptions,
 } from "../core/index.js";
 import { resolveAnchor } from "../anchors/index.js";
+import type { EditSessionTracker } from "../edit/index.js";
 import { badRequest } from "../errors.js";
 import type { InvalidationBus } from "../events/index.js";
 import { TREE_KEY, dedupeKeys } from "../events/index.js";
@@ -219,6 +220,23 @@ export type MutationPlan = {
    * query off the autosave path.
    */
   readonly mayChangeTree?: boolean;
+  /**
+   * The workspace-relative path of the document this plan is the **editor's
+   * save** of (SPEC.md §4's edit acknowledgment; SERVER-052). Set by
+   * `PUT /api/docs/{id}` and by nothing else — a user save through that verb is
+   * what §4 means by an edit session, and it is where the reader's autosave and
+   * the plugin read-modify-write both land.
+   *
+   * Left unset by every other verb on purpose. A create, a move, an archive, a
+   * delete, a thread turn and a lock audit entry are all things that *happen to*
+   * a document rather than sessions of somebody editing it; folding them in
+   * would acknowledge a document the user only filed, and would double up with
+   * the `comment.created` a thread reply already enqueues.
+   *
+   * Carrying the path rather than a boolean is what lets the tracker report
+   * stats path-scoped to this file and follow a document renamed between saves.
+   */
+  readonly editSession?: string | undefined;
 };
 
 export type MutationResult = {
@@ -267,6 +285,17 @@ export interface DocsWorkspace {
    * no bytes, where every cleanup call is a no-op.
    */
   readonly attachmentsRoot?: string | undefined;
+  /**
+   * §4's edit acknowledgment (SERVER-052). Every mutation is reported to it —
+   * not only the editor's saves — because a commit by the *other* party is what
+   * seals an open session, and a tracker that never heard about one could hand
+   * the agent a range spanning the agent's own commit.
+   *
+   * A seam, and optional, for the reason `assertWritable` is one: the pipeline
+   * stays testable without a queue, and a server built without a projection (and
+   * so without a git writer) has no acknowledgment to make.
+   */
+  readonly editSessions?: EditSessionTracker | undefined;
 }
 
 /** A 400 always carries `issues` — `ApiErrorSchema`'s `bad_request` variant requires it. */
@@ -748,6 +777,19 @@ export async function runMutation(
           ...(plan.commit.anchors === undefined ? {} : { anchors: plan.commit.anchors }),
           ...(plan.commit.squash === undefined ? {} : { squash: plan.commit.squash }),
         });
+
+  // §4's edit acknowledgment (SERVER-052). Told about *every* mutation, not only
+  // the editor's saves: a commit by the other party is what seals an open
+  // session, which is how a user's reported range never spans an agent's commit
+  // to the same document. Synchronous and I/O-free — the git reads an event
+  // needs happen on the tracker's own timer, never here on the autosave path.
+  workspace.editSessions?.observeCommit({
+    docId: request.docId,
+    actor: request.actor,
+    paths: plan.stage,
+    editPath: plan.editSession ?? null,
+    outcome: commit,
+  });
 
   // After the commit and before the response — a hook failure must not cost the
   // projection its update, or the UI would stop showing a change that is on disk.

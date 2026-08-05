@@ -190,11 +190,49 @@ export function buildRegistry(modules: readonly DiscoveredModule[]): PluginRegis
   return { plugins, warnings, docTypes, columns };
 }
 
+/**
+ * Where discovery has got to — the half of the registry a **layout** has to
+ * consult (UI-073).
+ *
+ * `pluginRegistry()` answers "what is registered", which is the same answer
+ * (`EMPTY_REGISTRY`) whether nothing is registered or nothing has loaded *yet*.
+ * A surface whose geometry depends on a plugin cannot act on that: painting
+ * during `pending` is painting a layout that is about to change under whatever
+ * the user is doing to it. This is the distinction that was missing.
+ *
+ * - `settled` — discovery is done, or was never asked for. The initial value,
+ *   so every host that does not call {@link loadPlugins} (unit tests, any
+ *   non-browser render) sees a registry it can act on immediately.
+ * - `pending` — {@link loadPlugins} is in flight. Set **synchronously** when it
+ *   is called, which is what puts it in place before `main.tsx` renders.
+ * - `abandoned` — it took longer than {@link DISCOVERY_BUDGET_MS}. Surfaces
+ *   stop waiting and paint without plugin chrome.
+ */
+export type PluginDiscoveryPhase = "settled" | "pending" | "abandoned";
+
+/**
+ * The bound on how long any surface may wait for discovery.
+ *
+ * The manifests are chunks of this same bundle, served from the origin that
+ * served the page: two seconds is not a slow import, it is a broken one, and
+ * past that point a document the user cannot read is worse than a document
+ * without its plugin's panel. Nothing is cancelled — a discovery that finishes
+ * afterwards still installs, and the next reader to open gets it.
+ */
+export const DISCOVERY_BUDGET_MS = 2_000;
+
 let registry: PluginRegistry = EMPTY_REGISTRY;
+let phase: PluginDiscoveryPhase = "settled";
 const listeners = new Set<() => void>();
 
-function install(next: PluginRegistry): void {
+/**
+ * Swaps registry and phase together and notifies once. Two notifications would
+ * be two renders, and the second of them is exactly the frame in which a panel
+ * appears over an already-painted body.
+ */
+function publish(next: PluginRegistry, nextPhase: PluginDiscoveryPhase): void {
   registry = next;
+  phase = nextPhase;
   for (const listener of [...listeners]) listener();
 }
 
@@ -204,19 +242,39 @@ function install(next: PluginRegistry): void {
  * registry starts {@link EMPTY_REGISTRY} and components that resolve slots
  * subscribe through {@link usePluginRegistry} and re-render when discovery
  * settles. Never throws — every failure mode is a warning in the registry.
+ *
+ * The shell, the board and the keyboard are live from the first frame, which is
+ * why this is not awaited. The one surface that *does* wait is the document
+ * body, whose geometry is what a late arrival damages — see `DocView.tsx`,
+ * where that decision and its alternatives are argued.
  */
 export async function loadPlugins(): Promise<PluginRegistry> {
-  const next = buildRegistry(await importAll(discoverManifestLoaders()));
-  for (const warning of next.warnings) {
-    console.error(`[corpus] plugin ${warning.plugin} skipped: ${warning.reason}`);
+  // Synchronous, before the first `await`: `main.tsx` calls this and then
+  // renders, so the app's first render must already see `pending`.
+  publish(registry, "pending");
+  const budget = setTimeout(() => {
+    publish(registry, "abandoned");
+  }, DISCOVERY_BUDGET_MS);
+  try {
+    const next = buildRegistry(await importAll(discoverManifestLoaders()));
+    for (const warning of next.warnings) {
+      console.error(`[corpus] plugin ${warning.plugin} skipped: ${warning.reason}`);
+    }
+    publish(next, "settled");
+    return next;
+  } finally {
+    clearTimeout(budget);
   }
-  install(next);
-  return next;
 }
 
 /** The current registry — {@link EMPTY_REGISTRY} until {@link loadPlugins} resolves. */
 export function pluginRegistry(): PluginRegistry {
   return registry;
+}
+
+/** How far discovery has got — see {@link PluginDiscoveryPhase}. */
+export function pluginDiscoveryPhase(): PluginDiscoveryPhase {
+  return phase;
 }
 
 /** Notifies on every registry swap; returns the unsubscribe. */
@@ -236,9 +294,28 @@ export function usePluginRegistry(): PluginRegistry {
   return useSyncExternalStore(subscribePlugins, pluginRegistry);
 }
 
-/** Test seam: install a registry built by hand. Returns the previous one. */
-export function setPluginRegistry(next: PluginRegistry): PluginRegistry {
+/**
+ * The same store, read for {@link PluginDiscoveryPhase} rather than contents.
+ * A component that lays out around a plugin slot needs both: the phase decides
+ * whether it may paint at all, the registry decides what it paints.
+ */
+export function usePluginDiscovery(): PluginDiscoveryPhase {
+  return useSyncExternalStore(subscribePlugins, pluginDiscoveryPhase);
+}
+
+/**
+ * Test seam: install a registry built by hand. Returns the previous one.
+ *
+ * An explicit install is a **settled** registry by default — there is nothing
+ * in flight to wait for — which is why gating on the phase changes nothing for
+ * the tests that use this seam. Pass a phase to drive a surface through
+ * discovery's own states.
+ */
+export function setPluginRegistry(
+  next: PluginRegistry,
+  nextPhase: PluginDiscoveryPhase = "settled",
+): PluginRegistry {
   const previous = registry;
-  install(next);
+  publish(next, nextPhase);
   return previous;
 }

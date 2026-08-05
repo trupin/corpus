@@ -16,6 +16,7 @@ import { corpusExtensions, NODE as NODE_NAMES } from "./markdown/schema.js";
 import { canonicalizeMarkdown, serializeDoc } from "./markdown/serialize.js";
 import type { PmNode } from "./markdown/schema.js";
 import { createRefSuggestion, type RefSuggestionState } from "./refSuggestion.js";
+import { SoftWrap } from "./softWrap.js";
 import { useSaveStatusPublisher } from "./SaveChip.js";
 import { buildSelection, type EditorSelection } from "./selection.js";
 import { useAutosave, type AnchorReport } from "./useAutosave.js";
@@ -166,6 +167,11 @@ export function DocEditor({
       docRefWithView(openRef),
       imageWithView(),
       createRefSuggestion({ onStateChange: setSuggestion, keyHandler: suggestionKeys }),
+      // View-only, like the suggestion above it: it draws the document the
+      // markdown says it is (UI-072) and contributes nothing to the schema, so
+      // `corpusExtensions()` — which parsing and serialising share — stays the
+      // list of what a *file* can contain.
+      SoftWrap,
     ],
     [],
   );

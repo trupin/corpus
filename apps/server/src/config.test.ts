@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_ATTACHMENT_LIMITS } from "./attachments/index.js";
+import { EDIT_ACK_IDLE_MS } from "./edit/index.js";
 import { ConfigError } from "./errors.js";
 import {
   CONFIG_RELATIVE_PATH,
@@ -78,7 +79,30 @@ describe("WorkspaceConfigSchema", () => {
       token: LONG_TOKEN,
       dataDir: DEFAULT_DATA_DIR,
       attachments: DEFAULT_ATTACHMENT_LIMITS,
+      editAcknowledgment: { idleMs: EDIT_ACK_IDLE_MS },
     });
+  });
+
+  it("takes SPEC.md §4's acknowledgment window from the file, and defaults it to three minutes", () => {
+    expect(
+      WorkspaceConfigSchema.parse({ version: 1, token: LONG_TOKEN }).editAcknowledgment,
+    ).toEqual({ idleMs: EDIT_ACK_IDLE_MS });
+    expect(
+      WorkspaceConfigSchema.parse({
+        version: 1,
+        token: LONG_TOKEN,
+        editAcknowledgment: { idleMs: 30_000 },
+      }).editAcknowledgment,
+    ).toEqual({ idleMs: 30_000 });
+    // A window of zero is not a shorter acknowledgment; it is one event per
+    // autosave, which is the thing §4's window exists to prevent.
+    expect(
+      WorkspaceConfigSchema.safeParse({
+        version: 1,
+        token: LONG_TOKEN,
+        editAcknowledgment: { idleMs: 0 },
+      }).success,
+    ).toBe(false);
   });
 
   it("takes attachment caps from the file, and defaults each one independently", () => {
