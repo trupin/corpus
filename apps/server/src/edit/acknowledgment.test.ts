@@ -5,19 +5,30 @@
 // synthetic commit graph. This one asks the question that graph cannot: does a
 // `PUT /api/docs/{id}` by a person, against a repository git actually wrote,
 // produce one queue file whose range and stats describe what the person did.
+//
+// It also owns §4's **close** door — `POST /api/docs/{id}/edit-session/flush`
+// (SERVER-057) — because every property that route publishes is a statement
+// about the queue file it does or does not produce, which is the observable this
+// file already reads.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseDocEditedPayload, type DocEditedPayload } from "@corpus/contract";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "../docs/write-fixture.js";
+import {
+  AUTH,
+  createDoc,
+  createWriteWorkspace,
+  type WriteWorkspace,
+  type WriteWorkspaceOptions,
+} from "../docs/write-fixture.js";
 
 /** Short enough to watch a session idle out; the shipped window is three minutes. */
 const IDLE_MS = 80;
 
 const workspaces: WriteWorkspace[] = [];
 
-function workspace(prefix: string, options: { editAckIdleMs?: number } = {}): WriteWorkspace {
+function workspace(prefix: string, options: WriteWorkspaceOptions = {}): WriteWorkspace {
   const ws = createWriteWorkspace(prefix, { sprint: "s011", ...options });
   workspaces.push(ws);
   return ws;
@@ -54,6 +65,13 @@ function acknowledgments(ws: WriteWorkspace): DocEditedPayload[] {
 
 const edit = (ws: WriteWorkspace, id: string, body: string, actor: "user" | "agent" = "user") =>
   ws.put(`/api/docs/${id}`, { body }, { "x-corpus-author": actor });
+
+/**
+ * The flush as a real caller makes it: `POST`, no body, no acting party header.
+ * `keepalive` is the browser's affair — on the wire it is this request.
+ */
+const flush = (ws: WriteWorkspace, id: string, headers: Record<string, string> = AUTH) =>
+  ws.request(`/api/docs/${id}/edit-session/flush`, { method: "POST", headers });
 
 /**
  * §4's squash idle (30 s), stepped over so that a `POST /api/docs` and the edits
@@ -247,5 +265,113 @@ describe("doc.edited over the real write path", () => {
     await vi.waitFor(() => {
       expect(acknowledgments(ws)).toHaveLength(1);
     });
+  });
+});
+
+describe("POST /api/docs/{id}/edit-session/flush", () => {
+  it("ends the open session now, without waiting out §4's window", async () => {
+    // The shipped window is three minutes and this workspace's is the default:
+    // nothing here waits it out, which is the whole point of the route.
+    const ws = workspace("flush-close");
+    const doc = await createDoc(ws, { type: "note", title: "Put down", body: "one\n" });
+    pastTheSquashWindow(ws);
+    await edit(ws, doc.id, "one\ntwo\n");
+    expect(acknowledgments(ws)).toHaveLength(0);
+
+    const response = await flush(ws, doc.id);
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+    const payload = acknowledgments(ws)[0];
+    expect(payload).toMatchObject({ docId: doc.id, actor: "user", endedBy: "close" });
+    expect(payload?.to).toBe(ws.head());
+    expect(payload?.stats.commits).toBe(1);
+    expect(payload?.stats.insertions).toBeGreaterThan(0);
+  });
+
+  it("answers before the acknowledgment exists — emission is decided after the response", async () => {
+    // The contract's reason for a bodyless `204`: at the moment the caller is
+    // answered, whether an event follows is not yet known, so the response can
+    // only state the postcondition.
+    const ws = workspace("flush-after");
+    const doc = await createDoc(ws, { type: "note", title: "Ordering", body: "a\n" });
+    pastTheSquashWindow(ws);
+    await edit(ws, doc.id, "a\nb\n");
+
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    expect(acknowledgments(ws)).toHaveLength(0);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+  });
+
+  it("emits exactly one event per session however many times it is flushed", async () => {
+    // The route inherits the tracker's structural guarantee: `end()` removes the
+    // session from the map before it emits, so the second flush finds nothing.
+    // An unload path that fires twice — `pagehide` after `visibilitychange` — is
+    // the case this makes free.
+    const ws = workspace("flush-twice", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "note", title: "Twice", body: "x\n" });
+    pastTheSquashWindow(ws);
+    await edit(ws, doc.id, "x\ny\n");
+
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    expect((await flush(ws, doc.id)).status).toBe(204);
+
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+    // And the other door finds nothing either: the window elapses on a session
+    // that is already gone.
+    ws.advance(IDLE_MS * 4);
+    await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
+    expect(acknowledgments(ws)).toHaveLength(1);
+    expect(acknowledgments(ws)[0]?.endedBy).toBe("close");
+  });
+
+  it("answers 204 with no session open — never a 409 or a 'nothing to flush' 404", async () => {
+    // The idempotence the contract publishes. A document that was only read has
+    // no session, and the caller cannot know that: sessions open on the server's
+    // own write path and close on a timer no client can observe.
+    const ws = workspace("flush-idle-doc");
+    const doc = await createDoc(ws, { type: "note", title: "Only read", body: "x\n" });
+
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    expect((await flush(ws, doc.id)).status).toBe(204);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(acknowledgments(ws)).toHaveLength(0);
+  });
+
+  it("answers 204 and emits nothing when the session's commits were all skipped (§14)", async () => {
+    // A workspace with no git: every auto-commit is `skipped`, so there is no
+    // revision to name and no session to end. The postcondition still holds, so
+    // the answer is still `204` — the route reports the state, not the work.
+    const ws = workspace("flush-no-git", { git: false });
+    const doc = await createDoc(ws, { type: "note", title: "No git", body: "a\n" });
+    await edit(ws, doc.id, "a\nb\n");
+
+    expect((await flush(ws, doc.id)).status).toBe(204);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(acknowledgments(ws)).toHaveLength(0);
+    // The write itself landed — only the acknowledgment did not.
+    expect(ws.read(doc.path)).toContain("b");
+  });
+
+  it("404s for a document the projection does not have — the only 404 there is", async () => {
+    const ws = workspace("flush-unknown");
+    const response = await flush(ws, "doc_zzzzzzzz");
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as { code: string }).code).toBe("not_found");
+  });
+
+  it("requires the workspace token like every other route", async () => {
+    const ws = workspace("flush-auth");
+    const doc = await createDoc(ws, { type: "note", title: "Guarded", body: "x\n" });
+    expect((await flush(ws, doc.id, {})).status).toBe(401);
   });
 });

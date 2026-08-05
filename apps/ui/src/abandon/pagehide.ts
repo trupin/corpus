@@ -18,18 +18,27 @@
  * one listener, and the phases run in a declared order rather than in whatever
  * order the tree happened to mount.
  *
- * It is deliberately not a general event bus. Two phases, one event, no
- * priorities to argue about.
+ * A third phase joined for the same kind of reason, not for a different one
+ * (UI-044). Ending the document's **edit session** (SPEC.md §4) tells the server
+ * to emit the acknowledgment *now*, over the commit range as it stands — so it
+ * has to be issued after the writes, or the last buffer's `PUT` lands behind the
+ * event that was supposed to describe it and opens a second session nobody is
+ * left to close. `settle` is that: everything that ends a session, after
+ * everything that writes one.
+ *
+ * It is still deliberately not a general event bus. Three phases, one event,
+ * each earning its place with a write ordering — never a priority number.
  */
 
-/** `decide` runs to completion before any `flush` handler is called. */
-export type UnloadPhase = "decide" | "flush";
+/** Phases run in order; each runs to completion before the next one starts. */
+export type UnloadPhase = "decide" | "flush" | "settle";
 
-const PHASES: readonly UnloadPhase[] = ["decide", "flush"];
+const PHASES: readonly UnloadPhase[] = ["decide", "flush", "settle"];
 
 const handlers: Record<UnloadPhase, Set<() => void>> = {
   decide: new Set(),
   flush: new Set(),
+  settle: new Set(),
 };
 
 let listening = false;
@@ -43,7 +52,7 @@ function runSequence(): void {
 }
 
 function pending(): number {
-  return handlers.decide.size + handlers.flush.size;
+  return PHASES.reduce((total, phase) => total + handlers[phase].size, 0);
 }
 
 /**
@@ -69,8 +78,7 @@ export function onPageHide(phase: UnloadPhase, handler: () => void): () => void 
 
 /** Test seam: the sequence is module state and a suite must be able to reset it. */
 export function resetPageHide(): void {
-  handlers.decide.clear();
-  handlers.flush.clear();
+  for (const phase of PHASES) handlers[phase].clear();
   if (listening) {
     window.removeEventListener("pagehide", runSequence);
     listening = false;

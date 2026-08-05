@@ -111,13 +111,15 @@ export interface EditSessionTracker {
    * §4's **close** path: the reader closed and the session is flushed. Ends and
    * emits every session open on this document.
    *
-   * No HTTP route calls this yet, deliberately. CONTRACT-028 §7 proposed §7's
-   * edit-lock release as the close signal; it is not one — the shipped editor
-   * releases the lease on blur and after ten seconds of not typing
-   * (`useUserLock.ts`), which would end a session inside every pause and make
-   * §4's three-minute window unreachable. UI-044 needs an explicit flush call,
-   * and that is a contract change (SPEC.md §9.3), not a route invented here.
-   * Until it exists this entry point is reached by {@link close} alone.
+   * Reached by `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031, mounted
+   * by SERVER-057) and by {@link close}. It is deliberately *not* reached by
+   * §7's edit-lock release, which CONTRACT-028 §7 first proposed as the close
+   * signal: the shipped editor drops the lease on blur and after ten seconds of
+   * not typing (`useUserLock.ts`), which would end a session inside every pause
+   * and make §4's three-minute window unreachable.
+   *
+   * Idempotent, which is what lets the route publish itself that way: a document
+   * with no open session is a loop over nothing.
    */
   flush(docId: string): void;
   /**

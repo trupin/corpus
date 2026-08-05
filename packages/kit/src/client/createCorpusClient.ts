@@ -322,6 +322,39 @@ export interface CorpusClient {
    * names them.
    */
   deleteDoc(id: string): Promise<DeleteDocResult>;
+  /**
+   * `POST /api/docs/{id}/edit-session/flush` — SPEC.md §4's **close** path.
+   *
+   * §4 gives a user edit session two ends: *"the reader closes (the UI flushes
+   * the session), or the document goes inactive for a few minutes while open"*.
+   * This is the first of them. Without it every acknowledgment waits out the
+   * three-minute window, including the ones the user asked for by putting the
+   * document down.
+   *
+   * **Nothing is returned, and there is nothing to branch on.** The route
+   * answers `204` whether or not a session was open — the caller cannot know,
+   * since sessions are opened by the server on the first editor save that lands
+   * a commit and closed by a timer no client can observe — so this asserts a
+   * postcondition (*this document has no open edit session*) rather than
+   * performing an action. Calling it twice is calling it once, which is what
+   * makes it safe on an unload path where a duplicate is far likelier than a
+   * miss. Whether an acknowledgment follows is decided after the response and
+   * is deliberately not reported (CONTRACT-031 §2).
+   *
+   * **Always `keepalive`.** The one call that most needs to arrive is the one
+   * issued as the page goes away, and `keepalive: true` is the only spelling
+   * that survives it — `navigator.sendBeacon` sends no request headers at all
+   * and therefore no bearer token, which this route (not on SPEC.md §2.1's
+   * exception list) answers `401`. The request is body-less, so the keepalive
+   * budget is never in question, and setting it unconditionally means the
+   * in-app close path is not a second, weaker code path.
+   *
+   * A `404` means the document is unknown — a stale id, a thread id, an
+   * `undefined` in a template string. It is the only one, and it is not
+   * actionable on a close path: a caller that receives it has nothing to flush
+   * either way.
+   */
+  flushEditSession(docId: string): Promise<void>;
   /** `POST /api/threads` — a thread on a selection, a whole document, or standalone (SPEC.md §6). */
   createThread(input: CreateThreadInput): Promise<CreateThreadResponse>;
   /**
@@ -831,6 +864,21 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         "DELETE /api/docs/{id}",
         await api.DELETE("/api/docs/{id}", { params: { path: { id } } }),
       );
+    },
+
+    async flushEditSession(docId) {
+      const operation = "POST /api/docs/{id}/edit-session/flush";
+      const result = await api.POST("/api/docs/{id}/edit-session/flush", {
+        params: { path: { id: docId } },
+        // See the interface docblock: `keepalive` is what lets this reach the
+        // server from a page that is going away, and it is the only spelling
+        // that can still carry the bearer token.
+        keepalive: true,
+      });
+      // Not `unwrap`: a `204` carries no body, so `data` is `undefined` on the
+      // success path and "did it work" has to be read off the response itself.
+      if (result.response.ok) return;
+      throw new CorpusRequestError(operation, result.response.status, result.error ?? null);
     },
 
     async createThread(input) {

@@ -3,6 +3,7 @@ import { useUpdateDocById } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onPageHide } from "../abandon/pagehide.js";
 import { isAbandoned, publishBodyDraft } from "../abandon/registry.js";
+import { beginEditWrite, endEditWrite } from "./editSessionFlush.js";
 import { beginEditing, endEditing } from "./editingRegistry.js";
 
 /**
@@ -153,10 +154,19 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
       revision.current += 1;
       const stamp = revision.current;
       setState({ kind: "saving" });
+      /*
+       * This is the write that opens SPEC.md §4's edit session, so the close
+       * path has to know it is on the wire: a reader closed while it is in
+       * flight must not flush the session until it has landed, or the range the
+       * acknowledgment describes stops one save short of what the user typed
+       * (`editSessionFlush.ts`).
+       */
+      beginEditWrite(job.docId);
       void mutate
         .current({ id: job.docId, changes: { body: job.body } })
         .then((response: UpdateDocResponse) => {
           inFlight.current = false;
+          endEditWrite(job.docId, true);
           retried.current = false;
           lastSaved.current = job.body;
           anchors.current?.({
@@ -215,6 +225,9 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
         })
         .catch((error: unknown) => {
           inFlight.current = false;
+          // Refused, so it committed nothing and opened no session — but the
+          // close path was waiting on it and must stop.
+          endEditWrite(job.docId, false);
           // The buffer is put back, not discarded: the text the user typed is
           // the only copy of it that exists.
           pending.current ??= job;

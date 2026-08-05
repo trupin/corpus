@@ -35,6 +35,7 @@ import {
   EDIT_ACK_IDLE_MS,
   createEditSessionTracker,
   mountDocDiffRoutes,
+  mountEditSessionRoutes,
   type EditSessionTracker,
 } from "./edit/index.js";
 import {
@@ -398,6 +399,12 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       now,
       idleMs: config.editAcknowledgment?.idleMs ?? EDIT_ACK_IDLE_MS,
     });
+
+    // §4's `close` path, which the reader calls when it puts a document down
+    // (CONTRACT-031, SERVER-057). Mounted here rather than with the docs routes
+    // for the same reason the diff read is: it is one half of the acknowledgment
+    // feature, and the tracker it opens onto has just been built above.
+    mountEditSessionRoutes(app, { projection: deps.projection, editSessions });
 
     // The other half of the same feature: the bounded diff an agent fetches once
     // a `doc.edited` has convinced it the change is worth reading (CLI-026).

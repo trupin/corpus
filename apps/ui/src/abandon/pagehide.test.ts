@@ -3,13 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { onPageHide, resetPageHide } from "./pagehide";
 
 /**
- * The tab-close sequence's only claim: `decide` runs before `flush`, whatever
- * order the surfaces registered in (PR #12 review, MINOR 14).
+ * The tab-close sequence's only claim: `decide` runs before `flush`, which runs
+ * before `settle`, whatever order the surfaces registered in (PR #12 review,
+ * MINOR 14; UI-044 for the third phase).
  *
  * Registration order is effect order, which is child-before-parent — the
  * editor's flush registers before the reader's abandon decision — so a suite
- * that registered in the "natural" order would pass against three plain
- * listeners and prove nothing. Every case below registers `flush` **first**.
+ * that registered in the "natural" order would pass against plain listeners and
+ * prove nothing. Every case below registers the later phases **first**.
  */
 
 afterEach(() => {
@@ -39,6 +40,28 @@ describe("the tab-close sequence", () => {
     hide();
 
     expect(order).toEqual(["decide-a", "decide-b", "flush-a", "flush-b"]);
+  });
+
+  it("runs every settle handler after the last flush handler", () => {
+    // UI-044: ending the edit session tells the server to acknowledge the
+    // commit range *as it stands*, so it has to follow the writes.
+    const order: string[] = [];
+    onPageHide("settle", () => {
+      order.push("settle-a");
+    });
+    onPageHide("flush", () => {
+      order.push("flush-a");
+    });
+    onPageHide("decide", () => {
+      order.push("decide-a");
+    });
+    onPageHide("settle", () => {
+      order.push("settle-b");
+    });
+
+    hide();
+
+    expect(order).toEqual(["decide-a", "flush-a", "settle-a", "settle-b"]);
   });
 
   it("lets a decide handler settle what a flush handler then reads", () => {

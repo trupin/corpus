@@ -6,7 +6,9 @@
  * user edit session has ended and enqueues exactly one `doc.edited` per session,
  * carrying the session's commit range and change stats and never the diff body;
  * {@link mountDocDiffRoutes} serves the bounded diff an agent fetches once it has
- * decided the change is worth reading.
+ * decided the change is worth reading. {@link mountEditSessionRoutes} is §4's
+ * other end — the reader's explicit `close`, which ends a session without waiting
+ * out its window.
  *
  * This file is the surface: nothing outside `edit/` imports its internals.
  */
@@ -22,7 +24,8 @@ export {
   truncateDiff,
 } from "./diff.js";
 export type { BoundedDiff, DocDiffDeps } from "./diff.js";
-export { mountDocDiffRoutes } from "./routes.js";
+export { mountDocDiffRoutes, mountEditSessionRoutes } from "./routes.js";
+export type { EditSessionRouteDeps } from "./routes.js";
 export { EDIT_ACK_IDLE_MS, EDIT_EVENT_SOURCE, createEditSessionTracker } from "./sessions.js";
 export type {
   EditEnqueue,

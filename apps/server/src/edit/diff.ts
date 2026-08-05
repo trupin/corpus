@@ -147,10 +147,33 @@ export interface BoundedDiff {
  * before this rule existed: a 500-paragraph rewrite arrives from git as one
  * 64 000-character hunk, whose only boundary is that first header.
  *
- * With no admissible hunk boundary — one hunk bigger than the bound, a second
- * hunk starting past it, or a preamble larger than the whole cap — the fallback
- * is the contract's stated exception: the last **line** boundary at or under the
- * cap, which is still never mid-line.
+ * **A hunk larger than the whole bound is cut *inside*, at a line boundary** —
+ * the exception the contract itself publishes on `DocDiff.truncated`, applied
+ * wherever that hunk sits rather than only when it is the first. This is the
+ * SERVER-058 case, and it is the *ordinary* edit shape: a save re-stamps
+ * `updated:`, so git emits a tiny frontmatter hunk and then one body hunk
+ * carrying the whole change. Dropping that body hunk whole leaves the only
+ * admissible hunk boundary at the frontmatter — measured on a real server as
+ * **401 characters of an allowed 16 000**, a well-formed diff saying a timestamp
+ * changed and nothing else, which is a worse answer than a long one. Cutting
+ * inside it is not a loss of alignment either: no cut anywhere can show a hunk
+ * bigger than the whole budget, so the alternative to a prefix of it is nothing
+ * of it.
+ *
+ * A hunk that *would* fit within the bound is still dropped whole — the waste is
+ * then bounded by that hunk's own size, and what comes back is a diff whose every
+ * hunk is complete.
+ *
+ * With no admissible hunk boundary at all — one hunk bigger than the bound, a
+ * second hunk starting past it, or a preamble larger than the whole cap — the
+ * fallback is the same line boundary.
+ *
+ * Note that `max(hunk boundary, line boundary)` — the shape first proposed — is
+ * *not* what this does, because it is degenerate: every hunk boundary is also a
+ * line boundary, so the last line boundary ≤ cap is never smaller than the last
+ * hunk boundary ≤ cap and the maximum is always the line one. That rule would
+ * abolish hunk alignment entirely, cutting mid-hunk even where whole hunks fit,
+ * and contradict the published contract text rather than apply its exception.
  */
 export function truncateDiff(text: string, max: number = DOC_DIFF_MAX_CHARS): BoundedDiff {
   const totalChars = text.length;
@@ -164,9 +187,15 @@ export function truncateDiff(text: string, max: number = DOC_DIFF_MAX_CHARS): Bo
   }
   // `hunks[0]` ends the preamble and begins the first hunk; a cut there would
   // return a diff with no hunks in it. Everything after it keeps at least one.
-  const cut = hunks.slice(1).findLast((start) => start <= max);
-  if (cut !== undefined && cut > 0)
-    return { diff: text.slice(0, cut), truncated: true, totalChars };
+  const boundaries = hunks.slice(1);
+  const index = boundaries.findLastIndex((start) => start <= max);
+  const cut = boundaries[index];
+  if (cut !== undefined && cut > 0) {
+    // The hunk this cut would drop runs from the boundary to the next header, or
+    // to the end of the diff when it is the last one.
+    const dropped = (boundaries[index + 1] ?? totalChars) - cut;
+    if (dropped <= max) return { diff: text.slice(0, cut), truncated: true, totalChars };
+  }
 
   const newline = text.lastIndexOf("\n", max - 1);
   const diff = newline === -1 ? text.slice(0, max) : text.slice(0, newline + 1);
