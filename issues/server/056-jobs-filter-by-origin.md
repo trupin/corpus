@@ -4,7 +4,7 @@
 server
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -46,17 +46,17 @@ answers to "what did this job come from" is exactly the drift this issue is
 meant to avoid.
 
 ## Acceptance Criteria
-- [ ] A filtered request returns **every** matching job, not the most recent N —
+- [x] A filtered request returns **every** matching job, not the most recent N —
       with a test that proves it by burying the match behind more than
       `DEFAULT_RECENT_JOBS` newer rows
-- [ ] A deferred job whose `updated` has stopped advancing is still returned by a
+- [x] A deferred job whose `updated` has stopped advancing is still returned by a
       filtered query, however much newer traffic sits above it (the reported case)
-- [ ] Origin matching agrees with `resolveOrigin` exactly: same key preference,
+- [x] Origin matching agrees with `resolveOrigin` exactly: same key preference,
       same "unknown document ⇒ no origin" rule, proven by a test where a job's
       payload names a deleted document
-- [ ] The unfiltered console query is byte-for-byte unchanged in behaviour,
+- [x] The unfiltered console query is byte-for-byte unchanged in behaviour,
       including its ordering and its tie-break
-- [ ] Status filtering (if CONTRACT-030 defines it) covers the non-terminal set
+- [x] Status filtering (if CONTRACT-030 defines it) covers the non-terminal set
       and is driven by the same `QueueEventStatus` vocabulary, not a restated list
 
 ## Technical Design
@@ -71,14 +71,42 @@ backlog, mixed origins, deleted origin documents, and the unfiltered path's
 unchanged ordering.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model._
+Ran on **opus** (orchestrator, directly — the session's subagent limit was reached).
+
+**The design decision the issue flagged.** Of the three options — project the
+origin into a column, match in SQL, or scan in TypeScript — this matches **in
+SQL**, and the expression is *generated from `ORIGIN_KEYS`* rather than written
+out, so adding a key cannot leave the filter behind.
+
+A `COALESCE` over the three keys would have been the obvious spelling and is
+**wrong**: `resolveOrigin` takes the first key whose value names a document the
+corpus *still holds*, so a payload whose `threadId` names a deleted thread and
+whose `parentId` names a live document resolves to the **parent**, where
+`COALESCE` stops at the dead thread. The filter is a `CASE` with an
+`IN (SELECT id FROM documents)` guard per key, which is that rule exactly. A test
+pins it against `resolveOrigin`'s own answer for that payload.
+
+- `apps/server/src/jobs/project.test.ts`: 7 new cases, including the buried-match
+  case built as the issue asked — the wanted job, then `DEFAULT_RECENT_JOBS + 10`
+  newer ones — asserting *both* that the console can no longer see it (the bug,
+  reproduced) and that the filtered query can.
+- The deferred case reproduced end to end: enqueue → `claimAll` → `defer` on the
+  document's lock → 55 newer jobs. The filtered query still returns it, still
+  `deferred`, still naming what it is blocked on.
+- The unfiltered path keeps its `LIMIT ?`, its ordering and its tie-break; a test
+  asserts `listJobRows(db, 50)` and `listJobRows(db, 50, {})` agree, with a log
+  line moving `updated` so activity-order rather than creation-order is what is
+  being checked.
+- Route-level coverage in `routes.test.ts`: the buried match over the wire, plus
+  400s for an unknown status and a malformed origin.
+- `apps/server/src/jobs` **66/66**; contract + jobs together **1855/1855**.
 
 ## Completion Checklist (domain agent)
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix

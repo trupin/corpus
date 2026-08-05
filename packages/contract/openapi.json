@@ -6922,8 +6922,8 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Recent jobs for the console",
-        "description": "The console's master list: one row per queue event with its status and last log line (SPEC.md §7, §11). `originId` links each row back to the document or thread it came from.",
+        "summary": "Recent jobs for the console, or the jobs outstanding on one document",
+        "description": "Two questions on one route. **Unfiltered** it is the console's master list: one row per queue event with its status and last log line (SPEC.md §7, §11), most recently touched first, and `originId` links each row back to the document or thread it came from. **Filtered by `originId` (and usually `status`)** it is a predicate about a single document — *is the agent still working here?* — which SPEC.md §8's pending row and the board row's agent dot both need. That answer is **complete** — `recent` bounds the console list and is ignored once `originId` is given — because a predicate about one document cannot be allowed to be displaced by unrelated queue activity; that displacement is exactly how a deferred job's \"working…\" row used to vanish while its reply was still coming (CONTRACT-030).",
         "parameters": [
           {
             "schema": {
@@ -6931,11 +6931,33 @@
               "minimum": 1,
               "maximum": 200,
               "default": 50,
-              "description": "How many of the most recent jobs to return (1–200)."
+              "description": "How many of the most recent jobs to return (1–200). **Bounds the console list only, and is ignored once `originId` is given.** A window is the right shape for \"what has the queue been doing\", which is unbounded, and the wrong shape for \"is anything outstanding here\", which must be answered completely or not at all: a windowed predicate is wrong less often than an unwindowed one and still wrong, and its failure is the silent direction — a job that fell out of the window is indistinguishable from no job. One document's jobs are bounded by that document's own history, so there is nothing here a window needs to protect the caller from."
             },
             "required": false,
-            "description": "How many of the most recent jobs to return (1–200).",
+            "description": "How many of the most recent jobs to return (1–200). **Bounds the console list only, and is ignored once `originId` is given.** A window is the right shape for \"what has the queue been doing\", which is unbounded, and the wrong shape for \"is anything outstanding here\", which must be answered completely or not at all: a windowed predicate is wrong less often than an unwindowed one and still wrong, and its failure is the silent direction — a job that fell out of the window is indistinguishable from no job. One document's jobs are bounded by that document's own history, so there is nothing here a window needs to protect the caller from.",
             "name": "recent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "**Restrict to jobs originating from this document or thread** — the `Job.originId` value, matched by the same rule the response field is derived by (first of `threadId`, `parentId`, `docId` in the event payload that names a document the corpus still holds). This is a predicate about one document, not a narrowing of the console list: it exists so a caller can ask *is anything still outstanding here?* and get a **complete** answer — every matching job, in the same order, with `recent` no longer applied. Omitted, the query is the console's list and is unchanged, window and all.",
+              "example": "doc_a1b2c3"
+            },
+            "required": false,
+            "description": "**Restrict to jobs originating from this document or thread** — the `Job.originId` value, matched by the same rule the response field is derived by (first of `threadId`, `parentId`, `docId` in the event payload that names a document the corpus still holds). This is a predicate about one document, not a narrowing of the console list: it exists so a caller can ask *is anything still outstanding here?* and get a **complete** answer — every matching job, in the same order, with `recent` no longer applied. Omitted, the query is the console's list and is unchanged, window and all.",
+            "name": "originId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on an edit lock is still owed."
+            },
+            "required": false,
+            "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on an edit lock is still owed.",
+            "name": "status",
             "in": "query"
           }
         ],

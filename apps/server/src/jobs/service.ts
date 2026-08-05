@@ -10,7 +10,7 @@ import { notFound } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
 import type { ProjectionDb } from "../projection/index.js";
 import type { QueueService } from "../queue/index.js";
-import { listJobRows, readJobRow, recordJobLine } from "./project.js";
+import { listJobRows, readJobRow, recordJobLine, type JobFilter } from "./project.js";
 import { JobLogStore, type AppendOutcome, type LogSource } from "./store.js";
 
 /** Recorded in the log when the console asks for a failed job to run again. */
@@ -84,8 +84,8 @@ export class JobService {
     return { lines: lines.slice(cursor), nextCursor: lines.length };
   }
 
-  list(recent: number): Job[] {
-    return listJobRows(this.projection, recent);
+  list(recent: number, filter: JobFilter = {}): Job[] {
+    return listJobRows(this.projection, recent, filter);
   }
 
   /**

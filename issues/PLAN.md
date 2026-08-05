@@ -354,9 +354,9 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | done | P1 | — |
 | UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P1 | UI-051 |
 | UI-061 | A selection spanning several turns is silently truncated to one (PR #20) | todo | P2 | UI-051 |
-| CONTRACT-030 | Jobs query by origin: ask "is a job outstanding for this thread" on the wire | todo | P1 | — |
-| SERVER-056 | Filter jobs by origin (originId is derived at response time, not a column) | todo | P1 | CONTRACT-030 |
-| UI-069 | Outstanding-job lookup reads a 50-row window; deferred jobs fall out of it | todo | P1 | CONTRACT-030, SERVER-056 |
+| CONTRACT-030 | Jobs query by origin: ask "is a job outstanding for this thread" on the wire | done | P1 | — |
+| SERVER-056 | Filter jobs by origin (originId is derived at response time, not a column) | done | P1 | CONTRACT-030 |
+| UI-069 | Outstanding-job lookup reads a 50-row window; deferred jobs fall out of it | done | P1 | CONTRACT-030, SERVER-056 |
 | UI-062 | Document comment sometimes anchors at the top, not at the selection (dogfood) | done | P1 | — |
 
 <!-- Additional phases will be added as the project grows -->

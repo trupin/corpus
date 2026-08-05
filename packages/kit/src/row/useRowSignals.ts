@@ -36,6 +36,22 @@ export interface AgentActivity {
  * into an open thread and the last turn is not yet its reply — and the jobs
  * projection, which names the document a queue event originated from. Neither is
  * a progress estimate, because there isn't one.
+ *
+ * **This one keeps the shared `useJobs({})` query on purpose** (UI-069). The
+ * thread reader's equivalent now asks a filtered query per thread, because its
+ * answer had to be complete and there is one reader per open column. A *row*
+ * runs once per card: a column of two hundred rows would issue two hundred
+ * requests for two hundred distinct `["jobs", {originId}]` keys, which is the
+ * economics this whole module exists to avoid — the reason neither signal is a
+ * prop drilled down from a column is that one shared key serves every row.
+ *
+ * The console window that costs the thread reader its honesty costs this row
+ * much less, because the second source covers exactly the case that falls out of
+ * it. A job sinks below the cut-off by *waiting* — deferred on an edit lock, or
+ * queued behind a backlog — and a row whose thread is waiting on the agent has
+ * `awaitingAgent` set by the server, which is not windowed and not a scan. So the
+ * dot stays lit on the evidence that survives; what is lost is the job's
+ * `lastLine` as the dot's label, and it falls back to naming the wait instead.
  */
 export function useAgentActivity(row: Pick<DocRow, "id" | "awaitingAgent">): AgentActivity {
   const jobs = useJobs({});

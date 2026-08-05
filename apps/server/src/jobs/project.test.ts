@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { JobSchema } from "@corpus/contract";
+import { DEFAULT_RECENT_JOBS, JobSchema } from "@corpus/contract";
 import { createWorkspace, type Workspace } from "../docs/corpus-fixture.js";
 import { createProjectionQueueMirror } from "../projection/index.js";
 import { createQueueService, type QueueService } from "../queue/index.js";
@@ -169,6 +169,105 @@ describe("listJobRows", () => {
     await enqueue({});
 
     expect(listJobRows(ws.db, 50)).toHaveLength(1);
+  });
+});
+
+/**
+ * SERVER-056 / CONTRACT-030. The console asks "what has the queue been doing";
+ * two callers ask "is anything still outstanding on *this* document". The second
+ * question used to be answered by scanning the first one's answer, which put it
+ * inside a recency window — and the failure was silent and one-directional.
+ */
+describe("listJobRows filtered to one document", () => {
+  const bury = async (count: number): Promise<void> => {
+    for (let index = 0; index < count; index += 1) {
+      clock += 1000;
+      await enqueue({ docId: DOC });
+    }
+  };
+
+  it("returns a match buried behind more than a full console window", async () => {
+    const wanted = await enqueue({ threadId: THREAD });
+    await bury(DEFAULT_RECENT_JOBS + 10);
+
+    // The console cannot see it any more — that is the bug, reproduced.
+    expect(listJobRows(ws.db, DEFAULT_RECENT_JOBS).map((row) => row.eventId)).not.toContain(wanted);
+    // The predicate can, and `recent` no longer bounds the answer.
+    expect(listJobRows(ws.db, DEFAULT_RECENT_JOBS, { originId: THREAD }).map((r) => r.eventId)) //
+      .toEqual([wanted]);
+  });
+
+  it("still finds a deferred job whose `updated` stopped advancing (the reported case)", async () => {
+    const deferred = await enqueue({ threadId: THREAD });
+    await queue.claimAll();
+    await queue.defer(deferred, { blockedOn: DOC });
+    // The user keeps editing; the rest of the queue moves on for a long time.
+    await bury(DEFAULT_RECENT_JOBS + 5);
+
+    const outstanding = listJobRows(ws.db, DEFAULT_RECENT_JOBS, {
+      originId: THREAD,
+      status: ["pending", "in-progress", "deferred"],
+    });
+
+    expect(outstanding.map((row) => row.eventId)).toEqual([deferred]);
+    expect(outstanding[0]?.status).toBe("deferred");
+    expect(outstanding[0]?.blockedOn).toBe(DOC);
+  });
+
+  it("agrees with resolveOrigin when the preferred key names a deleted document", async () => {
+    // `threadId` is preferred, but it names nothing the corpus holds, so the
+    // origin — and therefore the filter — falls through to the parent.
+    const id = await enqueue({ threadId: "th_gone0000", parentId: DOC });
+
+    expect(
+      resolveOrigin(ws.db, JSON.stringify({ threadId: "th_gone0000", parentId: DOC })),
+    ).toEqual({ id: DOC, title: DOC_TITLE });
+    expect(listJobRows(ws.db, 50, { originId: DOC }).map((row) => row.eventId)).toEqual([id]);
+    expect(listJobRows(ws.db, 50, { originId: "th_gone0000" })).toEqual([]);
+  });
+
+  it("keeps the thread's own jobs apart from its parent's", async () => {
+    const onThread = await enqueue({ threadId: THREAD, parentId: DOC });
+    clock += 1000;
+    const onDoc = await enqueue({ docId: DOC });
+
+    expect(listJobRows(ws.db, 50, { originId: THREAD }).map((row) => row.eventId)).toEqual([
+      onThread,
+    ]);
+    expect(listJobRows(ws.db, 50, { originId: DOC }).map((row) => row.eventId)).toEqual([onDoc]);
+  });
+
+  it("filters by status alone without dropping the console's window", async () => {
+    const failed = await enqueue({ docId: DOC });
+    await queue.claimAll();
+    await queue.fail(failed, "boom");
+    clock += 1000;
+    await enqueue({ docId: DOC });
+
+    expect(listJobRows(ws.db, 50, { status: ["failed"] }).map((row) => row.eventId)).toEqual([
+      failed,
+    ]);
+    // Status without an origin is still the console's list, so `recent` applies.
+    expect(listJobRows(ws.db, 1, { status: ["failed", "pending"] })).toHaveLength(1);
+  });
+
+  it("returns nothing rather than everything for an origin with no jobs", async () => {
+    await enqueue({ docId: DOC });
+
+    expect(listJobRows(ws.db, 50, { originId: "doc_nothing1" })).toEqual([]);
+  });
+
+  it("leaves the unfiltered query's ordering and tie-break untouched", async () => {
+    const older = await enqueue({ threadId: THREAD });
+    clock += 60_000;
+    const newer = await enqueue({});
+    // A log line moves `updated`, so the *older* event becomes the most recently
+    // active one — the console orders by activity, not by creation, and that is
+    // the part an added `WHERE` must not disturb.
+    recordJobLine(ws.db, older, { ts: "2026-07-27T09:02:00Z", line: "worked on it" });
+
+    expect(listJobRows(ws.db, 50).map((row) => row.eventId)).toEqual([older, newer]);
+    expect(listJobRows(ws.db, 50, {}).map((row) => row.eventId)).toEqual([older, newer]);
   });
 });
 

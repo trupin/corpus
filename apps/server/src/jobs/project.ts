@@ -166,15 +166,71 @@ const SELECT_JOBS = `
   FROM events e
   LEFT JOIN jobs j ON j.event_id = e.id`;
 
-/** Console rows, most recently active first. `recent` is already range-checked by the contract. */
-export function listJobRows(db: ProjectionDb, recent: number): Job[] {
+/**
+ * `resolveOrigin`'s rule, spelled in SQL so a filter can be a `WHERE`.
+ *
+ * `originId` is not a column — it is derived per response by walking
+ * {@link ORIGIN_KEYS} in preference order and taking the **first key whose value
+ * names a document the corpus still holds**. Both halves matter, and a
+ * `COALESCE` over the three keys would get the second one wrong: a payload whose
+ * `threadId` names a deleted thread but whose `parentId` names a live document
+ * resolves to the *parent*, where `COALESCE` would stop at the dead thread and
+ * the filter would disagree with the field it filters on.
+ *
+ * Built from `ORIGIN_KEYS` rather than written out, so adding a key cannot leave
+ * the filter behind — the drift SERVER-056 exists to prevent.
+ */
+const ORIGIN_ID_SQL = `CASE ${ORIGIN_KEYS.map(
+  (key) =>
+    `WHEN json_extract(e.payload_json, '$.${key}') IN (SELECT id FROM documents) ` +
+    `THEN json_extract(e.payload_json, '$.${key}')`,
+).join(" ")} END`;
+
+/** The console's order: most recently active first, id breaking ties. */
+const ORDER_JOBS = "ORDER BY COALESCE(j.updated, e.created) DESC, e.id DESC";
+
+export interface JobFilter {
+  /** Restrict to jobs whose resolved origin is this document (CONTRACT-030). */
+  readonly originId?: string | undefined;
+  /** Restrict to these statuses; empty/absent means every status. */
+  readonly status?: readonly QueueEventStatus[] | undefined;
+}
+
+/**
+ * Console rows, most recently active first. `recent` is already range-checked by
+ * the contract.
+ *
+ * **`recent` bounds the console list only.** Once `originId` is given the answer
+ * is complete, because the question has changed: "what has the queue been doing"
+ * is unbounded and wants a window, while "is anything outstanding on this
+ * document" must be answered completely or it is not an answer. A windowed
+ * predicate fails silently and in one direction — a job pushed out by unrelated
+ * churn looks exactly like no job — which is how a deferred job's "working…" row
+ * used to disappear while its reply was still coming (CONTRACT-030). One
+ * document's jobs are bounded by its own history, so nothing here needs the cap.
+ */
+export function listJobRows(db: ProjectionDb, recent: number, filter: JobFilter = {}): Job[] {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (filter.originId !== undefined) {
+    clauses.push(`${ORIGIN_ID_SQL} = ?`);
+    params.push(filter.originId);
+  }
+  if (filter.status !== undefined && filter.status.length > 0) {
+    clauses.push(`e.status IN (${filter.status.map(() => "?").join(", ")})`);
+    params.push(...filter.status);
+  }
+
+  const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
+  // The unfiltered path keeps its `LIMIT ?` exactly as it was, ordering and
+  // tie-break included; the filtered one drops it rather than raising it.
+  const limit = filter.originId === undefined ? " LIMIT ?" : "";
+  if (filter.originId === undefined) params.push(recent);
+
   const rows = db
-    .prepare(
-      // The id breaks ties so a page is stable across identical timestamps —
-      // whole-second instants make ties ordinary, not exotic.
-      `${SELECT_JOBS} ORDER BY COALESCE(j.updated, e.created) DESC, e.id DESC LIMIT ?`,
-    )
-    .all(recent) as JobJoinRow[];
+    .prepare(`${SELECT_JOBS}${where} ${ORDER_JOBS}${limit}`)
+    .all(...params) as JobJoinRow[];
   return rows.map((row) => toJob(db, row));
 }
 

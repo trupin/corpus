@@ -33,38 +33,29 @@ import { useJobs } from "@corpus/kit";
  *
  * ---
  *
- * **What this actually guarantees, and inside what window.** `useJobs({})` is the
- * console's own query — the shared `["jobs", {}]` key, so a board full of cards
- * issues one request and repaints on the SSE invalidation the queue already emits
- * on every transition. The price of sharing it is that the console's *shape* is
- * the only shape on offer: `JobsQuerySchema` carries `recent` and nothing else,
- * so the server answers with the **`DEFAULT_RECENT_JOBS` (50) most recently
- * touched** jobs, ordered `COALESCE(j.updated, e.created) DESC`
- * (`apps/server/src/jobs/project.ts`'s `listJobRows`). Everything below therefore
- * reads: *the agent owes this thread an answer, as far as the 50 most recently
- * touched jobs can tell.*
+ * **The question is asked on the wire, so the answer has no window** (UI-069,
+ * on CONTRACT-030 → SERVER-056). This used to read the console's own
+ * `useJobs({})` — the shared `["jobs", {}]` key — and scan it, which meant the
+ * answer was only ever *"as far as the 50 most recently touched jobs can tell"*.
+ * The error that produced was one-directional and silent: a job whose `updated`
+ * stopped advancing sank below the cut-off while the rest of the queue moved,
+ * and the `.working` row vanished while the reply was still coming. A
+ * **deferred** job is the ordinary way to get there — SPEC.md §7 has a deferral
+ * wait indefinitely on an edit lock — and a `pending` job behind a long backlog
+ * reaches the same place.
  *
- * Inside that window the answer is exact. Outside it the error is
- * one-directional, and it is a false **negative**: a job whose `updated` has
- * stopped advancing sinks below the cut-off while the rest of the queue moves,
- * and this returns `null` while the reply is still genuinely coming. A
- * **deferred** job is the standard way to get there — SPEC.md §7 has a deferral
- * wait indefinitely on an edit lock, with `corpus job retry` as the manual
- * override for a lock that never clears — and a `pending` job behind a long
- * backlog reaches the same place. The row disappears; the wait does not. That is
- * the same dishonesty UI-058 was filed to remove, pointing the other way.
+ * `GET /api/jobs?originId=…&status=…` now answers that question directly and
+ * **completely**: the filters are a `WHERE`, and `recent` bounds the console
+ * list only. So a job buried behind any amount of unrelated queue activity is
+ * still found, which is the whole point.
  *
- * **Why it is not fixed here.** The wire cannot be asked the question this caller
- * has. There is no `originId` filter and no `status` filter, and `listJobRows`
- * has no `WHERE` to hang one on. The two fixes available above the wire are both
- * worse than the bound: raising `recent` moves the boundary without removing it
- * (and, since the bound rides on the shared key, forks this caller's request away
- * from the console's for the privilege), and polling harder does not widen
- * anything at all. A row that is wrong less often is still wrong. The honest fix
- * is a filtered query, which is a contract and a server change — CONTRACT-030 →
- * SERVER-056 → UI-069. Until those land the bound is written down rather than
- * hidden, and `outstandingAgentRequest.test.ts` pins it so the day it changes is
- * a failing test rather than a surprise.
+ * **What it costs.** A filtered call is a different cache entry from the
+ * console's — one request per thread that asks, not one for the board. That is
+ * the right trade *here* and the wrong one for a board row, which is why
+ * `packages/kit/src/row/useRowSignals.ts` deliberately keeps the shared query;
+ * its own docblock says why. This hook runs in an open thread reader, of which
+ * there are as many as the user has columns open, and each still repaints live
+ * on the SSE invalidation the queue emits on every transition.
  */
 
 /**
@@ -79,6 +70,14 @@ import { useJobs } from "@corpus/kit";
  */
 const OUTSTANDING_STATUSES: readonly QueueEventStatus[] = ["pending", "in-progress", "deferred"];
 
+/**
+ * The same three states as the `status` query parameter spells them. Derived
+ * from the list above rather than written out, so the filter sent to the server
+ * and the predicate applied to its answer can never disagree about what
+ * "outstanding" means.
+ */
+const OUTSTANDING_STATUS_PARAM = OUTSTANDING_STATUSES.join(",");
+
 /** Sorting key that never throws a job out of the list for an unreadable stamp. */
 function startedAt(job: Job): number {
   const at = Date.parse(job.started);
@@ -91,10 +90,15 @@ function startedAt(job: Job): number {
  * Oldest rather than newest: two queued events are one wait as far as the person
  * looking at the card is concerned, and it began with the first of them.
  *
- * Split out from the hook because the scan and the window are separate claims.
- * This function is exhaustive over what it is given — no cap, no early exit, a
- * match at position 500 is found — and every limit on the answer comes from the
- * list, which is the module docblock's subject.
+ * Split out from the hook because picking the oldest is this module's own rule,
+ * not the server's: `GET /api/jobs` orders by most-recently-active, and no query
+ * parameter asks for "the one that has been waiting longest". The origin and
+ * status checks below are now also the server's, and are kept rather than
+ * dropped — they cost a comparison over a handful of rows and they make this
+ * function total over any list, including the ones its tests hand it directly.
+ *
+ * Exhaustive over what it is given: no cap, no early exit, a match at position
+ * 500 is found.
  */
 export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job | null {
   let oldest: Job | null = null;
@@ -107,12 +111,14 @@ export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job 
 }
 
 /**
- * The oldest unfinished job this thread is waiting on, or `null` — **within the
- * server's most-recent-jobs window**, whose extent and failure mode the module
- * docblock states in full.
+ * The oldest unfinished job this thread is waiting on, or `null`.
+ *
+ * No window and no caveat: the origin and the statuses go to the server, which
+ * answers completely (CONTRACT-030). What is left to do here is pick the oldest
+ * of what came back.
  */
 export function useOutstandingAgentJob(threadId: string): Job | null {
-  const jobs = useJobs({});
+  const jobs = useJobs({ originId: threadId, status: OUTSTANDING_STATUS_PARAM });
   return pickOutstandingJob(jobs.data?.jobs ?? [], threadId);
 }
 

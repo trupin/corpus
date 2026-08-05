@@ -1,7 +1,16 @@
+/** @vitest-environment jsdom */
 import { DEFAULT_RECENT_JOBS, type Job } from "@corpus/contract";
-import { describe, expect, it } from "vitest";
-import { jobFixture } from "../testing/readerFixture";
-import { agentWaitSince, pickOutstandingJob } from "./outstandingAgentRequest";
+import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { jobFixture, readerTransport } from "../testing/readerFixture";
+import {
+  agentWaitSince,
+  pickOutstandingJob,
+  useOutstandingAgentJob,
+} from "./outstandingAgentRequest";
+
+afterEach(cleanup);
 
 const THREAD = "thread-standup";
 
@@ -80,45 +89,72 @@ describe("pickOutstandingJob", () => {
     expect(pickOutstandingJob([broken, real], THREAD)?.eventId).toBe("evt_real");
   });
 
-  /**
-   * **The bound, pinned.** `useOutstandingAgentJob` reads the console's own
-   * unfiltered `useJobs({})`, so the server answers with the
-   * `DEFAULT_RECENT_JOBS` most recently touched rows — `recent` is the only
-   * parameter `JobsQuerySchema` has — and this scan never sees anything below
-   * that cut-off.
-   *
-   * Below is the reported case. A deferred `comment.created` job sits parked
-   * indefinitely on an edit lock (SPEC.md §7), so its `updated` stops advancing
-   * while the queue keeps moving; one full window of newer traffic later, the
-   * ordering `COALESCE(j.updated, e.created) DESC` has pushed it off the end of
-   * the response. The thread's "working…" row disappears and the reply is still
-   * genuinely coming.
-   *
-   * That is a **known false negative**, recorded rather than blessed: it is the
-   * module docblock's subject, and CONTRACT-030 → SERVER-056 → UI-069 are the
-   * fix. The test exists so the day the window stops deciding the answer is a
-   * failing test rather than a surprise — UI-069 replaces it with its opposite.
-   */
-  it("cannot see a job the server's window truncated away (CONTRACT-030)", () => {
+  it("is exhaustive over whatever list it is handed", () => {
     const deferred = jobFixture({
       eventId: "evt_deferred",
       status: "deferred",
       originId: THREAD,
       started: "2026-07-01T09:00:00.000Z",
-      updated: "2026-07-01T09:00:00.000Z",
       blockedOn: "doc-standup",
     });
-    // The whole queue, newest-touched first: the deferral has sunk to the bottom.
-    const queue = [...noise(DEFAULT_RECENT_JOBS), deferred];
-    // What `GET /api/jobs` actually answers with, `recent` defaulted.
-    const answered = queue.slice(0, DEFAULT_RECENT_JOBS);
 
-    expect(answered).toHaveLength(DEFAULT_RECENT_JOBS);
-    expect(answered).not.toContain(deferred);
-    // The job the person is waiting on, if the question could reach it…
-    expect(pickOutstandingJob(queue, THREAD)?.eventId).toBe("evt_deferred");
-    // …and the answer they get instead.
-    expect(pickOutstandingJob(answered, THREAD)).toBeNull();
+    expect(pickOutstandingJob([...noise(DEFAULT_RECENT_JOBS), deferred], THREAD)?.eventId) //
+      .toBe("evt_deferred");
+  });
+});
+
+/**
+ * UI-069, and the reason CONTRACT-030 and SERVER-056 were filed.
+ *
+ * This used to read the console's unfiltered `useJobs({})` and scan it, so the
+ * answer was bounded by `DEFAULT_RECENT_JOBS`. A deferred job waits indefinitely
+ * on an edit lock (SPEC.md §7), so its `updated` stops advancing while the queue
+ * moves; one window of newer traffic later it was off the end of the response,
+ * the "working…" row vanished, and the reply was still coming.
+ *
+ * Asserted at the **transport**, not the scan: `readerTransport` answers
+ * `/api/jobs` the way the server does — `recent` bounds the console list and is
+ * ignored once `originId` is given — so a caller that went back to scanning
+ * would fail these, while a test over `pickOutstandingJob` alone could not tell
+ * the two apart.
+ */
+describe("useOutstandingAgentJob", () => {
+  const deferred = jobFixture({
+    eventId: "evt_deferred",
+    status: "deferred",
+    originId: THREAD,
+    started: "2026-07-01T09:00:00.000Z",
+    blockedOn: "doc-standup",
+  });
+
+  function setup(jobs: readonly Job[]) {
+    const wire = readerTransport({ jobs });
+    const harness = createCorpusTestHarness({ fetch: wire.fetch });
+    const view = renderHook(() => useOutstandingAgentJob(THREAD), { wrapper: harness.Wrapper });
+    return { ...view, wire };
+  }
+
+  it("finds a job buried behind more than a full console window", async () => {
+    // Newest-touched first, as the server orders: the deferral is last of 51.
+    const { result, wire } = setup([...noise(DEFAULT_RECENT_JOBS), deferred]);
+
+    await waitFor(() => {
+      expect(result.current?.eventId).toBe("evt_deferred");
+    });
+
+    // …because the question went to the server, rather than being scanned here.
+    const asked = wire.of("GET", "/api/jobs").at(-1);
+    expect(asked?.search).toContain(`originId=${THREAD}`);
+    expect(asked?.search).toContain("status=pending%2Cin-progress%2Cdeferred");
+  });
+
+  it("reports nothing when the thread has no outstanding job", async () => {
+    const { result, wire } = setup(noise(3));
+
+    await waitFor(() => {
+      expect(wire.of("GET", "/api/jobs").length).toBeGreaterThan(0);
+    });
+    expect(result.current).toBeNull();
   });
 });
 
