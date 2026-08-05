@@ -373,3 +373,6 @@ belongs to the same fix wave.
 | UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
 | UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
+| SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | todo | P1 | — |
+| UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
+| PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
