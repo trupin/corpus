@@ -4,12 +4,13 @@ import { useCallback, useEffect, useRef, useState, type ReactElement, type React
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
+import { useTitleFit } from "./useTitleFit";
 
 /**
  * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
  * due — over the prototype's `.fm-chips` strip.
  *
- * **One draft, one write.** The title is an input styled as the document's `h1`
+ * **One draft, one write.** The title is a field styled as the document's `h1`
  * (the prototype edits it in place), and it belongs to the *same* draft as the
  * three fields below it, so editing all four and saving issues one `PUT`
  * carrying only the keys that actually changed. That is not a nicety: the server
@@ -142,11 +143,13 @@ export function FrontmatterForm({
   });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState(false);
-  const field = useRef<HTMLInputElement>(null);
+  // A textarea, not an input: the title wraps (UI-065). See `useTitleFit`.
+  const field = useRef<HTMLTextAreaElement>(null);
   const selected = useRef(false);
 
   const current = draftOf(doc);
   const value = draft ?? current;
+  useTitleFit(field, value.title);
   const changes = draft === null ? {} : changedFields(doc, draft);
   const isDirty = Object.keys(changes).length > 0;
 
@@ -283,10 +286,14 @@ export function FrontmatterForm({
 
       {banner}
 
-      <input
+      <textarea
         ref={field}
         className="doc-title"
         aria-label="Document title"
+        // The field grows by wrapping, never by the user adding rows: `↵` is
+        // save (below), so no newline can reach the value and one row is always
+        // the floor.
+        rows={1}
         value={value.title}
         readOnly={locked}
         onChange={(event) => {

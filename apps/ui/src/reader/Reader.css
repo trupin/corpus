@@ -118,10 +118,31 @@
   border-color: var(--accent);
 }
 
+/*
+ * ── The title (UI-065) ───────────────────────────────────────────────
+ *
+ * It **wraps**, and it is the only title surface that does. `design/index.html`
+ * already draws it as an `h1` with `text-wrap: balance` and no truncation, so
+ * this is the mockup's own answer, not a departure — what shipped was a
+ * single-line `<input>`, which cannot wrap whatever the CSS says. It is a
+ * `<textarea>` now; `useTitleFit` gives it its height.
+ *
+ * The two places a title is deliberately **one line** stay that way, and the
+ * difference is the shape of the box, not an oversight: `.col-title` (a header
+ * whose count, ＋ and ⋯ must stay on the line) and `.row-title` in
+ * `@corpus/kit/row.css` (a fixed-height list item, where a wrapping title would
+ * make rows jump between heights and cost the list its scannability). Both
+ * truncate with an ellipsis and say so where they do it. A title in the reader
+ * is the document itself and has a whole column to spend; a title in a row is a
+ * label in a list.
+ */
 .doc-title {
   font-family: var(--serif);
   font-size: 24px;
   font-weight: 700;
+  /* `1.25`, not the body's `1.45`: display type set at 24px needs its lines
+     closer, and the field's height is now a multiple of this. */
+  line-height: 1.25;
   margin: 0 0 4px;
   text-wrap: balance;
   color: inherit;
@@ -130,6 +151,16 @@
   padding: 0;
   width: 100%;
   max-width: 62ch;
+  display: block;
+  /* The height is measured, so a drag handle offering another one is a way to
+     put the field out of step with its content. */
+  resize: none;
+  /* `useTitleFit` sizes the box to hold every line; a scrollbar here would mean
+     it had failed, and a scrolled-away line is the defect this rule set fixes. */
+  overflow: hidden;
+  /* A title can be one long token — a URL, a path, an id. Same reasoning as
+     `.doc-body` in `@corpus/kit/markdown.css`. */
+  overflow-wrap: anywhere;
 }
 
 .doc-title:read-only {

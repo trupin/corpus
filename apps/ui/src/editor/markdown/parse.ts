@@ -1,4 +1,4 @@
-import { remarkCorpusRefs } from "@corpus/kit";
+import { remarkCorpusRefs, remarkTableCellBreaks } from "@corpus/kit";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified, type Processor } from "unified";
@@ -36,6 +36,11 @@ function markdownProcessor(): Processor {
     // than a unified-typed plugin, precisely so it does not drag unified's
     // types into every consumer.
     .use(remarkCorpusRefs as never)
+    // `<br>` in a table cell is a line break, not a tag (UI-064). From the kit
+    // for the same reason `remarkCorpusRefs` is: the rule is stated once, so
+    // the editor and `MarkdownView` cannot come to disagree about a file.
+    // `serialize.ts` writes the token back, so the round trip is byte-stable.
+    .use(remarkTableCellBreaks as never)
     .freeze() as unknown as Processor;
   return processor;
 }

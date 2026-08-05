@@ -3,8 +3,19 @@ import { describe, expect, it } from "vitest";
 import { parseMarkdown } from "../editor/markdown/parse.js";
 import { serializeDoc } from "../editor/markdown/serialize.js";
 import { threadRowFixture } from "../testing/readerFixture.js";
-import { detachedThreads, offsetsComparable, placeAnchors } from "./anchorPlacement.js";
-import type { DocumentTrace } from "./traceCache.js";
+import type { TextQuoteSelector } from "../editor/selection.js";
+import {
+  detachedThreads,
+  isPlaced,
+  offsetsComparable,
+  placeAnchors,
+  segmentsOf,
+  unplacedThreads,
+  type AnchoredThread,
+} from "./anchorPlacement.js";
+import { mdRangeToPm, pmRangeToMd, type MdRange, type PmRange } from "./offsetMap.js";
+import { selectorFromSelection } from "./selectorFromSelection.js";
+import { traceOfBody, type DocumentTrace } from "./traceCache.js";
 
 /**
  * Turning the server's answer into something drawable — and refusing to draw
@@ -33,6 +44,38 @@ function anchor(overrides: Partial<ResolvedAnchor> = {}): ResolvedAnchor {
 
 function row(overrides: Partial<DocRow> = {}): DocRow {
   return threadRowFixture({ id: "th_1", parent: "doc_1", turnCount: 3, ...overrides });
+}
+
+/** What each segment quotes: one contiguous slice of the markdown, markup and all. */
+// `PmRange`, not `PmSegment`: these helpers only ever read `from`/`to`, and a
+// rebased placement hands back plain ranges. Demanding the narrower type made
+// the test file disagree with the code it tests.
+function quoted(traced: DocumentTrace, segments: readonly PmRange[]): string[] {
+  return segments.map((segment) => {
+    const md = pmRangeToMd(traced.trace, segment);
+    return md === null ? "" : traced.markdown.slice(md.start, md.end);
+  });
+}
+
+/**
+ * What the reader sees under the highlight: the *content* the segments cover,
+ * run by run, with the syntax between runs left out — which is what a
+ * ProseMirror inline decoration can express and all it can express.
+ */
+function underHighlight(traced: DocumentTrace, segments: readonly PmRange[]): string {
+  let text = "";
+  for (const segment of segments) {
+    for (const run of traced.trace) {
+      const from = Math.max(segment.from, run.pmFrom);
+      const to = Math.min(segment.to, run.pmTo);
+      if (to <= from || run.atomic) continue;
+      text += traced.markdown.slice(
+        run.mdStart + (from - run.pmFrom),
+        run.mdStart + (to - run.pmFrom),
+      );
+    }
+  }
+  return text;
 }
 
 describe("placing an anchor", () => {
@@ -175,14 +218,22 @@ describe("offsets the trace cannot vouch for", () => {
       expect(offsetsComparable(raw, canonical)).toBe(false);
     });
 
-    it("draws nothing rather than a highlight in the wrong paragraph", () => {
+    /**
+     * UI-062. Refusing the offsets is still right; refusing to place the anchor
+     * is not, and used to be the same decision. The two spellings render the
+     * same characters, so the range travels through that shared projection
+     * (`rebaseRange`) and lands on the words it names — never on the paragraph
+     * a raw offset would have hit.
+     */
+    it("places it through the rendered text rather than the raw offsets", () => {
+      const traced = source(raw);
       const [placed] = placeAnchors({
         anchors: [anchor({ range: { start: 0, end: 5 } })],
         rows: [row()],
         body: raw,
-        source: source(raw),
+        source: traced,
       });
-      expect(placed?.placement.segments).toEqual([]);
+      expect(quoted(traced, placed?.placement.segments ?? [])).toEqual(["Title"]);
       expect(placed?.orphaned).toBe(false);
     });
   });
@@ -193,17 +244,61 @@ describe("offsets the trace cannot vouch for", () => {
     expect(offsetsComparable("abcd\nef\n", "ab\ncdef\n")).toBe(false);
   });
 
-  it("draws no highlight rather than a wrong one", () => {
+  it("draws the highlight over the words the offsets name, not the ones they land on", () => {
+    const raw = "Title\n=====\n\nThe rate is 6.1% today.\n";
+    const traced = source(raw);
+    const start = raw.indexOf("6.1%");
+    const [placed] = placeAnchors({
+      anchors: [anchor({ range: { start, end: start + 4 } })],
+      rows: [row()],
+      body: raw,
+      source: traced,
+    });
+    expect(quoted(traced, placed?.placement.segments ?? [])).toEqual(["6.1%"]);
+    // …and it is not called an orphan, because it is not one.
+    expect(placed?.orphaned).toBe(false);
+  });
+
+  /**
+   * The refusal that remains. When the two spellings do not even render the
+   * same characters there is no shared projection to travel through, and a
+   * placement would be a guess — so the thread is listed instead of drawn
+   * (`unplacedThreads`), and never given a position it does not have.
+   */
+  it("draws nothing when the two spellings say different things", () => {
     const raw = "Title\n=====\n\nThe rate is 6.1% today.\n";
     const [placed] = placeAnchors({
       anchors: [anchor({ range: { start: 24, end: 28 } })],
       rows: [row()],
       body: raw,
-      source: source(raw),
+      source: source("Heading\n\nA different sentence entirely.\n"),
     });
     expect(placed?.placement.segments).toEqual([]);
-    // …and it is not called an orphan, because it is not one.
     expect(placed?.orphaned).toBe(false);
+    expect(unplacedThreads([placed as AnchoredThread]).map((each) => each.id)).toEqual(["th_1"]);
+  });
+});
+
+describe("the placement rule, one anchor at a time", () => {
+  it("reads a canonical body's offsets straight off the trace", () => {
+    expect(segmentsOf(anchor(), BODY, source())).toEqual([{ from: 13, to: 17, block: 1 }]);
+  });
+
+  it("reads a respelt body's offsets through the rendered text", () => {
+    const raw = `\n${BODY}`;
+    const start = raw.indexOf("6.1%");
+    expect(segmentsOf(anchor({ range: { start, end: start + 4 } }), raw, source(raw))).toEqual([
+      { from: 13, to: 17, block: 1 },
+    ]);
+  });
+
+  it("places nothing for an orphan, whatever range came with it", () => {
+    expect(segmentsOf(anchor({ orphaned: true }), BODY, source())).toEqual([]);
+    expect(segmentsOf(anchor({ range: null }), BODY, source())).toEqual([]);
+  });
+
+  it("places nothing for a range past the end of the body", () => {
+    expect(segmentsOf(anchor({ range: { start: 900, end: 910 } }), BODY, source())).toEqual([]);
   });
 });
 
@@ -218,5 +313,130 @@ describe("threads that hang off no text", () => {
       wholeDocument: [rows[1]],
       orphaned: [rows[2]],
     });
+  });
+
+  it("lists an unplaceable thread, and never counts an orphan among them", () => {
+    const traced = source();
+    const placed = placeAnchors({
+      anchors: [
+        anchor(),
+        anchor({ anchorId: "anc_2", threadId: "th_2", orphaned: true, range: null }),
+      ],
+      rows: [row(), row({ id: "th_2" })],
+      body: "A body that says something else entirely.\n",
+      source: traced,
+    });
+    expect(unplacedThreads(placed).map((each) => each.id)).toEqual(["th_1"]);
+  });
+});
+
+/**
+ * UI-062, end to end over the whole round trip: a selection is quoted, the
+ * server resolves the quote, and the answer comes back as a highlight. Asserted
+ * here rather than over the offset helpers alone, because every helper was
+ * already right — what was wrong was what the chain did with a body whose
+ * spelling the editor does not reproduce.
+ */
+describe("a comment whose selection straddles inline markup", () => {
+  /**
+   * SPEC.md §6's exactness tier, rungs 1–2, as `GET /api/docs/{id}` applies it.
+   * Restated rather than imported: `apps/ui` does not depend on the server, and
+   * what this test needs from it is two lines of `indexOf`.
+   */
+  function resolve(body: string, selector: TextQuoteSelector): MdRange | null {
+    const framed = body.indexOf(selector.prefix + selector.exact + selector.suffix);
+    if (framed !== -1) {
+      const start = framed + selector.prefix.length;
+      return { start, end: start + selector.exact.length };
+    }
+    const first = body.indexOf(selector.exact);
+    if (first === -1 || body.indexOf(selector.exact, first + 1) !== -1) return null;
+    return { start: first, end: first + selector.exact.length };
+  }
+
+  /**
+   * The whole flow, as the app runs it: the editor parses the file and the
+   * selector is cut from what *it* would print (`selectorFromSelection`'s rule —
+   * the quote is markdown, never the screen's text), the server resolves that
+   * quote against the file, and the answer is placed back into the editor.
+   */
+  function comment(body: string, from: string, to: string): AnchoredThread {
+    const traced = source(body);
+    const live = traceOfBody(body);
+    const start = live.markdown.indexOf(from);
+    const end = live.markdown.indexOf(to) + to.length;
+    const pm = mdRangeToPm(live.trace, { start, end });
+    const selection = selectorFromSelection(live, {
+      from: pm[0]?.from ?? 0,
+      to: pm.at(-1)?.to ?? 0,
+    });
+    if (selection === null) throw new Error("the selection quoted nothing");
+    const range = resolve(body, selection.selector);
+    const [placed] = placeAnchors({
+      anchors: [anchor({ range, orphaned: range === null })],
+      rows: [row()],
+      body,
+      source: traced,
+    });
+    if (placed === undefined) throw new Error("no placement");
+    return placed;
+  }
+
+  const BOLD = "Said **Moushmi Verma** on repositioning Fernando under Mesbah.\n";
+
+  it("quotes the file's own spelling, asterisks and all", () => {
+    const live = traceOfBody(BOLD);
+    const start = live.markdown.indexOf("Moushmi");
+    const pm = mdRangeToPm(live.trace, { start, end: live.markdown.indexOf("Mesbah") + 6 });
+    const selection = selectorFromSelection(live, {
+      from: pm[0]?.from ?? 0,
+      to: pm.at(-1)?.to ?? 0,
+    });
+    expect(selection?.selector.exact).toBe(
+      "Moushmi Verma** on repositioning Fernando under Mesbah",
+    );
+  });
+
+  it("highlights the selected words and not the markup, on a canonical file", () => {
+    const placed = comment(BOLD, "Moushmi", "Mesbah");
+    expect(quoted(source(BOLD), placed.placement.segments)).toEqual([
+      "Moushmi Verma** on repositioning Fernando under Mesbah",
+    ]);
+    expect(isPlaced(placed)).toBe(true);
+  });
+
+  /**
+   * The reported failure. Identical selection, identical quote — on a file
+   * carrying the blank line every editor leaves after the frontmatter fence,
+   * which the printer does not re-emit. Every offset in the file is one past
+   * where the editor's own text would put it, and the thread used to end up
+   * with no highlight and a card pinned to the top of the document.
+   */
+  it("still highlights it on a file the editor would print differently", () => {
+    const body = `\n${BOLD}`;
+    const placed = comment(body, "Moushmi", "Mesbah");
+    expect(placed.orphaned).toBe(false);
+    expect(isPlaced(placed)).toBe(true);
+    expect(quoted(source(body), placed.placement.segments)).toEqual([
+      "Moushmi Verma** on repositioning Fernando under Mesbah",
+    ]);
+  });
+
+  it("keeps a selection wholly inside one text run working unchanged", () => {
+    const body = "\nThe rate is 6.1% today.\n";
+    const placed = comment(body, "rate", "today");
+    expect(quoted(source(body), placed.placement.segments)).toEqual(["rate is 6.1% today"]);
+  });
+
+  it("covers no markup character the reader never saw", () => {
+    const body = `\n${BOLD}`;
+    const traced = source(body);
+    const placed = comment(body, "Moushmi", "Mesbah");
+    // A ProseMirror position exists only for content, so the highlight's own
+    // span is the reader's text: the `**` inside the quote has no position and
+    // therefore cannot be inside the decoration.
+    expect(underHighlight(traced, placed.placement.segments)).toBe(
+      "Moushmi Verma on repositioning Fernando under Mesbah",
+    );
   });
 });

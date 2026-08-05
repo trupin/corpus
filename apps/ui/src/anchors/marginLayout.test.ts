@@ -62,14 +62,35 @@ describe("the cascade", () => {
     expect(layout.minHeight).toBe((last?.top ?? 0) + 60 + MARGIN_GUTTER_PX);
   });
 
-  it("lets a card with no anchor fall to the running bottom", () => {
+  /**
+   * UI-062. A card with no measurable anchor used to collect the *initial*
+   * `lastBottom` — zero — which sorted it above every anchored card, so a
+   * comment on the last paragraph was drawn against the title.
+   */
+  it("keeps a card with no anchor in document order, not at the top", () => {
     const layout = cascade([item("anchored", 200, 50), item("loose", null, 50)]);
-    // The unplaced card takes the bottom that is current when it is collected —
-    // zero — sorts first, and is cascaded like any other.
+    expect(layout.cards).toEqual([
+      { id: "anchored", top: 200 },
+      { id: "loose", top: 262 },
+    ]);
+  });
+
+  it("puts a card with no anchor at the top only when nothing precedes it", () => {
+    const layout = cascade([item("loose", null, 50), item("anchored", 200, 50)]);
     expect(layout.cards).toEqual([
       { id: "loose", top: 0 },
       { id: "anchored", top: 200 },
     ]);
+  });
+
+  it("stacks a run of unanchored cards under the last anchor, in order", () => {
+    const layout = cascade([
+      item("first", 100, 50),
+      item("loose-a", null, 50),
+      item("loose-b", null, 50),
+    ]);
+    expect(layout.cards.map((card) => card.id)).toEqual(["first", "loose-a", "loose-b"]);
+    expect(layout.cards.map((card) => card.top)).toEqual([100, 162, 224]);
   });
 
   it("answers an empty layout for no cards at all", () => {
@@ -140,10 +161,11 @@ describe("applying", () => {
     applyMargin(margin, cascade(measureMargin(main, margin)));
     const card = (id: string): HTMLElement | null =>
       margin.querySelector<HTMLElement>(`:scope > .thread-card[data-thread="${id}"]`);
-    expect(card("th_3")?.style.top).toBe("0px");
     expect(card("th_1")?.style.top).toBe("100px");
     expect(card("th_2")?.style.top).toBe("400px");
-    expect(margin.style.minHeight).toBe("472px");
+    // th_3 has no anchor, so it follows the last card that had one.
+    expect(card("th_3")?.style.top).toBe("472px");
+    expect(margin.style.minHeight).toBe("544px");
   });
 
   it("writes nothing that has not moved", () => {

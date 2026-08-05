@@ -7,6 +7,7 @@ import { useDoc } from "../query/useDoc.js";
 import { CodeFence } from "./CodeFence.js";
 import { CorpusImage } from "./CorpusImage.js";
 import { REF_ALIAS_ATTRIBUTE, REF_ID_ATTRIBUTE, remarkCorpusRefs } from "./refs.js";
+import { remarkTableCellBreaks } from "./tableBreaks.js";
 
 /**
  * The read surface for every markdown body in Corpus (SPEC.md §10 names
@@ -18,6 +19,14 @@ import { REF_ALIAS_ATTRIBUTE, REF_ID_ATTRIBUTE, remarkCorpusRefs } from "./refs.
  * text and never as elements. There is no sanitizer to configure and therefore
  * none to get wrong — the same reasoning `SnippetSchema` uses for search
  * highlights.
+ *
+ * **One token is qualified, and only inside a table cell** (UI-064): a bare
+ * `<br>` there becomes a real line break, because a break in a cell has no
+ * markdown spelling at all — every spelling markdown has is a newline, and a
+ * newline ends the row. `remarkTableCellBreaks` rewrites that one token in the
+ * mdast tree; it does not open a raw-HTML path, and the rule above still holds
+ * for every other tag, in every other position, including a `<br>` in prose.
+ * See `tableBreaks.ts` for why the scope is that narrow.
  *
  * **One renderer, every host.** The column reader, focus mode, thread turns and
  * plugin surfaces all render bodies through this component, which is what lets
@@ -71,10 +80,16 @@ type OpenRef = ((docId: string) => void) | undefined;
  *
  * `remarkBreaks` runs last, over a tree `remarkCorpusRefs` has already split:
  * a `[[ref]]` cannot contain a newline, so neither plugin can see text the
- * other needed.
+ * other needed. `remarkTableCellBreaks` is independent of both — it rewrites
+ * `html` nodes, and neither of the others reads or produces one.
  */
-const REMARK_PLUGINS = [remarkGfm, remarkCorpusRefs];
-const REMARK_PLUGINS_HARD_BREAKS = [remarkGfm, remarkCorpusRefs, remarkBreaks];
+const REMARK_PLUGINS = [remarkGfm, remarkTableCellBreaks, remarkCorpusRefs];
+const REMARK_PLUGINS_HARD_BREAKS = [
+  remarkGfm,
+  remarkTableCellBreaks,
+  remarkCorpusRefs,
+  remarkBreaks,
+];
 
 interface RefLinkProps {
   readonly id: string;

@@ -101,6 +101,11 @@ const NON_CANONICAL: readonly (readonly [string, string])[] = [
   ["a named character reference in a body", "**alpha&nbsp;**beta\n"],
   ["a space against an emphasis marker", "**alpha beta ** gamma\n"],
   ["a ref straight after a bold run", "**link:&#x20;**[[doc_mbc52nvo]]**6.4%** week\n"],
+  // UI-064: the canonical spelling of a break in a cell is `<br>`, so the
+  // self-closing spellings normalise to it exactly as `*` bullets normalise
+  // to `-`. `<br>` itself is canonical and lives in `fixtures/tables.md`.
+  ["a self-closing break in a table cell", "| a | b |\n| - | - |\n| one<br/>two | x |\n"],
+  ["a spaced self-closing break in a cell", "| a | b |\n| - | - |\n| one<br />two | x |\n"],
 ];
 
 describe("non-canonical input", () => {

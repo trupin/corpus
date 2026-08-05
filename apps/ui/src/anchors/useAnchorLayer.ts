@@ -11,7 +11,13 @@ import {
   setAnchorsTransaction,
   type AnchorPlacement,
 } from "./anchorDecorations";
-import { detachedThreads, placeAnchors, type AnchoredThread } from "./anchorPlacement";
+import {
+  detachedThreads,
+  isPlaced,
+  placeAnchors,
+  unplacedThreads,
+  type AnchoredThread,
+} from "./anchorPlacement";
 import { escapeSelectorValue } from "./cssEscape";
 import { selectorFromSelection, type AnchorSelection } from "./selectorFromSelection";
 import { traceOfBody, traceOfDoc } from "./traceCache";
@@ -93,10 +99,20 @@ export interface AnchorLayer {
    */
   readonly captureComment: () => (() => void) | null;
   readonly onAnchors: (report: AnchorReport) => void;
-  /** Anchored threads, in document order. */
+  /**
+   * Threads drawn **at their anchor**, in document order — chips or margin
+   * cards.
+   *
+   * Only the ones with somewhere to sit: an anchor with no segments has no
+   * position, and giving it one is how a comment ends up reading as a comment on
+   * the title (`anchorPlacement.segmentsOf`). Those arrive in
+   * {@link AnchorLayer.unplaced} instead.
+   */
   readonly anchored: readonly AnchoredThread[];
   readonly wholeDocument: readonly DocRow[];
   readonly orphaned: readonly DocRow[];
+  /** Anchored and resolved, but with nothing on this screen to sit beside. */
+  readonly unplaced: readonly DocRow[];
   /** True when the cards belong in the margin rather than in chips at the anchor. */
   readonly marginMode: boolean;
   /** The element a chip renders into, in chip mode. */
@@ -226,10 +242,13 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     );
   }, [anchors, overlay]);
 
-  const anchored = useMemo(
+  const all = useMemo(
     () => placeAnchors({ anchors: effective, rows: threads, body, source }),
     [body, effective, source, threads],
   );
+
+  const anchored = useMemo(() => all.filter(isPlaced), [all]);
+  const unplaced = useMemo(() => unplacedThreads(all), [all]);
 
   const detached = useMemo(() => detachedThreads(threads, effective), [effective, threads]);
 
@@ -335,7 +354,9 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   /* ── Layout mode ───────────────────────────────────────────────────── */
 
-  const anchoredCount = anchored.filter((thread) => !thread.orphaned).length;
+  // Only placeable anchors count: a margin whose cards have no highlights to sit
+  // beside is a margin with nothing to align to (UI-062).
+  const anchoredCount = anchored.length;
 
   useEffect(() => {
     const element = mainRef.current;
@@ -571,6 +592,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     anchored,
     wholeDocument: detached.wholeDocument,
     orphaned: detached.orphaned,
+    unplaced,
     marginMode,
     slotHost: useCallback(
       (threadId: string) => (marginMode ? null : slotHost(threadId)),

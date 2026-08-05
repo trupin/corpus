@@ -200,7 +200,7 @@ describe("the related panel", () => {
     fireEvent.click(container.querySelector('[data-related="doc_r"]') as HTMLElement);
 
     await waitFor(() => {
-      expect(container.querySelector<HTMLInputElement>(".doc-title")?.value).toBe("Rates");
+      expect(container.querySelector<HTMLTextAreaElement>(".doc-title")?.value).toBe("Rates");
     });
     // A push, exactly as a `[[ref]]` or a backlink makes one: the entry the
     // reader came from is still under it, which is what Back pops to.
@@ -208,7 +208,7 @@ describe("the related panel", () => {
 
     fireEvent.click(container.querySelector(".back") as HTMLElement);
     await waitFor(() => {
-      expect(container.querySelector<HTMLInputElement>(".doc-title")?.value).toBe(
+      expect(container.querySelector<HTMLTextAreaElement>(".doc-title")?.value).toBe(
         "Mortgage options",
       );
     });

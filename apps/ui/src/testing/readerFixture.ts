@@ -1,4 +1,4 @@
-import type { Doc, DocRow, Lock, RelatedDoc, Thread, Warning } from "@corpus/contract";
+import type { Doc, DocRow, Job, Lock, RelatedDoc, Thread, Warning } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -29,6 +29,8 @@ export interface ReaderTransport {
   /** Replaces a document mid-test, for out-of-band edits arriving over SSE. */
   readonly put: (doc: Doc) => void;
   readonly setLocks: (locks: readonly Lock[]) => void;
+  /** Settles or raises a job mid-test, for a queue transition arriving over SSE. */
+  readonly setJobs: (jobs: readonly Job[]) => void;
 }
 
 export interface ReaderTransportOptions {
@@ -44,6 +46,12 @@ export interface ReaderTransportOptions {
    */
   readonly related?: Readonly<Record<string, readonly RelatedDoc[]>>;
   readonly locks?: readonly Lock[];
+  /**
+   * The console's job rows `GET /api/jobs` answers with — the queue, which is
+   * where "does the agent still owe this thread an answer?" is decided (SPEC.md
+   * §8, UI-058). Empty by default: a quiet queue is the ordinary state.
+   */
+  readonly jobs?: readonly Job[];
   /** `"<METHOD> <pathname>"` → status, for the failure paths. */
   readonly failing?: Readonly<Record<string, number>>;
   /**
@@ -134,6 +142,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
   const docs = new Map((options.docs ?? []).map((doc) => [doc.frontmatter.id, doc]));
   const threads = new Map((options.threads ?? []).map((thread) => [thread.id, thread]));
   let locks = options.locks ?? [];
+  let jobs = options.jobs ?? [];
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     // The body is deliberately withheld from `new Request`. These suites run in
@@ -173,7 +182,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname === "/api/locks") return json({ locks });
-    if (url.pathname === "/api/jobs") return json({ jobs: [] });
+    if (url.pathname === "/api/jobs") return json({ jobs });
     if (url.pathname === "/api/tree") return json({ folders: [] });
 
     if (url.pathname === "/api/docs" && request.method === "GET") {
@@ -326,6 +335,26 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     setLocks: (next) => {
       locks = next;
     },
+    setJobs: (next) => {
+      jobs = next;
+    },
+  };
+}
+
+/** One console row, as `GET /api/jobs` returns it (SPEC.md §7). */
+export function jobFixture(overrides: Partial<Job> = {}): Job {
+  return {
+    eventId: "evt_1",
+    type: "comment.created",
+    status: "pending",
+    started: "2026-07-01T10:05:00.000Z",
+    updated: "2026-07-01T10:05:00.000Z",
+    lastLine: null,
+    originId: null,
+    originTitle: null,
+    blockedOn: null,
+    blockedOnTitle: null,
+    ...overrides,
   };
 }
 

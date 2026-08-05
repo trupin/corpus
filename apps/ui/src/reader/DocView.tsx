@@ -261,9 +261,11 @@ export function DocView({
 
         {/*
          * Anchored threads sit at their anchors (a chip between two blocks, or a
-         * card in the margin); only the ones that hang off no text are listed
-         * here. A document the editor does not own has no anchors to place, so
-         * every thread on it stays below the body, where UI-005 put them.
+         * card in the margin); only the ones with no place in the body are listed
+         * here — never anchored, orphaned, or anchored somewhere this view cannot
+         * point at (`anchorPlacement.segmentsOf`). A document the editor does not
+         * own has no anchors to place, so every thread on it stays below the
+         * body, where UI-005 put them.
          */}
         {anchorsHost ? (
           <>
@@ -279,6 +281,7 @@ export function DocView({
             <DetachedThreads
               wholeDocument={anchors.wholeDocument}
               orphaned={anchors.orphaned}
+              unplaced={anchors.unplaced}
               expandedThreads={expandedThreads}
               flashThread={flashThread}
               onToggleThread={onToggleThread}
@@ -310,7 +313,7 @@ export function DocView({
 
       {anchors.marginMode ? (
         <MarginColumn
-          threads={anchors.anchored.filter((thread) => !thread.orphaned)}
+          threads={anchors.anchored}
           expandedThreads={expandedThreads}
           flashThread={flashThread}
           onToggleThread={onToggleThread}

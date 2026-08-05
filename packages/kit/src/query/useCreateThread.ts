@@ -2,7 +2,7 @@ import type { CreateThreadResponse } from "@corpus/contract";
 import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { useCorpusClient } from "../client/context.js";
 import type { CreateThreadInput } from "../client/createCorpusClient.js";
-import { DOCS_KEY, docKey, QUEUE_KEY, threadKey } from "./keys.js";
+import { DOCS_KEY, docKey, JOBS_KEY, QUEUE_KEY, threadKey } from "./keys.js";
 import type { SettledCallbacks } from "./settledCallbacks.js";
 
 /**
@@ -78,7 +78,12 @@ export function useCreateThread(
         void queryClient.invalidateQueries({ queryKey: docKey(variables.parent) });
       }
       void queryClient.invalidateQueries({ queryKey: DOCS_KEY });
-      if (data.eventId !== null) void queryClient.invalidateQueries({ queryKey: QUEUE_KEY });
+      if (data.eventId !== null) {
+        void queryClient.invalidateQueries({ queryKey: QUEUE_KEY });
+        // The job the enqueue created is what the new thread's pending row reads
+        // (SPEC.md §8, UI-058), not just a number in the console strip.
+        void queryClient.invalidateQueries({ queryKey: JOBS_KEY });
+      }
       onSuccess?.(data, variables);
     },
     onError(error, variables) {

@@ -7,7 +7,7 @@ ui
 P1
 
 ## Status
-todo
+done
 
 ## Model
 opus
@@ -76,19 +76,19 @@ That sequence distinguishes the two candidate causes without guessing:
 They call for different fixes, so establish which before writing code.
 
 ## Acceptance Criteria
-- [ ] Pre-fix reproduction logged with the four pieces of evidence above
-- [ ] A comment on a selection that starts or ends inside inline markup
+- [x] Pre-fix reproduction logged with the four pieces of evidence above
+- [x] A comment on a selection that starts or ends inside inline markup
       (`**bold**`, `*italic*`, `` `code` ``, a `[link](url)`) anchors beside the
       selected text
-- [ ] The highlight is drawn over the selected words — and specifically does not
+- [x] The highlight is drawn over the selected words — and specifically does not
       cover the markup characters the user never saw
-- [ ] A genuinely orphaned thread still goes where §11 says: below the body, not
+- [x] A genuinely orphaned thread still goes where §11 says: below the body, not
       the top
-- [ ] Whatever the placement rule is for a range that begins mid-markup, it is
+- [x] Whatever the placement rule is for a range that begins mid-markup, it is
       stated in the code — this is the second bug in this class (see UI-060) and
       the rule should stop being rediscovered
-- [ ] Selections wholly inside one text run keep working exactly as today
-- [ ] Regression test at the level the bug lives at: a selection whose markdown
+- [x] Selections wholly inside one text run keep working exactly as today
+- [x] Regression test at the level the bug lives at: a selection whose markdown
       range straddles a markup boundary, asserted end to end rather than only
       over the offset helpers
 
@@ -114,16 +114,113 @@ an e2e that comments across a bold boundary in the real editor and asserts the
 card is aligned to the line rather than the document top.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model. The reproduction above is
-mandatory before any code changes._
+
+**Model: opus (claude-opus-5, 1M context).** Real `corpus init` workspace at
+`/tmp/ui062ws`, real server (`corpus server start`, port **8766** — never 8765),
+real Vite dev server on **5992** with `CORPUS_SERVER_ORIGIN=127.0.0.1:8766`, real
+Chromium driven by Playwright. Selection made as a real DOM range over the live
+`.ProseMirror`, comment created through the floating toolbar's 💬 Comment and the
+real composer. Wire traffic captured off the browser's own network events.
+
+### Pre-fix reproduction — the four pieces of evidence
+
+Fixture `doc_ui062b` (`data/docs/plain.md`), an ordinary file: frontmatter fence,
+**a blank line**, then the body.
+
+1. **The markdown around the anchor** — what `GET /api/docs/doc_ui062b` returned
+   as `body`, verbatim:
+   ```
+   "\n# Plain standup\n\n**Moushmi Verma** on repositioning Fernando under Mesbah — the reporting line changes on Monday.\n\nClosing paragraph…\n"
+   ```
+   Note the leading `\n`: the blank line after the frontmatter fence is part of
+   the body the server stores and returns.
+2. **The selector on the wire** — `POST /api/threads`, dragging from inside the
+   bold run through `Mesbah`:
+   ```json
+   {"exact":"Moushmi Verma** on repositioning Fernando under Mesbah",
+    "prefix":"# Plain standup\n\n**",
+    "suffix":" — the reporting line changes on"}
+   ```
+   The `**` inside `exact` is correct and by design (`selectorFromSelection`'s
+   docblock): the quote is a slice of the file, not of the screen.
+3. **What the server resolved it to** — the next `GET /api/docs/doc_ui062b`:
+   ```json
+   {"anchorId":"anc_5c9e4ed0","threadId":"th_r5m25sq4",
+    "range":{"start":20,"end":74},"orphaned":false}
+   ```
+   **Resolved. Not orphaned.** So this is candidate **(a)**, not (b).
+4. **Where the card was drawn, and whether a highlight was drawn at all** — in
+   focus mode (`marginMode: true`), read off the live DOM:
+   ```
+   highlights: []          ← no .anchor-hl anywhere in the body
+   pips:       []
+   cards: [{ thread:"th_mj4v2hzr", styleTop:"0px",   rectTop: 87.3,
+             quote:"“Moushmi Verma** on repositioning Fernando under Mesbah”" },
+           { thread:"th_r5m25sq4", styleTop:"333px", rectTop: 420.3, … }]
+   detached: []            ← nothing below the body
+   ```
+   `styleTop: "0px"` — the card pinned to the very top of the document, quote and
+   all, exactly the screenshot. The second card is only there because the cascade
+   stacked it under the first; with one thread there is one card, at the top.
+
+**Diagnosis.** The anchor resolves, and `mdRangeToPm` is not the culprit: an
+exhaustive sweep of **18 325** selections over a canonical markup-rich body
+(bold, italic, inline code, links, `[[ref]]`, list, blockquote, fence) produced
+**zero** ranges that resolved but yielded no segments — a range beginning inside
+markup has always placed correctly. What fails is one rung above:
+`offsetsComparable(body, canonical)` is **false**, because the printer does not
+re-emit the leading blank line, so every offset in the file is one past where the
+editor's own text puts it. `placeAnchors` then forced `segments: []` for *every*
+anchor on the document, no highlight was drawn, and `marginLayout.cascade`'s
+`anchorTop ?? lastBottom` — `lastBottom` still `0` at collection time — dropped
+the card at the top. Same trigger for tables (the printer pads cells), hard
+breaks written as two trailing spaces, setext headings and indented code.
+
+The healthy control, same selection, same bold boundary, on a byte-canonical file
+(`doc_ui062c`): highlight drawn as **two** spans, `"Moushmi Verma"` and
+`" on repositioning Fernando under Mesbah"` (the `**` between them has no
+position, so it is inside neither), pip drawn, card at `top: 211.3` against an
+anchor at `211.1`. Nothing about inline markup was ever broken.
+
+### Post-fix verification, same app, same flow
+
+`doc_ui062b` (leading blank line), identical selection:
+```
+highlights: "Moushmi Verma" @211 / " on repositioning Fernando under Mesbah" @211
+pips:       one per thread
+cards:      th_gemn6zxh styleTop:"122px" rectTop: 209.3  ← anchor top 209.1
+```
+No card at `0px`; no `*` inside any highlight span.
+
+`doc_ui062a` (the table fixture, where the padded `prefix` also stops the
+server's rung 1 and it resolves on rung 2 instead): highlight drawn below the
+table at `374.9`, card at `375.3`.
+
+### Gates
+
+- `apps/ui` unit suite: **2053 passed / 128 files** (`vitest run src`).
+- `apps/ui/e2e/anchor-layer.spec.ts`: **9 passed** (7 existing + 2 new), real
+  Vite dev server on `CORPUS_UI_PORT=5993`.
+- Pre-fix red, recorded by reverting the two behaviour changes and re-running:
+  **8 unit tests** red (5 in `anchorPlacement.test.ts`, 3 in
+  `marginLayout.test.ts`) and **both new e2e tests** red — the first on
+  `.anchor-hl` count `0` instead of `2`, the second timing out waiting for the
+  aligned card.
+- `npx eslint … --max-warnings 0`, `npx prettier --check`, `npx tsc --noEmit`
+  over the touched files: clean.
+
+### Processes
+
+Workspace server on 8766 and Vite on 5992/5993 were started for this run and
+stopped afterwards; ports 8765 and 5173 were never touched.
 
 ## Completion Checklist (domain agent)
-- [ ] Pre-fix reproduction logged
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Pre-fix reproduction logged
+- [x] Tests written and passing
+- [x] `/lint` passes (scoped: eslint, prettier, tsc over the touched files)
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix

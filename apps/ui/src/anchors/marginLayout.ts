@@ -39,14 +39,33 @@ export interface MarginLayout {
 }
 
 /**
- * The prototype's routine exactly: collect with a fallback of the running
- * `lastBottom` (still `0` at collection time, so an unplaced card sorts to the
- * top and is cascaded down like any other), sort ascending, then walk.
+ * The prototype's routine — collect a wanted top per card, sort ascending, then
+ * walk with `y = max(wanted, lastBottom)` — with one correction to how a card
+ * with **no measurable anchor** is collected.
+ *
+ * `items` arrive in document order, so the honest answer for a card whose
+ * highlight is not on screen is *where the document had got to*: the top of the
+ * last card that did have one. The prototype wrote `lastBottom`, which is still
+ * `0` during collection and therefore sorts **every** such card to the very top
+ * of the margin — so a document where no highlight can be drawn at all stacked
+ * its whole conversation against the title, and deleting an anchored phrase
+ * teleported its card up there until the text was retyped (UI-062).
+ *
+ * A card without an anchor is normally not in this list at all: the layer above
+ * lists those below the body (`anchorPlacement.segmentsOf`). This is the
+ * transient case — a highlight the editor has momentarily collapsed — and
+ * keeping it in document order is what stops the transient from being a jump.
  */
 export function cascade(items: readonly MarginItem[]): MarginLayout {
+  let lastAnchored = 0;
   let lastBottom = 0;
   const cards = items
-    .map((item) => ({ item, top: item.anchorTop ?? lastBottom }))
+    .map((item) => {
+      const top = item.anchorTop ?? lastAnchored;
+      lastAnchored = top;
+      return { item, top };
+    })
+    // Stable, so cards sharing a wanted top keep document order.
     .sort((left, right) => left.top - right.top)
     .map(({ item, top }) => {
       const y = Math.max(top, lastBottom);

@@ -317,8 +317,10 @@ describe("Board", () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(field);
     });
-    expect((field as HTMLInputElement).selectionStart).toBe(0);
-    expect((field as HTMLInputElement).selectionEnd).toBe((field as HTMLInputElement).value.length);
+    expect((field as HTMLTextAreaElement).selectionStart).toBe(0);
+    expect((field as HTMLTextAreaElement).selectionEnd).toBe(
+      (field as HTMLTextAreaElement).value.length,
+    );
   });
 
   it("creates into inbox from a column that is not folder-scoped", async () => {

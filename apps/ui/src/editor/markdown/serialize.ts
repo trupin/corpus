@@ -36,6 +36,8 @@ import { MARK, NODE, type PmMark, type PmNode } from "./schema.js";
  * - bold is `**`, italic is `*`;
  * - fences are ``` and keep their language string;
  * - exactly one blank line between block nodes;
+ * - a hard break inside a table cell is `<br>`, GFM's only spelling for one
+ *   (UI-064); everywhere else a hard break stays a trailing `\`;
  * - the file ends with exactly one `\n`, and an empty body is `""`.
  */
 
@@ -288,6 +290,33 @@ function textOf(nodes: readonly PmNode[]): string {
   return nodes.map((child) => child.text ?? "").join("");
 }
 
+/**
+ * The token a break becomes inside a cell (UI-064).
+ *
+ * Written here rather than as a printer handler because only this function
+ * knows it is building a cell: every markdown spelling of a hard break is a
+ * newline, a newline ends a table row, and the printer's default answer is
+ * therefore to flatten the break into a **space** — the user's line break,
+ * silently deleted on the next save. `<br>` is what GFM writes instead, so it
+ * is what is written here, as a construct the printer already emits verbatim.
+ * The parser reads the same token back (`parse.ts`), which is what closes the
+ * round trip.
+ *
+ * Rewritten in place rather than mapped to fresh nodes: a node's identity is
+ * its key in the position trace, so cloning the `strong` around a break would
+ * drop that run's address out of the offset map.
+ */
+function breaksAsTokens(nodes: MdNode[]): MdNode[] {
+  for (const [index, node] of nodes.entries()) {
+    if (node.type === "break") {
+      nodes[index] = { type: RAW_INLINE_TYPE, value: "<br>" };
+      continue;
+    }
+    if (node.children !== undefined) breaksAsTokens(node.children);
+  }
+  return nodes;
+}
+
 function tableMdast(node: PmNode): MdNode {
   const rawAlign = attr(node, "align");
   const align = Array.isArray(rawAlign)
@@ -302,7 +331,9 @@ function tableMdast(node: PmNode): MdNode {
         type: "tableCell",
         // A cell is phrasing in markdown but `block+` in ProseMirror; flatten
         // its paragraphs rather than emitting a table GFM cannot express.
-        children: (cell.content ?? []).flatMap((block) => inlineChildren(block.content ?? [])),
+        children: breaksAsTokens(
+          (cell.content ?? []).flatMap((block) => inlineChildren(block.content ?? [])),
+        ),
       })),
     })),
   };

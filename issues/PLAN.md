@@ -345,11 +345,11 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | todo | P1 | UI-051 |
 | AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | todo | P1 | AGENT-010 |
 | UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | todo | P2 | — |
-| UI-058 | A "note only" turn still shows "agent is working" (dogfood) | todo | P1 | — |
-| UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | todo | P1 | — |
+| UI-058 | A "note only" turn still shows "agent is working" (dogfood) | done | P1 | — |
+| UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | done | P1 | — |
 | UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P1 | UI-051 |
 | UI-061 | A selection spanning several turns is silently truncated to one (PR #20) | todo | P2 | UI-051 |
-| UI-062 | Document comment sometimes anchors at the top, not at the selection (dogfood) | todo | P1 | — |
+| UI-062 | Document comment sometimes anchors at the top, not at the selection (dogfood) | done | P1 | — |
 
 <!-- Additional phases will be added as the project grows -->
 
@@ -365,8 +365,8 @@ belongs to the same fix wave.
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
 | SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
-| UI-064 | `<br>` inside a table cell renders as literal text | todo | P1 | — |
+| UI-064 | `<br>` inside a table cell renders as literal text | done | P1 | — |
 | UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
 | UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
 | UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
-| UI-065 | A long document title wraps instead of being cut | todo | P2 | — |
+| UI-065 | A long document title wraps instead of being cut | done | P2 | — |

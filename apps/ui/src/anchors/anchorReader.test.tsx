@@ -243,6 +243,48 @@ describe("threads with no anchor", () => {
     });
     expect(document.querySelector("[data-thread-section]")).toBeNull();
   });
+
+  /**
+   * UI-062. A live anchor the view cannot point at is listed below the body,
+   * like the ones that hang off no text — and specifically **not** drawn at the
+   * top of the document, which is where a margin card with no highlight to
+   * measure used to land.
+   */
+  it("lists an anchor it cannot point at, apart from the detached ones", async () => {
+    mount(docWith([anchorAt("6.1%", { range: { start: 900, end: 910 } })]), [row()]);
+    const section = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-thread-section="unplaced"]');
+      expect(found).not.toBeNull();
+      return found;
+    });
+    expect(section?.textContent).toContain("Threads without a place in this view");
+    expect(highlights()).toHaveLength(0);
+    // Not reported as a loss the server has not reported.
+    expect(document.querySelector('[data-thread-section="detached"]')).toBeNull();
+  });
+
+  /**
+   * UI-062's other half: the file carries the blank line every editor leaves
+   * after the frontmatter fence, so every offset in it is one past where the
+   * editor's own text would put it. The highlight still lands on the quote.
+   */
+  it("still highlights a document the editor would print differently", async () => {
+    const body = `\n${BODY}`;
+    const start = body.indexOf("6.1%");
+    mount(
+      docFixture({
+        frontmatter: { id: "doc_m", title: "Mortgage options" },
+        body,
+        anchors: [anchorAt("6.1%", { range: { start, end: start + 4 } })],
+      }),
+      [row()],
+    );
+    await waitFor(() => {
+      expect(highlights()).toHaveLength(1);
+    });
+    expect(highlights()[0]?.textContent).toBe("6.1%");
+    expect(document.querySelector("[data-thread-section]")).toBeNull();
+  });
 });
 
 describe("the layout", () => {

@@ -1,7 +1,7 @@
 import type { AppendTurnResponse } from "@corpus/contract";
 import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { useCorpusClient, usePendingTurnStore } from "../client/context.js";
-import { DOCS_KEY, docKey, threadKey } from "./keys.js";
+import { DOCS_KEY, docKey, JOBS_KEY, QUEUE_KEY, threadKey } from "./keys.js";
 import { isPendingTurn, type PendingTurn, type ThreadView } from "./pendingTurns.js";
 
 /**
@@ -112,6 +112,14 @@ export function useAppendTurn(
       void queryClient.invalidateQueries({ queryKey: key });
       void queryClient.invalidateQueries({ queryKey: docKey(threadId) });
       void queryClient.invalidateQueries({ queryKey: DOCS_KEY });
+      // A turn that enqueued produced a job, and the queue is where "is a
+      // response outstanding?" is answered — the console's depth and the thread
+      // card's pending row both read it (SPEC.md §8, UI-058). A turn that
+      // enqueued nothing changed neither, so neither is dropped.
+      if (data.eventId !== null) {
+        void queryClient.invalidateQueries({ queryKey: QUEUE_KEY });
+        void queryClient.invalidateQueries({ queryKey: JOBS_KEY });
+      }
     },
 
     onError(_error, _variables, context) {

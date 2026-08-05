@@ -214,6 +214,10 @@ export {
   REF_PATTERN,
   type DocRef,
 } from "./markdown/refs.js";
+// The one raw-HTML token Corpus reads as markdown, and only inside a table cell
+// (UI-064). Exported because the document editor parses with the same rule —
+// reader and editor must not be two readings of one file.
+export { isLineBreakTag, remarkTableCellBreaks } from "./markdown/tableBreaks.js";
 // One image renderer for every host (SPEC.md §11's "images open full-size"):
 // the authenticated attachment fetch and the click-to-open affordance, so a
 // plugin's read surface draws pictures exactly as a turn does. The viewer
