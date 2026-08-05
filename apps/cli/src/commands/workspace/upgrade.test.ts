@@ -671,7 +671,9 @@ describe("the workspace upgrade command spec", () => {
     expect(machine?.description).toContain('"written"');
   });
 
-  it("is the topic's only verb, reachable as `corpus workspace upgrade`", () => {
-    expect(workspaceTopic.commands.map((command) => command.name)).toEqual(["upgrade"]);
+  it("is reachable as `corpus workspace upgrade`, alongside the verb that shows its conflicts", () => {
+    // Pinned rather than "contains": a new workspace verb is a change to the
+    // command surface and shows up here as a failing diff (SPEC.md §2.3).
+    expect(workspaceTopic.commands.map((command) => command.name)).toEqual(["upgrade", "diff"]);
   });
 });

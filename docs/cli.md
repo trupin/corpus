@@ -77,6 +77,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus todos list`](#corpus-todos-list)
   - [`corpus todos migrate`](#corpus-todos-migrate)
 - [`corpus workspace`](#corpus-workspace)
+  - [`corpus workspace diff`](#corpus-workspace-diff)
   - [`corpus workspace upgrade`](#corpus-workspace-upgrade)
 - [Exit codes](#exit-codes)
 
@@ -2123,7 +2124,53 @@ corpus todos migrate --json
 
 Maintain the workspace's own scaffolding.
 
-Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4).
+Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4). What it refuses to overwrite it reports as a **conflict** — unresolved work, not a notice (§2.4) — and `diff` is what shows the difference the resolver has to act on. Neither verb needs the server running: a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them.
+
+### `corpus workspace diff`
+
+Show what the tool changed under a template file this workspace edited.
+
+`corpus workspace upgrade` never overwrites a template file the workspace has edited: it reports it as a **conflict**, and a conflict is unresolved work rather than a notice (SPEC.md §2.4). This is the verb that report points at — the one thing it cannot carry, which is what actually changed upstream.
+
+**With a path**, it prints the three identities the compare rests on — the baseline `corpus init` recorded, the workspace's copy, and the copy the installed tool ships — and then the unified diff between the last two. **With no path**, it lists every path currently in conflict, so the work can be enumerated without re-running an upgrade.
+
+**Direction is explicit, because a merge applied backwards discards the tool's change silently.** The `---` side is `workspace/<path>`, the file on disk; the `+++` side is `tool/<path>`, what the installed tool ships. `-` lines are the workspace's, `+` lines are the tool's, and the diff reads workspace → tool. Under `--json` the same fact is a value rather than prose: `diff.from` is `"workspace"` and `diff.to` is `"tool"`.
+
+**The baseline is an identity, not bytes.** The manifest records its sha256 and no older template ships inside the tool, so what is reachable here is _which sides moved_ — stated per side as `matchesBaseline` — rather than a three-way text merge. That is the fact a merge decision actually turns on: a `+` line that the baseline also lacked is the tool's new work, and a workspace copy that still matches the baseline needs no merge at all.
+
+**Nothing normal here is a failure.** A file with no conflict says which of the harmless cases it is and exits 0 — identical to the tool's, edited here but unchanged upstream, untouched here so the upgrade will simply update it. A file the tool has **retired** says so and shows no diff, because there is nothing on the other side to compare against, which is not the same as an empty file. A file this workspace deleted is shown as a whole-file addition. Only a path the tool does not install at all is refused (exit 2), with the reason — an empty diff there would read as _no difference_ when the truth is _nobody looked_.
+
+It writes nothing, and it needs no running server: it reads two files and one manifest entry. Merging is yours to do — Corpus never merges a skill automatically, because a skill is prose that instructs the agent and a plausible-looking auto-merge would corrupt the instructions the loop runs on.
+
+```
+corpus workspace diff [path] [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                                                                                                                                                                                                                       |
+| -------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`   | no       | The template file to compare, workspace-relative exactly as `corpus workspace upgrade` prints it (`.claude/skills/comment/SKILL.md`). A path relative to the current directory, or an absolute one inside the workspace, is accepted too. Omit it to list every path in conflict. |
+
+**Examples**
+
+List the paths currently in conflict — the work an upgrade left unresolved, without re-running it.
+
+```
+corpus workspace diff
+```
+
+What the tool changed under an edited skill: the three shas, then the diff from this workspace's copy to the tool's.
+
+```
+corpus workspace diff .claude/skills/comment/SKILL.md
+```
+
+One JSON value: `{"root":"/home/me/notes","toolVersion":"0.3.0","baselineRecordedBy":"0.2.0","path":".claude/skills/comment/SKILL.md","source":"template","action":"keep-modified","conflict":true,"baseline":"9c0d…","workspace":{"present":true,"sha256":"5e6f…","matchesBaseline":false},"tool":{"present":true,"sha256":"1a2b…","matchesBaseline":false},"diff":{"from":"workspace","to":"tool","text":"--- workspace/…\n+++ tool/…\n@@ -1,4 +1,5 @@\n…","added":3,"removed":1,"coarse":false}}`.
+
+```
+corpus workspace diff .claude/skills/comment/SKILL.md --json
+```
 
 ### `corpus workspace upgrade`
 

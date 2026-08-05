@@ -3,25 +3,12 @@ import { dirname, join } from "node:path";
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { InternalError } from "../../errors.js";
 import { plural } from "../../input.js";
-import {
-  resolvePluginsRoot,
-  resolveTemplateRoot,
-  TEMPLATE_MANIFEST_FILE,
-  templateManifestPath,
-} from "../../paths.js";
+import { TEMPLATE_MANIFEST_FILE, templateManifestPath } from "../../paths.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { collectIncoming, shaOnDisk, type ToolRoots } from "../../template/incoming.js";
 import {
-  planPluginSeedInstall,
-  planPluginSkillInstall,
-  planTemplateInstall,
-  templateSeedNames,
-  templateSkillNames,
-} from "../../template/install.js";
-import {
-  pluginSourceMarker,
   readTemplateManifest,
   serializeManifest,
-  sha256,
   type TemplateManifest,
 } from "../../template/manifest.js";
 import {
@@ -193,14 +180,9 @@ export interface UpgradeReport {
 
 /**
  * The tool-side roots, named so tests can point them at a scratch tree — the
- * same seam `runInit` takes. Simulating "the operator ran `npm update`" means
- * changing what the *tool* carries, which is otherwise fixed by the installed
- * package's own layout.
+ * same seam `runInit` takes, and the same one `corpus workspace diff` reads.
  */
-export interface UpgradeDependencies {
-  readonly templateRoot?: string;
-  readonly pluginsRoot?: string | undefined;
-}
+export type UpgradeDependencies = ToolRoots;
 
 export async function runWorkspaceUpgrade(
   context: WorkspaceCommandContext,
@@ -365,48 +347,6 @@ async function isIgnoredByRules(root: string, relative: string): Promise<boolean
     if (gitExitCode(cause) === 1) return false;
     throw gitFailure("checking whether the workspace ignores its queue skeleton", cause);
   }
-}
-
-/**
- * Every file the installed tool would put in a workspace today, hashed: the
- * bundled template, then the plugin skills, each carrying where it came from.
- * A plugin-sourced entry is refreshed from **its plugin**, not from the template
- * (sprint-012 Adjudication 11) — which falls out of building the source set the
- * same way `corpus init` does, rather than by special-casing the manifest marker.
- */
-function collectIncoming(dependencies: UpgradeDependencies): readonly IncomingFile[] {
-  const templateRoot = dependencies.templateRoot ?? resolveTemplateRoot();
-  const installed = planTemplateInstall(templateRoot);
-
-  const files: IncomingFile[] = installed.map((file) => {
-    const from = join(templateRoot, ...file.from.split("/"));
-    return { path: file.to, from, sha256: sha256(readFileSync(from)) };
-  });
-
-  const pluginsRoot =
-    "pluginsRoot" in dependencies ? dependencies.pluginsRoot : resolvePluginsRoot();
-  const pluginFiles = [
-    ...planPluginSkillInstall(pluginsRoot, templateSkillNames(installed)).files,
-    // Seed templates ride the same path as skills (CLI-012), which is what makes
-    // an installed plugin template refreshable from its plugin and protected by
-    // the same never-clobber compare — no special case anywhere in this file.
-    ...planPluginSeedInstall(pluginsRoot, templateSeedNames(installed)).files,
-  ];
-  for (const file of pluginFiles) {
-    const from = join(pluginsRoot ?? "", ...file.from.split("/"));
-    files.push({
-      path: file.to,
-      from,
-      sha256: sha256(readFileSync(from)),
-      source: pluginSourceMarker(file.plugin),
-    });
-  }
-  return files;
-}
-
-function shaOnDisk(root: string, path: string): string | null {
-  const absolute = join(root, ...path.split("/"));
-  return existsSync(absolute) ? sha256(readFileSync(absolute)) : null;
 }
 
 /** Copies the bytes for every writing verdict and returns what it wrote. */

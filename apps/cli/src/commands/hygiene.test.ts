@@ -320,7 +320,9 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "thread/reply.ts",
       "thread/show.ts",
       "thread/status.ts",
+      "workspace/diff.ts",
       "workspace/index.ts",
+      "workspace/unified-diff.ts",
       "workspace/upgrade.ts",
     ]);
   });
