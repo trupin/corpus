@@ -503,6 +503,60 @@ describe("the pending indicator", () => {
     expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
   });
 
+  /**
+   * A real console list is not one row. The lookup scans everything the server
+   * returned, so a busy queue must not bury this thread's request — the answer
+   * has to be as good at row 50 as at row 1. (What it *cannot* survive is the
+   * server truncating the row away entirely; that bound is
+   * `outstandingAgentRequest.test.ts`'s subject and CONTRACT-030's.)
+   */
+  it("finds this thread's request among a full window of other work", async () => {
+    const others = Array.from({ length: 49 }, (_, index) =>
+      jobFixture({
+        eventId: `evt_other_${String(index)}`,
+        status: index % 2 === 0 ? "processed" : "in-progress",
+        originId: `th_other_${String(index)}`,
+        started: `2026-07-01T11:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      }),
+    );
+    const { container } = render(
+      <Host
+        transport={wire(
+          { agent: "requested", turns: [TURNS[0] as never] },
+          { jobs: [...others, askJob()] },
+        )}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+    expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
+  });
+
+  /**
+   * `Job.started` flips from the enqueue instant to the first log line's
+   * (CONTRACT-029). A note-only turn landing after that flip used to drag the
+   * clock forward with it — the displayed wait jumping *down* by however long the
+   * job had been queued. The ask is at 10:05, the first log at 10:07, the note at
+   * 10:12, and the row still counts from 10:05.
+   */
+  it("does not restart the clock when a note follows the job's first log line", async () => {
+    const { container } = render(
+      <Host
+        transport={wire(
+          { agent: "engaged", turns: [TURNS[0] as never, NOTE] },
+          { jobs: [askJob({ status: "in-progress", started: "2026-07-01T10:07:00.000Z" })] },
+        )}
+      />,
+    );
+    await loaded(container);
+    await waitFor(() => {
+      expect(container.querySelector(".working")).not.toBeNull();
+    });
+    expect(container.querySelector(".working")?.getAttribute("data-working-since")).toBe(ASKED_AT);
+  });
+
   it("goes quiet once the job is settled, and never speaks for another thread's", async () => {
     const settled = render(
       <Host

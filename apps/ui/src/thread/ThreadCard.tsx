@@ -114,7 +114,6 @@ export function ThreadCard({
 
   const data = thread.data;
   const turns: readonly ThreadTurn[] = data?.turns ?? [];
-  const lastTurn = turns.at(-1);
   /**
    * The last turn the **server** has. An optimistic append carries a provisional
    * client timestamp, and marking the thread read up to a turn the server has
@@ -365,7 +364,7 @@ export function ThreadCard({
       />
 
       {outstanding === null ? null : (
-        <PendingIndicator since={agentWaitSince(outstanding, lastTurn?.ts)} />
+        <PendingIndicator since={agentWaitSince(outstanding, turns)} />
       )}
 
       <ThreadComposer threadId={threadId} resolved={resolved} onNotify={onNotify} />

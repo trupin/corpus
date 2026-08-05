@@ -39,6 +39,25 @@ import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
  * exactly as `turnAnchors.ts` refuses when its two projections disagree about a
  * quote's occurrences (PR #20): a visible gap beats a confident lie about which
  * sentence a comment is on.
+ *
+ * **The result can be a superset of the true range, and never anything else.**
+ * Plain-text equality licenses the *offsets*; it says nothing about granularity.
+ * `sourceTrace.ts` marks a run **atomic** when its markdown and its text differ
+ * character for character, and a partial hit inside an atomic run quotes the
+ * whole run rather than slicing a string whose offsets do not line up. Escaping
+ * routinely makes a run atomic in one spelling and not the other: a file that
+ * writes `5 \* 3` — what a defensively-escaping printer produces — has one atomic
+ * run spanning the paragraph, while the canonical text prints a bare `5 * 3`
+ * (`escape.ts` leaves an asterisk with spaces on both sides alone, since it can
+ * neither open nor close emphasis) and maps character for character. A range
+ * travelling through such a run therefore comes back **widened to the run**: a
+ * comment on one word highlights the paragraph.
+ *
+ * That is a known loss of precision rather than a misplacement, and the bound is
+ * tight in both directions. The rebased range always *contains* the true one and
+ * can never be disjoint from it — the runs it grows to are exactly the runs the
+ * range overlapped — and it can never grow past them, so the widening stops at
+ * the paragraph and never reaches the next one. `rebase.test.ts` pins it.
  */
 export function rebaseRange(from: string, to: string, range: MdRange): MdRange | null {
   if (from === to) return range;

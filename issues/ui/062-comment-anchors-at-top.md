@@ -214,6 +214,56 @@ table at `374.9`, card at `375.3`.
 Workspace server on 8766 and Vite on 5992/5993 were started for this run and
 stopped afterwards; ports 8765 and 5173 were never touched.
 
+---
+
+### PR #21 review follow-up (2026-08-04)
+
+**Model: Opus 5 (1M context)**, ui-dev agent. One MINOR finding: `rebase.ts`'s
+docblock said the round trip "is arithmetic rather than a search", which is true
+of the *offsets* and overstates the *result*.
+
+The reviewer's reading is confirmed. Plain-text equality licenses the offsets and
+says nothing about granularity: `sourceTrace.ts` marks a run **atomic** when its
+markdown and its text differ character for character, and a partial hit inside an
+atomic run quotes the whole run. Escaping puts a run on one side of that line and
+not the other, so a range travelling through one comes back **widened to the
+run** — a superset of the true range, never disjoint from it, and never wider
+than the runs it overlapped.
+
+No behaviour was changed. The docblock now states the widening and its bound, and
+`rebase.test.ts` pins it with two tests (the widening, and the same paragraph
+without the escape staying exact).
+
+#### Real-app confirmation
+Same harness as above, fresh: `corpus init /tmp/corpus-ui21` (server on **8766**),
+Vite on **5999**, real Chromium. Document created through the CLI with the body
+
+```
+We assume a 30-year fixed at 6.1% and 5 \* 3 is fifteen.
+```
+
+— the ordinary shape of a file written by a defensively-escaping printer, which
+our `escape.ts` prints back as a bare `5 * 3` (an asterisk with spaces on both
+sides can neither open nor close emphasis). A thread was anchored on the quote
+`30-year fixed at 6.1%`. In the reader:
+
+```
+highlights: [{ "cls": "anchor-hl", "attr": "anc_0d651085",
+               "text": "We assume a 30-year fixed at 6.1% and 5 * 3 is fifteen." }]
+```
+
+The highlight covers the **whole paragraph**, not the quoted phrase — the
+documented widening, live, and visibly a superset containing the quote rather
+than a misplacement. It stops at the paragraph, as the bound says it must.
+
+#### Gates
+- `apps/ui` unit suite: **2072 passed**, 0 failed (`VITEST_MAX_THREADS=4`);
+  `rebase.test.ts` 13 tests (was 11).
+- `npx eslint … --max-warnings 0`, `npx prettier --check`, `npx tsc --noEmit`
+  over the touched files: clean.
+- Server, Vite and the temp workspace torn down; 5999 and 8766 verified free.
+  Ports 8765 and 5173 never touched.
+
 ## Completion Checklist (domain agent)
 - [x] Pre-fix reproduction logged
 - [x] Tests written and passing

@@ -91,6 +91,43 @@ describe("rebasing a range between two spellings", () => {
   });
 
   /**
+   * **The known widening.** A run is atomic when its markdown and its text differ
+   * character for character, and a partial hit inside one quotes the whole run.
+   * Escaping puts a run on one side of that line and not the other: a file
+   * written by a defensively-escaping printer spells the paragraph `5 \* 3`,
+   * which the trace cannot slice, while the canonical text prints a bare `5 * 3`
+   * (`escape.ts` leaves an asterisk with spaces on both sides alone, since it can
+   * neither open nor close emphasis), which it can.
+   *
+   * So the round trip is not always exact — it is exact or **wider**. The result
+   * still contains the quoted words and is still on the right sentence; it is
+   * simply the whole paragraph. Pinned so the next reader knows it is a known
+   * widening rather than a bug.
+   */
+  it("widens to the whole run when one spelling escapes what the other does not", () => {
+    const body = "\nThe rate is 6.1% and 5 \\* 3 is fifteen.\n\nA second paragraph.\n";
+    const canonical = canonicalOf(body);
+    // The escape is the whole difference: same words, two spellings of one of them.
+    expect(canonical).toContain("5 * 3");
+    expect(body).toContain("5 \\* 3");
+
+    const quoted = travel(body, "fifteen");
+    // Not refused, and not misplaced — the word the comment was on is in there.
+    expect(quoted).toContain("fifteen");
+    // But widened to the run the escape made atomic: the paragraph, not the word.
+    expect(quoted).toBe("The rate is 6.1% and 5 * 3 is fifteen.");
+    // And no further. The widening stops at the run it overlapped.
+    expect(quoted).not.toContain("second paragraph");
+  });
+
+  /** The same document, minus the escape: nothing to widen, so nothing widens. */
+  it("stays exact in a paragraph neither spelling escapes", () => {
+    const body = "\nThe rate is 6.1% and 5 plus 3 is fifteen.\n";
+    expect(canonicalOf(body)).not.toBe(body);
+    expect(travel(body, "fifteen")).toBe("fifteen");
+  });
+
+  /**
    * The licence and nothing weaker. Two documents that do not render the same
    * characters have no shared projection to travel through, and a placement
    * would be a guess about which sentence a comment is on.

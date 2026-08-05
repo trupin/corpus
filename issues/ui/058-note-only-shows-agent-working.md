@@ -157,7 +157,84 @@ shown to survive a reload rather than restart (SPEC.md §8).
 - `npx eslint <touched files> --max-warnings 0`: clean. `prettier --check`: clean.
   `tsc --noEmit` in `apps/ui` and `packages/kit`: clean.
 
+---
+
+### PR #21 review follow-up (2026-08-04)
+Model: **Opus 5 (1M context)**, ui-dev agent. Two findings from the Fable review
+of PR #21, both against `apps/ui/src/thread/outstandingAgentRequest.ts`.
+
+**MAJOR — the lookup reads a truncated window. Escalated, not papered over.**
+Investigated the wire before touching anything:
+
+- `JobsQuerySchema` (`packages/contract/src/schemas/job.ts`) has exactly one
+  parameter, `recent` (default 50, max 200). There is **no** `originId` filter and
+  **no** `status` filter.
+- `listJobRows` (`apps/server/src/jobs/project.ts`) is a single statement with no
+  `WHERE`, ordered `COALESCE(j.updated, e.created) DESC`.
+- `originId` is not even a column: `resolveOrigin` derives it at response time by
+  parsing `payload_json` and walking `["threadId","parentId","docId"]`, then
+  requiring the id to exist in `documents`.
+
+So the honest fix — asking the question the caller actually has — is a contract
+change plus a server change, which is out of this domain. **Escalated**, with the
+follow-ups filed: **CONTRACT-030** (the filter) → **SERVER-056** (answer it in the
+projection, unwindowed) → **UI-069** (consume it and delete the apology). The two
+fixes available above the wire were both rejected on the standard this issue set
+for itself: raising `recent` moves the boundary without removing it (and forks
+this caller off the shared `["jobs", {}]` key for the privilege), and polling
+harder widens nothing. A row that is wrong less often is still wrong.
+
+What landed here instead: the module docblock now **states the guarantee it
+actually provides** — the window's extent, its ordering, that the error is a
+one-directional false *negative*, that a deferred job (whose `updated` stops
+advancing, SPEC.md §7) is the standard way to reach it, and why it is not fixed
+in place. `pickOutstandingJob` is split out of the hook so the scan and the window
+are separate claims; the scan is exhaustive (proved at 200 rows), and the window
+is pinned by a test that reconstructs the reported case and asserts `null`.
+UI-069 replaces that test with its opposite.
+
+**MINOR — `agentWaitSince` could step forward. Fixed.** `min(job.started,
+latestTurn)` is the minimum of two non-decreasing values, so it is itself
+non-decreasing. It now takes the thread's **turns** and returns *the newest turn
+that is not newer than `job.started`*, which makes turns posted after the job's
+recorded start irrelevant. The answer is still never later than the old one (it
+is a turn, and it is ≤ `job.started`), so it cannot over-report a wait either.
+The residue — a turn posted in the gap between enqueue and first log — is
+CONTRACT-029's and is documented and tested as such.
+
+#### Real-app verification (the exact scenario the reviewer constructed)
+`corpus init /tmp/corpus-ui21` (server auto-picked **port 8766**; 8765 and 5173
+untouched), `corpus server start` (pid 1579), Vite on **5999** with
+`CORPUS_SERVER_ORIGIN=http://127.0.0.1:8766` and `VITE_CORPUS_TOKEN` from
+`.corpus/config.json`, driven by a real Chromium.
+
+| step (real CLI against the real server) | observed |
+| --- | --- |
+| `thread create --parent doc_w45nyyef --requests-agent true` | `th_j6eafjli`, ask turn at **01:32:23Z**, `evt_63nakuxfnvzb` |
+| `queue claim-all` | event claimed |
+| `job log evt_63nakuxfnvzb "reading the mortgage doc"` | `GET /api/jobs` → `"started":"2026-08-05T01:32:49Z"` — **the field moved off the enqueue instant**, CONTRACT-029 reproduced live |
+| `thread reply th_j6eafjli` (note only, no agent) | turn at **01:33:37Z**, `"eventId":null` — no new job |
+| open the thread in the browser | `.working` present, `data-working-since` = **`2026-08-05T01:32:23Z`** |
+
+`2026-08-05T01:32:23Z` is the **ask**. The previous implementation would have
+reported `min(01:32:49, 01:33:37)` = `01:32:49Z` — the 26 s the request spent
+queued erased, the displayed wait jumping down, which is precisely the reset this
+row exists to prevent. Left open, the row escalated on its own from "still
+working…" to "still working — longer than usual" measured from 01:32:23.
+
+#### Checks
+- `apps/ui` unit suite: **2072 passed**, 0 failed (`VITEST_MAX_THREADS=4`).
+  `outstandingAgentRequest.test.ts` 21 tests (was 4), `ThreadCard.test.tsx` 33
+  (was 31).
+- `npx eslint <touched files> --max-warnings 0`: clean. `prettier --check`:
+  clean. `tsc --noEmit` in `apps/ui`: clean.
+- Torn down: server stopped, Vite killed, `/tmp/corpus-ui21` removed, 5999 and
+  8766 verified free, no orphaned vitest/vite/tsx processes.
+
 ## Follow-ups surfaced (not fixed here)
+- **The jobs window (PR #21 review).** CONTRACT-030 → SERVER-056 → UI-069, above.
+  Note `packages/kit/src/row/useRowSignals.ts` reads the same unfiltered
+  `useJobs({})` and carries the same bound; UI-069 covers it.
 - **`AWAITING_AGENT_SQL` is the same heuristic, server-side.**
   `apps/server/src/docs/needs.ts:58` computes `DocRow.awaitingAgent` as
   `t.agent <> 'none' AND t.status = 'open' AND t.last_author = 'user'`, so a

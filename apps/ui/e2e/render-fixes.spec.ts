@@ -272,6 +272,46 @@ test.describe("UI-065 — a long document title", () => {
     expect(measured.scroll).toBeLessThanOrEqual(measured.client + 1);
   });
 
+  /**
+   * The column assertion above passes in the *slack* direction — if the mirror
+   * and the field disagree such that the mirror is taller, the row is merely too
+   * big and nothing is cut. Focus mode is the direction that clips: it sets a
+   * larger type, and when only the field was resized the mirror kept sizing the
+   * grid row for the smaller one. PR #21 review, MAJOR 1.
+   */
+  test("wraps in focus mode too, where the type is larger", async ({ page }) => {
+    await stubCorpus(page, [FOLDER_VIEW, NOTE, THREAD_ROW]);
+    await openRow(page, "doc_render");
+    await page.keyboard.press("f");
+    await page.locator(".focus").waitFor();
+
+    const title = page.locator(".focus .doc-title");
+    await expect(title).toHaveValue(LONG_TITLE);
+
+    const measured = await title.evaluate((element) => {
+      const field = element as HTMLTextAreaElement;
+      const mirror = field.parentElement as HTMLElement;
+      return {
+        fieldFont: Number.parseFloat(getComputedStyle(field).fontSize),
+        mirrorFont: Number.parseFloat(getComputedStyle(mirror, "::after").fontSize),
+        scroll: field.scrollHeight,
+        client: field.clientHeight,
+        line: Number.parseFloat(getComputedStyle(field).lineHeight),
+        height: field.getBoundingClientRect().height,
+      };
+    });
+    // The two must agree about type, or the mirror measures a different string.
+    expect(measured.mirrorFont).toBe(measured.fieldFont);
+    // Still wrapping at the larger size.
+    expect(measured.height).toBeGreaterThan(measured.line * 1.5);
+    // Nothing *cut*: the box may miss the content by a sub-pixel — focus mode's
+    // 30px against a 1.25 line height is 37.5px, and the mirror's rounding and
+    // the field's need not land on the same integer — but it must never be short
+    // by enough to hide a line. Half a line is the honest bound; asserting
+    // `client + 1` would pass for a rounding artefact and fail for nothing real.
+    expect(measured.scroll - measured.client).toBeLessThan(measured.line / 2);
+  });
+
   test("does not collide with the body below it", async ({ page }) => {
     await stubCorpus(page, [FOLDER_VIEW, NOTE, THREAD_ROW]);
     await openRow(page, "doc_render");
