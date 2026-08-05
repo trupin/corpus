@@ -47,9 +47,18 @@ export const READING_WIDTH_RATIO = 560 / 336;
  * - `.doc-body` (`@corpus/kit/markdown.css`) caps the body at `62ch` at 15 px in
  *   `--serif`. Measured in Chromium against the shipped stylesheet, `62ch`
  *   resolves to **517.2 px** (Iowan Old Style / Charter — the first two
- *   families of `--serif` that a machine is likely to have). Every other
- *   element in the reader that carries a measure — `.doc-title`, `.thread-card`,
- *   `.backlinks`, the banners — is capped at the same `62ch`.
+ *   families of `--serif` that a machine is likely to have). The other elements
+ *   in the reader that carry a measure — `.thread-card`, `.backlinks`, the
+ *   banners — are capped at the same `62ch`.
+ *
+ *   **The title is no longer one of them, and the derivation below does not
+ *   depend on it.** `.title-grow` (UI-065) carries `62ch` too, but it also
+ *   carries the title's own 24 px type, and `ch` resolves against the element's
+ *   own font — so its cap is ≈744 px and never binds inside a column this
+ *   ceiling holds to ~530 px of content. `width: 100%` decides the title's
+ *   width, which is what `design/index.html` draws. Recorded because this
+ *   comment previously listed `.doc-title` as sharing the 517 px measure and it
+ *   no longer does (PR #21 re-review, MINOR 3).
  * - `.col .reader-scroll` (`Column.css`) pads it by `12px 14px`: **+28 px**.
  * - `.col` is `border-box` with a 1 px border on each side: **+2 px**.
  *

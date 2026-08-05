@@ -304,12 +304,18 @@ test.describe("UI-065 — a long document title", () => {
     expect(measured.mirrorFont).toBe(measured.fieldFont);
     // Still wrapping at the larger size.
     expect(measured.height).toBeGreaterThan(measured.line * 1.5);
-    // Nothing *cut*: the box may miss the content by a sub-pixel — focus mode's
-    // 30px against a 1.25 line height is 37.5px, and the mirror's rounding and
-    // the field's need not land on the same integer — but it must never be short
-    // by enough to hide a line. Half a line is the honest bound; asserting
-    // `client + 1` would pass for a rounding artefact and fail for nothing real.
-    expect(measured.scroll - measured.client).toBeLessThan(measured.line / 2);
+    // Nothing cut, bounded by a **measured** constant rather than a fraction of
+    // a line. An earlier version allowed half a line — 18px here, which is most
+    // of a cut line, so it would have passed while showing the user exactly the
+    // defect UI-065 exists to prevent (PR #21 re-review, MINOR 2).
+    //
+    // The floor is 2, not the 0–1 that integer rounding alone predicts: a
+    // textarea's intrinsic content height and a pseudo-element's block box do
+    // not agree to the pixel even on identical type. Measured at 2 on Chromium
+    // with focus mode's 30px/1.25. A hidden line would be 37.5px, so this
+    // catches one an order of magnitude before it appears — and any drift past
+    // 2 is a real change worth looking at rather than noise to widen for.
+    expect(measured.scroll - measured.client).toBeLessThanOrEqual(2);
   });
 
   test("does not collide with the body below it", async ({ page }) => {

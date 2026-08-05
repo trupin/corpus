@@ -40,8 +40,9 @@ import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
  * quote's occurrences (PR #20): a visible gap beats a confident lie about which
  * sentence a comment is on.
  *
- * **The result can be a superset of the true range, and never anything else.**
- * Plain-text equality licenses the *offsets*; it says nothing about granularity.
+ * **The result is not always the true range — it can be wider, and at a
+ * `[[ref]]` edge it can be narrower.** Plain-text equality licenses the
+ * *offsets*; it says nothing about granularity.
  * `sourceTrace.ts` marks a run **atomic** when its markdown and its text differ
  * character for character, and a partial hit inside an atomic run quotes the
  * whole run rather than slicing a string whose offsets do not line up. Escaping
@@ -53,11 +54,23 @@ import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
  * travelling through such a run therefore comes back **widened to the run**: a
  * comment on one word highlights the paragraph.
  *
- * That is a known loss of precision rather than a misplacement, and the bound is
- * tight in both directions. The rebased range always *contains* the true one and
- * can never be disjoint from it — the runs it grows to are exactly the runs the
- * range overlapped — and it can never grow past them, so the widening stops at
- * the paragraph and never reaches the next one. `rebase.test.ts` pins it.
+ * The widening is bounded: it grows only to the runs the range already
+ * overlapped and never past them, so it stops at the paragraph and cannot reach
+ * the next one.
+ *
+ * **The narrowing case, which an earlier version of this comment denied.**
+ * `pushText` splits a text node around its `refSpans` and emits *no run* for the
+ * reference token itself, because a `[[ref]]` renders as a title rather than as
+ * its own characters. A range whose leading or trailing edge sits on a ref
+ * therefore comes back without it: an anchor over `[[doc_a1]] carefully` rebases
+ * to ` carefully`, and the highlight starts after the reference. Small on
+ * screen, and worth stating exactly, because this comment is what the next
+ * reader will reason from — it previously claimed the result "always contains
+ * the true one", which is false at a ref edge (PR #21 re-review, MINOR 1).
+ *
+ * Neither direction is a *misplacement*: the range never lands on words the
+ * anchor does not overlap. `rebase.test.ts` pins the widening and its stopping
+ * point; the ref edge is not yet pinned and belongs with UI-060's parity work.
  */
 export function rebaseRange(from: string, to: string, range: MdRange): MdRange | null {
   if (from === to) return range;
