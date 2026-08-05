@@ -148,7 +148,15 @@ describe("the mutation pipeline", () => {
     const frames: QueryKey[][] = [];
     const rowsAtFrame: number[] = [];
     const off = ws.server.bus.subscribe((keys) => {
-      frames.push(keys as QueryKey[]);
+      // Document frames only. §4's edit acknowledgment (SERVER-052) enqueues on
+      // its own timer, and this fixture's clock jumps a minute between verbs —
+      // enough, five verbs in, for a user edit session to idle out and put a
+      // *queue* frame in the middle of the sequence. That is another
+      // subsystem's announcement; what this test is about is the document
+      // surface's, and `edit/acknowledgment.test.ts` holds the other.
+      const frame = keys as QueryKey[];
+      if (frame.some((key) => key[0] === "queue")) return;
+      frames.push(frame);
       const counted = ws.db.prepare("SELECT COUNT(*) AS n FROM documents").get() as { n: number };
       rowsAtFrame.push(counted.n);
     });

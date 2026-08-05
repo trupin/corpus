@@ -46,8 +46,22 @@
  * re-derives (see {@link REPOPULATED_TABLES}), and that carry-over is keyed by
  * content-addressed chunk id, so it survives this bump too — a v8 database has
  * no such table, and the copy is skipped.
+ *
+ * 9 → 10 (SERVER-055): no DDL change — `anchors.resolved_offset` is now computed
+ * with the **whole** §6 resolution ladder instead of its exactness tier, so the
+ * values a v9 database holds are a strict subset of the ones this projector
+ * writes. Nothing migrates them (an offset is derived from the file), and
+ * without the bump a workspace would keep reporting threads detached that the
+ * reader resolves until something happened to touch each file.
+ *
+ * 10 → 11 (SERVER-055 revert): no DDL change — the ladder above was reverted to
+ * its exactness tier, because rung 3 pointed threads at lookalike siblings on
+ * every read path (`anchors/resolve.ts`). The bump is forward, never back to 9:
+ * a v10 database holds fuzzy offsets this projector would never write, some of
+ * them on a passage the anchor's author never commented on, and only a rebuild
+ * clears them. A workspace that never ran v10 pays one extra rebuild.
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 11;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";

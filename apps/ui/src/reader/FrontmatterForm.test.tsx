@@ -1,11 +1,22 @@
 /** @vitest-environment jsdom */
+import type { CorpusClient } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  EDIT_SESSION_SETTLE_MS,
+  resetEditSessionFlush,
+  setEditSessionClient,
+} from "../editor/editSessionFlush";
 import { docFixture, readerTransport, type ReaderTransport } from "../testing/readerFixture";
 import { changedFields, FrontmatterForm, tagsToText, textToTags } from "./FrontmatterForm";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // The registry is module state, and an unmount from any test in this file
+  // releases a surface into it (UI-044).
+  resetEditSessionFlush();
+});
 
 const DOC = docFixture({
   frontmatter: {
@@ -311,5 +322,73 @@ describe("FrontmatterForm", () => {
         message: "Saved — title updated and committed.",
       });
     });
+  });
+});
+
+/**
+ * SPEC.md §4's close path (UI-044). A title write opens an edit session exactly
+ * as a body write does, and on a thread or a view this form is the document's
+ * only editing surface — so it has to both mark the session and hold it open
+ * while the reader is still showing the document.
+ */
+describe("the document's edit session", () => {
+  function flusher(): ReturnType<typeof vi.fn> {
+    const flushEditSession = vi.fn(async () => Promise.resolve());
+    setEditSessionClient({ flushEditSession } as unknown as CorpusClient);
+    return flushEditSession;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the session open while the form is mounted, and ends it when it goes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const flushEditSession = flusher();
+    const { wire, unmount } = mount();
+
+    const title = screen.getByLabelText("Document title");
+    fireEvent.change(title, { target: { value: "Renamed" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+
+    // The reader is still open on the document: the acknowledgment waits.
+    vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS * 4);
+    expect(flushEditSession).not.toHaveBeenCalled();
+
+    unmount();
+    vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS + 1);
+    expect(flushEditSession.mock.calls).toEqual([["doc_m"]]);
+  });
+
+  it("opens no session for a form that was only looked at", () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const flushEditSession = flusher();
+    const { unmount } = mount();
+
+    unmount();
+    vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS * 4);
+
+    expect(flushEditSession).not.toHaveBeenCalled();
+  });
+
+  it("opens no session when the server refuses the write", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const flushEditSession = flusher();
+    const wire = readerTransport({ docs: [DOC], failing: { "PUT /api/docs/doc_m": 500 } });
+    const { unmount } = mount({ wire });
+
+    const title = screen.getByLabelText("Document title");
+    fireEvent.change(title, { target: { value: "Renamed" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => {
+      expect(wire.of("PUT")).toHaveLength(1);
+    });
+
+    unmount();
+    vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS * 4);
+    expect(flushEditSession).not.toHaveBeenCalled();
   });
 });

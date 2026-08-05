@@ -8,6 +8,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { docRowFixture } from "@corpus/kit/testing";
 import { docFixture } from "../testing/readerFixture";
 import { DocEditor, editorHandlesType } from "./DocEditor.js";
+import {
+  EDIT_SESSION_SETTLE_MS,
+  resetEditSessionFlush,
+  useEditSessionFlusher,
+} from "./editSessionFlush.js";
 import { resetEditingRegistry } from "./editingRegistry.js";
 import { SaveStatusProvider } from "./SaveChip.js";
 import type { EditorSelection } from "./selection.js";
@@ -60,6 +65,8 @@ function wire(docs: readonly Doc[] = [], listed: readonly Doc[] = []): Wire {
         path: url.pathname,
         body: raw === "" ? undefined : (JSON.parse(raw) as unknown),
       });
+      // SPEC.md §4's close path: `204`, no body in either direction.
+      if (url.pathname.endsWith("/edit-session/flush")) return new Response(null, { status: 204 });
       if (url.pathname === "/api/locks") return json({ locks: state.locks });
       if (url.pathname.startsWith("/api/locks/")) {
         const docId = url.pathname.split("/")[3] ?? "";
@@ -169,6 +176,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   resetEditingRegistry();
+  resetEditSessionFlush();
   vi.useRealTimers();
 });
 
@@ -885,5 +893,118 @@ describe("the comment hand-off", () => {
       expect(transport.of("PUT")).toHaveLength(1);
     });
     expect(transport.of("PUT")[0]?.body).toEqual({ body: "**The rate** is 6.4%.\n" });
+  });
+});
+
+/**
+ * SPEC.md §4's close path, through the real editor and the real client.
+ *
+ * The flusher stays mounted while the editor goes, because that is the shape of
+ * the thing: the shell outlives every reader, and the flush is issued after the
+ * reader that earned it has unmounted.
+ */
+function SessionFlusher(): null {
+  useEditSessionFlusher();
+  return null;
+}
+
+interface SessionHostProps {
+  readonly transport: Wire;
+  readonly mounted: boolean;
+  readonly onEditor?: (editor: Editor | null) => void;
+}
+
+function SessionHost({ transport, mounted, onEditor }: SessionHostProps): ReactElement {
+  const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
+  return (
+    <harness.Wrapper>
+      <SessionFlusher />
+      <SaveStatusProvider>
+        {mounted ? (
+          <DocEditor
+            docId="doc_a1b2c3"
+            body={"First paragraph.\n"}
+            locked={false}
+            {...(onEditor === undefined ? {} : { onEditor })}
+          />
+        ) : null}
+      </SaveStatusProvider>
+    </harness.Wrapper>
+  );
+}
+
+const flushCalls = (transport: Wire): Call[] =>
+  transport.calls.filter((call) => call.path.endsWith("/edit-session/flush"));
+
+describe("ending the document's edit session", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  it("flushes the session when the reader closes, and not before", async () => {
+    const transport = wire();
+    let editor: Editor | null = null;
+    const view = render(
+      <SessionHost
+        transport={transport}
+        mounted
+        onEditor={(instance) => {
+          editor = instance;
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(editor).not.toBeNull();
+    });
+
+    await act(async () => {
+      editor?.commands.insertContentAt(editor.state.doc.content.size - 1, " Added.");
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(transport.of("PUT")).toHaveLength(1);
+    });
+
+    // Still open, still being typed into: §4's window is the server's business
+    // and the UI has nothing to say yet.
+    await act(async () => {
+      vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS * 4);
+      await Promise.resolve();
+    });
+    expect(flushCalls(transport)).toHaveLength(0);
+
+    // The reader closes.
+    view.rerender(<SessionHost transport={transport} mounted={false} />);
+    await act(async () => {
+      vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS + 1);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(flushCalls(transport)).toHaveLength(1);
+    });
+    expect(flushCalls(transport)[0]?.method).toBe("POST");
+    expect(flushCalls(transport)[0]?.path).toBe("/api/docs/doc_a1b2c3/edit-session/flush");
+    expect(flushCalls(transport)[0]?.body).toBeUndefined();
+  });
+
+  it("says nothing about a document that was opened and only read", async () => {
+    const transport = wire();
+    const view = render(<SessionHost transport={transport} mounted />);
+    await waitFor(() => {
+      expect(prose()).toBeTruthy();
+    });
+
+    view.rerender(<SessionHost transport={transport} mounted={false} />);
+    await act(async () => {
+      vi.advanceTimersByTime(EDIT_SESSION_SETTLE_MS * 4);
+      await Promise.resolve();
+    });
+
+    expect(flushCalls(transport)).toHaveLength(0);
   });
 });

@@ -201,14 +201,12 @@ interface ParentSide {
  * block.
  *
  * The anchored/orphaned split is decided by `anchors.resolved_offset`, and by
- * nothing else. That column is populated with **`resolveAnchorExact` only** —
- * never the fuzzy ladder (`projection/project-document.ts`, sprint-003
- * Adjudication 1) — so `NULL` *is* §6's orphan state, already computed, and a
- * pack that re-ran the ladder to "find" the passage would reintroduce at read
- * time exactly the misattachment SERVER-002 was fixed to prevent. An anchor that
- * survived a save through a *fuzzy* rung therefore reads as orphaned here: it
- * keeps its quote and loses its resolved passage, which is the conservative
- * direction and the one §6 already publishes.
+ * nothing else. That column is populated by `projection/project-document.ts`
+ * with the same full §6 ladder `docs/read.ts` runs (SERVER-055), so `NULL` *is*
+ * §6's orphan state, already computed, and the agent is never told a thread is
+ * detached while the board draws a highlight for it. A pack that re-ran the
+ * ladder itself would be a second implementation of the same question — one
+ * definition of "resolves", in the projector.
  */
 function parentSide(db: ProjectionDb, thread: LoadedThread, parent: LoadedDocument): ParentSide {
   const title = parent.row.title;

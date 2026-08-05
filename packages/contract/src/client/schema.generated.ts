@@ -471,6 +471,169 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/{id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one document's change across a commit range
+         * @description The unified diff of a single document across a git commit range — what `corpus doc diff <id>` prints, and the escalation a `doc.edited` queue event deliberately does not carry (SPEC.md §4). The event announces *that* a user edit session ended, with its range and change stats; this is the one call that says *what* changed, made only when the agent decides the change is worth reading.
+         *
+         *     **Bounded, like the context pack.** Reading a diff costs roughly the same however large the document or the change: the body is capped at 16000 characters (`DOC_DIFF_MAX_CHARS`) and a longer diff is **truncated, not refused** — whole hunks are dropped from the end so the answer is still a valid unified diff, `truncated` says so, and `totalChars` says how much was cut. Refusing would leave a caller that already spent a wake-up with nothing; truncating leaves it with the front of the change and an honest measure of the rest.
+         *
+         *     **Path-scoped**: the diff and the stats cover this document's file alone, so commits in the range that touched other documents contribute nothing — the range may be a commit range, but the answer is about one document.
+         *
+         *     **The range.** `from` is exclusive and `to` inclusive (`git diff from..to`). Both are optional: `to` defaults to the newest commit that touched this document and `from` to the parent of `to`, so the bare `corpus doc diff <id>` of §4's own sentence reads as *what changed in this document's last commit*, while the pair carried by a `doc.edited` event reads as *what changed in that session*. The resolved values come back in the response, because a caller that omitted one must be able to say what it read.
+         *
+         *     **Only commit shas.** A syntactically invalid revision — `HEAD~1`, a tag, anything leading with `-` — is a `400` naming the parameter, before a handler and therefore before a `git` process exists. A well-formed sha this repository does not contain is *also* a `400` naming the parameter, never a `404`: the `404` on this route means the **document** is unknown, and conflating the two would have a caller believe its document had been deleted when it had merely mistyped a range.
+         *
+         *     A document the workspace has never committed — a file not yet committed, or a workspace with no git (SPEC.md §14) — answers `200` with a null range, an empty diff and zero stats: an answer, not an error. Read-only; no acting party.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Base of the range, **exclusive** — `git diff from..to`. Omit it to use the parent of `to`, which reads as that single commit's own change; a `to` with no parent falls back to git's empty tree, so a document introduced by the repository's root commit diffs as wholly added. Must be a commit sha: a named revision is a `400` naming this parameter. */
+                    from?: string;
+                    /** @description Head of the range, **inclusive**. Omit it to use the newest commit that touched this document. Must be a commit sha, like `from`. */
+                    to?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The resolved range, the change stats, and the diff — truncated to the published bound when the change is larger than it. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DocDiff"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/{id}/edit-session/flush": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End this document's edit session now
+         * @description Ends any **user** edit session open on this document immediately, which is SPEC.md §4's `close` path: *the reader closes (the UI flushes the session)*. The session's acknowledgment — one `doc.edited` queue event carrying its commit range and change stats — follows, exactly as it would have when §4's three-minute inactivity window elapsed, with `endedBy: "close"`.
+         *
+         *     **Idempotent, and that is load-bearing.** The answer is `204` whether or not a session was open: this route asserts a *postcondition* — this document has no open edit session — rather than performing an action, and asserting it twice is asserting it once. The caller cannot know whether a session is open (sessions are opened by the server, on the first editor save that lands a commit, and ended by a timer the client cannot observe), so a `404` for *nothing to flush* would make correct client code impossible to write. Calling it on a document that was only read, or flushing twice because an unload path fired twice, is a no-op.
+         *
+         *     **The `204` carries no body, and deliberately says nothing about whether an event was emitted.** Two reasons, both of which would make such a field a lie. It is a race — the idle window may have elapsed a millisecond earlier, and the session would then already be gone through the other door. And emission is decided *after* this response: a session whose path-scoped range turns out to be empty — an edit and its undo inside one sitting — or whose auto-commits were all rejected or skipped (SPEC.md §14) correctly produces no event at all. What the caller needs is the postcondition, and that is the whole of what `204` states.
+         *
+         *     **One event per session, whichever door it leaves by.** The flush path and the inactivity path converge on the same session object, and whichever fires first removes it, so the other finds nothing — which is also why a repeated flush is free. At most one `doc.edited` may ever exist per `sessionId`, and a consumer may drop a repeat on that basis alone.
+         *
+         *     **Callable from a page-unload path — with `fetch(…, { keepalive: true })`, not with `navigator.sendBeacon`.** Stated here rather than left to be discovered: `keepalive` is the supported spelling, because it is the one that can send the workspace bearer token. `sendBeacon` sets no request headers at all, so it cannot carry `Authorization` (SPEC.md §2.1), and this route is not on §2.1's exception list — the method and the empty body would both have suited it, the auth header is what rules it out. Nothing else stands in `keepalive`'s way here: the request is body-less, so the 64 KiB keepalive budget is never in question, and the UI is served same-origin by this server, so no preflight has to survive the unload. Reach it from `pagehide` or `visibilitychange → hidden`; the generated client accepts `keepalive` and forwards it to `fetch`.
+         *
+         *     **The `404` means the document is unknown, and it is the only one** — never *no session here*. It catches the client bug worth catching (a stale or wrong id, a thread id, an `undefined` in a template string), which a permissive `204` would hide forever. It is not actionable on an unload path: a caller that gets one has nothing to flush either way and should ignore it.
+         *
+         *     No acting party. The flush authors nothing — the session's commits landed minutes earlier, authored by the user — so there is no git author to attribute and the route declares no `x-corpus-author`, exactly as `POST /api/check` and `POST /api/index/rebuild` do not. The event's own actor is fixed by its payload schema (`actor: "user"`, always), so who makes this call cannot change what the event says, and a caller that is not the reader cannot manufacture an acknowledgment: with no session open there is nothing to end.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Identifier of any document; threads are documents too. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The document has no open edit session. The same answer whether this call ended one or there was none to end — the postcondition, not a report of what happened. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/{id}/move": {
         parameters: {
             query?: never;
@@ -3948,6 +4111,41 @@ export interface components {
              */
             relation: "linked" | "similar" | "both";
         };
+        DocDiff: {
+            /**
+             * @description The document the diff is for.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /** @description Workspace-relative path of the document's file, e.g. `data/docs/finance/mortgage.md` — the path the diff was taken at, and what a `--- a/… +++ b/…` header in `diff` names. */
+            path: string;
+            /**
+             * @description The resolved base of the range, exclusive — the value used, whether supplied or defaulted. `EMPTY_TREE_OBJECT_ID` when `to` has no parent. `null` only in the no-history case below, where `to` is null too.
+             * @example 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+             */
+            from: string | null;
+            /**
+             * @description The resolved head of the range, inclusive. **`null` exactly when the workspace has no committed history for this document** — a file written but not yet committed, or a workspace with no git at all (SPEC.md §14). In that case `from` is null too, `diff` is empty, `stats` are zero and `truncated` is false: an answer, not an error, because a document that has never been committed genuinely has no change to show.
+             * @example 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+             */
+            to: string | null;
+            stats: components["schemas"]["DocChangeStats"];
+            /** @description The unified diff of this document's file across the range, at most 16000 characters (`DOC_DIFF_MAX_CHARS`). Path-scoped, so commits in the range that touched other documents contribute nothing. Plain text, rendered as-is and never interpreted — a diff of a markdown document contains markdown, and a client that renders it would be rendering the user's document instead of showing the change to it. Empty when nothing changed in the range, which is a legitimate answer. */
+            diff: string;
+            /** @description `true` when the diff was cut to `DOC_DIFF_MAX_CHARS`. The cut is **hunk-aligned**: whole hunks are dropped from the end so that what is returned is always a valid unified diff a person or a tool can read, rather than a fragment ending mid-line. A single hunk larger than the whole bound is the one exception — it is cut at a line boundary, never mid-line. Stated rather than silent (the rule the context pack's own `truncated` sets): an agent acting on half a change while believing it saw all of it is the failure this flag exists to prevent, and `stats` plus `totalChars` say how much is missing. */
+            truncated: boolean;
+            /** @description Length in characters of the **full** diff before truncation; equal to `diff`'s length whenever `truncated` is false. Lets a caller report the scale of what it did not get (`showing 16000 of 42311 characters`) and decide whether to narrow the range and ask again. */
+            totalChars: number;
+        };
+        /** @description How much changed across the **whole** range, even when `diff` below was truncated. The same shape a `doc.edited` event carries, so a caller can compare what it was told with what it fetched. */
+        DocChangeStats: {
+            /** @description Commits in the range that touched this document. Normally **1**: §4 folds an editing session's repeated autosaves into a single auto-commit, so a session is usually one commit and its range is a range of one. More than one means the squash did not fold them — saves either side of the squash idle window, or a save that started a fresh commit for another of §4's reasons. `0` is reachable only on `GET /api/docs/{id}/diff` for a document with no committed history; a `doc.edited` event never carries it, because a session that produced no commit produces no event. */
+            commits: number;
+            /** @description Lines added across the range, path-scoped to this document's file. */
+            insertions: number;
+            /** @description Lines removed across the range, path-scoped to this document's file. */
+            deletions: number;
+        };
         UpdateDocResponse: {
             doc: components["schemas"]["Doc"];
             anchors: components["schemas"]["AnchorReconciliation"];
@@ -4525,7 +4723,7 @@ export interface components {
              * @example evt_7c1d
              */
             id: string;
-            /** @description Event type. Core values: comment.created, form.respond, agent.done. Plugins define their own. */
+            /** @description Event type. Core values: comment.created, form.respond, doc.edited, agent.done. Plugins define their own. */
             type: string;
             /**
              * Format: date-time
@@ -4614,7 +4812,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string;
-            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
+            /** @description The type of the queue event this job is running — the same value as `QueueEvent.type`, read from the projection rather than re-derived. Core values: comment.created, form.respond, doc.edited, agent.done. Open rather than enumerated for the same reason `QueueEvent.type` is: plugins define their own event types (SPEC.md §7, §10). The console's collapsed job row reads `<type> · <originTitle>`, so this is what tells the user *what* is running, not just what it is running on (SPEC.md §11). */
             type: string;
             /**
              * @description Mirrors the `.corpus/queue/<status>/` directory the event file currently lives in. `pending` and `in-progress` are the live states; `processed`, `failed` and `abandoned` are terminal. **`deferred` is neither** (SPEC.md §7): the event was claimed and could not proceed because the user holds the edit lock on the document it needs, so it waits — not claimable, not failed — and returns to `pending` automatically when that lock is released, broken or reaped.

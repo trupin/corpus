@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-02T00:00:00Z
+updated: 2026-08-04T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -120,6 +120,7 @@ row below is failed with a reason and is never silently completed.
 | --------------------- | --------------------------------------------------------------------------------------------- |
 | `comment.created`     | A subagent applying the **comment** skill to the thread named in the payload.                 |
 | `form.respond`        | A subagent applying the **comment** skill; the payload names the thread, the form's turn, and the answer. |
+| `doc.edited`          | A subagent working **Reflecting on a user edit** below — the one event whose procedure lives in this skill instead of in a skill of its own. Its dispatch carries the payload verbatim, both shas included. |
 | `agent.done`          | A finished piece of background work. Nothing produces this event today — reports reach you directly (Delegation below) — but an arriving one is handled like a report: verify the work its payload identifies and settle it. |
 | `<plugin>.<action>`   | A subagent applying the skill named `<plugin>` — the part before the first dot.               |
 | anything else         | `corpus queue fail <id> --reason "unknown event type: <type>"`                                |
@@ -230,11 +231,174 @@ one-line reply (the comment skill has the subagent post it; post it yourself if 
 missing), then defer exactly as Locks and deferral below prescribes — never
 `corpus queue fail` for a lock, never a retry loop against it.
 
+## Reflecting on a user edit
+
+`doc.edited` says a person finished an editing session on a document. It carries the
+document id, an opaque `sessionId`, the commit range (`from`, `to`) and three numbers
+(`commits`, `insertions`, `deletions`) — and never the diff itself. Reflecting on it is
+three decisions taken in order: what changed, whether it ripples into other documents, and
+what to say. The whole procedure runs inside the dispatched subagent, at the **Sonnet** tier
+by default and **Opus 5** when step 4 is going to write another document. The dispatch
+prompt carries the payload verbatim, the two shas above all, because they are passed
+straight back.
+
+**Your own edits never wake you.** The payload's actor is always `user`: the server emits
+nothing for an agent-authored write, and a payload claiming otherwise is dropped before it
+reaches you.
+
+**But an agent turn can still wake the loop, so this needs care rather than confidence.**
+The server checks the turn's *body* before it checks the author: a turn mentioning `@agent`
+enqueues whoever wrote it. So the rule is two things, not one — post **no `--requests-agent`
+and no `@agent` in the body**, in every turn you write here. That matters most where you are
+least thinking about it: a ripple comment or an acknowledgment that **quotes a user's line**
+carries whatever that line said, and a quoted `@agent` wakes the loop exactly as a written
+one does. Quote the passage you mean, and drop the mention if it carries one.
+
+Get those two right and nothing here feeds itself. The one other thing to drop is a repeat:
+at most one event exists per `sessionId`, so a second carrying an id you already handled is
+completed without acting on it.
+
+**1 — Read the change, always, exactly once.** The event's `from` and `to` go in as
+`--from-rev` and `--to-rev` unchanged — no conversion, no resolution, including the
+empty-tree sha carried by a document the repository's first commit introduced:
+
+```bash
+corpus doc diff doc_a1b2c3 --from-rev 0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b --to-rev 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+doc_a1b2c3 · data/docs/finance/mortgage-options.md
+0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b..9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+1 commit · +2 -2 · 268 characters
+```
+
+The stats do not decide whether to make that call, and this is the one place where the
+cheap move is the wrong one: they cannot tell a one-word correction from a one-word
+reversal, because `will` becomes `will not` at `+1 -1` exactly like a misspelling does.
+What they are for is sizing the read — a change far past the 16000-character bound comes
+back cut, and the numbers say so before you spend the call — and giving you the honest
+figure to quote when it does. The read is bounded, so it costs about the same whatever the
+person wrote.
+
+**2 — Decide triviality from the diff, never from its size.** Read the `-` lines and the
+`+` lines as claims and ask one question: does the document assert anything different now?
+An edit is **trivial** when every changed line says what it said before — spelling,
+punctuation, casing, whitespace, rewrapping, markdown formatting, an ordering that preserves
+meaning. It is **substantive** when any changed line adds, removes or reverses a claim: a
+number, a date, a name, a status, a negation, a modal (`must` against `may`, `will` against
+`will not`), a `[[ref]]`, a heading that renames a section, or prose that is simply new.
+
+Length is never the test. One word is substantive when the word is a negation, a quantity, a
+name or a modal; two hundred reflowed lines are trivial. Where the diff leaves you unable to
+tell, call it substantive and let the ripple check come back empty — a check that finds
+nothing costs two retrievals, while a thread about a whitespace fix is the behaviour that
+gets the loop switched off by lunchtime.
+
+**A trivial edit is completed in silence** — no thread, no reply, no write. One job-log line
+is the whole record, so the console still shows that the event was seen and judged:
+
+```bash
+corpus job log evt_7c1d9a "doc.edited on [[doc_a1b2c3]] — rewrapped a paragraph, no claim changed"
+corpus queue complete evt_7c1d9a
+```
+
+**3 — Check the ripple by retrieving.** A substantive edit gets two bounded lookups and no
+more. `corpus doc related doc_a1b2c3 --limit 5` walks the documents already linked to this
+one, and one `corpus search` per changed claim — at most three claims — finds the ones that
+are not. Search on what the `-` and `+` lines disagree about, the old value or the name or
+the decision phrase, never on the document's own title, which returns the document you are
+already holding. `--references doc_a1b2c3` narrows a search to the documents that point back
+at it. Both verbs print ids, heading paths and snippets; open a body with
+`corpus doc show <id>` only where a snippet restates the old claim, and open at most three.
+
+**4 — Update or comment, and lean to commenting.** Update another document only when the
+correction is mechanical and entailed — the same fact, stated the same way, now wrong, with
+exactly one way to write the new one: the rate this document quotes is the rate the person
+just corrected. Everything else is a comment on that document: a conclusion drawn from the
+old fact, a rewrite that takes a decision, a passage where the ripple is a question rather
+than a substitution. Comment rather than update whenever the diff came back cut. Anchor that
+comment to the passage that is now wrong when you can quote the span exactly — that is what
+makes it findable — and fall back to a whole-document thread when the passage is not one
+span or when the anchoring write is refused by the user's lock. Stop at three documents:
+past that, name what looks affected in the acknowledgment instead of spraying threads, and
+let the person point at the ones that matter.
+
+**5 — Acknowledge on the document's own surface.** Every substantive edit gets exactly one
+short whole-document thread on the edited document —
+`corpus thread create --parent doc_a1b2c3 --from agent`, no `--quote`, no `--requests-agent`.
+That shape exists already and is the right one: it takes no edit lock, writes no anchor into
+a document the person may still have open, and enqueues nothing. Anchoring the
+acknowledgment to text that just moved would do all three. Say what you understood the
+change to be, what you checked, and what came of it — two sentences, not a retelling of the
+person's own writing — and close with the trace line when the reflection wrote anything. One
+acknowledgment per session, never a second. A trivial edit gets none of this.
+
+The thread you open is a note, not a summons: it carries no request for the agent, so it can
+be read and left alone. The person pulls you back in by mentioning you in it, exactly as in
+any other thread.
+
+**A cut diff is never reasoned about as if it were whole.** The size slot on the counts line
+says which case you are in — `268 characters` when whole, `showing 16000 of 61200 characters`
+when cut — and a `#` notice repeats it under the body. When it is cut: say so in the
+acknowledgment, in the numbers the counts line printed; never update another document off it,
+because the correction may sit in the part you did not see; and when the session was more
+than one commit, `corpus doc diff doc_a1b2c3` with no range reads its newest commit whole,
+which is a smaller change you can see all of. `corpus doc show doc_a1b2c3` gives the document
+as it now stands whenever the ripple check needs the current text rather than the change.
+
+**Worked, end to end.** The person edited a mortgage note; the reflection finds one document
+that copied the old figure and fixes it.
+
+```bash
+corpus job log evt_7c1d9a "claimed doc.edited on [[doc_a1b2c3]] (1 commit, +2 -2, ended by idle)"
+corpus doc diff doc_a1b2c3 --from-rev 0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b --to-rev 9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+doc_a1b2c3 · data/docs/finance/mortgage-options.md
+0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b..9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456
+1 commit · +2 -2 · 268 characters
+
+@@ -3,7 +3,7 @@
+-The working rate assumption is 6.1% as of 2026-05-02.
++The working rate assumption is 6.4% as of 2026-07-28.
+```
+
+A number changed, so it is substantive; the claim that changed is the rate assumption, so
+that is what the two lookups ask about:
+
+```bash
+corpus doc related doc_a1b2c3 --limit 5
+doc_7e3a91  linked  Refinance plan — every projection here assumes 6.1% for the whole term
+corpus search "rate assumption 6.1%" --limit 5
+doc_7e3a91  Refinance plan › Costs  …every projection here assumes 6.1% for the whole term…
+corpus doc show doc_7e3a91
+```
+
+One document, one figure, one way to write the new one — mechanical and entailed, so it is
+an update rather than a question. Then the acknowledgment, on the edited document, stating
+the change and closing with the trace:
+
+```bash
+corpus doc edit doc_7e3a91 --from agent <<'EOF'
+# Refinance plan
+
+Every projection here assumes 6.4% for the whole term, following the rate
+assumption in [[doc_a1b2c3]].
+EOF
+corpus job log evt_7c1d9a "edited [[doc_7e3a91]] — carried the 6.4% rate assumption across"
+corpus thread create --parent doc_a1b2c3 --from agent <<'EOF'
+You moved the working rate assumption to 6.4%. One other document copied the
+old 6.1% — [[doc_7e3a91]] — and I carried the new figure across; nothing else
+in the corpus quotes it.
+↳ updated the rate assumption in [[doc_7e3a91]] to 6.4%
+EOF
+corpus job log evt_7c1d9a "completed — acknowledged on [[doc_a1b2c3]]"
+corpus queue complete evt_7c1d9a
+```
+
 ## Concurrency and ordering
 
 Compute, for every event in the batch, the set of documents its work touches:
 
 - `comment.created` / `form.respond`: the thread id **and** the thread's `parent` document id.
+- `doc.edited`: the payload's `docId`. Its reflection may go on to write documents no payload
+  names, so it is dispatched after any overlapping thread work in the batch rather than
+  beside it.
 - `<plugin>.<action>`: every document id in the payload.
 - `agent.done`: the documents of the work it reports.
 - An event whose touched set you cannot compute from its payload touches everything: run it

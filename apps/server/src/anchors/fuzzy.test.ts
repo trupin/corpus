@@ -111,6 +111,66 @@ describe("findFuzzyRange", () => {
     expect(findFuzzyRange("", noContext("needle"))).toBeNull();
   });
 
+  it("accepts a deleted bullet's parallel sibling — declared context and all", () => {
+    // The rung's defining limitation, pinned so nobody wires it into a reader
+    // again (SERVER-055 did, and pointed live comments at the wrong bullet).
+    // Four near-identical items, the second deleted: the survivor below it
+    // scores five edits on a 30-unit needle against a budget of
+    // floor(30 × 0.25) = 7, *and* inherits the deleted item's neighbours, so
+    // the declared context corroborates the wrong line as readily as the right
+    // one. There is no side condition on (body, selector) that separates them:
+    // deleting this bullet and renaming it to its neighbour's text while
+    // deleting that neighbour produce the same body from the same body.
+    const exact = "- bread from the corner bakery";
+    const sibling = "- milk from the corner bakery";
+    const body = `Groceries:\n\n- eggs from the corner bakery\n${sibling}\n- jam from the corner bakery\n`;
+    expect(boundedLevenshtein(sibling, exact, 7)).toBeLessThanOrEqual(7);
+
+    const range = findFuzzyRange(body, {
+      exact,
+      prefix: "- eggs from the corner bakery\n",
+      suffix: `\n${sibling}`,
+      hint: 0,
+    });
+    expect(range).not.toBeNull();
+    // Some sibling — which one is a tie-break away, and none of them is the
+    // bullet the thread was opened on.
+    expect(body.slice(range?.start, range?.end)).not.toContain("bread");
+    // Which is why the reader asks `resolveAnchorExact` instead, and answers
+    // "orphaned" — see `resolve.test.ts` and `docs/read.test.ts`.
+  });
+
+  it("accepts an in-place edit of the quote, whose surroundings are intact", () => {
+    const exact = "assume a 30-year fixed at 6.1%";
+    const body =
+      "The model we use here: let us assume a 30-year fixed at 6.4% for the base case.\n";
+    const range = findFuzzyRange(body, {
+      exact,
+      prefix: "here: let us ",
+      suffix: " for the base case.",
+      hint: 0,
+    });
+    expect(body.slice(range?.start, range?.end)).toBe("assume a 30-year fixed at 6.4%");
+  });
+
+  it("ranks by quote similarity first, so a verbatim lookalike outscores the declared context", () => {
+    // Same sentence twice; the declared surroundings belong to the second, which
+    // is the one the edit corrupted — and the rung still returns the first,
+    // because context only breaks ties between equally similar windows. A
+    // second reason this rung answers a different question from the reader's:
+    // rung 2 sees the quote occurring once here and resolves it, unambiguously,
+    // to the same first occurrence.
+    const exact = "the rate is reviewed every quarter";
+    const body = `Appendix A. ${exact}. End of appendix.\n\nPolicy: the rate is reviewd every quarter, per the board.`;
+    const range = findFuzzyRange(body, {
+      exact,
+      prefix: "Policy: ",
+      suffix: ", per the board.",
+      hint: 0,
+    });
+    expect(range?.start).toBe(body.indexOf(exact));
+  });
+
   it("never returns a range splitting a surrogate pair", () => {
     const body = `🎉🎊🎈 anchred sentence with a typo 🚀 and trailing emoji 🌍`;
     const exact = "anchored sentence with a typo";

@@ -119,28 +119,43 @@ function anchorFixture(overrides: Partial<ResolvedAnchor> = {}): ResolvedAnchor 
   };
 }
 
+/** What `GET /api/docs/{id}` answers with: a body, and the offsets into it. */
+interface ServedDocument {
+  readonly body: string;
+  readonly anchors: readonly ResolvedAnchor[];
+}
+
 interface HostProps {
   readonly wire: ReaderTransport;
-  readonly anchors: readonly ResolvedAnchor[];
+  readonly served: ServedDocument;
   readonly threads: readonly DocRow[];
   readonly onLayer: (layer: AnchorLayer) => void;
   readonly onNotify: (notice: RowNotice) => void;
+  /** Publishes the setter, so a test can move the server's copy on. */
+  readonly onServe: (serve: (next: ServedDocument) => void) => void;
 }
 
-function Host({ wire, anchors, threads, onLayer, onNotify }: HostProps): ReactElement {
+function Host({ wire, served, threads, onLayer, onNotify, onServe }: HostProps): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: wire.fetch }));
+  const [current, setCurrent] = useState(served);
+  onServe(setCurrent);
   return (
     <harness.Wrapper>
-      <Probe anchors={anchors} threads={threads} onLayer={onLayer} onNotify={onNotify} />
+      <Probe served={current} threads={threads} onLayer={onLayer} onNotify={onNotify} />
     </harness.Wrapper>
   );
 }
 
-function Probe({ anchors, threads, onLayer, onNotify }: Omit<HostProps, "wire">): ReactElement {
+function Probe({
+  served,
+  threads,
+  onLayer,
+  onNotify,
+}: Omit<HostProps, "wire" | "onServe">): ReactElement {
   const layer = useAnchorLayer({
     docId: "doc_m",
-    body: BODY,
-    anchors,
+    body: served.body,
+    anchors: served.anchors,
     threads,
     locked: false,
     editable: true,
@@ -159,6 +174,8 @@ interface Mounted {
   readonly editorState: () => EditorState;
   readonly replaceDocument: (markdown: string) => void;
   readonly adoptDocument: (markdown: string) => void;
+  /** The server's copy moves on: a new body, and the anchors that index it. */
+  readonly serveDocument: (next: ServedDocument) => void;
 }
 
 function mount(
@@ -168,14 +185,18 @@ function mount(
 ): Mounted {
   const notices: RowNotice[] = [];
   let current: AnchorLayer | null = null;
+  let serve: ((next: ServedDocument) => void) | null = null;
   const fake = fakeEditor(BODY);
   render(
     <Host
       wire={wire}
-      anchors={anchors}
+      served={{ body: BODY, anchors }}
       threads={threads}
       onLayer={(layer) => {
         current = layer;
+      }}
+      onServe={(setter) => {
+        serve = setter;
       }}
       onNotify={(notice) => {
         notices.push(notice);
@@ -191,6 +212,11 @@ function mount(
     editorState: fake.state,
     replaceDocument: fake.replace,
     adoptDocument: fake.adopt,
+    serveDocument: (next) => {
+      act(() => {
+        serve?.(next);
+      });
+    },
     layer: () => {
       if (current === null) throw new Error("not mounted");
       return current;
@@ -677,6 +703,53 @@ describe("the highlights themselves", () => {
   });
 
   /**
+   * The other direction of the same rule, and the one an edit takes (UI-071).
+   *
+   * An edit moves the *server's* copy on first: the `PUT` lands, the refetch
+   * answers with a new body and with anchors resolved against **it**, and the
+   * editor adopts that body only once the editing session settles — a commit or
+   * more later. In that window this layer holds offsets for one text and an
+   * editor showing another, and the offsets still apply cleanly: they just name
+   * different characters. Drawing them is a highlight over words the anchor does
+   * not cover, which is the one failure worse than no highlight.
+   */
+  it("draws nothing from a body the editor has not adopted yet", async () => {
+    const app = mount([anchorFixture()], [threadRowFixture({ id: "th_1", parent: "doc_m" })]);
+    await waitFor(() => {
+      expect(anchorState(app.editorState())?.anchors[0]?.segments).toEqual([
+        { from: RATE_FROM, to: RATE_TO, block: 1 },
+      ]);
+    });
+
+    // Eight characters inserted ahead of the quote: every offset after them
+    // moves, and none of them stops being a valid position in the old text.
+    const moved = BODY.replace("The rate", "A revised rate");
+    const start = moved.indexOf("6.1%");
+    expect(start).not.toBe(BODY.indexOf("6.1%"));
+    app.serveDocument({
+      body: moved,
+      anchors: [anchorFixture({ range: { start, end: start + 4 } })],
+    });
+    await new Promise((resolve) => setTimeout(resolve, REAPPLY_DEBOUNCE_MS * 3));
+
+    // Still on `6.1%` in the body that is on screen — not six characters along,
+    // where the new offsets would have put it.
+    expect(anchorState(app.editorState())?.anchors[0]?.segments).toEqual([
+      { from: RATE_FROM, to: RATE_TO, block: 1 },
+    ]);
+
+    // And it lands, in the right place, the moment the editor holds that body.
+    act(() => {
+      app.adoptDocument(moved);
+    });
+    await waitFor(() => {
+      expect(anchorState(app.editorState())?.anchors[0]?.segments).toEqual([
+        { from: start + 1, to: start + 5, block: 1 },
+      ]);
+    });
+  });
+
+  /**
    * UI-062. An anchor with nothing to sit beside is reported separately, so the
    * surfaces that place things by position never see it: no chip, no margin
    * card, and above all no card dropped at the top of the document.
@@ -783,11 +856,12 @@ describe("an editor destroyed before the layer's effect runs", () => {
     render(
       <Host
         wire={readerTransport({})}
-        anchors={[]}
+        served={{ body: BODY, anchors: [] }}
         threads={[]}
         onLayer={(layer) => {
           current = layer;
         }}
+        onServe={() => undefined}
         onNotify={() => undefined}
       />,
     );

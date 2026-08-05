@@ -379,11 +379,14 @@ function insertAnchors(
   for (const anchorId of ids) {
     const selector = fields.anchors[anchorId];
     if (selector === undefined) continue;
-    // Sprint-003 Adjudication 1: **exact-only**, never the full ladder. Fuzzy is
-    // the rung that finds a deleted bullet's look-alike sibling, and re-running
-    // it here would reintroduce at render time exactly the misattachment the
-    // reconciler was fixed to prevent (SERVER-002 rounds 2–3). NULL when the
-    // selector no longer resolves verbatim — the §9.1 orphan state.
+    // The §6 exactness tier, exactly as `docs/read.ts` runs it. This column is
+    // what `corpus thread context` calls a thread anchored or orphaned; the
+    // wire `Doc.anchors` is what the board draws. One definition of "resolves",
+    // or the agent is told a thread is detached while the reader highlights it
+    // — so this call and the reader's must stay the same call. NULL is the
+    // §9.1 orphan state. Rung 3 belongs to reconciliation alone: it scores
+    // similarity, and a reader has no diff to turn similarity into evidence of
+    // survival (`anchors/resolve.ts`).
     const range = resolveAnchorExact(body, selector);
     insert.run(
       docId,

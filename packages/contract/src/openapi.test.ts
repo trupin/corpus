@@ -10,8 +10,9 @@ import {
   CONTEXT_PACK_SHAPES,
 } from "./schemas/context.js";
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
+import { DOC_DIFF_MAX_CHARS, DOC_EDITED_EVENT_TYPE } from "./schemas/edit.js";
 import { ERROR_CODES } from "./schemas/error.js";
-import { QUEUE_EVENT_STATUSES } from "./schemas/queue.js";
+import { CORE_QUEUE_EVENT_TYPES, QUEUE_EVENT_STATUSES } from "./schemas/queue.js";
 import { docFilterShape } from "./schemas/query.js";
 import {
   HEADING_PATH_SEPARATOR,
@@ -1035,6 +1036,220 @@ describe("the context pack (CONTRACT-024)", () => {
 });
 
 /**
+ * CONTRACT-028: SPEC.md §4's edit acknowledgment, as it reaches the published
+ * document — the `doc.edited` type in the core vocabulary every event-carrying
+ * shape prints, and the bounded diff read behind `corpus doc diff <id>`. The
+ * rider's three load-bearing clauses are each asserted against the document a
+ * client author actually reads: never the diff body, one bounded read, and a
+ * `404` that means only what it says.
+ */
+describe("the edit-acknowledgment surface (CONTRACT-028)", () => {
+  const DIFF_PATH = "/api/docs/{id}/diff";
+
+  it("adds exactly one endpoint to the inventory", () => {
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("/diff"))).toEqual([
+      "GET /api/docs/{id}/diff",
+    ]);
+  });
+
+  it("requires the workspace bearer token and declares only a read's codes", () => {
+    const op = operation(DIFF_PATH, "get");
+    expect(op.security).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["200", "400", "401", "404"]);
+  });
+
+  it("names no acting party and takes no body — reading a diff writes nothing", () => {
+    const op = operation(DIFF_PATH, "get");
+    expect(op.parameters?.map((entry) => `${entry.in}:${entry.name}`)).toEqual([
+      "path:id",
+      "query:from",
+      "query:to",
+    ]);
+    expect(op.requestBody).toBeUndefined();
+    expect(op.description).toContain("Read-only; no acting party.");
+  });
+
+  /**
+   * Both halves optional, and neither defaulted in the document: the defaults
+   * are computed from the document's own history, so a published `default`
+   * would both be a lie and — per `./schemas/index.ts` — promote the property
+   * to required in the generated client.
+   */
+  it.each(["from", "to"])("publishes %s as an optional, undefaulted sha", (name) => {
+    const param = parameter(DIFF_PATH, "get", name);
+    expect(param?.required).toBe(false);
+    expect(param?.schema?.type).toBe("string");
+    expect(param?.schema?.default).toBeUndefined();
+    expect(JSON.stringify(param?.schema)).toContain("^[0-9a-f]{7,64}$");
+  });
+
+  it("states the frugality bound, the truncation and the 400-not-404 rule in its prose", () => {
+    const description = operation(DIFF_PATH, "get").description ?? "";
+    expect(description).toContain(
+      "Reading a diff costs roughly the same however large the document or the change",
+    );
+    expect(description).toContain("truncated, not refused");
+    expect(description).toContain(String(DOC_DIFF_MAX_CHARS));
+    expect(description).toContain("never a `404`");
+    expect(description).toContain("Path-scoped");
+  });
+
+  it("publishes the diff body's cap, which is the whole of what a response bound can be", () => {
+    expect(componentSchemas?.["DocDiff"]?.properties?.["diff"]?.maxLength).toBe(DOC_DIFF_MAX_CHARS);
+  });
+
+  it("is the resolved range, the stats, the body and how much of it was cut", () => {
+    const diff = componentSchemas?.["DocDiff"];
+    expect(Object.keys(diff?.properties ?? {})).toEqual([
+      "id",
+      "path",
+      "from",
+      "to",
+      "stats",
+      "diff",
+      "truncated",
+      "totalChars",
+    ]);
+    expect(diff?.required).toEqual([
+      "id",
+      "path",
+      "from",
+      "to",
+      "stats",
+      "diff",
+      "truncated",
+      "totalChars",
+    ]);
+  });
+
+  /** The no-history answer has to be representable, or it becomes an error. */
+  it.each(["from", "to"])(
+    "makes the resolved %s nullable for a never-committed document",
+    (key) => {
+      expect(componentSchemas?.["DocDiff"]?.properties?.[key]?.type).toEqual(["string", "null"]);
+    },
+  );
+
+  it("carries three counts and no file count, since a file count would be a constant", () => {
+    const stats = componentSchemas?.["DocChangeStats"];
+    expect(Object.keys(stats?.properties ?? {})).toEqual(["commits", "insertions", "deletions"]);
+    expect(stats?.required).toEqual(["commits", "insertions", "deletions"]);
+    for (const key of ["commits", "insertions", "deletions"]) {
+      expect(stats?.properties?.[key]?.minimum, key).toBe(0);
+    }
+  });
+
+  /**
+   * The rider's "never the diff body": the event payload stays the open record
+   * §7 keeps it as, and no published component describes a `doc.edited`
+   * payload — the schema is a parse-side narrowing beside the feature, exactly
+   * as `form.respond`'s is, so nothing invites a producer to put a diff in one.
+   */
+  it("publishes no doc.edited payload component, keeping the envelope open", () => {
+    expect(Object.keys(componentSchemas ?? {})).not.toContain("DocEditedPayload");
+    expect(componentSchemas?.["QueueEvent"]?.properties?.["payload"]?.type).toBe("object");
+  });
+
+  it.each(["QueueEvent", "Job"])("names doc.edited among %s's core types", (name) => {
+    expect(componentSchemas?.[name]?.properties?.["type"]?.description).toContain(
+      DOC_EDITED_EVENT_TYPE,
+    );
+  });
+});
+
+/**
+ * CONTRACT-031: the other half of §4's rider — the `close` path made into a
+ * call. CONTRACT-028 declared no such route on the premise that §7's edit-lock
+ * release already signalled a reader close; SERVER-052 measured that against the
+ * shipped editor (lease dropped on blur and after ten seconds of not typing,
+ * against the session's three minutes) and disproved it.
+ *
+ * The prose assertions below are not decoration. UI-044 will write its
+ * reader-close path against the generated document alone, and the two things it
+ * must not have to discover by experiment are whether a duplicate call is safe
+ * and whether the route survives a page unload.
+ */
+describe("the edit-session flush (CONTRACT-031)", () => {
+  const FLUSH_PATH = "/api/docs/{id}/edit-session/flush";
+
+  it("adds exactly one endpoint to the inventory", () => {
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("edit-session"))).toEqual([
+      "POST /api/docs/{id}/edit-session/flush",
+    ]);
+  });
+
+  it("requires the workspace bearer token and declares only the codes a flush can produce", () => {
+    const op = operation(FLUSH_PATH, "post");
+    expect(op.security).toBeUndefined();
+    expect(Object.keys(op.responses ?? {})).toEqual(["204", "400", "401", "404"]);
+  });
+
+  /**
+   * A `204` with a body would be a contradiction; a `200` with one would invite
+   * the client to branch on whether a session was open, which is a race against
+   * the inactivity timer and, worse, is not yet decided when the response is
+   * written (a session with an empty path-scoped range emits nothing).
+   */
+  it("answers 204 with no content, so there is nothing to branch on", () => {
+    const success = operation(FLUSH_PATH, "post").responses?.["204"];
+    expect(success?.content).toBeUndefined();
+    expect(success?.description).toContain("postcondition");
+    expect(operation(FLUSH_PATH, "post").responses?.["200"]).toBeUndefined();
+  });
+
+  it("takes the document id and nothing else — no body, no query, no header", () => {
+    const op = operation(FLUSH_PATH, "post");
+    expect(op.parameters?.map((entry) => `${entry.in}:${entry.name}`)).toEqual(["path:id"]);
+    expect(op.requestBody).toBeUndefined();
+  });
+
+  it("states that a flush with no open session is a no-op rather than an error", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain("Idempotent");
+    expect(description).toContain("The answer is `204` whether or not a session was open");
+    expect(description).toContain("is a no-op");
+  });
+
+  /**
+   * The reachability answer, published rather than left to be found at
+   * implementation time: `keepalive` works and `sendBeacon` does not, and the
+   * reason is the bearer header rather than the method or the body.
+   */
+  it("says which unload-path spelling works, and why the other does not", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain("keepalive: true");
+    expect(description).toContain("navigator.sendBeacon");
+    expect(description).toContain("sets no request headers at all");
+    expect(description).toContain("pagehide");
+  });
+
+  it("carries CONTRACT-028's one-event-per-session invariant onto the flush path", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain("whichever fires first removes it");
+    expect(description).toContain("At most one `doc.edited` may ever exist per `sessionId`");
+    expect(description).toContain('endedBy: "close"');
+  });
+
+  it("reserves its 404 for an unknown document, like every other route on a document", () => {
+    const description = operation(FLUSH_PATH, "post").description ?? "";
+    expect(description).toContain(
+      "**The `404` means the document is unknown, and it is the only one**",
+    );
+    expect(description).toContain("never *no session here*");
+  });
+
+  /**
+   * §4's surface is two routes, and the registry keeps them adjacent — which is
+   * also the path order of the generated document, so a reader of the document
+   * alone finds the acknowledgment and its escalation together.
+   */
+  it("sits beside the diff route it shares SPEC.md §4 with", () => {
+    const paths = Object.keys(document.paths ?? {});
+    expect(paths.indexOf(FLUSH_PATH)).toBe(paths.indexOf("/api/docs/{id}/diff") + 1);
+  });
+});
+
+/**
  * CONTRACT-011: the extra-frontmatter surface and the first-class §11 view
  * keys. The schema descriptions here ARE the plugin contract — a plugin author
  * reads only the generated document — so these invariants pin the published
@@ -1187,10 +1402,22 @@ describe("author attribution", () => {
    *   *does* carry the header, and the pair is the clearest statement of what
    *   the header is for.
    *
-   * In both cases declaring the header would advertise a commit that never
+   * - `POST /api/docs/{id}/edit-session/flush` (CONTRACT-031) writes no
+   *   workspace file either: it ends an in-memory edit session and lets the
+   *   acknowledgment for it be enqueued. The commits that session is *about*
+   *   landed minutes earlier, on the editor's own save path, already authored by
+   *   the user — and the event's own actor is fixed by its payload schema
+   *   (`actor: "user"`, always), so the caller could not change the attribution
+   *   even by naming itself.
+   *
+   * In all three cases declaring the header would advertise a commit that never
    * happens.
    */
-  const UNATTRIBUTED_POSTS = new Set(["POST /api/check", "POST /api/index/rebuild"]);
+  const UNATTRIBUTED_POSTS = new Set([
+    "POST /api/check",
+    "POST /api/index/rebuild",
+    "POST /api/docs/{id}/edit-session/flush",
+  ]);
 
   it("declares the optional actor header on every mutating operation", () => {
     const problems: string[] = [];
@@ -2119,7 +2346,10 @@ describe("the CONTRACT-007 riders", () => {
     expect(property?.type).toBe("string");
     expect(property?.enum).toBeUndefined();
     const description = JSON.stringify(property);
-    expect(description).toContain("comment.created, form.respond, agent.done");
+    // Derived from the constant rather than retyped: adding a core type
+    // (`doc.edited`, CONTRACT-028) must extend what both surfaces publish, and
+    // a hand-copied list would have made that a test edit instead of a check.
+    expect(description).toContain(CORE_QUEUE_EVENT_TYPES.join(", "));
     expect(description).toContain("plugins define");
     expect(description).toContain("QueueEvent.type");
   });

@@ -16,8 +16,10 @@ import { corpusExtensions, NODE as NODE_NAMES } from "./markdown/schema.js";
 import { canonicalizeMarkdown, serializeDoc } from "./markdown/serialize.js";
 import type { PmNode } from "./markdown/schema.js";
 import { createRefSuggestion, type RefSuggestionState } from "./refSuggestion.js";
+import { SoftWrap } from "./softWrap.js";
 import { useSaveStatusPublisher } from "./SaveChip.js";
 import { buildSelection, type EditorSelection } from "./selection.js";
+import { useEditSurface } from "./editSessionFlush.js";
 import { useAutosave, type AnchorReport } from "./useAutosave.js";
 import { useUserLock } from "./useUserLock.js";
 import "./editor.css";
@@ -140,6 +142,14 @@ export function DocEditor({
 
   const autosave = useAutosave({ docId, savedBody: canonical, locked, onAnchors });
   const userLock = useUserLock({ docId, enabled: !locked });
+  /*
+   * SPEC.md §4's close path. This component *is* the editing surface, and its
+   * teardown — a closed reader, a navigation onto another document (the reader
+   * keys it by id, so that is a remount) — is what ends the sitting. Counted
+   * rather than flagged: focus mode over a column showing the same document is
+   * two of these, and closing one of them has ended nothing.
+   */
+  useEditSurface(docId);
   const publishStatus = useSaveStatusPublisher();
   const editing = useIsEditing(docId);
 
@@ -166,6 +176,11 @@ export function DocEditor({
       docRefWithView(openRef),
       imageWithView(),
       createRefSuggestion({ onStateChange: setSuggestion, keyHandler: suggestionKeys }),
+      // View-only, like the suggestion above it: it draws the document the
+      // markdown says it is (UI-072) and contributes nothing to the schema, so
+      // `corpusExtensions()` — which parsing and serialising share — stays the
+      // list of what a *file* can contain.
+      SoftWrap,
     ],
     [],
   );

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState, type ReactElement } from "react
 import { BoardNavigationProvider } from "../board/openInColumn";
 import { ComposeOverlay } from "../compose/ComposeOverlay";
 import { Console } from "../console/Console";
+import { useEditSessionFlusher } from "../editor/editSessionFlush";
 import { BoardCommandsProvider, useBoardCommands } from "../keyboard/boardCommands";
 import { CheatSheet } from "../keyboard/CheatSheet";
 import { ImageViewerHost } from "../image/ImageViewerHost";
@@ -112,6 +113,13 @@ function ShellSurfaces(): ReactElement {
   );
 
   useShortcuts(context);
+  /*
+   * SPEC.md §4's close path lives here rather than in a reader because it fires
+   * *after* the reader is gone — a surface released, a save that settled behind
+   * the unmount, the tab closing. Something that outlives every reader has to
+   * hold the client it is issued through.
+   */
+  useEditSessionFlusher();
 
   return (
     <>

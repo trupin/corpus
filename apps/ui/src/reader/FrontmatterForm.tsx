@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement, type React
 import { onPageHide } from "../abandon/pagehide";
 import { isAbandoned, publishTitleDraft } from "../abandon/registry";
 import { unloadClient } from "../abandon/unloadClient";
+import { beginEditWrite, endEditWrite, useEditSurface } from "../editor/editSessionFlush";
 
 /**
  * Frontmatter as the small form SPEC.md §11 asks for — title, tags, status,
@@ -123,13 +124,29 @@ export function FrontmatterForm({
 }: FrontmatterFormProps): ReactElement {
   const docId = doc.frontmatter.id;
   /*
+   * An editing surface for SPEC.md §4's close path, exactly as the body editor
+   * is: a title write opens a session too, and on a thread or a view — which
+   * have no body editor — this form is the *only* surface the document has.
+   * Without it, saving a title would look like a document nobody has open and
+   * flush the session out from under the reader still showing it.
+   */
+  useEditSurface(docId);
+  /*
    * The callbacks ride on the **hook**, not on the call (the `SettledCallbacks`
    * seam UI-012 added). A save issued while the reader is unmounting has no
    * observer left to receive a per-call `onSuccess`, so it would commit the
    * write in silence — and the exit flush below is exactly that save.
    */
+  /*
+   * The edit-session bracket rides on these — the **hook**-level callbacks —
+   * for the same reason the toast does: the write that most needs releasing it
+   * is the one issued from the unmount cleanup below, and a per-call callback
+   * is skipped once the observer is gone. A `beginEditWrite` never answered
+   * would hold this document's close flush open indefinitely.
+   */
   const update = useUpdateDoc(docId, {
     onSuccess: (_response, saved) => {
+      endEditWrite(docId, true);
       setDraft(null);
       onNotify({
         tone: "info",
@@ -137,6 +154,7 @@ export function FrontmatterForm({
       });
     },
     onError: (error) => {
+      endEditWrite(docId, false);
       onNotify({ tone: "error", message: `Save failed — ${error.message}` });
     },
   });
@@ -177,6 +195,7 @@ export function FrontmatterForm({
 
   const save = (): void => {
     if (!isDirty || locked) return;
+    beginEditWrite(docId);
     update.mutate(changes);
   };
 
@@ -215,6 +234,7 @@ export function FrontmatterForm({
   const flush = useCallback((): void => {
     const write = outgoingWrite();
     if (write === null) return;
+    beginEditWrite(write.id);
     mutate.current(write.changes);
   }, [outgoingWrite]);
 

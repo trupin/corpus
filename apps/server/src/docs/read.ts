@@ -204,15 +204,29 @@ export function wireFrontmatter(row: DocumentRow, parsed: ParsedDocument): DocFr
 type AnchorThreadRow = { readonly anchor_id: string; readonly id: string; readonly status: string };
 
 /**
- * Resolve every anchor of a document against its current body (SPEC.md §6).
+ * Resolve every anchor of a document against its current body — the exactness
+ * tier of the §6 ladder, rungs 1–2, and deliberately not rung 3
+ * (sprint-003 Adjudication 1; SERVER-055 wired the fuzzy rung in here and was
+ * reverted, see `anchors/resolve.ts`).
  *
- * **Exact rungs only**, matching what the projection stores in `anchors`
- * (sprint-003 Adjudication 1): running fuzzy at render time would re-attach a
- * deleted paragraph's look-alike sibling and put a thread's highlight on text
- * nobody commented on — exactly the misattachment SERVER-002/012/013 were fixed
- * to prevent. Reconciliation already rewrites `exact` on every save, so the
- * fuzzy rung would only ever fire on an out-of-band edit the watcher has not
- * reconciled yet, and it would fire wrong.
+ * A reader holds one body. It cannot see what an edit did, and rung 3's
+ * similarity score is evidence of survival only for a caller that can: in a
+ * list, a table or a boilerplate template the passage most similar to a deleted
+ * item is its surviving sibling, with near-identical neighbours to match, so
+ * neither the quote nor its declared context separates "edited in place" from
+ * "deleted, and this is what is left". Wired in, the rung landed threads on the
+ * neighbouring bullet, the next table row and the parallel paragraph — the
+ * silent misattachment §6 forbids, and worse than the detachment it was meant
+ * to spare the reader. `resolveAnchorExact` reports orphaned instead, which is
+ * §6's stated answer whenever survival cannot be proved.
+ *
+ * The cost is real and known: an anchor whose quote was edited under it reads
+ * detached until the next save's reconciliation — which *does* hold a diff —
+ * rewrites the selector to the bytes on the page, after which rung 1 carries it
+ * (see the round trip in `read.test.ts`). Three states never get that save: a
+ * selector that never byte-matched (UI-068), an out-of-band edit inside the
+ * watcher's debounce, and a thread document whose turns changed. They read
+ * orphaned, visibly, with the selector intact.
  *
  * An anchor entry no thread claims is omitted rather than reported with a
  * fabricated thread id: `ResolvedAnchor` requires one. §14 already reports the

@@ -138,13 +138,17 @@ async function openTodo(page: Page, docId: string = TODO.id): Promise<void> {
   await page.locator(".reader .ProseMirror").waitFor();
 }
 
-/**
- * Drags across exactly one item's own text node — a real selection over real
- * glyphs, which is what `selectorFromSelection` maps through the serializer's
- * emission trace. Selecting with the keyboard would run past the list item.
- */
-async function selectItemText(page: Page, text: string): Promise<void> {
-  const rect = await page.evaluate((needle) => {
+/** A sub-pixel box, as the layout reports it — what a mouse drag has to aim at. */
+interface TextBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Where a text node reading exactly `text` sits right now, or `null`. */
+async function boxOfText(page: Page, text: string): Promise<TextBox | null> {
+  return page.evaluate((needle) => {
     const root = document.querySelector(".reader .ProseMirror");
     if (root === null) return null;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -160,14 +164,54 @@ async function selectItemText(page: Page, text: string): Promise<void> {
     }
     return null;
   }, text);
-  expect(rect, `no text node reads exactly “${text}”`).not.toBeNull();
-  const found = rect as { x: number; y: number; width: number; height: number };
-  const y = found.y + found.height / 2;
-  await page.mouse.move(found.x + 1, y);
-  await page.mouse.down();
-  await page.mouse.move(found.x + found.width / 2, y);
-  await page.mouse.move(found.x + found.width - 1, y);
-  await page.mouse.up();
+}
+
+/** How many attempts a drag gets before a mis-landed one is a failure. */
+const SELECT_ATTEMPTS = 3;
+
+/**
+ * Drags across exactly one item's own text node — a real selection over real
+ * glyphs, which is what `selectorFromSelection` maps through the serializer's
+ * emission trace. Selecting with the keyboard would run past the list item.
+ *
+ * **The drag is checked against what it actually selected** (UI-071). A rect
+ * measured in one layout and dragged in another puts the pointer on a different
+ * line, and the drag then selects whatever moved under it — silently, because
+ * the browser has no idea which words were meant. The document surface *used
+ * to* move after the editor first paints: plugin discovery is a dynamic
+ * `import()` that settles late, and the `DocPanel` it registers renders
+ * **above** the body, pushing it down 77.9px in this fixture. Measure "Call the
+ * plumber" before that and release the mouse after it and the same x-span lands
+ * three lines up, on `ores that landed ` — 17 characters out of "Chores that
+ * landed in the inbox." That is the state the v0.3.0 pre-push gate caught, four
+ * assertions later, as a highlight over the wrong sentence.
+ *
+ * **UI-073 closed that at the source**: `DocView` paints no body until discovery
+ * has settled, so no frame exists any more in which this document is on screen
+ * and a panel is still on its way (`plugin-late-arrival.spec.ts` holds the
+ * manifest modules at the route level and pins it). The loop below stays: it
+ * costs one comparison, and it is what would catch the *next* thing that moves.
+ *
+ * Re-measuring is what makes a shifted attempt recoverable; the equality check
+ * is what makes it *safe*, and it is the half that matters. A spec may fail to
+ * select — it may never go on to comment on words nobody chose.
+ */
+async function selectItemText(page: Page, text: string): Promise<void> {
+  let selected = "";
+  for (let attempt = 0; attempt < SELECT_ATTEMPTS; attempt += 1) {
+    const found = await boxOfText(page, text);
+    expect(found, `no text node reads exactly “${text}”`).not.toBeNull();
+    if (found === null) return;
+    const y = found.y + found.height / 2;
+    await page.mouse.move(found.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(found.x + found.width / 2, y);
+    await page.mouse.move(found.x + found.width - 1, y);
+    await page.mouse.up();
+    selected = await page.evaluate(() => window.getSelection()?.toString() ?? "");
+    if (selected === text) return;
+  }
+  expect(selected, `the drag meant for “${text}” landed on other words`).toBe(text);
 }
 
 /** An integer-rounded box; sub-pixel layout is noise every assertion tolerates. */
@@ -605,5 +649,63 @@ test.describe("commenting on one item", () => {
       .toContain("- [x] Call the plumber");
 
     await expect(page.locator(".reader .anchor-hl")).toHaveText("Call the plumber");
+  });
+
+  /**
+   * UI-071, and the reason the two tests above are worth trusting.
+   *
+   * The v0.3.0 pre-push gate failed the toggle test with a highlight reading
+   * `ores that landed ` where `Call the plumber` was asked for. It was not a
+   * misplaced highlight: the anchor layer drew exactly the 17 characters its
+   * anchor covered. The **anchor** was made over the wrong words, because the
+   * document moved between the moment the spec measured the item's position and
+   * the moment it dragged over it — plugin discovery settled, the todos
+   * `DocPanel` appeared above the body, and everything below it dropped 78px, so
+   * the same x-span landed on the first paragraph three lines up.
+   *
+   * Driven here instead of waited for. A one-shot `mousemove` listener inserts a
+   * spacer of the panel's own height at the instant the drag begins, which puts
+   * the shift in exactly the window the gate lost the race in — every run,
+   * on an idle machine. Against a helper that measures once and trusts the
+   * result, this comments on `ores that landed `.
+   */
+  test("comments on the item the pointer chose, not on text that moved under it", async ({
+    page,
+  }) => {
+    const corpus = await stubCorpus(page, [VIEW, TODO]);
+    await stubTodosAggregate(page, async () => (await corpus.doc(TODO.id))?.body ?? "");
+    await openTodo(page);
+
+    // Measured off the live layout: the panel is what shifts the body in the
+    // field, and its height is what the spacer has to reproduce.
+    const shift = await page.evaluate(() => {
+      const panel = document.querySelector(".doc-main > .doc-panel");
+      return panel === null ? 0 : Math.round(panel.getBoundingClientRect().height);
+    });
+    expect(shift, "no plugin panel above the body — nothing shifts it").toBeGreaterThan(0);
+
+    await page.evaluate((height: number) => {
+      const shiftOnce = (): void => {
+        window.removeEventListener("mousemove", shiftOnce, true);
+        const spacer = document.createElement("div");
+        spacer.style.height = `${String(height)}px`;
+        document.querySelector(".doc-main")?.prepend(spacer);
+      };
+      window.addEventListener("mousemove", shiftOnce, true);
+    }, shift);
+
+    await selectItemText(page, "Call the plumber");
+
+    await page.locator("[data-sel-comment]").click();
+    await expect(page.locator("[data-comment-pop] .cm-quote")).toHaveText("“Call the plumber”");
+
+    await page.locator("[data-comment-pop] .cm-input").fill("Which office is this?");
+    await page.locator("[data-comment-send]").click();
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
+    const sent = (await corpus.of("POST", "/api/threads"))[0]?.body as {
+      selector: { exact: string };
+    };
+    expect(sent.selector.exact).toBe("Call the plumber");
   });
 });

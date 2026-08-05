@@ -276,6 +276,7 @@ describe("skills", () => {
             "claiming",
             "routing",
             "delegation",
+            "user edit",
             "concurrency",
             "locks",
             "job logs",
@@ -431,7 +432,7 @@ describe("orchestrate skill body", () => {
         sections.get(current)?.push(line);
       }
     }
-    expect(sections.size).toBe(15);
+    expect(sections.size).toBe(16);
     for (const [heading, lines] of sections) {
       expect(
         lines.join("\n").trim().length,
@@ -549,6 +550,114 @@ describe("orchestrate skill body", () => {
     // The guidance is executable: a decision rule, not a decoration.
     expect(body).toMatch(/Judge weight by three things/);
     expect(body).toMatch(/take the stronger/);
+  });
+
+  /**
+   * Reflect-on-edit (AGENT-011, SPEC.md §4's edit-acknowledgment rider signed
+   * 2026-08-02). The rider's four load-bearing claims — the diff is fetched with
+   * the event's range, triviality is decided from the change rather than its
+   * size, the acknowledgment lands on the document's own surface, and nothing
+   * about reflecting can cascade — are asserted here so a later rewrite cannot
+   * quietly turn the feature into comment spam or into silence.
+   */
+  describe("doc.edited", () => {
+    it("routes the event and names the procedure that handles it", () => {
+      expect(body).toContain("`doc.edited`");
+      expect(body).toMatch(/\*\*Reflecting on a user edit\*\* below/);
+      // It touches the payload's document, so it orders against thread work.
+      expect(body).toMatch(/`doc\.edited`: the payload's `docId`/);
+    });
+
+    it("fetches the diff with the event's range, passed through unchanged", () => {
+      expect(body).toMatch(
+        /corpus doc diff doc_a1b2c3 --from-rev [0-9a-f]{40} --to-rev [0-9a-f]{40}/,
+      );
+      expect(body).toMatch(/`--from-rev` and `--to-rev` unchanged/);
+      expect(body).toMatch(/empty-tree sha/);
+      // The stats size the read; they never stand in for it.
+      expect(body).toMatch(/The stats do not decide whether to make that call/);
+      expect(body).toMatch(/`will` becomes `will not` at `\+1 -1`/);
+    });
+
+    it("decides triviality from the claims a diff changes, not from its size", () => {
+      expect(body).toMatch(/\*\*trivial\*\* when every changed line says what it said before/);
+      expect(body).toMatch(/\*\*substantive\*\* when any changed line adds, removes or reverses/);
+      expect(body).toMatch(/Length is never the test/);
+      // Under-reacting is the tie-break, and a trivial edit writes nothing.
+      expect(body).toMatch(
+        /\*\*A trivial edit is completed in silence\*\* — no thread, no reply, no write/,
+      );
+      expect(body).toContain(
+        'corpus job log evt_7c1d9a "doc.edited on [[doc_a1b2c3]] — rewrapped a paragraph, no claim changed"',
+      );
+    });
+
+    it("checks the ripple by retrieving, within a stated bound", () => {
+      expect(body).toMatch(/corpus doc related doc_a1b2c3 --limit 5/);
+      expect(body).toMatch(/at most three claims/);
+      expect(body).toContain("--references doc_a1b2c3");
+      expect(body).toMatch(/open at most three/);
+      // Commenting is the default; updating is the entailed-correction case.
+      expect(body).toMatch(/lean to commenting/i);
+      expect(body).toMatch(/mechanical and entailed/);
+      expect(body).toMatch(/Stop at three documents/);
+    });
+
+    it("acknowledges with a whole-document thread and says why that surface", () => {
+      expect(body).toMatch(
+        /corpus thread create --parent doc_a1b2c3 --from agent`, no `--quote`, no `--requests-agent`/,
+      );
+      expect(body).toMatch(/takes no edit lock, writes no anchor/);
+      expect(body).toMatch(/One\s+acknowledgment per session, never a second/);
+      expect(body).toMatch(/A trivial edit gets none of this/);
+    });
+
+    it("restates the actor guarantee so the reflection cannot cascade or self-suppress", () => {
+      expect(body).toMatch(/\*\*Your own edits never wake you\.\*\*/);
+      expect(body).toMatch(/The payload's actor is always `user`/);
+      expect(body).toMatch(/nothing here feeds itself/);
+      // The dedupe key is named, and dropping a repeat is a completion.
+      expect(body).toMatch(/at most one event exists per `sessionId`/);
+    });
+
+    /**
+     * PR #22 review, MINOR 6. The first version of this section told the model an
+     * agent turn "enqueues nothing unless it carries an explicit request", and
+     * then to "edit and comment freely… there is no reason to suppress a change
+     * out of caution about a loop that cannot happen". The loop *can* happen:
+     * `shouldEnqueue` tests the turn's **body** before it tests the author, so a
+     * turn mentioning `@agent` enqueues whoever wrote it.
+     *
+     * The path is not hypothetical — a ripple comment or an acknowledgment that
+     * quotes a user's line carries whatever that line said. So the guarantee is
+     * pinned as two obligations rather than one, and the quoting hazard by name,
+     * because that is the one a careful model would otherwise walk into.
+     */
+    it("names both obligations, and the quoting hazard that reaches past them", () => {
+      expect(body).toMatch(/no `--requests-agent`\s*\n?\s*and no `@agent` in the body/);
+      expect(body).toMatch(/checks the turn's \*body\* before it checks the author/);
+      expect(body).toMatch(/quotes a user's line/);
+      // And it must not tell the model the loop is impossible.
+      expect(body).not.toMatch(/a loop that cannot happen/);
+    });
+
+    it("refuses to reason about a cut diff as a whole one", () => {
+      expect(body).toMatch(/\*\*A cut diff is never reasoned about as if it were whole\.\*\*/);
+      expect(body).toContain("showing 16000 of 61200 characters");
+      expect(body).toMatch(/never update another document off it/);
+      expect(body).toMatch(
+        /corpus doc diff doc_a1b2c3` with no range reads its newest commit whole/,
+      );
+      expect(body).toMatch(/corpus doc show doc_a1b2c3` gives the document\s+as it now stands/);
+    });
+
+    it("works the whole procedure once, ending in a settled event", () => {
+      expect(body).toMatch(/\*\*Worked, end to end\.\*\*/);
+      expect(body).toMatch(/corpus job log evt_7c1d9a "claimed doc\.edited on \[\[doc_a1b2c3\]\]/);
+      expect(body).toMatch(/^\+The working rate assumption is 6\.4%/m);
+      expect(body).toMatch(/corpus doc edit doc_7e3a91 --from agent <<'EOF'/);
+      expect(body).toMatch(/↳ updated the rate assumption in \[\[doc_7e3a91\]\] to 6\.4%/);
+    });
   });
 
   it("hardwires no plugin name and hedges nothing", () => {

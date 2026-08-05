@@ -372,6 +372,11 @@ export async function updateDocumentLocked(
       // route can write is invisible to `docs/tree.ts`, and a body edit is
       // the autosave path, which must not pay for a tree query.
       mayChangeTree: "status" in fields,
+      // §4's edit acknowledgment (SERVER-052): this verb *is* the edit session.
+      // Only a `user` save opens one — the tracker scopes that — but the path is
+      // carried unconditionally, because an agent save through the same verb
+      // still has to seal a session the user has open on this document.
+      editSession: loaded.path,
     },
   });
 

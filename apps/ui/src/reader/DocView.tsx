@@ -1,13 +1,13 @@
 import type { Lock } from "@corpus/contract";
 import { MarkdownView, type RowNotice } from "@corpus/kit";
-import type { ReactElement } from "react";
+import { useRef, type ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
 import { useAnchorLayer } from "../anchors/useAnchorLayer";
 import { useMarginLayout } from "../anchors/useMarginLayout";
 import { DocEditor, editorHandlesType } from "../editor/DocEditor";
 import { useSelectionContextMenu } from "../menu/useSelectionContextMenu";
-import { usePluginRegistry } from "../plugins/registry";
+import { usePluginDiscovery, usePluginRegistry } from "../plugins/registry";
 import { resolveDocPanel, resolveDocView } from "../plugins/slots";
 import { ThreadCard } from "../thread/ThreadCard";
 import { Backlinks } from "./Backlinks";
@@ -83,15 +83,41 @@ export function DocView({
   // Subscribe to plugin discovery so an open reader swaps to a plugin `View`
   // (or back) when the registry settles after first render.
   usePluginRegistry();
+  const discovery = usePluginDiscovery();
+
+  /**
+   * The document, if any, whose body this reader is *currently showing* and
+   * painted while discovery was `abandoned` — see the gate below. Its body is on
+   * screen with no plugin chrome and must not acquire any: a panel appearing
+   * over it now is the defect, arriving late instead of early. Written during
+   * render because it is a cache of a render's own outcome and re-deriving it in
+   * an effect would cost the frame this exists to prevent; the write is
+   * idempotent.
+   *
+   * The mark is dropped the moment the reader moves onto another document,
+   * which is what makes it a property of one painted body rather than of this
+   * component (PR #22 review, MINOR). `DocView` is not keyed by document id, so
+   * a reader lives across every navigation in its stack: a mark kept past the
+   * document it describes would paint blind for a `[[ref]]` followed an hour
+   * after discovery settled, and again for the original document on the way
+   * Back — neither of which is a late arrival over anything. There is nothing on
+   * screen at that point to protect; the incoming body's first paint carries its
+   * chrome, which is exactly the ordering this whole gate is for.
+   */
+  const paintedBlind = useRef<string | null>(null);
+  if (paintedBlind.current !== reader.docId) paintedBlind.current = null;
+  if (doc !== undefined && discovery === "abandoned") paintedBlind.current = reader.docId;
+  const blind = paintedBlind.current === reader.docId;
+
   // The PLUGINS-001 slots, resolved once per render. A registered plugin
   // `View` replaces the standard document view — including the editor, were a
   // plugin ever to claim a core editable type (SPEC.md §10: "a doc whose
   // `type` has a registered `View` renders with it") — so the anchor layer is
   // not hosted either: the plugin owns its whole body surface.
   const PluginView =
-    doc === undefined || reader.isThread ? null : resolveDocView(doc.frontmatter.type);
+    doc === undefined || reader.isThread || blind ? null : resolveDocView(doc.frontmatter.type);
   const DocPanel =
-    doc === undefined || reader.isThread ? null : resolveDocPanel(doc.frontmatter.type);
+    doc === undefined || reader.isThread || blind ? null : resolveDocPanel(doc.frontmatter.type);
   const anchorsHost =
     doc !== undefined &&
     !reader.isThread &&
@@ -158,7 +184,54 @@ export function DocView({
     );
   }
 
-  if (doc === undefined) {
+  /**
+   * **Nothing of this document paints until plugin discovery has settled**
+   * (UI-073) — and that is the whole fix, made here because this is where the
+   * document's vertical layout is decided.
+   *
+   * Discovery is a dynamic `import()` started at bootstrap, and the `DocPanel`
+   * it may register renders *above* the body. Landing after the editor had
+   * painted, it dropped everything below it by its own height — measured at
+   * **77.86px** (306.69 → 384.55) in the todos workspace. That is not cosmetic.
+   * This is the surface where text is selected in order to comment on it, so a
+   * body that moves between mousedown and mouseup yields a selection over words
+   * nobody chose — silently, because the resulting selection is perfectly
+   * valid. Driven deterministically, a drag aimed at `Call the plumber` came
+   * back holding `in the inbox.` plus the whole item above it, and in UI-071 a
+   * string picked up that way travelled into a comment quote and a highlight.
+   *
+   * **Why holding, and not the two alternatives.**
+   *
+   * - *Reserving the slot's height* would spend vertical space on every
+   *   document in the workspace to protect a slot almost none of them fill,
+   *   which SPEC.md §11's reading surface cannot afford and the issue rules
+   *   out outright. The height is also unknowable before the panel renders (the
+   *   todos panel grows a notice and a due chip), so the reservation would be a
+   *   guess that still moves when it is wrong. And it cannot cover a plugin
+   *   `View` at all: a `View` replaces the body wholesale, at whatever size it
+   *   likes — there is no slot to reserve.
+   * - *Cancelling an in-flight selection* when the layout shifts treats the
+   *   symptom and misses half of it: a plain **click** — placing a caret,
+   *   ticking a task-list box — has no in-flight state to cancel and still
+   *   lands on whatever moved into its place.
+   *
+   * **What holding costs: bounded, and in practice nothing.** The registry goes
+   * empty → loaded exactly once per session, from `main.tsx` at bootstrap, so
+   * this is not a per-open price; and the wait it adds is only whatever is left
+   * of a local module import once the reader's own `GET /api/docs/:id` round
+   * trip is done. Every reader opened after that first settle waits for zero.
+   * Core's boot stays uncoupled from plugin load time — the shell, the board and
+   * the keyboard are live from the first frame (§10's containment promise);
+   * only the one surface whose geometry is at risk waits, and it says so.
+   *
+   * **The bound.** `DISCOVERY_BUDGET_MS` (2s) — past that the phase turns
+   * `abandoned` and the body paints with no plugin chrome, because an unreadable
+   * document is worse than an unadorned one. `blind` above then holds this
+   * document that way for as long as it is on screen, so a registry that turns
+   * up afterwards is honoured by the next document opened rather than by moving
+   * the words out from under a pointer that is already on them.
+   */
+  if (doc === undefined || discovery === "pending") {
     return <p className="reader-note">Loading…</p>;
   }
 
@@ -210,7 +283,10 @@ export function DocView({
          * above the document body. Both hosts get it for free, because the
          * column reader and focus mode both render this component. The
          * resolver returns the panel already wrapped in its own boundary, or
-         * `null` — no plugin, no panel, no placeholder.
+         * `null` — no plugin, no panel, **no placeholder**: a document nothing
+         * claims lays out exactly as it did before there was a slot here. The
+         * gate above is what makes that affordable — nothing below this line
+         * ever moves to make room, because nothing below it paints first.
          */}
         {DocPanel !== null ? <DocPanel doc={doc} /> : null}
 

@@ -32,6 +32,13 @@ import { mountSkillRoutes } from "./skills/index.js";
 import { createDocumentMutex, mountDocsRoutes, type DocsWorkspace } from "./docs/index.js";
 import { mountThreadRoutes, type ThreadsWorkspace } from "./threads/index.js";
 import {
+  EDIT_ACK_IDLE_MS,
+  createEditSessionTracker,
+  mountDocDiffRoutes,
+  mountEditSessionRoutes,
+  type EditSessionTracker,
+} from "./edit/index.js";
+import {
   createInvalidationBus,
   createSseHub,
   mountEventStream,
@@ -147,6 +154,18 @@ export interface CorpusServer {
    * re-queues, there is simply nothing to drain it.
    */
   readonly indexMaintenance: IndexMaintenance | undefined;
+  /**
+   * SPEC.md §4's edit acknowledgment (SERVER-052): what decides a *user* edit
+   * session has ended and enqueues the one `doc.edited` for it. `undefined`
+   * alongside {@link locks} — without a projection there is no write pipeline to
+   * observe and no git writer to name a range from.
+   *
+   * Exposed because the **close** path has no HTTP route yet: `flush(docId)` is
+   * the entry point UI-044's reader-close will bind to once the contract carries
+   * a call for it, and `close()` is what shutdown runs. See the type's own
+   * docstrings for why §7's edit-lock release is not that signal.
+   */
+  readonly editSessions: EditSessionTracker | undefined;
   /**
    * Registers cleanup to run at shutdown. Subsystems (the SQLite handle from
    * SERVER-004, the chokidar watcher from SERVER-007) attach here instead of
@@ -327,6 +346,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
   let locks: LockService | undefined;
   let lockGuard: LockGuard | undefined;
+  let editSessions: EditSessionTracker | undefined;
   let semantic: SemanticRetrieval | undefined;
   let indexMaintenance: IndexMaintenance | undefined;
   if (deps.projection !== undefined) {
@@ -366,6 +386,36 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     lockGuard = guard;
     mountLockRoutes(app, lockService);
 
+    // §4's edit acknowledgment (SERVER-052). Built before the write pipeline
+    // because the pipeline takes it as a constructor argument, exactly like the
+    // lock guard above: every mutation has to reach it, and threading it through
+    // one workspace object is what makes that true of verbs written later.
+    // It enqueues through `queue.enqueue` and not a file drop, because that is
+    // the only path that also wakes a parked `corpus queue idle` (SPEC.md §7).
+    editSessions = createEditSessionTracker({
+      git: gitCommands,
+      enqueue: (input) => queue.enqueue(input),
+      // The one thing the acknowledgment says back to the write path: a commit
+      // its event has named must not be amended afterwards, or the published
+      // range dangles and the next session re-announces the same change.
+      endSquashSession: (sha) => {
+        git.endSquashSession(sha);
+      },
+      logger,
+      now,
+      idleMs: config.editAcknowledgment?.idleMs ?? EDIT_ACK_IDLE_MS,
+    });
+
+    // §4's `close` path, which the reader calls when it puts a document down
+    // (CONTRACT-031, SERVER-057). Mounted here rather than with the docs routes
+    // for the same reason the diff read is: it is one half of the acknowledgment
+    // feature, and the tracker it opens onto has just been built above.
+    mountEditSessionRoutes(app, { projection: deps.projection, editSessions });
+
+    // The other half of the same feature: the bounded diff an agent fetches once
+    // a `doc.edited` has convinced it the change is worth reading (CLI-026).
+    mountDocDiffRoutes(app, { projection: deps.projection, git: gitCommands });
+
     const docsWorkspace: DocsWorkspace = {
       workspaceRoot: config.workspaceRoot,
       projection: deps.projection,
@@ -376,6 +426,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       now,
       assertWritable: (docId, actor) => guard.assertWritable(docId, actor),
       attachmentsRoot: attachmentsRootOf(config.corpusDir),
+      editSessions,
     };
     // One mutex across both surfaces. Anchored thread creation and the deletion
     // cascade rewrite a *document's* frontmatter, so they contend with
@@ -546,6 +597,13 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
+      // First, and before `queue.close()` releases the parked long-polls: a
+      // reader's edit session cannot outlive this process, so §4's close path
+      // fires for every session still open and the acknowledgments go into the
+      // queue while there is still a parked `corpus queue idle` to wake
+      // (SERVER-052). Failures are the tracker's own to log — a shutdown never
+      // fails because an acknowledgment could not be enqueued.
+      await editSessions?.close();
       // Before `server.close()`, which waits for open connections: a parked
       // long-poll and an attached SSE stream are both *active* connections and
       // would otherwise hold shutdown open — the long-poll for the rest of its
@@ -588,6 +646,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     lockGuard,
     semantic,
     indexMaintenance,
+    editSessions,
     registerDisposer(dispose) {
       disposers.push(dispose);
     },

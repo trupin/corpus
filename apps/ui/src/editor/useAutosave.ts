@@ -3,6 +3,7 @@ import { useUpdateDocById } from "@corpus/kit";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onPageHide } from "../abandon/pagehide.js";
 import { isAbandoned, publishBodyDraft } from "../abandon/registry.js";
+import { beginEditWrite, endEditWrite } from "./editSessionFlush.js";
 import { beginEditing, endEditing } from "./editingRegistry.js";
 
 /**
@@ -117,6 +118,15 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
   anchors.current = onAnchors;
   const isLocked = useRef(locked);
   isLocked.current = locked;
+  /**
+   * True once this hook has stopped owning a surface for the document a
+   * response is about — the surface unmounted, or it rebound onto another
+   * document. Read by the failure handler, which is the one place that would
+   * otherwise schedule work for a surface that is gone.
+   */
+  const retired = useRef(false);
+  const boundDoc = useRef(docId);
+  boundDoc.current = docId;
 
   const clearTimer = (timer: typeof debounce): void => {
     if (timer.current !== null) clearTimeout(timer.current);
@@ -153,10 +163,19 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
       revision.current += 1;
       const stamp = revision.current;
       setState({ kind: "saving" });
+      /*
+       * This is the write that opens SPEC.md §4's edit session, so the close
+       * path has to know it is on the wire: a reader closed while it is in
+       * flight must not flush the session until it has landed, or the range the
+       * acknowledgment describes stops one save short of what the user typed
+       * (`editSessionFlush.ts`).
+       */
+      beginEditWrite(job.docId);
       void mutate
         .current({ id: job.docId, changes: { body: job.body } })
         .then((response: UpdateDocResponse) => {
           inFlight.current = false;
+          endEditWrite(job.docId, true);
           retried.current = false;
           lastSaved.current = job.body;
           anchors.current?.({
@@ -215,6 +234,44 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
         })
         .catch((error: unknown) => {
           inFlight.current = false;
+          // Refused, so it committed nothing and opened no session — but the
+          // close path was waiting on it and must stop.
+          endEditWrite(job.docId, false);
+          /**
+           * A refusal owed to a surface that no longer exists ends here.
+           *
+           * The retry below is a timer, and the only thing that clears it is
+           * this hook's cleanup — which has already run whenever the request it
+           * would retry was the *teardown* flush. That orphan is not merely a
+           * stray request. The line above has just told `editSessionFlush` this
+           * write is settled, so its sweep ends the session 300 ms later over
+           * the range that actually committed; a `PUT` landing three seconds
+           * behind that opens a **second** session with no surface left to
+           * close it, and one sitting becomes two `doc.edited` events and two
+           * acknowledgment threads. The invariant that module states — *a flush
+           * never ends a session while a write for that document may still
+           * land* — holds only if no write can be started after the last
+           * surface for the document is gone.
+           *
+           * Holding the write open across the retry window would satisfy the
+           * invariant too, and was rejected: it parks the acknowledgment three
+           * seconds behind the close for a request nobody is waiting on, and
+           * the hold would have to be released down every path that cancels the
+           * retry — one missed release wedges that document's flush for the life
+           * of the tab.
+           *
+           * What that costs is one debounce window of text, on a save that
+           * failed exactly as the reader closed. Nothing here could have saved
+           * it in any case: there is no chip left to report the failure and no
+           * user left to press retry, and parking the body somewhere that
+           * outlives its surface is the second source of truth for a document
+           * body that SPEC.md §5 is most careful about — the same reason the
+           * buffer is not rescued from behind a foreign lock. The acknowledgment
+           * then describes what the server actually has, which is the honest
+           * range. The chip and the buffer are skipped with it: nothing renders
+           * the one, and nothing can type over the other.
+           */
+          if (retired.current || boundDoc.current !== job.docId) return;
           // The buffer is put back, not discarded: the text the user typed is
           // the only copy of it that exists.
           pending.current ??= job;
@@ -373,15 +430,23 @@ export function useAutosave({ docId, savedBody, locked, onAnchors }: UseAutosave
     };
   }, [flush]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    retired.current = false;
+    return () => {
+      /*
+       * Retired *before* the final flush, not after: that flush is the last
+       * request this surface will ever make, and whether it succeeds or fails
+       * there is no longer anything here to report to or retry for. Every timer
+       * this hook owns is cleared on the next two lines, so anything armed from
+       * here on could never be cleared at all.
+       */
+      retired.current = true;
       flush();
       clearTimer(debounce);
       clearTimer(settle);
       endEditing(docId);
-    },
-    [docId, flush],
-  );
+    };
+  }, [docId, flush]);
 
   return {
     state,

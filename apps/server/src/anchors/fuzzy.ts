@@ -156,10 +156,18 @@ type ScoredCandidate = {
 
 /**
  * Rung 3 of the resolution ladder: score fixed-length windows at candidate
- * offsets by normalized Levenshtein similarity and accept the best window at
- * or above `FUZZY_THRESHOLD`. Ties break by (a) prefix/suffix agreement with
- * the window's actual surroundings, (b) proximity to `hint`, (c) earliest
- * offset — in that order, so the result is deterministic.
+ * offsets by normalized Levenshtein similarity and accept the best window at or
+ * above `FUZZY_THRESHOLD`. Ties break by (a) prefix/suffix agreement with the
+ * window's actual surroundings, (b) proximity to `hint`, (c) earliest offset —
+ * in that order, so the result is deterministic.
+ *
+ * **This rung answers "what is the most similar passage", which is only
+ * evidence of survival when the caller holds a diff** — see
+ * `resolve.ts`'s note on who may call {@link resolveAnchor} and why the read
+ * paths do not (SERVER-055 revert). Similarity alone cannot separate an
+ * in-place edit from a deleted passage's parallel sibling, and the declared
+ * context cannot either when the siblings are what a list, a table or a
+ * template makes them: near-identical neighbours.
  */
 export function findFuzzyRange(body: string, query: FuzzyQuery): Range | null {
   const { exact, prefix, suffix, hint } = query;

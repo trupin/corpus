@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { buildRegistry, EMPTY_REGISTRY, loadPlugins, pluginRegistry } from "./registry";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buildRegistry,
+  DISCOVERY_BUDGET_MS,
+  EMPTY_REGISTRY,
+  loadPlugins,
+  pluginDiscoveryPhase,
+  pluginRegistry,
+  setPluginRegistry,
+} from "./registry";
 
 const component = (): null => null;
 
@@ -106,6 +114,56 @@ describe("loadPlugins (real glob)", () => {
     expect(registry.plugins.some((plugin) => plugin.dir === "_fixture")).toBe(true);
     expect(registry.warnings.filter((warning) => warning.plugin === "_fixture")).toEqual([]);
     expect(pluginRegistry()).toBe(registry);
+  });
+});
+
+/**
+ * The half of the registry a layout consults (UI-073). A surface that paints
+ * during discovery is painting a layout about to change under the user's
+ * pointer, and `pluginRegistry()` alone cannot tell "nothing registered" from
+ * "nothing loaded yet".
+ */
+describe("the discovery phase", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    setPluginRegistry(EMPTY_REGISTRY);
+  });
+
+  it("is settled before anything asks to discover — the state a test host sees", () => {
+    expect(pluginDiscoveryPhase()).toBe("settled");
+  });
+
+  it("turns pending synchronously, before loadPlugins' first await", async () => {
+    const loading = loadPlugins();
+    // Not awaited: `main.tsx` calls `loadPlugins()` and then renders, so the
+    // very first render has to already see `pending`.
+    expect(pluginDiscoveryPhase()).toBe("pending");
+    await loading;
+    expect(pluginDiscoveryPhase()).toBe("settled");
+  });
+
+  it("abandons the wait after the budget, and settles if it finishes anyway", async () => {
+    vi.useFakeTimers();
+    const loading = loadPlugins();
+    expect(pluginDiscoveryPhase()).toBe("pending");
+
+    // No `await` before this: the imports' microtasks have not run, so the
+    // timer fires against a genuinely unfinished discovery.
+    vi.advanceTimersByTime(DISCOVERY_BUDGET_MS + 1);
+    expect(pluginDiscoveryPhase()).toBe("abandoned");
+
+    // Nothing was cancelled — a late discovery still installs, and the next
+    // surface to open resolves against it.
+    await loading;
+    expect(pluginDiscoveryPhase()).toBe("settled");
+    expect(pluginRegistry().plugins.length).toBeGreaterThan(0);
+  });
+
+  it("treats a hand-installed registry as settled — there is nothing in flight", () => {
+    setPluginRegistry(EMPTY_REGISTRY, "pending");
+    expect(pluginDiscoveryPhase()).toBe("pending");
+    setPluginRegistry(EMPTY_REGISTRY);
+    expect(pluginDiscoveryPhase()).toBe("settled");
   });
 });
 

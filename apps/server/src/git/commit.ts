@@ -107,6 +107,27 @@ export interface AutoCommitter {
   commit(request: CommitRequest): Promise<CommitOutcome>;
   /** Serializes arbitrary git work against the same index lock the commit path holds. */
   withGitLock<T>(run: () => Promise<T>): Promise<T>;
+  /**
+   * End the squash session if it is sitting on `sha`, so the next save by the
+   * same author to the same document makes a **fresh** commit instead of
+   * amending that one.
+   *
+   * Called when a sha has been published *outside* the repository: §4's edit
+   * acknowledgment names a commit range in a queue event, and from there the
+   * range reaches the agent, a thread, a log line. Amending the commit such a
+   * range ends at leaves it pointing at an object no branch holds, and — because
+   * an amend of a one-commit session moves that session's base too — makes the
+   * *next* session start again at the same parent, so one change is announced
+   * twice under two session ids. It is the rule {@link isPublished} already
+   * applies to a commit a remote has seen, applied to the other way a sha gets
+   * out (SERVER-052 review, PR #22).
+   *
+   * Synchronous and lock-free by design. It only *forgets* state, which is safe
+   * from any point — the cost of forgetting a session that was still foldable is
+   * one commit that did not fold — and its caller is a timer that must not queue
+   * behind an autosave.
+   */
+  endSquashSession(sha: string): void;
 }
 
 export interface AutoCommitterOptions {
@@ -485,6 +506,9 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
 
   return {
     withGitLock,
+    endSquashSession(sha) {
+      if (session !== null && session.sha === sha) session = null;
+    },
     commit: (request) =>
       withGitLock(async () => {
         const outcome = await runCommit(request);

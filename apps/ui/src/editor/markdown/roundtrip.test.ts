@@ -40,6 +40,7 @@ describe("the fixture corpus", () => {
       "blockquotes.md",
       "code-blocks.md",
       "emphasis.md",
+      "hard-wrapped.md",
       "headings.md",
       "links.md",
       "lists-bullet.md",
@@ -52,7 +53,7 @@ describe("the fixture corpus", () => {
       "tables.md",
       "task-lists.md",
     ]);
-    expect(names).toHaveLength(14);
+    expect(names).toHaveLength(15);
   });
 
   it.each(names)("%s round-trips byte for byte", (name) => {

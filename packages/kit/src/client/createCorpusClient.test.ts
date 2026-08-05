@@ -181,6 +181,31 @@ describe("the operations map onto the contract's routes", () => {
     expect(await request?.text()).toBe("");
   });
 
+  /**
+   * SPEC.md §4's close path (CONTRACT-031, UI-044). The `204` is the success,
+   * so the client cannot read it off a body — and it has to reach the server
+   * from a page that is going away, which is what `keepalive` buys and
+   * `navigator.sendBeacon` cannot (it sends no headers, so no bearer token).
+   */
+  it("ends an edit session with a body-less, keepalive POST and returns nothing", async () => {
+    const recorder = recording(null, 204);
+    await expect(client(recorder).flushEditSession("doc_a")).resolves.toBeUndefined();
+    const request = recorder.requests[0];
+    expect(request?.method).toBe("POST");
+    expect(new URL(request?.url ?? "").pathname).toBe("/api/docs/doc_a/edit-session/flush");
+    expect(await request?.text()).toBe("");
+    expect(request?.keepalive).toBe(true);
+    expect(request?.headers.get("authorization")).toBe("Bearer s3cret");
+  });
+
+  it("raises the flush's only 404 — an id this workspace does not have", async () => {
+    const recorder = recording({ code: "not_found", message: "No document `doc_gone`." }, 404);
+    await expect(client(recorder).flushEditSession("doc_gone")).rejects.toMatchObject({
+      status: 404,
+      code: "not_found",
+    });
+  });
+
   it("authenticates every call with the configured bearer token", async () => {
     const recorder = recording({ folders: [] });
     await client(recorder).getTree();

@@ -269,12 +269,17 @@ never auto-merged. The audience for that report is the agent.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-008 | Edit-acknowledgment spec rider — apply at phase kickoff (orchestrator) | todo | P1 | — |
-| CONTRACT-028 | doc.edited queue event + bounded doc-diff route | todo | P1 | SHARED-008 |
-| SERVER-052 | Edit-session end detection (close flush + 3m inactivity) → actor-scoped emission | todo | P1 | CONTRACT-028 |
-| CLI-026 | `corpus doc diff` verb | todo | P1 | CONTRACT-028, SERVER-052 |
-| UI-044 | Reader close flushes the edit session | todo | P1 | SERVER-052 |
-| AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | todo | P1 | CLI-026 |
+| SHARED-008 | Edit-acknowledgment spec rider — apply at phase kickoff (orchestrator) | done | P1 | — |
+| CONTRACT-028 | doc.edited queue event + bounded doc-diff route | done | P1 | SHARED-008 |
+| SERVER-052 | Edit-session end detection (close flush + 3m inactivity) → actor-scoped emission | done | P1 | CONTRACT-028 |
+| CLI-026 | `corpus doc diff` verb | done | P1 | CONTRACT-028, SERVER-052 |
+| CONTRACT-031 | Explicit edit-session flush route (SERVER-052 disproved the lock-release premise) | done | P1 | CONTRACT-028, SERVER-052 |
+| SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | done | P1 | CONTRACT-031, SERVER-052 |
+| SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
+| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | todo | P2 | SERVER-058 |
+| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SERVER-058 |
+| UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
+| AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
 
 ## Phase 7b — React 19, router 8, CI directives (branch `phase-7b-upgrades-ci`)
 
@@ -375,5 +380,11 @@ belongs to the same fix wave.
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
 | SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | todo | P1 | — |
 | UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
-| UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | todo | P1 | UI-062 |
+| UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
+| UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
+| UI-073 | A plugin panel loading late moves the document under the pointer (UI-071 finding) | done | P1 | — |
+| UI-074 | Board surfaces have UI-073's late-plugin exposure (rows shift, false "missing" card) | todo | P2 | UI-073 |
+| INFRA-020 | Three tests fail under gate load and pass in isolation (pattern, 3 cycles lost) | todo | P2 | — |
+| SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
+| SERVER-059 | Orphan repair, not fuzzy resolution — the read path provably cannot decide | todo | P1 | — |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
