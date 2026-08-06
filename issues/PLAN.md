@@ -396,4 +396,5 @@ belongs to the same fix wave.
 | CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | blocked | P1 | CONTRACT-033 |
 | AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | blocked | P1 | CLI-029 |
 | SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-016 | Render skill/agent mentions as mentions, clickable — DRAFT, awaiting sign-off | blocked | P2 | — |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
