@@ -49,6 +49,7 @@ function marginThreads(ids: readonly string[]): AnchoredThread[] {
     anchorId: `a_${String(index)}`,
     threadId,
     row: threadRowFixture({ id: threadId, parent: DOC, title: `Comment ${String(index)}` }),
+    rowKnown: true,
     orphaned: false,
     quote: `quoted span ${String(index)}`,
     placement: {

@@ -135,6 +135,7 @@ function Margin({
     anchorId: `anc_${row.id}`,
     threadId: row.id,
     row,
+    rowKnown: true,
     orphaned: false,
     quote: row.anchorQuote ?? "",
     placement: {

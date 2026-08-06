@@ -25,6 +25,30 @@ import "./anchors.css";
  * does not. The margin used to be the exception — it received no expansion state
  * at all, so a conversation could be folded in a narrow column and not in a wide
  * one, which is the incoherence the live report was actually about.
+ *
+ * <a id="PLACEMENT_WAITS"></a>
+ * **A placement waits for the row list to answer, and both of these say so.**
+ * SPEC.md §11 applies the rule "when a conversation is **placed**", and
+ * `ThreadPanel` latches that decision once — deliberately, so that reading a
+ * conversation can never fold it. The cost of latching is that a decision taken
+ * against a guess is permanent, so there must be no guesses: an anchor whose row
+ * has not arrived *yet* is not a conversation this surface can place, and drawing
+ * it anyway placed every resolved thread **expanded** whenever
+ * `useDocs({parent, type: thread})` was a beat slower than the document read —
+ * for the life of the reader, because the row that landed afterwards carried the
+ * same status and so never re-armed the latch. That was reproducible under a
+ * loaded machine roughly one open in eight, and deterministically with the list
+ * delayed by a second.
+ *
+ * So a chip or a card appears when the surface knows what it is drawing, which
+ * is a beat later on a slow list and not at all on a fast one — the two queries
+ * are issued in the same tick and the body does not paint until the first
+ * returns. Nothing is lost meanwhile: **the anchored highlight is in the body
+ * from the first paint** and is not a placement, so §11's "the passage still says
+ * it has been discussed" holds throughout. And the case this guard was once
+ * confused with — a thread past the first page of `useDocs`, whose row is never
+ * coming — is *answered*, not pending, so it keeps the panel PR #25 gave it
+ * (`AnchoredThread.rowKnown`, `summaryFromAnchor`).
  */
 
 export interface AnchorThreadsProps {
@@ -56,11 +80,11 @@ export function AnchorChips({
   return (
     <>
       {threads.map((thread) => {
-        // Only the widget is a precondition here: the anchor answers for the
-        // conversation while its row is missing (`anchoredSummary`), so a chip
-        // is never withheld for a thread the body is already highlighting.
+        // Two preconditions, and they fail for opposite reasons: no widget means
+        // there is nowhere to draw this chip, and no answer about the row means
+        // there is nothing to draw it *as* — see `PLACEMENT_WAITS`.
         const host = hostFor(thread.threadId);
-        if (host === null) return null;
+        if (host === null || !thread.rowKnown) return null;
         return createPortal(
           <ThreadPanel
             summary={anchoredSummary(thread, parentId)}
@@ -85,13 +109,8 @@ export interface MarginColumnProps extends AnchorThreadsProps {
  * The margin column. Panels are absolutely positioned by `useMarginLayout`, so
  * their order in the DOM is irrelevant and their `top` is everything.
  *
- * **Every anchor gets a panel, row or no row** (PR #25 review, MINOR). Skipping
- * the ones whose row had not arrived made a conversation disappear from the
- * margin while its highlight stayed in the body — permanently, on a document
- * carrying more threads than one page of `useDocs` holds, and for a frame on
- * every first paint. `anchoredSummary` is what makes that unnecessary: the
- * anchor already says which thread it is, what passage it is about and whether
- * it is resolved, and the card fills in the rest by id.
+ * **Every anchor whose row has been answered for gets a panel** — see
+ * `PLACEMENT_WAITS`.
  */
 export function MarginColumn({
   threads,
@@ -103,16 +122,18 @@ export function MarginColumn({
 }: MarginColumnProps): ReactElement {
   return (
     <div className="focus-margin" ref={innerRef} data-anchor-margin>
-      {threads.map((thread) => (
-        <ThreadPanel
-          key={thread.threadId}
-          summary={anchoredSummary(thread, parentId)}
-          host="margin"
-          flashing={flashThread === thread.threadId}
-          onOpenDoc={onOpenDoc}
-          onNotify={onNotify}
-        />
-      ))}
+      {threads.map((thread) =>
+        !thread.rowKnown ? null : (
+          <ThreadPanel
+            key={thread.threadId}
+            summary={anchoredSummary(thread, parentId)}
+            host="margin"
+            flashing={flashThread === thread.threadId}
+            onOpenDoc={onOpenDoc}
+            onNotify={onNotify}
+          />
+        ),
+      )}
     </div>
   );
 }

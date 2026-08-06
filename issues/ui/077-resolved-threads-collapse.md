@@ -394,6 +394,165 @@ but it is a derivation where a field would do. A `CONTRACT-*` issue adding
 `unread` to the thread resource would delete `openThreadUnread`'s second branch
 outright — flagged for the orchestrator, not fixed here.
 
+### Gate-blocker round — `collapse.spec.ts` was not a flake (2026-08-06)
+
+**Model: opus** (claude-opus-5, 1M context). The previous round's reading —
+"four load flakes at four workers that pass on isolated re-runs" — was **wrong**,
+and INFRA-020's rule of thumb is what catches it: a test that fails without
+contention is racy, and the code may be too. Here the code was.
+
+#### Reproduction, before any change
+
+Per INFRA-020, twice: once idle and once busy.
+
+- **No contention.** `collapse.spec.ts --workers=1 --repeat-each=6`, the two
+  reported tests: **18 passed, 0 failed** (27 s). So it is not a slow machine.
+- **With contention.** The same file at `--workers=8 --repeat-each=3`, twice:
+  **7/48** and **9/48** failed.
+- **The real gate**, `npm run e2e` at default workers with six CPU burners
+  running (load average ~25): **4 collapse failures** plus the two documented
+  environmental ones (`console.spec` / `smoke.spec` need `127.0.0.1:8765`
+  unbound; the user's corpus server holds it).
+
+**Every one of those failures is a single fact**, and it is not the fold anyone
+was looking at:
+
+```
+Locator: .reader >> [data-thread-panel="th_done"] >> > [data-thread-expand]
+Expected: 1   Received: 0
+```
+
+`th_done` is the **resolved** thread. It rendered a *card*. So what the gate was
+reporting is the by-rule half of this issue not happening — the first acceptance
+criterion in this file — in the narrow-column placement, roughly one open in
+eight. The tests naming `.t-collapse` failed on their closing
+`expectFolded(…, "th_done")`, which is why it read as an on-demand-fold problem.
+
+#### The defect
+
+`ThreadPanel.placedUnread` latches the placement inputs on its first render and
+only re-reads on a **status** change — deliberately, so that reading a
+conversation can never fold it. `summaryFromAnchor` answers `unread: true` for an
+anchored conversation whose row has not arrived — deliberately, so §11's
+interlock keeps it open rather than hiding a turn nobody has vouched for. Each is
+correct alone. Together:
+
+1. `useDocs({parent, type: thread})` is slower than the document read, so
+   `reader.threads` is still the empty stand-in when the anchors are placed;
+2. every anchor is drawn from `summaryFromAnchor` → `unread: true`;
+3. `ThreadPanel` latches that **guess**;
+4. the row lands carrying the same `resolved` status, so the latch is never
+   re-armed and `resolvedRuleCollapses` stays false;
+5. the resolved conversation is a full card **for the life of that reader**.
+
+Nothing times out and nothing retries — there is no second chance in a latched
+decision. Contention only changes how often step 1 happens.
+
+**Deterministic reproduction**, on an idle box: delay only that one request by
+1.5 s (`page.route` → `setTimeout` → `route.fallback()`), open the document, wait
+four further seconds for everything to settle, and read the DOM:
+
+```
+[{"thread":"th_open","line":0,"card":1},{"thread":"th_done","line":0,"card":1}]
+```
+
+Both cards. The rule never applied, and never would have.
+
+#### The fix — a placement waits for the row list to answer
+
+Nothing about the latch changes; the guess it was latching is what goes away.
+`row === undefined` was made to say two different things, and now says which:
+
+- `AnchoredThread.rowKnown` (new) — the surface has the **answer**: a row in
+  hand, or a list that has come back without one.
+- `PlacementInput.rowsSettled` (new), from `ReaderDoc.threadsSettled` (new,
+  `!threads.isPending`) via `useAnchorLayer`. False-on-error like
+  `threadPending`, so a failed list moves the reader on instead of holding it.
+- `AnchorChips` and `MarginColumn` draw a panel only for a conversation whose row
+  has been answered for.
+
+The case PR #25 fixed is untouched, because it is *answered*, not pending: a
+thread past `DEFAULT_PAGE_LIMIT` still gets its panel from the anchor, expanded,
+with the interlock holding it open. What is withheld is only the beat before the
+list replies — and the **anchored highlight is in the body from the first paint
+regardless**, so §11's "the passage still says it has been discussed" never
+lapses. On a normal load there is nothing to see: both queries are issued in the
+same tick and the body does not paint until the first returns.
+
+`soft-wrap.spec.ts` is **not** collateral from the `Loading…` gate — see below.
+
+#### `soft-wrap.spec.ts:170` — the test, and provably so
+
+Checked as its own question. `doc_wrapped` is a plain note with no anchors and no
+threads, so neither `DocView`'s `placementKnown` gate (thread-documents only) nor
+the anchored placements are anywhere in its path. It could not reproduce: 48
+contended runs, then 30 repeats of that one test at eight workers on a loaded box
+— **0 failures**.
+
+So the mechanism was reconstructed instead, and it reproduces byte for byte.
+Instrumenting the passing run shows the click lands at **offset 5 of the text
+node `"office opens later."`** — i.e. `offic|e`, exactly where the reported
+failure typed — and `End` then moves it to 19. The failure is therefore `End`
+doing *nothing*, which is what happens when the keystroke reaches a page whose
+editable surface is not yet `document.activeElement`: ProseMirror sets its
+selection from the mousedown, but focus lands a beat later, and Chrome treats a
+`End` with no editable focus as a scroll. Held still by blurring the surface
+between the click and the key:
+
+```
+{"blurred":{"was":"tiptap ProseMirror doc-body ProseMirror-focused","now":""},
+ "afterEnd":{"anchorOffset":5,"node":"office opens later."},
+ "body":"Tomorrow is a\nWednesday, so the\noffic!e opens later."}
+```
+
+`offic!e opens later.` — the reported failure, produced on demand. **Nothing
+moved under the caret; the caret never moved.** Fixed by waiting on the
+condition: `caretIn` clicks and then asserts the body has focus before any
+caret key. The same one-line wait was added to the sibling `dblclick` case and to
+`edit-session-close.spec.ts:98`, which has the identical click→`End`→type shape
+and would mis-place its sentence silently rather than fail.
+
+#### Checks
+
+- `VITEST_MAX_THREADS=4 vitest run apps/ui packages/kit` — **2874 passed**, 0
+  failed (2867 → 2874). New: three `placeAnchors` cases pinning `rowKnown`
+  across the three states, and a `describe.each` over the margin and the chip
+  for "a resolved conversation whose row is merely slow" — no panel until the
+  list answers, then **folded** rather than latched open. Reverting the guard
+  fails 4 of that file's 10, including that one; it is a regression test, not a
+  restatement.
+- `collapse.spec.ts` gained "a document whose thread rows are slower than its
+  body", the deterministic reproduction kept as a spec. Verified in both
+  directions: it fails on the pre-fix component and passes on the fixed one.
+- **Repeat runs under deliberate load** (six CPU burners, load average 21–34
+  throughout), all at `CORPUS_UI_PORT=5273`:
+
+  | run | before | after |
+  | --- | --- | --- |
+  | `collapse.spec` ×8 workers, ×3 | 7/48, 9/48 failed | 0/144 failed |
+  | full `npm run e2e`, default workers | 4 collapse failures | 0 (×2 runs) |
+  | `collapse` + `soft-wrap` ×8 workers, ×3 and ×4 | — | 0/161 failed |
+
+  The two environmental failures (`console.spec`, `smoke.spec`) are present in
+  every run, before and after, and are documented above: they assert the strip
+  reads "server unreachable", which holds only while `127.0.0.1:8765` is unbound.
+- `tsc --noEmit` (apps/ui, `src` + `e2e`) clean · `eslint` clean on every touched
+  file · `prettier --check` clean.
+
+#### Flagged, not fixed
+
+- **`reveal.spec.ts:268` is duration-shaped.** At **eight** workers (twice the
+  gate's default) under the same load it failed waiting for `.reveal-flash`,
+  which is a decoration with a finite lifetime — it had already expired. It did
+  not appear in either default-worker gate run, before or after, and is unrelated
+  to this issue; it needs its own evidence and its own fix.
+- **The click→keystroke shape is repo-wide.** Ten sites across
+  `autocomplete-keys`, `board`, `clipboard` (×5), `edit-session-close`,
+  `soft-wrap` and `turn-breaks` send a key straight after a `click()` with no
+  focus wait. The two with the silent-corruption shape (a caret key, then typing)
+  are fixed here; the `ControlOrMeta+a` ones would fail loudly rather than
+  corrupt, and were left alone rather than swept without evidence.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

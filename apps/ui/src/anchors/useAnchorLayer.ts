@@ -55,6 +55,12 @@ export interface AnchorLayerOptions {
   readonly anchors: readonly ResolvedAnchor[];
   /** Threads on this document, from `GET /api/docs?parent=…&type=thread`. */
   readonly threads: readonly DocRow[];
+  /**
+   * Whether {@link threads} is that query's answer rather than the empty array
+   * it reports while in flight — what tells a placement the difference between
+   * "no row yet" and "no row, ever" (`anchorPlacement.AnchoredThread.rowKnown`).
+   */
+  readonly threadsSettled: boolean;
   /** Another party holds the lock: no selection toolbar, no comment creation (SPEC.md §7). */
   readonly locked: boolean;
   /** The document is rendered by the editor at all — a `view` or a thread is not. */
@@ -136,7 +142,17 @@ interface Optimistic {
 }
 
 export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
-  const { docId, body, anchors, threads, locked, editable, flashThread = null, onNotify } = options;
+  const {
+    docId,
+    body,
+    anchors,
+    threads,
+    threadsSettled,
+    locked,
+    editable,
+    flashThread = null,
+    onNotify,
+  } = options;
   const collapse = useThreadCollapse();
   const rows = useRef(threads);
   rows.current = threads;
@@ -237,8 +253,15 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   }, [anchors, overlay]);
 
   const all = useMemo(
-    () => placeAnchors({ anchors: effective, rows: threads, body, source }),
-    [body, effective, source, threads],
+    () =>
+      placeAnchors({
+        anchors: effective,
+        rows: threads,
+        rowsSettled: threadsSettled,
+        body,
+        source,
+      }),
+    [body, effective, source, threads, threadsSettled],
   );
 
   const anchored = useMemo(() => all.filter(isPlaced), [all]);

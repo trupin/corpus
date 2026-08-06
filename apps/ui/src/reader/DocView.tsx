@@ -245,6 +245,7 @@ export function DocView({
     body: doc?.body ?? "",
     anchors: doc?.anchors ?? [],
     threads: reader.threads,
+    threadsSettled: reader.threadsSettled,
     locked: lock !== null,
     editable: anchorsHost,
     flashThread,

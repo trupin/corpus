@@ -187,6 +187,56 @@ for (const placement of PLACEMENTS) {
   });
 }
 
+/**
+ * The regression this file was hardened for, held still.
+ *
+ * `collapse.spec.ts` blocked two pushes as a "load flake". It was not one: at
+ * eight workers, roughly one open in eight placed the **resolved** conversation
+ * as a card and left it that way, which is the by-rule half of UI-077 simply not
+ * happening. The cause is a race with one loser and no timeout — an anchored
+ * conversation was placed from its anchor whenever
+ * `useDocs({parent, type: thread})` was a beat slower than the document read,
+ * and `ThreadPanel` latches a placement on purpose, so the anchor's
+ * "`unread: true`, because nothing here can vouch for it" became the reader's
+ * permanent answer. The row that followed carried the same `resolved` status and
+ * so never re-armed the latch.
+ *
+ * The delay below is what contention was doing by accident. A second is far more
+ * than the race needs and costs the suite nothing, because the assertion is that
+ * the answer is *right once it lands*, not that it lands quickly.
+ */
+test.describe("a document whose thread rows are slower than its body", () => {
+  /** Holds the thread-row list back; every other call is served as usual. */
+  async function delayThreadRows(page: Page, ms: number): Promise<void> {
+    await page.route("**/api/docs**", async (route) => {
+      const url = new URL(route.request().url());
+      const isRowList =
+        route.request().method() === "GET" &&
+        url.searchParams.get("parent") === "doc_note" &&
+        url.searchParams.get("type") === "thread";
+      if (isRowList) await new Promise((resolve) => setTimeout(resolve, ms));
+      await route.fallback();
+    });
+  }
+
+  test("still places the resolved one collapsed and the open one full", async ({ page }) => {
+    await stubCorpus(page, BASE);
+    await delayThreadRows(page, 1000);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_note"]').first().click();
+    await page.locator(".reader .ProseMirror").waitFor();
+
+    // The highlight is in the body from the first paint and never waits for a
+    // row — §11's "the passage still says it has been discussed".
+    await expect(page.locator('.reader .anchor-hl[data-thread="th_done"]')).toHaveCount(1);
+
+    // And the conversations are placed on the answer, not on a guess.
+    await expectFolded(page, "th_done");
+    await expectOpen(page, "th_open");
+  });
+});
+
 test.describe("the rule and the reader", () => {
   test("does not collapse a resolved thread holding a turn nobody has seen", async ({ page }) => {
     await openNote(page, [VIEW, NOTE, OPEN_THREAD, { ...RESOLVED_THREAD, unread: true }]);

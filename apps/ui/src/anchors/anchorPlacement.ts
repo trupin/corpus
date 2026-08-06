@@ -72,6 +72,17 @@ export interface AnchoredThread {
   readonly anchorId: string;
   readonly threadId: string;
   readonly row: DocRow | undefined;
+  /**
+   * Whether this surface has the **final** answer about the row — either it has
+   * one, or the list it would be in has come back without it.
+   *
+   * `row === undefined` says two very different things, and conflating them is
+   * what UI-077 shipped: "the list has not landed yet" and "the list has landed
+   * and this thread is not in it" (a document carrying more threads than one page
+   * of `useDocs` holds). Only the second is an answer, and only an answer may be
+   * placed on — see {@link summaryFromAnchor}.
+   */
+  readonly rowKnown: boolean;
   readonly orphaned: boolean;
   readonly quote: string;
   readonly placement: AnchorPlacement;
@@ -151,7 +162,7 @@ export function isPlaced(thread: AnchoredThread): boolean {
  * still reachable from it*". The same gap opens transiently on every first
  * paint, before the list lands — which popped panels in rather than showing them.
  *
- * So the anchor answers for the conversation until the row does. It is the
+ * So the anchor answers for the conversation when the row never will. It is the
  * authority on the two things that matter most here — which thread it is, and
  * what passage it is about — and the server resolves its `threadStatus` along
  * with it, so the rule has a status to read.
@@ -163,6 +174,16 @@ export function isPlaced(thread: AnchoredThread): boolean {
  * rule's reach. It is therefore placed **expanded**, its card fetches the
  * conversation by id and tells the whole truth — which is what every anchored
  * thread did before this placement had a fold at all.
+ *
+ * **Only ever for a thread whose row is not coming** ({@link
+ * AnchoredThread.rowKnown}). Placement is a one-shot latched decision
+ * (`ThreadPanel.placedUnread`), so this answer is permanent once taken: used
+ * while the list was merely *slow*, it placed a resolved conversation expanded
+ * for the life of the reader, because the row that arrived a beat later carried
+ * the same status and so never re-armed the latch. That was UI-077's live
+ * defect — reproduced under load and deterministically with a delayed
+ * `useDocs({parent, type: thread})`, and fixed by not placing at all until the
+ * list has answered.
  */
 export function summaryFromAnchor(thread: AnchoredThread, parentId: string): ThreadSummary {
   return {
@@ -187,6 +208,11 @@ export function anchoredSummary(thread: AnchoredThread, parentId: string): Threa
 export interface PlacementInput {
   readonly anchors: readonly ResolvedAnchor[];
   readonly rows: readonly DocRow[];
+  /**
+   * Whether `rows` is the list's **answer** rather than the empty stand-in a
+   * query in flight reports. See {@link AnchoredThread.rowKnown}.
+   */
+  readonly rowsSettled: boolean;
   /** The body the server returned, whose offsets `anchors` use. */
   readonly body: string;
   readonly source: DocumentTrace;
@@ -196,7 +222,13 @@ export interface PlacementInput {
  * Every anchored thread on the document, in document order, each carrying the
  * segments its highlight occupies (empty when it is orphaned or unplaceable).
  */
-export function placeAnchors({ anchors, rows, body, source }: PlacementInput): AnchoredThread[] {
+export function placeAnchors({
+  anchors,
+  rows,
+  rowsSettled,
+  body,
+  source,
+}: PlacementInput): AnchoredThread[] {
   const byId = new Map(rows.map((row) => [row.id, row]));
   const read = readerFor(body, source);
 
@@ -207,6 +239,7 @@ export function placeAnchors({ anchors, rows, body, source }: PlacementInput): A
       anchorId: anchor.anchorId,
       threadId: anchor.threadId,
       row,
+      rowKnown: rowsSettled || row !== undefined,
       orphaned: anchor.orphaned,
       quote: anchor.selector.exact,
       placement: {

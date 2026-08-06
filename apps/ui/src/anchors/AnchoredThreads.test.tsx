@@ -92,6 +92,7 @@ function threads(): AnchoredThread[] {
         turnCount: 1,
         lastAuthor: "user",
       }),
+      rowKnown: true,
       orphaned: false,
       quote: "lender spreads",
       placement: { ...placement("th_rowed"), turnCount: 1 },
@@ -100,6 +101,8 @@ function threads(): AnchoredThread[] {
       anchorId: "anc_th_overflow",
       threadId: "th_overflow",
       row: undefined,
+      // The list answered and this thread was not in it — see `rowKnown`.
+      rowKnown: true,
       orphaned: false,
       quote: "yield curve",
       placement: placement("th_overflow"),
@@ -118,13 +121,18 @@ function isFolded(id: string): boolean {
   return found.querySelector("[data-thread-expand]") !== null;
 }
 
-function Margin({ transport }: { readonly transport: ReaderTransport }): ReactElement {
+interface HostProps {
+  readonly transport: ReaderTransport;
+  readonly anchored?: AnchoredThread[];
+}
+
+function Margin({ transport, anchored = threads() }: HostProps): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
   return (
     <harness.Wrapper>
       <ThreadCollapseProvider surfaceKey={columnSurface("col_a")}>
         <MarginColumn
-          threads={threads()}
+          threads={anchored}
           parentId={DOC}
           flashThread={null}
           onOpenDoc={() => undefined}
@@ -136,7 +144,7 @@ function Margin({ transport }: { readonly transport: ReaderTransport }): ReactEl
   );
 }
 
-function Chips({ transport }: { readonly transport: ReaderTransport }): ReactElement {
+function Chips({ transport, anchored = threads() }: HostProps): ReactElement {
   const [harness] = useState(() => createCorpusTestHarness({ fetch: transport.fetch }));
   const [hosts] = useState(() => {
     const made = new Map<string, HTMLElement>();
@@ -152,7 +160,7 @@ function Chips({ transport }: { readonly transport: ReaderTransport }): ReactEle
     <harness.Wrapper>
       <ThreadCollapseProvider surfaceKey={columnSurface("col_a")}>
         <AnchorChips
-          threads={threads()}
+          threads={anchored}
           parentId={DOC}
           flashThread={null}
           onOpenDoc={() => undefined}
@@ -189,6 +197,55 @@ describe.each([
 
   it("still folds the resolved one the list did describe", async () => {
     render(<Host transport={wire()} />);
+    await waitFor(() => {
+      expect(panel("th_rowed")).not.toBeNull();
+    });
+    expect(isFolded("th_rowed")).toBe(true);
+    expect(panel("th_rowed")?.querySelector(".thread-card")).toBeNull();
+  });
+});
+
+/**
+ * UI-077's live defect: **a resolved conversation placed while the list was
+ * merely slow stayed expanded for the life of the reader.**
+ *
+ * The two halves that combine into it are each correct alone. `ThreadPanel`
+ * latches its placement once and only re-reads on a status change, so that
+ * reading a conversation can never fold it; and an anchor with no row reports
+ * `unread: true`, so §11's interlock holds it open rather than hiding a turn
+ * nobody has vouched for. Together, an anchor that arrived before its row placed
+ * a *guess* — and because the row that followed carried the same `resolved`
+ * status, nothing ever re-armed the latch and the guess became permanent.
+ *
+ * Found under load (roughly one open in eight at eight Playwright workers), then
+ * pinned deterministically by delaying `useDocs({parent, type: thread})` by a
+ * second. This is that sequence with the timing taken out of it: the row is
+ * absent and *unanswered for* on the first render and present on the second,
+ * which is precisely what a slow list looks like to this component.
+ */
+describe.each([
+  ["in the margin", Margin],
+  ["as a chip at its anchor", Chips],
+])("a resolved conversation whose row is merely slow, %s", (_, Host) => {
+  /** The same two threads, before the list has answered about either. */
+  function pending(): AnchoredThread[] {
+    return threads().map((thread) => ({ ...thread, row: undefined, rowKnown: false }));
+  }
+
+  it("draws no panel until the list has answered", () => {
+    render(<Host transport={wire()} anchored={pending()} />);
+    expect(panel("th_rowed")).toBeNull();
+    expect(panel("th_overflow")).toBeNull();
+  });
+
+  it("folds it once the row lands, instead of latching the anchor's guess", async () => {
+    const transport = wire();
+    const view = render(<Host transport={transport} anchored={pending()} />);
+    expect(panel("th_rowed")).toBeNull();
+
+    // The list answers. Before the fix this second render was too late: the
+    // panel had already latched `unread: true` off the anchor and stayed a card.
+    view.rerender(<Host transport={transport} anchored={threads()} />);
     await waitFor(() => {
       expect(panel("th_rowed")).not.toBeNull();
     });

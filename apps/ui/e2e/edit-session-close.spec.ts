@@ -96,6 +96,10 @@ test("a save refused as the reader closes still ends the sitting exactly once", 
 
   // A save that lands: this is what opens the session on the server.
   await page.locator(".reader .ProseMirror").click();
+  // `End` before the surface has focus is a no-op that lands the sentence in the
+  // middle of the body instead of at the end — see `soft-wrap.spec.ts`'s
+  // `caretIn`. Waiting on the condition, not on a duration.
+  await expect(page.locator(".reader .ProseMirror")).toBeFocused();
   await page.keyboard.press("End");
   await page.keyboard.type(" A landed sentence.");
   await expect
