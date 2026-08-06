@@ -401,4 +401,9 @@ belongs to the same fix wave.
 | CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
 | UI-077 | Resolved threads do not collapse in the doc view (bug against §5) | todo | P1 | SHARED-018 |
 | SHARED-017 | Multi-select + bulk actions — DRAFT, awaiting sign-off | blocked | P2 | — |
+| SHARED-018 | Collapse anything, anywhere — on demand and by rule — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-019 | Agent resolves settled subthreads — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
+| UI-078 | Resolve confirmation promises replying reopens the thread; it does not | todo | P1 | — |
+
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

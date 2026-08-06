@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §5, the thread frontmatter table: `status: open | resolved;`
+- SPEC.md §6, the thread frontmatter table: `status: open | resolved;`
   **`resolved threads collapse in the doc view`**
 
 ## Summary
@@ -62,7 +62,7 @@ The user generalised the request minutes after filing it:
 
 So there are two halves and only one of them is a bug:
 
-- **By rule** — resolved collapses by default. Already promised by §5 (above).
+- **By rule** — resolved collapses by default. Already promised by §6 (above).
   This issue.
 - **On demand** — anything collapsible, anywhere, by the reader. **Not** in
   SPEC today; drafted as **SHARED-018** and held for sign-off.
