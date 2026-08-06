@@ -40,6 +40,15 @@ export interface ReaderDoc {
   readonly isThread: boolean;
   /** The conversation, for a `type: thread` document. */
   readonly thread: ThreadView | undefined;
+  /**
+   * The conversation read is still in flight.
+   *
+   * Distinct from `thread === undefined`, which is also what a *failed* read
+   * looks like: a placement that waited on the data would then wait forever,
+   * where what it wants is to wait for the answer and then place the
+   * conversation — card, error and all (`DocView`'s thread branch).
+   */
+  readonly threadPending: boolean;
   /** Threads *on* this document (SPEC.md §6), for the 💬 popover and the slots. */
   readonly threads: readonly DocRow[];
   /** Documents referencing this one — the "Referenced by" panel. */
@@ -82,6 +91,7 @@ export function useReaderDoc(docId: string): ReaderDoc {
     isArchived: doc.data?.frontmatter.status === "archived",
     isThread,
     thread: thread.data,
+    threadPending: isThread && thread.isPending,
     threads: threads.data?.items ?? [],
     backlinks: backlinks.data?.items ?? [],
     related: related.data?.related ?? [],

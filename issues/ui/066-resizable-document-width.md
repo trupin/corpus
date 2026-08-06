@@ -57,6 +57,46 @@ The user is explicit that a cap is fine — the ask is that **they** choose it.
   what you get. Do not reintroduce a per-element measure as a "sensible default";
   the uniform behavior is the signed one (SHARED-010 Amendment 2).
 
+## Clarified 2026-08-06 — threads are documents, and they resize too
+
+The user, unprompted:
+
+> "I want to be able to resize the width any document, including threads. I know
+> we have an issue for that but just wanted to make that clear."
+
+**Read the signed §11 text carefully before implementing, because it invites the
+narrow reading.** It says "**the document body** has a comfortable default
+width", and the only place it mentions threads is "anchored thread placement
+follows the body when it moves" — which frames a thread as something attached to
+a document rather than as a document in its own right. An implementer skimming it
+would plausibly build this for notes and skip threads entirely.
+
+§5 settles it: a thread **is** a document, whose body is its conversation. So the
+signed text already covers it and no amendment is needed. What was missing is the
+distinction between the two ways a thread appears, which this issue must build to:
+
+- **A thread opened in a reader** — as its own document, in a column or in full
+  screen — resizes exactly like any other document, with its own remembered
+  width. This is the case the user is asking for.
+- **A thread rendered as an anchored margin card or a chip** does **not** get its
+  own width: it *follows the document it is anchored to*, which is precisely what
+  the signed sentence already says. Two independently resizable widths on one
+  screen, one nested in the other, is not what was asked for and would look
+  broken.
+
+So: the unit that carries a width is **a reader showing a document**, not a
+thread card.
+
+### Interaction with UI-077 (landed)
+
+UI-077 routes every thread placement — margin card, chip, below-body list,
+thread-as-document, nested child — through one component that decides its fold,
+and holds sticky per-reader state browser-locally keyed by surface. Width is the
+same shape of state on the same surfaces, so **reuse that keying rather than
+inventing a second scheme**; two adjacent per-surface stores with different
+conventions is how they drift. Read `apps/ui/src/thread/threadCollapse.ts` for
+the precedent, including how it stamps state so a change re-asserts the default.
+
 ## Acceptance Criteria
 - [ ] The document body's width is adjustable by the user, in column view and in
       full screen
@@ -70,6 +110,12 @@ The user is explicit that a cap is fine — the ask is that **they** choose it.
 - [ ] Anchored thread placement still lines up: margin cards and connectors are
       positioned against the body, and they must follow it when it moves
 - [ ] The editor and the rendered view agree at every width
+
+- [ ] A thread opened in a reader resizes like any other document, in both column
+      view and full screen, and remembers its width
+- [ ] An anchored thread card or chip does **not** resize independently — it
+      follows the document it is anchored to (the signed sentence's own rule)
+- [ ] Width state reuses UI-077's per-surface keying rather than a second scheme
 
 ## Technical Design
 ### Files to Create/Modify

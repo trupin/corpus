@@ -5,11 +5,13 @@ import { serializeDoc } from "../editor/markdown/serialize.js";
 import { threadRowFixture } from "../testing/readerFixture.js";
 import type { TextQuoteSelector } from "../editor/selection.js";
 import {
+  anchoredSummary,
   detachedThreads,
   isPlaced,
   offsetsComparable,
   placeAnchors,
   segmentsOf,
+  summaryFromAnchor,
   unplacedThreads,
   type AnchoredThread,
 } from "./anchorPlacement.js";
@@ -327,6 +329,51 @@ describe("threads that hang off no text", () => {
       source: traced,
     });
     expect(unplacedThreads(placed).map((each) => each.id)).toEqual(["th_1"]);
+  });
+});
+
+/**
+ * PR #25 review, MINOR: a document's threads arrive as one paginated list while
+ * its anchors do not, so a placement has to be able to describe a conversation
+ * whose row is not in the answer — otherwise it disappears from the margin while
+ * its highlight stays in the body, which SPEC.md §11 forbids in as many words.
+ */
+describe("an anchored conversation whose row has not arrived", () => {
+  const placedAnchor = (overrides: Partial<ResolvedAnchor> = {}): AnchoredThread => {
+    const [only] = placeAnchors({
+      anchors: [anchor(overrides)],
+      rows: [],
+      body: BODY,
+      source: source(),
+    });
+    return only as AnchoredThread;
+  };
+
+  it("describes itself from the anchor: which thread, what passage, what status", () => {
+    const summary = summaryFromAnchor(placedAnchor({ threadStatus: "resolved" }), "doc_m");
+    expect(summary.id).toBe("th_1");
+    expect(summary.quote).toBe("6.1%");
+    expect(summary.status).toBe("resolved");
+    expect(summary.parent).toBe("doc_m");
+  });
+
+  it("reports unread, so the rule never folds a conversation nobody can vouch for", () => {
+    // The one thing an anchor cannot say. §11's interlock is what covers it:
+    // the conversation is placed expanded and its card tells the whole truth.
+    expect(summaryFromAnchor(placedAnchor({ threadStatus: "resolved" }), "doc_m").unread).toBe(
+      true,
+    );
+  });
+
+  it("defers to the row the moment the list has one", () => {
+    const withRow: AnchoredThread = {
+      ...placedAnchor({ threadStatus: "resolved" }),
+      row: row({ id: "th_1", status: "resolved", turnCount: 4, lastAuthor: "agent" }),
+    };
+    const summary = anchoredSummary(withRow, "doc_m");
+    expect(summary.turnCount).toBe(4);
+    expect(summary.lastAuthor).toBe("agent");
+    expect(summary.unread).toBe(false);
   });
 });
 

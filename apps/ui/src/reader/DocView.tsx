@@ -1,5 +1,13 @@
-import type { Doc, Lock } from "@corpus/contract";
-import { MarkdownView, useDoc, type RowNotice } from "@corpus/kit";
+import type { Doc, DocRow, Lock } from "@corpus/contract";
+import {
+  hasSeenMark,
+  isPendingTurn,
+  MarkdownView,
+  THREAD_DOC_TYPE,
+  useDoc,
+  useDocs,
+  type RowNotice,
+} from "@corpus/kit";
 import { useRef, type ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
@@ -57,6 +65,42 @@ export function foreignLock(lock: Lock | null): Lock | null {
 }
 
 /**
+ * Whether a thread that **is** the open document holds a turn nobody has seen.
+ *
+ * §11's interlock — "a conversation carrying a turn you have not seen is never
+ * collapsed by the rule" — is the clause that stops the by-rule fold becoming a
+ * way to lose messages, so this placement has to answer it truthfully rather
+ * than assume (PR #25 review). Two sources, in order:
+ *
+ * - **The thread's own row**, which is the server's answer and the one every
+ *   other placement reads (`summaryFromRow`). A thread opened as a document is
+ *   handed no row, so it is looked up in its parent's thread list — the same
+ *   `useDocs({parent, type: thread})` the reader that opened it already issued,
+ *   under the same cache key.
+ * - **What this browser has displayed**, when there is no row to find: a
+ *   standalone thread has no parent to list, and a thread past the first page of
+ *   a parent carrying more threads than one page holds is not in the answer.
+ *   `hasSeenMark` is the kit's record of the `POST …/seen` this session sent for
+ *   a `(thread, last turn)` pair, so it says exactly "this browser has displayed
+ *   the whole of this conversation". Before that it reads unread and the
+ *   interlock holds the conversation open, which is the direction §11 picks
+ *   whenever the answer is in doubt; after it, the rule takes over — which is
+ *   what makes resolving such a thread on screen fold it.
+ *
+ * A conversation with no confirmed turn cannot be unread: there is nothing to
+ * have read, exactly as `useMarkSeenOnce` treats it.
+ */
+export function openThreadUnread(
+  threadId: string,
+  thread: ReaderDoc["thread"],
+  row: DocRow | undefined,
+): boolean {
+  if (row !== undefined) return row.unread === true;
+  const lastConfirmedTs = thread?.turns.findLast((turn) => !isPendingTurn(turn))?.ts;
+  return lastConfirmedTs !== undefined && !hasSeenMark(threadId, lastConfirmedTs);
+}
+
+/**
  * The summary for a thread that **is** the open document.
  *
  * Every other placement gets one from the projection's row (`summaryFromRow`);
@@ -64,28 +108,25 @@ export function foreignLock(lock: Lock | null): Lock | null {
  * an item out of a list. So it is assembled from what the reader already holds —
  * the conversation itself, for the turn count and the status — plus the parent's
  * resolved anchor for the quote, which is the only place a thread's anchored
- * words exist (the selector lives in the *parent's* frontmatter, SPEC.md §6).
+ * words exist (the selector lives in the *parent's* frontmatter, SPEC.md §6) —
+ * and {@link openThreadUnread} for the one field neither of those carries.
  *
  * Both reads are already in flight for this document: `useReaderDoc` fetches the
  * conversation, and the expanded card fetches the parent under the same cache
  * key. Nothing here costs a request that was not going to be made.
- *
- * `unread: false` is honest rather than a shrug. This panel does not let the
- * rule decide anything (`applyRule={false}`), so the flag reaches only the "new"
- * badge — and the reader is looking at the thread, which is what clears it
- * (SPEC.md §7).
  */
 export function openThreadSummary(
   threadId: string,
   thread: ReaderDoc["thread"],
   parent: Doc | undefined,
+  unread: boolean,
 ): ThreadSummary {
   return {
     id: threadId,
     status: thread?.status ?? "open",
     turnCount: thread?.turns.length ?? 0,
     lastAuthor: thread?.turns.at(-1)?.author ?? null,
-    unread: false,
+    unread,
     quote:
       parent?.anchors.find((anchor) => anchor.threadId === threadId)?.selector.exact.trim() ?? "",
     parent: thread?.parent ?? null,
@@ -120,6 +161,34 @@ export function DocView({
   const openThreadParent = useDoc(
     reader.isThread ? (reader.thread?.parent ?? undefined) : undefined,
   );
+  /**
+   * The thread list this document's own row would be in, if it has one.
+   *
+   * For a thread with a parent that is the parent's list — the very query the
+   * reader showing that parent issues, so this shares its cache entry rather
+   * than adding a request. For everything else it is *this* document's own
+   * thread list, which `useReaderDoc` has already fetched: the same key again,
+   * and a list in which the document itself can never appear, so the lookup
+   * below correctly finds nothing. That is what keeps the hook unconditional
+   * without ever spending a request on a question this reader is not asking.
+   */
+  const rowScope = reader.isThread ? (reader.thread?.parent ?? reader.docId) : reader.docId;
+  const scopeThreads = useDocs({ parent: rowScope, type: THREAD_DOC_TYPE });
+  const openThreadRow = scopeThreads.data?.items.find((row) => row.id === reader.docId);
+  /**
+   * Whether this reader yet knows how to **place** the conversation it opened.
+   *
+   * The rule decides the state a conversation is placed in, once, and a fold
+   * taken on a guess does not correct itself: the panel latches what it was
+   * placed with until the status changes, precisely so that reading a
+   * conversation cannot fold it (`ThreadPanel.placedUnread`). So the two facts
+   * the rule reads — the thread's status, and whether it holds an unseen turn —
+   * have to be in hand *before* the panel mounts, or a resolved conversation is
+   * placed open whenever its row is a beat slower than its turns and stays that
+   * way. Same instinct as the plugin-discovery gate below: nothing paints until
+   * what it would paint is known.
+   */
+  const placementKnown = !reader.threadPending && !scopeThreads.isPending;
   const lock = foreignLock(reader.lock);
   // Subscribe to plugin discovery so an open reader swaps to a plugin `View`
   // (or back) when the registry settles after first render.
@@ -345,25 +414,37 @@ export function DocView({
         {reader.isThread ? (
           <div className="doc-body thread-conversation">
             {/*
-             * The conversation you opened, foldable but never folded *for* you.
+             * The conversation you opened — placed by the same rule as every
+             * other placement (PR #25 review, MAJOR).
              *
-             * `applyRule={false}`: navigating to a thread is the reader's own act
-             * of opening it, and §11's precedence is "the last thing that
-             * happened wins" — so the rule, which is older than the click, does
-             * not get to close it. §11 also says outright that the rule is
-             * applied "when a conversation is placed and when its status
-             * changes, never because you have just read it", and opening a
-             * resolved thread to a single grey line is precisely a rule folding
-             * something away under someone who went there to read it. The fold
-             * is still offered, on demand, and one taken by hand still sticks.
+             * This panel used to opt out of the rule, on the reading that
+             * navigating to a thread is newer than the rule and therefore wins
+             * §11's precedence. It is not: §11's precedence clause is about
+             * "collapsing or expanding it **yourself**", an explicit gesture,
+             * while the rule applies "when a conversation is **placed**" — and
+             * opening a thread in a reader is a placement. §6 settles the rest
+             * in one line, "a resolved thread is collapsed by default *wherever
+             * it is shown*", and §11 enumerates this placement by name. The
+             * exception also broke the half of §11 that is not open to reading
+             * at all: "a change to the thread's status re-asserts the rule…
+             * **so resolving a conversation collapses it even while it is open
+             * on screen**", which resolving a thread-as-document did not do.
              */}
-            <ThreadPanel
-              summary={openThreadSummary(reader.docId, reader.thread, openThreadParent.data)}
-              host="standalone"
-              applyRule={false}
-              onOpenDoc={onNavigate}
-              onNotify={onNotify}
-            />
+            {placementKnown ? (
+              <ThreadPanel
+                summary={openThreadSummary(
+                  reader.docId,
+                  reader.thread,
+                  openThreadParent.data,
+                  openThreadUnread(reader.docId, reader.thread, openThreadRow),
+                )}
+                host="standalone"
+                onOpenDoc={onNavigate}
+                onNotify={onNotify}
+              />
+            ) : (
+              <p className="reader-note">Loading…</p>
+            )}
           </div>
         ) : anchorsHost ? (
           /*
@@ -400,6 +481,7 @@ export function DocView({
           <>
             <AnchorChips
               threads={anchors.anchored}
+              parentId={doc.frontmatter.id}
               flashThread={flashThread}
               onOpenDoc={onNavigate}
               onNotify={onNotify}
@@ -436,6 +518,7 @@ export function DocView({
       {anchors.marginMode ? (
         <MarginColumn
           threads={anchors.anchored}
+          parentId={doc.frontmatter.id}
           flashThread={flashThread}
           onOpenDoc={onNavigate}
           onNotify={onNotify}

@@ -283,6 +283,182 @@ commit — and the server log contains **0** error lines.
 **Conclusion: PASS.** Every acceptance criterion observed against the real
 server over real HTTP. Server stopped (pid 98946), port 8766 verified free.
 
+---
+
+### Review-fix round — PR #25, two MINOR findings (2026-08-06, model: opus)
+
+Both findings addressed. Real server (`corpus server start`, run from source via
+tsx, port 8766, workspace `/tmp/corpus-s061-e2e-m6f2`), real CLI, real
+`chmod 000` files — no stubs anywhere in this round's E2E.
+
+#### Finding 1 — `queue/held.ts`: a diagnostic read could deny the agent its work
+
+`store.readEvent` rethrows every non-`ENOENT` error, so one unreadable file in
+`in-progress/` made `readHeldInProgress` throw — inside `claimAll`, **before it
+moves anything**. Malformed *content* was skipped and logged; an unreadable
+*file* took the whole batch down with it.
+
+**Decision: degrade at the granularity the failure actually has — two tiers, not
+one.**
+
+- **One unreadable file → skip it**, exactly as a malformed one is skipped, and
+  exclude it from `total` as well as from the list. This is the maximal-
+  information option and the one consistent with the neighbouring path: the
+  other nineteen held events are still reported, and still reported honestly.
+  Degrading the whole report here would throw away nineteen accurate rows to
+  punish one bad file.
+- **An unlistable directory → degrade the whole report** to `NOTHING_HELD`.
+  There is no per-file granularity to be narrow with — there is no list to skip
+  an entry from — so the choice is between telling the agent nothing (which the
+  CLI renders as silence) and telling it a number that is wrong. Nothing wins.
+
+Both are logged at `error`, deliberately unlike the malformed path's `debug`: a
+malformed file is expected residue that `reap-stale` exists to clear, while an
+unreadable one is a workspace fault only an operator can fix — and `error` is
+the one level a server running at `silent` still writes. `total` excludes every
+skip in both tiers, so the contract's `total === events.length` while
+`truncated` is false still holds exactly.
+
+The CLI's own reasoning (`commands/queue/in-progress.ts:98-103` — "a server that
+omits the report costs a diagnostic instead of costing the work") now holds on
+both ends of the wire: **the in-progress set is the report, the claim is the
+work.**
+
+**Pre-fix reproduction** (per-file catch temporarily removed from `held.ts`,
+server restarted on the reverted code, `chmod 000` on one held file):
+
+```
+$ chmod 000 .corpus/queue/in-progress/evt_ijm56o7bd3bs.json
+$ corpus queue status
+queue running — pending 2, in-progress 5, …
+$ corpus queue claim-all
+corpus: 500 internal_error: internal error
+$ corpus queue status
+queue running — pending 2, in-progress 5, …      # the batch is stranded
+```
+
+Two claimable events, and the agent got neither — because of a diagnostic.
+
+**Post-fix, same workspace, same unreadable file, same two pending events:**
+
+```
+$ corpus queue claim-all --json
+claimed: evt_3gcwf54tel57,evt_h45u7o33nerh
+inProgress.total: 4  events: 4  truncated: false
+$ corpus queue status
+queue running — pending 0, in-progress 7, …
+```
+
+Server log (`.corpus/server.log`), the skip and the 200 side by side:
+
+```
+{"level":"error","msg":"skipping unreadable in-progress event",
+ "id":"evt_ijm56o7bd3bs",
+ "reason":"EACCES: permission denied, open '…/in-progress/evt_ijm56o7bd3bs.json'"}
+{"level":"info","msg":"request","method":"POST","path":"/api/queue/claim-all","status":200,"durationMs":10}
+```
+
+Five files held, one unreadable, `total: 4 === events.length` — the invariant
+survives the skip, and the skip is not silent.
+
+**The directory tier, on the same server** (`chmod 000` on `in-progress/`, queue
+halted so the claim attempts no moves):
+
+```
+$ corpus queue claim-all --json
+{"events":[],"inProgress":{"events":[],"total":0,"truncated":false}}
+{"level":"error","msg":"cannot list in-progress events; reporting nothing held",
+ "reason":"EACCES: permission denied, scandir '…/.corpus/queue/in-progress'"}
+```
+
+**A deliberate limit, recorded honestly:** with the queue *running* and the
+directory still `chmod 000`, the same claim is a `500` — not from the report,
+which degraded cleanly, but from `move("pending","in-progress")`, whose
+destination is unusable. The report tier cannot rescue a claim whose own writes
+cannot land, and should not pretend to: that is a write failure and a `500` is
+the right answer to it.
+
+#### Finding 2 — `queue/service.ts:284`: the comment contradicted the code
+
+`// Halted: return empty *without touching the filesystem*.` sat directly under
+a line that reads every file in `in-progress/`. Behaviour unchanged (the
+docblock at 278–279 is right: a halt stops work being handed out, not the
+agent's ability to reconcile); the comment now says what the code does:
+
+```
+// Halted: claim nothing, and *move* nothing — the read above is the report
+// the halt does not suppress (see the docblock), never a claim.
+```
+
+#### Tests
+
+New, in `queue/held.test.ts`:
+
+- *"skips a file it cannot read at all — not merely one it cannot parse"* — a
+  real unreadable entry (a **directory** named `evt_unreadable0.json`: `readdir`
+  lists it, every read fails `EISDIR`). Chosen over `chmod` on purpose — a
+  `chmod` is bypassed by root and would let the test pass in CI without proving
+  anything. Asserts the good event is still reported, `total: 1` /
+  `truncated: false` (the skip is out of `total`), one `error` log carrying the
+  id and the reason, zero `debug` logs, and that nothing moved or was
+  quarantined.
+- *"degrades the whole report when in-progress/ cannot be listed at all"* — the
+  status directory replaced by a file, so `readdir` is `ENOTDIR` for every user.
+  Asserts `NOTHING_HELD` (not a throw) and the `error` log.
+- `recordingLogger` now records `errors` separately from `debugs`, because the
+  *level* is part of the assertion.
+
+New, in `queue/routes.test.ts` (over real HTTP, in the in-progress-set suite):
+
+- *"hands over the batch even when a held file cannot be read at all"* — one
+  unreadable held file, two claimable events: the batch comes back with both,
+  and the report degrades by exactly one row (`events: 1`, `total: 1`,
+  `truncated: false`).
+
+Every pre-existing assertion kept and passing, including the
+malformed-skipped-not-quarantined case and the `total === events.length`
+invariant at exactly the cap.
+
+```
+VITEST_MAX_THREADS=4 npx vitest run apps/server   → 3340 passed, 0 failed
+VITEST_MAX_THREADS=4 npx vitest run apps/server/src/queue → 157 passed, 0 failed
+npx eslint <4 touched files>                      → No issues found
+npx prettier --check <4 touched files>            → all clean
+tsc --noEmit (apps/server)                        → clean
+```
+
+Server stopped (pid 50082), port 8766 verified free, workspace removed.
+
+#### Surfaced, not fixed — same failure class, worse blast radius, outside these findings
+
+Reproduced by accident while restarting the server with the `chmod 000` file
+still in place: **an unreadable queue file stops the server from booting at
+all.** `QueueService`'s constructor calls `rebuildMirror` →
+`rebuildQueueMirrorSync` → `scanQueueSync` → `readEventSync`, which rethrows
+`EACCES` exactly as the async twin did:
+
+```
+{"level":"error","msg":"failed to start",
+ "error":"Error: EACCES: permission denied, open '…/in-progress/evt_ijm56o7bd3bs.json'",
+ "stack":"… at QueueStore.readEventSync (queue/store.ts:285)
+          at scanQueueSync (queue/project.ts:57)
+          at rebuildQueueMirrorSync (queue/project.ts:72)
+          at QueueService.rebuildMirror (queue/service.ts:196)
+          at new QueueService (queue/service.ts:169)
+          at createServer (app.ts:327) …"}
+$ corpus server start
+corpus: the server exited during startup
+```
+
+One bad file costs the whole workspace its server, and `corpus server start` is
+the only way back — with no way to reach the server to find out why. Note that a
+*different* boot-time reader already skips the same file gracefully
+(`{"level":"info","msg":"skipping unreadable queue event", …}` appears in the
+same log, before the crash), so the mirror rebuild is the one path that does
+not. This is the same class as finding 1 but strictly worse, and it is a change
+to boot behaviour that nobody asked for in this round — **escalated to the
+orchestrator for its own issue rather than folded in here.**
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing (`VITEST_MAX_THREADS=4 npx vitest run apps/server`)

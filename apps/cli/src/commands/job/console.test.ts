@@ -1,4 +1,6 @@
+import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
+import { ExitCode } from "../../errors.js";
 import {
   closeStubServers,
   jsonResponder,
@@ -50,6 +52,74 @@ describe("corpus job list", () => {
     await runJobList(harness.context);
 
     expect(JSON.parse(harness.stdout())).toEqual({ jobs: [JOB] });
+  });
+
+  it("passes --status through verbatim, comma-separated set and all", async () => {
+    const stub = await startStubServer(jsonResponder(200, { jobs: [JOB] }));
+
+    const harness = stubContext(stub, { flags: { status: "pending,in-progress,deferred" } });
+    await runJobList(harness.context);
+
+    // Verbatim: the CLI does not split, re-join, sort or dedupe the set. The
+    // contract owns that grammar (CLI-031).
+    expect(stub.requests[0]?.query.get("status")).toBe("pending,in-progress,deferred");
+  });
+
+  it("sends --origin as originId, and --recent alongside it untouched", async () => {
+    const stub = await startStubServer(jsonResponder(200, { jobs: [JOB] }));
+
+    const harness = stubContext(stub, { flags: { origin: "th_2222", recent: 5 } });
+    await runJobList(harness.context);
+
+    // `recent` is still sent; the server is what ignores it once `originId` is
+    // present, and second-guessing that here would fork the documented rule.
+    expect(stub.requests[0]?.query.get("originId")).toBe("th_2222");
+    expect(stub.requests[0]?.query.get("recent")).toBe("5");
+  });
+
+  it("sends no query at all when no flag was passed", async () => {
+    const stub = await startStubServer(jsonResponder(200, { jobs: [JOB] }));
+
+    const harness = stubContext(stub);
+    await runJobList(harness.context);
+
+    expect(stub.requests[0]?.url).toBe("/api/jobs");
+  });
+
+  it("says a filter matched nothing rather than that the queue is empty", async () => {
+    const stub = await startStubServer(jsonResponder(200, { jobs: [] }));
+
+    const harness = stubContext(stub, { flags: { status: "in-progress" } });
+    await runJobList(harness.context);
+
+    expect(harness.stdout()).toBe("no jobs match.\n");
+  });
+
+  it("surfaces an unknown status as the server's error, naming the legal values", async () => {
+    // The CLI holds no list of statuses to check against: the contract validates
+    // this parameter at its boundary precisely so a typo is an error naming the
+    // legal set instead of a filter that silently matches nothing (CLI-031).
+    const issues = [
+      {
+        path: "query.status",
+        message: `unknown job status "in_progress"; expected one of ${QUEUE_EVENT_STATUSES.join(", ")}`,
+      },
+    ];
+    const stub = await startStubServer(
+      jsonResponder(400, { code: "bad_request", message: "request failed validation", issues }),
+    );
+
+    const harness = stubContext(stub, { flags: { status: "in_progress" } });
+
+    // It reached the wire — the CLI did not refuse it locally.
+    await expect(runJobList(harness.context)).rejects.toMatchObject({
+      code: "bad_request",
+      exitCode: ExitCode.serverError,
+      message: "400 bad_request: request failed validation",
+      details: issues,
+    });
+    expect(stub.requests[0]?.query.get("status")).toBe("in_progress");
+    expect(harness.stdout()).toBe("");
   });
 });
 

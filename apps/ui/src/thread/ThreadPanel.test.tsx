@@ -150,6 +150,7 @@ function Margin({
       <ThreadCollapseProvider surfaceKey={columnSurface("col_a")}>
         <MarginColumn
           threads={threads}
+          parentId="doc_m"
           flashThread={null}
           onOpenDoc={() => undefined}
           onNotify={() => undefined}
@@ -470,5 +471,53 @@ describe("a conversation nested deeper than the surface can draw", () => {
     expect(panel("th_deep")?.querySelector(".thread-card")?.getAttribute("data-depth")).toBe("6");
     // And the turns that deep can be commented on again.
     expect(panel("th_deep")?.querySelector(".turn-comment")).not.toBeNull();
+  });
+
+  /**
+   * The interlock governs **the rule**, not the clamp (PR #25 review, MINOR).
+   * §11 binds it to "never collapsed *by the rule*", and depth is not a rule —
+   * it is what the surface can draw. An unread conversation down there used to
+   * defeat the clamp and render a full card at a depth the surface had already
+   * said it could not usefully draw; now it is placed collapsed like the rest,
+   * with its unseen turn announced on the line rather than buried.
+   */
+  it("clamps an unread conversation too, says it is unread, and still expands in place", async () => {
+    const transport = wire();
+    const row = openRow({
+      id: "th_deep",
+      parent: "th_open",
+      turnCount: 1,
+      lastAuthor: "user",
+      unread: true,
+    });
+    const harness = createCorpusTestHarness({ fetch: transport.fetch });
+    render(
+      <harness.Wrapper>
+        <ThreadCollapseProvider surfaceKey={columnSurface("col_a")}>
+          <ThreadPanel
+            summary={summaryFromRow(row)}
+            host="nested"
+            depth={6}
+            onOpenDoc={() => undefined}
+            onNotify={() => undefined}
+          />
+        </ThreadCollapseProvider>
+      </harness.Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(panel("th_deep")).not.toBeNull();
+    });
+    expect(isFolded("th_deep")).toBe(true);
+    // Collapsed is never hidden, and least of all here: the line says it holds
+    // something unseen, which is what makes the fold safe.
+    const line = panel("th_deep")?.querySelector("[data-thread-expand]") as HTMLElement;
+    expect(line.textContent).toContain("new");
+
+    fireEvent.click(line);
+    await waitFor(() => {
+      expect(panel("th_deep")?.querySelectorAll(".turn")).toHaveLength(1);
+    });
+    expect(panel("th_deep")?.querySelector(".thread-card")?.getAttribute("data-depth")).toBe("6");
   });
 });

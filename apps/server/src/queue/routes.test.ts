@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -283,6 +283,25 @@ describe("the in-progress set on the loop's entry points", () => {
     const halted = await claim();
     expect(halted.events).toEqual([]);
     expect(halted.inProgress.total).toBe(1);
+  });
+
+  it("hands over the batch even when a held file cannot be read at all", async () => {
+    await seed(1);
+    await claim();
+    await seed(2);
+    // Not malformed — unreadable: `readdir` lists it as an event file and every
+    // read of it fails with EISDIR, the same class as EACCES or EIO. The report
+    // is produced before the moves, so a throw would strand the two events the
+    // agent came for (PR #25 review).
+    mkdirSync(join(root, ".corpus", "queue", "in-progress", "evt_unreadable0.json"));
+
+    const batch = await claim();
+    expect(batch.events).toHaveLength(2);
+    // The diagnostic degrades by exactly one row, and stays self-consistent:
+    // the unreadable file is out of `total` as well as out of the list.
+    expect(batch.inProgress.events).toHaveLength(1);
+    expect(batch.inProgress.total).toBe(1);
+    expect(batch.inProgress.truncated).toBe(false);
   });
 
   it("settles nothing: reading it moves no file and changes no status", async () => {

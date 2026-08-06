@@ -35,13 +35,6 @@ export interface ThreadPanelProps {
   readonly depth?: number;
   /** True for ~1.2s after the 💬 popover jumped here. */
   readonly flashing?: boolean;
-  /**
-   * Whether the one rule decides the state this placement starts in.
-   *
-   * `false` only where the conversation **is** the open document — see
-   * `ThreadCollapseSubject.ruled`.
-   */
-  readonly applyRule?: boolean;
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -57,7 +50,6 @@ export function ThreadPanel({
   host,
   depth = 0,
   flashing = false,
-  applyRule = true,
   onOpenDoc,
   onNotify,
 }: ThreadPanelProps): ReactElement {
@@ -100,9 +92,8 @@ export function ThreadPanel({
       status: summary.status,
       unread,
       tooDeep: depth > MAX_DRAWN_DEPTH,
-      ruled: applyRule,
     }),
-    [applyRule, depth, summary.id, summary.status, unread],
+    [depth, summary.id, summary.status, unread],
   );
 
   /*

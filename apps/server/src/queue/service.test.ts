@@ -909,6 +909,56 @@ describe("the projection mirror", () => {
     expect(service.parked).toBe(0);
   });
 
+  // SERVER-063. The rebuild runs from the *constructor*, so the pre-fix rethrow
+  // was not "the queue is degraded": it was `corpus server start` reporting that
+  // the server exited during startup, over one file, with no server left to ask
+  // why. The projection's own boot pass was already skipping the same file one
+  // line above the crash — this makes the readers agree.
+  it("skips a file it cannot read at all at boot, and still boots and serves", async () => {
+    const seeded = makeService();
+    const [held] = await enqueueMany(seeded, 1);
+    if (held === undefined) throw new Error("expected one event");
+    await seeded.claimAll();
+    // A real unreadable entry, and one no user can read by accident: `readdir`
+    // lists it as an event file and every read of it fails with EISDIR. A
+    // `chmod` would be bypassed by root and let this pass without proving
+    // anything.
+    mkdirSync(join(corpusDir, "queue", "in-progress", "evt_unreadable00.json"));
+    mirror = makeMirror();
+    const logger = { level: "silent" as const, info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+
+    const service = makeService({ logger });
+
+    // Booted — and the mirror carries the readable event *only*: an event the
+    // projection could not read must not be reported as present, nor counted as
+    // something it is not.
+    expect(mirror.replacements[0]?.map((event) => [event.id, event.status])).toEqual([
+      [held.id, "in-progress"],
+    ]);
+    // Named, with its reason, at the one level a `silent` server still writes.
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith("skipping unreadable queue event", {
+      id: "evt_unreadable00",
+      status: "in-progress",
+      reason: expect.stringContaining("EISDIR") as string,
+    });
+    // Skipped, never quarantined: boot is a read, and moving a file the process
+    // could not read is not something a boot should attempt (SPEC.md §7).
+    expect(readdirSync(join(corpusDir, "queue", "in-progress")).sort()).toEqual(
+      ["evt_unreadable00.json", `${held.id}.json`].sort(),
+    );
+    expect(readdirSync(join(corpusDir, "queue", "failed"))).toEqual([]);
+
+    // Serving: a full round trip through the very directory the bad entry sits
+    // in, with the in-progress report skipping it exactly as the boot scan did.
+    const fresh = await service.enqueue({ type: "comment.created", source: "cli", payload: {} });
+    const batch = await service.claimAll();
+    expect(batch.events.map((event) => event.id)).toEqual([fresh.id]);
+    expect(batch.held.events.map((event) => event.id)).toEqual([held.id]);
+    expect(batch.held.total).toBe(1);
+    expect((await service.complete(fresh.id)).status).toBe("processed");
+  });
+
   it("rebuilds into a mirror attached after construction, and uses it from then on", async () => {
     const service = makeService();
     const seeded = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });

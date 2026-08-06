@@ -1,7 +1,7 @@
-import type { QueryKey } from "@corpus/contract";
+import type { QueryKey, QueueEventStatus } from "@corpus/contract";
 import { QUEUE_EVENT_STATUSES } from "@corpus/contract";
 import { DOCS_KEY, JOBS_KEY, QUEUE_KEY } from "../events/index.js";
-import type { QueueStore, StoredEvent } from "./store.js";
+import type { QueueStore, ReadEventResult, StoredEvent } from "./store.js";
 
 /**
  * The seam between the queue and the SQLite projection's `events` table
@@ -42,25 +42,80 @@ export type QueueInvalidate = (keys: readonly QueryKey[]) => void;
 
 export const NOOP_INVALIDATE: QueueInvalidate = () => undefined;
 
+/**
+ * One event file the scan could not read **at all** — EACCES, EIO, a directory
+ * where a file should be — as opposed to one it read and could not parse.
+ *
+ * Carries the status because the scan spans every directory: "which file" is a
+ * path, not an id, and an operator who has to go fix this by hand needs both.
+ */
+export interface UnreadableEvent {
+  readonly id: string;
+  readonly status: QueueEventStatus;
+  readonly reason: string;
+}
+
 export interface QueueScanResult {
   readonly events: StoredEvent[];
   /** Ids whose file could not be parsed; logged, skipped, never fatal. */
   readonly malformed: string[];
+  /** Files that could not be read at all; logged at `error`, skipped, never fatal. */
+  readonly unreadable: UnreadableEvent[];
 }
 
-/** Reads every event file across every status directory. Boot path, hence sync. */
+/** What to put in a log field for a thrown value. */
+const causeOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/**
+ * Reads every event file across every status directory. Boot path, hence sync.
+ *
+ * **Nothing here throws.** This runs from `QueueService`'s constructor, i.e.
+ * during boot, so a throw is not "the queue is degraded" — it is `corpus server
+ * start` reporting that the server exited during startup, with no server left
+ * to ask why, over one file in a directory the user then has to find by hand
+ * (SERVER-063). The two ways a file can fail are therefore both skipped, and
+ * both excluded from the mirror the caller replaces the `events` table with: a
+ * row the projection cannot read must not be reported as present, and must not
+ * be reported as something it is not either. The file itself stays exactly where
+ * it is — **boot is a read**, and moving a file the process could not read is
+ * not something a boot should attempt; `reap-stale` is what quarantines.
+ *
+ * This is the third reader of the same directories to settle on that rule, and
+ * they now agree: `readHeldInProgress` skips per file (SERVER-061), and the
+ * projection's own boot pass (`projectEventFile`) already skipped this exact
+ * file — its "skipping unreadable queue event" line was in the same log,
+ * immediately above the crash this replaces.
+ *
+ * The *level* is part of the rule: an unreadable file is a fault in the
+ * workspace that only an operator can fix, and `error` is the one level a server
+ * running at `silent` still writes — so a skip that costs the console an event
+ * can never be invisible. Both kinds are reported rather than logged here,
+ * because the caller is the one holding the logger.
+ *
+ * An unlistable *status directory* is not handled here and does not need to be:
+ * `ensureLayoutSync` runs first and fails on it, from the `mkdir` rather than
+ * from any read.
+ */
 export function scanQueueSync(store: QueueStore): QueueScanResult {
   const events: StoredEvent[] = [];
   const malformed: string[] = [];
+  const unreadable: UnreadableEvent[] = [];
   for (const status of QUEUE_EVENT_STATUSES) {
     for (const id of store.listIdsSync(status)) {
-      const read = store.readEventSync(status, id);
+      let read: ReadEventResult | undefined;
+      try {
+        read = store.readEventSync(status, id);
+      } catch (error) {
+        unreadable.push({ id, status, reason: causeOf(error) });
+        continue;
+      }
       if (read === undefined) continue;
       if (read.ok) events.push(read.event);
       else malformed.push(id);
     }
   }
-  return { events, malformed };
+  return { events, malformed, unreadable };
 }
 
 /**

@@ -1,7 +1,7 @@
 import { MAX_IN_PROGRESS_REPORTED, type InProgressSet } from "@corpus/contract";
 import type { JobOrigin } from "../jobs/project.js";
 import type { Logger } from "../logger.js";
-import type { QueueStore, StoredEvent } from "./store.js";
+import type { QueueStore, ReadEventResult, StoredEvent } from "./store.js";
 
 /**
  * What the server still thinks the agent is doing: the events sitting in
@@ -74,6 +74,10 @@ function byMostRecentlyClaimed(left: StoredEvent, right: StoredEvent): number {
   return delta !== 0 ? delta : right.id.localeCompare(left.id);
 }
 
+/** What to put in a log field for a thrown value. */
+const causeOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 /**
  * Reads `in-progress/` and bounds it.
  *
@@ -84,14 +88,54 @@ function byMostRecentlyClaimed(left: StoredEvent, right: StoredEvent): number {
  * whenever `truncated` is false. An unparseable file has no id, type or origin
  * to reconcile against anyway; `reap-stale` is what quarantines it.
  *
+ * **Nothing here throws.** This runs inside `claimAll` *before* it moves
+ * anything, so a throw would cost the agent its entire batch in order to produce
+ * a diagnostic. The CLI reasons its way to the same conclusion from the other
+ * end of the wire (`commands/queue/in-progress.ts`: "a server that omits the
+ * report costs a diagnostic instead of costing the work"), and the rule is the
+ * same on this side: **the in-progress set is the report, the claim is the
+ * work**. Degradation is therefore as narrow as the failure allows, in two
+ * tiers, because the two failures have different granularity:
+ *
+ * - **One unreadable file** — EACCES, EIO, a truncated filesystem, a directory
+ *   where a file should be — is skipped exactly as a malformed one is, excluded
+ *   from `total` as well as from the list. Every other held event is still
+ *   reported, and still reported honestly.
+ * - **An unlistable directory** offers no per-file granularity to be narrow
+ *   with: there is no list to skip an entry from. The whole report degrades to
+ *   {@link NOTHING_HELD} — the agent is told nothing, which the CLI renders as
+ *   silence, rather than told a number that is wrong.
+ *
+ * Both are logged at `error` rather than at the malformed path's `debug`, and
+ * the difference is deliberate: a malformed file is expected residue that
+ * `reap-stale` exists to clear, while an unreadable one is a fault in the
+ * workspace that only an operator can fix — and `error` is the one level a
+ * silenced server still writes.
+ *
  * Every held file is read, which is the same scan `reap-stale` already performs
  * and is bounded by what one agent is working on — the cap bounds the *report*,
  * not the directory.
  */
 export async function readHeldInProgress(store: QueueStore, logger: Logger): Promise<HeldSet> {
+  let ids: readonly string[];
+  try {
+    ids = await store.listIds("in-progress");
+  } catch (error) {
+    logger.error("cannot list in-progress events; reporting nothing held", {
+      reason: causeOf(error),
+    });
+    return NOTHING_HELD;
+  }
+
   const held: StoredEvent[] = [];
-  for (const id of await store.listIds("in-progress")) {
-    const read = await store.readEvent("in-progress", id);
+  for (const id of ids) {
+    let read: ReadEventResult | undefined;
+    try {
+      read = await store.readEvent("in-progress", id);
+    } catch (error) {
+      logger.error("skipping unreadable in-progress event", { id, reason: causeOf(error) });
+      continue;
+    }
     if (read === undefined) continue;
     if (read.ok) held.push(read.event);
     else logger.debug("skipping malformed in-progress event", { id, reason: read.reason });

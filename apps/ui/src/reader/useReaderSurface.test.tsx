@@ -35,6 +35,7 @@ function readerDoc(docId: string, body: string): ReaderDoc {
     isArchived: false,
     isThread: false,
     thread: undefined,
+    threadPending: false,
     threads: [],
     backlinks: [],
     related: [],

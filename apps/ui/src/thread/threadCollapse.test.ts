@@ -48,13 +48,28 @@ describe("the one rule", () => {
 
   it("collapses a conversation nested deeper than the surface can draw", () => {
     expect(placedCollapsed(subject({ tooDeep: true }))).toBe(true);
-    // …but not an unread one, for the same reason the rule does not.
-    expect(placedCollapsed(subject({ tooDeep: true, unread: true }))).toBe(false);
   });
 
-  it("stands down where the placement is the reader's own act of opening it", () => {
-    expect(placedCollapsed(subject({ status: "resolved", ruled: false }))).toBe(false);
-    expect(placedCollapsed(subject({ tooDeep: true, ruled: false }))).toBe(false);
+  /**
+   * The interlock binds **the rule** — §11's words — and depth is not a rule:
+   * `threadDepth.ts` says it is "what the surface can draw". Letting the
+   * interlock jump the depth clamp drew a full card at a depth the surface had
+   * already declared it could not usefully draw (PR #25 review, MINOR).
+   */
+  it("clamps depth even for an unread conversation, and only the rule stands down", () => {
+    expect(placedCollapsed(subject({ tooDeep: true, unread: true }))).toBe(true);
+    expect(placedCollapsed(subject({ status: "resolved", tooDeep: true, unread: true }))).toBe(
+      true,
+    );
+    // The rule itself still yields to it, wherever the surface can draw.
+    expect(placedCollapsed(subject({ status: "resolved", unread: true }))).toBe(false);
+  });
+
+  /** Nothing about the clamp is a one-way door: it is placement, not policy. */
+  it("still lets a reader expand a conversation the surface clamped", () => {
+    const deep = subject({ tooDeep: true, unread: true });
+    expect(isThreadCollapsed({}, deep)).toBe(true);
+    expect(isThreadCollapsed(withOverride({}, deep, false), deep)).toBe(false);
   });
 });
 

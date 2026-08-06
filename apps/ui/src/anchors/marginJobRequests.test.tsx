@@ -88,6 +88,7 @@ function Margin({
     <harness.Wrapper>
       <MarginColumn
         threads={threads}
+        parentId={DOC}
         flashThread={null}
         onOpenDoc={() => undefined}
         onNotify={() => undefined}

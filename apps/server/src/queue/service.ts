@@ -191,12 +191,25 @@ export class QueueService {
    * hold, so a restart — or a crash halfway through a transition, or a file
    * moved by hand while the server was down — can neither lose nor duplicate an
    * event (sprint-003 TEST-56).
+   *
+   * A file the scan could not read is reported one line per file rather than
+   * aggregated like the malformed ones: it names a file an operator has to go
+   * repair, and the reason (EACCES, EISDIR, EIO) is the whole diagnostic
+   * (SERVER-063). It is logged at `error` for the same reason the other two
+   * readers do — that is the level a `silent` server still writes.
    */
   private rebuildMirror(): QueueScanResult {
     const scan = rebuildQueueMirrorSync(this.store, this.mirror);
     if (scan.malformed.length > 0) {
       this.logger.error("queue boot rebuild skipped malformed events", {
         ids: scan.malformed.join(","),
+      });
+    }
+    for (const skipped of scan.unreadable) {
+      this.logger.error("skipping unreadable queue event", {
+        id: skipped.id,
+        status: skipped.status,
+        reason: skipped.reason,
       });
     }
     return scan;
@@ -281,7 +294,8 @@ export class QueueService {
   async claimAll(): Promise<QueueBatch> {
     return this.serialize(async () => {
       const held = await readHeldInProgress(this.store, this.logger);
-      // Halted: return empty *without touching the filesystem*.
+      // Halted: claim nothing, and *move* nothing — the read above is the report
+      // the halt does not suppress (see the docblock), never a claim.
       if (await this.store.isHalted()) return { events: [], held };
 
       const claimed: StoredEvent[] = [];

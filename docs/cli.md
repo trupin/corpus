@@ -1038,15 +1038,21 @@ Show recent jobs and their last log line.
 
 The console's master list from the terminal: one row per queue event with its status and most recent log line, most recent first.
 
+The two filters are what make the rest of the queue surface reachable from here. `corpus queue claim-all` reports what the server still holds `in-progress` and caps that report at twenty rows, ending in `… and N more held, not shown`; `--status in-progress` is how that number is expanded. `--origin` answers the other question — _is anything still outstanding on this document?_ — and the server answers **that** one completely.
+
+**The list is windowed unless `--origin` is given.** `--recent` bounds it, the server applies its own default, and a `--status` filter narrows within that window rather than lifting it. `--origin` is the exception, and the only one: one document's jobs are bounded by that document's own history, so the server drops the window instead of applying it.
+
 ```
 corpus job list [flags]
 ```
 
 **Flags**
 
-| Flag               | Type   | Default | Description                                                                   |
-| ------------------ | ------ | ------- | ----------------------------------------------------------------------------- |
-| `--recent <count>` | number | —       | How many of the most recent jobs to show. The server applies its own default. |
+| Flag                | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--status <a,b>`    | string | —       | Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Sent to the server unchanged, so a misspelled value comes back as an error naming the legal set rather than as an empty list. The window still applies: this returns the `--recent` most recent jobs **with these statuses**, not every one that ever had them. |
+| `--origin <doc-id>` | string | —       | Only jobs originating from this document or thread — the `originId` the console links through. A predicate about one document rather than a narrowing of the list, so it is answered **completely**: `--recent` is not applied.                                                                                                                                                               |
+| `--recent <count>`  | number | —       | How many of the most recent jobs to show. The server applies its own default. Bounds this list only, and is **ignored once `--origin` is given**.                                                                                                                                                                                                                                             |
 
 **Examples**
 
@@ -1054,6 +1060,18 @@ What has the agent been doing?
 
 ```
 corpus job list
+```
+
+Everything the server still thinks is running — the whole set behind `corpus queue claim-all`'s capped `… and N more held` line (SPEC.md §7).
+
+```
+corpus job list --status in-progress
+```
+
+Every job that thread has produced, unwindowed — _does the agent still owe this thread an answer?_
+
+```
+corpus job list --origin th_5f1c2a
 ```
 
 One JSON value: `{"jobs":[{"eventId":"evt_9f2a","status":"processed",…}]}`.

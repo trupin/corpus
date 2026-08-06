@@ -410,6 +410,9 @@ belongs to the same fix wave.
 | SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry (SIGNED, applied) | done | P1 | — |
 | SHARED-022 | Choosing the model per message — DRAFT, awaiting sign-off | blocked | P2 | — |
 | CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
-| CLI-031 | No CLI route to the full in-progress inventory (`job list --status`) (CLI-029 finding) | todo | P2 | CLI-029 |
+| CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
+| SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
+| SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | todo | P1 | — |
+| CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
 
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

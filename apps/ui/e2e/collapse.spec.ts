@@ -246,6 +246,78 @@ test.describe("the rule and the reader", () => {
 });
 
 /**
+ * PR #25 review, MAJOR — the placement §6 names most directly: "a resolved
+ * thread is collapsed by default **wherever it is shown**", and §11 lists "a
+ * `type: thread` document open in a reader in a column or in full screen" among
+ * the placements the fold applies to. This reader used to opt out of the rule
+ * altogether, which also broke the one sentence that is not open to reading:
+ * "a change to the thread's status re-asserts the rule… **so resolving a
+ * conversation collapses it even while it is open on screen**".
+ */
+test.describe("a thread opened as its own document", () => {
+  /** A column over the threads themselves, so one can be opened as a document. */
+  const THREADS_VIEW: StubRow = {
+    id: "doc_view_threads",
+    type: "view",
+    title: "Conversations",
+    path: "data/docs/views/threads.md",
+    pinned: true,
+    order: 2,
+    query: { type: "thread" },
+  };
+
+  const ROWS = [VIEW, THREADS_VIEW, NOTE, OPEN_THREAD, RESOLVED_THREAD] as const;
+
+  async function openThread(page: Page, id: string, rows = ROWS): Promise<void> {
+    await stubCorpus(page, rows);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator(`.col[data-col="doc_view_threads"] .row[data-row-doc="${id}"]`).click();
+    await expect(page.locator(`.reader[data-reader-doc="${id}"]`)).toHaveCount(1);
+    await panel(page, id).waitFor();
+  }
+
+  test("is placed collapsed when it is resolved, and expands where it stands", async ({ page }) => {
+    await openThread(page, "th_done");
+    await expectFolded(page, "th_done");
+
+    const line = panel(page, "th_done").locator(OWN_LINE);
+    await expect(line).toContainText("2 turns");
+    await expect(line).toContainText("resolved");
+
+    await line.click();
+    await expectOpen(page, "th_done");
+    // In place: the reader never left the conversation it opened.
+    await expect(page.locator('.reader[data-reader-doc="th_done"]')).toHaveCount(1);
+  });
+
+  test("collapses when it is resolved while it is open on screen", async ({ page }) => {
+    await openThread(page, "th_open");
+    await expectOpen(page, "th_open");
+
+    await panel(page, "th_open").locator('[data-resolve="th_open"]').click();
+    await expectFolded(page, "th_open");
+
+    // Reopening re-asserts the rule the other way, on the same surface.
+    await panel(page, "th_open").locator(OWN_LINE).click();
+    await panel(page, "th_open").locator('[data-resolve="th_open"]').click();
+    await expect(panel(page, "th_open").locator(".t-status")).toHaveText("open");
+    await expectOpen(page, "th_open");
+  });
+
+  test("stays open when it holds a turn nobody has seen", async ({ page }) => {
+    await openThread(page, "th_done", [
+      VIEW,
+      THREADS_VIEW,
+      NOTE,
+      OPEN_THREAD,
+      { ...RESOLVED_THREAD, unread: true },
+    ]);
+    await expectOpen(page, "th_done");
+  });
+});
+
+/**
  * The one collapse in the app that had no way back. Past the drawn depth a child
  * thread rendered as a chip that **navigated away**, so reading it meant losing
  * your place — and the turns that deep lost their "comment on this" control with

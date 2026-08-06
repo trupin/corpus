@@ -1,5 +1,7 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 import { normalizeBody } from "../editor/markdown/serialize";
+import { summaryFromRow, type ThreadSummary } from "../thread/CollapsedThread";
+import { RESOLVED_STATUS } from "../thread/threadCollapse";
 import type { AnchorPlacement } from "./anchorDecorations";
 import { mdRangeToPm, type MdRange, type PmSegment } from "./offsetMap";
 import { rebaseRange } from "./rebase";
@@ -132,6 +134,54 @@ function placeInto(anchor: ResolvedAnchor, source: DocumentTrace, read: RangeRea
 /** Whether this thread has a place in the body for a chip or a margin card. */
 export function isPlaced(thread: AnchoredThread): boolean {
   return !thread.orphaned && thread.placement.segments.length > 0;
+}
+
+/**
+ * What a placement knows about an anchored conversation **before its row has
+ * arrived** — and why that is not the same as knowing nothing (PR #25 review,
+ * MINOR).
+ *
+ * A document's threads are read as one paginated list (`useDocs({parent,
+ * type})`, capped at `DEFAULT_PAGE_LIMIT`), while its anchors come off the
+ * document itself and are never paginated. Past that page the two disagree, and
+ * a placement that **skipped** the anchors whose rows it did not have made those
+ * conversations vanish from the margin while their highlights stayed in the
+ * body. SPEC.md §11 promises the opposite: "its anchored highlight stays in the
+ * body, so the passage still says it has been discussed and *the conversation is
+ * still reachable from it*". The same gap opens transiently on every first
+ * paint, before the list lands — which popped panels in rather than showing them.
+ *
+ * So the anchor answers for the conversation until the row does. It is the
+ * authority on the two things that matter most here — which thread it is, and
+ * what passage it is about — and the server resolves its `threadStatus` along
+ * with it, so the rule has a status to read.
+ *
+ * **`unread: true` is the honest answer to the one thing an anchor cannot say.**
+ * The row is where "does this hold a turn nobody has seen" comes from; with no
+ * row the surface cannot vouch that anything here has been seen, and §11's
+ * interlock is exactly the clause that keeps a conversation like that out of the
+ * rule's reach. It is therefore placed **expanded**, its card fetches the
+ * conversation by id and tells the whole truth — which is what every anchored
+ * thread did before this placement had a fold at all.
+ */
+export function summaryFromAnchor(thread: AnchoredThread, parentId: string): ThreadSummary {
+  return {
+    id: thread.threadId,
+    status: thread.placement.resolved ? RESOLVED_STATUS : "open",
+    turnCount: thread.placement.turnCount,
+    lastAuthor: null,
+    unread: true,
+    quote: thread.quote.trim(),
+    parent: parentId,
+    parentTitle: null,
+  };
+}
+
+/** The projection's row once the list has it; the anchor until then. */
+export function anchoredSummary(thread: AnchoredThread, parentId: string): ThreadSummary {
+  return thread.row === undefined
+    ? summaryFromAnchor(thread, parentId)
+    : summaryFromRow(thread.row);
 }
 
 export interface PlacementInput {

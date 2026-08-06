@@ -268,6 +268,18 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
         return json({ threadId: id, lastSeenTs: "2026-07-02T09:00:00.000Z", unread: false });
       }
       if (verb === "resolve" || verb === "reopen") {
+        /*
+         * The flip is **recorded**, as the server records it (SPEC.md §6): the
+         * next `GET /api/threads/{id}` the invalidation triggers has to come
+         * back with the new status, or a test that resolves a conversation and
+         * waits for what the status change causes is waiting on a change the
+         * fixture quietly undid. Same class of stub-fidelity gap as the one
+         * `stubCorpus` closed for the browser suites (UI-077).
+         */
+        const subject = threads.get(id);
+        if (subject !== undefined) {
+          threads.set(id, { ...subject, status: verb === "resolve" ? "resolved" : "open" });
+        }
         return json({ thread: threadSummary(id, verb === "resolve"), warnings: [] });
       }
       const thread = threads.get(id);

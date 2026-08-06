@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { summaryFromRow } from "../thread/CollapsedThread";
 import { ThreadPanel } from "../thread/ThreadPanel";
-import type { AnchoredThread } from "./anchorPlacement";
+import { anchoredSummary, type AnchoredThread } from "./anchorPlacement";
 import "./anchors.css";
 
 /**
@@ -29,6 +29,11 @@ import "./anchors.css";
 
 export interface AnchorThreadsProps {
   readonly threads: readonly AnchoredThread[];
+  /**
+   * The document these anchors belong to — what a conversation whose row has not
+   * arrived reports as its parent (`anchoredSummary`).
+   */
+  readonly parentId: string;
   readonly flashThread: string | null;
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -42,6 +47,7 @@ export interface AnchorChipsProps extends AnchorThreadsProps {
 /** Chips at their anchors — rendered through the editor's widget decorations. */
 export function AnchorChips({
   threads,
+  parentId,
   flashThread,
   onOpenDoc,
   onNotify,
@@ -50,11 +56,14 @@ export function AnchorChips({
   return (
     <>
       {threads.map((thread) => {
-        const host = thread.row === undefined ? null : hostFor(thread.threadId);
-        if (host === null || thread.row === undefined) return null;
+        // Only the widget is a precondition here: the anchor answers for the
+        // conversation while its row is missing (`anchoredSummary`), so a chip
+        // is never withheld for a thread the body is already highlighting.
+        const host = hostFor(thread.threadId);
+        if (host === null) return null;
         return createPortal(
           <ThreadPanel
-            summary={summaryFromRow(thread.row)}
+            summary={anchoredSummary(thread, parentId)}
             host="slot"
             flashing={flashThread === thread.threadId}
             onOpenDoc={onOpenDoc}
@@ -76,12 +85,17 @@ export interface MarginColumnProps extends AnchorThreadsProps {
  * The margin column. Panels are absolutely positioned by `useMarginLayout`, so
  * their order in the DOM is irrelevant and their `top` is everything.
  *
- * A thread with no row is skipped rather than drawn from nothing: the row is
- * where the collapsed line's turn count, last author and unread state come from,
- * and a fold that could not say how much is inside would be a truncation.
+ * **Every anchor gets a panel, row or no row** (PR #25 review, MINOR). Skipping
+ * the ones whose row had not arrived made a conversation disappear from the
+ * margin while its highlight stayed in the body — permanently, on a document
+ * carrying more threads than one page of `useDocs` holds, and for a frame on
+ * every first paint. `anchoredSummary` is what makes that unnecessary: the
+ * anchor already says which thread it is, what passage it is about and whether
+ * it is resolved, and the card fills in the rest by id.
  */
 export function MarginColumn({
   threads,
+  parentId,
   flashThread,
   onOpenDoc,
   onNotify,
@@ -89,18 +103,16 @@ export function MarginColumn({
 }: MarginColumnProps): ReactElement {
   return (
     <div className="focus-margin" ref={innerRef} data-anchor-margin>
-      {threads.map((thread) =>
-        thread.row === undefined ? null : (
-          <ThreadPanel
-            key={thread.threadId}
-            summary={summaryFromRow(thread.row)}
-            host="margin"
-            flashing={flashThread === thread.threadId}
-            onOpenDoc={onOpenDoc}
-            onNotify={onNotify}
-          />
-        ),
-      )}
+      {threads.map((thread) => (
+        <ThreadPanel
+          key={thread.threadId}
+          summary={anchoredSummary(thread, parentId)}
+          host="margin"
+          flashing={flashThread === thread.threadId}
+          onOpenDoc={onOpenDoc}
+          onNotify={onNotify}
+        />
+      ))}
     </div>
   );
 }

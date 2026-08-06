@@ -274,6 +274,126 @@ resolved thread from a column to a single grey line would be the rule folding
 something away under someone who went there to read it. Escalate if the user
 wants it the other literal way; it is one prop.
 
+### Review-fix round — PR #25, three findings (2026-08-06)
+
+**Model: opus** (claude-opus-5, 1M context). No SPEC change: every fix below is
+the existing signed text, applied.
+
+**MAJOR — the judgment call above is overruled, and the exception is gone.**
+The reading was wrong on the merits: §11's precedence clause governs "collapsing
+or expanding it **yourself**", an explicit gesture, while the rule applies "when
+a conversation is **placed**" — and opening a thread in a reader is a placement,
+which §11 enumerates by name ("a `type: thread` document open in a reader in a
+column or in full screen"). §6 settles the rest in one line. The unarguable half
+was a live defect: §11 says "a change to the thread's status re-asserts the rule
+… **so resolving a conversation collapses it even while it is open on screen**",
+and resolving a thread-as-document did nothing — `observe` dropped the override
+and `placedCollapsed` short-circuited on `ruled === false`. `ThreadCollapseSubject.ruled`,
+`ThreadPanel.applyRule` and the `DocView` call site's `applyRule={false}` are
+all removed; there is no longer any way to spell the exception.
+
+**MAJOR (the related half) — `openThreadSummary`'s `unread: false` is now
+sourced, not asserted.** Two sources, in order: the thread's **own row**, looked
+up in its parent's thread list (`useDocs({parent, type: thread})` — the very
+query the reader that opened it already issued, so it shares that cache entry
+rather than adding a request); and, where there is no row to find, **whether
+this browser has displayed the conversation** (`hasSeenMark`, the kit's
+per-`(thread, last turn)` record of the `POST …/seen` it sent). Before it has
+been displayed that reads unread and §11's interlock holds it open; after, the
+rule takes over, which is what makes resolving a **standalone** thread on screen
+fold it. Two cases have no row and rely on the second source: a standalone
+thread (no parent to list) and a thread past the first page of a very busy
+parent. See "the surprise" below.
+
+**MINOR — every anchored conversation gets a panel, row or no row.**
+`AnchoredThreads.MarginColumn` (and `AnchorChips`, which had the same guard)
+skipped a thread whose `row` was `undefined`. A document's anchors are not
+paginated and its thread rows are (`DEFAULT_PAGE_LIMIT = 50`), so past that page
+the conversation vanished from the margin **permanently** while its highlight
+stayed in the body, and clicking that highlight found nothing to scroll to —
+against §11's "the conversation is still reachable from it". Both now render
+through `anchoredSummary`: the row when the list has it, the anchor until then
+(`summaryFromAnchor` — which thread, what passage, what status, and `unread:
+true` for the one thing an anchor cannot say, so the interlock places it
+expanded and its card tells the whole truth). `useAnchorLayer`'s highlight-click
+expansion gained the same fallback, so a row-less highlight is no longer a dead
+click. This also removes the transient version on every first paint.
+
+**MINOR — the interlock no longer defeats the depth clamp.** `placedCollapsed`
+returned `false` on `unread` *before* consulting `tooDeep`, so an unread
+conversation past `MAX_DRAWN_DEPTH` rendered a full card at a depth the surface
+has declared it cannot usefully draw. §11 binds the interlock to **the rule**
+("never collapsed *by the rule*") and `threadDepth.ts` says depth is "not a
+second rule: it is what the surface can draw". Order reversed: the clamp first,
+then the rule with the interlock inside it. The clamped conversation still shows
+its "new" badge on the collapsed line and still expands in place.
+
+#### The surprise removing the exception created
+
+**Placement is a one-shot decision, so the facts have to be in hand before the
+panel mounts.** `ThreadPanel.placedUnread` deliberately latches what a
+conversation was placed with and only re-reads on a status change — that is the
+fix from the last round, the one that stops reading a conversation from folding
+it. With the rule now live on this surface, a panel mounted before its row (or
+before its turns) arrived would latch a *guess* and never correct it: a resolved
+conversation placed open because its row was a beat slower than its body, for
+the life of that reader. Driven in jsdom, that is exactly what happened first —
+the status flipped from a placeholder `open` to `resolved` under the panel and
+re-asserted the rule against a half-loaded summary, and the two by-rule cases
+came out **inverted**.
+
+So `DocView` now waits: `placementKnown = !reader.threadPending &&
+!scopeThreads.isPending`, with a `Loading…` line until both have settled — the
+same instinct as the plugin-discovery gate directly below it, and cheap, because
+the list is normally already cached from the reader that opened the thread.
+`ReaderDoc.threadPending` is new and exists so the gate waits for the *answer*
+rather than for the data: a failed thread read leaves `thread === undefined`
+forever, and gating on that would have hung the reader instead of showing the
+card's error.
+
+Second, smaller: `readerFixture`'s `resolve`/`reopen` did not record the flip, so
+the refetch the invalidation triggers handed back the old status and any test
+that resolves a conversation and waits for the consequence was waiting on a
+change the fixture had undone. Same class of stub-fidelity gap as the
+`stubCorpus` one this issue already closed.
+
+#### Checks (review-fix round)
+
+- `VITEST_MAX_THREADS=4 vitest run apps/ui/src packages/kit/src` — **2867
+  passed**, 0 failed (2852 → 2867). New: `openThreadCollapse.test.tsx` (4 —
+  resolved-as-document placed collapsed and expanding in place; unread left
+  open; resolve-on-screen collapsing and reopen expanding; the standalone
+  fallback), `AnchoredThreads.test.tsx` (6 — `describe.each` over the margin and
+  the chip: every anchored conversation still shown, the row-less one reachable
+  as its conversation, the rowed resolved one still folded), plus the depth-clamp
+  cases in `threadCollapse.test.ts` and `ThreadPanel.test.tsx` and the
+  anchor-summary cases in `anchorPlacement.test.ts`. Every prior assertion kept,
+  including the disarming-interlock case.
+- `playwright test` (whole suite, `CORPUS_UI_PORT=5273`) — **297 passed, 6
+  failed**. Two are the same environmental pair as before (`console.spec` /
+  `smoke.spec` assert the strip reads "server unreachable", which holds only
+  while `127.0.0.1:8765` is unbound; `lsof` shows the user's live corpus server
+  still on it, pid 29851). The other four were **load flakes at four workers**:
+  `collapse.spec` (16/16) and `search.spec` (all) pass on a re-run of those files
+  alone. `collapse.spec` gained three browser specs for the thread-as-document
+  placement, opened the way the app opens it — a `type: thread` column, a row
+  click, the reader's own `[data-resolve]`.
+- `tsc --noEmit` (apps/ui, `src` + `e2e`) clean · `eslint` clean on every touched
+  file · `prettier --check` clean.
+
+#### Unresolved
+
+**A thread resource carries no `unread`.** The contract exposes it only on
+`DocRow`, so this placement derives it (above). The derivation is exact for the
+ordinary case — an anchored or whole-document thread on a parent within one page
+— and falls back to this session's seen record for a standalone thread or one
+past that page: such a conversation opens **expanded** on its first visit after
+a reload even when it was read long ago, then folds normally once displayed.
+That is the safe direction (§11 prefers an unnecessary card to a hidden turn),
+but it is a derivation where a field would do. A `CONTRACT-*` issue adding
+`unread` to the thread resource would delete `openThreadUnread`'s second branch
+outright — flagged for the orchestrator, not fixed here.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

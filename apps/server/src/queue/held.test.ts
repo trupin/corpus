@@ -3,7 +3,7 @@
 // the set is defined as "what is in `in-progress/`", so a fixture that invented
 // the events would be asserting nothing.
 
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -16,19 +16,38 @@ import { createWriteWorkspace, createDoc, type WriteWorkspace } from "../docs/wr
 let root: string;
 let store: QueueStore;
 
-/** Records what was logged, so "skipped, not quarantined" is provable rather than implied. */
+interface LogEntry {
+  message: string;
+  fields?: LogFields;
+}
+
+/**
+ * Records what was logged, so "skipped, not quarantined" is provable rather than
+ * implied — and, for the unreadable paths, that the skip is not silent.
+ *
+ * `errors` and `debugs` are kept apart because the *level* is part of what is
+ * being asserted: a malformed file is expected residue (`debug`), an unreadable
+ * one is a workspace fault an operator has to fix, and only `error` survives a
+ * server running at `silent`.
+ */
 function recordingLogger(): Logger & {
-  readonly debugs: { message: string; fields?: LogFields }[];
+  readonly debugs: LogEntry[];
+  readonly errors: LogEntry[];
 } {
-  const debugs: { message: string; fields?: LogFields }[] = [];
+  const debugs: LogEntry[] = [];
+  const errors: LogEntry[] = [];
+  const record =
+    (into: LogEntry[]) =>
+    (message: string, fields?: LogFields): void => {
+      into.push(fields === undefined ? { message } : { message, fields });
+    };
   return {
     level: "debug",
     info: () => undefined,
-    error: () => undefined,
-    debug: (message, fields) => {
-      debugs.push(fields === undefined ? { message } : { message, fields });
-    },
+    error: record(errors),
+    debug: record(debugs),
     debugs,
+    errors,
   };
 }
 
@@ -165,6 +184,54 @@ describe("readHeldInProgress", () => {
       "evt_good00000000.json",
     ]);
     expect(await store.listIds("failed")).toEqual([]);
+  });
+
+  // The report is not the work (PR #25 review, SERVER-061): `claimAll` reads this
+  // before it moves anything, so a throw here would cost the agent its whole
+  // batch to produce a diagnostic.
+  it("skips a file it cannot read at all — not merely one it cannot parse", async () => {
+    const logger = recordingLogger();
+    await hold(event("evt_good00000000", "2026-08-06T09:05:00Z"));
+    // A real unreadable entry, and one no user can read by accident: `readdir`
+    // lists it as an event file, every read of it fails with EISDIR. A `chmod`
+    // would be bypassed by root and let the test pass without proving anything.
+    mkdirSync(store.pathFor("in-progress", "evt_unreadable0"));
+
+    const held = await readHeldInProgress(store, logger);
+    expect(held.events.map((each) => each.id)).toEqual(["evt_good00000000"]);
+    // Excluded from `total` exactly as a malformed file is, so the contract's
+    // invariant still holds: `total === events.length` while not truncated.
+    expect(held).toMatchObject({ total: 1, truncated: false });
+
+    // Not silent, and at `error` — a silenced server still has to say this.
+    expect(logger.errors).toEqual([
+      {
+        message: "skipping unreadable in-progress event",
+        fields: { id: "evt_unreadable0", reason: expect.stringContaining("EISDIR") as string },
+      },
+    ]);
+    expect(logger.debugs).toEqual([]);
+    // And settled nothing, same as every other read path (SPEC.md §7).
+    expect(readdirSync(store.dirFor("in-progress")).sort()).toEqual([
+      "evt_good00000000.json",
+      "evt_unreadable0.json",
+    ]);
+    expect(await store.listIds("failed")).toEqual([]);
+  });
+
+  it("degrades the whole report when in-progress/ cannot be listed at all", async () => {
+    const logger = recordingLogger();
+    // The one failure with no per-file granularity to be narrow with: there is
+    // no list to skip an entry from. `readdir` on a non-directory is ENOTDIR for
+    // every user, so this is deterministic rather than permission-dependent.
+    rmSync(store.dirFor("in-progress"), { recursive: true, force: true });
+    writeFileSync(store.dirFor("in-progress"), "not a directory");
+
+    // Told nothing, rather than told a wrong number — and still not a throw.
+    expect(await readHeldInProgress(store, logger)).toEqual(NOTHING_HELD);
+    expect(logger.errors.map((entry) => entry.message)).toEqual([
+      "cannot list in-progress events; reporting nothing held",
+    ]);
   });
 
   it("moves, settles and creates nothing", async () => {

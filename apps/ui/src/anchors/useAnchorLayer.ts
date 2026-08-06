@@ -16,6 +16,7 @@ import {
   detachedThreads,
   isPlaced,
   placeAnchors,
+  summaryFromAnchor,
   unplacedThreads,
   type AnchoredThread,
 } from "./anchorPlacement";
@@ -139,6 +140,8 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const collapse = useThreadCollapse();
   const rows = useRef(threads);
   rows.current = threads;
+  const docIdRef = useRef(docId);
+  docIdRef.current = docId;
 
   const mainRef = useRef<HTMLDivElement>(null);
   const marginRef = useRef<HTMLDivElement>(null);
@@ -396,12 +399,24 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    */
   const expand = useRef(collapse.expand);
   expand.current = collapse.expand;
+  /*
+   * The placed anchors, for the conversations whose row has not arrived — a
+   * document with more threads than one page of `useDocs` holds, or any document
+   * in the beat before that list lands. Without this the highlight of such a
+   * conversation was a dead click: no row, no subject, nothing expanded.
+   */
+  const placed = useRef(all);
+  placed.current = all;
 
   useEffect(() => {
     activate.current = (threadId: string) => {
       const row = rows.current.find((candidate) => candidate.id === threadId);
+      const anchor = placed.current.find((candidate) => candidate.threadId === threadId);
       if (row !== undefined) {
         expand.current({ threadId, status: row.status, unread: row.unread === true });
+      } else if (anchor !== undefined) {
+        const summary = summaryFromAnchor(anchor, docIdRef.current);
+        expand.current({ threadId, status: summary.status, unread: summary.unread });
       }
       const panel = marginRef.current?.querySelector<HTMLElement>(
         `:scope > [data-thread-panel="${escapeSelectorValue(threadId)}"]`,

@@ -14,7 +14,8 @@
  *   a collapsed conversation displays nothing and therefore reads nothing
  *   (SPEC.md §7), so a rule that folded away unread turns would be a way to lose
  *   them. The asymmetry is deliberate — the override binds the **rule**, not the
- *   reader, who may still fold an unread conversation by hand.
+ *   reader, who may still fold an unread conversation by hand, and not the depth
+ *   clamp, which is not a rule at all (see {@link placedCollapsed}).
  * - **Precedence: the last thing that happened wins.** The rule decides the
  *   state a conversation is *placed* in; the reader's own act overrides it and
  *   sticks; a change to the thread's **status** re-asserts the rule and clears
@@ -62,17 +63,6 @@ export interface ThreadCollapseSubject {
    * rather than dropped").
    */
   readonly tooDeep?: boolean | undefined;
-  /**
-   * Whether this placement lets the rule decide the state it starts in.
-   *
-   * `false` for a conversation that **is** the open document. Navigating to a
-   * thread is the reader's own act of opening it and it is the last thing that
-   * happened (§11's precedence), so applying the rule there would be the rule
-   * collapsing something because the reader has just gone to read it — which is
-   * the one thing §11 says a rule never does. The fold stays offered, and one
-   * taken by hand still sticks.
-   */
-  readonly ruled?: boolean | undefined;
 }
 
 /**
@@ -89,13 +79,26 @@ export function resolvedRuleCollapses(subject: ThreadCollapseSubject): boolean {
 /**
  * The state a conversation is **placed** in, before anyone touches it.
  *
- * The rule, plus what the surface can draw — and the unread interlock in front
- * of both, because a conversation nobody has seen is never folded away by
- * anything except a person.
+ * Two things decide it, and they are not the same kind of thing.
+ *
+ * **What the surface can draw comes first, and the interlock does not bind it**
+ * (PR #25 review, MINOR). §11 binds the interlock to *the rule* — "a
+ * conversation carrying a turn you have not seen is never collapsed **by the
+ * rule**" — and depth is not a rule: `threadDepth.ts` says so in as many words,
+ * "not a second rule: it is what the surface can draw". An unread conversation
+ * nested past {@link MAX_DRAWN_DEPTH} used to be drawn in full at a depth the
+ * surface had already declared it could not usefully draw; now it is placed
+ * collapsed like every other conversation down there — with the "new" badge on
+ * its line, so the unseen turn is announced rather than buried, and one click
+ * expands it where it stands.
+ *
+ * **Then the rule**, with the interlock inside it ({@link
+ * resolvedRuleCollapses}): a conversation nobody has seen is never folded away
+ * by the rule, only by a person.
  */
 export function placedCollapsed(subject: ThreadCollapseSubject): boolean {
-  if (subject.ruled === false || subject.unread) return false;
-  return resolvedRuleCollapses(subject) || subject.tooDeep === true;
+  if (subject.tooDeep === true) return true;
+  return resolvedRuleCollapses(subject);
 }
 
 /**
