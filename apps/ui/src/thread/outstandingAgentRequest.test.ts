@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { DEFAULT_RECENT_JOBS, MAX_RECENT_JOBS, type Job } from "@corpus/contract";
+import { JOBS_KEY, createCorpusQueryClient } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -212,6 +213,144 @@ describe("useOutstandingAgentJob", () => {
       expect(wire.of("GET", "/api/jobs").length).toBeGreaterThan(0);
     });
     expect(result.current).toBeNull();
+  });
+});
+
+/**
+ * UI-076. **A truncation episode is not the only one there will ever be.**
+ *
+ * The escalation is parked between episodes, and parking a query does not empty
+ * it: TanStack holds the last answer, and the app's `staleTime` is infinite. So
+ * the second time the queue saturates, the exact query wakes up already holding
+ * the *first* episode's answer — a job that has since finished — and a caller
+ * that reads whatever data is in hand asserts a wait that ended minutes ago,
+ * until the re-enable refetch lands.
+ *
+ * Driven the way the app is driven: the **production** query client (so the
+ * infinite `staleTime` that makes the stale answer stick is the one under test),
+ * and real `invalidate` frames through the kit's SSE bridge rather than a manual
+ * `invalidateQueries` — the queue transitions that drain and re-saturate a real
+ * queue arrive exactly that way.
+ *
+ * Asserted over **every render**, not the settled one. The lie is one round trip
+ * long by construction; a `waitFor` on the final state cannot see it, and would
+ * have passed against the code this issue was filed against.
+ */
+describe("useOutstandingAgentJob across two truncation episodes", () => {
+  /** `MAX_RECENT_JOBS` unfinished jobs of other threads — the shared list, at its cap. */
+  function saturation(tag: string): Job[] {
+    return Array.from({ length: MAX_RECENT_JOBS }, (_, index) =>
+      jobFixture({
+        eventId: `evt_${tag}_${String(index)}`,
+        status: "pending",
+        originId: `thread-busy-${String(index)}`,
+      }),
+    );
+  }
+
+  function episodes(jobs: readonly Job[]) {
+    const wire = readerTransport({ jobs });
+    const harness = createCorpusTestHarness({
+      fetch: wire.fetch,
+      queryClient: createCorpusQueryClient(),
+    });
+    const seen: (string | null)[] = [];
+    renderHook(
+      () => {
+        const job = useOutstandingAgentJob(THREAD);
+        seen.push(job?.eventId ?? null);
+        return job;
+      },
+      { wrapper: harness.Wrapper },
+    );
+    /** A queue transition, as the server announces one. */
+    const transition = (next: readonly Job[]): void => {
+      wire.setJobs(next);
+      harness.eventSource.latest().invalidate([...JOBS_KEY]);
+    };
+    const escalations = (): number =>
+      wire.of("GET", "/api/jobs").filter((call) => call.search.includes("originId")).length;
+    return { seen, transition, escalations, wire };
+  }
+
+  const reply = jobFixture({
+    eventId: "evt_reply",
+    status: "pending",
+    originId: THREAD,
+    started: "2026-07-01T09:00:00.000Z",
+  });
+
+  /**
+   * The three transitions that strand a stale answer, in the order a queue
+   * produces them. The middle one is the load-bearing step: the escalation is
+   * parked **while the thread's job is still unfinished**, so the answer it
+   * keeps says "outstanding", and it is parked before the job settles, so
+   * nothing refreshes it — an invalidation refetches active queries and marks
+   * the rest stale.
+   */
+  async function strandAStaleAnswer(): Promise<ReturnType<typeof episodes>> {
+    const context = episodes([...saturation("one"), reply]);
+    const { seen, transition } = context;
+
+    // 1. Saturated. The thread's job is found by escalating to `?originId=`.
+    await waitFor(() => {
+      expect(seen.at(-1)).toBe("evt_reply");
+    });
+
+    // 2. The queue drains under the cap with the reply still outstanding: the
+    //    escalation parks holding "evt_reply is pending", which is true now.
+    transition([reply]);
+    await waitFor(() => {
+      expect(context.escalations()).toBe(2);
+    });
+
+    // 3. The reply lands. The shared list empties, the card falls quiet — and
+    //    the parked query is not refetched, because it is not active.
+    transition([]);
+    await waitFor(() => {
+      expect(seen.at(-1)).toBeNull();
+    });
+    return context;
+  }
+
+  it("never re-asserts a job that finished while the escalation was parked", async () => {
+    const { seen, transition, escalations } = await strandAStaleAnswer();
+    const settled = seen.length;
+
+    // The queue saturates again, on other threads' work only.
+    transition(saturation("two"));
+    await waitFor(() => {
+      expect(escalations()).toBe(3);
+    });
+    await waitFor(() => {
+      expect(seen.length).toBeGreaterThan(settled);
+    });
+
+    // Not on any render did the card go back to counting up a finished job.
+    expect(seen.slice(settled)).not.toContain("evt_reply");
+    expect(seen.at(-1)).toBeNull();
+  });
+
+  it("still escalates in the second episode, and finds what is genuinely outstanding", async () => {
+    const { seen, transition, escalations } = await strandAStaleAnswer();
+
+    // A new ask, buried behind a fresh saturation: disregarding the parked
+    // answer must not cost the completeness the escalation exists for.
+    const asked = jobFixture({
+      eventId: "evt_asked_again",
+      status: "pending",
+      originId: THREAD,
+      started: "2026-07-01T11:00:00.000Z",
+    });
+    transition([...saturation("two"), asked]);
+
+    await waitFor(() => {
+      expect(seen.at(-1)).toBe("evt_asked_again");
+    });
+    // One per episode, plus the refetch the drain's own invalidation issued
+    // while the escalation was still active. Flat in the number of cards either
+    // way — that is what `anchors/marginJobRequests.test.tsx` counts.
+    expect(escalations()).toBe(3);
   });
 });
 

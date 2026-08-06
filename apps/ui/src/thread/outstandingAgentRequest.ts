@@ -5,6 +5,7 @@ import {
   useJobs,
   useOutstandingJobs,
 } from "@corpus/kit";
+import { useState } from "react";
 
 /**
  * Whether an agent response is **outstanding** for a thread — the one question
@@ -119,6 +120,43 @@ export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job 
 }
 
 /**
+ * When the escalation currently in progress began, or `null` when there is none.
+ *
+ * A `truncated` shared answer is not one continuous state: the queue saturates,
+ * drains, and saturates again, and each of those is a **separate question** to
+ * the server even though the cache key is the same both times. This is the
+ * boundary between them, read during render rather than from an effect so the
+ * very first render of a new episode already knows it is a new one — the render
+ * on which the parked query still holds the previous episode's answer, and the
+ * only render on which preferring it would matter.
+ *
+ * `Date.now()` in the state initialiser rather than `null` for a hook that mounts
+ * mid-episode: an answer cached before this card existed is an answer to a
+ * question nobody here asked, and disregarding it costs at most one repaint of
+ * the shared reading.
+ */
+interface Escalation {
+  readonly escalated: boolean;
+  readonly since: number | null;
+}
+
+function useEscalationStart(escalated: boolean): number | null {
+  const [episode, setEpisode] = useState<Escalation>(() => ({
+    escalated,
+    since: escalated ? Date.now() : null,
+  }));
+  if (episode.escalated !== escalated) {
+    // React's "adjusting state during render": the output of this pass is
+    // discarded and the component re-renders immediately with the new episode,
+    // so no effect ordering can put a stale answer on the screen first.
+    const started: Escalation = { escalated, since: escalated ? Date.now() : null };
+    setEpisode(started);
+    return started.since;
+  }
+  return episode.since;
+}
+
+/**
  * The oldest unfinished job this thread is waiting on, or `null`.
  *
  * **One request for every card on the screen, and a complete answer anyway.**
@@ -128,12 +166,33 @@ export function pickOutstandingJob(jobs: readonly Job[], threadId: string): Job 
  * possibly short, which takes `MAX_RECENT_JOBS` events unfinished at the same
  * instant.
  *
- * The fallback is read only while `truncated` holds, rather than whenever it has
- * data: TanStack keeps a parked query's last answer cached, and a queue that has
- * drained back under the cap would otherwise be answered from a snapshot of when
- * it was over it. While the escalation is in flight the shared list still
- * answers — the best available reading, and never a worse one than the caller
- * had a moment ago.
+ * **The escalation's answer is read only while it answers *this* escalation**
+ * (UI-076). Parking the query does not empty it: TanStack keeps the last
+ * response, and under `staleTime: Infinity` (`app/queryClient.ts`) it keeps it
+ * indefinitely. So the second time the queue saturates, the query is re-enabled
+ * already holding the **first** episode's answer — "job X is outstanding", true
+ * when it was fetched, about a job that finished while the queue was draining —
+ * and a caller that preferred whatever data was in hand would put "working…" on
+ * the card for work that is not happening, until the re-enable refetch lands.
+ * That is the pending row UI-058 and UI-069 were each filed to remove, so the
+ * cached answer counts only when it arrived no earlier than the escalation
+ * asking now: `dataUpdatedAt` against {@link useEscalationStart}.
+ *
+ * **Until it arrives the shared list answers, and that can under-report** — a
+ * job buried past the cap reads as no job at all for the one round trip the
+ * exact question takes. That is the direction to fail in, and it is not a new
+ * one: it is exactly what the *first* escalation does, having no cached answer
+ * to prefer. A card that has not yet said "working…" is corrected by the next
+ * repaint; a card counting up a wait for a job that finished minutes ago is a
+ * claim the person reading it has no way to check.
+ *
+ * The comparison is against the escalation's start and not against the shared
+ * query's own `dataUpdatedAt`, which would be simpler and wrong: within one
+ * episode both queries refetch on every `["jobs"]` invalidation, and requiring
+ * the exact answer to be the newer of the two would drop the card back to the
+ * shared reading — which is short, that being the premise — on every queue
+ * transition. A saturated queue transitions constantly, so the pending row would
+ * flicker on and off throughout the wait it is reporting.
  */
 export function useOutstandingAgentJob(threadId: string): Job | null {
   const outstanding = useOutstandingJobs();
@@ -141,8 +200,10 @@ export function useOutstandingAgentJob(threadId: string): Job | null {
     { originId: threadId, status: OUTSTANDING_JOB_STATUS_PARAM },
     { enabled: outstanding.truncated },
   );
-  const jobs = outstanding.truncated ? (exact.data?.jobs ?? outstanding.jobs) : outstanding.jobs;
-  return pickOutstandingJob(jobs, threadId);
+  const escalatedAt = useEscalationStart(outstanding.truncated);
+  const answer =
+    escalatedAt !== null && exact.dataUpdatedAt >= escalatedAt ? exact.data : undefined;
+  return pickOutstandingJob(answer?.jobs ?? outstanding.jobs, threadId);
 }
 
 /** The one field of a turn this module needs: when it was posted. */
