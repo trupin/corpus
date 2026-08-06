@@ -1,18 +1,28 @@
 import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import { REVEAL_RETRIES, REVEAL_RETRY_MS, revealItem } from "./reveal";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
  * The behaviour a reading surface has regardless of the chrome around it:
- * scroll restoration, which threads are expanded, and the 💬 jump-and-flash.
+ * scroll restoration and the 💬 jump-and-flash.
  *
- * **The read mark is deliberately not here.** SPEC.md §7 counts *displayed*
- * content, and the only component that knows a conversation was displayed is
- * the one that displayed it — so `ThreadCard` marks seen on mount and the kit
- * de-duplicates per `(thread, last turn)`. A surface-level effect keyed on
- * "the open document is a thread" would mark a thread seen whose turns had not
- * arrived yet, and would say nothing at all about an expanded chip.
+ * **Which conversations are folded is deliberately not here any more.** It used
+ * to be — a list of expanded thread ids in React state, reset to empty on every
+ * document change, so a reader who opened four conversations to read a paragraph
+ * found them all closed again after following one `[[ref]]`. SPEC.md §11 now
+ * makes a fold **sticky** ("through navigating away and back, and through a
+ * reload"), and browser-local per reader, which is a different lifetime from
+ * anything else on this surface: it outlives the navigation, so it lives in
+ * `ThreadCollapseProvider` and is keyed by the surface rather than held by it.
+ *
+ * **The read mark is deliberately not here either.** SPEC.md §7 counts
+ * *displayed* content, and the only component that knows a conversation was
+ * displayed is the one that displayed it — so `ThreadCard` marks seen on mount
+ * and the kit de-duplicates per `(thread, last turn)`. A surface-level effect
+ * keyed on "the open document is a thread" would mark a thread seen whose turns
+ * had not arrived yet, and would say nothing at all about a folded one.
  *
  * Shared by the column reader and focus mode for the same reason `DocView` is —
  * these are properties of *reading a document*, and two copies would drift.
@@ -57,10 +67,8 @@ interface RestoreState {
 
 export interface ReaderSurface {
   readonly scrollRef: RefObject<HTMLDivElement | null>;
-  readonly expandedThreads: readonly string[];
   readonly flashThread: string | null;
-  readonly toggleThread: (threadId: string) => void;
-  /** The 💬 popover's action: expand the slot, scroll to it, flash it. */
+  /** The 💬 popover's action: expand the conversation, scroll to it, flash it. */
   readonly jumpToThread: (threadId: string) => void;
   readonly handleScroll: (scrollY: number) => void;
   /** Reads the live offset — what `push` writes onto the entry being left. */
@@ -76,8 +84,17 @@ export function useReaderSurface({
   onRevealed,
 }: ReaderSurfaceOptions): ReaderSurface {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [expandedThreads, setExpanded] = useState<readonly string[]>([]);
   const [flashThread, setFlash] = useState<string | null>(null);
+  const collapse = useThreadCollapse();
+  /*
+   * Read through refs so `jumpToThread` never changes identity: it is a
+   * dependency of the reveal effect below, and an effect that tore itself down
+   * mid-retry would leave a pending reveal instruction with nobody to honour it.
+   */
+  const expand = useRef(collapse.expand);
+  expand.current = collapse.expand;
+  const rows = useRef(reader.threads);
+  rows.current = reader.threads;
   const restore = useRef<RestoreState | null>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,10 +173,14 @@ export function useReaderSurface({
     state.applied = element.scrollTop;
   });
 
-  // A new document starts collapsed: which threads were open is about the
-  // document being read, not about the surface reading it.
+  /*
+   * A new document clears the flash and nothing else.
+   *
+   * It used to clear the folds too, which is exactly what SPEC.md §11 now
+   * forbids: a fold survives navigating away and back. The flash does not — it
+   * is a 1.2 s pointer at one conversation on the document being left.
+   */
   useEffect(() => {
-    setExpanded([]);
     setFlash(null);
   }, [reader.docId]);
 
@@ -190,7 +211,12 @@ export function useReaderSurface({
   }, [navToken]);
 
   const jumpToThread = useCallback((threadId: string) => {
-    setExpanded((current) => (current.includes(threadId) ? current : [...current, threadId]));
+    // Jumping to a conversation expands it: the reader asked for it by name, and
+    // that is the reader's own act overriding the rule (SPEC.md §11).
+    const row = rows.current.find((candidate) => candidate.id === threadId);
+    if (row !== undefined) {
+      expand.current({ threadId, status: row.status, unread: row.unread === true });
+    }
     setFlash(threadId);
     if (flashTimer.current !== null) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => {
@@ -260,21 +286,7 @@ export function useReaderSurface({
     [onScroll],
   );
 
-  const toggleThread = useCallback((threadId: string) => {
-    setExpanded((current) =>
-      current.includes(threadId) ? current.filter((id) => id !== threadId) : [...current, threadId],
-    );
-  }, []);
-
   const currentScroll = useCallback(() => scrollRef.current?.scrollTop ?? 0, []);
 
-  return {
-    scrollRef,
-    expandedThreads,
-    flashThread,
-    toggleThread,
-    jumpToThread,
-    handleScroll,
-    currentScroll,
-  };
+  return { scrollRef, flashThread, jumpToThread, handleScroll, currentScroll };
 }

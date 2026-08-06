@@ -59,6 +59,16 @@ export interface StubRow {
    */
   readonly anchors?: readonly SeedAnchor[];
   /**
+   * The thread holds a turn nobody has displayed yet (SPEC.md §7).
+   *
+   * Seeded because the flag is what the one collapse rule defers to: "a
+   * conversation carrying a turn you have not seen is never collapsed by the
+   * rule" (§11, UI-077), and a stub that answered `unread: false` for everything
+   * could not tell a rule that honours the interlock from one that ignores it.
+   * Cleared by `POST /api/threads/{id}/seen`, as the server clears it.
+   */
+  readonly unread?: boolean;
+  /**
    * The ranked answer `GET /api/docs/{id}/related` gives for this document
    * (UI-025), in the server's order.
    *
@@ -119,6 +129,8 @@ interface StoredDoc {
   anchors: StoredAnchor[];
   /** A seeded related answer, or `null` to derive one from the ref graph. */
   related: readonly SeedRelated[] | null;
+  /** Holds a turn nobody has displayed yet; cleared by the seen route. */
+  unread: boolean;
 }
 
 /**
@@ -171,6 +183,7 @@ function seeded(row: StubRow): StoredDoc {
     updated: SEEDED_AT,
     agent: "none",
     related: row.related ?? null,
+    unread: row.unread ?? false,
     anchors: (row.anchors ?? []).map((anchor) => ({
       anchorId: anchor.anchorId,
       threadId: anchor.threadId,
@@ -255,6 +268,13 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
   const turnsOf = (doc: StoredDoc): readonly StubTurn[] =>
     doc.type === "thread" ? parseThreadTurns(doc.body) : [];
 
+  /** A thread's anchored text, from the entry its parent holds for it. */
+  const parentAnchorQuote = (doc: StoredDoc): string | null => {
+    if (doc.type !== "thread" || doc.parent === null) return null;
+    const parent = store.get(doc.parent);
+    return parent?.anchors.find((anchor) => anchor.threadId === doc.id)?.selector.exact ?? null;
+  };
+
   const asRow = (doc: StoredDoc): unknown => {
     const turns = turnsOf(doc);
     const last = turns.at(-1);
@@ -274,7 +294,18 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       stale: doc.stale,
       parent: doc.parent,
       agent: doc.type === "thread" ? doc.agent : null,
-      anchorQuote: null,
+      /*
+       * The anchored words, read off the **parent's** anchor entry — which is
+       * where a thread's selector lives (SPEC.md §6), and so the only place the
+       * projection can get this from either.
+       *
+       * It used to be flatly `null`, which no surface noticed until a collapsed
+       * conversation had to say what it is about (UI-077): every anchored thread
+       * described itself as a "whole document" one. A stub that answers `null`
+       * for everything cannot tell a row that carries its quote from one that
+       * drops it.
+       */
+      anchorQuote: parentAnchorQuote(doc),
       /*
        * The conversation columns of the projection (SPEC.md §9.1), read off the
        * thread's own body rather than asserted: a body whose turns the server
@@ -285,12 +316,12 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       turnCount: doc.type === "thread" ? turns.length : null,
       lastAuthor: doc.type === "thread" ? (last?.author ?? "user") : null,
       lastTurn: doc.type === "thread" ? (last?.body ?? null) : null,
-      unread: doc.type === "thread" ? false : null,
+      unread: doc.type === "thread" ? doc.unread : null,
       awaitingAgent: doc.type === "thread" ? false : null,
       unreadThreads: 0,
       attention: [],
       snippets: [],
-      parentTitle: null,
+      parentTitle: doc.parent === null ? null : (store.get(doc.parent)?.title ?? null),
       pinned: doc.pinned,
       order: doc.order,
       query: doc.query,
@@ -495,6 +526,54 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
      * Absent before UI-056, which is why a `ThreadCard` never rendered a turn
      * under the stub and turn-level commenting had no Playwright coverage.
      */
+    /*
+     * `POST /api/threads/{id}/seen` (SPEC.md §7) and the resolve/reopen pair
+     * (§6). Both mutate the store rather than answering flatly, because both are
+     * what UI-077's rules key on: reading a conversation is what lets the rule
+     * fold it next time it is placed, and a status change is what re-asserts the
+     * rule and clears a fold the reader made by hand.
+     */
+    const threadVerb = /^\/api\/threads\/([^/]+)\/(seen|resolve|reopen)$/.exec(url.pathname);
+    if (threadVerb !== null && method === "POST") {
+      const id = decodeURIComponent(threadVerb[1] ?? "");
+      const verb = threadVerb[2];
+      const doc = store.get(id);
+      if (doc === undefined || doc.type !== "thread") {
+        return json(route, { code: "not_found", message: id }, 404);
+      }
+      if (verb === "seen") {
+        doc.unread = false;
+        const turns = parseThreadTurns(doc.body);
+        return json(route, {
+          threadId: id,
+          lastSeenTs: turns.at(-1)?.ts ?? SEEDED_AT,
+          unread: false,
+        });
+      }
+      doc.status = verb === "resolve" ? "resolved" : "open";
+      stampUpdated(doc);
+      const parent = doc.parent === null ? undefined : store.get(doc.parent);
+      const anchor = parent?.anchors.find((entry) => entry.threadId === id);
+      if (anchor !== undefined) anchor.threadStatus = doc.status;
+      const turns = parseThreadTurns(doc.body);
+      return json(route, {
+        thread: {
+          id,
+          title: doc.title,
+          status: doc.status,
+          parent: doc.parent,
+          anchor: anchor?.anchorId ?? null,
+          agent: doc.agent,
+          created: SEEDED_AT,
+          updated: doc.updated,
+          turnCount: turns.length,
+          lastAuthor: turns.at(-1)?.author ?? "user",
+          lastTs: turns.at(-1)?.ts ?? SEEDED_AT,
+        },
+        warnings: [],
+      });
+    }
+
     const threadRead = /^\/api\/threads\/([^/]+)$/.exec(url.pathname);
     if (threadRead !== null && method === "GET") {
       const id = decodeURIComponent(threadRead[1] ?? "");

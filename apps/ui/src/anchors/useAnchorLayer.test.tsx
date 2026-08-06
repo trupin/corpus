@@ -159,8 +159,6 @@ function Probe({
     threads,
     locked: false,
     editable: true,
-    expandedThreads: [],
-    onToggleThread: () => undefined,
     onNotify,
   });
   onLayer(layer);

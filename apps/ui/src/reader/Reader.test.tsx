@@ -79,13 +79,20 @@ function Host({ wire, initial, isActive, onFocusMode, onNav }: HostProps): React
   );
 }
 
-function fullWire(overrides: Partial<Parameters<typeof readerTransport>[0]> = {}): ReaderTransport {
+type FullWireOptions = Partial<Parameters<typeof readerTransport>[0]> & {
+  /** Resolves `th_rate`, which is what makes it collapse by rule (SPEC.md §11). */
+  readonly resolvedThread?: boolean;
+};
+
+function fullWire({ resolvedThread = false, ...overrides }: FullWireOptions = {}): ReaderTransport {
+  const status = resolvedThread ? "resolved" : "open";
   return readerTransport({
     docs: [MORTGAGE, RATES, THREAD_DOC],
     threads: [
       threadFixture({
         id: "th_rate",
         parent: "doc_m",
+        status,
         // A thread always has at least one turn — it is created with its first
         // one — and the seen mark is keyed on the last turn, so a turnless
         // fixture would be testing a state the server cannot produce.
@@ -97,6 +104,7 @@ function fullWire(overrides: Partial<Parameters<typeof readerTransport>[0]> = {}
         threadRowFixture({
           id: "th_rate",
           parent: "doc_m",
+          status,
           anchorQuote: "assume a 30-year fixed at 6.1%",
         }),
       ],
@@ -218,7 +226,7 @@ describe("Reader", () => {
     // Backlinks and threads resolve after the first paint; the surface must not
     // yank the reader back to the restore offset when they do.
     await waitFor(() => {
-      expect(container.querySelector(".t-chip")).not.toBeNull();
+      expect(container.querySelector("[data-thread-panel]")).not.toBeNull();
     });
     expect(scroller.scrollTop).toBe(300);
   });
@@ -486,13 +494,22 @@ describe("Reader", () => {
    * SPEC.md §7: displayed content only. Opening a parent marks nothing; opening
    * the thread itself does.
    */
-  it("marks a thread document seen, and a parent document nothing", async () => {
-    const parentWire = fullWire();
+  /**
+   * SPEC.md §7's read rule, restated for the collapse UI-077 built.
+   *
+   * What counts as read is **displayed** content, so the question is no longer
+   * "is this a parent document" but "is this conversation folded". A resolved
+   * thread is collapsed by the one rule (§11) and its collapsed line displays
+   * nothing, so the parent's reader marks nothing seen — and the same thread
+   * opened as a document does.
+   */
+  it("marks a thread document seen, and a collapsed conversation nothing", async () => {
+    const parentWire = fullWire({ resolvedThread: true });
     const { container } = render(<Host wire={parentWire} />);
     await showsTitle(container, "Mortgage options");
-    // Its thread's collapsed chip is on screen, and it has displayed nothing.
+    // Its collapsed line is on screen, and it has displayed nothing.
     await waitFor(() => {
-      expect(container.querySelector(".t-chip")).not.toBeNull();
+      expect(container.querySelector("[data-thread-expand]")).not.toBeNull();
     });
     expect(parentWire.of("POST").filter((call) => call.path.endsWith("/seen"))).toHaveLength(0);
 
@@ -529,10 +546,15 @@ describe("Reader", () => {
       expect(container.querySelectorAll(".thread-conversation .turn")).toHaveLength(2);
     });
     expect(screen.getByText("is 6.1% right?")).toBeDefined();
-    // The standalone host is the same card, composer included, and has nothing
-    // to collapse back into.
+    /*
+     * The standalone host is the same card, composer included — and it now
+     * carries the fold too. SPEC.md §11 lists "a `type: thread` document open in
+     * a reader in a column or in full screen" among the places a conversation
+     * can be collapsed, and the control used to be absent here because there was
+     * no chip to fold back into. There is one now, in every placement.
+     */
     expect(container.querySelector(".thread-conversation .composer")).not.toBeNull();
-    expect(container.querySelector(".thread-conversation .t-collapse")).toBeNull();
+    expect(container.querySelector(".thread-conversation .t-collapse")).not.toBeNull();
   });
 
   it("degrades honestly when the open document was deleted out of band", async () => {

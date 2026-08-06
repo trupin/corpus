@@ -88,9 +88,7 @@ function Margin({
     <harness.Wrapper>
       <MarginColumn
         threads={threads}
-        expandedThreads={[]}
         flashThread={null}
-        onToggleThread={() => undefined}
         onOpenDoc={() => undefined}
         onNotify={() => undefined}
         innerRef={createRef<HTMLDivElement>()}

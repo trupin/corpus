@@ -341,6 +341,18 @@
   padding-left: 10px;
 }
 
+/* A nested conversation's spacing is its card's, as it always was: the panel
+   wrapper is a seam for the fold, not a second margin on top of the one the
+   card already carries. A folded one keeps a little room of its own, since
+   there is no card underneath to provide it. */
+.thread-slot.nested {
+  margin: 0;
+}
+
+.thread-slot.nested.collapsed {
+  margin: 8px 0;
+}
+
 /* Past the cap the nesting stops insetting: the wrapper cancels the parent
    card's own inset so the child's left edge lands on the parent's, and every
    deeper level lands on the same line. What tells them apart from there is the

@@ -67,7 +67,13 @@
   align-items: start;
 }
 
-.focus-inner.with-margin .t-chip {
+/*
+ * In margin mode the conversations live in the margin, so the body carries no
+ * chips of its own. Scoped to `.doc-main`: the margin's own collapsed lines are
+ * chips too now (SPEC.md §11 — one collapsed representation everywhere), and an
+ * unscoped rule would hide every folded conversation on the surface.
+ */
+.focus-inner.with-margin .doc-main .t-chip {
   display: none;
 }
 

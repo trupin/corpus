@@ -2,8 +2,8 @@ import type { DocRow } from "@corpus/contract";
 import type { RowNotice } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
-import { ThreadSlot } from "../reader/ThreadSlot";
-import { ThreadCard } from "../thread/ThreadCard";
+import { summaryFromRow } from "../thread/CollapsedThread";
+import { ThreadPanel } from "../thread/ThreadPanel";
 import type { AnchoredThread } from "./anchorPlacement";
 import "./anchors.css";
 
@@ -12,20 +12,24 @@ import "./anchors.css";
  * is (SPEC.md §11).
  *
  * - **A chip at its anchor**, in a narrow column — a widget between the two
- *   blocks the anchor sits between, with the real `ThreadSlot` portalled into
- *   it. The slot itself is UI-008's; this decides *where*.
+ *   blocks the anchor sits between, with the real `ThreadPanel` portalled into
+ *   it. This decides *where*; the panel decides whether it is folded.
  * - **A card in the margin**, in focus mode or a wide reader, cascaded beside
  *   its highlight.
  * - **Below the body**, for whole-document threads, for threads whose anchor the
  *   server could no longer resolve, and for the ones it did resolve that this
  *   view cannot point at (`anchorPlacement.segmentsOf`).
+ *
+ * **All three render the same component**, which is the point of UI-077: which
+ * placement a thread gets depends on the width, and whether it can be collapsed
+ * does not. The margin used to be the exception — it received no expansion state
+ * at all, so a conversation could be folded in a narrow column and not in a wide
+ * one, which is the incoherence the live report was actually about.
  */
 
 export interface AnchorThreadsProps {
   readonly threads: readonly AnchoredThread[];
-  readonly expandedThreads: readonly string[];
   readonly flashThread: string | null;
-  readonly onToggleThread: (threadId: string) => void;
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -38,9 +42,7 @@ export interface AnchorChipsProps extends AnchorThreadsProps {
 /** Chips at their anchors — rendered through the editor's widget decorations. */
 export function AnchorChips({
   threads,
-  expandedThreads,
   flashThread,
-  onToggleThread,
   onOpenDoc,
   onNotify,
   hostFor,
@@ -51,13 +53,10 @@ export function AnchorChips({
         const host = thread.row === undefined ? null : hostFor(thread.threadId);
         if (host === null || thread.row === undefined) return null;
         return createPortal(
-          <ThreadSlot
-            row={thread.row}
-            expanded={expandedThreads.includes(thread.threadId)}
+          <ThreadPanel
+            summary={summaryFromRow(thread.row)}
+            host="slot"
             flashing={flashThread === thread.threadId}
-            onToggle={() => {
-              onToggleThread(thread.threadId);
-            }}
             onOpenDoc={onOpenDoc}
             onNotify={onNotify}
           />,
@@ -74,11 +73,12 @@ export interface MarginColumnProps extends AnchorThreadsProps {
 }
 
 /**
- * The margin column. Cards are absolutely positioned by `useMarginLayout`, so
+ * The margin column. Panels are absolutely positioned by `useMarginLayout`, so
  * their order in the DOM is irrelevant and their `top` is everything.
  *
- * No `onCollapse`: a margin card has no chip to fold back into, and
- * `ThreadCard` renders the `–` control exactly when the host gives it one.
+ * A thread with no row is skipped rather than drawn from nothing: the row is
+ * where the collapsed line's turn count, last author and unread state come from,
+ * and a fold that could not say how much is inside would be a truncation.
  */
 export function MarginColumn({
   threads,
@@ -89,17 +89,18 @@ export function MarginColumn({
 }: MarginColumnProps): ReactElement {
   return (
     <div className="focus-margin" ref={innerRef} data-anchor-margin>
-      {threads.map((thread) => (
-        <ThreadCard
-          key={thread.threadId}
-          threadId={thread.threadId}
-          host="margin"
-          row={thread.row}
-          flashing={flashThread === thread.threadId}
-          onOpenDoc={onOpenDoc}
-          onNotify={onNotify}
-        />
-      ))}
+      {threads.map((thread) =>
+        thread.row === undefined ? null : (
+          <ThreadPanel
+            key={thread.threadId}
+            summary={summaryFromRow(thread.row)}
+            host="margin"
+            flashing={flashThread === thread.threadId}
+            onOpenDoc={onOpenDoc}
+            onNotify={onNotify}
+          />
+        ),
+      )}
     </div>
   );
 }
@@ -109,9 +110,7 @@ export interface DetachedThreadsProps {
   readonly orphaned: readonly DocRow[];
   /** Anchored, resolved, but with nothing on this screen to sit beside. */
   readonly unplaced?: readonly DocRow[];
-  readonly expandedThreads: readonly string[];
   readonly flashThread: string | null;
-  readonly onToggleThread: (threadId: string) => void;
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -143,9 +142,7 @@ export function DetachedThreads({
   wholeDocument,
   orphaned,
   unplaced = [],
-  expandedThreads,
   flashThread,
-  onToggleThread,
   onOpenDoc,
   onNotify,
 }: DetachedThreadsProps): ReactElement | null {
@@ -156,14 +153,11 @@ export function DetachedThreads({
       <div className="thread-slots" data-thread-section={kind}>
         <div className="slots-label">{label}</div>
         {rows.map((row) => (
-          <ThreadSlot
+          <ThreadPanel
             key={row.id}
-            row={row}
-            expanded={expandedThreads.includes(row.id)}
+            summary={summaryFromRow(row)}
+            host="slot"
             flashing={flashThread === row.id}
-            onToggle={() => {
-              onToggleThread(row.id);
-            }}
             onOpenDoc={onOpenDoc}
             onNotify={onNotify}
           />

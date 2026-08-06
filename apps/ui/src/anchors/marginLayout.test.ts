@@ -107,9 +107,15 @@ function fixture(): { main: HTMLElement; margin: HTMLElement } {
       <p>two <span class="anchor-hl" data-thread="th_2">quote</span></p>
     </div>
     <div id="margin">
-      <div class="thread-card" data-thread="th_1"><div class="thread-card" data-thread="th_c"></div></div>
-      <div class="thread-card" data-thread="th_2"></div>
-      <div class="thread-card" data-thread="th_3"></div>
+      <div class="thread-slot expanded" data-thread-panel="th_1">
+        <div class="thread-card" data-thread="th_1">
+          <div class="thread-slot expanded" data-thread-panel="th_c">
+            <div class="thread-card" data-thread="th_c"></div>
+          </div>
+        </div>
+      </div>
+      <div class="thread-slot expanded" data-thread-panel="th_2"><div class="thread-card"></div></div>
+      <div class="thread-slot collapsed" data-thread-panel="th_3"><button class="t-chip"></button></div>
     </div>`;
   const main = document.querySelector<HTMLElement>("#main");
   const margin = document.querySelector<HTMLElement>("#margin");
@@ -121,7 +127,7 @@ function fixture(): { main: HTMLElement; margin: HTMLElement } {
     const id = anchor.getAttribute("data-thread") ?? "";
     anchor.getBoundingClientRect = () => ({ top: 50 + (tops[id] ?? 0) }) as DOMRect;
   }
-  for (const card of margin.querySelectorAll<HTMLElement>(".thread-card")) {
+  for (const card of margin.querySelectorAll<HTMLElement>("[data-thread-panel]")) {
     Object.defineProperty(card, "offsetHeight", { value: 60, configurable: true });
   }
   return { main, margin };
@@ -160,7 +166,7 @@ describe("applying", () => {
     const { main, margin } = fixture();
     applyMargin(margin, cascade(measureMargin(main, margin)));
     const card = (id: string): HTMLElement | null =>
-      margin.querySelector<HTMLElement>(`:scope > .thread-card[data-thread="${id}"]`);
+      margin.querySelector<HTMLElement>(`:scope > [data-thread-panel="${id}"]`);
     expect(card("th_1")?.style.top).toBe("100px");
     expect(card("th_2")?.style.top).toBe("400px");
     // th_3 has no anchor, so it follows the last card that had one.

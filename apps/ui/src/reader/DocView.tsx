@@ -1,5 +1,5 @@
-import type { Lock } from "@corpus/contract";
-import { MarkdownView, type RowNotice } from "@corpus/kit";
+import type { Doc, Lock } from "@corpus/contract";
+import { MarkdownView, useDoc, type RowNotice } from "@corpus/kit";
 import { useRef, type ReactElement } from "react";
 import { AnchorChips, DetachedThreads, MarginColumn } from "../anchors/AnchoredThreads";
 import { CommentPopover } from "../anchors/CommentPopover";
@@ -9,12 +9,12 @@ import { DocEditor, editorHandlesType } from "../editor/DocEditor";
 import { useSelectionContextMenu } from "../menu/useSelectionContextMenu";
 import { usePluginDiscovery, usePluginRegistry } from "../plugins/registry";
 import { resolveDocPanel, resolveDocView } from "../plugins/slots";
-import { ThreadCard } from "../thread/ThreadCard";
+import { summaryFromRow, type ThreadSummary } from "../thread/CollapsedThread";
+import { ThreadPanel } from "../thread/ThreadPanel";
 import { Backlinks } from "./Backlinks";
 import { FrontmatterForm } from "./FrontmatterForm";
 import { LockBanner } from "./LockBanner";
 import { RelatedPanel } from "./RelatedPanel";
-import { ThreadSlot } from "./ThreadSlot";
 import type { ReaderDoc } from "./useReaderDoc";
 
 /**
@@ -56,14 +56,49 @@ export function foreignLock(lock: Lock | null): Lock | null {
   return lock === null || lock.holder === "user" ? null : lock;
 }
 
+/**
+ * The summary for a thread that **is** the open document.
+ *
+ * Every other placement gets one from the projection's row (`summaryFromRow`);
+ * this one has no row, because the reader opened a document rather than picked
+ * an item out of a list. So it is assembled from what the reader already holds —
+ * the conversation itself, for the turn count and the status — plus the parent's
+ * resolved anchor for the quote, which is the only place a thread's anchored
+ * words exist (the selector lives in the *parent's* frontmatter, SPEC.md §6).
+ *
+ * Both reads are already in flight for this document: `useReaderDoc` fetches the
+ * conversation, and the expanded card fetches the parent under the same cache
+ * key. Nothing here costs a request that was not going to be made.
+ *
+ * `unread: false` is honest rather than a shrug. This panel does not let the
+ * rule decide anything (`applyRule={false}`), so the flag reaches only the "new"
+ * badge — and the reader is looking at the thread, which is what clears it
+ * (SPEC.md §7).
+ */
+export function openThreadSummary(
+  threadId: string,
+  thread: ReaderDoc["thread"],
+  parent: Doc | undefined,
+): ThreadSummary {
+  return {
+    id: threadId,
+    status: thread?.status ?? "open",
+    turnCount: thread?.turns.length ?? 0,
+    lastAuthor: thread?.turns.at(-1)?.author ?? null,
+    unread: false,
+    quote:
+      parent?.anchors.find((anchor) => anchor.threadId === threadId)?.selector.exact.trim() ?? "",
+    parent: thread?.parent ?? null,
+    parentTitle: parent?.frontmatter.title ?? null,
+  };
+}
+
 export interface DocViewProps {
   readonly reader: ReaderDoc;
   /** True right after creation: the title is focused *and* selected. */
   readonly selectTitle: boolean;
-  readonly expandedThreads: readonly string[];
   /** The thread the 💬 popover just jumped to; flashes for ~1.2s. */
   readonly flashThread: string | null;
-  readonly onToggleThread: (threadId: string) => void;
   /** A `[[ref]]`, a backlink or a thread-context link was followed. */
   readonly onNavigate: (docId: string) => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -72,13 +107,19 @@ export interface DocViewProps {
 export function DocView({
   reader,
   selectTitle,
-  expandedThreads,
   flashThread,
-  onToggleThread,
   onNavigate,
   onNotify,
 }: DocViewProps): ReactElement {
   const { doc } = reader;
+  /*
+   * The parent of a thread that is itself the open document — where its anchored
+   * words live (SPEC.md §6). Disabled on anything that is not a thread, and on a
+   * standalone one, which has no parent to ask about.
+   */
+  const openThreadParent = useDoc(
+    reader.isThread ? (reader.thread?.parent ?? undefined) : undefined,
+  );
   const lock = foreignLock(reader.lock);
   // Subscribe to plugin discovery so an open reader swaps to a plugin `View`
   // (or back) when the registry settles after first render.
@@ -137,9 +178,7 @@ export function DocView({
     threads: reader.threads,
     locked: lock !== null,
     editable: anchorsHost,
-    expandedThreads,
     flashThread,
-    onToggleThread,
     onNotify,
   });
 
@@ -305,9 +344,23 @@ export function DocView({
          */}
         {reader.isThread ? (
           <div className="doc-body thread-conversation">
-            <ThreadCard
-              threadId={reader.docId}
+            {/*
+             * The conversation you opened, foldable but never folded *for* you.
+             *
+             * `applyRule={false}`: navigating to a thread is the reader's own act
+             * of opening it, and §11's precedence is "the last thing that
+             * happened wins" — so the rule, which is older than the click, does
+             * not get to close it. §11 also says outright that the rule is
+             * applied "when a conversation is placed and when its status
+             * changes, never because you have just read it", and opening a
+             * resolved thread to a single grey line is precisely a rule folding
+             * something away under someone who went there to read it. The fold
+             * is still offered, on demand, and one taken by hand still sticks.
+             */}
+            <ThreadPanel
+              summary={openThreadSummary(reader.docId, reader.thread, openThreadParent.data)}
               host="standalone"
+              applyRule={false}
               onOpenDoc={onNavigate}
               onNotify={onNotify}
             />
@@ -347,9 +400,7 @@ export function DocView({
           <>
             <AnchorChips
               threads={anchors.anchored}
-              expandedThreads={expandedThreads}
               flashThread={flashThread}
-              onToggleThread={onToggleThread}
               onOpenDoc={onNavigate}
               onNotify={onNotify}
               hostFor={anchors.slotHost}
@@ -358,9 +409,7 @@ export function DocView({
               wholeDocument={anchors.wholeDocument}
               orphaned={anchors.orphaned}
               unplaced={anchors.unplaced}
-              expandedThreads={expandedThreads}
               flashThread={flashThread}
-              onToggleThread={onToggleThread}
               onOpenDoc={onNavigate}
               onNotify={onNotify}
             />
@@ -368,14 +417,11 @@ export function DocView({
         ) : reader.threads.length === 0 ? null : (
           <div className="thread-slots">
             {reader.threads.map((row) => (
-              <ThreadSlot
+              <ThreadPanel
                 key={row.id}
-                row={row}
-                expanded={expandedThreads.includes(row.id)}
+                summary={summaryFromRow(row)}
+                host="slot"
                 flashing={flashThread === row.id}
-                onToggle={() => {
-                  onToggleThread(row.id);
-                }}
                 onOpenDoc={onNavigate}
                 onNotify={onNotify}
               />
@@ -390,9 +436,7 @@ export function DocView({
       {anchors.marginMode ? (
         <MarginColumn
           threads={anchors.anchored}
-          expandedThreads={expandedThreads}
           flashThread={flashThread}
-          onToggleThread={onToggleThread}
           onOpenDoc={onNavigate}
           onNotify={onNotify}
           innerRef={anchors.marginRef}

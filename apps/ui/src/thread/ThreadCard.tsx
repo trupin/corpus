@@ -12,12 +12,15 @@ import {
   type RowNotice,
   type ThreadTurn,
 } from "@corpus/kit";
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from "react";
 import { placeChildThreads, turnAnchorText } from "./childThreads";
+import { summaryFromRow, type ThreadSummary } from "./CollapsedThread";
 import { NewChildThread } from "./NewChildThread";
 import { agentWaitSince, useOutstandingAgentJob } from "./outstandingAgentRequest";
 import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
+import { MAX_NESTED_DEPTH } from "./threadDepth";
+import { ThreadPanel } from "./ThreadPanel";
 import { ThreadComposer } from "./ThreadComposer";
 import { Turn } from "./Turn";
 import { useTurnComments } from "./useTurnComments";
@@ -34,9 +37,12 @@ import "./thread.css";
  * conversation seen from four places, and a fork is how two of them quietly stop
  * agreeing about what a thread is.
  *
- * The collapse control is present exactly when the host gave it something to
- * collapse into (`onCollapse`) — a margin card and a thread document have no
- * chip to fold back to.
+ * **This is the expanded half of a conversation, and only that.** `ThreadPanel`
+ * decides which half is on screen; mounting this one is what displays the
+ * conversation and therefore what marks it seen (SPEC.md §7). The `–` control in
+ * the head is the fold, and it is present in every host now — §11's "whether it
+ * can be collapsed does not depend on the width" is exactly the sentence that
+ * used to be untrue here, where a margin card had no way back to anything.
  */
 
 export type ThreadHost = "slot" | "margin" | "standalone" | "nested";
@@ -44,23 +50,19 @@ export type ThreadHost = "slot" | "margin" | "standalone" | "nested";
 /** A thread with no anchors, shared so it is one identity rather than one per render. */
 const NO_ANCHORS: readonly ResolvedAnchor[] = [];
 
-/** Past this depth the card stops indenting and says how deep it is instead. */
-export const MAX_NESTED_DEPTH = 3;
-
-/** Deeper than this the conversation is a link, not a nesting. */
-export const MAX_RENDERED_DEPTH = 4;
-
 export interface ThreadCardProps {
   readonly threadId: string;
   readonly host: ThreadHost;
   /** 0 for a top-level card; each child thread is one deeper. */
   readonly depth?: number;
-  /** The list row that opened this card, for the head before the fetch lands. */
-  readonly row?: DocRow | undefined;
+  /** What the placement already knew, for the head before the fetch lands. */
+  readonly summary?: ThreadSummary | undefined;
   /** True for ~1.2s after the 💬 popover jumped here. */
   readonly flashing?: boolean;
   /** Present renders the `–` collapse control. */
   readonly onCollapse?: (() => void) | undefined;
+  /** The conversation's own right-click menu, when a placement hosts one. */
+  readonly onCardContextMenu?: ((event: MouseEvent<HTMLElement>) => void) | undefined;
   /** Follows a `[[ref]]`, the context link, or a nested thread's own link. */
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -70,9 +72,10 @@ export function ThreadCard({
   threadId,
   host,
   depth = 0,
-  row,
+  summary,
   flashing = false,
   onCollapse,
+  onCardContextMenu,
   onOpenDoc,
   onNotify,
 }: ThreadCardProps): ReactElement {
@@ -122,7 +125,7 @@ export function ThreadCard({
    * timestamp instead, one round trip later.
    */
   const lastConfirmedTs = turns.findLast((turn) => !isPendingTurn(turn))?.ts;
-  const parentId = data?.parent ?? row?.parent ?? null;
+  const parentId = data?.parent ?? summary?.parent ?? null;
 
   /**
    * SPEC.md §7: **displayed content only**. This card renders the conversation,
@@ -148,10 +151,10 @@ export function ThreadCard({
   // four-step ladder, SPEC.md §6).
   const parent = useDoc(parentId ?? undefined);
   const parentMissing = parent.error instanceof CorpusRequestError && parent.error.status === 404;
-  const parentTitle = parent.data?.frontmatter.title ?? row?.parentTitle ?? null;
+  const parentTitle = parent.data?.frontmatter.title ?? summary?.parentTitle ?? null;
   const resolvedQuote =
     parent.data?.anchors.find((anchor) => anchor.threadId === threadId)?.selector.exact ?? null;
-  const quote = (resolvedQuote ?? row?.anchorQuote ?? "").trim();
+  const quote = (resolvedQuote ?? summary?.quote ?? "").trim();
 
   /**
    * The thread **as a document** — its markdown and its own anchors.
@@ -199,7 +202,7 @@ export function ThreadCard({
   const [submitted, setSubmitted] = useState<readonly SubmittedAnswer[]>([]);
   const answers = mapFormAnswers(turns, submitted);
 
-  const status = data?.status ?? row?.status ?? "open";
+  const status = data?.status ?? summary?.status ?? "open";
   const resolved = status === "resolved";
   /**
    * SPEC.md §8's pending row, off the **queue** rather than off the thread's
@@ -239,8 +242,20 @@ export function ThreadCard({
        * view. The handler stops the event when it opens, so the innermost card
        * answers for its own turns and the document view's own menu never opens
        * over one (UI-051).
+       *
+       * With **no** selection it declines, and the conversation's own menu takes
+       * the event: right-clicking a card offers that card's actions — collapse,
+       * resolve/reopen — which is where §11 puts the fold, since it claims no key
+       * of its own. Read off `defaultPrevented` rather than off a second
+       * selection check, because the selection handler is the one that decides
+       * whether it consumed the event and asking twice is how the two answers
+       * drift.
        */
-      onContextMenu={turnComments.onContextMenu}
+      onContextMenu={(event) => {
+        turnComments.onContextMenu(event);
+        if (event.defaultPrevented || onCardContextMenu === undefined) return;
+        onCardContextMenu(event);
+      }}
     >
       <div className="t-head">
         <span className="t-quote">{headLabel}</span>
@@ -324,13 +339,17 @@ export function ThreadCard({
                   },
                 });
               }}
-              {...(depth < MAX_RENDERED_DEPTH
-                ? {
-                    onComment: (target: ThreadTurn) => {
-                      setCommenting((current) => (current === target.ts ? null : target.ts));
-                    },
-                  }
-                : {})}
+              /*
+               * Commenting is offered at every depth now. It used to stop at the
+               * old render cap — the depth at which a conversation became a link
+               * that navigated away — so a turn deep in a nest lost the one
+               * affordance the whole recursion exists for. Nothing about §6's
+               * recursion ever justified that: it was a consequence of the cap,
+               * and the cap no longer drops anything.
+               */
+              onComment={(target: ThreadTurn) => {
+                setCommenting((current) => (current === target.ts ? null : target.ts));
+              }}
             >
               <ChildCards
                 rows={placement.byTurn.get(turn.ts) ?? []}
@@ -381,46 +400,36 @@ interface ChildCardsProps {
 }
 
 /**
- * Nested conversations, and where the nesting stops.
+ * Nested conversations, and where the nesting stops **drawing** — not where it
+ * stops existing (SPEC.md §11, rider signed 2026-08-05).
  *
  * Indentation runs out at {@link MAX_NESTED_DEPTH}: past it the wrapper stops
- * inset­ting and the card says how deep it is instead, so depths 3, 4 and 5 all
- * sit at the same left edge. Past {@link MAX_RENDERED_DEPTH} the conversation
- * becomes a link rather than a card — indefinite recursion would eventually
- * leave a composer a few characters wide, and a conversation that deep is a
- * conversation you open.
+ * insetting and the card says how deep it is instead, so depths 3, 4 and 5 all
+ * sit at the same left edge. Past `MAX_DRAWN_DEPTH` the conversation is placed
+ * **collapsed** — one line that still says what it is, expanding where it stands
+ * — rather than becoming a link that navigates away.
+ *
+ * That link was the one collapse in the app with no way back: §11 now says
+ * "every collapse expands again in place… a fold whose only way back is losing
+ * your place is not a collapse", and "opening it in its own reader stays
+ * available as a **choice**, never as the only way to read it" — which is where
+ * the panel's right-click menu keeps it.
+ *
+ * Indefinite recursion is still bounded, but by the reader rather than by a cap:
+ * each expansion draws one more level, whose own children are collapsed again.
  */
 function ChildCards({ rows, depth, onOpenDoc, onNotify }: ChildCardsProps): ReactElement | null {
   if (rows.length === 0) return null;
   const childDepth = depth + 1;
   const wrapper = childDepth > MAX_NESTED_DEPTH ? "child-threads flush" : "child-threads";
-  if (childDepth > MAX_RENDERED_DEPTH) {
-    return (
-      <div className={wrapper}>
-        {rows.map((child) => (
-          <button
-            key={child.id}
-            type="button"
-            className="t-chip"
-            onClick={() => {
-              onOpenDoc(child.id);
-            }}
-          >
-            💬 {String(child.turnCount ?? 0)} · open thread
-          </button>
-        ))}
-      </div>
-    );
-  }
   return (
     <div className={wrapper}>
       {rows.map((child) => (
-        <ThreadCard
+        <ThreadPanel
           key={child.id}
-          threadId={child.id}
+          summary={summaryFromRow(child)}
           host="nested"
-          depth={depth + 1}
-          row={child}
+          depth={childDepth}
           onOpenDoc={onOpenDoc}
           onNotify={onNotify}
         />

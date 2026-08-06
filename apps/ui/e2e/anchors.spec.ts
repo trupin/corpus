@@ -174,24 +174,49 @@ test.describe("the margin column", () => {
     expect(inner?.["grid-template-columns"]?.split(" ").at(-1)).toBe("300px");
   });
 
-  test("positions its cards absolutely, edge to edge, with no measure of their own", async ({
-    page,
-  }) => {
+  /**
+   * The cascade positions the **panel**, not the card inside it (UI-077): a
+   * conversation in the margin is a card when it is expanded and a single line
+   * when it is folded, and both have to sit beside their anchor. A fold that
+   * dropped out of the layout would leave the ones below it stacked where the
+   * card used to be.
+   */
+  test("positions its conversations absolutely, edge to edge, folded or not", async ({ page }) => {
     const styles = await measure(
       page,
       `<div class="focus-inner with-margin">
          <div class="doc-main"></div>
-         <div class="focus-margin"><div class="thread-card" data-thread="th_1">card</div></div>
+         <div class="focus-margin">
+           <div class="thread-slot expanded" data-thread-panel="th_1" id="open">
+             <div class="thread-card">card</div>
+           </div>
+           <div class="thread-slot collapsed" data-thread-panel="th_2" id="folded">
+             <button class="t-chip" data-thread-expand="th_2">line</button>
+           </div>
+         </div>
        </div>`,
-      [[".thread-card", ["position", "left", "right", "margin-top", "max-width", "display"]]],
+      [
+        ["#open", ["position", "left", "right", "margin-top", "max-width", "display"]],
+        ["#folded", ["position", "left", "right", "max-width", "display"]],
+        ["#open > .thread-card", ["margin-top", "max-width"]],
+      ],
     );
-    const card = styles[".thread-card"];
+    const card = styles["#open"];
     expect(card?.["position"]).toBe("absolute");
     expect(card?.["left"]).toBe("0px");
     expect(card?.["right"]).toBe("0px");
     expect(card?.["margin-top"]).toBe("0px");
     expect(card?.["max-width"]).toBe("none");
     expect(card?.["display"]).toBe("block");
+    // The card inside sheds its own measure and margin to the panel's.
+    expect(styles["#open > .thread-card"]?.["margin-top"]).toBe("0px");
+    expect(styles["#open > .thread-card"]?.["max-width"]).toBe("none");
+    // A folded conversation is laid out exactly the same way.
+    const folded = styles["#folded"];
+    expect(folded?.["position"]).toBe("absolute");
+    expect(folded?.["left"]).toBe("0px");
+    expect(folded?.["right"]).toBe("0px");
+    expect(folded?.["max-width"]).toBe("none");
   });
 
   test("draws the 23px connector back to the text", async ({ page }) => {
@@ -199,10 +224,14 @@ test.describe("the margin column", () => {
       const host = document.createElement("div");
       host.innerHTML = `<div class="focus-inner with-margin">
         <div class="doc-main"></div>
-        <div class="focus-margin"><div class="thread-card">card</div></div>
+        <div class="focus-margin">
+          <div class="thread-slot expanded" data-thread-panel="th_1">
+            <div class="thread-card">card</div>
+          </div>
+        </div>
       </div>`;
       document.body.append(host);
-      const card = host.querySelector(".thread-card");
+      const card = host.querySelector("[data-thread-panel]");
       const style = card === null ? null : getComputedStyle(card, "::before");
       const out = {
         content: style?.getPropertyValue("content") ?? "",

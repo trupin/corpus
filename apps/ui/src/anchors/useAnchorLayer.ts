@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { useIsEditing } from "../editor/editingRegistry";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
+import { useThreadCollapse } from "../thread/ThreadCollapseContext";
 import {
   anchorDecorationPlugin,
   anchorPluginKey,
@@ -57,10 +58,8 @@ export interface AnchorLayerOptions {
   readonly locked: boolean;
   /** The document is rendered by the editor at all — a `view` or a thread is not. */
   readonly editable: boolean;
-  readonly expandedThreads: readonly string[];
   /** The thread the 💬 popover just jumped to; its anchor is scrolled to. */
   readonly flashThread?: string | null;
-  readonly onToggleThread: (threadId: string) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -136,18 +135,10 @@ interface Optimistic {
 }
 
 export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
-  const {
-    docId,
-    body,
-    anchors,
-    threads,
-    locked,
-    editable,
-    expandedThreads,
-    flashThread = null,
-    onToggleThread,
-    onNotify,
-  } = options;
+  const { docId, body, anchors, threads, locked, editable, flashThread = null, onNotify } = options;
+  const collapse = useThreadCollapse();
+  const rows = useRef(threads);
+  rows.current = threads;
 
   const mainRef = useRef<HTMLDivElement>(null);
   const marginRef = useRef<HTMLDivElement>(null);
@@ -396,19 +387,27 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   /* ── Opening a thread from a highlight ─────────────────────────────── */
 
-  const expanded = useRef(expandedThreads);
-  expanded.current = expandedThreads;
-  const toggle = useRef(onToggleThread);
-  toggle.current = onToggleThread;
+  /**
+   * Clicking an anchored highlight opens its thread — and **expands** it, which
+   * is the reader's own act and therefore overrides the rule (SPEC.md §11's
+   * precedence). A resolved conversation folded by default is still one click
+   * away from its own highlight, which is the route back the "collapsed is never
+   * hidden" clause promises: the passage keeps saying it has been discussed.
+   */
+  const expand = useRef(collapse.expand);
+  expand.current = collapse.expand;
 
   useEffect(() => {
     activate.current = (threadId: string) => {
-      if (!expanded.current.includes(threadId)) toggle.current(threadId);
-      const card = marginRef.current?.querySelector<HTMLElement>(
-        `:scope > .thread-card[data-thread="${escapeSelectorValue(threadId)}"]`,
+      const row = rows.current.find((candidate) => candidate.id === threadId);
+      if (row !== undefined) {
+        expand.current({ threadId, status: row.status, unread: row.unread === true });
+      }
+      const panel = marginRef.current?.querySelector<HTMLElement>(
+        `:scope > [data-thread-panel="${escapeSelectorValue(threadId)}"]`,
       );
-      if (card !== null && card !== undefined && typeof card.scrollIntoView === "function") {
-        card.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (panel !== null && panel !== undefined && typeof panel.scrollIntoView === "function") {
+        panel.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     };
   }, []);
