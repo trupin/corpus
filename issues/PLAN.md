@@ -408,7 +408,9 @@ belongs to the same fix wave.
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
 | UI-078 | Resolve confirmation promises replying reopens the thread; it does not | todo | P1 | — |
 | SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry (SIGNED, applied) | done | P1 | — |
-| SHARED-022 | Choosing the model per message — DRAFT, awaiting sign-off | blocked | P2 | — |
+| SHARED-022 | Choosing the model for a request — weight levels, honoured as a directive (SIGNED, applied) | done | P2 | — |
+| UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | todo | P2 | SHARED-022 |
+| AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | todo | P2 | SHARED-022 |
 | CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
@@ -416,6 +418,8 @@ belongs to the same fix wave.
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime (duration-shaped) | todo | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
 | SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
+| INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
+| UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
 

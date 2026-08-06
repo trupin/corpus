@@ -6,7 +6,7 @@ shared (orchestrator-owned)
 
 ## Status
 
-draft — awaiting user sign-off. **Nothing in SPEC.md has been edited.**
+done — signed by the user 2026-08-06; amendments applied to SPEC.md.
 
 ## Priority
 
@@ -319,7 +319,7 @@ genuinely in conflict.
 
 ## Proposed SPEC.md amendments — verbatim, held for sign-off
 
-> **Nothing below has been applied.** All three land at phase kickoff, by the
+> **Applied to SPEC.md on 2026-08-06, user-signed.** All three landed at phase kickoff, by the
 > orchestrator, after sign-off. Amendment 1 is the only **replacement** in this
 > rider; 2 and 3 append and delete nothing.
 
