@@ -396,7 +396,7 @@ belongs to the same fix wave.
 | CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | blocked | P1 | CONTRACT-033 |
 | AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | blocked | P1 | CLI-029 |
 | SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
-| SHARED-016 | Render skill/agent mentions as mentions, clickable — DRAFT, awaiting sign-off | blocked | P2 | — |
+| SHARED-016 | Mentions, invocations and bare doc ids render as handles — DRAFT, awaiting sign-off | blocked | P2 | — |
 | UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
 | CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
 | UI-077 | Resolved threads do not collapse in the doc view (bug against §5) | todo | P1 | SHARED-018 |
