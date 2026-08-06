@@ -105,11 +105,11 @@ describe("idle", () => {
     const service = makeService();
     const [first] = await enqueueMany(service, 2);
 
-    const events = await service.idle({ timeoutMs: 60_000 });
-    expect(events?.map((event) => event.id).sort()).toEqual(
+    const available = await service.idle({ timeoutMs: 60_000 });
+    expect(available?.events.map((event) => event.id).sort()).toEqual(
       (await service.store.listIds("pending")).sort(),
     );
-    expect(events).toHaveLength(2);
+    expect(available?.events).toHaveLength(2);
     expect(await service.store.listIds("in-progress")).toEqual([]);
     expect(first).toBeDefined();
   });
@@ -130,7 +130,7 @@ describe("idle", () => {
     });
 
     const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
-    expect((await parked)?.map((each) => each.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual([event.id]);
     expect(service.parked).toBe(0);
   });
 
@@ -152,7 +152,7 @@ describe("idle", () => {
       }),
     );
 
-    expect((await parked)?.map((each) => each.id)).toEqual(["evt_outofband00"]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual(["evt_outofband00"]);
   });
 
   it("releases a dropped client without answering", async () => {
@@ -205,14 +205,14 @@ describe("halt and resume", () => {
     });
 
     expect(await service.idle({ timeoutMs: 60 })).toBeUndefined();
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
     expect((await service.store.listIds("pending")).sort()).toEqual(
       events.map((event) => event.id).sort(),
     );
 
     const resumed = await service.resume();
     expect(resumed.halted).toBe(false);
-    expect(await service.claimAll()).toHaveLength(2);
+    expect((await service.claimAll()).events).toHaveLength(2);
   });
 
   it("is idempotent in both directions", async () => {
@@ -237,7 +237,7 @@ describe("halt and resume", () => {
     });
 
     await service.resume();
-    expect((await parked)?.map((each) => each.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual([event.id]);
   });
 });
 
@@ -246,7 +246,7 @@ describe("claimAll", () => {
     const service = makeService();
     const enqueued = await enqueueMany(service, 3);
 
-    const claimed = await service.claimAll();
+    const claimed = (await service.claimAll()).events;
     expect(claimed.map((event) => event.id).sort()).toEqual(
       enqueued.map((event) => event.id).sort(),
     );
@@ -270,10 +270,19 @@ describe("claimAll", () => {
       service.claimAll(),
     ]);
 
-    const ids = batches.flat().map((event) => event.id);
+    const ids = batches.flatMap((batch) => batch.events).map((event) => event.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(enqueued.map((event) => event.id).sort());
     expect(await service.store.listIds("pending")).toEqual([]);
+
+    // Each caller's held set was read before its own moves, so no batch reports
+    // the events it is handing over — and a later caller sees what the earlier
+    // ones took (the chain is FIFO, so the last one sees the other four).
+    for (const batch of batches) {
+      const claimedHere = new Set(batch.events.map((event) => event.id));
+      expect(batch.held.events.filter((event) => claimedHere.has(event.id))).toEqual([]);
+    }
+    expect(Math.max(...batches.map((batch) => batch.held.total))).toBeGreaterThan(0);
   });
 
   it("quarantines a malformed file instead of poisoning the batch", async () => {
@@ -281,7 +290,7 @@ describe("claimAll", () => {
     const good = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
     writeFileSync(service.store.pathFor("pending", "evt_bad000000000"), "{ truncated");
 
-    const claimed = await service.claimAll();
+    const claimed = (await service.claimAll()).events;
     expect(claimed.map((event) => event.id)).toEqual([good.id]);
     expect(await service.store.listIds("failed")).toEqual(["evt_bad000000000"]);
     const quarantined: unknown = JSON.parse(
@@ -293,7 +302,7 @@ describe("claimAll", () => {
 
   it("returns an empty batch, and invalidates nothing, when there is no work", async () => {
     const service = makeService();
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
     expect(invalidations).toEqual([]);
   });
 });
@@ -460,7 +469,7 @@ describe("defer", () => {
     await service.defer(event.id, { blockedOn: "doc_locked01" });
 
     // Handing it back would spin the agent against a lock it still cannot take.
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
     expect(await service.idle({ timeoutMs: 20 })).toBeUndefined();
     expect(await service.store.listIds("deferred")).toEqual([event.id]);
   });
@@ -515,7 +524,9 @@ describe("requeueDeferredFor", () => {
     expect((await service.store.listIds("pending")).sort()).toEqual([first.id, second.id].sort());
     expect(await service.store.listIds("deferred")).toEqual([elsewhere.id]);
     expect(invalidations).toEqual([QUEUE_QUERY_KEYS]);
-    expect((await parked)?.map((event) => event.id).sort()).toEqual([first.id, second.id].sort());
+    expect((await parked)?.events.map((event) => event.id).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
   });
 
   it("clears the deferral bookkeeping as the event re-enters", async () => {
@@ -596,7 +607,9 @@ describe("requeueDeferredFor", () => {
 
     expect(requeued.sort()).toEqual([first.id, second.id].sort());
     // Waits on the condition — both events available — not on a duration.
-    expect((await parked)?.map((event) => event.id).sort()).toEqual([first.id, second.id].sort());
+    expect((await parked)?.events.map((event) => event.id).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
   });
 
   it("quarantines a corrupt file in deferred/ rather than skipping it forever", async () => {
@@ -634,7 +647,7 @@ describe("requeue", () => {
     expect(onDisk).toMatchObject({ status: "pending", attempts: 0 });
     expect(onDisk).not.toHaveProperty("error");
     expect(invalidations).toContainEqual(QUEUE_QUERY_KEYS);
-    expect((await parked)?.map((pending) => pending.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((pending) => pending.id)).toEqual([event.id]);
   });
 
   it("is a no-op for an event that is already pending", async () => {
@@ -704,7 +717,7 @@ describe("reapStale", () => {
 
     clock += 60_000;
     await service.reapStale();
-    expect((await parked)?.map((each) => each.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual([event.id]);
   });
 
   it("quarantines a corrupt in-progress file", async () => {
@@ -733,7 +746,7 @@ describe("losing a race with another actor", () => {
     await enqueueMany(service, 1);
     vi.spyOn(service.store, "move").mockResolvedValue(false);
 
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
   });
 
   it("skips an event whose file disappeared between the move and the read", async () => {
@@ -741,7 +754,7 @@ describe("losing a race with another actor", () => {
     await enqueueMany(service, 1);
     vi.spyOn(service.store, "readEvent").mockResolvedValue(undefined);
 
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
   });
 
   it("skips an event that left in-progress mid-reap", async () => {

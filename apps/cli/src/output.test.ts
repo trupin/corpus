@@ -114,6 +114,27 @@ describe("colour", () => {
   });
 });
 
+describe("a note", () => {
+  it("goes to stderr in human mode, leaving stdout to the machine payload", () => {
+    // `queue claim-all` writes one JSON line to stdout in *both* modes, so its
+    // human prose has nowhere else to go — and the split is what keeps the
+    // claimed batch and the server's in-progress view from ever mixing.
+    const sink = collector();
+    sink.out(false).note("the server still holds 2 events in-progress");
+
+    expect(sink.stdout).toEqual([]);
+    expect(sink.stderr.join("")).toBe("the server still holds 2 events in-progress\n");
+  });
+
+  it("is silent under --json, where stderr is the failure envelope", () => {
+    const sink = collector();
+    sink.out(true).note("the server still holds 2 events in-progress");
+
+    expect(sink.stdout).toEqual([]);
+    expect(sink.stderr).toEqual([]);
+  });
+});
+
 describe("a nested output, for a command run as a step of another", () => {
   it("captures the step's JSON value instead of emitting it", () => {
     // The invariant `--json` rests on: exactly one value on stdout. A composite
@@ -145,6 +166,15 @@ describe("a nested output, for a command run as a step of another", () => {
 
     expect(sink.stdout).toEqual([]);
     expect(nested.lines()).toEqual(["two", "lines"]);
+  });
+
+  it("passes a step's note through indented, on the parent's stderr", () => {
+    const sink = collector();
+    const nested = createNestedOutput(sink.out(false));
+    nested.output.note("the server still holds 1 event in-progress");
+
+    expect(sink.stdout).toEqual([]);
+    expect(sink.stderr.join("")).toBe("  the server still holds 1 event in-progress\n");
   });
 
   it("never lets a step decide to print JSON", () => {

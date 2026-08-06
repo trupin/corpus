@@ -24,9 +24,27 @@ const RUNNING = {
   halted: false,
   pending: 0,
   inProgress: 0,
+  deferred: 0,
   processed: 0,
   failed: 0,
   abandoned: 0,
+};
+
+/** No held events — the normal case, and the one that must print nothing. */
+const NO_HELD_EVENTS = { events: [], total: 0, truncated: false };
+
+const HELD = {
+  events: [
+    {
+      id: "evt_h000",
+      type: "comment.created",
+      heldSince: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+      originId: "doc_r8",
+      originTitle: "Re: the rate assumption",
+    },
+  ],
+  total: 4,
+  truncated: true,
 };
 
 afterEach(closeStubServers);
@@ -49,6 +67,7 @@ function fakeSignals(): SignalTarget & { fire(): void; count(): number } {
 async function idleStub(
   idle: (request: { query: URLSearchParams }) => "events" | "expire" | "hold",
   halted = false,
+  inProgress: unknown = NO_HELD_EVENTS,
 ): Promise<StubServer> {
   return startStubServer((request, response) => {
     if (request.path === "/api/queue/status") {
@@ -56,7 +75,7 @@ async function idleStub(
       return;
     }
     const outcome = idle({ query: request.query });
-    if (outcome === "events") sendJson(response, 200, { events: [EVENT] });
+    if (outcome === "events") sendJson(response, 200, { events: [EVENT], inProgress });
     else if (outcome === "expire") sendNoContent(response);
   });
 }
@@ -68,17 +87,42 @@ describe("corpus queue idle", () => {
     const human = stubContext(stub, { flags: { wait: 5 } });
     await runIdle(human.context, { signals: fakeSignals() });
     expect(human.stdout()).toBe("evt_1111 comment.created\n");
+    // Nothing held: the report adds nothing to the loop's normal iteration.
+    expect(human.stderr()).toBe("");
 
     const machine = stubContext(stub, { flags: { wait: 5 }, json: true });
     await runIdle(machine.context, { signals: fakeSignals() });
-    expect(JSON.parse(machine.stdout())).toEqual({ events: [EVENT] });
+    expect(JSON.parse(machine.stdout())).toEqual({
+      events: [EVENT],
+      inProgress: NO_HELD_EVENTS,
+    });
+  });
+
+  it("reports what the server still holds, as its own key and its own stream", async () => {
+    const stub = await idleStub(() => "events", false, HELD);
+
+    const human = stubContext(stub, { flags: { wait: 5 } });
+    await runIdle(human.context, { signals: fakeSignals() });
+    // Pending ids on stdout, the server's view on stderr: the two lists answer
+    // different questions and never share a stream.
+    expect(human.stdout()).toBe("evt_1111 comment.created\n");
+    expect(human.stderr().split("\n").filter(Boolean)).toEqual([
+      "the server still holds 4 events in-progress — not claimed by this call:",
+      "  evt_h000  comment.created  held 3h  Re: the rate assumption",
+      "  … and 3 more held, not shown (4 in total)",
+    ]);
+
+    const machine = stubContext(stub, { flags: { wait: 5 }, json: true });
+    await runIdle(machine.context, { signals: fakeSignals() });
+    expect(JSON.parse(machine.stdout())).toEqual({ events: [EVENT], inProgress: HELD });
+    expect(machine.stderr()).toBe("");
   });
 
   it("writes nothing at all while parked", async () => {
     let release: (() => void) | undefined;
     const stub = await startStubServer((request, response) => {
       if (request.path === "/api/queue/status") return sendJson(response, 200, RUNNING);
-      release = () => sendJson(response, 200, { events: [EVENT] });
+      release = () => sendJson(response, 200, { events: [EVENT], inProgress: NO_HELD_EVENTS });
     });
 
     const harness = stubContext(stub, { flags: { wait: 30 }, json: true });
@@ -90,7 +134,7 @@ describe("corpus queue idle", () => {
 
     release?.();
     await running;
-    expect(JSON.parse(harness.stdout())).toEqual({ events: [EVENT] });
+    expect(JSON.parse(harness.stdout())).toEqual({ events: [EVENT], inProgress: NO_HELD_EVENTS });
   });
 
   it("reports an expired window as a timeout, not an error", async () => {

@@ -3,6 +3,7 @@ import { ID_PREFIXES, newId } from "../core/ids.js";
 import { formatInstant } from "../core/time.js";
 import { conflict, notFound } from "../errors.js";
 import { silentLogger, type Logger } from "../logger.js";
+import { readHeldInProgress, type HeldSet } from "./held.js";
 import {
   NOOP_INVALIDATE,
   NOOP_QUEUE_MIRROR,
@@ -61,6 +62,21 @@ export interface EnqueueInput {
 export interface IdleRequest {
   readonly timeoutMs: number;
   readonly signal?: AbortSignal | undefined;
+}
+
+/**
+ * What the loop's two entry points answer with: the events on offer, and what
+ * the server is already holding (SPEC.md §7's reconciliation bullet).
+ *
+ * One type for both because they are the same two facts — `claimAll` has just
+ * taken the events it reports, `idle` has only spotted them — and the agent
+ * reconciles `held` identically either way. Keeping them one shape is also what
+ * makes it impossible for a route to report the held set on one entry point and
+ * silently drop it on the other.
+ */
+export interface QueueBatch {
+  readonly events: StoredEvent[];
+  readonly held: HeldSet;
 }
 
 export interface ReapResult {
@@ -221,15 +237,21 @@ export class QueueService {
    * availability and never claims** — the agent's loop is `idle → claim-all`.
    * While halted it parks for the full window: that is what "the agent stops
    * picking up work" means (SPEC.md §7).
+   *
+   * A window that ends with work also reports {@link QueueBatch.held}, read in
+   * the same serialized turn as the pending events so the two are one
+   * observation rather than two. The expiring window reports nothing, because
+   * the contract's `204` has no body — and an agent with nothing to claim has
+   * nothing to reconcile against; the list arrives on the next `200` regardless.
    */
-  async idle(request: IdleRequest): Promise<StoredEvent[] | undefined> {
+  async idle(request: IdleRequest): Promise<QueueBatch | undefined> {
     // Wall clock, not the injected `now`: the window is a duration measured
     // against the very timers the waiter parks on, while `now` exists to make
     // the *instants written into files* deterministic in tests.
     const deadline = Date.now() + request.timeoutMs;
     for (;;) {
-      const available = await this.settledPending();
-      if (available.length > 0) return available;
+      const available = await this.settledWork();
+      if (available !== undefined) return available;
 
       const remaining = deadline - Date.now();
       if (remaining <= 0) return undefined;
@@ -243,11 +265,24 @@ export class QueueService {
    * batch. Serialized in-process and `ENOENT`-tolerant, so two concurrent calls
    * split the queue between them and never hand the same event to both. Events
    * enqueued during the claim simply stay pending for the next one.
+   *
+   * **`held` is the state `in-progress/` was in *before* this claim's moves**,
+   * and that is the whole point of the field (SPEC.md §7, CONTRACT-033). The
+   * batch being handed over lands in `in-progress/` as part of this very call,
+   * so reporting the directory afterwards would tell the agent it is
+   * "apparently already working" on the events it is being given — useless on
+   * the first claim and actively misleading on every one. Read here, at the top
+   * of the same serialized turn, the two sets are disjoint by construction
+   * rather than by the order two calls happened to be made in.
+   *
+   * It is read before the halt check as well: a halt stops work being handed
+   * out, not the agent's ability to reconcile what it already holds.
    */
-  async claimAll(): Promise<StoredEvent[]> {
+  async claimAll(): Promise<QueueBatch> {
     return this.serialize(async () => {
+      const held = await readHeldInProgress(this.store, this.logger);
       // Halted: return empty *without touching the filesystem*.
-      if (await this.store.isHalted()) return [];
+      if (await this.store.isHalted()) return { events: [], held };
 
       const claimed: StoredEvent[] = [];
       let touched = false;
@@ -266,7 +301,7 @@ export class QueueService {
         claimed.push(event);
       }
       if (touched) this.invalidate(QUEUE_QUERY_KEYS);
-      return claimed;
+      return { events: claimed, held };
     });
   }
 
@@ -617,6 +652,24 @@ export class QueueService {
    */
   private settledPending(): Promise<StoredEvent[]> {
     return this.serialize(() => this.availablePending());
+  }
+
+  /**
+   * {@link settledPending} plus the held set, for the long poll's answer:
+   * `undefined` when there is no work, so the parked path pays nothing for a
+   * field only a `200` carries.
+   *
+   * Both halves are read in one turn of the chain, so the pending events and the
+   * held set are a single observation — the same reason `settledPending` takes
+   * the chain at all. `idle` claims nothing, so unlike `claimAll` there is no
+   * before-or-after question here: there are no moves to be before.
+   */
+  private settledWork(): Promise<QueueBatch | undefined> {
+    return this.serialize(async () => {
+      const events = await this.availablePending();
+      if (events.length === 0) return undefined;
+      return { events, held: await readHeldInProgress(this.store, this.logger) };
+    });
   }
 
   /**

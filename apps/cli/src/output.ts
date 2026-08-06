@@ -30,6 +30,24 @@ export interface Output {
   /** A human one-liner. Suppressed under `--json` so stdout stays one JSON value. */
   line(text: string): void;
   /**
+   * A human-readable aside on **stderr**, suppressed under `--json`.
+   *
+   * The one caller is the queue's in-progress report (SPEC.md §7, CLI-029), and
+   * it needs this channel rather than {@link line} for a reason specific to
+   * `queue claim-all`: that command's stdout is a machine payload in *both*
+   * modes — the orchestrate skill runs the bare verb and parses stdout, and
+   * `docs/cli.md` publishes `corpus queue claim-all | jq …`. Prose appended
+   * there would break every one of those readers. stderr is the conventional
+   * channel for diagnostics beside a machine payload, and the stream split is
+   * itself the guarantee §7 asks for: what you just claimed is on stdout, what
+   * the server thinks you already had is on stderr, and nothing can confuse the
+   * two.
+   *
+   * Suppressed under `--json` because stderr in that mode is reserved for the
+   * `{"error":{…}}` envelope, and the same data is already in the JSON value.
+   */
+  note(text: string): void;
+  /**
    * Text that must reach stdout in both modes. Two legitimate callers: help,
    * which is documentation rather than data, and `queue claim-all`, whose one
    * JSON line *is* its output in human mode too.
@@ -65,6 +83,11 @@ export function createOutput(options: OutputOptions): Output {
     line(text: string): void {
       if (options.json) return;
       options.stdout(`${text}\n`);
+    },
+
+    note(text: string): void {
+      if (options.json) return;
+      options.stderr(`${text}\n`);
     },
 
     write(text: string): void {
@@ -128,6 +151,12 @@ export function createNestedOutput(parent: Output, prefix = "  "): NestedOutput 
       line(text: string): void {
         lines.push(text);
         parent.line(`${prefix}${text}`);
+      },
+      // A note is a diagnostic, not the step's result, so it is passed through
+      // indented rather than captured: the composite report has no field for it,
+      // and a person watching still wants to see it as it happens.
+      note(text: string): void {
+        parent.note(`${prefix}${text}`);
       },
       write(text: string): void {
         for (const line of text.split("\n")) {

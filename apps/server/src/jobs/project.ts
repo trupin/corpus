@@ -100,7 +100,8 @@ function resolveBlockedOnTitle(db: ProjectionDb, blockedOn: string | null): stri
 
 /**
  * The originating document or thread, resolved through the projection; `null`
- * when unknown.
+ * when unknown. Reads the payload from its stored JSON — the projection's
+ * `events.payload_json` column.
  *
  * The title comes from the same row that proves the document exists, so the
  * response's `originTitle` is null exactly when its `originId` is — the rule
@@ -113,6 +114,21 @@ export function resolveOrigin(db: ProjectionDb, payloadJson: string): JobOrigin 
   } catch {
     return null;
   }
+  return resolveOriginFromPayload(db, payload);
+}
+
+/**
+ * The same rule, for a caller that already holds the parsed payload: the queue's
+ * in-progress report (SERVER-061) reads event files, not projection rows, and
+ * re-serialising a payload only to parse it back would be a round-trip in
+ * service of nothing.
+ *
+ * This is the one place the rule lives. "Where did this event come from" must
+ * have exactly one answer wherever it is asked, or the console row and the
+ * reconciliation row disagree for no reason (SERVER-056) — hence a shared
+ * function rather than a second walk over {@link ORIGIN_KEYS}.
+ */
+export function resolveOriginFromPayload(db: ProjectionDb, payload: unknown): JobOrigin | null {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
 
   const record = payload as Record<string, unknown>;

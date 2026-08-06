@@ -203,7 +203,7 @@ describe("the queue mirrored into the projection", () => {
     ]);
 
     // The first write path to touch it quarantines it, and the row appears.
-    expect((await restarted.queue.claimAll()).map((event) => event.id)).toEqual([good.id]);
+    expect((await restarted.queue.claimAll()).events.map((event) => event.id)).toEqual([good.id]);
     expect(statusOf(restarted.db, badId)).toBe("failed");
     expect(eventFiles("failed")).toEqual([`${badId}.json`]);
     expect(doctor(config).ok).toBe(true);

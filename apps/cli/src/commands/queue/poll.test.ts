@@ -18,6 +18,11 @@ const EVENT = {
   payload: { threadId: "th_2222" },
 };
 
+/** The `200` body always carries both halves; nothing is held in these windows. */
+const NO_HELD_EVENTS = { events: [], total: 0, truncated: false };
+
+const BODY = { events: [EVENT], inProgress: NO_HELD_EVENTS };
+
 afterEach(closeStubServers);
 
 function timeoutsAsked(stub: StubServer): readonly number[] {
@@ -27,7 +32,7 @@ function timeoutsAsked(stub: StubServer): readonly number[] {
 describe("pollWindow", () => {
   it("returns the events the instant the server answers, well inside the window", async () => {
     const stub = await startStubServer((_request, response) => {
-      setTimeout(() => sendJson(response, 200, { events: [EVENT] }), 20);
+      setTimeout(() => sendJson(response, 200, BODY), 20);
     });
 
     const started = Date.now();
@@ -37,13 +42,18 @@ describe("pollWindow", () => {
       signal: new AbortController().signal,
     });
 
-    expect(outcome).toEqual({ kind: "events", events: [EVENT], requests: 1 });
+    expect(outcome).toEqual({
+      kind: "events",
+      events: [EVENT],
+      inProgress: NO_HELD_EVENTS,
+      requests: 1,
+    });
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it("asks the server for the whole window when it fits in one hold", async () => {
     const stub = await startStubServer((_request, response) => {
-      sendJson(response, 200, { events: [EVENT] });
+      sendJson(response, 200, BODY);
     });
 
     await pollWindow({
@@ -82,7 +92,7 @@ describe("pollWindow", () => {
       clock += Number(request.query.get("timeout")) * 1000;
       answered += 1;
       if (answered <= 2) return sendNoContent(response);
-      sendJson(response, 200, { events: [EVENT] });
+      sendJson(response, 200, BODY);
     });
 
     const outcome = await pollWindow({
@@ -93,7 +103,12 @@ describe("pollWindow", () => {
       maxSegmentSeconds: 5,
     });
 
-    expect(outcome).toEqual({ kind: "events", events: [EVENT], requests: 3 });
+    expect(outcome).toEqual({
+      kind: "events",
+      events: [EVENT],
+      inProgress: NO_HELD_EVENTS,
+      requests: 3,
+    });
   });
 
   it("issues exactly one request for a zero window, asking for the schema's minimum", async () => {
@@ -119,7 +134,7 @@ describe("pollWindow", () => {
         response.destroy();
         return;
       }
-      sendJson(response, 200, { events: [EVENT] });
+      sendJson(response, 200, BODY);
     });
 
     const outcome = await pollWindow({
@@ -128,7 +143,12 @@ describe("pollWindow", () => {
       signal: new AbortController().signal,
     });
 
-    expect(outcome).toEqual({ kind: "events", events: [EVENT], requests: 2 });
+    expect(outcome).toEqual({
+      kind: "events",
+      events: [EVENT],
+      inProgress: NO_HELD_EVENTS,
+      requests: 2,
+    });
   });
 
   it("gives up loudly on a second consecutive transport failure", async () => {

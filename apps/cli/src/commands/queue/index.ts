@@ -21,7 +21,10 @@ export const queueTopic: TopicSpec = {
     "and every transition is idempotent so a retried call is never a crash. `defer` is the " +
     "fourth, non-terminal outcome: work blocked on a user-held edit lock waits rather than " +
     "failing, and returns to `pending` by itself when that lock clears. `halt` is the kill " +
-    "switch: it stops consumption without stopping production.",
+    "switch: it stops consumption without stopping production. The loop's two entry points — " +
+    "`idle` when it returns work, and `claim-all` — additionally report what the server still " +
+    "holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the " +
+    "agent can reconcile the server's view against its own memory (SPEC.md §7).",
   commands: [
     idleCommand,
     claimAllCommand,

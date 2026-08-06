@@ -1,6 +1,7 @@
 import { DEFAULT_IDLE_TIMEOUT_SECONDS } from "@corpus/contract";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 import { abortOnInterrupt, type SignalTarget } from "../../signals.js";
+import { reportInProgress } from "./in-progress.js";
 import { pollWindow } from "./poll.js";
 
 /**
@@ -53,9 +54,16 @@ export async function runIdle(
     // value would be worse than silence for whoever is parsing stdout.
     if (outcome.kind === "interrupted") return;
 
+    // A window that returned work carries the in-progress set too (SPEC.md §7),
+    // and it is passed through as its own key rather than folded into `events`:
+    // one list is what is waiting to be claimed, the other is what the server
+    // thinks is already owed, and an agent that merged them would either redo
+    // settled work or claim nothing. Human mode keeps them in different streams
+    // for the same reason — pending ids on stdout, the report on stderr.
     if (outcome.kind === "events") {
-      out.emit({ events: outcome.events });
+      out.emit({ events: outcome.events, inProgress: outcome.inProgress });
       for (const event of outcome.events) out.line(`${event.id} ${event.type}`);
+      reportInProgress(out, outcome.inProgress);
       return;
     }
 
@@ -83,7 +91,15 @@ export const idleCommand: WorkspaceCommandSpec = {
     'window and reports `reason: "halted"` instead, which costs one extra `GET /api/queue/status` ' +
     "on expiry (the `204` carries no halted indicator). **Idle observes and never claims**: the " +
     "events stay in `pending/` until `corpus queue claim-all`, so a crash between the two loses " +
-    "nothing. Ctrl-C exits 0 with no output.",
+    "nothing. Ctrl-C exits 0 with no output.\n\n" +
+    "**When it returns work, it also reports what the server still thinks you are doing** " +
+    "(SPEC.md §7) — the same `inProgress` field `corpus queue claim-all` carries, as its own key " +
+    "beside `events` and never mixed into them: those events are already in `in-progress/` and " +
+    "are not the ones waiting to be claimed. In human mode it prints as a readable block on " +
+    "stderr with ages rendered as `held 3h`; under `--json` `heldSince` stays an ISO instant so " +
+    "you compute the age against your own clock, and `total` plus `truncated` say whether the " +
+    "20-row cap cut the list. A timeout carries no list at all — the `204` has no body, and an " +
+    "agent with nothing to claim has nothing to reconcile against.",
   args: [],
   flags: [
     {
@@ -105,7 +121,7 @@ export const idleCommand: WorkspaceCommandSpec = {
     {
       command: "corpus queue idle --json",
       description:
-        'The agent loop\'s form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}]}` on work, `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` on expiry.',
+        'The agent loop\'s form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false}}` on work, `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` on expiry.',
     },
     {
       command: "corpus queue idle --wait 0 --json",

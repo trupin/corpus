@@ -12,7 +12,11 @@ import {
 import { DRIFT_KINDS, PROJECTION_COUNT_FIELDS } from "./schemas/db.js";
 import { DOC_DIFF_MAX_CHARS, DOC_EDITED_EVENT_TYPE } from "./schemas/edit.js";
 import { ERROR_CODES } from "./schemas/error.js";
-import { CORE_QUEUE_EVENT_TYPES, QUEUE_EVENT_STATUSES } from "./schemas/queue.js";
+import {
+  CORE_QUEUE_EVENT_TYPES,
+  MAX_IN_PROGRESS_REPORTED,
+  QUEUE_EVENT_STATUSES,
+} from "./schemas/queue.js";
 import { docFilterShape } from "./schemas/query.js";
 import {
   HEADING_PATH_SEPARATOR,
@@ -1604,6 +1608,133 @@ describe("the annotatable queue verbs take an omittable body", () => {
     const op = operation("/api/queue/halt", "post");
     expect(op.description).toContain("body is optional in full");
     expect(op.requestBody?.description).toContain("omit the body entirely");
+  });
+});
+
+/**
+ * CONTRACT-033, the wire half of SHARED-015. SPEC.md §7: "Claiming work also
+ * reports the events the server currently holds `in-progress`, each with what it
+ * is and how long it has been held… Reconciliation is the agent's judgement and
+ * never an inference the server draws on its behalf."
+ *
+ * What is pinned in the *published document* rather than in the schema tests is
+ * everything a client author learns without opening this package: the shape, the
+ * cap and its signal, and the prose that makes the list actionable — above all
+ * the never-settle-what-you-cannot-account-for clause, which is the one rule
+ * whose absence turns this feature into a way to kill a concurrent run's work.
+ */
+describe("the in-progress set reported on a claim (CONTRACT-033)", () => {
+  const CLAIM_PATH = "/api/queue/claim-all";
+
+  it("adds no endpoint: the report rides on the loop's existing entry points", () => {
+    expect(operations()).toEqual([...ENDPOINT_INVENTORY].sort());
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("in-progress"))).toEqual([]);
+  });
+
+  it("publishes the held event with what it is, where it came from, and since when", () => {
+    const schema = componentSchemas?.["InProgressEvent"];
+    expect(Object.keys(schema?.properties ?? {})).toEqual([
+      "id",
+      "type",
+      "heldSince",
+      "originId",
+      "originTitle",
+    ]);
+    expect(schema?.required).toEqual(["id", "type", "heldSince", "originId", "originTitle"]);
+  });
+
+  /**
+   * The instant-not-duration decision, published where a client author reads it:
+   * a `date-time` string, with the reason for it in the description rather than
+   * only in the source docblock.
+   */
+  it("types the held-since as an instant and says why it is not a duration", () => {
+    const heldSince = componentSchemas?.["InProgressEvent"]?.properties?.["heldSince"];
+    expect(JSON.stringify(heldSince)).toContain("date-time");
+    expect(heldSince?.description).toContain("not how long ago that was");
+    expect(heldSince?.description).toContain("whichever clock it trusts");
+  });
+
+  /**
+   * The origin is `Job`'s, spelling and nullability both — the rider asked for
+   * one vocabulary for "where this came from", not a second one.
+   */
+  it("says where a held event came from the way a job does", () => {
+    const held = componentSchemas?.["InProgressEvent"];
+    const job = componentSchemas?.["Job"];
+    for (const field of ["originId", "originTitle"] as const) {
+      expect(JSON.stringify(held?.properties?.[field]), field).toContain('"null"');
+      expect(JSON.stringify(job?.properties?.[field]), field).toContain('"null"');
+    }
+    expect(held?.properties?.["originId"]?.description).toContain("`Job.originId`");
+  });
+
+  /**
+   * The cap is only acceptable because it announces itself. `maxItems` publishes
+   * the bound, `total` publishes the real size, and `truncated` is the flag that
+   * stops a capped list reading as a complete one — the CONTRACT-030 precedent,
+   * on this very route.
+   */
+  it("publishes the cap and both halves of its overflow signal", () => {
+    const set = componentSchemas?.["InProgressSet"];
+    expect(Object.keys(set?.properties ?? {})).toEqual(["events", "total", "truncated"]);
+    expect(set?.required).toEqual(["events", "total", "truncated"]);
+    expect(set?.properties?.["events"]?.maxItems).toBe(MAX_IN_PROGRESS_REPORTED);
+    expect(set?.properties?.["total"]?.description).toContain("and N more");
+    expect(set?.properties?.["total"]?.description).toContain("GET /api/jobs?status=in-progress");
+    expect(set?.properties?.["truncated"]?.description).toContain("complete one");
+  });
+
+  it("states the ordering the cap depends on", () => {
+    expect(componentSchemas?.["InProgressSet"]?.properties?.["events"]?.description).toContain(
+      "most recently claimed first",
+    );
+  });
+
+  /**
+   * The separation is the feature. Both bodies carry it as a sibling of
+   * `events`, and both require it — an optional field would be
+   * indistinguishable from an empty one.
+   */
+  it.each(["ClaimBatch", "IdleResult"])("gives %s the set as its own required field", (name) => {
+    const schema = componentSchemas?.[name];
+    expect(Object.keys(schema?.properties ?? {})).toEqual(["events", "inProgress"]);
+    expect(schema?.required).toContain("inProgress");
+    expect(schema?.properties?.["events"]?.items?.$ref).toContain("QueueEvent");
+    // Referenced unmodified: `.describe()` on a registered schema would carry
+    // the component's name onto the derived one and rewrite the definition both
+    // bodies share, so the reference has to be a bare `$ref`.
+    expect(schema?.properties?.["inProgress"]?.$ref).toContain("InProgressSet");
+  });
+
+  /**
+   * The prose lives on the shared component rather than on each reference, for
+   * the reason above — so this is where a client author reads the separation
+   * rule and the never-settle clause without opening the route.
+   */
+  it("carries the reconciliation rule on the component both bodies share", () => {
+    const description = componentSchemas?.["InProgressSet"]?.description ?? "";
+    expect(description).toContain("never mixed into the claimed events");
+    expect(description).toContain("never settle an event you cannot account for");
+    expect(description).toContain("settles nothing by itself");
+  });
+
+  /** SPEC.md §7's reconciliation rule, published where a client author reads it. */
+  it("states the reconciliation contract, including what must never be settled", () => {
+    const description = operation(CLAIM_PATH, "post").description ?? "";
+    expect(description).toContain("never mixed into `events`");
+    expect(description).toContain("cannot account for is never settled");
+    expect(description).toContain("concurrent run's work");
+    expect(description).toContain("reports, and settles nothing by itself");
+    expect(description).toContain("`reap-stale` remains the recovery");
+    expect(description).toContain("The list is capped");
+  });
+
+  /** The rider's resolved Q1: the two entry points, and only those. */
+  it("reports it on idle too, and says the 204 cannot carry it", () => {
+    const description = operation("/api/queue/idle", "get").description ?? "";
+    expect(description).toContain("the loop's two entry points");
+    expect(description).toContain("`204` that ends an empty window has no body");
   });
 });
 

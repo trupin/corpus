@@ -2578,10 +2578,14 @@
             },
             "minItems": 1,
             "description": "Pending events, still in `pending/`. Claim them with `POST /api/queue/claim-all`."
+          },
+          "inProgress": {
+            "$ref": "#/components/schemas/InProgressSet"
           }
         },
         "required": [
-          "events"
+          "events",
+          "inProgress"
         ]
       },
       "QueueEvent": {
@@ -2622,6 +2626,79 @@
           "payload"
         ]
       },
+      "InProgressSet": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InProgressEvent"
+            },
+            "maxItems": 20,
+            "description": "The held events, most recently claimed first, capped at 20. **Disjoint from the events just claimed** — an event cannot be in both, since a claim moves it out of `pending/` and this list is read from `in-progress/` as it stood beforehand. When the cap bites, the newest are kept: those are the ones this session can still account for, and the ancient ones are `reap-stale`'s job."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many events the server holds `in-progress` **in total**, equal to `events.length` whenever `truncated` is false. It is the \"and N more\" the cap owes the caller: subtract the list's length to get it. For the complete set past 20, ask `GET /api/jobs?status=in-progress` — the cap bounds this report, never the caller's reach."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the cap cut the list — `total` is then greater than `events.length`. Stated rather than left to be derived (the rule `DocDiff.truncated` sets): this is the flag that stops a capped list from reading as a complete one, and a caller must not have to compute the one fact that keeps it honest."
+          }
+        },
+        "required": [
+          "events",
+          "total",
+          "truncated"
+        ],
+        "description": "What the server still thinks the agent is doing (SPEC.md §7) — reported beside a claim as **its own field, never mixed into the claimed events**. The two answer different questions, and an agent that confused them would either redo settled work or settle work it never did. Nothing here was claimed by the call that returned it: these events were already in `in-progress/` when it arrived. The loop reconciles: settle what you have already done with the ordinary verbs, leave what you are still working, and never settle an event you cannot account for. The server reports and settles nothing by itself."
+      },
+      "InProgressEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_[A-Za-z0-9]+$",
+            "description": "Identifier of a queue event.",
+            "example": "evt_7c1d"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for the same reason: plugins define their own. Core values: comment.created, form.respond, doc.edited, agent.done. It is half of what makes the row checkable: an agent recognises *what kind of work* it is being told it still owes."
+          },
+          "heldSince": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-19T10:05:00Z",
+            "description": "**When the event was claimed**, as an instant — not how long ago that was. An instant is still true after the agent has sat on this response for a turn, and it lets the caller compute the age against whichever clock it trusts instead of inheriting the server's. Rendering it as `held 3h` is the CLI's job (SPEC.md §7)."
+          },
+          "originId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+            "description": "Document or thread the held event originated from, or null — **the same field `Job.originId` is, derived by the same rule**: the first of `threadId`, `parentId`, `docId` in the event payload that names a document the corpus still holds. `form.respond` names a thread; a plugin event may name nothing, which is what null is for.",
+            "example": "doc_a1b2c3"
+          },
+          "originTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "**The current title of whatever `originId` names, or null** — null exactly when `originId` is null, or when the document it names no longer exists. Read at response time rather than stored, exactly as `Job.originTitle` is. This is the field that makes the row *checkable* rather than merely present: \"you are apparently still working on `comment.created` for **Re: the rate assumption**\" is a sentence an agent can hold against its own memory, and a bare event id is not."
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "heldSince",
+          "originId",
+          "originTitle"
+        ]
+      },
       "ClaimBatch": {
         "type": "object",
         "properties": {
@@ -2630,10 +2707,14 @@
             "items": {
               "$ref": "#/components/schemas/QueueEvent"
             }
+          },
+          "inProgress": {
+            "$ref": "#/components/schemas/InProgressSet"
           }
         },
         "required": [
-          "events"
+          "events",
+          "inProgress"
         ]
       },
       "ReapStaleResult": {
@@ -5983,7 +6064,7 @@
           "queue"
         ],
         "summary": "Long-poll until work is available",
-        "description": "Returns `200` the instant pending work exists or arrives, and `204` with no body when the window expires (default and maximum 480 s) so the skill loop re-invokes it. Both outcomes are normal; `204` is not an error. **Idle reports availability and never claims** — follow a `200` with `POST /api/queue/claim-all`. While the queue is halted, idle parks for the full window and never returns events (SPEC.md §7).",
+        "description": "Returns `200` the instant pending work exists or arrives, and `204` with no body when the window expires (default and maximum 480 s) so the skill loop re-invokes it. Both outcomes are normal; `204` is not an error. **Idle reports availability and never claims** — follow a `200` with `POST /api/queue/claim-all`. While the queue is halted, idle parks for the full window and never returns events (SPEC.md §7).\n\nA `200` also carries `inProgress`: what the server still thinks the agent is doing. It is reported here and on `claim-all` — the loop's two entry points — and nowhere else; the `204` that ends an empty window has no body and therefore no list. See `claim-all` for the reconciliation contract.",
         "parameters": [
           {
             "schema": {
@@ -6041,8 +6122,8 @@
         "tags": [
           "queue"
         ],
-        "summary": "Atomically claim every pending event",
-        "description": "Moves all `pending/*` events to `in-progress/` in one call and returns them as a batch; concurrent claims never hand the same event to two callers. Returns an empty batch while halted (SPEC.md §7).",
+        "summary": "Atomically claim every pending event, and report what is already held",
+        "description": "Moves all `pending/*` events to `in-progress/` in one call and returns them as a batch; concurrent claims never hand the same event to two callers. Returns an empty batch while halted (SPEC.md §7).\n\n**The response also reports what the server still thinks the agent is doing**, as `inProgress` — its own field, never mixed into `events`. The two answer different questions, and an agent that confused them would either redo settled work or settle work it never did. Nothing in `inProgress` was claimed by this call: those events were already in `in-progress/` when it arrived.\n\n**The loop is expected to reconcile it** (SPEC.md §7). An event whose work this agent has already done is settled on the spot with the ordinary verbs; one it is genuinely still working is left alone; and an event it **cannot account for is never settled** — closing an unfamiliar event to tidy the list would silently kill a concurrent run's work. Reconciliation is the agent's judgement and never an inference the server draws on its behalf: this endpoint reports, and settles nothing by itself. `reap-stale` remains the recovery for the other case — a session that died with its context — and stays a requeue.\n\n**The list is capped, and says so.** Past the cap it reports the true `total` and sets `truncated`; the complete set is `GET /api/jobs?status=in-progress`. A short list that looked complete would defeat the whole field.",
         "parameters": [
           {
             "schema": {
@@ -6062,7 +6143,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The claimed events; empty while halted or when nothing is pending.",
+            "description": "The claimed events — empty while halted or when nothing is pending — beside the events the server already holds `in-progress`.",
             "content": {
               "application/json": {
                 "schema": {
