@@ -33,6 +33,53 @@
 /** The status that trips the one rule. */
 export const RESOLVED_STATUS = "resolved";
 
+/**
+ * What a surface knows about whether a conversation holds a turn nobody has
+ * seen — including **that it does not know** (PR #25 re-review, MAJOR).
+ *
+ * Read state is the server's (SPEC.md §7: `.corpus/seen.json`, and it "survives
+ * browser changes"), and the UI receives it on `DocRow.unread`. Some placements
+ * have no row: a standalone thread opened as a document has no parent list to
+ * appear in, and an anchored conversation past `DEFAULT_PAGE_LIMIT` is not in
+ * the page its parent's list returned. Those placements used to answer the
+ * interlock with a boolean anyway — a browser-session guess (`hasSeenMark`, a
+ * `Map` that dies with the tab) dressed as the server's fact.
+ *
+ * A guess in either direction is a defect with a spec clause attached: guessing
+ * `unread` makes §6's "a resolved thread is collapsed by default wherever it is
+ * shown" untrue for those placements forever, and guessing `read` folds a
+ * conversation this browser cannot vouch has been read, against §11's "never
+ * collapsed by the rule". So the third answer is spelled out instead, and the
+ * rule stands down when it is the answer: **the rule applies only where the read
+ * state is known.** Naming it is what stops the two clauses being traded off
+ * against each other silently.
+ */
+export type ThreadReadState = "read" | "unread" | "unknown";
+
+/**
+ * The projection's `unread` as a read state. `null` is the contract's "not a
+ * thread" — no answer, rather than "nothing unseen" (see `DocRowSchema`).
+ */
+export function readStateOf(unread: boolean | null | undefined): ThreadReadState {
+  if (unread === null || unread === undefined) return "unknown";
+  return unread ? "unread" : "read";
+}
+
+/**
+ * The more cautious of two answers, which is the only direction a placement's
+ * record ever moves — see `ThreadCollapseApi.place`.
+ *
+ * `unread` outranks `unknown` outranks `read`: a conversation that was placed
+ * with something unseen in it does not become foldable because it has since been
+ * displayed, and one whose read state was never known does not become foldable
+ * because this browser has now displayed it either.
+ */
+export function strongerReadState(left: ThreadReadState, right: ThreadReadState): ThreadReadState {
+  if (left === "unread" || right === "unread") return "unread";
+  if (left === "unknown" || right === "unknown") return "unknown";
+  return "read";
+}
+
 export const COLLAPSE_STORAGE_KEY = "corpus.collapse";
 
 /** Bumped when the shape below changes; an older blob degrades to defaults. */
@@ -53,8 +100,11 @@ export interface ThreadCollapseSubject {
   readonly threadId: string;
   /** The thread's own status; `resolved` is what the rule keys on. */
   readonly status: string;
-  /** True while it holds a turn nobody has displayed yet (SPEC.md §7). */
-  readonly unread: boolean;
+  /**
+   * Whether it holds a turn nobody has displayed yet (SPEC.md §7) — or whether
+   * this surface has no way to tell. See {@link ThreadReadState}.
+   */
+  readonly readState: ThreadReadState;
   /**
    * True when this surface cannot usefully draw the conversation where it
    * stands — nesting past {@link MAX_DRAWN_DEPTH}. Not a second rule: it is what
@@ -71,9 +121,17 @@ export interface ThreadCollapseSubject {
  * Kept separate from {@link placedCollapsed} so the closed set stays visible in
  * the code: this function is the whole of it, and a second rule would have to be
  * written into this one body rather than added beside it.
+ *
+ * **It asks for `read`, not for "not unread"** (PR #25 re-review, MAJOR). §11's
+ * interlock is a promise about what a fold can cost — a collapsed conversation
+ * displays nothing and so reads nothing (§7), so folding one that might hold an
+ * unseen turn is a way to lose it. A surface that does not know cannot make that
+ * promise, so it does not fold: `unknown` stands the rule down exactly as
+ * `unread` does. The reader may still fold such a conversation by hand; the
+ * override binds the rule, not them.
  */
 export function resolvedRuleCollapses(subject: ThreadCollapseSubject): boolean {
-  return subject.status === RESOLVED_STATUS && !subject.unread;
+  return subject.status === RESOLVED_STATUS && subject.readState === "read";
 }
 
 /**

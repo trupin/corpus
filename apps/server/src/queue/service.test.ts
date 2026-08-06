@@ -959,6 +959,53 @@ describe("the projection mirror", () => {
     expect((await service.complete(fresh.id)).status).toBe("processed");
   });
 
+  // SERVER-063 review round. The rebuild also runs from `attachMirror`, which
+  // `attachProjection` calls during boot — and a status directory that cannot be
+  // listed used to throw straight out of it, with the same result as the file
+  // case above: no server, and no server left to ask why.
+  it("skips a status directory it cannot list at boot, and still boots and serves", async () => {
+    const logger = { level: "silent" as const, info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+    const service = makeService({ logger });
+    const [held, done] = await enqueueMany(service, 2);
+    if (held === undefined || done === undefined) throw new Error("expected two events");
+    await service.claimAll();
+    await service.complete(done.id);
+    // Unlistable for every user, root included — `readdirSync` on a path that is
+    // not a directory is ENOTDIR for everyone, the directory-level twin of the
+    // EISDIR trick above. A `chmod 000` (the shape this was reported as) would
+    // be bypassed by root, and is pinned at the store's seam in project.test.ts.
+    const processedDir = join(corpusDir, "queue", "processed");
+    rmSync(processedDir, { recursive: true });
+    writeFileSync(processedDir, "not a directory\n");
+    const late = makeMirror();
+
+    const scan = service.attachMirror(late);
+
+    // Alive, and honest about the loss: the processed event is excluded from the
+    // mirror rather than counted as something it is not, and the *other* status
+    // directories are still scanned.
+    expect(scan.unlistable).toEqual([
+      { status: "processed", reason: expect.stringContaining("ENOTDIR") as string },
+    ]);
+    expect(late.replacements[0]?.map((event) => [event.id, event.status])).toEqual([
+      [held.id, "in-progress"],
+    ]);
+    // Named, with the consequence an operator needs, at the one level a `silent`
+    // server still writes.
+    expect(logger.error).toHaveBeenCalledWith(
+      "cannot list queue status directory; its events are missing from the projection",
+      { status: "processed", reason: expect.stringContaining("ENOTDIR") as string },
+    );
+    // Nothing moved or quarantined: boot is a read.
+    expect(readFileSync(processedDir, "utf8")).toBe("not a directory\n");
+
+    // Serving: a full round trip through the directories that are still there.
+    const fresh = await service.enqueue({ type: "comment.created", source: "cli", payload: {} });
+    const batch = await service.claimAll();
+    expect(batch.events.map((event) => event.id)).toEqual([fresh.id]);
+    expect(batch.held.events.map((event) => event.id)).toEqual([held.id]);
+  });
+
   it("rebuilds into a mirror attached after construction, and uses it from then on", async () => {
     const service = makeService();
     const seeded = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });

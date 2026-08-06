@@ -1,6 +1,6 @@
 import type { DocRow } from "@corpus/contract";
 import type { MouseEvent, ReactElement } from "react";
-import { RESOLVED_STATUS } from "./threadCollapse";
+import { readStateOf, RESOLVED_STATUS, type ThreadReadState } from "./threadCollapse";
 
 /**
  * A collapsed conversation: one line that still says what it is.
@@ -41,7 +41,15 @@ export interface ThreadSummary {
   /** How many turns are inside — the conversation's whole size. */
   readonly turnCount: number;
   readonly lastAuthor: string | null;
-  readonly unread: boolean;
+  /**
+   * Whether it holds something unseen — or whether the placement has no way to
+   * tell (see {@link ThreadReadState}). The line announces only a definite
+   * `unread`: a badge is a claim, and so is its absence, but the only way to see
+   * this line at all with the answer `unknown` is a fold the reader took with
+   * the card in front of them, and this browser is not the authority on what the
+   * server recorded as seen.
+   */
+  readonly readState: ThreadReadState;
   /** The anchored words, or `""` for a conversation about no particular passage. */
   readonly quote: string;
   /** The commented document; `null` is SPEC.md §6's standalone thread. */
@@ -56,7 +64,7 @@ export function summaryFromRow(row: DocRow): ThreadSummary {
     status: row.status,
     turnCount: row.turnCount ?? 0,
     lastAuthor: row.lastAuthor,
-    unread: row.unread === true,
+    readState: readStateOf(row.unread),
     quote: row.anchorQuote?.trim() ?? "",
     parent: row.parent,
     parentTitle: row.parentTitle,
@@ -111,7 +119,7 @@ export function CollapsedThread({
       {...(onContextMenu === undefined ? {} : { onContextMenu })}
     >
       {collapsedLabel(summary)}
-      {summary.unread ? <span className="unread">new</span> : null}
+      {summary.readState === "unread" ? <span className="unread">new</span> : null}
     </button>
   );
 }

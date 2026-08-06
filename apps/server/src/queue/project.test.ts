@@ -2,9 +2,34 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { QueueEventStatus } from "@corpus/contract";
 import { DOCS_KEY, JOBS_KEY, QUEUE_KEY } from "../events/index.js";
 import { QUEUE_QUERY_KEYS, scanQueueSync } from "./project.js";
 import { QueueStore, type StoredEvent } from "./store.js";
+
+/**
+ * A real store whose listing of one status fails the way a `chmod 000` status
+ * directory fails. `chmod` is bypassed by root, so a test that used it would
+ * pass without proving anything for whoever runs the suite as root; the
+ * privilege-free equivalents (a path that is not a directory, a symlink loop)
+ * all produce a *layout* that `ensureLayoutSync` refuses before the scan runs.
+ * So the `EACCES` shape is injected at the one seam the reader talks to.
+ */
+class RefusingStore extends QueueStore {
+  constructor(
+    corpusDir: string,
+    private readonly refused: QueueEventStatus,
+  ) {
+    super(corpusDir);
+  }
+
+  override listIdsSync(status: QueueEventStatus): string[] {
+    if (status !== this.refused) return super.listIdsSync(status);
+    throw Object.assign(new Error(`EACCES: permission denied, scandir '${this.dirFor(status)}'`), {
+      code: "EACCES",
+    });
+  }
+}
 
 describe("the queue's invalidation key table", () => {
   it("names the queue, the job list and the document collection", () => {
@@ -81,9 +106,60 @@ describe("scanQueueSync", () => {
     expect(scan.malformed).toEqual(["evt_malformed000"]);
   });
 
+  // SERVER-063 review round: the file-level skip above landed with a docblock
+  // claiming an unlistable *directory* could never get here, because
+  // `ensureLayoutSync` would fail on it first. It does not — `mkdirSync(dir,
+  // { recursive: true })` succeeds on an existing directory whatever its mode —
+  // so the listing threw straight out of the constructor, which is the same
+  // "server exited during startup" this scan exists to prevent.
+  it("skips a status directory it cannot list, and keeps scanning the others", async () => {
+    await store.writeEvent("pending", event("evt_pending00000"));
+    await store.writeEvent("processed", event("evt_processed000"));
+    // Real, and unlistable for every user including root: `readdirSync` on a
+    // path that is not a directory is `ENOTDIR` for everyone. (The failure this
+    // was reported as — a `chmod 000` directory — is `EACCES`, which root
+    // bypasses; the next test pins that shape at the store's seam instead.)
+    rmSync(store.dirFor("processed"), { recursive: true });
+    writeFileSync(store.dirFor("processed"), "not a directory\n");
+
+    const scan = scanQueueSync(store);
+
+    expect(scan.unlistable).toEqual([
+      { status: "processed", reason: expect.stringContaining("ENOTDIR") as string },
+    ]);
+    // Losing one status is not a reason to stop reporting the others, and the
+    // events inside the lost one are excluded rather than counted as something
+    // they are not: `processed` is simply absent from the mirror.
+    expect(scan.events.map((each) => [each.id, each.status])).toEqual([
+      ["evt_pending00000", "pending"],
+    ]);
+    expect(scan.malformed).toEqual([]);
+    expect(scan.unreadable).toEqual([]);
+  });
+
+  it("skips a status directory the filesystem refuses to list, whatever the reason", async () => {
+    await store.writeEvent("in-progress", { ...event("evt_inprogress00"), status: "in-progress" });
+    // The reported failure, at the seam it arrives through: `chmod 000` on a
+    // status directory. It cannot be produced from a test that may run as root,
+    // so the store is asked to throw exactly what the filesystem throws — the
+    // store stays honest, the reader decides the policy.
+    const refusing = new RefusingStore(join(root, ".corpus"), "pending");
+
+    const scan = scanQueueSync(refusing);
+
+    expect(scan.unlistable).toEqual([
+      { status: "pending", reason: expect.stringContaining("EACCES") as string },
+    ]);
+    expect(scan.events.map((each) => each.id)).toEqual(["evt_inprogress00"]);
+  });
+
   it("reports nothing skipped when every file reads", async () => {
     await store.writeEvent("pending", event("evt_pending00000"));
 
-    expect(scanQueueSync(store)).toMatchObject({ malformed: [], unreadable: [] });
+    expect(scanQueueSync(store)).toMatchObject({
+      malformed: [],
+      unreadable: [],
+      unlistable: [],
+    });
   });
 });

@@ -522,3 +522,128 @@ describe("a conversation nested deeper than the surface can draw", () => {
     expect(panel("th_deep")?.querySelector(".thread-card")?.getAttribute("data-depth")).toBe("6");
   });
 });
+
+/**
+ * PR #25 re-review, MINOR — **the chip↔margin swap is an unmount, and the
+ * placement has to survive it.**
+ *
+ * "Reading never collapses anything" (SPEC.md §11) is kept by recording what a
+ * conversation was placed with and never letting that answer soften; the record
+ * used to be a ref inside `ThreadPanel`, which made it a property of one mounted
+ * component. Crossing `MARGIN_MIN_WIDTH` unmounts the chip's panel and mounts a
+ * fresh one in the margin (`useAnchorLayer.slotHost` answers `null`, so
+ * `AnchorChips` draws nothing), so widening a column while reading a resolved
+ * conversation re-placed it against the row it had just marked read and folded
+ * it mid-sentence. Same defect as the round trip the ref was added for, reached
+ * by a resize.
+ *
+ * The other half is asserted beside it, because the fix is a *lifetime* and not
+ * a memory: a placement is a fresh decision every time §11 says one is made, so
+ * leaving the conversation and coming back has to fold it.
+ */
+describe("a conversation that changes placement while it is on screen", () => {
+  function anchoredOf(row: DocRow): AnchoredThread {
+    return {
+      anchorId: `anc_${row.id}`,
+      threadId: row.id,
+      row,
+      rowKnown: true,
+      orphaned: false,
+      quote: row.anchorQuote ?? "",
+      placement: {
+        anchorId: `anc_${row.id}`,
+        threadId: row.id,
+        resolved: row.status === "resolved",
+        turnCount: row.turnCount ?? 0,
+        segments: [],
+      },
+    };
+  }
+
+  /** One surface, one conversation, either placement — the width decides. */
+  function Swap({
+    harness,
+    row,
+    margin,
+  }: {
+    readonly harness: ReturnType<typeof createCorpusTestHarness>;
+    readonly row: DocRow;
+    readonly margin: boolean;
+  }): ReactElement {
+    return (
+      <harness.Wrapper>
+        <ContextMenuProvider>
+          <ThreadCollapseProvider surfaceKey={columnSurface("col_a")}>
+            {margin ? (
+              <MarginColumn
+                threads={[anchoredOf(row)]}
+                parentId="doc_m"
+                flashThread={null}
+                onOpenDoc={() => undefined}
+                onNotify={() => undefined}
+                innerRef={createRef<HTMLDivElement>()}
+              />
+            ) : (
+              <ThreadPanel
+                summary={summaryFromRow(row)}
+                host="slot"
+                onOpenDoc={() => undefined}
+                onNotify={() => undefined}
+              />
+            )}
+          </ThreadCollapseProvider>
+        </ContextMenuProvider>
+      </harness.Wrapper>
+    );
+  }
+
+  it("does not fold under the reader when the column widens into the margin", async () => {
+    const transport = wire();
+    const harness = createCorpusTestHarness({ fetch: transport.fetch });
+    const unseen = resolvedRow({ unread: true });
+    const view = render(<Swap harness={harness} row={unseen} margin={false} />);
+
+    // Placed expanded by the interlock, and read: the seen round trip lands and
+    // the row comes back saying there is nothing unseen left.
+    await waitFor(() => {
+      expect(panel("th_done")?.querySelector(".thread-card")).not.toBeNull();
+    });
+    view.rerender(<Swap harness={harness} row={resolvedRow()} margin={false} />);
+    await waitFor(() => {
+      expect(isFolded("th_done")).toBe(false);
+    });
+
+    // Now the column crosses `MARGIN_MIN_WIDTH`: a fresh panel, same surface,
+    // same conversation, still on screen — and still being read.
+    view.rerender(<Swap harness={harness} row={resolvedRow()} margin={true} />);
+    await waitFor(() => {
+      expect(panel("th_done")?.closest(".focus-margin")).not.toBeNull();
+    });
+    expect(isFolded("th_done")).toBe(false);
+  });
+
+  it("does fold when the reader leaves it and comes back — a placement is a fresh decision", async () => {
+    const transport = wire();
+    const harness = createCorpusTestHarness({ fetch: transport.fetch });
+    const view = render(
+      <Swap harness={harness} row={resolvedRow({ unread: true })} margin={false} />,
+    );
+    await waitFor(() => {
+      expect(panel("th_done")?.querySelector(".thread-card")).not.toBeNull();
+    });
+
+    // Away: nothing on this surface is showing the conversation any more, so the
+    // surface stops remembering how it was placed.
+    view.unmount();
+    await waitFor(() => {
+      expect(panel("th_done")).toBeNull();
+    });
+
+    // Back, with the conversation read and resolved: the rule places it folded.
+    render(<Swap harness={harness} row={resolvedRow()} margin={false} />);
+    await waitFor(() => {
+      expect(panel("th_done")).not.toBeNull();
+    });
+    expect(isFolded("th_done")).toBe(true);
+  });
+});

@@ -394,7 +394,7 @@ belongs to the same fix wave.
 | CONTRACT-033 | claim-all/idle carry the in-progress set (id, type, origin, held-since) | done | P1 | SHARED-015 |
 | SERVER-061 | Populate the in-progress set from `in-progress/`; settle nothing | done | P1 | CONTRACT-033 |
 | CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | done | P1 | CONTRACT-033 |
-| AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | todo | P1 | CLI-029 |
+| AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | done | P1 | CLI-029 |
 | SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
 | SHARED-016 | Mentions, invocations and bare doc ids render as handles — DRAFT, awaiting sign-off | blocked | P2 | — |
 | UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
@@ -415,6 +415,8 @@ belongs to the same fix wave.
 | SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | todo | P1 | — |
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime (duration-shaped) | todo | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
+| SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
+| CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
 
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

@@ -167,17 +167,20 @@ export function isPlaced(thread: AnchoredThread): boolean {
  * what passage it is about — and the server resolves its `threadStatus` along
  * with it, so the rule has a status to read.
  *
- * **`unread: true` is the honest answer to the one thing an anchor cannot say.**
- * The row is where "does this hold a turn nobody has seen" comes from; with no
- * row the surface cannot vouch that anything here has been seen, and §11's
- * interlock is exactly the clause that keeps a conversation like that out of the
- * rule's reach. It is therefore placed **expanded**, its card fetches the
- * conversation by id and tells the whole truth — which is what every anchored
- * thread did before this placement had a fold at all.
+ * **`readState: "unknown"` is the honest answer to the one thing an anchor
+ * cannot say.** The row is where "does this hold a turn nobody has seen" comes
+ * from; an anchor carries no read state at all, and this said `unread: true`
+ * instead — the right *placement* reached by asserting a fact the surface does
+ * not have (PR #25 re-review, MAJOR). The outcome is unchanged, because §11's
+ * interlock and the unknown answer stand the rule down alike: it is placed
+ * **expanded**, its card fetches the conversation by id and tells the whole
+ * truth, which is what every anchored thread did before this placement had a
+ * fold at all. What changes is that its collapsed line no longer announces a
+ * "new" turn nobody has seen evidence of.
  *
  * **Only ever for a thread whose row is not coming** ({@link
  * AnchoredThread.rowKnown}). Placement is a one-shot latched decision
- * (`ThreadPanel.placedUnread`), so this answer is permanent once taken: used
+ * (`ThreadCollapseApi.place`), so this answer is permanent once taken: used
  * while the list was merely *slow*, it placed a resolved conversation expanded
  * for the life of the reader, because the row that arrived a beat later carried
  * the same status and so never re-armed the latch. That was UI-077's live
@@ -191,7 +194,7 @@ export function summaryFromAnchor(thread: AnchoredThread, parentId: string): Thr
     status: thread.placement.resolved ? RESOLVED_STATUS : "open",
     turnCount: thread.placement.turnCount,
     lastAuthor: null,
-    unread: true,
+    readState: "unknown",
     quote: thread.quote.trim(),
     parent: parentId,
     parentTitle: null,

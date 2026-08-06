@@ -368,11 +368,15 @@ describe("an anchored conversation whose row has not arrived", () => {
     expect(summary.parent).toBe("doc_m");
   });
 
-  it("reports unread, so the rule never folds a conversation nobody can vouch for", () => {
-    // The one thing an anchor cannot say. §11's interlock is what covers it:
-    // the conversation is placed expanded and its card tells the whole truth.
-    expect(summaryFromAnchor(placedAnchor({ threadStatus: "resolved" }), "doc_m").unread).toBe(
-      true,
+  /**
+   * PR #25 re-review, MAJOR. This used to answer `unread: true` — the right
+   * placement reached by asserting a fact an anchor does not carry. It says it
+   * does not know instead, which stands the rule down just the same and keeps a
+   * "new" badge off the line of a conversation nobody has evidence about.
+   */
+  it("does not know whether it holds anything unseen, and says so", () => {
+    expect(summaryFromAnchor(placedAnchor({ threadStatus: "resolved" }), "doc_m").readState).toBe(
+      "unknown",
     );
   });
 
@@ -384,7 +388,7 @@ describe("an anchored conversation whose row has not arrived", () => {
     const summary = anchoredSummary(withRow, "doc_m");
     expect(summary.turnCount).toBe(4);
     expect(summary.lastAuthor).toBe("agent");
-    expect(summary.unread).toBe(false);
+    expect(summary.readState).toBe("read");
   });
 });
 

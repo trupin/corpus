@@ -6,6 +6,7 @@ import { useIsEditing } from "../editor/editingRegistry";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
+import { readStateOf } from "../thread/threadCollapse";
 import {
   anchorDecorationPlugin,
   anchorPluginKey,
@@ -436,10 +437,10 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       const row = rows.current.find((candidate) => candidate.id === threadId);
       const anchor = placed.current.find((candidate) => candidate.threadId === threadId);
       if (row !== undefined) {
-        expand.current({ threadId, status: row.status, unread: row.unread === true });
+        expand.current({ threadId, status: row.status, readState: readStateOf(row.unread) });
       } else if (anchor !== undefined) {
         const summary = summaryFromAnchor(anchor, docIdRef.current);
-        expand.current({ threadId, status: summary.status, unread: summary.unread });
+        expand.current({ threadId, status: summary.status, readState: summary.readState });
       }
       const panel = marginRef.current?.querySelector<HTMLElement>(
         `:scope > [data-thread-panel="${escapeSelectorValue(threadId)}"]`,

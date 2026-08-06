@@ -252,16 +252,56 @@ test.describe("the margin column", () => {
     expect(connector.height).toBe("1px");
   });
 
-  test("hides the chips it replaces", async ({ page }) => {
+  /**
+   * The rule hides **the anchor widget's** chip, and nothing else (PR #25
+   * re-review, CRITICAL).
+   *
+   * `.t-chip` is the one collapsed representation a conversation has anywhere
+   * (SPEC.md §11), so a rule scoped at `.doc-main .t-chip` also hid every
+   * whole-document, orphaned and unplaceable conversation the body still lists
+   * while the margin is up — the moment one of them was folded it became a
+   * `display: none` line with no card and no expander anywhere, and the fold is
+   * sticky, so a reload did not bring it back. "Collapsed is never hidden."
+   */
+  test("hides the anchor widget's chip, and leaves every other placement reachable", async ({
+    page,
+  }) => {
     const styles = await measure(
       page,
       `<div class="focus-inner with-margin">
-         <div class="doc-main"><button class="t-chip">💬 2 · agent</button></div>
-         <div class="focus-margin"></div>
+         <div class="doc-main">
+           <div class="doc-body"><div class="anchor-slot"><div class="thread-slot collapsed">
+             <button class="t-chip" id="at-anchor">💬 2 · agent</button>
+           </div></div></div>
+           <div class="thread-slots" data-thread-section="whole-document">
+             <div class="thread-slot collapsed" data-thread-panel="th_w">
+               <button class="t-chip" id="whole-doc">💬 2 turns · agent · resolved</button>
+             </div>
+           </div>
+           <div class="thread-slots" data-thread-section="detached">
+             <div class="thread-slot collapsed" data-thread-panel="th_o">
+               <button class="t-chip" id="orphan">💬 1 turn · user</button>
+             </div>
+           </div>
+         </div>
+         <div class="focus-margin">
+           <div class="thread-slot collapsed" data-thread-panel="th_a">
+             <button class="t-chip" id="in-margin">💬 3 turns · agent · resolved</button>
+           </div>
+         </div>
        </div>`,
-      [[".t-chip", ["display"]]],
+      [
+        ["#at-anchor", ["display"]],
+        ["#whole-doc", ["display"]],
+        ["#orphan", ["display"]],
+        ["#in-margin", ["display"]],
+      ],
     );
-    expect(styles[".t-chip"]?.["display"]).toBe("none");
+    expect(styles["#at-anchor"]?.["display"]).toBe("none");
+    // Every conversation the margin does not take over stays on screen, folded.
+    expect(styles["#whole-doc"]?.["display"]).toBe("inline-flex");
+    expect(styles["#orphan"]?.["display"]).toBe("inline-flex");
+    expect(styles["#in-margin"]?.["display"]).toBe("inline-flex");
   });
 });
 

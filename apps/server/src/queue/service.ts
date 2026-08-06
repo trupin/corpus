@@ -195,8 +195,12 @@ export class QueueService {
    * A file the scan could not read is reported one line per file rather than
    * aggregated like the malformed ones: it names a file an operator has to go
    * repair, and the reason (EACCES, EISDIR, EIO) is the whole diagnostic
-   * (SERVER-063). It is logged at `error` for the same reason the other two
-   * readers do — that is the level a `silent` server still writes.
+   * (SERVER-063). A status directory it could not *list* gets the same
+   * treatment, and its own line says what an operator needs to know beyond the
+   * fault: everything in that directory is missing from the projection, so a
+   * console that looks short of events is describing the filesystem, not a lost
+   * event. Both are logged at `error` for the same reason the other reader does
+   * — that is the level a `silent` server still writes.
    */
   private rebuildMirror(): QueueScanResult {
     const scan = rebuildQueueMirrorSync(this.store, this.mirror);
@@ -211,6 +215,15 @@ export class QueueService {
         status: skipped.status,
         reason: skipped.reason,
       });
+    }
+    for (const skipped of scan.unlistable) {
+      this.logger.error(
+        "cannot list queue status directory; its events are missing from the projection",
+        {
+          status: skipped.status,
+          reason: skipped.reason,
+        },
+      );
     }
     return scan;
   }

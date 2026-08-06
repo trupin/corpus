@@ -78,6 +78,20 @@ const RESOLVED_THREAD: StubRow = {
   status: "resolved",
 };
 
+/**
+ * A conversation about the whole document — no anchor, so the margin never takes
+ * it over and it is listed in the body under every placement.
+ */
+const WHOLE_THREAD: StubRow = {
+  id: "th_whole",
+  type: "thread",
+  title: "About the memo",
+  path: "data/docs/threads/th_whole.md",
+  body: "## user · 2026-07-02T09:00:00Z\nIs this the final cut?\n\n## agent · 2026-07-02T09:02:00Z\nIt is.\n",
+  parent: "doc_note",
+  status: "resolved",
+};
+
 const BASE = [VIEW, NOTE, OPEN_THREAD, RESOLVED_THREAD] as const;
 
 async function openNote(page: Page, rows: readonly StubRow[] = BASE): Promise<void> {
@@ -186,6 +200,73 @@ for (const placement of PLACEMENTS) {
     });
   });
 }
+
+/**
+ * PR #25 re-review, CRITICAL — a collapsed conversation that became unreachable.
+ *
+ * Margin mode is a property of the *document* (it turns on when the anchored
+ * conversations have somewhere to cascade), not of every conversation on it: a
+ * whole-document thread, an orphan and an unplaceable anchor all stay in the
+ * body while the margin is up. `.focus-inner.with-margin .doc-main .t-chip` was
+ * written when `.t-chip` meant "the anchor's chip"; since UI-077 it is the one
+ * collapsed representation a conversation has anywhere, so that rule hid those
+ * conversations the moment they folded — one line, `display: none`, no card, and
+ * no expander left on the surface. The fold is sticky in `localStorage`, so a
+ * reload did not bring it back either.
+ *
+ * The fixture needs **both** kinds of conversation: an anchored one so the
+ * margin is genuinely up, and an unanchored one to be lost. The suite's existing
+ * deep-nesting case uses `{ ...NOTE, anchors: [] }`, which switches margin mode
+ * off — which is why nothing here caught it.
+ */
+test.describe("a conversation the margin does not take over, with the margin up", () => {
+  const ROWS = [VIEW, NOTE, OPEN_THREAD, RESOLVED_THREAD, WHOLE_THREAD] as const;
+
+  test("stays on screen and expands in place when the rule folds it", async ({ page }) => {
+    await openNote(page, ROWS);
+    const focus = await PLACEMENTS[1].enter(page);
+
+    // The margin is up, and holds the anchored conversations only.
+    await expect(focus.locator(".focus-margin [data-thread-panel]")).toHaveCount(2);
+    const whole = focus.locator('.doc-main [data-thread-panel="th_whole"]');
+    await expect(whole).toHaveCount(1);
+
+    // Folded by the rule — and still there, which is the whole clause.
+    await expectFolded(focus, "th_whole");
+    const line = whole.locator(OWN_LINE);
+    await expect(line).toBeVisible();
+    await expect(line).toContainText("2 turns");
+    await expect(line).toContainText("resolved");
+
+    await line.click();
+    await expectOpen(focus, "th_whole");
+  });
+
+  test("stays on screen when the reader folds it by hand", async ({ page }) => {
+    await openNote(page, [
+      VIEW,
+      NOTE,
+      OPEN_THREAD,
+      RESOLVED_THREAD,
+      { ...WHOLE_THREAD, status: "open" },
+    ]);
+    const focus = await PLACEMENTS[1].enter(page);
+    await expectOpen(focus, "th_whole");
+
+    await panel(focus, "th_whole").locator(".t-collapse").click();
+    await expectFolded(focus, "th_whole");
+    // Not hidden: reachable now, and after a reload, which is where the sticky
+    // fold used to turn an invisible line into a permanently lost conversation.
+    await expect(panel(focus, "th_whole").locator(OWN_LINE)).toBeVisible();
+
+    await page.reload();
+    await page.locator(".reader .ProseMirror").waitFor();
+    const again = await PLACEMENTS[1].enter(page);
+    await expect(panel(again, "th_whole").locator(OWN_LINE)).toBeVisible();
+    await panel(again, "th_whole").locator(OWN_LINE).click();
+    await expectOpen(again, "th_whole");
+  });
+});
 
 /**
  * The regression this file was hardened for, held still.

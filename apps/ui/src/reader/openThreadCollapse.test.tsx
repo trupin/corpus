@@ -16,6 +16,7 @@ import {
   type ReaderTransport,
 } from "../testing/readerFixture.js";
 import { clearCollapseState } from "../thread/threadCollapse.js";
+import { openThreadReadState } from "./DocView.js";
 import { Reader } from "./Reader.js";
 import { resetEscapeLayers } from "./useEscapeStack.js";
 
@@ -225,8 +226,9 @@ describe("resolving a thread while it is the open document", () => {
   /**
    * A standalone thread has no parent to list, so there is no row to read
    * `unread` off. The fallback is what this browser has displayed
-   * (`hasSeenMark`): open, so the interlock holds it open; once displayed, the
-   * rule takes over and the resolve folds it.
+   * (`hasSeenMark`): before that the answer is **unknown** and the rule stands
+   * down, so it is placed open; once displayed, the answer is `read` and the
+   * resolve folds it.
    */
   it("collapses a standalone thread too, once the reader has been shown it", async () => {
     const transport = wire("th_solo", { parent: null });
@@ -241,5 +243,47 @@ describe("resolving a thread while it is the open document", () => {
     await waitFor(() => {
       expect(isFolded("th_solo")).toBe(true);
     });
+  });
+});
+
+/**
+ * PR #25 re-review, MAJOR — **the fallback no longer claims to know.**
+ *
+ * Read state is the server's (SPEC.md §7: `.corpus/seen.json`, and it "survives
+ * browser changes"). Where this placement has no row it used to answer the
+ * interlock with `!hasSeenMark(…)` — a module-level `Map` with a page session's
+ * lifetime, reporting a conversation the server knows was read as carrying
+ * something unseen. It reached the same placement §11's interlock would have
+ * chosen, by asserting a fact it did not have; the honest answer is that it does
+ * not know, and the rule stands down on that rather than on a guess.
+ *
+ * The mark can confirm a read and can never deny one, which is the whole of the
+ * asymmetry below. A field on the thread resource deletes this branch:
+ * `issues/contract/036-thread-unread-field.md`.
+ */
+describe("what a thread opened as a document knows about its read state", () => {
+  const thread = threadFixture({ id: "th_x", parent: PARENT, turns: TURNS });
+
+  it("reads the row when there is one, including its null", () => {
+    const row = (unread: boolean | null) =>
+      threadRowFixture({ id: "th_x", parent: PARENT, unread, turnCount: TURNS.length });
+    expect(openThreadReadState("th_x", thread, row(true))).toBe("unread");
+    expect(openThreadReadState("th_x", thread, row(false))).toBe("read");
+    expect(openThreadReadState("th_x", thread, row(null))).toBe("unknown");
+  });
+
+  it("answers `unknown` with no row and no mark, rather than guessing unread", () => {
+    // The reviewer's case: a standalone thread, read long ago on the server, in
+    // a browser that has not displayed it since the page loaded.
+    expect(openThreadReadState("th_x", thread, undefined)).toBe("unknown");
+  });
+
+  it("answers `read` for a conversation with nothing in it to have read", () => {
+    // Not a guess: `useMarkSeenOnce` never marks a turnless thread either,
+    // because there is nothing to record.
+    expect(openThreadReadState("th_x", threadFixture({ id: "th_x", turns: [] }), undefined)).toBe(
+      "read",
+    );
+    expect(openThreadReadState("th_x", undefined, undefined)).toBe("read");
   });
 });

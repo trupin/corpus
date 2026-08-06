@@ -12,7 +12,9 @@ import {
   isThreadCollapsed,
   placedCollapsed,
   readCollapseState,
+  readStateOf,
   resolvedRuleCollapses,
+  strongerReadState,
   surfaceOverrides,
   withOverride,
   withSurface,
@@ -31,7 +33,7 @@ import {
  */
 
 function subject(overrides: Partial<ThreadCollapseSubject> = {}): ThreadCollapseSubject {
-  return { threadId: "th_1", status: "open", unread: false, ...overrides };
+  return { threadId: "th_1", status: "open", readState: "read", ...overrides };
 }
 
 describe("the one rule", () => {
@@ -42,8 +44,48 @@ describe("the one rule", () => {
   });
 
   it("never folds a conversation holding a turn nobody has seen", () => {
-    expect(resolvedRuleCollapses(subject({ status: "resolved", unread: true }))).toBe(false);
-    expect(placedCollapsed(subject({ status: "resolved", unread: true }))).toBe(false);
+    expect(resolvedRuleCollapses(subject({ status: "resolved", readState: "unread" }))).toBe(false);
+    expect(placedCollapsed(subject({ status: "resolved", readState: "unread" }))).toBe(false);
+  });
+
+  /**
+   * PR #25 re-review, MAJOR. Some placements have no row to read `unread` off —
+   * a standalone thread, or one past its parent's first page of thread rows —
+   * and used to answer the interlock with a guess. The rule asks for knowledge,
+   * so it stands down on `unknown` exactly as it does on `unread`: a fold hides
+   * the turns (SPEC.md §7), and a surface that cannot vouch that they have been
+   * read cannot make §11's promise about what the fold costs.
+   */
+  it("never folds a conversation whose read state it does not know", () => {
+    expect(resolvedRuleCollapses(subject({ status: "resolved", readState: "unknown" }))).toBe(
+      false,
+    );
+    expect(placedCollapsed(subject({ status: "resolved", readState: "unknown" }))).toBe(false);
+    // …and the rule does fold the same conversation once the answer is known.
+    expect(placedCollapsed(subject({ status: "resolved", readState: "read" }))).toBe(true);
+  });
+
+  it("reads the projection's flag, and its null as no answer rather than as read", () => {
+    expect(readStateOf(true)).toBe("unread");
+    expect(readStateOf(false)).toBe("read");
+    // `DocRow.unread` is null on a non-thread — the contract's "no answer".
+    expect(readStateOf(null)).toBe("unknown");
+    expect(readStateOf(undefined)).toBe("unknown");
+  });
+
+  /**
+   * The direction a placement's record moves, and the reason it has one: reading
+   * a conversation must never make it foldable, so the merge is monotonic and
+   * only a status change takes the answer fresh (`ThreadCollapseApi.place`).
+   */
+  it("keeps the more cautious of two answers about the same conversation", () => {
+    expect(strongerReadState("read", "unread")).toBe("unread");
+    expect(strongerReadState("unread", "read")).toBe("unread");
+    expect(strongerReadState("read", "unknown")).toBe("unknown");
+    expect(strongerReadState("unknown", "read")).toBe("unknown");
+    // Unseen turns outrank not knowing: the badge is worth keeping.
+    expect(strongerReadState("unknown", "unread")).toBe("unread");
+    expect(strongerReadState("read", "read")).toBe("read");
   });
 
   it("collapses a conversation nested deeper than the surface can draw", () => {
@@ -57,17 +99,17 @@ describe("the one rule", () => {
    * already declared it could not usefully draw (PR #25 review, MINOR).
    */
   it("clamps depth even for an unread conversation, and only the rule stands down", () => {
-    expect(placedCollapsed(subject({ tooDeep: true, unread: true }))).toBe(true);
-    expect(placedCollapsed(subject({ status: "resolved", tooDeep: true, unread: true }))).toBe(
-      true,
-    );
+    expect(placedCollapsed(subject({ tooDeep: true, readState: "unread" }))).toBe(true);
+    expect(
+      placedCollapsed(subject({ status: "resolved", tooDeep: true, readState: "unread" })),
+    ).toBe(true);
     // The rule itself still yields to it, wherever the surface can draw.
-    expect(placedCollapsed(subject({ status: "resolved", unread: true }))).toBe(false);
+    expect(placedCollapsed(subject({ status: "resolved", readState: "unread" }))).toBe(false);
   });
 
   /** Nothing about the clamp is a one-way door: it is placement, not policy. */
   it("still lets a reader expand a conversation the surface clamped", () => {
-    const deep = subject({ tooDeep: true, unread: true });
+    const deep = subject({ tooDeep: true, readState: "unread" });
     expect(isThreadCollapsed({}, deep)).toBe(true);
     expect(isThreadCollapsed(withOverride({}, deep, false), deep)).toBe(false);
   });
@@ -85,7 +127,7 @@ describe("precedence — the last thing that happened wins", () => {
   });
 
   it("lets the reader fold an unread conversation by hand — the override binds the rule, not them", () => {
-    const unread = subject({ status: "resolved", unread: true });
+    const unread = subject({ status: "resolved", readState: "unread" });
     expect(isThreadCollapsed({}, unread)).toBe(false);
     expect(isThreadCollapsed(withOverride({}, unread, true), unread)).toBe(true);
   });

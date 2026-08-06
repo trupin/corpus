@@ -1,6 +1,7 @@
 import type { RevealTarget } from "@corpus/kit/plugin";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
+import { readStateOf } from "../thread/threadCollapse";
 import { REVEAL_RETRIES, REVEAL_RETRY_MS, revealItem } from "./reveal";
 import type { ReaderDoc } from "./useReaderDoc";
 
@@ -215,7 +216,7 @@ export function useReaderSurface({
     // that is the reader's own act overriding the rule (SPEC.md §11).
     const row = rows.current.find((candidate) => candidate.id === threadId);
     if (row !== undefined) {
-      expand.current({ threadId, status: row.status, unread: row.unread === true });
+      expand.current({ threadId, status: row.status, readState: readStateOf(row.unread) });
     }
     setFlash(threadId);
     if (flashTimer.current !== null) clearTimeout(flashTimer.current);

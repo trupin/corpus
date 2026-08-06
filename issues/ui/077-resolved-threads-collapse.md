@@ -394,6 +394,15 @@ but it is a derivation where a field would do. A `CONTRACT-*` issue adding
 `unread` to the thread resource would delete `openThreadUnread`'s second branch
 outright — flagged for the orchestrator, not fixed here.
 
+> **Correction (2026-08-06, second review-fix round).** The commit message for
+> this round claimed "CONTRACT-036 material was filed". **It was not** — that was
+> an error in the record, not a filing. It is filed now:
+> `issues/contract/036-thread-unread-field.md`. The paragraph above is also
+> imprecise about the fallback, and that imprecision was the MAJOR of the
+> re-review: the derivation did not report "safe", it reported **unread**, which
+> is a claim about the server's read state made by a browser session that cannot
+> see it. See the round below.
+
 ### Gate-blocker round — `collapse.spec.ts` was not a flake (2026-08-06)
 
 **Model: opus** (claude-opus-5, 1M context). The previous round's reading —
@@ -552,6 +561,155 @@ and would mis-place its sentence silently rather than fail.
   focus wait. The two with the silent-corruption shape (a caret key, then typing)
   are fixed here; the `ControlOrMeta+a` ones would fail loudly rather than
   corrupt, and were left alone rather than swept without evidence.
+
+### Second review-fix round — PR #25 re-review, three findings (2026-08-06)
+
+**Model: opus** (claude-opus-5, 1M context). No SPEC change: every fix below is
+the existing signed text, applied. A release is cut from this PR once merged, so
+each fix is verified in a real browser as well as in jsdom.
+
+#### CRITICAL — a collapsed conversation could become unreachable
+
+`FocusMode.css`'s `.focus-inner.with-margin .doc-main .t-chip { display: none }`
+was written when `.t-chip` meant "the anchor's inline chip". Since this issue it
+is the **one collapsed representation a conversation has anywhere** (§11), and
+`.doc-main` holds three placements the margin never takes over —
+`DetachedThreads`' whole-document threads, orphans, and anchors this view cannot
+point at, all rendered inside the body while the margin is up. Folded, by the
+rule or by hand, any of them became a `display: none` line with no card and no
+expander left on the surface; the fold is sticky in `localStorage` keyed `focus`,
+so a reload did not bring it back. §11 says the opposite twice: "collapsed is
+never hidden… the conversation stays in the document's record" and "every
+collapse expands again in place".
+
+Reproduced in Chromium exactly as the review describes — focus mode over a
+document carrying one anchored comment (so margin mode is genuinely on,
+`useAnchorLayer`'s `anchoredCount > 0`) and one **resolved whole-document**
+comment. The rule folds the whole-document one and its line is invisible:
+
+```
+.focus-margin [data-thread-panel]        → 2   (the anchored pair)
+.doc-main [data-thread-panel="th_whole"] → 1   (present in the DOM)
+locator('… > [data-thread-expand]')      → toBeVisible() FAILED
+```
+
+Fixed by scoping the rule to the anchor widget it was always about:
+`.focus-inner.with-margin .doc-main .anchor-slot .t-chip`. That is also the true
+statement — `useAnchorLayer.slotHost` already answers `null` in margin mode, so
+`AnchorChips` portals nothing into those widgets and the rule is belt and braces
+over the editor's decorations, which is why the column reader's
+`.reader-scroll.with-margin` has never needed one.
+
+**Siblings, checked as asked.** Every `display: none` in `apps/ui` and
+`packages/kit` was read against the question "is this scoped by a *placement*
+class over content a conversation can now be?". Eleven rules; ten are not of that
+shape: `.focus` / `.overlay` / `.comment-pop` / `.comments-pop` / `.sel-toolbar`
+are open-state toggles on the element itself, `.toast-wrap:empty` and
+`.pending-atts:empty` are emptiness, `.autocomplete` is its own popover. The one
+other placement-scoped rule is `Reader.css`'s `.col.reading .col-list, .col.reading
+.col-head .chips` — the column is a list **or** a reader, never both, and neither
+selector can match a thread panel. The three `visibility: hidden` uses
+(`.title-grow::after`, `.composer-grow::after`, `.chips-probe`) are measuring
+mirrors. **No sibling.** The one this rule had was itself: it was the only rule in
+the app scoped by `with-margin` that hides anything.
+
+#### MAJOR — the `unread` fallback claimed to know, and it was load-bearing
+
+`openThreadUnread` answered `!hasSeenMark(threadId, ts)` where no row was found —
+a module-level `Map` with a **page session's** lifetime (`useMarkSeenOnce`),
+standing in for read state that SPEC.md §7 puts on the server and says "survives
+browser changes". The mark can confirm a read and can never deny one, so the
+negative branch was this tab reporting a conversation the server knows was read
+as carrying something unseen. `ThreadPanel` latches a placement, so the guess was
+permanent: Ask from the global composer (`useCompose`, `parent: null` — a
+standalone thread), read the answer, resolve it, reload, open it, and it is
+placed **expanded**, every time, against §6.
+
+**The honest UI answer, and it is now what the code says.** Read state is
+tri-state here, and the third value is named: `ThreadReadState = "read" | "unread"
+| "unknown"` (`threadCollapse.ts`). The rule asks for **knowledge** —
+`resolvedRuleCollapses` is `status === resolved && readState === "read"` — so
+`unknown` stands it down exactly as `unread` does. That is the direction the
+review preferred and the one §11 forces: a fold hides the turns (§7), so a
+surface that cannot vouch they have been read cannot make §11's promise about
+what the fold costs. The reader may still fold such a conversation by hand; the
+override binds the rule, not them.
+
+Three placements answer honestly now instead of guessing:
+
+- `openThreadReadState` (was `openThreadUnread`) — the row when there is one
+  (including `unread: null`, the contract's "no answer", as `unknown`);
+  `hasSeenMark` **only** to confirm a read; `unknown` otherwise. A conversation
+  with no confirmed turn is `read`, which is knowledge rather than a guess —
+  there is nothing to have read, and `useMarkSeenOnce` treats it the same way.
+- `summaryFromAnchor` — was `unread: true`, "the one thing an anchor cannot say"
+  said as a fact. Now `unknown`. Same placement, no claim.
+- `summaryFromRow` — `readStateOf(row.unread)`, so a thread row whose `unread` is
+  null does not read as "nothing unseen".
+
+**What changes on screen**: a collapsed line no longer says **"new"** for a
+conversation nobody has evidence about. What does *not* change is the placement
+itself — this is honesty about a guess that happened to land right, not a
+behaviour fix, and the report says so rather than claiming more.
+
+**The field this deletes.** `issues/contract/036-thread-unread-field.md` — filed
+this round, precise about what it removes: with `unread` on `ThreadSchema`,
+`openThreadReadState` becomes `readStateOf(thread.unread)` and the whole second
+branch goes, along with the `hasSeenMark` import and the `useDocs({parent, type:
+thread})` row lookup. `ThreadReadState` itself stays: an anchor still has no
+answer to give.
+
+#### MINOR — the latch survived less than it appeared to
+
+`placedUnread` was a ref, so it was a property of one mounted component, and the
+chip↔margin swap is an unmount and a remount (`slotHost` → `null`, `MarginColumn`
+mounts a fresh panel). Dragging a column past `MARGIN_MIN_WIDTH` while reading a
+resolved conversation re-placed it against the row it had just marked read and
+folded it mid-sentence — "reading never collapses anything", broken by a resize
+instead of by a round trip.
+
+Moved into the surface: `ThreadCollapseApi.place` records what a conversation was
+placed with, per thread, merged with `strongerReadState` so the answer only ever
+gets more cautious, and taken fresh on a status change. **The lifetime is the
+fix, not the memory**: `ThreadCollapseApi.hold` refcounts the panels showing a
+conversation and drops the record on a microtask, so a swap (both panels in one
+commit — React runs every removal's cleanup before every addition's setup) keeps
+it, while leaving the document and coming back does not. Otherwise the repair
+would have become this round's own MAJOR: a conversation placed expanded forever.
+
+#### Verification
+
+- **Each fix has a test that fails without it**, checked by reverting the fix and
+  re-running:
+  - CRITICAL — `e2e/anchors.spec.ts`'s "hides the anchor widget's chip, and leaves
+    every other placement reachable" and two new `collapse.spec.ts` browser specs
+    over a document carrying **both** an anchored and a whole-document comment
+    (the fixture gap the review named: the existing deep-nesting case uses
+    `{ ...NOTE, anchors: [] }`, which switches margin mode off). With the old
+    selector: **3 failed**, all three on the collapsed line's visibility.
+  - MAJOR — `AnchoredThreads.test.tsx`'s "does not announce a new turn on the
+    row-less one it cannot vouch for", in both placements. With
+    `summaryFromAnchor` back at `"unread"`: **2 failed**. Plus
+    `openThreadCollapse.test.tsx`'s three direct cases over
+    `openThreadReadState`, and the tri-state cases in `threadCollapse.test.ts`.
+  - MINOR — `ThreadPanel.test.tsx`'s "does not fold under the reader when the
+    column widens into the margin", with its counterpart "does fold when the
+    reader leaves it and comes back" pinning the lifetime. With the latch put
+    back in the component: **1 failed**, the swap one.
+- `VITEST_MAX_THREADS=4 vitest run apps/ui packages/kit` — **2885 passed**, 0
+  failed (2874 → 2885). Every prior assertion kept, including
+  `AnchoredThreads.test.tsx`'s `rowKnown` cases and `ThreadPanel.test.tsx`'s
+  disarming-interlock case.
+- `playwright test collapse.spec.ts anchors.spec.ts` (`CORPUS_UI_PORT=5273`) —
+  **29 passed**; and **under contention** per INFRA-020, `--workers=8
+  --repeat-each=3`: **87 passed, 0 failed**.
+- Full `playwright test`, default workers, `CORPUS_UI_PORT=5273` — **304 passed,
+  2 failed**. The two are the documented environmental pair (`console.spec` /
+  `smoke.spec` assert the strip reads "server unreachable", which holds only
+  while `127.0.0.1:8765` is unbound; `lsof` shows the user's corpus server on it,
+  pid 29851). Unchanged before and after this work.
+- `tsc --noEmit` (apps/ui, `src` + `e2e`) clean · `eslint` clean on every touched
+  file · `prettier --check` clean.
 
 ## Completion Checklist (domain agent)
 

@@ -27,7 +27,7 @@ function summary(overrides: Partial<ThreadSummary> = {}): ThreadSummary {
     status: "open",
     turnCount: 3,
     lastAuthor: "agent",
-    unread: false,
+    readState: "read",
     quote: "lender spreads",
     parent: "doc_m",
     parentTitle: "Rates memo",
@@ -77,7 +77,7 @@ describe("summaryFromRow", () => {
       status: "resolved",
       turnCount: 4,
       lastAuthor: "user",
-      unread: true,
+      readState: "unread",
       // Trimmed: the selector quotes the file, and the line quotes the words.
       quote: "yield curve",
       parent: "doc_m",
@@ -87,7 +87,13 @@ describe("summaryFromRow", () => {
 
   it("reads a row that knows nothing about turns as an empty conversation", () => {
     const row = docRowFixture({ id: "th_3", type: "thread", turnCount: null, unread: null });
-    expect(summaryFromRow(row)).toMatchObject({ turnCount: 0, unread: false, quote: "" });
+    // `unread: null` is the contract's "not a thread", so it is no answer about
+    // read state rather than "nothing unseen" — the rule stands down on it.
+    expect(summaryFromRow(row)).toMatchObject({
+      turnCount: 0,
+      readState: "unknown",
+      quote: "",
+    });
   });
 });
 
@@ -104,10 +110,23 @@ describe("the control", () => {
 
   it("shows the unread badge only while something in it is unseen", () => {
     const { rerender } = render(
-      <CollapsedThread summary={summary({ unread: true })} onExpand={() => undefined} />,
+      <CollapsedThread summary={summary({ readState: "unread" })} onExpand={() => undefined} />,
     );
     expect(screen.getByRole("button").querySelector(".unread")?.textContent).toBe("new");
     rerender(<CollapsedThread summary={summary()} onExpand={() => undefined} />);
+    expect(screen.getByRole("button").querySelector(".unread")).toBeNull();
+  });
+
+  /**
+   * PR #25 re-review, MAJOR. A placement with no row to read `unread` off used
+   * to report `unread: true`, which put "new" on the line of a conversation this
+   * browser has no evidence about — a claim about the server's `.corpus/seen.json`
+   * made by a tab that cannot see it. The badge is for a definite answer.
+   */
+  it("does not claim a new turn when it does not know", () => {
+    render(
+      <CollapsedThread summary={summary({ readState: "unknown" })} onExpand={() => undefined} />,
+    );
     expect(screen.getByRole("button").querySelector(".unread")).toBeNull();
   });
 

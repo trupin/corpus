@@ -55,12 +55,28 @@ export interface UnreadableEvent {
   readonly reason: string;
 }
 
+/**
+ * One status directory the scan could not list — EACCES on the directory itself,
+ * EIO, a filesystem that went away — as opposed to one file inside it.
+ *
+ * There is no id here, and that is the whole difference: an unlistable directory
+ * offers no per-file granularity to be narrow with, so what is lost is *every*
+ * event in that status, and the status is the only thing an operator can be
+ * pointed at.
+ */
+export interface UnlistableStatus {
+  readonly status: QueueEventStatus;
+  readonly reason: string;
+}
+
 export interface QueueScanResult {
   readonly events: StoredEvent[];
   /** Ids whose file could not be parsed; logged, skipped, never fatal. */
   readonly malformed: string[];
   /** Files that could not be read at all; logged at `error`, skipped, never fatal. */
   readonly unreadable: UnreadableEvent[];
+  /** Status directories that could not be listed; logged at `error`, skipped, never fatal. */
+  readonly unlistable: UnlistableStatus[];
 }
 
 /** What to put in a log field for a thrown value. */
@@ -73,36 +89,59 @@ const causeOf = (error: unknown): string =>
  * **Nothing here throws.** This runs from `QueueService`'s constructor, i.e.
  * during boot, so a throw is not "the queue is degraded" — it is `corpus server
  * start` reporting that the server exited during startup, with no server left
- * to ask why, over one file in a directory the user then has to find by hand
- * (SERVER-063). The two ways a file can fail are therefore both skipped, and
- * both excluded from the mirror the caller replaces the `events` table with: a
- * row the projection cannot read must not be reported as present, and must not
- * be reported as something it is not either. The file itself stays exactly where
- * it is — **boot is a read**, and moving a file the process could not read is
- * not something a boot should attempt; `reap-stale` is what quarantines.
+ * to ask why, over one entry in a directory the user then has to find by hand
+ * (SERVER-063). Every way the filesystem can refuse is therefore skipped, and
+ * everything skipped is excluded from the mirror the caller replaces the
+ * `events` table with: a row the projection cannot read must not be reported as
+ * present, and must not be reported as something it is not either. Nothing is
+ * moved — **boot is a read**, and relocating something the process could not
+ * read is not something a boot should attempt; `reap-stale` is what quarantines.
  *
- * This is the third reader of the same directories to settle on that rule, and
- * they now agree: `readHeldInProgress` skips per file (SERVER-061), and the
- * projection's own boot pass (`projectEventFile`) already skipped this exact
- * file — its "skipping unreadable queue event" line was in the same log,
- * immediately above the crash this replaces.
+ * Degradation is as narrow as the failure allows, in the same two tiers
+ * `readHeldInProgress` uses (`held.ts`, SERVER-061), because the two failures
+ * have different granularity — and the two readers of these directories now
+ * really do agree, at both tiers, which the docblock that used to sit here only
+ * claimed:
  *
- * The *level* is part of the rule: an unreadable file is a fault in the
- * workspace that only an operator can fix, and `error` is the one level a server
- * running at `silent` still writes — so a skip that costs the console an event
- * can never be invisible. Both kinds are reported rather than logged here,
+ * - **One unreadable file** — EACCES, EIO, a directory where a file should be —
+ *   costs exactly that event. Every other event, in this status directory and in
+ *   the ones after it, is still scanned and still mirrored.
+ * - **An unlistable status directory** offers no per-file granularity to be
+ *   narrow with: there is no list to skip an entry from, so the whole status is
+ *   lost. The other status directories are still scanned — losing `pending/` is
+ *   not a reason to stop reporting what is `in-progress/`.
+ *
+ * The store stays honest either way: `listIdsSync` and `readEventSync` throw
+ * what the filesystem threw, and the *policy* of skipping lives here, in the
+ * reader that knows it is a boot path.
+ *
+ * The *level* is part of the rule: an unreadable file or directory is a fault in
+ * the workspace that only an operator can fix, and `error` is the one level a
+ * server running at `silent` still writes — so a skip that costs the console an
+ * event can never be invisible. Every kind is reported rather than logged here,
  * because the caller is the one holding the logger.
  *
- * An unlistable *status directory* is not handled here and does not need to be:
- * `ensureLayoutSync` runs first and fails on it, from the `mkdir` rather than
- * from any read.
+ * `ensureLayoutSync` runs before this and does **not** cover the directory case:
+ * its `mkdirSync(dir, { recursive: true })` succeeds on an existing directory
+ * whatever its mode, so a `chmod 000` status directory arrives here intact and
+ * fails at the listing. What that `mkdir` does refuse is a status *path that is
+ * not a directory at all* (a file, a symlink to one, a loop) — a layout fault,
+ * and a write, which is not this reader's to answer.
  */
 export function scanQueueSync(store: QueueStore): QueueScanResult {
   const events: StoredEvent[] = [];
   const malformed: string[] = [];
   const unreadable: UnreadableEvent[] = [];
+  const unlistable: UnlistableStatus[] = [];
   for (const status of QUEUE_EVENT_STATUSES) {
-    for (const id of store.listIdsSync(status)) {
+    let ids: readonly string[];
+    try {
+      ids = store.listIdsSync(status);
+    } catch (error) {
+      unlistable.push({ status, reason: causeOf(error) });
+      continue;
+    }
+    for (const id of ids) {
       let read: ReadEventResult | undefined;
       try {
         read = store.readEventSync(status, id);
@@ -115,7 +154,7 @@ export function scanQueueSync(store: QueueStore): QueueScanResult {
       else malformed.push(id);
     }
   }
-  return { events, malformed, unreadable };
+  return { events, malformed, unreadable, unlistable };
 }
 
 /**

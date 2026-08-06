@@ -1,5 +1,5 @@
 import { useSetThreadStatus, type RowNotice } from "@corpus/kit";
-import { useCallback, useEffect, useMemo, useRef, type MouseEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, type MouseEvent, type ReactElement } from "react";
 import { useContextMenu } from "../menu/ContextMenuHost";
 import { MenuItems } from "../menu/MenuItems";
 import type { MenuAction } from "../menu/menuModel";
@@ -57,51 +57,42 @@ export function ThreadPanel({
   const menu = useContextMenu();
 
   /**
-   * **Reading never collapses anything** (SPEC.md §11) — and this ref is the
-   * whole of it.
+   * What this conversation is being placed with, decided by the **surface**
+   * rather than by this component (SPEC.md §11's "reading never collapses
+   * anything" — see `ThreadCollapseApi.place`).
    *
-   * The interlock keeps an unread conversation out of the rule's reach. But
-   * displaying one is what marks it read, so an interlock read off the *live*
-   * flag disarms itself a round trip later: open a resolved thread with an
-   * unseen turn, the card renders, `POST …/seen` lands, the row comes back
-   * `unread: false`, and the rule folds the conversation shut **while the reader
-   * is looking at it**. Seen in a browser, which is the only place the seen
-   * round trip exists (`e2e/collapse.spec.ts`).
-   *
-   * So the rule reads whether this conversation has held an unseen turn **since
-   * it was placed**, and that answer only ever moves one way: a turn arriving
-   * unseen re-arms it, and reading never disarms it. A status change is what
-   * re-arms the rule — §11's "the rule is applied when a conversation is placed
-   * and when its status changes" — and re-reads the flag from scratch, which is
-   * how the same thread, seen and then placed again, does collapse.
-   *
-   * Written during render because it caches this render's own inputs, the way
-   * `DocView.paintedBlind` does; the write is idempotent.
+   * The record used to be a ref here, which made it a property of one mounted
+   * panel; the chip↔margin swap is an unmount and a remount, so dragging a
+   * column past `MARGIN_MIN_WIDTH` while reading a resolved conversation
+   * re-placed it against the row it had just marked read and folded it under the
+   * reader (PR #25 re-review, MINOR). `hold` below is what gives the surface's
+   * record the right lifetime: as long as the conversation is on screen, and no
+   * longer, so coming back to it later is a fresh placement.
    */
-  const placedUnread = useRef({ status: summary.status, unread: summary.unread });
-  if (placedUnread.current.status !== summary.status) {
-    placedUnread.current = { status: summary.status, unread: summary.unread };
-  } else if (summary.unread) {
-    placedUnread.current.unread = true;
-  }
-  const unread = placedUnread.current.unread;
+  const { place, hold, observe } = collapse;
+  const readState = place({
+    threadId: summary.id,
+    status: summary.status,
+    readState: summary.readState,
+  });
 
   const subject = useMemo<ThreadCollapseSubject>(
     () => ({
       threadId: summary.id,
       status: summary.status,
-      unread,
+      readState,
       tooDeep: depth > MAX_DRAWN_DEPTH,
     }),
-    [depth, summary.id, summary.status, unread],
+    [depth, readState, summary.id, summary.status],
   );
+
+  useEffect(() => hold(summary.id), [hold, summary.id]);
 
   /*
    * The status this conversation is being placed with, reported to the surface.
    * A status change is what re-asserts the rule and clears a stale override —
    * see `ThreadCollapseApi.observe`.
    */
-  const { observe } = collapse;
   useEffect(() => {
     observe(subject);
   }, [observe, subject]);

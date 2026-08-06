@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { resetSeenMarks } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { createRef, useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "../testing/memoryStorage.js";
@@ -203,6 +203,33 @@ describe.each([
     expect(isFolded("th_rowed")).toBe(true);
     expect(panel("th_rowed")?.querySelector(".thread-card")).toBeNull();
   });
+
+  /**
+   * PR #25 re-review, MAJOR — the row-less placement says it does not know,
+   * rather than saying "unread".
+   *
+   * An anchor carries no read state at all. Answering `unread: true` reached the
+   * right placement by asserting the server's fact, and the claim surfaced the
+   * moment the reader folded the conversation by hand: a "new" badge on the line
+   * of a conversation this browser has no evidence about. `readState: "unknown"`
+   * stands the rule down just the same and claims nothing.
+   */
+  it("does not announce a new turn on the row-less one it cannot vouch for", async () => {
+    render(<Host transport={wire()} />);
+    await waitFor(() => {
+      expect(panel("th_overflow")?.querySelector(".t-collapse")).not.toBeNull();
+    });
+
+    fireEvent.click(panel("th_overflow")?.querySelector(".t-collapse") as HTMLElement);
+    await waitFor(() => {
+      expect(isFolded("th_overflow")).toBe(true);
+    });
+    expect(panel("th_overflow")?.querySelector(".unread")).toBeNull();
+    // The line still says everything an anchor does know.
+    expect(panel("th_overflow")?.querySelector("[data-thread-expand]")?.textContent).toContain(
+      "yield curve",
+    );
+  });
 });
 
 /**
@@ -212,8 +239,8 @@ describe.each([
  * The two halves that combine into it are each correct alone. `ThreadPanel`
  * latches its placement once and only re-reads on a status change, so that
  * reading a conversation can never fold it; and an anchor with no row reports
- * `unread: true`, so §11's interlock holds it open rather than hiding a turn
- * nobody has vouched for. Together, an anchor that arrived before its row placed
+ * `readState: "unknown"`, so the rule stands down and holds it open rather than
+ * hiding a turn nobody has vouched for. Together, an anchor that arrived before its row placed
  * a *guess* — and because the row that followed carried the same `resolved`
  * status, nothing ever re-armed the latch and the guess became permanent.
  *
@@ -244,7 +271,7 @@ describe.each([
     expect(panel("th_rowed")).toBeNull();
 
     // The list answers. Before the fix this second render was too late: the
-    // panel had already latched `unread: true` off the anchor and stayed a card.
+    // panel had already latched the anchor's non-answer and stayed a card.
     view.rerender(<Host transport={transport} anchored={threads()} />);
     await waitFor(() => {
       expect(panel("th_rowed")).not.toBeNull();
