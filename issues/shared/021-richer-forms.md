@@ -1,4 +1,4 @@
-# [SHARED-021] The agent surveys the person with richer forms — DRAFT, awaiting sign-off
+# [SHARED-021] The agent surveys the person with richer forms
 
 ## Domain
 
@@ -6,11 +6,7 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05). No domain issue exists yet; the
-implementing chain does not start before the text is in place — the same rule
-SHARED-012 through SHARED-020 are held to. Signing this commits to a **contract
-change** (the form grammar and the `form.respond` payload both grow), not only to
-rendering.
+done — signed by the user 2026-08-05; amendments applied to SPEC.md.
 
 ## Priority
 

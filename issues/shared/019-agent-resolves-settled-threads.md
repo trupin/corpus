@@ -1,4 +1,4 @@
-# [SHARED-019] The agent resolves conversations it asked for and got — DRAFT, awaiting sign-off
+# [SHARED-019] The agent resolves conversations it asked for and got
 
 ## Domain
 
@@ -6,7 +6,7 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05). No domain issue exists yet; the
+done — signed by the user 2026-08-05; amendments applied to SPEC.md.
 implementing chain does not start before the text is in place — the same rule
 SHARED-012, SHARED-013, SHARED-014, SHARED-016 and SHARED-017 are held to.
 

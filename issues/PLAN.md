@@ -399,10 +399,12 @@ belongs to the same fix wave.
 | SHARED-016 | Mentions, invocations and bare doc ids render as handles — DRAFT, awaiting sign-off | blocked | P2 | — |
 | UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
 | CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
-| UI-077 | Resolved threads do not collapse in the doc view (bug against §5) | todo | P1 | SHARED-018 |
+| UI-077 | Collapse anything, anywhere: by rule + on demand, every placement | todo | P1 | SHARED-018 |
+| AGENT-014 | Agent resolves a settled subthread in the same turn as its reply | todo | P1 | SHARED-019 |
+| SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | todo | P1 | SHARED-019 |
 | SHARED-017 | Multi-select + bulk actions — DRAFT, awaiting sign-off | blocked | P2 | — |
-| SHARED-018 | Collapse anything, anywhere — on demand and by rule — DRAFT, awaiting sign-off | blocked | P1 | — |
-| SHARED-019 | Agent resolves settled subthreads — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
+| SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
 | UI-078 | Resolve confirmation promises replying reopens the thread; it does not | todo | P1 | — |
 | SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry — DRAFT, awaiting sign-off | blocked | P1 | — |

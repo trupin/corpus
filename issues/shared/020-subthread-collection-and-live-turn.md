@@ -1,4 +1,4 @@
-# [SHARED-020] Subthread replies are collected; the agent's latest turn stays current — DRAFT, awaiting sign-off
+# [SHARED-020] Subthread replies are collected; the agent's latest turn stays current
 
 ## Domain
 
@@ -6,11 +6,7 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05). No domain issue exists yet; the
-implementing chain does not start before the text is in place — the same rule
-SHARED-012 through SHARED-017 are held to. This rider is unusual among them:
-**it needs a primitive that does not exist**, so signing it commits to a contract
-addition, not just to rendering.
+done — signed by the user 2026-08-05; amendments applied to SPEC.md.
 
 ## Priority
 
@@ -549,5 +545,3 @@ _N/A — spec draft._
 - [ ] Sign-off recorded (with answers to Q1–Q6)
 - [ ] SPEC.md updated
 - [ ] Committed with `[SHARED-020]` prefix
-</content>
-</invoke>

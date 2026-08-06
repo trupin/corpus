@@ -1,4 +1,4 @@
-# [SHARED-017] Selecting several documents and acting on them — DRAFT, awaiting sign-off
+# [SHARED-017] Selecting several documents and acting on them
 
 ## Domain
 
@@ -6,9 +6,7 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05). No domain issue exists yet; the
-implementing chain does not start before the text is in place — the same rule
-SHARED-012, SHARED-013, SHARED-014 and SHARED-016 are held to.
+done — signed by the user 2026-08-05; amendments applied to SPEC.md.
 
 ## Priority
 

@@ -1,4 +1,4 @@
-# [SHARED-016] Mentions, invocations and bare document ids render as handles — DRAFT, awaiting sign-off
+# [SHARED-016] Mentions, invocations and bare document ids render as handles
 
 ## Domain
 
@@ -6,12 +6,7 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05, **extended the same day** with a
-second user request — bare document ids — folded in here rather than filed as a
-separate rider, because three near-identical rendering rules in three riders is
-exactly the incoherence the user's standing "just make it cohesive" is about).
-No domain issue exists yet; the implementing chain does not start before the text
-is in place — the same rule SHARED-012, SHARED-013 and SHARED-014 are held to.
+done — signed by the user 2026-08-05; amendments applied to SPEC.md.
 
 ## Priority
 

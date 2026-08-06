@@ -1,4 +1,4 @@
-# [SHARED-018] Anything collapses, anywhere — on demand and by rule — DRAFT, awaiting sign-off
+# [SHARED-018] Anything collapses, anywhere — on demand and by rule
 
 ## Domain
 
@@ -6,7 +6,7 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05). No new domain issue exists yet;
+done — signed by the user 2026-08-05; amendments applied to SPEC.md.
 **UI-077** already exists and is the by-rule half — it is explicitly held
 ("do not ship this alone") until this text is signed. The implementing chain does
 not start before the text is in place — the same rule SHARED-012, SHARED-013,
