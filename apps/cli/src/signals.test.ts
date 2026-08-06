@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   abortOnInterrupt,
   delay,
+  onInterrupt,
   INTERRUPT_SIGNALS,
   type InterruptSignal,
   type SignalTarget,
@@ -50,6 +51,67 @@ describe("abortOnInterrupt", () => {
     // `finally` that may run after an early return already did.
     dispose();
     expect(installed(target)).toBe(0);
+  });
+});
+
+describe("onInterrupt", () => {
+  function fire(target: ReturnType<typeof recordingTarget>, signal: InterruptSignal): void {
+    for (const listener of [...(target.listeners.get(signal) ?? [])]) listener();
+  }
+
+  it.each(INTERRUPT_SIGNALS)("tells the handler which signal arrived (%s)", (signal) => {
+    const target = recordingTarget();
+    const seen: InterruptSignal[] = [];
+    onInterrupt((received) => seen.push(received), target);
+
+    fire(target, signal);
+    expect(seen).toEqual([signal]);
+  });
+
+  it("runs once and then gets out of the way, so a second interrupt is Node's default", () => {
+    // The escape hatch: `corpus upgrade` gets one chance to put the server back,
+    // and an operator hammering Ctrl-C is never trapped inside it (CLI-030).
+    const target = recordingTarget();
+    let calls = 0;
+    onInterrupt(() => {
+      calls += 1;
+    }, target);
+
+    fire(target, "SIGINT");
+    expect(calls).toBe(1);
+    expect(installed(target)).toBe(0);
+
+    // Nothing is listening any more, so the second signal reaches no handler at
+    // all — which is exactly how the process gets killed instead.
+    fire(target, "SIGINT");
+    fire(target, "SIGTERM");
+    expect(calls).toBe(1);
+  });
+
+  it("installs one handler per signal and removes them all, idempotently", () => {
+    const target = recordingTarget();
+    const dispose = onInterrupt(() => undefined, target);
+
+    expect(installed(target)).toBe(INTERRUPT_SIGNALS.length);
+    dispose();
+    dispose();
+    expect(installed(target)).toBe(0);
+  });
+
+  it("does not run the handler after it has been disposed", () => {
+    // Node hands a listener the signal it already queued, so a handler can be
+    // invoked after its own `finally` removed it. Holding the reference is how
+    // that race is reproduced deterministically.
+    const target = recordingTarget();
+    let calls = 0;
+    const dispose = onInterrupt(() => {
+      calls += 1;
+    }, target);
+    const [stale] = [...(target.listeners.get("SIGINT") ?? [])];
+
+    dispose();
+    stale?.();
+    expect(calls).toBe(0);
   });
 });
 

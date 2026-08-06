@@ -1,4 +1,5 @@
 import type { Doc, DocRow, Job, Lock, RelatedDoc, Thread, Warning } from "@corpus/contract";
+import { DEFAULT_RECENT_JOBS } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -137,6 +138,34 @@ export function threadRowFixture(overrides: Partial<DocRow> = {}): DocRow {
   });
 }
 
+/**
+ * `GET /api/jobs` as the server answers it, so a test can tell a caller that
+ * asks the right question from one that scans (CONTRACT-030, UI-069).
+ *
+ * The window is the point. `recent` bounds the console's list and is **ignored
+ * once `originId` is given**, which is the whole difference between "the agent
+ * owes this thread an answer" and "…as far as the 50 most recently touched jobs
+ * can tell". A fixture that returned every job whatever was asked would let a
+ * caller that never sends the filter pass a test written to prove it does.
+ *
+ * `jobs` is taken as already ordered most-recently-touched first, as the server
+ * returns it — these suites hand it fixtures, not timestamps to sort.
+ */
+function answerJobs(jobs: readonly Job[], url: URL): readonly Job[] {
+  const originId = url.searchParams.get("originId");
+  const statuses = url.searchParams.get("status")?.split(",").filter(Boolean);
+
+  let answer = jobs;
+  if (originId !== null) answer = answer.filter((job) => job.originId === originId);
+  if (statuses !== undefined && statuses.length > 0) {
+    answer = answer.filter((job) => statuses.includes(job.status));
+  }
+  if (originId !== null) return answer;
+
+  const recent = Number(url.searchParams.get("recent") ?? DEFAULT_RECENT_JOBS);
+  return answer.slice(0, Number.isFinite(recent) && recent > 0 ? recent : DEFAULT_RECENT_JOBS);
+}
+
 export function readerTransport(options: ReaderTransportOptions = {}): ReaderTransport {
   const calls: ReaderCall[] = [];
   const docs = new Map((options.docs ?? []).map((doc) => [doc.frontmatter.id, doc]));
@@ -182,7 +211,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     }
 
     if (url.pathname === "/api/locks") return json({ locks });
-    if (url.pathname === "/api/jobs") return json({ jobs });
+    if (url.pathname === "/api/jobs") return json({ jobs: answerJobs(jobs, url) });
     if (url.pathname === "/api/tree") return json({ folders: [] });
 
     if (url.pathname === "/api/docs" && request.method === "GET") {

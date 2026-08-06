@@ -34,7 +34,11 @@ import { MARK, NODE, type PmMark, type PmNode } from "./schema.js";
  * - headings are ATX (`## `), never setext;
  * - bullets are `- `, ordered markers keep the source's first number;
  * - bold is `**`, italic is `*`;
- * - fences are ``` and keep their language string;
+ * - fences keep their language string and are ``` **by default, not by cap**:
+ *   the delimiter widens to one backtick longer than the longest run in the
+ *   payload, so a block holding its own fence stays one block instead of
+ *   closing early and splitting (UI-057, from AGENT-012). This is the printer's
+ *   widening, not ours — which is why `serialize.test.ts` asserts it;
  * - exactly one blank line between block nodes;
  * - a hard break inside a table cell is `<br>`, GFM's only spelling for one
  *   (UI-064); everywhere else a hard break stays a trailing `\`;

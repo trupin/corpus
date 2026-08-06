@@ -22,6 +22,24 @@ export const SERVER_PIDFILE = "server.pid";
 export const SERVER_LOGFILE = "server.log";
 export const TEMPLATE_MANIFEST_FILE = "template-manifest.json";
 
+/**
+ * Where `corpus upgrade` writes its report (SPEC.md §2.4, CONTRACT-027's
+ * `UpgradeStarted.logPath`).
+ *
+ * A third CLI-owned file inside `.corpus/`, and it exists for the same reason
+ * the other two do: the process that produces this information cannot hand it
+ * back over the channel that asked for it. An upgrade triggered from the UI runs
+ * detached and its last act is restarting the very server the browser was
+ * talking to, so the connection carrying the request is gone long before the
+ * report exists. The file is the only place the answer — what was installed,
+ * what the template sync updated, and above all which files are left in conflict
+ * — can still be read afterwards.
+ */
+export const UPGRADE_LOGFILE = "upgrade.log";
+
+/** How the report's location is spelled to a client: workspace-relative, POSIX. */
+export const UPGRADE_LOG_RELATIVE_PATH = `${CONFIG_DIR}/${UPGRADE_LOGFILE}`;
+
 /** `<root>/.corpus`. */
 export function corpusDir(root: string): string {
   return join(root, CONFIG_DIR);
@@ -37,6 +55,10 @@ export function serverLogPath(root: string): string {
 
 export function templateManifestPath(root: string): string {
   return join(corpusDir(root), TEMPLATE_MANIFEST_FILE);
+}
+
+export function upgradeLogPath(root: string): string {
+  return join(corpusDir(root), UPGRADE_LOGFILE);
 }
 
 /**

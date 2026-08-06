@@ -59,12 +59,19 @@ const NOTE: StubRow = {
   ],
 };
 
+/**
+ * A thread **file**, in SPEC.md §6's turn format — `## <author> · <ts>` headings
+ * — rather than the bare sentence this used to seed. The stub reports a thread's
+ * turns by parsing its body (UI-056), so the format is what makes this a
+ * one-turn conversation: the pip beside the anchor counts turns, and a body with
+ * no headings is a thread with no turns, here and on the real server alike.
+ */
 const THREAD: StubRow = {
   id: "th_1",
   type: "thread",
   title: 'Re: "lender spreads"',
   path: "data/docs/threads/th_1.md",
-  body: "Which lenders?",
+  body: "## user · 2026-07-01T09:00:00Z\nWhich lenders?\n",
   parent: "doc_note",
 };
 

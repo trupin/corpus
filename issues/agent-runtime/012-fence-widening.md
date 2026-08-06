@@ -4,7 +4,7 @@
 agent-runtime
 
 ## Status
-todo
+done
 
 ## Priority
 P1
@@ -83,15 +83,15 @@ Two things still owed:
   that in the skill guidance so the agent does not assume old output is fine.
 
 ## Acceptance Criteria
-- [ ] The skills' fence convention states the widening rule explicitly, with an
+- [x] The skills' fence convention states the widening rule explicitly, with an
       example of a payload containing ``` and the four-backtick fence around it
-- [ ] The rule is stated where the deliverable convention lives (AGENT-010's
+- [x] The rule is stated where the deliverable convention lives (AGENT-010's
       section), not as a footnote elsewhere
-- [ ] `assets/workspace/claude/skills/orchestrate/SKILL.md` and
+- [x] `assets/workspace/claude/skills/orchestrate/SKILL.md` and
       `comment/SKILL.md` both carry it — a convention only one skill knows is a
       convention that lasts until the other one writes something
-- [ ] The round-trip question above is answered in writing, with the evidence
-- [ ] Guidance covers the general case (longest run + 1), not just the
+- [x] The round-trip question above is answered in writing, with the evidence
+- [x] Guidance covers the general case (longest run + 1), not just the
       three-into-four case, so a payload containing ```` is also handled
 
 ## Technical Design
@@ -113,13 +113,29 @@ a fence in a real workspace and confirming it renders as one canvas whose copy
 button yields the whole thing.
 
 ## E2E Verification Log
-_Filled by the implementing agent; state the model._
+Ran on **opus** (orchestrator, directly — the session's subagent limit was reached).
+
+- **Rule added to both skills.** `comment/SKILL.md` carries the rule, the general
+  form (longest run + 1), a worked four-outside/three-inside example, and the
+  note that old split documents are not repaired retroactively.
+  `orchestrate/SKILL.md` carries it where it briefs subagents, since the payload
+  that hits this most is a prompt written *for* one.
+- **The example demonstrates itself.** Parsed both SKILL files with the repo's
+  own remark pipeline: the `markdown` example is **one** code block of 118 chars
+  with the inner three-backtick fence intact — i.e. the widened outer fence held
+  exactly as the rule claims. Had the rule been written with a three-backtick
+  fence, this check would have reported several blocks.
+- **Template tooling unaffected**: `scripts/workspace-template.test.ts` 110/110,
+  so the five-backtick outer fence does not confuse the extractor or the section
+  parser (the 2026-08-02 hazard note was about a different construct).
+- `npx prettier --check` clean on both skills.
+- Round-trip evidence is now a **test** rather than a probe — see UI-057.
 
 ## Completion Checklist (domain agent)
-- [ ] `/lint` passes (prettier covers markdown)
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] `/lint` passes (prettier covers markdown)
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 - [ ] Committed with `[ISSUE-ID]` prefix

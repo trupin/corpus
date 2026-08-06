@@ -4,7 +4,7 @@
 shared (orchestrator-owned)
 
 ## Status
-todo
+done — applied to SPEC.md §2.4 on 2026-08-05.
 
 ## Priority
 P1
@@ -84,8 +84,8 @@ APPEND to the §2.x "Upgrading" text above:
 > what it must still act on without parsing prose.
 
 ## Acceptance Criteria
-- [ ] Rider applied to SPEC.md verbatim at phase kickoff (orchestrator)
+- [x] Rider applied to SPEC.md verbatim at phase kickoff (orchestrator)
 - [ ] The five dependent issues implement against this text
 
 ## Completion Checklist (orchestrator)
-- [ ] SPEC.md updated on the phase branch; fidelity-checked in review
+- [x] SPEC.md updated on the phase branch; fidelity-checked in review

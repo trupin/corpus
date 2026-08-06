@@ -16,6 +16,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
 - [`corpus health`](#corpus-health)
 - [`corpus init`](#corpus-init)
 - [`corpus search`](#corpus-search)
+- [`corpus upgrade`](#corpus-upgrade)
 - [`corpus db`](#corpus-db)
   - [`corpus db doctor`](#corpus-db-doctor)
   - [`corpus db rebuild`](#corpus-db-rebuild)
@@ -77,6 +78,7 @@ regenerated with `npm run docs:cli -w apps/cli` and a stale copy fails pre-push 
   - [`corpus todos list`](#corpus-todos-list)
   - [`corpus todos migrate`](#corpus-todos-migrate)
 - [`corpus workspace`](#corpus-workspace)
+  - [`corpus workspace diff`](#corpus-workspace-diff)
   - [`corpus workspace upgrade`](#corpus-workspace-upgrade)
 - [Exit codes](#exit-codes)
 
@@ -144,13 +146,13 @@ corpus health --workspace ~/notes --timeout 1000
 
 Create a Corpus workspace here (document tree, config, git repository, agent skills).
 
-Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the current directory — in that order, so a positional always wins and naming two targets warns rather than picking one quietly. Refuses a directory that already holds a workspace, which `--force` never overrides. Refuses **before writing anything** a directory that holds unrelated content — existing files, a git repository or worktree, or any directory inside one — naming what it found; `--force` proceeds there and reports what it overwrote. Refusing first is the whole safety property: the template replaces same-named files such as `README.md` and `.gitignore`, and nothing can put them back.
+Materializes a workspace: `data/docs` and `data/threads`, the `.corpus/` runtime tree, a `.corpus/config.json` holding a freshly generated bearer token and this workspace's port (mode 600), the bundled agent skills and seed documents copied verbatim from the tool's workspace template, and a git repository with one initial commit authored as `user`. The target is the positional `path`, else `--workspace`, else `CORPUS_WORKSPACE`, else the current directory — in that order, so a positional always wins and naming two targets warns rather than picking one quietly. Refuses a directory that already holds a workspace, which `--force` never overrides. Refuses **before writing anything** a directory that holds unrelated content — existing files, a git repository or worktree, or any directory inside one — naming what it found; `--force` proceeds there and reports what it overwrote. Refusing first is the whole safety property: the template replaces same-named files such as `README.md` and `.gitignore`, and nothing can put them back. It contacts no server — there is not yet one to contact.
 
 ```
 corpus init [path] [flags]
 ```
 
-Runs outside a workspace; it does not contact the server.
+Runs outside a workspace: this command does not require one.
 
 **Arguments**
 
@@ -265,6 +267,60 @@ One JSON value: `{"hits":[{"id":"doc_a1b2c3","title":"Mortgage options","heading
 
 ```
 corpus search "deadline" --json
+```
+
+## `corpus upgrade`
+
+Install the latest release, bring this workspace's template files with it, and restart.
+
+Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). One run: query the GitHub Releases API, download the release tarball over HTTPS, **verify its published checksum**, reinstall through the same npm-global path this copy was installed with, bring the workspace's template files up to the new tool's, and restart the workspace's server — **if and only if** it was running when the upgrade began.
+
+**On demand, always.** Corpus never checks for, downloads, or installs anything in the background, and never phones home. Nothing here runs unless it is typed.
+
+**It refuses rather than guesses.** A release with no published checksum is not an upgrade target and is not installed. A copy of corpus whose install method cannot be detected — a source checkout, a project-local `node_modules`, an `npx` cache — is not upgraded either: the refusal names what it could not establish and gives the command to run by hand. It never elevates itself, and an unwritable npm prefix is a refusal, not a `sudo`. Every refusal leaves the installation exactly as it found it and exits **7**.
+
+**7 means nothing changed; 8 means something did.** Exit 7 is only used where that is provably true — every refusal above is decided before the server is touched and before a byte is installed. Once the install has begun the guarantee is gone, so an npm that fails, an interrupt, or a template sync that fails after the tool moved all exit **8** instead and carry `"changed":true` in the `--json` error envelope, with `details.server` saying whether the workspace's server was stopped and whether it came back. After an 8, re-check `corpus --version` and `corpus server status`; after a 7 there is nothing to re-check.
+
+**Interrupting it.** Between stopping the server and restarting it there is a window the command cannot leave cleanly. The first Ctrl-C (or `SIGTERM`) inside it is handled: the npm child is killed — processes npm had itself spawned may briefly outlive it — the server is started again, the report is written, and the command exits 8 with `upgrade_interrupted`. A second one is **not** handled — it kills corpus outright — and neither is `kill -9` or a machine going to sleep, either of which can leave the server stopped and the global package half-replaced. To recover from that: `corpus server start`, then `corpus upgrade` again once `corpus --version` has told you what you actually have.
+
+**The workspace half is not optional.** `corpus init` copies the agent's skills into the workspace and from that moment they are the workspace's own documents, so a tool update that ignored them would leave the loop running last version's instructions. The sync is the same three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a file the workspace never touched is updated, a file the workspace edited is **never** overwritten, and everything written lands in one attributed commit, so `corpus skill rollback` undoes a bad upgrade like any other change.
+
+**A conflict is unresolved work, not a notice.** A file this workspace edited that the tool also changed is reported apart from everything that merely happened, each entry naming `corpus workspace diff <path>` — the verb that shows what moved upstream. Corpus never merges them: a skill is prose that instructs the agent, and a plausible-looking auto-merge would corrupt the instructions the loop runs on. Under `--json` they are the `conflicts` array, so an agent can tell what it still owes without reading prose. Conflicts do not fail the run: the upgrade succeeded, and exits 0 with the list.
+
+**The report is written to `.corpus/upgrade.log`**, not only printed. An upgrade started from the board runs detached and its last act restarts the server the browser was talking to, so the file is the only place the answer can still be read afterwards. It is truncated at the start of every run and ends in one `report:` line carrying the whole result as JSON.
+
+Run outside a workspace it still upgrades the tool, and says that the template sync and the restart were skipped. `CORPUS_RELEASES_API` and `CORPUS_RELEASES_REPO` point it at a fork or a mirror instead of `trupin/corpus`.
+
+```
+corpus upgrade [flags]
+```
+
+Runs outside a workspace: this command does not require one.
+
+**Flags**
+
+| Flag      | Type    | Default | Description                                                                                                                                                                                                                                                                                                                        |
+| --------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--check` | boolean | `false` | Report only: what is installed, what the newest release is, whether it can be verified and installed here, and which workspace template changes are pending. Downloads nothing, installs nothing, writes nothing — not even the report file. Exits 0 whether or not an upgrade exists, and whether or not GitHub could be reached. |
+
+**Examples**
+
+Ask once whether a newer release exists, and whether it could be installed here.
+
+```
+corpus upgrade --check
+```
+
+Install the latest release, sync this workspace's template files, and restart the server if it was running.
+
+```
+corpus upgrade
+```
+
+One JSON value. `check` is the release comparison (`{"installed":"0.3.0","latest":"0.4.0","upgradeAvailable":true,"verifiable":true,…}`), `tool` what was installed, `template` the sync report, `server` whether it was restarted, `reportPath` where the written report is — and `conflicts` the unresolved work: `[{"path":".claude/skills/comment/SKILL.md","source":"template","detail":"modified here — 3 lines only here, 1 line only in the new copy","resolve":"corpus workspace diff .claude/skills/comment/SKILL.md"}]`.
+
+```
+corpus upgrade --json
 ```
 
 ## `corpus db`
@@ -2123,7 +2179,53 @@ corpus todos migrate --json
 
 Maintain the workspace's own scaffolding.
 
-Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4).
+Everything under `data/` is documents, and every change to one goes through the server. This topic is about the workspace _around_ them: the agent's skills, its personas and the seed files `corpus init` installed. They come from the tool, so a tool update has to be able to reach them — but the agent evolves its own skills, so an update must never overwrite what it wrote (SPEC.md §2.1). `upgrade` is that negotiation, and it is one of only two commands that write workspace files directly (§2.2 rule 4). What it refuses to overwrite it reports as a **conflict** — unresolved work, not a notice (§2.4) — and `diff` is what shows the difference the resolver has to act on. Neither verb needs the server running: a workspace whose skills are broken is exactly the one whose loop cannot be asked to fix them.
+
+### `corpus workspace diff`
+
+Show what the tool changed under a template file this workspace edited.
+
+`corpus workspace upgrade` never overwrites a template file the workspace has edited: it reports it as a **conflict**, and a conflict is unresolved work rather than a notice (SPEC.md §2.4). This is the verb that report points at — the one thing it cannot carry, which is what actually changed upstream.
+
+**With a path**, it prints the three identities the compare rests on — the baseline `corpus init` recorded, the workspace's copy, and the copy the installed tool ships — and then the unified diff between the last two. **With no path**, it lists every path currently in conflict, so the work can be enumerated without re-running an upgrade.
+
+**Direction is explicit, because a merge applied backwards discards the tool's change silently.** The `---` side is `workspace/<path>`, the file on disk; the `+++` side is `tool/<path>`, what the installed tool ships. `-` lines are the workspace's, `+` lines are the tool's, and the diff reads workspace → tool. Under `--json` the same fact is a value rather than prose: `diff.from` is `"workspace"` and `diff.to` is `"tool"`.
+
+**The baseline is an identity, not bytes.** The manifest records its sha256 and no older template ships inside the tool, so what is reachable here is _which sides moved_ — stated per side as `matchesBaseline` — rather than a three-way text merge. That is the fact a merge decision actually turns on: a `+` line that the baseline also lacked is the tool's new work, and a workspace copy that still matches the baseline needs no merge at all.
+
+**Nothing normal here is a failure.** A file with no conflict says which of the harmless cases it is and exits 0 — identical to the tool's, edited here but unchanged upstream, untouched here so the upgrade will simply update it. A file the tool has **retired** says so and shows no diff, because there is nothing on the other side to compare against, which is not the same as an empty file. A file this workspace deleted is shown as a whole-file addition. Only a path the tool does not install at all is refused (exit 2), with the reason — an empty diff there would read as _no difference_ when the truth is _nobody looked_.
+
+It writes nothing, and it needs no running server: it reads two files and one manifest entry. Merging is yours to do — Corpus never merges a skill automatically, because a skill is prose that instructs the agent and a plausible-looking auto-merge would corrupt the instructions the loop runs on.
+
+```
+corpus workspace diff [path] [flags]
+```
+
+**Arguments**
+
+| Argument | Required | Description                                                                                                                                                                                                                                                                       |
+| -------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`   | no       | The template file to compare, workspace-relative exactly as `corpus workspace upgrade` prints it (`.claude/skills/comment/SKILL.md`). A path relative to the current directory, or an absolute one inside the workspace, is accepted too. Omit it to list every path in conflict. |
+
+**Examples**
+
+List the paths currently in conflict — the work an upgrade left unresolved, without re-running it.
+
+```
+corpus workspace diff
+```
+
+What the tool changed under an edited skill: the three shas, then the diff from this workspace's copy to the tool's.
+
+```
+corpus workspace diff .claude/skills/comment/SKILL.md
+```
+
+One JSON value: `{"root":"/home/me/notes","toolVersion":"0.3.0","baselineRecordedBy":"0.2.0","path":".claude/skills/comment/SKILL.md","source":"template","action":"keep-modified","conflict":true,"baseline":"9c0d…","workspace":{"present":true,"sha256":"5e6f…","matchesBaseline":false},"tool":{"present":true,"sha256":"1a2b…","matchesBaseline":false},"diff":{"from":"workspace","to":"tool","text":"--- workspace/…\n+++ tool/…\n@@ -1,4 +1,5 @@\n…","added":3,"removed":1,"coarse":false}}`.
+
+```
+corpus workspace diff .claude/skills/comment/SKILL.md --json
+```
 
 ### `corpus workspace upgrade`
 
@@ -2177,12 +2279,14 @@ corpus workspace upgrade --json
 
 ## Exit codes
 
-| Code | Meaning                                                        |
-| ---- | -------------------------------------------------------------- |
-| `0`  | Success.                                                       |
-| `1`  | Internal error — an unexpected exception.                      |
-| `2`  | Usage error — unknown command, bad flag, missing argument.     |
-| `3`  | Not inside a Corpus workspace, or its config is invalid.       |
-| `4`  | The workspace server is unreachable.                           |
-| `5`  | The server returned an error response.                         |
-| `6`  | A check-style command reported a failure (its work succeeded). |
+| Code | Meaning                                                                         |
+| ---- | ------------------------------------------------------------------------------- |
+| `0`  | Success.                                                                        |
+| `1`  | Internal error — an unexpected exception.                                       |
+| `2`  | Usage error — unknown command, bad flag, missing argument.                      |
+| `3`  | Not inside a Corpus workspace, or its config is invalid.                        |
+| `4`  | The workspace server is unreachable.                                            |
+| `5`  | The server returned an error response.                                          |
+| `6`  | A check-style command reported a failure (its work succeeded).                  |
+| `7`  | Refused — a precondition was not met, and nothing was changed.                  |
+| `8`  | Failed partway — something had already been changed, so verify before retrying. |

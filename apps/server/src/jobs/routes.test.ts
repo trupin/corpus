@@ -421,6 +421,38 @@ describe("GET /api/jobs", () => {
       expect(ValidationErrorSchema.parse(await rejected.json()).issues.length).toBeGreaterThan(0);
     }
   });
+
+  /** CONTRACT-030's predicate, over the wire rather than in the projection. */
+  describe("asked about one document", () => {
+    it("answers completely, past the window the console would have applied", async () => {
+      const wanted = await enqueue({ threadId: THREAD });
+      for (let index = 0; index < 55; index += 1) {
+        clock += 1000;
+        await enqueue({ docId: DOC });
+      }
+
+      const console_ = JobListSchema.parse(await (await request("/api/jobs?recent=50")).json());
+      expect(console_.jobs.map((job) => job.eventId)).not.toContain(wanted);
+
+      const asked = JobListSchema.parse(
+        await (
+          await request(`/api/jobs?originId=${THREAD}&status=pending,in-progress,deferred`)
+        ).json(),
+      );
+      expect(asked.jobs.map((job) => job.eventId)).toEqual([wanted]);
+    });
+
+    it("refuses an unknown status instead of quietly matching nothing", async () => {
+      const rejected = await request("/api/jobs?status=in_progress");
+
+      expect(rejected.status).toBe(400);
+      expect(ValidationErrorSchema.parse(await rejected.json()).issues.length).toBeGreaterThan(0);
+    });
+
+    it("refuses an origin that is not a document id", async () => {
+      expect((await request("/api/jobs?originId=nonsense")).status).toBe(400);
+    });
+  });
 });
 
 describe("POST /api/jobs/{id}/retry", () => {

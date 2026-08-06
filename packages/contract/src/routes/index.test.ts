@@ -604,6 +604,28 @@ function createStubApp() {
     );
   });
 
+  // The check reaches GitHub only when called and keeps nothing between calls,
+  // so a stub is a whole implementation of its contract minus the fetch.
+  app.openapi(contractRoutes.checkUpgrade, (c) =>
+    c.json(
+      {
+        installed: "0.3.0",
+        latest: "0.4.0",
+        upgradeAvailable: true,
+        verifiable: true,
+        notesUrl: "https://github.com/trupin/corpus/releases/tag/v0.4.0",
+        reachable: true,
+        detail: null,
+      },
+      200,
+    ),
+  );
+  // `202`, and a body that reports only what is already true: a process exists,
+  // and here is where it will write its report.
+  app.openapi(contractRoutes.startUpgrade, (c) =>
+    c.json({ started: true as const, logPath: ".corpus/upgrade.log" }, 202),
+  );
+
   app.openapi(contractRoutes.streamEvents, (c) =>
     c.newResponse("event: invalidate\ndata: {}\n\n", 200, {
       "content-type": "text/event-stream",

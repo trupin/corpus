@@ -4,7 +4,8 @@
 contract
 
 ## Status
-todo
+blocked — the decision below changes what SPEC.md §9.2 promises, so it is
+drafted in SHARED-013 and held for user sign-off. Recommendation: candidate 2.
 
 ## Priority
 P2
@@ -13,7 +14,7 @@ P2
 opus
 
 ## Dependencies
-- Depends on: CONTRACT-028, SERVER-058
+- Depends on: CONTRACT-028, SERVER-058, SHARED-013 (sign-off)
 - Blocks: —
 
 ## Spec References

@@ -307,6 +307,38 @@ Rules:
   the block's raw text, so the fence boundary is exactly what the person gets. This changes
   nothing else you write — prose stays prose, and code you are explaining rather than handing
   over is fenced however the explanation reads best.
+- **Open the fence wider than anything inside it.** A fence ends at the first line that is
+  **nothing but** a backtick run at least as long as the one that opened it. So three backticks
+  around a payload that itself contains a fence closes early — the payload's own ``` line ends
+  your block: one deliverable becomes several, your prose spills out between them, and each
+  copy button hands over a fragment, which defeats the whole point of handing the thing over in
+  one gesture. Before you write the fence, find the **longest backtick run in the payload and
+  open with one more than that**: four around a payload containing three, five around one
+  containing four, and so on. The rule is the count, not the number four. Counting every run
+  rather than only the ones alone on a line is deliberate — a run in the middle of a sentence
+  closes nothing, so the rule is stricter than it strictly needs to be, and being one backtick
+  too wide costs nothing while being one too narrow splits the deliverable. This bites most
+  often on what matters most: a prompt written for another agent, which is itself markdown and
+  routinely contains fenced examples.
+
+  A prompt whose body contains a fence is handed over like this, four backticks outside and
+  three inside:
+
+  `````markdown
+  ````prompt
+  ## Output format
+
+  ```
+  owner | action | topic
+  ```
+
+  **Critical instruction:** answer only in that table.
+  ````
+  `````
+
+  Documents written before this rule are **not** repaired retroactively — a deliverable that
+  already split stays split until someone rewrites it. If you are asked why an old snippet
+  renders as several canvases, this is why, and the repair is to re-emit it with a wider fence.
 - **Close a turn that wrote with a trace line.** When the turn's work changed the corpus, the
   reply's **final line — and only its final line —** is a trace: the arrow `↳ `, a space, then
   a one-line, past-tense report of what the work did, as in

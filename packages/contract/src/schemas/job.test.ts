@@ -140,6 +140,63 @@ describe("JobsQuery", () => {
   it.each([0, MAX_RECENT_JOBS + 1, 1.5])("rejects recent=%s", (recent) => {
     expect(JobsQuerySchema.safeParse({ recent }).success).toBe(false);
   });
+
+  /**
+   * CONTRACT-030. The console list and the one-document predicate are different
+   * questions on one route, so the filters must be absent by default — a query
+   * that started narrowing the console would break UI-011 silently.
+   */
+  describe("the one-document filters", () => {
+    it("leaves both filters undefined when neither is asked for", () => {
+      const parsed = JobsQuerySchema.parse({});
+      expect(parsed.originId).toBeUndefined();
+      expect(parsed.status).toBeUndefined();
+      expect(parsed.recent).toBe(DEFAULT_RECENT_JOBS);
+    });
+
+    it("carries an origin id through", () => {
+      expect(JobsQuerySchema.parse({ originId: "th_x9y8z7w6" }).originId).toBe("th_x9y8z7w6");
+    });
+
+    it("rejects an origin that is not a document id", () => {
+      expect(JobsQuerySchema.safeParse({ originId: "not-an-id" }).success).toBe(false);
+    });
+
+    it("splits the status set the two outstanding-question callers pass", () => {
+      expect(JobsQuerySchema.parse({ status: "pending,in-progress,deferred" }).status).toEqual([
+        "pending",
+        "in-progress",
+        "deferred",
+      ]);
+    });
+
+    it("tolerates whitespace around the separators", () => {
+      expect(JobsQuerySchema.parse({ status: "pending, deferred" }).status).toEqual([
+        "pending",
+        "deferred",
+      ]);
+    });
+
+    it("accepts a single value without a separator", () => {
+      expect(JobsQuerySchema.parse({ status: "failed" }).status).toEqual(["failed"]);
+    });
+
+    /**
+     * The one that matters: a typo must be a 400 naming the legal values, never
+     * a filter that matches nothing. An empty jobs list reads as "no work
+     * outstanding", which is the exact answer this parameter exists to get right.
+     */
+    it.each(["", "pending,bogus", "bogus", ","])("rejects status=%o", (status) => {
+      const result = JobsQuerySchema.safeParse({ status });
+      expect(result.success).toBe(false);
+    });
+
+    it("names the legal values when it refuses", () => {
+      const result = JobsQuerySchema.safeParse({ status: "in_progress" });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toContain("in-progress");
+    });
+  });
 });
 
 describe("JobList", () => {

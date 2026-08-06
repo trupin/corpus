@@ -211,6 +211,14 @@ than assuming them:
   `command`), one deliverable per fence, prose outside it: the board renders that fence as a
   **copyable canvas** titled by the label. The comment skill states the convention; it binds
   the turns you post yourself just as it binds a subagent's.
+- **The fence must be wider than anything inside it** — longest backtick run in the payload,
+  plus one. A three-backtick fence closes at the payload's own three backticks, and the
+  deliverable arrives as several canvases with prose leaking between them. This is not a
+  corner case for you: the payload you hand over most often is a **prompt written for a
+  subagent**, which is markdown and usually contains fenced examples of its own. Check the
+  payload before you write the fence, every time. The comment skill carries the rule and an
+  example; a subagent that never read it will get this wrong, so it belongs in what you brief
+  them with.
 
 **Queue state never crosses the boundary.** A subagent never runs `corpus queue
 claim-all`, `corpus queue complete`, `corpus queue fail`, or `corpus queue defer`: it

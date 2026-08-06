@@ -252,12 +252,12 @@ Note: the SPEC §11 plugin-surface amendment was **signed 2026-08-02** (sprint-0
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-007 | Self-upgrade spec rider — apply to SPEC.md at phase kickoff (orchestrator) | todo | P1 | — |
-| INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | todo | P1 | SHARED-007 |
-| CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | todo | P1 | SHARED-007, INFRA-016, CLI-027 |
-| CONTRACT-027 | Upgrade routes: check + trigger | todo | P1 | SHARED-007 |
+| SHARED-007 | Self-upgrade spec rider — apply to SPEC.md at phase kickoff (orchestrator) | done | P1 | — |
+| INFRA-016 | Release workflow publishes .sha256 checksum asset beside the tarball | done | P1 | SHARED-007 |
+| CLI-025 | `corpus upgrade` / `--check`: fetch latest release, verify, reinstall, conditional server restart | done | P1 | SHARED-007, INFRA-016, CLI-027 |
+| CONTRACT-027 | Upgrade routes: check + trigger | done | P1 | SHARED-007 |
 | SERVER-050 | Upgrade endpoints: check proxy + detached upgrade trigger | todo | P1 | CONTRACT-027, CLI-025 |
-| CLI-027 | `corpus workspace diff <path>`: what the tool changed under an edited file | todo | P1 | SHARED-007 |
+| CLI-027 | `corpus workspace diff <path>`: what the tool changed under an edited file | done | P1 | SHARED-007 |
 | UI-035 | Upgrade UI: on-demand check + "Upgrade & restart" with SSE ride-through | todo | P1 | CONTRACT-027, SERVER-050 |
 
 Rider **amended 2026-08-03** (signed): `corpus upgrade` also runs the workspace
@@ -276,8 +276,9 @@ never auto-merged. The audience for that report is the agent.
 | CONTRACT-031 | Explicit edit-session flush route (SERVER-052 disproved the lock-release premise) | done | P1 | CONTRACT-028, SERVER-052 |
 | SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | done | P1 | CONTRACT-031, SERVER-052 |
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
-| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | todo | P2 | SERVER-058 |
-| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SERVER-058 |
+| SHARED-013 | Diff truncation is line-aligned, not hunk-aligned — DRAFT, awaiting sign-off | blocked | P2 | SERVER-058 |
+| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | blocked | P2 | SHARED-013 |
+| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | blocked | P2 | SHARED-013 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
 
@@ -347,16 +348,16 @@ parallel once SHARED-009 lands; PLUGINS-011 follows UI-052.
 | UI-050 | Fenced canvases: wrap long lines, collapse tall blocks (2nd report) | done | P1 | SHARED-009 |
 | PLUGINS-011 | Todos item composer adopts the composer key contract | done | P2 | UI-052 |
 | UI-055 | Design mockup still shows and binds the old composer keys (UI-052 finding) | todo | P2 | UI-052 |
-| UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | todo | P1 | UI-051 |
-| AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | todo | P1 | AGENT-010 |
-| UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | todo | P2 | — |
+| UI-056 | E2E stub misrepresents anchor resolution; no threads route (UI-051 finding) | done | P1 | UI-051 |
+| AGENT-012 | A snippet containing ``` splits into several snippets — widen the fence (dogfood) | done | P1 | AGENT-010 |
+| UI-057 | No test guards the widened-fence round-trip (AGENT-012 investigation) | done | P2 | — |
 | UI-058 | A "note only" turn still shows "agent is working" (dogfood) | done | P1 | — |
 | UI-059 | Links unstyled in rendered bodies; long URLs overflow the measure (dogfood) | done | P1 | — |
 | UI-060 | Source trace doesn't reproduce the renderer's block joins; some selections decline (PR #20) | todo | P1 | UI-051 |
 | UI-061 | A selection spanning several turns is silently truncated to one (PR #20) | todo | P2 | UI-051 |
-| CONTRACT-030 | Jobs query by origin: ask "is a job outstanding for this thread" on the wire | todo | P1 | — |
-| SERVER-056 | Filter jobs by origin (originId is derived at response time, not a column) | todo | P1 | CONTRACT-030 |
-| UI-069 | Outstanding-job lookup reads a 50-row window; deferred jobs fall out of it | todo | P1 | CONTRACT-030, SERVER-056 |
+| CONTRACT-030 | Jobs query by origin: ask "is a job outstanding for this thread" on the wire | done | P1 | — |
+| SERVER-056 | Filter jobs by origin (originId is derived at response time, not a column) | done | P1 | CONTRACT-030 |
+| UI-069 | Outstanding-job lookup reads a 50-row window; deferred jobs fall out of it | done | P1 | CONTRACT-030, SERVER-056 |
 | UI-062 | Document comment sometimes anchors at the top, not at the selection (dogfood) | done | P1 | — |
 
 <!-- Additional phases will be added as the project grows -->
@@ -372,13 +373,13 @@ belongs to the same fix wave.
 
 | ID | Title | Status | Priority | Depends on |
 | --- | --- | --- | --- | --- |
-| SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | todo | P1 | — |
+| SHARED-010 | Three SPEC amendments — apply at phase kickoff (orchestrator) | done | P1 | — |
 | UI-064 | `<br>` inside a table cell renders as literal text | done | P1 | — |
 | UI-063 | Comments list: open/resolved × anchored/unanchored, both hosts | todo | P1 | SHARED-010 |
 | UI-066 | Document body width is resizable, uniformly | todo | P1 | SHARED-010 |
 | UI-067 | Comment without selecting; reply to each thread in place (forum-shaped) | todo | P1 | SHARED-010, UI-063 |
 | UI-065 | A long document title wraps instead of being cut | done | P2 | — |
-| SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | todo | P1 | — |
+| SHARED-012 | Attachments in every comment — SPEC amendment (signed 2026-08-05) | done | P1 | — |
 | UI-070 | Attachments in every composer, through one kit surface | todo | P1 | SHARED-012 |
 | UI-071 | A highlight briefly lands on the wrong words while a document re-anchors | done | P1 | UI-062 |
 | UI-072 | Hard-wrapped prose shows its line breaks in the document editor (dogfood) | done | P1 | — |
@@ -388,4 +389,24 @@ belongs to the same fix wave.
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — the read path provably cannot decide | todo | P1 | — |
+| UI-075 | UI-069's per-thread jobs query fans out once per thread card (PR #24 review MAJOR) | done | P1 | UI-069 |
+| SHARED-015 | Agent sees the server's in-progress set and reconciles it — DRAFT, awaiting sign-off | blocked | P1 | — |
+| CONTRACT-033 | claim-all/idle carry the in-progress set (id, type, origin, held-since) | blocked | P1 | SHARED-015 |
+| SERVER-061 | Populate the in-progress set from `in-progress/`; settle nothing | blocked | P1 | CONTRACT-033 |
+| CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | blocked | P1 | CONTRACT-033 |
+| AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | blocked | P1 | CLI-029 |
+| SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-016 | Mentions, invocations and bare doc ids render as handles — DRAFT, awaiting sign-off | blocked | P2 | — |
+| UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
+| CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
+| UI-077 | Collapse anything, anywhere: by rule + on demand, every placement | todo | P1 | SHARED-018 |
+| AGENT-014 | Agent resolves a settled subthread in the same turn as its reply | todo | P1 | SHARED-019 |
+| SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | todo | P1 | SHARED-019 |
+| SHARED-017 | Multi-select + bulk actions — DRAFT, awaiting sign-off | blocked | P2 | — |
+| SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
+| SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
+| SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
+| UI-078 | Resolve confirmation promises replying reopens the thread; it does not | todo | P1 | — |
+| SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry — DRAFT, awaiting sign-off | blocked | P1 | — |
+
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

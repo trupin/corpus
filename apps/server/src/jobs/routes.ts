@@ -25,8 +25,8 @@ export function mountJobRoutes(app: OpenAPIHono, jobs: JobService): void {
   app.use(ingestPath, methodOnly("POST", noBrowserOrigin));
 
   app.openapi(contractRoutes.listJobs, (c) => {
-    const { recent } = c.req.valid("query");
-    return c.json({ jobs: jobs.list(recent) }, 200);
+    const { recent, originId, status } = c.req.valid("query");
+    return c.json({ jobs: jobs.list(recent, { originId, status }) }, 200);
   });
 
   app.openapi(contractRoutes.getJobLog, async (c) => {

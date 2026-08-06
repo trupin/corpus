@@ -113,7 +113,13 @@ function commandSection(command: CommandSpec, topic: string | undefined): readon
   lines.push("```", commandSynopsis(command, topic), "```", "");
 
   if (command.requiresWorkspace === false) {
-    lines.push("Runs outside a workspace; it does not contact the server.", "");
+    // What `requiresWorkspace: false` actually promises, and no more. It used to
+    // add "it does not contact the server", which was true of `corpus init` and
+    // became false the day `corpus upgrade` joined it: that verb resolves a
+    // workspace when there is one and restarts its server (SPEC.md §2.4). A
+    // generated sentence is read as a guarantee, so it may only assert the thing
+    // the flag decides — whether the dispatcher requires a workspace.
+    lines.push("Runs outside a workspace: this command does not require one.", "");
   }
 
   if (command.args.length > 0) {

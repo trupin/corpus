@@ -28,10 +28,18 @@ export const listJobs = createRoute({
   method: "get",
   path: "/api/jobs",
   tags: ["jobs"],
-  summary: "Recent jobs for the console",
+  summary: "Recent jobs for the console, or the jobs outstanding on one document",
   description:
-    "The console's master list: one row per queue event with its status and last log line " +
-    "(SPEC.md §7, §11). `originId` links each row back to the document or thread it came from.",
+    "Two questions on one route. **Unfiltered** it is the console's master list: one row per " +
+    "queue event with its status and last log line (SPEC.md §7, §11), most recently touched " +
+    "first, and `originId` links each row back to the document or thread it came from. " +
+    "**Filtered by `originId` (and usually `status`)** it is a predicate about a single " +
+    "document — *is the agent still working here?* — which SPEC.md §8's pending row and the " +
+    "board row's agent dot both need. That answer is **complete** — `recent` bounds the console " +
+    "list and is ignored once `originId` is given — because a predicate about one document " +
+    "cannot be allowed to be displaced by unrelated queue activity; that displacement is exactly " +
+    'how a deferred job\'s "working…" row used to vanish while its reply was still coming ' +
+    "(CONTRACT-030).",
   request: { query: JobsQuerySchema },
   responses: {
     200: jsonContent(JobListSchema, "Console rows, most recent first."),

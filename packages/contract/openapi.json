@@ -70,6 +70,10 @@
       "description": "Skills as documents: loop-safety rollback."
     },
     {
+      "name": "upgrade",
+      "description": "On-demand self-upgrade (SPEC.md §2.4): the check that reaches GitHub only when asked, and the trigger that spawns the detached CLI upgrade. Nothing here runs in the background, and nothing phones home."
+    },
+    {
       "name": "events",
       "description": "The SSE invalidation stream."
     },
@@ -3497,6 +3501,82 @@
           }
         },
         "additionalProperties": false
+      },
+      "UpgradeCheck": {
+        "type": "object",
+        "properties": {
+          "installed": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The version of the tool this server is running — the same value `GET /api/health` reports as `version`. Always known, including when the check could not reach GitHub: it is a fact about this process, not about the release list."
+          },
+          "latest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "The version of the newest published release of the installed distribution, exactly as the GitHub Releases API named it. `null` when there is none to report — either the check could not read the release list (`reachable` false) or the distribution has published nothing yet (`reachable` true). Compared by the server, never by the client: the comparison's verdict is `upgradeAvailable`, and a client that re-derived it from these two strings would be writing a second version parser."
+          },
+          "upgradeAvailable": {
+            "type": "boolean",
+            "description": "Whether `latest` is newer than `installed` — the version comparison and nothing else. Always `false` when `latest` is `null`, because an unknown latest is not a newer one. **Not sufficient on its own to offer an upgrade**: check `verifiable` too, or the action offered here is one the upgrade will refuse."
+          },
+          "verifiable": {
+            "type": "boolean",
+            "description": "Whether the release `latest` names publishes the checksum the upgrade verifies before installing — the `corpus-<version>.tgz.sha256` asset, in `shasum -a 256` two-field format, that the release workflow attaches beside the tarball (INFRA-016). §2.4 has `corpus upgrade` verify the published checksum, so a release without one is not an upgradable target and the upgrade refuses rather than installing unverified bytes. `false` whenever `latest` is `null` — there is no asset list to have looked at. A client seeing `upgradeAvailable` true and this `false` should say a newer release exists and cannot be installed automatically, rather than offering an action that will fail."
+          },
+          "notesUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "Absolute URL of the release notes for `latest` — the release's own page, for a client to link so a person can read what is changing before accepting it. `null` whenever there is no `latest`, and tolerated as `null` for a release that exposes no page. Rendered as a link, never fetched by the client: this server is the only thing that talks to GitHub, and it does so only when asked."
+          },
+          "reachable": {
+            "type": "boolean",
+            "description": "Whether the GitHub Releases API answered. `false` is the modelled failure that §2.4's on-demand check has to be able to report — an offline laptop, a captive portal, a rate-limited API — and it arrives as a `200` carrying this flag, never as a `5xx`: the endpoint did its job and the network is what did not. When `false`, `latest`, `upgradeAvailable`, `verifiable` and `notesUrl` carry nothing (`null` / `false`) and `detail` says why in one sentence."
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "One human sentence about this answer when there is something to add — chiefly why an unreachable check failed, but also why an available release is not verifiable, or that the distribution has published no releases yet. **Rendered, never parsed**: the wording is the server's and changes with the reason; every decision a client makes comes from the booleans above. `null` when there is nothing to add, which is the normal case for a workspace that is simply up to date. Nullable rather than optional so that every key on this small object is always present, like the two nullable fields beside it — one way to say 'nothing', not two."
+          }
+        },
+        "required": [
+          "installed",
+          "latest",
+          "upgradeAvailable",
+          "verifiable",
+          "notesUrl",
+          "reachable",
+          "detail"
+        ]
+      },
+      "UpgradeStarted": {
+        "type": "object",
+        "properties": {
+          "started": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Always `true`. The upgrade process was spawned; nothing here claims it will succeed, and it has not finished — the response is written before the download begins. The only other outcome of this call is the `409` refusal, so there is no `false` to send."
+          },
+          "logPath": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace-relative path of the file the detached upgrade writes its output to, e.g. `.corpus/upgrade.log` — the same spelling convention `POST /api/skills/{name}/rollback` uses for the file it restored. This is where SPEC.md §2.4's report lands: what the tool install did, what the workspace template sync updated, what it left alone, and — listed apart from all of that, because a conflict is unresolved work rather than a notice — every file the workspace edited and the tool also changed, each naming `corpus workspace diff <path>`. The connection this response arrives on does not survive to carry any of it: the upgrade outlives the server it restarts. A client that shows an upgrade as finished without pointing at this file has told the operator less than the upgrade knows."
+          }
+        },
+        "required": [
+          "started",
+          "logPath"
+        ]
       }
     },
     "parameters": {}
@@ -6922,8 +7002,8 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Recent jobs for the console",
-        "description": "The console's master list: one row per queue event with its status and last log line (SPEC.md §7, §11). `originId` links each row back to the document or thread it came from.",
+        "summary": "Recent jobs for the console, or the jobs outstanding on one document",
+        "description": "Two questions on one route. **Unfiltered** it is the console's master list: one row per queue event with its status and last log line (SPEC.md §7, §11), most recently touched first, and `originId` links each row back to the document or thread it came from. **Filtered by `originId` (and usually `status`)** it is a predicate about a single document — *is the agent still working here?* — which SPEC.md §8's pending row and the board row's agent dot both need. That answer is **complete** — `recent` bounds the console list and is ignored once `originId` is given — because a predicate about one document cannot be allowed to be displaced by unrelated queue activity; that displacement is exactly how a deferred job's \"working…\" row used to vanish while its reply was still coming (CONTRACT-030).",
         "parameters": [
           {
             "schema": {
@@ -6931,11 +7011,33 @@
               "minimum": 1,
               "maximum": 200,
               "default": 50,
-              "description": "How many of the most recent jobs to return (1–200)."
+              "description": "How many of the most recent jobs to return (1–200). **Bounds the console list only, and is ignored once `originId` is given.** A window is the right shape for \"what has the queue been doing\", which is unbounded, and the wrong shape for \"is anything outstanding here\", which must be answered completely or not at all: a windowed predicate is wrong less often than an unwindowed one and still wrong, and its failure is the silent direction — a job that fell out of the window is indistinguishable from no job. One document's jobs are bounded by that document's own history, so there is nothing here a window needs to protect the caller from."
             },
             "required": false,
-            "description": "How many of the most recent jobs to return (1–200).",
+            "description": "How many of the most recent jobs to return (1–200). **Bounds the console list only, and is ignored once `originId` is given.** A window is the right shape for \"what has the queue been doing\", which is unbounded, and the wrong shape for \"is anything outstanding here\", which must be answered completely or not at all: a windowed predicate is wrong less often than an unwindowed one and still wrong, and its failure is the silent direction — a job that fell out of the window is indistinguishable from no job. One document's jobs are bounded by that document's own history, so there is nothing here a window needs to protect the caller from.",
             "name": "recent",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(doc|th)_[A-Za-z0-9]+$",
+              "description": "**Restrict to jobs originating from this document or thread** — the `Job.originId` value, matched by the same rule the response field is derived by (first of `threadId`, `parentId`, `docId` in the event payload that names a document the corpus still holds). This is a predicate about one document, not a narrowing of the console list: it exists so a caller can ask *is anything still outstanding here?* and get a **complete** answer — every matching job, in the same order, with `recent` no longer applied. Omitted, the query is the console's list and is unchanged, window and all.",
+              "example": "doc_a1b2c3"
+            },
+            "required": false,
+            "description": "**Restrict to jobs originating from this document or thread** — the `Job.originId` value, matched by the same rule the response field is derived by (first of `threadId`, `parentId`, `docId` in the event payload that names a document the corpus still holds). This is a predicate about one document, not a narrowing of the console list: it exists so a caller can ask *is anything still outstanding here?* and get a **complete** answer — every matching job, in the same order, with `recent` no longer applied. Omitted, the query is the console's list and is unchanged, window and all.",
+            "name": "originId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on an edit lock is still owed."
+            },
+            "required": false,
+            "description": "Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Deliberately a general set rather than a named `outstanding` shorthand: which statuses count as unsettled is a reading of SPEC.md §7's state machine, and baking one caller's reading into the wire would make every other caller live with it. The two callers that ask the outstanding question pass `pending,in-progress,deferred` — the three non-terminal states, `deferred` included, since a job waiting on an edit lock is still owed.",
+            "name": "status",
             "in": "query"
           }
         ],
@@ -7723,6 +7825,78 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LockedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upgrade/check": {
+      "get": {
+        "tags": [
+          "upgrade"
+        ],
+        "summary": "Ask, once, whether a newer release exists",
+        "description": "Queries the GitHub Releases API for the newest release of the installed distribution and compares it with the running version (SPEC.md §2.4). **Only when called** — Corpus 'never checks for, downloads, or installs anything in the background, and never phones home', so this endpoint is the *only* thing that reaches GitHub, it reaches it once per request, and it keeps nothing between requests. There is no cache to invalidate and no schedule to disable, because there is neither.\n\n**Read-only in the strictest sense**: nothing is downloaded, nothing is written, no commit is made, and no acting party is declared. Calling it a hundred times changes nothing but the rate-limit budget.\n\n**Two independent verdicts, not one.** `upgradeAvailable` is the version comparison; `verifiable` is whether that release publishes the checksum asset §2.4 requires the upgrade to verify before installing. A newer release without one is not an upgradable target — `POST /api/upgrade` would start an upgrade that refuses — so a client offers its action on both flags, and explains rather than acts when they disagree.\n\n**An unreachable GitHub is a described answer, never a `5xx`.** Offline laptops, captive portals and rate limits are ordinary conditions for a localhost tool, not server faults: the response is a `200` with `reachable` false, the other fields empty, and `detail` saying why in one sentence. The endpoint succeeded; the network is what did not.\n\n**It reports nothing about the workspace's template files**, though §2.4's upgrade syncs them. It cannot: the three-way rule compares against the files the *new* tool ships, and those are not in this workspace until the install has happened. `corpus upgrade --check` answers that question locally, after it has resolved the incoming side.",
+        "responses": {
+          "200": {
+            "description": "What the check found — including the honest 'I could not look', which is `reachable` false rather than an error status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeCheck"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/upgrade": {
+      "post": {
+        "tags": [
+          "upgrade"
+        ],
+        "summary": "Spawn the detached CLI upgrade, and answer before it finishes",
+        "description": "Asks the server to spawn the installed `corpus upgrade` as a detached process — the UI's 'Upgrade & restart' action (SPEC.md §2.4). The server performs no part of the upgrade itself: the spawned CLI checks, downloads the tarball over HTTPS, verifies its published checksum, reinstalls through the same npm-global path the tool was installed with (refusing with instructions rather than guessing when the install method cannot be detected), brings the workspace's template files up to the new tool's, and — if and only if the server was running when the upgrade began — restarts it against the same workspace.\n\n**Takes no request body at all**, and carries no acting party: this request writes no workspace file and makes no commit. The writes and the single attributed commit belong to the spawned process, which outlives this one by design (it restarts the server, so it cannot be the server's child in any surviving sense).\n\n**`202`, and the gap it names is real.** The response is written before the download begins; it reports that a process exists and nothing more. Success, refusal-to-install and every template-sync verdict are decided long afterwards, and none of them can come back over this connection — which is why the body names `logPath`, the file the detached process writes its report to. That report is where SPEC.md §2.4's requirement lands: what was updated, what was left alone, and, listed apart from both because **a conflict is unresolved work rather than a notice**, every file the workspace edited that the tool also changed, each naming `corpus workspace diff <path>`. Corpus never merges those automatically — a plausible-looking auto-merge of prose that instructs the agent would corrupt the loop.\n\n**Completion is observed, not reported.** §2.4: the UI 'rides out the restart with its normal SSE reconnect and shows the new version on return'. The `/events` stream dropping is the upgrade proceeding; the stream returning with a new `version` from `GET /api/health` is it having finished. There is deliberately no progress endpoint, because the only server that could answer one is the server being replaced.\n\n**One at a time.** A second trigger while an upgrade is in flight is a `409`, not a second process: two concurrent installs racing over the same npm prefix is how a working installation becomes a broken one.",
+        "responses": {
+          "202": {
+            "description": "Spawned, not completed. `started` is always `true` — the refusal has its own status — and `logPath` is where the upgrade's report, conflicts included, will be written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeStarted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid workspace bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with state that already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
                 }
               }
             }

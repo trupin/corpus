@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { InternalError, ServerResponseError, UsageError } from "./errors.js";
-import { createOutput } from "./output.js";
+import { createNestedOutput, createOutput } from "./output.js";
 
 function collector() {
   const stdout: string[] = [];
@@ -111,5 +111,44 @@ describe("colour", () => {
     const sink = collector();
     sink.out(true).write("help text\n");
     expect(sink.stdout.join("")).toBe("help text\n");
+  });
+});
+
+describe("a nested output, for a command run as a step of another", () => {
+  it("captures the step's JSON value instead of emitting it", () => {
+    // The invariant `--json` rests on: exactly one value on stdout. A composite
+    // command calling three handlers must not produce three documents.
+    const sink = collector();
+    const parent = sink.out(true);
+    const nested = createNestedOutput(parent);
+
+    nested.output.emit({ stopped: true });
+    parent.emit({ mode: "upgrade" });
+
+    expect(sink.stdout.join("")).toBe('{"mode":"upgrade"}\n');
+    expect(nested.value()).toEqual({ stopped: true });
+  });
+
+  it("passes human lines through indented, and records them", () => {
+    const sink = collector();
+    const nested = createNestedOutput(sink.out(false));
+    nested.output.line("stopped (pid 4711)");
+
+    expect(sink.stdout.join("")).toBe("  stopped (pid 4711)\n");
+    expect(nested.lines()).toEqual(["stopped (pid 4711)"]);
+  });
+
+  it("keeps a step's `write` off stdout, where it would break --json", () => {
+    const sink = collector();
+    const nested = createNestedOutput(sink.out(true));
+    nested.output.write("two\nlines\n");
+
+    expect(sink.stdout).toEqual([]);
+    expect(nested.lines()).toEqual(["two", "lines"]);
+  });
+
+  it("never lets a step decide to print JSON", () => {
+    const nested = createNestedOutput(collector().out(true));
+    expect(nested.output.json).toBe(false);
   });
 });

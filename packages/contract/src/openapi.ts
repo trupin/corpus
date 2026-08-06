@@ -71,6 +71,13 @@ export function buildOpenApiDocument(): ReturnType<OpenAPIHono["getOpenAPI31Docu
           "rebuild that re-queues it. Derived runtime state only — no files, no commits.",
       },
       { name: "skills", description: "Skills as documents: loop-safety rollback." },
+      {
+        name: "upgrade",
+        description:
+          "On-demand self-upgrade (SPEC.md §2.4): the check that reaches GitHub only when asked, " +
+          "and the trigger that spawns the detached CLI upgrade. Nothing here runs in the " +
+          "background, and nothing phones home.",
+      },
       { name: "events", description: "The SSE invalidation stream." },
       { name: "attachments", description: "Attachment bytes." },
     ],

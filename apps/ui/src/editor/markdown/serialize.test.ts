@@ -111,6 +111,57 @@ describe("nodes", () => {
     expect(serializeDoc(source)).toBe("```\nx\n```\n");
   });
 
+  /**
+   * UI-057, spun out of AGENT-012. The property that keeps autosave from
+   * **corrupting** a document: a fence closes at the first line whose backtick
+   * run is at least as long as the opener, so a payload carrying its own fence
+   * needs a wider one. The widening is `remark-stringify`'s and `serialize.ts`
+   * deliberately delegates to it — which is exactly why it needs a test here.
+   * Nothing would fail if a later change hand-rolled the printer or turned the
+   * option off; documents would simply start splitting into several blocks on
+   * save, and the copy button would hand over fragments.
+   */
+  describe("a fence whose payload contains a fence", () => {
+    const blockCount = (markdown: string): number =>
+      (parseMarkdown(markdown).content ?? []).filter((node) => node.type === NODE.codeBlock).length;
+
+    it("widens past a three-backtick payload and stays one block", () => {
+      const payload = "## Output format\n\n```\nowner | action | topic\n```";
+      const source = doc({
+        type: NODE.codeBlock,
+        attrs: { language: "prompt" },
+        content: [text(payload)],
+      });
+
+      const printed = serializeDoc(source);
+
+      expect(printed).toBe(`\`\`\`\`prompt\n${payload}\n\`\`\`\`\n`);
+      expect(blockCount(printed)).toBe(1);
+    });
+
+    it("counts the longest run rather than assuming four", () => {
+      const payload = "````\nnested four\n````";
+      const source = doc({
+        type: NODE.codeBlock,
+        attrs: { language: null },
+        content: [text(payload)],
+      });
+
+      const printed = serializeDoc(source);
+
+      expect(printed).toBe(`\`\`\`\`\`\n${payload}\n\`\`\`\`\`\n`);
+      expect(blockCount(printed)).toBe(1);
+    });
+
+    it("keeps the widened fence across a full round trip", () => {
+      const markdown = "````prompt\n## Heading\n\n```\ninner\n```\n````\n";
+
+      expect(blockCount(markdown)).toBe(1);
+      expect(canonicalizeMarkdown(markdown)).toBe(markdown);
+      expect(blockCount(canonicalizeMarkdown(markdown))).toBe(1);
+    });
+  });
+
   it("serialises a horizontal rule as three dashes", () => {
     expect(serializeDoc(doc({ type: NODE.horizontalRule }))).toBe("---\n");
   });

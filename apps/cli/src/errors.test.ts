@@ -4,6 +4,8 @@ import {
   EXIT_CODES,
   ExitCode,
   InternalError,
+  PartialFailureError,
+  RefusedError,
   ServerResponseError,
   ServerUnreachableError,
   UsageError,
@@ -45,9 +47,49 @@ describe("exit codes", () => {
     expect(isCliError(new Error("boom"))).toBe(false);
   });
 
-  it("documents every code from 0 to 6 exactly once", () => {
-    expect(EXIT_CODES.map((entry) => entry.code)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  it("carries the refusal's own reason code", () => {
+    const error = new RefusedError("the release publishes no checksum", {
+      code: "upgrade_unverifiable",
+    });
+    expect(exitCodeFor(error)).toBe(ExitCode.refused);
+    expect(error.code).toBe("upgrade_unverifiable");
+    expect(error.name).toBe("RefusedError");
+  });
+
+  it("documents every code from 0 to 8 exactly once", () => {
+    expect(EXIT_CODES.map((entry) => entry.code)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     for (const entry of EXIT_CODES) expect(entry.meaning.length).toBeGreaterThan(0);
+  });
+
+  it("separates a refusal that changed nothing from a failure that changed something", () => {
+    // The distinction exit 7 used to blur (CLI-030). It is carried twice on
+    // purpose: as an exit code for a caller reading a shell status, and as
+    // `changed` for one reading a payload — `.corpus/upgrade.log` has the
+    // second and no exit code at all.
+    const refused = new RefusedError("the release publishes no checksum", {
+      code: "upgrade_unverifiable",
+    });
+    const partial = new PartialFailureError("the install command failed", {
+      code: "upgrade_install_failed",
+    });
+
+    expect([refused.exitCode, refused.changed]).toEqual([ExitCode.refused, false]);
+    expect([partial.exitCode, partial.changed]).toEqual([ExitCode.partialFailure, true]);
+    expect(partial.name).toBe("PartialFailureError");
+  });
+
+  it("leaves `changed` unsaid on every failure that cannot honestly answer it", () => {
+    // A 500 from a POST may or may not have written. Asserting `false` there
+    // would replace one false promise with another.
+    for (const error of [
+      new UsageError("bad usage"),
+      new InternalError("boom"),
+      new CheckFailedError("check failed"),
+      new ServerResponseError("500 internal: nope", { code: "internal", status: 500 }),
+      new ServerUnreachableError("down"),
+    ]) {
+      expect(error.changed).toBeUndefined();
+    }
   });
 });
 
@@ -70,6 +112,25 @@ describe("toProblem", () => {
       message: "400 bad_request: invalid",
       details: [{ path: "body.title", message: "Required" }],
     });
+  });
+
+  it("carries `changed` into the envelope whenever the failure knows it", () => {
+    expect(toProblem(new RefusedError("nope", { code: "upgrade_unverifiable" }))).toEqual({
+      code: "upgrade_unverifiable",
+      message: "nope",
+      changed: false,
+    });
+    expect(
+      toProblem(
+        new PartialFailureError("halfway", { code: "upgrade_interrupted", details: { pid: 7 } }),
+      ),
+    ).toEqual({
+      code: "upgrade_interrupted",
+      message: "halfway",
+      changed: true,
+      details: { pid: 7 },
+    });
+    expect(toProblem(new UsageError("bad usage"))).not.toHaveProperty("changed");
   });
 
   it("falls back for thrown non-Errors", () => {
@@ -98,6 +159,28 @@ describe("renderError", () => {
     expect(rendered.startsWith("corpus: 400 bad_request: invalid\n")).toBe(true);
     expect(rendered).toContain("  Fix the body.");
     expect(rendered).toContain('"path": "body.title"');
+  });
+
+  it("says out loud that a failure changed something, and only then", () => {
+    // A person never sees the exit code, so the fact that decides what they do
+    // next has to be in the text (CLI-030).
+    const partial = renderError(
+      new PartialFailureError("the install command failed", {
+        code: "upgrade_install_failed",
+        hint: "Check `corpus --version`.",
+      }),
+      { verbose: false },
+    );
+    expect(partial).toContain("This failed partway");
+    expect(partial).toContain("Check `corpus --version`.");
+
+    const refused = renderError(new RefusedError("nope", { code: "upgrade_unverifiable" }), {
+      verbose: false,
+    });
+    expect(refused).not.toContain("failed partway");
+    expect(renderError(new UsageError("bad usage"), { verbose: false })).not.toContain(
+      "failed partway",
+    );
   });
 
   it("renders a plain string throw", () => {
