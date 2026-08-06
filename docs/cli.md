@@ -277,7 +277,11 @@ Upgrades the **tool**, and everything that has to move with it (SPEC.md §2.4). 
 
 **On demand, always.** Corpus never checks for, downloads, or installs anything in the background, and never phones home. Nothing here runs unless it is typed.
 
-**It refuses rather than guesses.** A release with no published checksum is not an upgrade target and is not installed. A copy of corpus whose install method cannot be detected — a source checkout, a project-local `node_modules`, an `npx` cache — is not upgraded either: the refusal names what it could not establish and gives the command to run by hand. It never elevates itself, and an unwritable npm prefix is a refusal, not a `sudo`. Every refusal leaves the installation exactly as it found it and exits 7.
+**It refuses rather than guesses.** A release with no published checksum is not an upgrade target and is not installed. A copy of corpus whose install method cannot be detected — a source checkout, a project-local `node_modules`, an `npx` cache — is not upgraded either: the refusal names what it could not establish and gives the command to run by hand. It never elevates itself, and an unwritable npm prefix is a refusal, not a `sudo`. Every refusal leaves the installation exactly as it found it and exits **7**.
+
+**7 means nothing changed; 8 means something did.** Exit 7 is only used where that is provably true — every refusal above is decided before the server is touched and before a byte is installed. Once the install has begun the guarantee is gone, so an npm that fails, an interrupt, or a template sync that fails after the tool moved all exit **8** instead and carry `"changed":true` in the `--json` error envelope, with `details.server` saying whether the workspace's server was stopped and whether it came back. After an 8, re-check `corpus --version` and `corpus server status`; after a 7 there is nothing to re-check.
+
+**Interrupting it.** Between stopping the server and restarting it there is a window the command cannot leave cleanly. The first Ctrl-C (or `SIGTERM`) inside it is handled: the npm child is killed — processes npm had itself spawned may briefly outlive it — the server is started again, the report is written, and the command exits 8 with `upgrade_interrupted`. A second one is **not** handled — it kills corpus outright — and neither is `kill -9` or a machine going to sleep, either of which can leave the server stopped and the global package half-replaced. To recover from that: `corpus server start`, then `corpus upgrade` again once `corpus --version` has told you what you actually have.
 
 **The workspace half is not optional.** `corpus init` copies the agent's skills into the workspace and from that moment they are the workspace's own documents, so a tool update that ignored them would leave the loop running last version's instructions. The sync is the same three-way compare `corpus workspace upgrade` performs, called rather than reimplemented: a file the workspace never touched is updated, a file the workspace edited is **never** overwritten, and everything written lands in one attributed commit, so `corpus skill rollback` undoes a bad upgrade like any other change.
 
@@ -2275,13 +2279,14 @@ corpus workspace upgrade --json
 
 ## Exit codes
 
-| Code | Meaning                                                        |
-| ---- | -------------------------------------------------------------- |
-| `0`  | Success.                                                       |
-| `1`  | Internal error — an unexpected exception.                      |
-| `2`  | Usage error — unknown command, bad flag, missing argument.     |
-| `3`  | Not inside a Corpus workspace, or its config is invalid.       |
-| `4`  | The workspace server is unreachable.                           |
-| `5`  | The server returned an error response.                         |
-| `6`  | A check-style command reported a failure (its work succeeded). |
-| `7`  | Refused — a precondition was not met, and nothing was changed. |
+| Code | Meaning                                                                         |
+| ---- | ------------------------------------------------------------------------------- |
+| `0`  | Success.                                                                        |
+| `1`  | Internal error — an unexpected exception.                                       |
+| `2`  | Usage error — unknown command, bad flag, missing argument.                      |
+| `3`  | Not inside a Corpus workspace, or its config is invalid.                        |
+| `4`  | The workspace server is unreachable.                                            |
+| `5`  | The server returned an error response.                                          |
+| `6`  | A check-style command reported a failure (its work succeeded).                  |
+| `7`  | Refused — a precondition was not met, and nothing was changed.                  |
+| `8`  | Failed partway — something had already been changed, so verify before retrying. |

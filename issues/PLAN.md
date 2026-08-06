@@ -397,4 +397,8 @@ belongs to the same fix wave.
 | AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | blocked | P1 | CLI-029 |
 | SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
 | SHARED-016 | Render skill/agent mentions as mentions, clickable — DRAFT, awaiting sign-off | blocked | P2 | — |
+| UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
+| CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
+| UI-077 | Resolved threads do not collapse in the doc view (bug against §5) | todo | P1 | SHARED-018 |
+| SHARED-017 | Multi-select + bulk actions — DRAFT, awaiting sign-off | blocked | P2 | — |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

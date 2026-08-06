@@ -42,6 +42,45 @@ export function abortOnInterrupt(
 }
 
 /**
+ * Runs `handler` **once**, on the first SIGINT/SIGTERM, and de-registers every
+ * listener before doing so. Returns the same idempotent disposer as above.
+ *
+ * The one-shot part is the point (CLI-030). `corpus upgrade` holds a window it
+ * cannot leave cleanly — the server is stopped and npm is rewriting the global
+ * package — and an interrupt there has to be turned into the ordinary failure
+ * path rather than into a dead process, or the board never comes back. But a
+ * command that swallowed *every* interrupt would be a tool an operator cannot
+ * get out of. Removing the listeners as the first signal fires restores Node's
+ * default disposition, so the second Ctrl-C terminates the process outright:
+ * the tool gets one chance to tidy up, and the operator always has the last
+ * word.
+ */
+export function onInterrupt(
+  handler: (signal: InterruptSignal) => void,
+  target: SignalTarget = process,
+): () => void {
+  const listeners = new Map<InterruptSignal, () => void>();
+
+  let done = false;
+  const dispose = (): void => {
+    if (done) return;
+    done = true;
+    for (const [signal, listener] of listeners) target.off(signal, listener);
+  };
+
+  for (const signal of INTERRUPT_SIGNALS) {
+    const listener = (): void => {
+      if (done) return;
+      dispose();
+      handler(signal);
+    };
+    listeners.set(signal, listener);
+    target.on(signal, listener);
+  }
+  return dispose;
+}
+
+/**
  * `setTimeout` that resolves early when the signal aborts, so an interrupt
  * arriving inside a retry backoff is not made to wait the backoff out.
  */

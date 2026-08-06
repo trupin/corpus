@@ -1,7 +1,7 @@
 import type { Actor, UpgradeCheck } from "@corpus/contract";
 import { createClient } from "../../client.js";
 import {
-  InternalError,
+  PartialFailureError,
   RefusedError,
   WorkspaceConfigError,
   isCliError,
@@ -10,6 +10,7 @@ import {
 import { plural, resolveActor } from "../../input.js";
 import { createNestedOutput, type Output } from "../../output.js";
 import { serverPidfilePath } from "../../paths.js";
+import { onInterrupt, type InterruptSignal, type SignalTarget } from "../../signals.js";
 import type {
   CommandContext,
   StandaloneCommandSpec,
@@ -82,6 +83,14 @@ import { evaluateRelease, lookupLatestRelease, releaseSource } from "./release.j
  * instructions the loop runs on. It is reported apart from everything that
  * merely happened, as a list an agent can read without parsing prose, each entry
  * naming `corpus workspace diff <path>` (CLI-027).
+ *
+ * **Steps 4–7 are a window, and the exit code says so.** Everything before step
+ * 4 refuses (exit 7) with the guarantee that nothing moved. From step 4 the
+ * guarantee is gone — the board is down and npm is rewriting the package this
+ * process runs from — so a failure there exits 8 and carries `changed: true`,
+ * which is what tells an agent to re-check its version and its server rather
+ * than simply retry (CLI-030). The same window installs a one-shot interrupt
+ * handler, because a `finally` does not run on SIGINT.
  */
 
 /** How long the release list may take. Short: it is one small JSON document. */
@@ -163,6 +172,8 @@ export interface UpgradeEffects {
   readonly stopServer?: (context: WorkspaceCommandContext) => Promise<void>;
   readonly startServer?: (context: WorkspaceCommandContext) => Promise<void>;
   readonly now?: () => Date;
+  /** Where interrupt handlers are installed; a parameter so no test touches `process`. */
+  readonly signals?: SignalTarget;
 }
 
 export async function runUpgrade(
@@ -445,7 +456,10 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     command: null,
     version: null,
   };
-  let failure: Error | undefined;
+  let failure: PartialFailureError | undefined;
+  /** Set when the stop or the install threw; rethrown *after* the restart. */
+  let aborted: unknown;
+  let interruptedBy: InterruptSignal | undefined;
 
   // Each nested step speaks for itself — `corpus server stop` already says
   // `stopped (pid 4711)` — so the composite prints their lines rather than a
@@ -459,6 +473,28 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
     for (const line of lines.slice(drained)) journal.note(`  ${line}`);
     drained = lines.length;
   };
+
+  // Everything from here to the restart is a window this command cannot leave
+  // cleanly: the board is down and npm is rewriting the package this process is
+  // running from. A `finally` covers an exception; it does **not** run on
+  // SIGINT/SIGTERM, whose default disposition kills the process outright — so a
+  // Ctrl-C inside a fifteen-minute install used to leave the server stopped and
+  // nothing to say why (CLI-030).
+  //
+  // The handler does no work of its own. It kills the npm child through the
+  // abort signal — the *direct* child only, which is all Node's `signal` option
+  // promises; grandchildren npm spawned can briefly outlive it, and the help
+  // text says so rather than the code pretending otherwise — and lets the
+  // failure travel the path that already exists: the
+  // `finally` below restarts the server, the journal records it, and the command
+  // exits 8. It is one-shot, so a second Ctrl-C is Node's default and kills the
+  // process — the operator is never trapped inside their own upgrade.
+  const interrupt = new AbortController();
+  const releaseInterrupt = onInterrupt((signal) => {
+    interruptedBy = signal;
+    interrupt.abort();
+    say(`  ${signal} received — stopping the install and putting the server back`);
+  }, effects.signals);
 
   try {
     if (stage.workspaceContext !== null && stage.wasRunning) {
@@ -475,6 +511,7 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
       tarballPath: download.path,
       env: context.env,
       timeoutMs: INSTALL_TIMEOUT_MS,
+      signal: interrupt.signal,
     });
     installed.command = install.command;
     // What is on disk now, read back rather than assumed. The release's tag and
@@ -518,10 +555,34 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
         say(
           "  fix the cause and run `corpus workspace upgrade` — the tool half does not need repeating.",
         );
-        failure = cause instanceof Error ? cause : new InternalError(String(cause));
+        // Exit 8, not 1: the tool really did move, which is a change the caller
+        // has to account for, and "unexpected exception" says nothing about it.
+        failure = new PartialFailureError(
+          `the tool was upgraded to ${installed.version ?? "?"} but this workspace's template files were not: ` +
+            templateFailure.message,
+          {
+            code: "upgrade_template_failed",
+            hint: `Fix the cause and run \`corpus workspace upgrade\`${
+              templateFailure.hint === null ? "" : ` — ${templateFailure.hint}`
+            }`,
+            details: {
+              workspace: stage.workspaceContext.workspace.root,
+              toolVersion: installed.version,
+              server,
+            },
+            cause,
+          },
+        );
       }
     }
+  } catch (cause) {
+    // Only the stop and the install reach here — the template sync's failure is
+    // caught inline above so the full report can still be emitted. Held rather
+    // than rethrown so the `finally` restarts the server *first*, and what is
+    // finally thrown can say whether it came back.
+    aborted = cause;
   } finally {
+    releaseInterrupt();
     // Whatever happened above, a server that was running is put back. A failed
     // sync is a reason to tell somebody, not a reason to leave the board down.
     if (stage.workspaceContext !== null && server.stopped) {
@@ -535,6 +596,20 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
       }
     }
     discardDownload(download);
+  }
+
+  // Thrown here rather than from the try, so the server report it carries is the
+  // one that includes the restart. Nothing was emitted on this path — the run
+  // never produced a result — so the error envelope is the whole answer, and it
+  // has to carry the state of the board with it.
+  if (aborted !== undefined) throw interruptedOrPartial(aborted, interruptedBy, server);
+
+  if (interruptedBy !== undefined) {
+    // The signal arrived after the install had already returned. Failing a run
+    // that then finished would be the opposite lie to the one CLI-030 fixed.
+    say(
+      `  ${interruptedBy} arrived after the install finished; the upgrade completed rather than stopping halfway`,
+    );
   }
 
   const result: UpgradeResult = {
@@ -571,6 +646,53 @@ async function performUpgrade(context: CommandContext, stage: RunStage): Promise
   // upgrade is exactly what its caller needs, and losing it to the failure would
   // leave nothing but a message.
   if (failure !== undefined) throw failure;
+}
+
+/**
+ * The failure a half-finished upgrade reports, with the state of the board
+ * folded into it (CLI-030).
+ *
+ * Three shapes come out of the install window and they are not the same
+ * failure. An **interrupt** is named as one: the operator ended it, and the code
+ * an agent branches on should say that rather than blaming npm. An error that
+ * already knows it changed something (`npmInstall`'s) is rebuilt only to add
+ * `details.server`, because a caller that has just been told its upgrade failed
+ * needs to know whether its board came back without running a second command.
+ * Anything else — a `stop` that failed before npm was ever spawned — is passed
+ * through untouched: nothing had changed yet, and laundering it into an 8 would
+ * be the same kind of false claim in the other direction.
+ */
+function interruptedOrPartial(
+  cause: unknown,
+  interruptedBy: InterruptSignal | undefined,
+  server: ServerReport,
+): unknown {
+  if (interruptedBy !== undefined) {
+    return new PartialFailureError(
+      `the upgrade was interrupted by ${interruptedBy} while it was installing`,
+      {
+        code: "upgrade_interrupted",
+        hint:
+          "The npm child was killed and the workspace's server was started again if it had been stopped. Check " +
+          "`corpus --version` and `corpus server status` before running `corpus upgrade` again.",
+        details: { signal: interruptedBy, server },
+        cause,
+      },
+    );
+  }
+  if (!(cause instanceof PartialFailureError)) return cause;
+  return new PartialFailureError(cause.message, {
+    code: cause.code,
+    ...(cause.hint === undefined ? {} : { hint: cause.hint }),
+    details: { ...asRecord(cause.details), server },
+    cause,
+  });
+}
+
+function asRecord(details: unknown): Record<string, unknown> {
+  return typeof details === "object" && details !== null && !Array.isArray(details)
+    ? (details as Record<string, unknown>)
+    : {};
 }
 
 /**
@@ -747,7 +869,22 @@ export const upgradeCommand: StandaloneCommandSpec = {
     "source checkout, a project-local `node_modules`, an `npx` cache — is not upgraded either: " +
     "the refusal names what it could not establish and gives the command to run by hand. It never " +
     "elevates itself, and an unwritable npm prefix is a refusal, not a `sudo`. Every refusal " +
-    "leaves the installation exactly as it found it and exits 7.\n\n" +
+    "leaves the installation exactly as it found it and exits **7**.\n\n" +
+    "**7 means nothing changed; 8 means something did.** Exit 7 is only used where that is " +
+    "provably true — every refusal above is decided before the server is touched and before a " +
+    "byte is installed. Once the install has begun the guarantee is gone, so an npm that fails, " +
+    "an interrupt, or a template sync that fails after the tool moved all exit **8** instead and " +
+    'carry `"changed":true` in the `--json` error envelope, with `details.server` saying whether ' +
+    "the workspace's server was stopped and whether it came back. After an 8, re-check `corpus " +
+    "--version` and `corpus server status`; after a 7 there is nothing to re-check.\n\n" +
+    "**Interrupting it.** Between stopping the server and restarting it there is a window the " +
+    "command cannot leave cleanly. The first Ctrl-C (or `SIGTERM`) inside it is handled: the npm " +
+    "child is killed — processes npm had itself spawned may briefly outlive it — the server is " +
+    "started again, the report is written, and the command exits 8 with `upgrade_interrupted`. A " +
+    "second one is **not** handled — it kills corpus outright — and " +
+    "neither is `kill -9` or a machine going to sleep, either of which can leave the server " +
+    "stopped and the global package half-replaced. To recover from that: `corpus server start`, " +
+    "then `corpus upgrade` again once `corpus --version` has told you what you actually have.\n\n" +
     "**The workspace half is not optional.** `corpus init` copies the agent's skills into the " +
     "workspace and from that moment they are the workspace's own documents, so a tool update that " +
     "ignored them would leave the loop running last version's instructions. The sync is the same " +

@@ -3,7 +3,7 @@ import { accessSync, constants, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { promisify } from "node:util";
-import { RefusedError } from "../../errors.js";
+import { PartialFailureError, RefusedError } from "../../errors.js";
 import { sha256 } from "../../template/manifest.js";
 import { cliPackageRoot, readPackageVersion } from "../../version.js";
 import type { ReleaseAsset, ReleaseAssets } from "./release.js";
@@ -14,14 +14,21 @@ import type { ReleaseAsset, ReleaseAssets } from "./release.js";
  * prove they are the published ones, and hand them to the same npm that put the
  * current copy where it is.
  *
- * Every failure in this file is a **refusal**, and that is the design rather
- * than an accident of error handling. §2.4: "if the install method cannot be
- * detected it refuses with instructions rather than guessing". A tool that
- * guesses how it was installed corrupts an installation it does not understand;
- * a tool that installs unverified bytes is a supply-chain hole with a progress
- * bar. So each refusal names what it could not establish and gives the operator
- * the command they would have run themselves — which is strictly more useful
- * than a wrong guess, and is the only thing that keeps `sudo` out of this file.
+ * Every failure in this file **up to the moment npm is spawned** is a refusal,
+ * and that is the design rather than an accident of error handling. §2.4: "if
+ * the install method cannot be detected it refuses with instructions rather
+ * than guessing". A tool that guesses how it was installed corrupts an
+ * installation it does not understand; a tool that installs unverified bytes is
+ * a supply-chain hole with a progress bar. So each refusal names what it could
+ * not establish and gives the operator the command they would have run
+ * themselves — which is strictly more useful than a wrong guess, and is the
+ * only thing that keeps `sudo` out of this file.
+ *
+ * The exception is `npmInstall` itself, and it is the whole reason exit 8
+ * exists (CLI-030). By the time npm has been spawned the caller has already
+ * stopped the workspace's server and npm may have half-replaced the package, so
+ * "refused — nothing was changed" would be a lie told to the one caller least
+ * able to check: an agent. Its failure is a `PartialFailureError`.
  */
 
 const execFileAsync = promisify(execFile);
@@ -342,6 +349,12 @@ export interface NpmInstallOptions {
   readonly tarballPath: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly timeoutMs: number;
+  /**
+   * Aborting it kills the npm child. The caller arms this from its interrupt
+   * handler, so a Ctrl-C during a fifteen-minute install ends the child rather
+   * than orphaning it under a parent that is about to exit (CLI-030).
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface NpmInstallResult {
@@ -371,14 +384,19 @@ export const npmInstall: NpmRunner = async (options) => {
       env: options.env,
       timeout: options.timeoutMs,
       maxBuffer: 8 * 1024 * 1024,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     return { command, output: `${stdout}${stderr}`.trim() };
   } catch (cause) {
-    throw new RefusedError(`the install command failed: ${command}`, {
+    // Not a refusal: npm was spawned against the real global prefix, so which
+    // version is installed is now a question rather than a known fact — and the
+    // caller stopped the server to get here. The hint says what to look at
+    // instead of guessing on the operator's behalf (CLI-030).
+    throw new PartialFailureError(`the install command failed: ${command}`, {
       code: "upgrade_install_failed",
       hint:
-        "npm reported the failure below. The previous version is still installed unless npm says otherwise; " +
-        "run the command by hand to see the whole log.",
+        "npm reported the failure below. Check `corpus --version` for the version that is actually installed — it may be " +
+        "the old one, the new one, or a partly-replaced package — and run the command by hand to see the whole log.",
       details: { command, npm: npmFailureDetail(cause) },
       cause,
     });

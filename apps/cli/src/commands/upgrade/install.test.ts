@@ -278,7 +278,7 @@ describe("downloadAndVerify", () => {
 });
 
 describe("npmInstall", () => {
-  it("names the same npm-global path this copy was installed with, and reports a failure as a refusal", async () => {
+  it("names the same npm-global path this copy was installed with, and reports a failure as a partial one", async () => {
     // A real `npm`, given a tarball that does not exist: it fails immediately,
     // touches no network, and installs nothing — which exercises the command
     // this verb builds and the refusal it turns a non-zero exit into.
@@ -298,8 +298,44 @@ describe("npmInstall", () => {
 
     if (!isCliError(error)) throw new Error(`expected a CliError, got ${String(error)}`);
     expect(error.code).toBe("upgrade_install_failed");
-    expect(error.exitCode).toBe(ExitCode.refused);
+    // Not a refusal: npm was spawned against the real prefix, so "nothing was
+    // changed" is no longer something this can promise (CLI-030).
+    expect(error.exitCode).toBe(ExitCode.partialFailure);
+    expect(error.changed).toBe(true);
+    expect(error.hint).toContain("corpus --version");
     expect(error.message).toContain(`--prefix ${prefix}`);
     expect(existsSync(join(prefix, "lib", "node_modules", "corpus"))).toBe(false);
   }, 130_000);
+
+  it("hands its abort signal to the child, so an interrupt ends npm too", async () => {
+    // The wiring, asserted offline and deterministically: a signal that is
+    // already aborted must end the run rather than be ignored. What Node does
+    // with it after that — killing the child — is Node's guarantee, and the real
+    // kill is what CLI-030's E2E watched with `pgrep`.
+    const prefix = tempDir("aborted-prefix");
+    const controller = new AbortController();
+    controller.abort();
+    const started = Date.now();
+
+    const error = await npmInstall({
+      method: {
+        kind: "npm-global",
+        packageRoot: join(prefix, "lib", "node_modules", "corpus"),
+        packageName: "corpus",
+        prefix,
+        globalRoot: join(prefix, "lib", "node_modules"),
+      },
+      tarballPath: join(prefix, "corpus-0.4.0.tgz"),
+      env: process.env,
+      timeoutMs: 120_000,
+      signal: controller.signal,
+    }).catch((cause: unknown) => cause);
+
+    if (!isCliError(error)) throw new Error(`expected a CliError, got ${String(error)}`);
+    expect(error.code).toBe("upgrade_install_failed");
+    expect(error.exitCode).toBe(ExitCode.partialFailure);
+    // The abort ended it, not the 120-second timeout.
+    expect(Date.now() - started).toBeLessThan(30_000);
+    expect(existsSync(join(prefix, "lib", "node_modules", "corpus"))).toBe(false);
+  }, 40_000);
 });

@@ -2,7 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ExitCode, isCliError, RefusedError } from "../../errors.js";
+import {
+  ExitCode,
+  isCliError,
+  PartialFailureError,
+  ServerUnreachableError,
+  toProblem,
+} from "../../errors.js";
+import { INTERRUPT_SIGNALS, type InterruptSignal, type SignalTarget } from "../../signals.js";
 import { upgradeLogPath } from "../../paths.js";
 import { createTestContext, type TestContextOptions } from "../../registry/fixtures.js";
 import { stubFetch } from "../../testing/fetch.js";
@@ -542,7 +549,7 @@ describe("corpus upgrade refuses rather than guessing", () => {
     ).toEqual({ code: "upgrade_prefix_unwritable", exitCode: ExitCode.refused });
   });
 
-  it("brings the server back when the install itself fails", async () => {
+  it("brings the server back when the install itself fails, and does not call that a refusal", async () => {
     const template = makeTemplate();
     const root = await makeWorkspace(template);
     const lifecycle: string[] = [];
@@ -553,7 +560,10 @@ describe("corpus upgrade refuses rather than guessing", () => {
       template: { templateRoot: template, pluginsRoot: undefined },
       installMethod: npmGlobal(),
       npm: () => {
-        throw new RefusedError("the install command failed", { code: "upgrade_install_failed" });
+        throw new PartialFailureError("the install command failed", {
+          code: "upgrade_install_failed",
+          details: { command: "npm install --global …" },
+        });
       },
       serverRunning: () => Promise.resolve(true),
       stopServer: () => {
@@ -570,6 +580,47 @@ describe("corpus upgrade refuses rather than guessing", () => {
     expect(lifecycle).toEqual(["stop", "start"]);
     // No template file was touched: the sync never ran.
     expect(read(root, ".claude/skills/orchestrate/SKILL.md")).toBe("orchestrate v1\n");
+
+    // The honesty CLI-030 is about: this path stopped the server and handed the
+    // package to npm, so exit 7's "nothing was changed" would be a lie. The
+    // caller gets the fact three ways — exit code, `changed`, and the state of
+    // its own board without having to run a second command.
+    if (!isCliError(failure)) throw new Error("expected a CliError");
+    expect(failure.exitCode).toBe(ExitCode.partialFailure);
+    expect(toProblem(failure)).toMatchObject({
+      code: "upgrade_install_failed",
+      changed: true,
+      details: {
+        command: "npm install --global …",
+        server: { wasRunning: true, stopped: true, restarted: true, detail: null },
+      },
+    });
+  });
+
+  it("reports a stop that failed before npm was ever spawned as itself", async () => {
+    // Nothing had changed yet, so laundering it into an 8 would be the same
+    // false claim in the other direction.
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const installs: string[] = [];
+
+    const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
+    const failure: unknown = await runUpgrade(base.context, {
+      fetch: await releaseFetch(),
+      template: { templateRoot: template, pluginsRoot: undefined },
+      installMethod: npmGlobal(),
+      npm: (options) => {
+        installs.push(options.tarballPath);
+        return Promise.resolve({ command: "npm install --global …", output: "" });
+      },
+      serverRunning: () => Promise.resolve(true),
+      stopServer: () => Promise.reject(new ServerUnreachableError("pid 4711 will not die")),
+      startServer: () => Promise.resolve(),
+    }).catch((cause: unknown) => cause);
+
+    expect(isCliError(failure) && failure.exitCode).toBe(ExitCode.serverUnreachable);
+    expect(isCliError(failure) && failure.changed).toBeUndefined();
+    expect(installs).toEqual([]);
   });
 
   it("does not stop the server for an upgrade it is about to refuse", async () => {
@@ -620,6 +671,155 @@ describe("when the tool moves and the workspace cannot follow", () => {
     expect(lifecycle).toEqual(["stop", "start"]);
     const log = readFileSync(upgradeLogPath(root), "utf8");
     expect(log).toContain("were NOT updated");
+
+    // The tool *did* move, so this is a partial failure and not an "unexpected
+    // exception" (exit 1 said nothing about the installed version having
+    // changed under the caller's feet).
+    if (!isCliError(failure)) throw new Error("expected a CliError");
+    expect(failure.exitCode).toBe(ExitCode.partialFailure);
+    expect(toProblem(failure)).toMatchObject({
+      code: "upgrade_template_failed",
+      changed: true,
+      details: { toolVersion: "0.4.0", server: { stopped: true, restarted: true } },
+    });
+  });
+});
+
+/**
+ * The window between "the server is down" and "the server is back" is the one
+ * place `corpus upgrade` cannot be interrupted safely, and a `finally` does not
+ * run on SIGINT (CLI-030). The target is injected, so nothing here touches the
+ * real process's listener table.
+ */
+describe("when it is interrupted mid-install", () => {
+  function fakeSignals(): SignalTarget & { fire: (signal: InterruptSignal) => void } {
+    const listeners = new Map<InterruptSignal, Set<() => void>>();
+    return {
+      on(signal, listener) {
+        const set = listeners.get(signal) ?? new Set<() => void>();
+        set.add(listener);
+        listeners.set(signal, set);
+      },
+      off(signal, listener) {
+        listeners.get(signal)?.delete(listener);
+      },
+      fire(signal) {
+        for (const listener of [...(listeners.get(signal) ?? [])]) listener();
+      },
+    };
+  }
+
+  it.each(INTERRUPT_SIGNALS)(
+    "puts the server back and exits 8 rather than dying silently (%s)",
+    async (signal) => {
+      const template = makeTemplate();
+      const root = await makeWorkspace(template);
+      const signals = fakeSignals();
+      const lifecycle: string[] = [];
+
+      const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
+      const failure: unknown = await runUpgrade(base.context, {
+        fetch: await releaseFetch(),
+        template: { templateRoot: template, pluginsRoot: undefined },
+        installMethod: npmGlobal(),
+        signals,
+        // A long install, ended by the interrupt exactly as the real npm child
+        // is ended by its abort signal.
+        npm: (options) =>
+          new Promise((_resolve, reject) => {
+            options.signal?.addEventListener("abort", () => {
+              reject(new Error("npm was killed"));
+            });
+            signals.fire(signal);
+          }),
+        serverRunning: () => Promise.resolve(true),
+        stopServer: () => {
+          lifecycle.push("stop");
+          return Promise.resolve();
+        },
+        startServer: () => {
+          lifecycle.push("start");
+          return Promise.resolve();
+        },
+      }).catch((cause: unknown) => cause);
+
+      if (!isCliError(failure)) throw new Error(`expected a CliError, got ${String(failure)}`);
+      expect(failure.exitCode).toBe(ExitCode.partialFailure);
+      expect(toProblem(failure)).toMatchObject({
+        code: "upgrade_interrupted",
+        changed: true,
+        details: { signal, server: { wasRunning: true, stopped: true, restarted: true } },
+      });
+      // The whole point: the board comes back.
+      expect(lifecycle).toEqual(["stop", "start"]);
+      expect(base.stdout()).toContain(`${signal} received`);
+
+      // A detached run's only witness records it too.
+      const log = readFileSync(upgradeLogPath(root), "utf8");
+      expect(log).toContain(`${signal} received`);
+      expect(log).toContain(`${REPORT_MARKER} {"error"`);
+    },
+  );
+
+  it("handles the first interrupt and gets out of the way, so a second one is the operator's", async () => {
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const signals = fakeSignals();
+
+    const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
+    await runUpgrade(base.context, {
+      fetch: await releaseFetch(),
+      template: { templateRoot: template, pluginsRoot: undefined },
+      installMethod: npmGlobal(),
+      signals,
+      npm: (options) =>
+        new Promise((_resolve, reject) => {
+          options.signal?.addEventListener("abort", () => {
+            reject(new Error("npm was killed"));
+          });
+          signals.fire("SIGINT");
+          // In the real process this second one is Node's default and kills
+          // corpus; through the injected target it reaches nothing at all,
+          // which is the same fact observed from in here.
+          signals.fire("SIGINT");
+          signals.fire("SIGTERM");
+        }),
+      serverRunning: () => Promise.resolve(true),
+      stopServer: () => Promise.resolve(),
+      startServer: () => Promise.resolve(),
+    }).catch(() => undefined);
+
+    expect(base.stdout().match(/received — stopping the install/g)).toHaveLength(1);
+  });
+
+  it("does not fail a run whose install had already finished when the signal arrived", async () => {
+    // The opposite lie: an upgrade that completed is not a partial failure, and
+    // reporting one would send an agent chasing a rollback that never happened.
+    const template = makeTemplate();
+    const root = await makeWorkspace(template);
+    const signals = fakeSignals();
+
+    const base = createTestContext({ json: false, cwd: root, version: "0.3.0" });
+    await runUpgrade(base.context, {
+      fetch: await releaseFetch(),
+      template: { templateRoot: template, pluginsRoot: undefined },
+      installMethod: npmGlobal(),
+      signals,
+      npm: () => {
+        // Delivered just as npm returns: too late to stop anything.
+        signals.fire("SIGINT");
+        write(template, "claude/skills/orchestrate/SKILL.md", "orchestrate v2\n");
+        return Promise.resolve({ command: "npm install --global …", output: "" });
+      },
+      serverRunning: () => Promise.resolve(true),
+      stopServer: () => Promise.resolve(),
+      startServer: () => Promise.resolve(),
+    });
+
+    expect(base.stdout()).toContain("arrived after the install finished");
+    // It really did finish: the new tool's file was synced into the workspace.
+    expect(read(root, ".claude/skills/orchestrate/SKILL.md")).toBe("orchestrate v2\n");
+    expect(readFileSync(upgradeLogPath(root), "utf8")).toContain(`${REPORT_MARKER} {"mode"`);
   });
 });
 
