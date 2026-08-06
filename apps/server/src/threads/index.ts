@@ -59,6 +59,7 @@ export {
   buildTurnAppend,
   commitTurnAppend,
   storeTurnFiles,
+  turnCommitSubject,
   turnRequestBody,
   whileUnreferenced,
 } from "./turns.js";

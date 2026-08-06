@@ -260,10 +260,10 @@ describe("the queue and the auto-commit", () => {
 
     const started = Date.now();
     await appendTurn(ws, created.id, { body: "@agent are you there?" });
-    const events = await parked;
+    const available = await parked;
 
-    expect(events).toHaveLength(1);
-    expect(events?.[0]?.type).toBe("comment.created");
+    expect(available?.events).toHaveLength(1);
+    expect(available?.events[0]?.type).toBe("comment.created");
     expect(Date.now() - started).toBeLessThan(1_000);
     expect(ws.server.queue.parked).toBe(0);
   });

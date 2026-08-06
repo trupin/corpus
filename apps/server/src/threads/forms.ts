@@ -41,7 +41,7 @@ import { badRequest, notFound } from "../errors.js";
 import { NO_MENTIONS } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
-import { buildTurnAppend, commitTurnAppend, type TurnAppend } from "./turns.js";
+import { buildTurnAppend, commitTurnAppend, turnCommitSubject, type TurnAppend } from "./turns.js";
 import { EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
 
 /**
@@ -61,10 +61,13 @@ export function formAnswerBody(answer: FormAnswerRequest): string {
 /**
  * The auto-commit subject, a deliberate sibling of the turn path's
  * `comment: turn on <id> by <actor>`: same shape, different verb, so `git log`
- * distinguishes an answer from a reply without opening the diff.
+ * distinguishes an answer from a reply without opening the diff. Built by the
+ * turn path's own {@link turnCommitSubject} so the two cannot disagree about
+ * the shape — or about §8's `(reopened)` marker, which an answer earns on
+ * exactly the same terms a reply does.
  */
-export const formCommitSubject = (threadId: string, actor: Actor): string =>
-  `form: answer on ${threadId} by ${actor}`;
+export const formCommitSubject = (threadId: string, actor: Actor, reopened = false): string =>
+  turnCommitSubject({ act: "form: answer", threadId, actor, reopened });
 
 /**
  * The form the turn at `ts` carries, or the contract's `404`.
@@ -134,14 +137,16 @@ export function formRespondPayload(input: {
  * **The §8 decision is `decideParticipation`, not a rule written here.** The
  * form path calls it with the tri-state *omitted* and no parsed mentions, so it
  * lands on §8's automatic clause: an engaged, unresolved thread re-triggers on a
- * user's turn, and everything else does not. That is what makes the resolved
- * case (`eventId: null`, nothing enqueued) fall out of the same matrix the reply
- * path obeys instead of out of a second `if (status === "resolved")` that would
- * be free to drift from it. The consequences, stated because they are corners:
+ * user's turn, and everything else does not. That is what makes every corner
+ * below fall out of the same matrix the reply path obeys instead of out of a
+ * second `if (status === "resolved")` that would be free to drift from it. The
+ * consequences, stated because they are corners:
  *
- *   - **A resolved thread** answers `201`, writes the turn, and enqueues
- *     nothing. §8: resolving stops the automatic re-trigger, and the contract's
- *     own `eventId` description spells it out.
+ *   - **A resolved thread** is *reopened* by a person's answer, which then
+ *     re-triggers on §8's ordinary terms — an answer is a turn a person wrote,
+ *     and §8's reopen names no exception for the shape of the turn (SHARED-019
+ *     Amendment 1). The agent answering its own form on a resolved thread does
+ *     not reopen it, by the same author rule, and so is still the silent case.
  *   - **A thread the agent is not `engaged` in** likewise enqueues nothing. A
  *     form-carrying agent turn normally leaves the thread `engaged` (the server
  *     moves `requested → engaged` on the agent's first turn), so this is the
@@ -195,6 +200,7 @@ export async function answerThreadForm(
       text: formAnswerBody(answer),
       ts: nextTurnTs(thread.loaded.parsed.body, formatInstant(workspace.now())),
       agent: decision.agent,
+      status: decision.status,
     });
 
     // From here on the turn stays on disk, whatever fails after it.
@@ -203,7 +209,7 @@ export async function answerThreadForm(
       thread,
       actor,
       prepared,
-      formCommitSubject(id, actor),
+      formCommitSubject(id, actor, decision.status !== thread.status),
     );
 
     const eventId = decision.enqueue

@@ -410,24 +410,53 @@ describe("the `form.respond` event (SPEC.md §7)", () => {
 });
 
 describe("§8 decides whether the answer re-triggers the agent", () => {
-  it("appends and commits but enqueues nothing on a resolved thread", async () => {
+  // Corrected by SERVER-062. This case used to read "appends and commits but
+  // enqueues nothing on a resolved thread" and asserted `eventId: null` — the
+  // silence UI-078 filed. §8's reopen (SHARED-019 Amendment 1) names no
+  // exception for the shape of a person's turn, and an answer is a turn a
+  // person wrote, so it reopens and then re-triggers on §8's ordinary terms.
+  it("reopens a resolved thread and re-triggers, in the answer's own commit", async () => {
     const thread = await threadWithForm();
     expect((await ws.post(`/api/threads/${thread.id}/resolve`, {})).status).toBe(200);
     expect(threadFrontmatterOf(ws, thread.id)["agent"]).toBe("engaged");
+    expect(threadFrontmatterOf(ws, thread.id)["status"]).toBe("resolved");
     const before = ws.head();
 
     const response = await answerForm(thread, { option: OPTIONS[0], note: "for the record" });
-    const payload = (await response.json()) as { eventId: string | null };
+    const payload = (await response.json()) as {
+      eventId: string | null;
+      thread: { status: string };
+    };
 
     expect(response.status).toBe(201);
-    expect(payload.eventId).toBeNull();
-    expect(addedEvents(thread)).toEqual([]);
-    // The turn is on disk and committed all the same. `HEAD` rather than a
-    // commit count: §4 folds consecutive same-actor writes into one session
-    // commit, and resolve-then-answer is two writes by `user`.
+    expect(payload.eventId).toMatch(/^evt_/);
+    expect(onlyAddedEvent(thread)["type"]).toBe(FORM_RESPOND_EVENT_TYPE);
+    expect(payload.thread.status).toBe("open");
+    expect(threadFrontmatterOf(ws, thread.id)["status"]).toBe("open");
+    // The turn, the status flip and the commit are one write. `HEAD` rather
+    // than a commit count: §4 folds consecutive same-actor writes into one
+    // session commit, and resolve-then-answer is two writes by `user`.
     expect(turnsOf(ws, thread.id).at(-1)?.body).toContain(OPTIONS[0]);
     expect(ws.head()).not.toBe(before);
     expect(ws.git("show", `HEAD:${threadPath(thread.id)}`)).toContain("for the record");
+    expect(ws.log("%s")[0]).toBe(formCommitSubject(thread.id, "user", true));
+  });
+
+  it("keeps a resolved thread closed when the agent answers its own form", async () => {
+    const thread = await threadWithForm();
+    expect((await ws.post(`/api/threads/${thread.id}/resolve`, {})).status).toBe(200);
+
+    const response = await answerForm(
+      thread,
+      { option: OPTIONS[0] },
+      { "x-corpus-author": "agent" },
+    );
+
+    expect(response.status).toBe(201);
+    expect(((await response.json()) as { eventId: string | null }).eventId).toBeNull();
+    expect(addedEvents(thread)).toEqual([]);
+    expect(threadFrontmatterOf(ws, thread.id)["status"]).toBe("resolved");
+    expect(ws.log("%s")[0]).toBe(formCommitSubject(thread.id, "agent"));
   });
 
   it("enqueues nothing when the agent is not engaged in the thread", async () => {
