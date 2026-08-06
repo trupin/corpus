@@ -405,5 +405,6 @@ belongs to the same fix wave.
 | SHARED-019 | Agent resolves settled subthreads — DRAFT, awaiting sign-off | blocked | P1 | — |
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
 | UI-078 | Resolve confirmation promises replying reopens the thread; it does not | todo | P1 | — |
+| SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry — DRAFT, awaiting sign-off | blocked | P1 | — |
 
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
