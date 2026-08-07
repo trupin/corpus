@@ -71,6 +71,8 @@ step() {
 # First because it is the cheapest and needs no build: one version number
 # describes the whole tool (INFRA-008), and drift is far easier to fix here than
 # after a `v*` tag has been pushed, where the same check is the publish guard.
+# It reads the committed tree as well as the working tree (INFRA-022), so this
+# step sees what is about to be pushed rather than what is merely on disk.
 # The tarball audit (`pack:check`) deliberately stays CI-only — it bundles and
 # packs, which is too slow for a push.
 step "version singularity"         npm run --silent version:check

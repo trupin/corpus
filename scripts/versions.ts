@@ -8,8 +8,13 @@
  * single source, every workspace manifest must equal it, and when a release
  * workflow runs, the `v*` tag must equal it too.
  *
- * Pure: `scripts/check-versions.ts` reads the manifests and the environment and
- * hands them here.
+ * The check runs over **two** trees, not one (INFRA-022): the working tree and
+ * the committed tree. A check that only reads disk passes while the tree a `v*`
+ * tag points at would fail — which is exactly how a release was lost.
+ *
+ * Pure: `scripts/version-sources.ts` reads the manifests out of disk and out of
+ * git, `scripts/check-versions.ts` reads the environment, and both hand them
+ * here.
  */
 
 /** One manifest under inspection. `version` is `undefined` when the field is absent. */
@@ -49,6 +54,65 @@ export function versionFromGitRef(gitRef: string | undefined): string | undefine
   if (gitRef === undefined || !gitRef.startsWith(TAG_REF_PREFIX)) return undefined;
   const tag = gitRef.slice(TAG_REF_PREFIX.length);
   return tag.startsWith("v") ? tag.slice(1) : undefined;
+}
+
+/**
+ * One tree's worth of manifests. There are two (INFRA-022): what is on disk and
+ * what is committed. They are checked separately because they can disagree — and
+ * the disagreement is the whole bug: `npm version --workspaces` rewrites every
+ * manifest but commits only the root, so the working tree is correct while the
+ * commit the tag points at is not.
+ */
+export interface VersionSource {
+  /** Names the tree in every message it produces, e.g. `working tree`. */
+  readonly label: string;
+  readonly root: ManifestVersion;
+  readonly workspaces: readonly ManifestVersion[];
+}
+
+export interface VersionSourceCheck {
+  readonly label: string;
+  readonly version: string | undefined;
+  readonly ok: boolean;
+}
+
+export interface VersionSourcesResult {
+  readonly ok: boolean;
+  /** One entry per source, in input order — enough to print the success line. */
+  readonly checks: readonly VersionSourceCheck[];
+  /**
+   * Labelled and deduplicated. Ordinary drift is present in both trees, and
+   * saying it twice would train the reader to skim past the one case where the
+   * two trees differ — which is precisely the case worth noticing.
+   */
+  readonly problems: readonly string[];
+}
+
+export function checkVersionSources(
+  sources: readonly VersionSource[],
+  gitRef?: string,
+): VersionSourcesResult {
+  const checks: VersionSourceCheck[] = [];
+  const grouped = new Map<string, { labels: string[]; problems: readonly string[] }>();
+
+  for (const source of sources) {
+    const result = checkVersions({ root: source.root, workspaces: source.workspaces, gitRef });
+    checks.push({ label: source.label, version: result.version, ok: result.ok });
+    if (result.ok) continue;
+    const key = result.problems.join("\n");
+    const group = grouped.get(key);
+    if (group === undefined)
+      grouped.set(key, { labels: [source.label], problems: result.problems });
+    else group.labels.push(source.label);
+  }
+
+  const problems: string[] = [];
+  for (const group of grouped.values()) {
+    const prefix = group.labels.join(" and ");
+    for (const problem of group.problems) problems.push(`${prefix}: ${problem}`);
+  }
+
+  return { ok: problems.length === 0, checks, problems };
 }
 
 export function checkVersions(input: VersionCheckInput): VersionCheckResult {
