@@ -1,5 +1,6 @@
 import {
   FORM_ANSWER_LABEL,
+  describeFormFailure,
   findFormFence,
   FormSchema,
   isFormAnswerBody,
@@ -85,7 +86,19 @@ export function parseFormBlock(body: string): ParsedForm {
     return {
       status: "invalid",
       source,
-      reason: parsed.error.issues[0]?.message ?? "the block is not a valid form",
+      /*
+       * The contract's own explanation of its own union, never
+       * `issues[0].message` (PR #28 finding 6). `FormSchema` is a union, so that
+       * message is *always* the union's own "Invalid input" — a fence declaring
+       * a fourth field kind rendered as "This form could not be read — Invalid
+       * input", which tells the reader nothing they did not already know.
+       * `describeFormFailure` narrows to the branch that came closest and names
+       * the place, so the same bytes read here as `fields.0.kind: Invalid
+       * discriminator value. Expected 'choose one' | 'choose any' | 'write'` —
+       * and as the *same* sentence the answer route's `404` carries, because
+       * both sides ask the contract rather than each keeping a reader.
+       */
+      reason: describeFormFailure(parsed.error) ?? "the block is not a valid form",
     };
   }
   return { status: "ok", form: parsed.data };

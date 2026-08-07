@@ -16,6 +16,7 @@ import {
   FORM_ANSWER_LABEL,
   FORM_RESPOND_EVENT_TYPE,
   FormRespondPayloadSchema,
+  parseFormAnswerBody,
 } from "@corpus/contract";
 import { readForm } from "../core/index.js";
 import { formAnswerBody, formCommitSubject } from "./forms.js";
@@ -679,6 +680,66 @@ describe("an answer that would not survive being appended", () => {
     expect(response.status).toBe(400);
     expect(payload.message).toContain("fence");
     expect(turnsOf(ws, thread.id)).toHaveLength(2);
+  });
+
+  /**
+   * PR #28 finding 2. The third delimiter a person's text can imitate belongs to
+   * the answer prose itself: a line spelled exactly like one of this form's bold
+   * question headings splits the record in the wrong place. Unlike the two
+   * above, the *parse still succeeds*, so nothing later flags it — the refusal
+   * is the only thing standing between the person and a record showing them,
+   * beside a question, something they did not write.
+   */
+  it("refuses a written answer carrying a line spelled like the note heading", async () => {
+    const { thread, response } = await withWrite("the rate moved\n\n**Note:**\n\nmine");
+    const payload = (await response.json()) as { message: string };
+
+    expect(response.status).toBe(400);
+    expect(payload.message).toContain("**Note:**");
+    expect(payload.message).toContain(FLAG);
+    expect(turnsOf(ws, thread.id)).toHaveLength(2);
+  });
+
+  /**
+   * And only where the collision is real. A heading naming a question the reader
+   * has already claimed — every question before this field, and this field's
+   * own — is ordinary content, so quoting the form back at it is not a `400`.
+   */
+  it("accepts a written answer quoting a question the reader has already claimed", async () => {
+    const { thread, response } = await withWrite(`you asked:\n\n**${PROMPT}**\n\nand I answered`);
+    expect(response.status).toBe(201);
+    expect(turnsOf(ws, thread.id)).toHaveLength(3);
+  });
+
+  /**
+   * The round trip on the exact bytes written, end to end: what the person
+   * submitted is what the turn on disk reads back as. `readThreadForms` asking
+   * the same reader is what makes `form_answered` — and so the Attention row —
+   * agree with it.
+   */
+  it("writes an accepted answer so that it reads back as the answer given", async () => {
+    const thread = await threadWithForm(richFormTurn());
+    const text = "moved on the 3rd\n\n- checked Q1\n- checked Q3\n\n**bold** but not a heading";
+    const response = await answerForm(thread, {
+      answers: [
+        { question: PROMPT, option: OPTIONS[0] },
+        { question: RISKS, options: [RISK_OPTIONS[0]] },
+        { question: FLAG, text },
+      ],
+      note: "and a remark",
+    });
+    expect(response.status).toBe(201);
+
+    const form = readForm(turnsOf(ws, thread.id)[1]?.body ?? "");
+    expect(form.ok).toBe(true);
+    const answered = parseFormAnswerBody(
+      turnsOf(ws, thread.id).at(-1)?.body ?? "",
+      form.ok ? form.form : { fields: [] },
+    );
+    expect(answered?.answers.map((record) => record.text)).toEqual([null, null, text]);
+    expect(answered?.answers[0]?.option).toBe(OPTIONS[0]);
+    expect(answered?.answers[1]?.options).toEqual([RISK_OPTIONS[0]]);
+    expect(answered?.note).toBe("and a remark");
   });
 
   it("accepts a written answer whose fence is closed, and the thread still reads back whole", async () => {

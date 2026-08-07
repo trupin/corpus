@@ -332,6 +332,20 @@
   outline-offset: 1px;
 }
 
+/* The way out of an optional `choose one` (`FormBlock.tsx`'s LEAVE_BLANK_LABEL).
+   It is a real member of the radio group, so it keeps the card and the picked
+   highlight every other option has — but it is not one of the answers the form
+   offers, and a dashed edge with a quieter label is what says so without adding
+   a second control idiom to the field. */
+.form-opt-blank {
+  border-style: dashed;
+}
+
+.form-opt-blank .form-opt-label {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
 .form-opt .price {
   margin-left: auto;
   font-family: var(--mono);

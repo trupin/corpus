@@ -451,6 +451,64 @@ is a list of reason codes and carries no number, and a row carries no turns, so
 counting in the UI would mean one `GET /api/threads/{id}` per row. Filed as
 **`issues/contract/040-open-form-count-on-the-row.md`** rather than approximated.
 
+### PR #28 review — findings 6 and 7
+
+Run on **opus** (`claude-opus-5[1m]`), 2026-08-07. Neither finding closes any of
+the three criteria left unticked above; both are defects in criteria already
+ticked, so nothing here changes a checkbox.
+
+**Finding 6 — every structural failure said "Invalid input".** `FormSchema` is a
+union, so `issues[0].message` is the union's own message for essentially every
+malformed fence, and both the board and the server's `400`/`404` were showing it.
+The explanation the server had built for exactly this (`describeIssue`, in
+`apps/server/src/core/form.ts`) moved to the contract as
+**`describeFormFailure`**, beside the union it explains — the one place both
+`apps/server` and `apps/ui` can import, since neither can import the other. The
+server's private copy is gone rather than duplicated. It also now prints the
+path for a failure Zod reports outside the union wrapper, which is where a blank
+question used to render as a bare "must not be blank".
+
+Real browser, `forms.spec.ts` on the real Vite dev server (port 5273 — 5173 and
+8765 were held by the user), the same broken fence the spec already carried:
+
+```
+This form could not be read — fields.1.kind: Invalid discriminator value.
+Expected 'choose one' | 'choose any' | 'write'
+```
+
+The same bytes through the **real running server** (`corpus init` +
+`server start` on a scratch workspace, port 8766), `POST /api/threads/{id}/turns`
+as `x-corpus-author: agent`:
+
+```
+400 the `form` block in this turn is not a valid form: fields.1.kind: Invalid
+    discriminator value. Expected 'choose one' | 'choose any' | 'write'
+```
+
+— the same sentence on both surfaces, which is the point of moving it rather
+than copying it.
+
+**Finding 7 — an optional `choose one` could not be returned to blank.** A radio
+group cannot un-click itself, so a mis-click on an optional single-select was
+unrecoverable and silently changed what the agent is told (§6 answers a form once,
+as a whole). The field now carries a **"Leave blank" member of its own radio
+group**, dashed and quietly labelled so it does not read as an offered answer; it
+is what the group shows as chosen while the field is untouched, so blank is
+visibly a legitimate state rather than an absence. Verified in the real browser:
+click an option, then `ArrowDown` twice from the first radio — arrow keys reach
+it because it is a member of the group, not a button beside it — and the picked
+row is the blank one again.
+
+The rule that makes "unanswered" mean something is intact: picking it sets the
+draft's `option` back to `null`, `formDraft`'s single spelling of blank, so the
+submit carries `{"answers": []}`. On the real server that is a `201`, while the
+answer a naive clear would have sent is refused:
+
+```
+POST …/form {"answers": []}                             → 201
+POST …/form {"answers":[{"question":…,"option":""}]}    → 400 json.answers.0.option: must not be blank
+```
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

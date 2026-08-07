@@ -57,6 +57,16 @@ import { warningsField } from "./warning.js";
  *   `choose any` carry `options` (at least one, each non-empty, all distinct),
  *   `write` carries none. A field is **required unless** it carries
  *   `optional: true`.
+ * - **A form must stay answerable (PR #28 finding 1).** A question and an option are
+ *   each a **single line**, and no option may be spelled like one of the answer
+ *   prose's delimiters ({@link nonBlankLine}, {@link collidingOption}). Neither
+ *   is a style rule: the answer turn is the durable record of what was answered
+ *   and is read back a line at a time, so a form breaking either could be
+ *   accepted, answered, written — and then never read, leaving the thread in
+ *   Attention with no answer able to clear it. The rule lives in the grammar
+ *   rather than at the answer route precisely so that such a form is *inert*
+ *   wherever it appears rather than answerable-looking, whichever door its bytes
+ *   came through.
  * - **The short spelling stays.** A top-level `prompt` plus `options` — the only
  *   grammar §6 had before the 2026-08-05 rider — **is** a form with one required
  *   choose-one field, and {@link FormSchema} normalises it into the field list at
@@ -92,12 +102,14 @@ import { warningsField } from "./warning.js";
  *   `options`: all of them fail {@link FormSchema} whole, and a reader that
  *   cannot parse a fence renders it as the visibly broken code block it is,
  *   never as a subset of working controls (§6, §11). The two postures are not
- *   alternatives but a pair: because forms are written **only through the
- *   server's thread endpoints** (§6), a turn carrying an unreadable form fence is
- *   refused at write time (`400`) and never reaches disk through the API — and
- *   the rendering rule is the safety net for bytes that arrived some other way
- *   (a hand-edited file, an older server), where refusing to render is the only
- *   move left. Every object in this grammar is therefore strict: a misspelled key
+ *   alternatives but a pair, and the second is doing real work rather than
+ *   standing by: the write-time refusal covers the **agent's** turn append,
+ *   which is where §6 says forms are asked, and covers nothing else — not a
+ *   thread's first turn (`POST /api/threads`), not another actor's turn, not a
+ *   hand-edited file, not an older server. So the rendering rule is what a
+ *   consumer meeting an unreadable fence actually relies on, and the grammar is
+ *   written to make that safe: a fence that does not parse is a form to nobody,
+ *   in every consumer at once. Every object in this grammar is therefore strict: a misspelled key
  *   fails loudly at the boundary instead of silently meaning something else —
  *   `optionnal: true` must not quietly leave a field required.
  *
@@ -251,6 +263,36 @@ export function containsFormFence(body: string): boolean {
  */
 export const FORM_ANSWER_LABEL = "**Answered:**";
 
+/** How a field with nothing given is spelled — §6's "says explicitly when… left blank". */
+export const FORM_ANSWER_BLANK = "_(left blank)_";
+
+/**
+ * The heading of the note block, spelled like the label it echoes.
+ *
+ * Nothing stops a form from asking a question spelled exactly this way, so the
+ * reader resolves the collision rather than pretending it cannot happen: the
+ * **field** claims the first such heading and the note claims the second, which
+ * is the order the writer emits them in.
+ */
+export const FORM_ANSWER_NOTE_HEADING = "Note:";
+
+/**
+ * A bold-heading line's text, or `undefined` when the line is ordinary content —
+ * the answer prose's one block delimiter, read.
+ *
+ * It lives here rather than in `./form-answer.ts` (which owns the prose) because
+ * the **grammar** has to ask the same question the reader asks: an option the
+ * answer would write on a line of its own must not read back as a heading, or
+ * the form it belongs to could be accepted and then never answerable. One
+ * spelling of "is this line a delimiter?", used by the writer's inverse and by
+ * the schema that must keep it applicable.
+ */
+export function answerHeadingText(line: string): string | undefined {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("**") || !trimmed.endsWith("**") || trimmed.length <= 4) return undefined;
+  return trimmed.slice(2, -2);
+}
+
 /**
  * The three field kinds, and there are no others (SPEC.md §6). Spelled exactly
  * as §6 spells them, deliberately: the agent writes this YAML by hand, in a
@@ -281,6 +323,31 @@ const nonBlank = z
   .refine((value) => value.trim().length > 0, { message: "must not be blank" });
 
 /**
+ * Non-blank **and single-line** — what a question and an option must be
+ * (PR #28 finding 1).
+ *
+ * Not a style rule: the answer turn's prose writes a question as a heading line
+ * and a chosen option as a line of its own, and reads both back a line at a
+ * time (`./form-answer.ts`). A newline in either makes the answer unreadable
+ * *after* it has been written — the turn is on disk, `parseFormAnswerBody`
+ * cannot pair it with its form, so the form counts as unanswered forever, no
+ * second answer can clear it (§11 requires every attention reason to have an
+ * action that clears it), and the only recovery is hand-editing the file.
+ *
+ * Enforcing it **here**, in the grammar, rather than at the answer route, is
+ * what makes the failure inert instead of silent: a form carrying a newline in
+ * a question or an option does not parse, so it is refused at write time on the
+ * agent's turn append, and a copy that arrived some other way (a hand-edited
+ * file, an older server) is not a form to any consumer — it renders as the
+ * visibly broken code block §11 asks for, and never advertises an answer nobody
+ * can give. Refusing at answer time instead would have accepted the form and
+ * then had nothing to offer the person holding it.
+ */
+const nonBlankLine = nonBlank.refine((value) => !/[\r\n]/.test(value), {
+  message: "must be a single line: the answer turn writes it on one line and reads it back",
+});
+
+/**
  * Distinctness is compared on the string **as written** — no case folding, no
  * Unicode normalisation. Two questions differing only by normalisation form are
  * two questions here, because an answer matches verbatim: folding them together
@@ -291,7 +358,7 @@ const areDistinct = (values: readonly string[]) => new Set(values).size === valu
 
 /** A choose-one or choose-any field's offered answers. */
 const OfferedOptionsSchema = z
-  .array(nonBlank)
+  .array(nonBlankLine)
   .min(1)
   .refine(areDistinct, {
     message: "Form options must be distinct: an answer names an option by its text.",
@@ -311,9 +378,9 @@ const optionalField = z
   .default(false)
   .describe("True when the person may leave this field blank. Absent means required.");
 
-const questionField = nonBlank.describe(
-  "The question, which is also the field's identity: distinct within the form, and named verbatim " +
-    "by the answer and by the event payload. Fields have no ids (SPEC.md §6).",
+const questionField = nonBlankLine.describe(
+  "The question, which is also the field's identity: distinct within the form, single-line, and " +
+    "named verbatim by the answer and by the event payload. Fields have no ids (SPEC.md §6).",
 );
 
 const ChooseOneFieldSchema = z.strictObject({
@@ -376,7 +443,7 @@ export type Form = z.infer<typeof FieldsFormSchema>;
  */
 const ShorthandFormSchema = z
   .strictObject({
-    prompt: nonBlank.describe("The question put to the user."),
+    prompt: nonBlankLine.describe("The question put to the user, on one line."),
     options: OfferedOptionsSchema,
   })
   .transform((shorthand): Form => ({
@@ -391,16 +458,150 @@ const ShorthandFormSchema = z
   }));
 
 /**
+ * An option the answer turn could not write down and read back, with the reason,
+ * or `undefined` when every option of every field survives the round trip
+ * (PR #28 finding 1).
+ *
+ * A chosen `choose one` option is written on a line of its own, so it is the one
+ * value in a form that has to share a line-space with the prose's two delimiters
+ * — a bold heading naming one of *this form's* questions or the note, and the
+ * blank marker. An option that imitates either is read back as a delimiter or as
+ * "left blank" rather than as itself, which would leave the form accepted and
+ * that answer unreadable: exactly the stuck state {@link nonBlankLine} exists to
+ * prevent, so it is refused in the same place and for the same reason.
+ *
+ * The test is deliberately **narrow**. `**Yes**` is a perfectly good option — a
+ * bold line only delimits when its text names a question of this form or the
+ * note heading — so an agent is refused only where the collision is real. A
+ * `choose any` option rides a `- ` prefix and can never be mistaken for either,
+ * but the rule is stated over all options anyway: an option's spelling should
+ * not depend on which kind of field happens to hold it, and the person reading
+ * the form cannot tell.
+ */
+function collidingOption(
+  form: Form,
+): { readonly option: string; readonly with: string } | undefined {
+  const questions = new Set(form.fields.map((field) => field.question));
+  for (const field of form.fields) {
+    if (field.kind === "write") continue;
+    for (const option of field.options) {
+      const heading = answerHeadingText(option);
+      if (heading !== undefined && questions.has(heading)) {
+        return { option, with: `the answer's heading for \`${heading}\`` };
+      }
+      if (heading === FORM_ANSWER_NOTE_HEADING) {
+        return { option, with: "the answer's note heading" };
+      }
+      if (option.trim() === FORM_ANSWER_BLANK) {
+        return { option, with: "the marker for a field left blank" };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * The parsed contents of a form fence. Deliberately **not** a registered OpenAPI
  * component: no route returns a form — turn bodies travel as markdown — and a
  * component with no producer would be contract surface nobody can reach. The
  * grammar it defines is published in the answer route's description instead.
  *
- * Both spellings parse; both yield {@link Form}.
+ * Both spellings parse; both yield {@link Form}. The last check runs on the
+ * union rather than inside either branch, so the short spelling is held to the
+ * same rule as the long one by construction rather than by a second copy of it.
  */
 export const FormSchema = z
   .union([FieldsFormSchema, ShorthandFormSchema])
+  .superRefine((form, ctx) => {
+    const collision = collidingOption(form);
+    if (collision === undefined) return;
+    ctx.addIssue({
+      code: "custom",
+      path: ["fields"],
+      message:
+        `\`${collision.option}\` cannot be an option: the answer turn writes a chosen option on a ` +
+        `line of its own, where that spelling reads as ${collision.with} instead. Reword it.`,
+    });
+  })
   .describe("A form fence's YAML: the questions the agent is asking (SPEC.md §6).");
+
+/**
+ * As much of Zod's issue tree as {@link describeFormFailure} reads.
+ *
+ * Structural rather than Zod's own `$ZodIssue`, so the one exported signature
+ * that mentions it does not drag Zod's internal namespace into the contract's
+ * public types — and so a Zod upgrade that renames an internal type is not a
+ * breaking change for both consumers at once.
+ */
+export interface FormIssue {
+  readonly code: string;
+  /** Absolute from the parsed value's root, at **every** depth of the tree. */
+  readonly path?: readonly PropertyKey[];
+  readonly message: string;
+  /** An `invalid_union`'s issues, one list per branch; absent on other codes. */
+  readonly errors?: readonly (readonly FormIssue[])[];
+}
+
+/** What `FormSchema.safeParse` hands back on failure, as much of it as is read. */
+export interface FormParseError {
+  readonly issues: readonly FormIssue[];
+}
+
+/**
+ * The issue that actually says something.
+ *
+ * A union's failure is a wrapper carrying one list of failures per branch, and
+ * the branch with the **fewest** complaints is the spelling its author came
+ * closest to writing — a `fields:` form with one bad `kind` complains once
+ * against the long spelling and about everything against the short one. Paths
+ * are absolute at every depth, so the deepest issue's path is the whole
+ * location and the wrappers' are prefixes of it; printing more than one would
+ * repeat it.
+ */
+function narrowIssue(issue: FormIssue): FormIssue {
+  const branches = issue.code === "invalid_union" ? (issue.errors ?? []) : [];
+  const closest = branches
+    .filter((branch) => branch.length > 0)
+    .reduce<readonly FormIssue[] | undefined>(
+      (best, branch) => (best === undefined || branch.length < best.length ? branch : best),
+      undefined,
+    );
+  const chosen = closest?.[0];
+  return chosen === undefined ? issue : narrowIssue(chosen);
+}
+
+/**
+ * Why a value failed {@link FormSchema}, as one sentence naming **what** is
+ * wrong and **where**.
+ *
+ * `FormSchema` is a union of the long and the short spelling, so Zod reports
+ * essentially every malformed form as an `invalid_union` whose own message is
+ * the useless `"Invalid input"`; the sentence worth showing is one level in.
+ * Narrowing to the closest branch is what turns `"Invalid input"` into
+ * `fields.0.kind: Invalid discriminator value. Expected 'choose one' | 'choose
+ * any' | 'write'`, which is the difference between an agent that can fix its
+ * fence and one that retries the same bytes.
+ *
+ * **It lives here, beside the union it explains, because both readers of that
+ * union need it and neither can import the other.** `apps/server`'s `readForm`
+ * reports it as the answer route's `404` detail and the write path's `400`;
+ * `apps/ui`'s `parseFormBlock` renders it beneath the raw block, so a person
+ * looking at a broken form in the board can tell what is wrong with it without
+ * opening the file. Those two are supposed to say the same thing about the same
+ * bytes, and a second spelling of the explanation is a second thing to keep true
+ * (PR #28 finding 6).
+ *
+ * `null` only for an error carrying no issues at all — which `safeParse` does
+ * not produce. Callers state their own fallback rather than inheriting a
+ * sentence invented here, because the two surfaces word it differently.
+ */
+export function describeFormFailure(error: FormParseError): string | null {
+  const first = error.issues[0];
+  if (first === undefined) return null;
+  const deepest = narrowIssue(first);
+  const where = (deepest.path ?? []).map(String).join(".");
+  return where === "" ? deepest.message : `${where}: ${deepest.message}`;
+}
 
 /** The three keys an answer entry may carry, one per field kind. */
 const ANSWER_VALUE_KEYS = ["option", "options", "text"] as const;

@@ -3,11 +3,14 @@ import {
   FORM_ANSWER_BLANK,
   FORM_ANSWER_LABEL,
   FormSchema,
+  formAnswerRecord,
   formAnswerRecords,
   formatFormAnswerBody,
   isFormAnswerBody,
   parseFormAnswerBody,
+  unreadableAnswer,
   type Form,
+  type FormAnswerRecord,
   type FormAnswerRequest,
 } from "./index.js";
 
@@ -194,6 +197,123 @@ describe("format → parse round trip", () => {
       answers: formAnswerRecords(tricky, answer),
       note: null,
     });
+  });
+});
+
+/**
+ * PR #28 finding 2. A person's `write` answer is arbitrary text landing in a
+ * format whose delimiters that text can imitate — the same class as the fence
+ * bug that broke the turn parser. The parse **succeeds** on such a body, so
+ * nothing downstream flags it: the bytes on disk are what they wrote, and every
+ * later read shows them, beside a question, something they did not write there.
+ */
+describe("an answer whose own text imitates the prose's delimiters", () => {
+  /** Two `write` fields, so a hijacked heading has a later block to steal. */
+  const TWO_WRITES: Form = FormSchema.parse({
+    fields: [
+      { question: "What happened?", kind: "write" },
+      { question: "What should I do?", kind: "write", optional: true },
+    ],
+  });
+
+  const answerWith = (text: string, note?: string): FormAnswerRecord =>
+    formAnswerRecord(TWO_WRITES, {
+      answers: [{ question: "What happened?", text }],
+      ...(note === undefined ? {} : { note }),
+    });
+
+  it("refuses a written answer containing a line that is exactly the note heading", () => {
+    const reason = unreadableAnswer(TWO_WRITES, answerWith("the file moved\n\n**Note:**\n\nmine"));
+    expect(reason).toContain("What happened?");
+    expect(reason).toContain("**Note:**");
+  });
+
+  it("refuses a written answer containing a later question's heading", () => {
+    const reason = unreadableAnswer(
+      TWO_WRITES,
+      answerWith("the file moved\n\n**What should I do?**\n\nfile it"),
+    );
+    expect(reason).toContain("**What should I do?**");
+  });
+
+  /**
+   * The damage the refusal prevents, shown once. The parse **succeeds** and
+   * lies: the first answer truncates at the imitated heading, and the field the
+   * person deliberately left blank comes back carrying the rest of their
+   * sentence — including the real heading and the blank marker, now read as
+   * content. Nothing anywhere reports a problem.
+   */
+  it("is a silent corruption when it is not refused", () => {
+    const record = answerWith("the file moved\n\n**What should I do?**\n\nfile it");
+    const parsed = parseFormAnswerBody(formatFormAnswerBody(record), TWO_WRITES);
+    expect(parsed).not.toBeUndefined();
+    expect(parsed?.answers[0]?.text).toBe("the file moved");
+    expect(parsed?.answers[1]?.text).toBe(
+      `file it\n\n**What should I do?**\n\n${FORM_ANSWER_BLANK}`,
+    );
+    expect(unreadableAnswer(TWO_WRITES, record)).not.toBeUndefined();
+  });
+
+  it("refuses a written answer that is exactly the blank marker", () => {
+    expect(unreadableAnswer(TWO_WRITES, answerWith(FORM_ANSWER_BLANK))).toContain(
+      FORM_ANSWER_BLANK,
+    );
+  });
+
+  /**
+   * Reading order decides: a heading naming a question the reader has already
+   * claimed is ordinary content, and the note is written last, so a `**Note:**`
+   * line inside the note is content too. Refusing either would be a `400` for
+   * text that survives the round trip perfectly well.
+   */
+  it("allows a heading the reader has already claimed, and one inside the note", () => {
+    const answered = formAnswerRecord(TWO_WRITES, {
+      answers: [
+        { question: "What happened?", text: "moved it" },
+        { question: "What should I do?", text: "quoting you:\n\n**What happened?**\n\nthat" },
+      ],
+      note: "for the record\n\n**Note:**\n\nstill mine",
+    });
+    expect(unreadableAnswer(TWO_WRITES, answered)).toBeUndefined();
+    expect(parseFormAnswerBody(formatFormAnswerBody(answered), TWO_WRITES)).toEqual(answered);
+  });
+
+  it("passes ordinary prose, markdown and all", () => {
+    const record = answerWith("**bold**, a `code span`, and\n\n- a list\n- of things");
+    expect(unreadableAnswer(TWO_WRITES, record)).toBeUndefined();
+    expect(parseFormAnswerBody(formatFormAnswerBody(record), TWO_WRITES)).toEqual(record);
+  });
+
+  /**
+   * Surrounding blank lines are normalised rather than refused: they change
+   * nothing a person meant by starting a textarea with a newline, and a `400`
+   * for whitespace would be the wrong trade. Interior ones survive.
+   */
+  it("normalises a written answer's surrounding whitespace instead of refusing it", () => {
+    const record = answerWith("\n\n  first\n\n  second  \n\n");
+    expect(record.answers[0]?.text).toBe("first\n\n  second");
+    expect(unreadableAnswer(TWO_WRITES, record)).toBeUndefined();
+    expect(parseFormAnswerBody(formatFormAnswerBody(record), TWO_WRITES)).toEqual(record);
+  });
+
+  it("normalises the note's surrounding whitespace the same way", () => {
+    const record = answerWith("moved it", "  and a remark\n");
+    expect(record.note).toBe("and a remark");
+    expect(unreadableAnswer(TWO_WRITES, record)).toBeUndefined();
+  });
+
+  /**
+   * The other half of the invariant lives in the grammar: a form whose *options*
+   * could imitate a delimiter does not parse, so no accepted form can be
+   * unanswerable. Asserted here, beside the check it is the counterpart of, so
+   * the pair reads as one rule.
+   */
+  it("cannot be reached through a form's options, because such a form does not parse", () => {
+    expect(
+      FormSchema.safeParse({
+        fields: [{ question: "Ready?", kind: "choose one", options: ["**Note:**", "No"] }],
+      }).success,
+    ).toBe(false);
   });
 });
 

@@ -58,39 +58,50 @@
 // short answer, and without it a repeated answer would retire a *different*
 // open form that nobody answered (`docs/query.test.ts`, `th_repeat`).
 //
-// **Round-trip preconditions**, documented rather than enforced, because both
-// come from the fence and neither is worth rejecting a form over: a question and
-// an option are single-line and carry no surrounding whitespace, and a written
-// answer carries none either (every writer of one trims it). Interior blank
-// lines in a written answer survive intact.
+// **The round trip is enforced, not assumed** (PR #28 finding 1).
+// It used to be a documented precondition — "a question and an option are
+// single-line" — that nothing checked, and a violation was *silent*: the form
+// posted, the answer posted, and only the read-back failed, leaving the thread
+// in Attention with no action that could ever clear it. Documenting an
+// unenforced precondition is defensible only where its violation is visible, so
+// each half now has an owner:
+//
+//   - **The form's half** is `./form.ts`'s grammar. A question and an option are
+//     single-line, and no option may spell one of the delimiters below. Both are
+//     checked by `FormSchema`, so a form that would be unanswerable does not
+//     parse — and an unparseable form is inert everywhere at once (§11 renders
+//     it as the broken block it is), rather than being an answerable-looking
+//     question with no answer.
+//   - **The person's half** is {@link unreadableAnswer}, which the write path
+//     calls before it writes: a written answer or a note is arbitrary text, and
+//     no grammar can stop it containing a line that reads as a delimiter, so the
+//     round trip is *performed* on the exact bytes about to be written and the
+//     answer is refused when it does not come back whole.
+//
+// Between them the invariant is total: **an accepted form is always answerable,
+// and an accepted answer always reads back as itself.** Surrounding whitespace
+// on a written answer and on a note is normalised (trimmed) rather than
+// refused — it changes nothing a person meant — while interior blank lines
+// survive intact.
 //
 // **What this module does not do, on purpose: it does not make the prose safe to
 // append.** A written answer is arbitrary text landing in a *thread body*, where
 // `## <author> · <ts>` is a turn delimiter and an unterminated fence masks every
 // heading after it — so text that would fabricate a turn or swallow the next one
 // has to be refused at the write path, which is the server's job and not the
-// format's (`apps/server/src/threads/forms.ts`).
+// format's (`apps/server/src/threads/forms.ts`, `assertAppendableAnswer`, which
+// is also where {@link unreadableAnswer} is asked).
 
 import {
+  answerHeadingText,
+  FORM_ANSWER_BLANK,
   FORM_ANSWER_LABEL,
+  FORM_ANSWER_NOTE_HEADING,
   type Form,
   type FormAnswerRequest,
   type FormField,
   type FormFieldRecord,
 } from "./form.js";
-
-/** How a field with nothing given is spelled — §6's "says explicitly when… left blank". */
-export const FORM_ANSWER_BLANK = "_(left blank)_";
-
-/**
- * The heading of the note block, spelled like the label it echoes.
- *
- * Nothing stops a form from asking a question spelled exactly this way, so the
- * reader resolves the collision rather than pretending it cannot happen: the
- * **field** claims the first such heading and the note claims the second, which
- * is the order the writer emits them in.
- */
-export const FORM_ANSWER_NOTE_HEADING = "Note:";
 
 /**
  * What the answer turn's prose says, as a value — the pair's shared shape.
@@ -115,6 +126,13 @@ export interface FormAnswerRecord {
  * Call it on an answer {@link validateFormAnswer} has already passed: it does
  * not re-check membership, and a field with no entry becomes a blank record
  * whether or not the field was optional.
+ *
+ * **A written answer is trimmed.** The prose is the durable record and it reads
+ * a block back with its blank edge lines dropped, so text that arrived with
+ * them would come back a different string than the payload says was given. One
+ * of the two had to move, and trimming the value costs nothing a person meant
+ * by a leading newline in a textarea — whereas refusing it would be a `400` for
+ * whitespace. Interior blank lines are untouched.
  */
 export function formAnswerRecords(
   form: Form,
@@ -123,14 +141,31 @@ export function formAnswerRecords(
   const entries = new Map(answer.answers.map((entry) => [entry.question, entry]));
   return form.fields.map((field) => {
     const entry = entries.get(field.question);
+    const text = field.kind === "write" ? entry?.text : undefined;
     return {
       question: field.question,
       kind: field.kind,
       option: field.kind === "choose one" ? (entry?.option ?? null) : null,
       options: field.kind === "choose any" ? (entry?.options ?? null) : null,
-      text: field.kind === "write" ? (entry?.text ?? null) : null,
+      text: text === undefined ? null : text.trim(),
     };
   });
+}
+
+/**
+ * A request turned into the record both the prose and the event carry — the one
+ * place the request's shape becomes the answer's.
+ *
+ * The server builds the turn body and the `form.respond` payload from the same
+ * call, so the two cannot disagree about what was given, down to the note's
+ * whitespace: the prose writes the note trimmed, so the record holds it trimmed.
+ */
+export function formAnswerRecord(form: Form, answer: FormAnswerRequest): FormAnswerRecord {
+  const note = answer.note?.trim();
+  return {
+    answers: formAnswerRecords(form, answer),
+    note: note === undefined || note === "" ? null : note,
+  };
 }
 
 const heading = (text: string): string => `**${text}**`;
@@ -167,12 +202,14 @@ export function isFormAnswerBody(body: string): boolean {
   return (body.split("\n", 1)[0] ?? "").trim().startsWith(FORM_ANSWER_LABEL);
 }
 
-/** A heading line's text, or `undefined` when the line is ordinary content. */
-function headingText(line: string): string | undefined {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("**") || !trimmed.endsWith("**") || trimmed.length <= 4) return undefined;
-  return trimmed.slice(2, -2);
-}
+/**
+ * A heading line's text, or `undefined` when the line is ordinary content.
+ *
+ * The reader's copy of the delimiter is `./form.ts`'s, so the grammar that has
+ * to keep options off this line-space and the parser that splits on it can never
+ * disagree about what a heading is.
+ */
+const headingText = answerHeadingText;
 
 /** Drops blank lines from both ends, keeping the interior exactly as written. */
 function trimBlankLines(lines: readonly string[]): readonly string[] {
@@ -272,4 +309,97 @@ export function parseFormAnswerBody(body: string, form: Form): FormAnswerRecord 
   }
   const text = note === undefined ? "" : trimBlankLines(note).join("\n").trim();
   return { answers, note: text === "" ? null : text };
+}
+
+/** Two records say the same thing. Fixed keys, so a spelled-out comparison is the whole of it. */
+function sameRecord(a: FormFieldRecord, b: FormFieldRecord): boolean {
+  const sameOptions =
+    a.options === null || b.options === null
+      ? a.options === b.options
+      : a.options.length === b.options.length &&
+        a.options.every((option, index) => option === b.options?.[index]);
+  return (
+    a.question === b.question &&
+    a.kind === b.kind &&
+    a.option === b.option &&
+    a.text === b.text &&
+    sameOptions
+  );
+}
+
+/** The delimiter a line of written text would be mistaken for, in reading order. */
+function delimiterIn(value: string, claimable: ReadonlySet<string>): string | undefined {
+  for (const line of value.split("\n")) {
+    const text = headingText(line);
+    if (text === FORM_ANSWER_NOTE_HEADING) return `\`${line.trim()}\`, which introduces the note`;
+    if (text !== undefined && claimable.has(text)) {
+      return `\`${line.trim()}\`, which introduces this form's answer to \`${text}\``;
+    }
+  }
+  return value.trim() === FORM_ANSWER_BLANK
+    ? `\`${FORM_ANSWER_BLANK}\`, which is how a field left blank is written`
+    : undefined;
+}
+
+/**
+ * Why the answer turn this record would write cannot be read back as this record,
+ * or `undefined` when it round-trips exactly (PR #28 finding 2).
+ *
+ * **A person's free text can imitate the prose's delimiters, and no schema can
+ * stop it.** A `write` answer containing a line that is exactly `**Note:**`, or
+ * exactly the bold heading of a *later* question of this same form, is read as
+ * the start of that block: the answer truncates at that line and the rest is
+ * swallowed into the wrong one. The parse **succeeds**, so nothing downstream
+ * flags it — the bytes on disk are what the person wrote, and every subsequent
+ * read of them is wrong, showing them beside a question something they did not
+ * write there. §11 promises "each question beside what was given for it".
+ *
+ * **So the round trip is performed rather than reasoned about.** The check is
+ * the format's inverse applied to the format's output: format, parse, compare.
+ * That makes it total by construction — it cannot fall behind a change to the
+ * prose, and it catches collisions nobody has thought of yet — where a list of
+ * banned spellings would have to be kept in step with the writer forever. The
+ * message names the offending line when one can be pointed at, because a person
+ * being refused needs to know *which* line to rewrite; the fallback sentence is
+ * for a mismatch with no single line behind it.
+ *
+ * **Why refuse rather than escape.** Indenting or quoting the offending line
+ * would record an answer the person did not give, which is the same reasoning
+ * `assertAppendableAnswer` already applies to a fabricated turn heading. And
+ * refusing here is safe in the way refusing a *form* would not be: a person can
+ * always reword their own text, so no form becomes unanswerable — the form's
+ * half of the invariant is `FormSchema`'s, and it is enforced there.
+ */
+export function unreadableAnswer(form: Form, answer: FormAnswerRecord): string | undefined {
+  const readBack = parseFormAnswerBody(formatFormAnswerBody(answer), form);
+  if (
+    readBack !== undefined &&
+    readBack.note === answer.note &&
+    readBack.answers.length === answer.answers.length &&
+    readBack.answers.every((record, index) => {
+      const given = answer.answers[index];
+      return given !== undefined && sameRecord(record, given);
+    })
+  ) {
+    return undefined;
+  }
+
+  // Reading order: a question's block can only be hijacked by a heading naming a
+  // question the reader has not claimed yet, which is the ones after it.
+  const later = new Set(answer.answers.map((record) => record.question));
+  for (const record of answer.answers) {
+    later.delete(record.question);
+    const delimiter = record.text === null ? undefined : delimiterIn(record.text, later);
+    if (delimiter !== undefined) {
+      return (
+        `the answer to \`${record.question}\` contains the line ${delimiter} — the answer turn ` +
+        "would split there and read back as something other than what was given; rewrite that line"
+      );
+    }
+  }
+  return (
+    "this answer cannot be read back from the turn it would write; rewrite it so that no line of " +
+    "it stands alone as one of this form's questions in bold, as `**Note:**`, or as " +
+    `\`${FORM_ANSWER_BLANK}\``
+  );
 }

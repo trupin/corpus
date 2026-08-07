@@ -77,6 +77,34 @@ export interface FormBlockProps {
 const SUBMIT_KEY_HINT = "⌘↵";
 
 /**
+ * The way back out of an **optional** `choose one` (PR #28 finding 7).
+ *
+ * A radio group is one-way by construction: clicking an option can never
+ * un-click it, so an optional single-select had no blank state a person could
+ * return to once they had touched it. §6 says an optional field is one the
+ * person may leave blank and that a form is answered once, as a whole — so a
+ * mis-click was unrecoverable *and* silent: what the agent is told changes, and
+ * nothing on screen says so. AGENT-017 tells the agent to mark fields optional
+ * generously, which makes optional single-selects the common case rather than
+ * the exotic one.
+ *
+ * It is a **member of the group**, not a clear button beside it, because that is
+ * the idiom the control already speaks: it is reachable with the same arrow keys
+ * as every other option, it is what the group shows as chosen while the field is
+ * untouched — so "blank" is visibly a legitimate state rather than an absence —
+ * and choosing it is one action rather than "click a button that undoes the
+ * thing you can see".
+ *
+ * The other two kinds already have one: a checkbox unticks itself, and a `write`
+ * field empties when the text is deleted. Only a radio group cannot.
+ *
+ * Picking it sets the draft's `option` back to `null`, which is `formDraft`'s
+ * single spelling of blank, so the field contributes **no entry at all** to the
+ * request — never `option: ""`, which the server reads as a value and refuses.
+ */
+const LEAVE_BLANK_LABEL = "Leave blank";
+
+/**
  * The refusal a second answer earns, said as what it is.
  *
  * `409` is not a validation failure and must not read like one: the request was
@@ -250,30 +278,54 @@ function FieldControl({ field, formTs, draft, onChange }: FieldControlProps): Re
           />
         </div>
       ) : (
-        field.options.map((option) => {
-          const { label, detail } = optionParts(option);
-          const picked =
-            field.kind === "choose one" ? value.option === option : value.options.includes(option);
-          return (
-            <label key={option} className={picked ? "form-opt picked" : "form-opt"}>
+        <>
+          {field.options.map((option) => {
+            const { label, detail } = optionParts(option);
+            const picked =
+              field.kind === "choose one"
+                ? value.option === option
+                : value.options.includes(option);
+            return (
+              <label key={option} className={picked ? "form-opt picked" : "form-opt"}>
+                <input
+                  className="form-opt-input"
+                  type={field.kind === "choose one" ? "radio" : "checkbox"}
+                  name={group}
+                  checked={picked}
+                  onChange={() => {
+                    onChange(
+                      field.kind === "choose one"
+                        ? { ...value, option }
+                        : { ...value, options: toggleOption(field, value.options, option) },
+                    );
+                  }}
+                />
+                <span className="form-opt-label">{label}</span>
+                {detail === null ? null : <span className="price">{detail}</span>}
+              </label>
+            );
+          })}
+
+          {/* The only kind that cannot un-choose itself — see LEAVE_BLANK_LABEL. */}
+          {field.kind === "choose one" && field.optional ? (
+            <label
+              className={
+                value.option === null ? "form-opt form-opt-blank picked" : "form-opt form-opt-blank"
+              }
+            >
               <input
                 className="form-opt-input"
-                type={field.kind === "choose one" ? "radio" : "checkbox"}
+                type="radio"
                 name={group}
-                checked={picked}
+                checked={value.option === null}
                 onChange={() => {
-                  onChange(
-                    field.kind === "choose one"
-                      ? { ...value, option }
-                      : { ...value, options: toggleOption(field, value.options, option) },
-                  );
+                  onChange({ ...value, option: null });
                 }}
               />
-              <span className="form-opt-label">{label}</span>
-              {detail === null ? null : <span className="price">{detail}</span>}
+              <span className="form-opt-label">{LEAVE_BLANK_LABEL}</span>
             </label>
-          );
-        })
+          ) : null}
+        </>
       )}
     </fieldset>
   );

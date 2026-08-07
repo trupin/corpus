@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   containsFormFence,
+  describeFormFailure,
   extractFormSource,
   findFormFence,
   FORM_ANSWER_LABEL,
@@ -306,6 +307,158 @@ describe("the form grammar", () => {
       fields: [{ question: " Ready? ", kind: "choose one", options: [" Yes"] }],
     });
     expect(parsed.fields[0]?.question).toBe(" Ready? ");
+  });
+});
+
+/**
+ * PR #28 finding 1. A newline in a question or an option used to be a documented
+ * precondition of the answer prose that **nothing checked**, and its violation
+ * was silent all the way through: the form posted, the answer posted, and only
+ * the read-back failed — leaving the thread in Attention as "awaiting your
+ * answer" with no answer able to clear it, which is exactly what §11 forbids.
+ *
+ * These cases pin the enforcement where it makes the failure inert rather than
+ * silent: a form that could not be answered does not parse, so it is refused at
+ * write time on the agent's turn and is not a form to any consumer that meets it
+ * some other way.
+ */
+describe("a form that could not be answered", () => {
+  const rejected = (value: unknown): string => {
+    const parsed = FormSchema.safeParse(value);
+    expect(parsed.success).toBe(false);
+    return (parsed.success ? null : describeFormFailure(parsed.error)) ?? "";
+  };
+
+  it.each([
+    ["a question carrying a newline", { fields: [{ question: "Which\nquote?", kind: "write" }] }],
+    [
+      "an option carrying a newline",
+      { fields: [{ question: "Which?", kind: "choose one", options: ["a\nb", "c"] }] },
+    ],
+    [
+      "an option carrying a carriage return",
+      { fields: [{ question: "Which?", kind: "choose any", options: ["a\r\nb"] }] },
+    ],
+    ["a short-spelling prompt carrying a newline", { prompt: "Which\nquote?", options: ["a"] }],
+  ])("rejects %s, because the answer turn writes it on one line", (_name, value) => {
+    expect(rejected(value)).toContain("single line");
+  });
+
+  /**
+   * The answer writes a chosen option on a line of its own, where three
+   * spellings mean something else: this form's own question headings, the note
+   * heading, and the blank marker.
+   */
+  it.each([
+    [
+      "one of this form's questions in bold",
+      { fields: [{ question: "Ready?", kind: "choose one", options: ["**Ready?**", "No"] }] },
+      "heading for `Ready?`",
+    ],
+    [
+      "the note heading",
+      { fields: [{ question: "Ready?", kind: "choose one", options: ["**Note:**", "No"] }] },
+      "note heading",
+    ],
+    [
+      "the blank marker",
+      { prompt: "Ready?", options: ["_(left blank)_", "No"] },
+      "field left blank",
+    ],
+  ])("rejects an option spelled like %s", (_name, value, expected) => {
+    const message = rejected(value);
+    expect(message).toContain("cannot be an option");
+    expect(message).toContain(expected);
+  });
+
+  /**
+   * The rule is narrow on purpose: a bold line only delimits when its text names
+   * a question of *this* form or the note, so an ordinary emphasised option is
+   * not collateral damage.
+   */
+  it("accepts a bold option that names neither a question nor the note", () => {
+    const parsed = FormSchema.safeParse({
+      fields: [{ question: "Ready?", kind: "choose one", options: ["**Yes**", "No"] }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
+/**
+ * PR #28 finding 6. Every rejection above is worth nothing to the person or the
+ * agent who has to fix the fence unless it says *what* is wrong: `FormSchema` is
+ * a union, so `issues[0].message` is the union's own "Invalid input" for
+ * essentially all of them, and both the answer route's `404` and the board's
+ * broken-form warning used to show exactly that string.
+ *
+ * These cases are the same values the grammar's rejection tests use, asserted
+ * for their *explanation* rather than for their falsity — because the explainer
+ * lives here precisely so `apps/server` and `apps/ui` cannot disagree about it.
+ */
+describe("why a form was rejected", () => {
+  const why = (value: unknown): string => {
+    const parsed = FormSchema.safeParse(value);
+    expect(parsed.success).toBe(false);
+    return (parsed.success ? null : describeFormFailure(parsed.error)) ?? "";
+  };
+
+  /** The reviewer's own example: a fourth field kind said "Invalid input". */
+  it("names the offending field and the kinds it could have been", () => {
+    const message = why({ fields: [{ question: "When?", kind: "date" }] });
+    expect(message).toContain("fields.0.kind");
+    expect(message).toContain("choose one");
+    expect(message).toContain("choose any");
+    expect(message).toContain("write");
+    expect(message).not.toBe("Invalid input");
+  });
+
+  it.each([
+    [
+      "a misspelled key",
+      { fields: [{ question: "Go?", kind: "write", optionnal: true }] },
+      ["fields.0", "optionnal"],
+    ],
+    [
+      "a write field carrying options",
+      {
+        fields: [{ question: "Go?", kind: "write", options: ["Yes"] }],
+      },
+      ["fields.0", "options"],
+    ],
+    [
+      "a choose-one carrying none",
+      { fields: [{ question: "Go?", kind: "choose one" }] },
+      ["fields.0.options"],
+    ],
+    [
+      "a blank question",
+      { fields: [{ question: "   ", kind: "write" }] },
+      ["fields.0.question", "must not be blank"],
+    ],
+    ["repeated options", { prompt: "Ready?", options: ["Yes", "Yes"] }, ["options", "distinct"]],
+    ["a form with no fields", { fields: [] as unknown[] }, ["fields"]],
+    ["something that is not a form at all", { title: "not a form" }, ["fields"]],
+    ["a scalar", 42, ["expected object"]],
+  ])("explains %s", (_name, value, expected) => {
+    const message = why(value);
+    for (const fragment of expected) expect(message).toContain(fragment);
+    expect(message).not.toBe("Invalid input");
+  });
+
+  /**
+   * The narrowing walks to the deepest issue and prints its path **once**: paths
+   * are absolute at every level of the union's tree, so a wrapper's path is a
+   * prefix of the one below it and printing both would read
+   * `fields.0: fields.0.kind: …`.
+   */
+  it("names the place once, not once per level of the union", () => {
+    const message = why({ fields: [{ question: "When?", kind: "date" }] });
+    expect(message.match(/fields\.0/g)).toHaveLength(1);
+  });
+
+  /** No issues at all is not a sentence — each surface words its own fallback. */
+  it("says nothing rather than inventing a reason for an empty error", () => {
+    expect(describeFormFailure({ issues: [] })).toBeNull();
   });
 });
 

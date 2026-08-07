@@ -31,6 +31,7 @@
 import type { Form } from "@corpus/contract";
 import {
   FormSchema,
+  describeFormFailure,
   extractFormSource,
   isFormAnswerBody,
   parseFormAnswerBody,
@@ -53,41 +54,6 @@ export type NoFormReason =
 export type FormReading =
   | { readonly ok: true; readonly form: Form }
   | { readonly ok: false; readonly reason: NoFormReason; readonly detail: string | null };
-
-/** Zod's union failure, as much of it as this module reads. */
-interface UnionIssue {
-  readonly code: string;
-  readonly path?: readonly PropertyKey[];
-  readonly message: string;
-  readonly errors?: readonly (readonly UnionIssue[])[];
-}
-
-/**
- * The one sentence a malformed form is reported with — the route's `404` detail
- * and the write path's `400`.
- *
- * `FormSchema` is a union of the long and short spellings, so *every* failure is
- * an `invalid_union` whose own message is the useless "Invalid input": the thing
- * worth saying is inside, in the branch that came closest. Picking the branch
- * with the fewest complaints is what turns "Invalid input" back into "Form
- * options must be distinct" or "Expected 'choose one' | 'choose any' | 'write'",
- * which is the difference between an agent that can fix its fence and one that
- * retries the same bytes.
- */
-function describeIssue(issue: UnionIssue): string {
-  const branches = issue.code === "invalid_union" ? (issue.errors ?? []) : [];
-  const closest = branches
-    .filter((branch) => branch.length > 0)
-    .reduce<readonly UnionIssue[] | undefined>(
-      (best, branch) => (best === undefined || branch.length < best.length ? branch : best),
-      undefined,
-    );
-  const chosen = closest?.[0];
-  if (chosen === undefined) return issue.message;
-  const where = (chosen.path ?? []).map(String).join(".");
-  const detail = describeIssue(chosen);
-  return where === "" ? detail : `${where}: ${detail}`;
-}
 
 /**
  * The form a turn body carries, or why it carries none.
@@ -117,7 +83,11 @@ export function readForm(body: string): FormReading {
     return {
       ok: false,
       reason: "not-a-form",
-      detail: parsed.error.issues[0] === undefined ? null : describeIssue(parsed.error.issues[0]),
+      // The one sentence a malformed form is reported with — the route's `404`
+      // detail and the write path's `400`. It is the contract's
+      // `describeFormFailure` rather than a reader of its own, because the board
+      // shows the *same* sentence for the same bytes (PR #28 finding 6).
+      detail: describeFormFailure(parsed.error),
     };
   }
   return { ok: true, form: parsed.data };

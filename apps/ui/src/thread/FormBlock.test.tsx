@@ -304,6 +304,102 @@ describe("a form in an agent turn", () => {
   });
 });
 
+/**
+ * PR #28 finding 7. §6 says an optional field is one the person may leave blank,
+ * and that a form is answered once as a whole — so an optional single-select
+ * that cannot be un-chosen makes a mis-click unrecoverable *and* silent: what
+ * the agent is told changes and nothing says so. AGENT-017 tells the agent to
+ * mark fields optional generously, so this is the common case, not the exotic
+ * one.
+ */
+describe("an optional choose-one can be returned to blank", () => {
+  const OPTIONAL_CHOICE = [
+    "```form",
+    "fields:",
+    "  - question: Which quote should I file?",
+    "    kind: choose one",
+    "    optional: true",
+    "    options:",
+    "      - Lemonade — $1,840/yr",
+    "      - State Farm — $1,975/yr",
+    "```",
+  ].join("\n");
+
+  const blankRow = (container: HTMLElement): HTMLInputElement =>
+    container.querySelector(".form-opt-blank input") as HTMLInputElement;
+
+  it("starts blank, and says so, rather than starting on nothing at all", async () => {
+    const { container } = render(<Host transport={wire([agentTurn(OPTIONAL_CHOICE)])} />);
+    await mounted(container);
+
+    const field = fieldFor(container, "Which quote should I file?");
+    // The two offered answers, plus the way back out of them.
+    expect(within(field).getAllByRole("radio")).toHaveLength(3);
+    expect(blankRow(container).checked).toBe(true);
+    expect(field.querySelector(".form-opt-blank")?.textContent).toContain("Leave blank");
+    // Blank is shown as a chosen state, not as the absence of one.
+    expect(field.querySelectorAll(".form-opt.picked")).toHaveLength(1);
+    expect(field.querySelector(".form-opt.picked")?.classList).toContain("form-opt-blank");
+  });
+
+  it("un-chooses a mis-clicked option and sends no entry at all", async () => {
+    const transport = wire([agentTurn(OPTIONAL_CHOICE)]);
+    const { container } = render(<Host transport={transport} />);
+    await mounted(container);
+
+    const field = fieldFor(container, "Which quote should I file?");
+    const radios = within(field).getAllByRole("radio");
+    fireEvent.click(radios[0] as HTMLElement);
+    expect((radios[0] as HTMLInputElement).checked).toBe(true);
+    expect(blankRow(container).checked).toBe(false);
+
+    fireEvent.click(blankRow(container));
+    expect((radios[0] as HTMLInputElement).checked).toBe(false);
+    expect(blankRow(container).checked).toBe(true);
+
+    fireEvent.click(submitButton(container));
+    await waitFor(() => {
+      expect(transport.of("POST").some((call) => call.path.endsWith("/form"))).toBe(true);
+    });
+    // `formDraft`'s single spelling of blank: absent, never `option: ""` — which
+    // the server reads as a value and refuses.
+    expect(transport.of("POST").find((entry) => entry.path.endsWith("/form"))?.body).toEqual({
+      answers: [],
+    });
+  });
+
+  /**
+   * A member of the group, not a button beside it: that is what puts it under
+   * the same arrow keys as every other option (SPEC.md §11 — no answer is
+   * available only to a pointer).
+   */
+  it("is a member of the same radio group as the options", async () => {
+    const { container } = render(<Host transport={wire([agentTurn(OPTIONAL_CHOICE)])} />);
+    await mounted(container);
+    const names = new Set(
+      within(fieldFor(container, "Which quote should I file?"))
+        .getAllByRole("radio")
+        .map((radio) => (radio as HTMLInputElement).name),
+    );
+    expect(names.size).toBe(1);
+  });
+
+  /**
+   * Only a radio group needs one. A required field has no blank state to return
+   * to, a checkbox unticks itself, and a `write` field empties when the text is
+   * deleted — a clear affordance on any of those would be a second way to say
+   * something the control already says.
+   */
+  it("appears on no other field", async () => {
+    const { container } = render(<Host transport={wire([agentTurn(THREE_KINDS)])} />);
+    await mounted(container);
+    expect(container.querySelectorAll(".form-opt-blank")).toHaveLength(0);
+    expect(
+      within(fieldFor(container, "Which quote should I file?")).getAllByRole("radio"),
+    ).toHaveLength(2);
+  });
+});
+
 describe("an answered form is a record", () => {
   const FORM = FormSchema.parse(
     // Same YAML the fence carries, read through the contract so the test cannot

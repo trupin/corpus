@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -114,9 +114,20 @@ rider, and a contract that needs one is the wrong contract.
       fence, first-form-fence-wins
 - [x] A turn still carries **at most one form**; the form is still identified by
       its turn's timestamp; the route path is unchanged
-- [~] The three stale claims about the grammar (schema docblock, route
+- [x] The three stale claims about the grammar (schema docblock, route
       description, and the server's restatement) are corrected in the same change
       that makes them stale
+      — _verified 2026-08-07 (PR #28 fix pass)._ All three now state the current
+      grammar: `schemas/form.ts`'s docblock ("The fields (CONTRACT-038)" bullet,
+      plus the new answerability bullet), `routes/forms.ts`'s `respondToForm`
+      description ("**The grammar** the YAML follows (CONTRACT-038)" through the
+      `409` paragraph), and `apps/server/src/threads/forms.ts`'s
+      `assertWritableForm` docblock. The `[~]` was earned: a **fourth** copy of
+      the write-time claim was overstated in `form.ts`'s "A form that cannot be
+      read is never half-read" bullet ("never reaches disk through the API"), and
+      the `routes/turn-append.ts` copy was the subject of PR #28 finding 3. Both
+      are corrected in this pass, so the set now agrees. Evidence: PR #28 fix
+      diff; `openapi.json` regenerated from the corrected prose.
 - [x] `openapi.json` and the generated client regenerate cleanly; the pinned
       counts and the `describe("the forms surface")` assertions in
       `openapi.test.ts` are updated to the new shape rather than deleted
@@ -410,6 +421,32 @@ incidental):
 Nothing outside those two issues' declared files fails, which is the check that
 the `Form` union really did collapse at the parse boundary: no consumer had to
 learn a second shape.
+
+## Criteria re-walk, 2026-08-07 (PR #28 fix pass, fresh eyes)
+
+Every criterion above was re-checked against the code and the tests rather than
+against the implementing agent's report. The evidence for the twelve, in order:
+`FormSchema` distinctness — `form.test.ts` "rejects two fields asking the same
+thing"; three kinds and no fourth — "parses one field of each kind, required by
+default" and "a fourth kind" in the rejection table; required-by-default — the
+same test, asserting `optional: false` on a field with no marker; the bare
+`prompt` + `options` shape — "parses a bare prompt + options as one required
+choose-one field", run against `FORM_YAML`, the fixture the repo's own server and
+UI fixtures use; no field ids — `FormFieldSchema`'s three strict objects declare
+`question`/`kind`/`options`/`optional` and nothing else, so an id is a parse
+error; one entry per field answered — `FormAnswerRequestSchema`; one entry per
+field **of the form** with blanks present — `FormRespondPayloadSchema` and
+`formAnswerRecords`, asserted in `forms.test.ts` "writes one entry per field of
+the form, in the form's order, blanks marked"; `validateFormAnswer`'s four
+rejections — `form.test.ts` lines ~368-495, one case each; the fence grammar
+untouched — `findFormFence` and its tests are unchanged by CONTRACT-038 and by
+this pass; one form per turn, identified by its turn's timestamp, route path
+unchanged — `routes/forms.ts`'s path is still
+`/api/threads/{id}/turns/{ts}/form`; generation — `npm run generate` is
+byte-idempotent (md5 stable across two runs) and `openapi.test.ts` passes.
+
+**Nothing was ticked that could not be pointed at.** The one criterion that
+needed work to become true (the three stale claims) is annotated above.
 
 ## Completion Checklist (domain agent)
 

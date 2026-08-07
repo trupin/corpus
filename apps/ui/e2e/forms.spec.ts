@@ -307,5 +307,88 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(all.locator(".form-comment")).toHaveCount(0);
     await expect(all.locator(".form-opt")).toHaveCount(0);
     await expect(all.locator(".form-submit")).toHaveCount(0);
+
+    /*
+     * PR #28 finding 6. The warning is all the reader gets, so it has to say
+     * *what* is wrong: `FormSchema` is a union, and its own first issue message
+     * is the useless "Invalid input" — which is exactly what this fence used to
+     * render. The sentence now comes from the contract's `describeFormFailure`,
+     * so the board and the answer route's `404` say the same thing about the
+     * same bytes, and it names the second field, its `kind`, and the three kinds
+     * it could have been.
+     */
+    const warning = all.locator(".form-warning");
+    await expect(warning).toContainText("fields.1.kind");
+    await expect(warning).toContainText("choose one");
+    await expect(warning).toContainText("choose any");
+    await expect(warning).toContainText("write");
+    await expect(warning).not.toContainText("Invalid input");
+  });
+
+  /**
+   * PR #28 finding 7. A radio group cannot un-click itself, so an optional
+   * single-select had no way back to blank — and §6 answers a form once, as a
+   * whole, so a mis-click was unrecoverable and silently changed what the agent
+   * is told. AGENT-017 tells the agent to mark fields optional generously, which
+   * makes this the common shape rather than the exotic one.
+   */
+  test("lets an optional choice be taken back to blank, from the keyboard", async ({ page }) => {
+    const corpus = await stubCorpus(page, [
+      ATTENTION_VIEW,
+      {
+        ...FORM_THREAD,
+        id: "th_optional",
+        path: "data/threads/th_optional.md",
+        body: threadBody([
+          [
+            "agent",
+            FORM_TS,
+            [
+              "```form",
+              "fields:",
+              "  - question: Which quote should I file?",
+              "    kind: choose one",
+              "    optional: true",
+              "    options:",
+              "      - Lemonade — $1,840/yr",
+              "      - State Farm — $1,975/yr",
+              "```",
+            ].join("\n"),
+          ],
+        ]),
+      },
+    ]);
+    await page.goto("/");
+
+    await row(page, "th_optional").click();
+    const form = column(page).locator(".form-comment");
+    await expect(form).toBeVisible();
+
+    // Blank is where an untouched optional field starts, and it is shown as a
+    // chosen state rather than as the absence of one.
+    const blank = form.locator(".form-opt-blank");
+    await expect(blank).toContainText("Leave blank");
+    await expect(blank).toHaveClass(/picked/);
+
+    // The mis-click.
+    await form.locator('.form-opt:not(.form-opt-blank) input[type="radio"]').first().click();
+    await expect(form.locator(".form-opt.picked")).toHaveCount(1);
+    await expect(blank).not.toHaveClass(/picked/);
+
+    // The way back, reached with the arrow keys of the group it belongs to —
+    // never a pointer-only affordance (§11). Two options plus the blank row, so
+    // ArrowDown twice from the first lands on it.
+    await form.locator('.form-opt:not(.form-opt-blank) input[type="radio"]').first().focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(blank).toHaveClass(/picked/);
+    await expect(form.locator(".form-opt.picked")).toHaveCount(1);
+
+    // And blank means blank: no entry at all, never `option: ""`.
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(column(page).locator(".form-comment.form-answered")).toBeVisible();
+    const answered = (await corpus.of("POST")).find((call) => call.path.endsWith("/form"));
+    expect(answered?.body).toEqual({ answers: [] });
+    await expect(column(page).locator(".form-record-a")).toHaveText("left blank");
   });
 });

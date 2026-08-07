@@ -131,6 +131,41 @@ describe("parseFormBlock", () => {
       expect(invalid(fourth)).not.toBe("");
     });
 
+    /**
+     * PR #28 finding 6. The warning is shown *instead of* the form, so it is the
+     * only thing a reader has to go on: "This form could not be read — Invalid
+     * input" tells them nothing they could not already see. `FormSchema` is a
+     * union, so `issues[0].message` is that string for every structural failure
+     * here — which is why the reason comes from the contract's
+     * `describeFormFailure`, the same sentence the answer route's `404` carries.
+     */
+    it.each([
+      [
+        "a fourth kind",
+        ["  - question: How much?", "    kind: number"],
+        ["fields.0.kind", "write"],
+      ],
+      [
+        "a misspelled optional marker",
+        ["  - question: Anything?", "    kind: write", "    optionnal: true"],
+        ["fields.0", "optionnal"],
+      ],
+      [
+        "a choose-one with no options",
+        ["  - question: Which?", "    kind: choose one"],
+        ["fields.0.options"],
+      ],
+      [
+        "two fields asking the same question",
+        ["  - question: Which?", "    kind: write", "  - question: Which?", "    kind: write"],
+        ["fields", "distinct"],
+      ],
+    ])("says what is wrong with %s, not just that something is", (_name, fields, expected) => {
+      const reason = invalid(["```form", "fields:", ...fields, "```"].join("\n"));
+      for (const fragment of expected) expect(reason).toContain(fragment);
+      expect(reason).not.toBe("Invalid input");
+    });
+
     it("refuses a write field carrying options, and a choose-one carrying none", () => {
       const writeWithOptions = [
         "```form",

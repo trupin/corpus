@@ -107,7 +107,9 @@ export const DriftKindSchema = z.enum(DRIFT_KINDS).openapi({
     "`content_mismatch`: the file's bytes no longer hash to what was projected. " +
     "`count_mismatch`: a table the projection keeps no per-item detail for disagrees with the " +
     "files by count. " +
-    "`unparseable`: the file is a document by location but its frontmatter cannot be read. " +
+    "`unparseable`: the file is a document by location but neither it nor its frontmatter can be " +
+    "read — the bytes are unreadable (an unreadable file, a permission error) or the frontmatter " +
+    "they carry is not valid. " +
     "`duplicate_id`: two files claim one id; only the first by path order is projected.",
 });
 

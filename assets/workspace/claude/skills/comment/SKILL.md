@@ -503,12 +503,22 @@ person may leave blank, and a field with no `optional` line is required. **At mo
 turn** — a form is identified by its turn's timestamp, so several questions are several fields
 of one form, never two forms.
 
-Get any of that wrong — a fourth kind, a misspelled key, a repeated option, YAML that does not
-parse — and **the server refuses the whole turn with a `400`** naming what it could not read.
-The reply does not post at all, so fix the fence and post it again; nothing half-written
-reaches the thread. A turn carrying a form is never revised either: when you need to ask
-something else, ask it in a **new** turn rather than rewriting the question under the person
-answering it.
+Every `question` and every option is **one line**, and no option is spelled `**Note:**`,
+`_(left blank)_`, or one of this form's own questions wrapped in `**…**`. The answer turn writes
+each question as a bold heading and each chosen option on a line of its own, so a newline or one
+of those spellings would come back as something the person did not say.
+
+Get any of that wrong — a fourth kind, a misspelled key, a repeated option, a question or option
+carrying a newline, YAML that does not parse — and
+**the server refuses the whole turn with a `400`** naming what it could not read. The turn does
+not post at all, so fix the fence and post it again; nothing half-written reaches the thread
+through it. That check is yours alone: it runs on turns **you** append to an existing thread,
+which is where you ask, and a form fence anywhere else — in a turn somebody else wrote, or in
+the first turn of a thread being created — reaches the file unchecked and is then drawn as a
+broken code block instead of as controls, asking a question nobody can answer. Post your form as
+a turn on the thread and read the `201` back. A turn carrying a form is never revised either:
+when you need to ask something else, ask it in a **new** turn rather than rewriting the question
+under the person answering it.
 
 **You never answer a form — not the person's, and not your own.** Answering belongs to the
 person alone, and the server refuses an answer from you.

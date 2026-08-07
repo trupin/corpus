@@ -52,8 +52,9 @@ import type { Actor, Form, FormAnswerRequest, FormRespondPayload } from "@corpus
 import {
   FORM_ANSWER_LABEL,
   FORM_RESPOND_EVENT_TYPE,
-  formAnswerRecords,
+  formAnswerRecord,
   formatFormAnswerBody,
+  unreadableAnswer,
   validateFormAnswer,
 } from "@corpus/contract";
 import {
@@ -90,14 +91,11 @@ export { FORM_ANSWER_LABEL };
  * produce this text — a field left blank has no entry in `answers` at all — and
  * "they declined" and "it was never asked" must never be the same bytes. The
  * bytes themselves are the contract's ({@link formatFormAnswerBody}); this
- * function exists so the composition with {@link formAnswerRecords} is written
+ * function exists so the composition with {@link formAnswerRecord} is written
  * once, on the path that writes the file.
  */
 export function formAnswerBody(form: Form, answer: FormAnswerRequest): string {
-  return formatFormAnswerBody({
-    answers: formAnswerRecords(form, answer),
-    note: answer.note ?? null,
-  });
+  return formatFormAnswerBody(formAnswerRecord(form, answer));
 }
 
 /**
@@ -108,11 +106,12 @@ const PROBE_HEADING = "## user · 2000-01-01T00:00:00Z\n";
 
 /**
  * Refuse an answer whose own text would not survive being appended as **one**
- * turn (SPEC.md §6, §14; SERVER-066).
+ * turn, or would not read back as the answer it records (SPEC.md §6, §11, §14;
+ * SERVER-066; PR #28 finding 2).
  *
  * A `write` answer and the note are the two places a person's arbitrary text
- * reaches this file, and a thread body has exactly two column-0 constructs that
- * such text can hijack: §6's `## <author> · <ts>` heading, which *is* the turn
+ * reaches this file, and it can hijack **three** delimiters, not two. Two belong
+ * to the thread: §6's `## <author> · <ts>` heading, which *is* the turn
  * delimiter, and a fenced block, inside which `core/code.ts` masks headings —
  * so an unterminated fence silently swallows every turn written after it. Either
  * one destroys turns rather than merely rendering oddly, which is why this is a
@@ -121,13 +120,23 @@ const PROBE_HEADING = "## user · 2000-01-01T00:00:00Z\n";
  * answer they did not give, and letting the bytes through would make the corpus
  * lose a conversation because somebody pasted a code sample into a text field.
  *
- * The question is asked of the *rendered* body rather than of the request,
- * because that is the string that lands on disk — the prose format is the
- * contract's and may grow, and a check written against the request would stop
- * covering it the moment it does. The probe heading is thrown away; it exists
- * only so `parseTurns` sees the same shape the append will produce.
+ * The third belongs to the answer prose itself: a line spelled exactly like one
+ * of this form's bold question headings, or like `**Note:**`, splits the record
+ * in the wrong place — the answer truncates there and the rest lands under the
+ * wrong question, while the *parse still succeeds*, so nothing later flags it.
+ * That failure has the same shape as the other two (content imitating a
+ * delimiter) and the same remedy, so it is refused in the same place rather
+ * than left to nobody: the contract owns the format and therefore owns the
+ * question, and {@link unreadableAnswer} answers it by performing the round
+ * trip on the exact record about to be written.
+ *
+ * The first two questions are asked of the *rendered* body rather than of the
+ * request, because that is the string that lands on disk — the prose format is
+ * the contract's and may grow, and a check written against the request would
+ * stop covering it the moment it does. The probe heading is thrown away; it
+ * exists only so `parseTurns` sees the same shape the append will produce.
  */
-export function assertAppendableAnswer(body: string): void {
+export function assertAppendableAnswer(body: string, form: Form, answer: FormAnswerRequest): void {
   const fence = unterminatedFence(body);
   if (fence !== null) {
     throw badRequest(
@@ -142,6 +151,12 @@ export function assertAppendableAnswer(body: string): void {
         "would split it into several turns; rewrite that line",
       [{ path: "body", message: "the answer would fabricate a turn heading" }],
     );
+  }
+  const unreadable = unreadableAnswer(form, formAnswerRecord(form, answer));
+  if (unreadable !== undefined) {
+    throw badRequest(unreadable, [
+      { path: "body", message: "the answer turn would not read back as this answer" },
+    ]);
   }
 }
 
@@ -161,14 +176,22 @@ export const formCommitSubject = (threadId: string, actor: Actor, reopened = fal
  * §6's grammar, before it reaches disk (SPEC.md §6; CONTRACT-038).
  *
  * §6 says forms are "written only through the server's thread endpoints", which
- * is what makes this the effective line of defence rather than a second one: two
- * fields asking the same question, a `choose one` listing a duplicate option, a
- * fourth kind however spelled, unreadable YAML — the agent learns at write time
- * instead of the person discovering it when they try to answer, and the answer
- * route's `404` stops being reachable through the API at all. §11's rule that an
- * unreadable form renders as the visibly broken code block it is stays exactly
- * as it was: it is the safety net for bytes that arrived some other way (a
- * hand-edited file, an older server), which is the only way they still can.
+ * is what makes this the **agent's** first line of defence rather than a second
+ * one: two fields asking the same question, a `choose one` listing a duplicate
+ * option, a fourth kind however spelled, a question or option carrying a
+ * newline, an option spelled like one of the answer prose's delimiters,
+ * unreadable YAML — the agent learns at write time instead of the person
+ * discovering it when they try to answer.
+ *
+ * It is not, and cannot be, a guarantee that no unreadable fence is on disk:
+ * this route is not the only door (`POST /api/threads` writes a first turn
+ * without this check — SERVER-070), and a turn from any other actor is
+ * deliberately not checked (below). That is why §11's rule — an unreadable form
+ * renders as the visibly broken code block it is, never as a partial set of
+ * controls — is load-bearing rather than decorative, and why the grammar refuses
+ * a form that could not be answered rather than leaving it to the answer route:
+ * a fence that does not parse is inert in every consumer at once, whichever door
+ * it came through.
  *
  * **Agent turns only.** §6 makes a form something an agent turn carries, so a
  * person quoting a form fence in a reply is quoting, not asking — the same
@@ -239,9 +262,9 @@ export function requireForm(
  * `answers` is one entry per field **of the form**, in the form's order, not one
  * per field answered: a blank field is present with every value key null, so the
  * agent never has to guess whether a question went unanswered or unasked. It is
- * built by the contract's {@link formAnswerRecords} — the same function that
- * feeds the prose — so the event and the turn cannot disagree about what was
- * given.
+ * built by the contract's {@link formAnswerRecord} — the same call that feeds
+ * the prose, down to the note's whitespace — so the event and the turn cannot
+ * disagree about what was given.
  */
 export function formRespondPayload(input: {
   readonly threadId: string;
@@ -249,11 +272,12 @@ export function formRespondPayload(input: {
   readonly form: Form;
   readonly answer: FormAnswerRequest;
 }): FormRespondPayload {
+  const record = formAnswerRecord(input.form, input.answer);
   return {
     threadId: input.threadId,
     formTs: input.formTs,
-    answers: [...formAnswerRecords(input.form, input.answer)],
-    note: input.answer.note ?? null,
+    answers: [...record.answers],
+    note: record.note,
   };
 }
 
@@ -336,7 +360,7 @@ export async function answerThreadForm(
     if (invalid !== undefined) throw badRequest(invalid.message, [...invalid.issues]);
 
     const text = formAnswerBody(form, answer);
-    assertAppendableAnswer(text);
+    assertAppendableAnswer(text, form, answer);
 
     const decision = decideParticipation({
       requestsAgent: undefined,

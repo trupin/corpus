@@ -56,6 +56,15 @@ export const respondToForm = createRoute({
     "required `choose one` field, so every form already written keeps parsing. Nothing else is " +
     "part of the grammar — no form id, no field ids, no defaults, no placeholders, no per-field " +
     "validation rules, no sections, no conditional fields.\n\n" +
+    "**Two rules keep the form answerable**, since the answer turn is the durable record of what " +
+    "was answered and is read back a line at a time (PR #28 finding 1). A `question` and an option " +
+    "are each **a single line**. And no option may be spelled `**Note:**`, `_(left blank)_`, or " +
+    "one of this same form's questions wrapped in `**…**`: the answer writes a chosen option on a " +
+    "line of its own, where those three read as the note heading, the blank marker, and a " +
+    "question heading. A form breaking either rule does not parse at all — so it is a `400` on " +
+    "the turn that would write it and, wherever such bytes already exist, a form to nobody: it " +
+    "renders as the broken code block it is (§11) rather than advertising a question no answer " +
+    "could ever clear.\n\n" +
     "**The answer** carries one entry per field answered, matched to its field by `question` " +
     "rather than by position, with the value under the key the field's kind names: `option` for " +
     "`choose one`, `options` for `choose any`, `text` for `write`. A chosen option is matched " +
@@ -71,7 +80,12 @@ export const respondToForm = createRoute({
     "`400` when the answer does not fit the form — an option a field does not offer, an answer to " +
     "a field the form does not ask, a required field with no answer, a value under the wrong key " +
     "for the field's kind, or the same option named twice in one `choose any` — naming every " +
-    "offending entry under `body.answers` in `issues`; `404` when the thread has no such turn, or " +
+    "offending entry under `body.answers` in `issues`. Also `400` when the answer's own text " +
+    "would not survive the turn it writes: a `write` answer or a `note` containing a line that " +
+    "reads as a turn heading, one leaving a code fence open, or one spelled exactly like this " +
+    "form's own `**<question>**` heading, `**Note:**` or `_(left blank)_` — the last of these " +
+    "would be recorded under the wrong question while parsing perfectly well, so it is refused " +
+    "rather than rewritten (a rewrite would record an answer nobody gave). `404` when the thread has no such turn, or " +
     "that turn carries no form; `409` when that form is **already answered** — a form is answered " +
     "once, and changing your mind is an ordinary reply, not a second answer to the same question " +
     "(SPEC.md §6, §11). The `409` is deliberate: the request is well formed and the state is what " +

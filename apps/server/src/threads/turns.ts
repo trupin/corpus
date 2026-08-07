@@ -237,9 +237,12 @@ export async function appendThreadTurn(
   // Before the lane, so an over-cap upload never queues behind another turn and
   // never reaches the filesystem.
   assertWithinLimits(input.files, workspace.attachmentLimits ?? DEFAULT_ATTACHMENT_LIMITS);
-  // Likewise for a malformed form: forms are written only through this endpoint
-  // (§6), so this is where the agent finds out — not the person, later, when
-  // they try to answer it.
+  // Likewise for a malformed form the *agent* wrote: this is the endpoint it
+  // asks through (§6), so this is where it finds out — not the person, later,
+  // when they try to answer. It vets neither another actor's turn nor the first
+  // turn of a thread created through `POST /api/threads`, both by design, so it
+  // is the agent's guard rather than a guarantee about disk; `assertWritableForm`
+  // states the boundary and §11's broken-block rendering covers the rest.
   assertWritableForm(actor, input.text);
 
   return mutex.run(id, async () => {
