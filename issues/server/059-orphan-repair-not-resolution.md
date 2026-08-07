@@ -13,8 +13,12 @@ P1
 fable
 
 ## Dependencies
-- Depends on: —
+- Depends on: UI-068, SERVER-071 (prevention); CONTRACT-041, SERVER-072, UI-086 (repair)
 - Blocks: —
+
+**This issue is now an umbrella.** The route was chosen by the user on
+2026-08-07 and decomposed into the five issues above; nothing is implemented
+here. It closes when they do.
 
 ## Spec References
 - SPEC.md §6 Anchoring — the resolution ladder, "a visible orphan beats a silent
@@ -60,9 +64,34 @@ sees only the after-state. No similarity measure, at any threshold, can separate
 "edited" from "deleted with a sibling remaining", because the evidence that would
 separate them does not exist at read time.
 
+## The route, chosen 2026-08-07 (user decision)
+
+**Prevent at birth, then offer re-attach.** Directions 1 and 3 below were not
+taken; direction 2 was, with a prevention phase in front of it.
+
+**Phase A — stop creating them.** Both ways an anchor is *born* orphaned get
+fixed, so the population stops growing: **UI-068** (the selector quotes the
+serializer's re-print rather than the file's bytes) and **SERVER-071**
+(`thread create` stores the context it was sent, which is how every
+agent-created anchor ended up context-free — and therefore how every one of them
+bypassed `contextCorroborates` entirely).
+
+**Phase B — drain the backlog.** **CONTRACT-041** opens a re-attach route,
+**SERVER-072** writes the corrected selector, **UI-086** shows the candidate
+sites and lets the person choose. This is the only phase that can fix a comment
+already detached.
+
+Why this pairing rather than either half alone: repair without prevention is an
+affordance in permanent use rather than a backlog that drains, and prevention
+without repair leaves every existing orphan detached for the life of its
+document. Direction 1 was declined because the population this issue is about
+**never byte-matched**, so there is no diff at write time to consult — the
+evidence it relies on does not exist for exactly these anchors.
+
 ## Directions that dodge the impossibility
-None is chosen; the point is that any future attempt must answer *what evidence a
-reader has* rather than tuning a threshold.
+Recorded as the options considered; direction 2 was chosen. The point of keeping
+all three is that any future attempt must answer *what evidence a reader has*
+rather than tuning a threshold.
 
 1. **A one-off repair pass** that rewrites the stale selector in the file, once,
    in a revertible commit — moving the decision to write time, where the diff

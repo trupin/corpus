@@ -388,7 +388,7 @@ belongs to the same fix wave.
 | INFRA-020 | Two tests fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
-| SERVER-059 | Orphan repair, not fuzzy resolution — the read path provably cannot decide | todo | P1 | — |
+| SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | todo | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
 | UI-075 | UI-069's per-thread jobs query fans out once per thread card (PR #24 review MAJOR) | done | P1 | UI-069 |
 | SHARED-015 | Agent sees the server's in-progress set and reconciles it — DRAFT, awaiting sign-off | blocked | P1 | — |
 | CONTRACT-033 | claim-all/idle carry the in-progress set (id, type, origin, held-since) | done | P1 | SHARED-015 |
@@ -406,17 +406,17 @@ belongs to the same fix wave.
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
 | UI-083 | Selecting rows and acting on the selection (SHARED-017) | todo | P2 | SHARED-017, CONTRACT-037 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | todo | P2 | SHARED-017 |
-| CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | todo | P1 | SHARED-021 |
-| SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | todo | P1 | CONTRACT-038 |
-| UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) | todo | P1 | CONTRACT-038 |
-| AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | todo | P1 | SERVER-068 |
+| CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
+| SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |
+| UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) — **partial, 11/14** | todo | P1 | CONTRACT-038 |
+| AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | done | P1 | SERVER-068 |
 | AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | todo | P1 | SHARED-023 |
 | CONTRACT-039 | A chosen weight has no way to reach the work it governs (SHARED-022) | todo | P2 | SHARED-022 |
 | SERVER-069 | Carry the chosen weight into the dispatch, and name it in the job log (SHARED-022) | todo | P2 | CONTRACT-039 |
 | SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
 | SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
-| UI-078 | Resolve confirmation promises replying reopens the thread; it does not | todo | P1 | — |
+| UI-078 | Resolve confirmation promises replying reopens the thread; it does not | done | P1 | — |
 | SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry (SIGNED, applied) | done | P1 | — |
 | SHARED-022 | Choosing the model for a request — weight levels, honoured as a directive (SIGNED, applied) | done | P2 | — |
 | UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | todo | P2 | SHARED-022 |
@@ -424,17 +424,24 @@ belongs to the same fix wave.
 | CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
-| SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | todo | P1 | — |
+| SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | done | P1 | — |
 | UI-079 | `reveal.spec` waits on a decoration with a finite lifetime (duration-shaped) | todo | P2 | — |
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
 | SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
-| INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | todo | P1 | INFRA-008 |
+| INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
 | SERVER-067 | Non-blocking errors reach the log but not the response: needs a §14 warning-channel decision | todo | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
-
+| CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | todo | P2 | CONTRACT-038 |
+| SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | todo | P2 | SERVER-068, CONTRACT-038 |
+| UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | todo | P2 | — |
+| UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | todo | P1 | UI-062 |
+| SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | todo | P1 | — |
+| CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | todo | P1 | — |
+| SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-071 |
+| UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-072 |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
