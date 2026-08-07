@@ -402,7 +402,15 @@ belongs to the same fix wave.
 | UI-077 | Collapse anything, anywhere: by rule + on demand, every placement | done | P1 | SHARED-018 |
 | AGENT-014 | Agent resolves a settled subthread in the same turn as its reply | todo | P1 | SHARED-019 |
 | SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | done | P1 | SHARED-019 |
-| SHARED-017 | Multi-select + bulk actions — DRAFT, awaiting sign-off | blocked | P2 | — |
+| SHARED-017 | Multi-select + bulk actions (SIGNED, applied) | done | P2 | — |
+| SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
+| UI-083 | Selecting rows and acting on the selection (SHARED-017) | todo | P2 | SHARED-017, CONTRACT-037 |
+| CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | todo | P2 | SHARED-017 |
+| CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | todo | P1 | SHARED-021 |
+| SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | todo | P1 | CONTRACT-038 |
+| UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) | todo | P1 | CONTRACT-038 |
+| AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | todo | P1 | SERVER-068 |
+| AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | todo | P1 | SHARED-023 |
 | SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
 | SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
