@@ -396,7 +396,7 @@ belongs to the same fix wave.
 | CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | done | P1 | CONTRACT-033 |
 | AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | done | P1 | CLI-029 |
 | SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
-| SHARED-016 | Mentions, invocations and bare doc ids render as handles — DRAFT, awaiting sign-off | blocked | P2 | — |
+| SHARED-016 | Mentions, invocations and bare doc ids render as handles (SIGNED, applied) | done | P2 | — |
 | UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
 | CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
 | UI-077 | Collapse anything, anywhere: by rule + on demand, every placement | done | P1 | SHARED-018 |
@@ -411,6 +411,8 @@ belongs to the same fix wave.
 | UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) | todo | P1 | CONTRACT-038 |
 | AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | todo | P1 | SERVER-068 |
 | AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | todo | P1 | SHARED-023 |
+| CONTRACT-039 | A chosen weight travels with the request into the queue event (SHARED-022) | todo | P2 | SHARED-022 |
+| SERVER-069 | Carry the chosen weight into the dispatch, and name it in the job log (SHARED-022) | todo | P2 | CONTRACT-039 |
 | SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
 | SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
@@ -429,7 +431,7 @@ belongs to the same fix wave.
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | todo | P1 | INFRA-008 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
-| SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P0 | — |
+| SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
 | SERVER-067 | The save path drops non-blocking errors: they reach no response and no log | todo | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
