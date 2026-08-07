@@ -49,6 +49,7 @@ export * from "./doc.js";
 export * from "./edit.js";
 export * from "./error.js";
 export * from "./extra.js";
+export * from "./form-answer.js";
 export * from "./form.js";
 export * from "./health.js";
 export * from "./id.js";

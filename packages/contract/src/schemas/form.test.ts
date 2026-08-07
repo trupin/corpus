@@ -5,13 +5,16 @@ import {
   findFormFence,
   FORM_ANSWER_LABEL,
   FORM_FENCE_INFO_STRING,
+  FORM_FIELD_KINDS,
   FORM_RESPOND_EVENT_TYPE,
   FormAnswerRequestSchema,
   FormAnswerResponseSchema,
+  FormFieldAnswerSchema,
   FormRespondPayloadSchema,
   FormSchema,
   parseFormRespondPayload,
   validateFormAnswer,
+  type Form,
 } from "./form.js";
 import { CORE_QUEUE_EVENT_TYPES } from "./queue.js";
 
@@ -19,9 +22,17 @@ const fenced = (info: string, yaml: string) => ["```" + info, yaml, "```"].join(
 
 const FORM_YAML = 'prompt: Which rate should the model assume?\noptions:\n  - "6.1%"\n  - "6.4%"';
 
-const form = FormSchema.parse({
-  prompt: "Which rate should the model assume?",
-  options: ["6.1%", "6.4%"],
+const RATE = "Which rate should the model assume?";
+
+const form = FormSchema.parse({ prompt: RATE, options: ["6.1%", "6.4%"] });
+
+/** The three-field ask SPEC.md §6's rider is written for: one of each kind. */
+const RICH_FORM = FormSchema.parse({
+  fields: [
+    { question: RATE, kind: "choose one", options: ["6.1%", "6.4%"] },
+    { question: "Which sheets did you check?", kind: "choose any", options: ["Q1", "Q2", "Q3"] },
+    { question: "Anything else?", kind: "write", optional: true },
+  ],
 });
 
 describe("the form fence", () => {
@@ -164,65 +175,325 @@ describe("the fence grammar at its edges", () => {
 });
 
 describe("the form grammar", () => {
-  it("accepts a prompt with at least one option", () => {
-    expect(FormSchema.parse({ prompt: "Ready?", options: ["Yes"] })).toEqual({
-      prompt: "Ready?",
-      options: ["Yes"],
+  it("names the three kinds, and only three (SPEC.md §6)", () => {
+    expect(FORM_FIELD_KINDS).toEqual(["choose one", "choose any", "write"]);
+  });
+
+  it("parses one field of each kind, required by default", () => {
+    expect(RICH_FORM.fields.map((field) => [field.kind, field.optional])).toEqual([
+      ["choose one", false],
+      ["choose any", false],
+      ["write", true],
+    ]);
+  });
+
+  /**
+   * The whole backwards-compatibility claim, asserted as a *behaviour* rather
+   * than as a tolerated input: the shorthand every form already on disk is
+   * written in parses to a value indistinguishable from the same form written
+   * the long way, so no consumer downstream ever asks "is this an old form?".
+   * The input is the exact shape the repo's own fixtures carry — `FORM_YAML`
+   * above, and `apps/server`'s and `apps/ui`'s form fixtures.
+   */
+  it("parses a bare prompt + options as one required choose-one field", () => {
+    const longhand: Form = {
+      fields: [{ question: RATE, kind: "choose one", options: ["6.1%", "6.4%"], optional: false }],
+    };
+    expect(form).toEqual(longhand);
+    expect(FormSchema.parse(longhand)).toEqual(form);
+  });
+
+  it("takes a write field with no options at all", () => {
+    expect(
+      FormSchema.parse({ fields: [{ question: "What changed?", kind: "write" }] }).fields[0],
+    ).toEqual({ question: "What changed?", kind: "write", optional: false });
+  });
+
+  /** A form with one non-choose-one field is a normal form, not a shorthand. */
+  it("takes a one-field form that is not a choose one", () => {
+    const single = FormSchema.parse({
+      fields: [{ question: "Which sheets?", kind: "choose any", options: ["Q1", "Q2"] }],
     });
+    expect(single.fields).toHaveLength(1);
+    expect(single.fields[0]?.kind).toBe("choose any");
   });
 
   it.each([
+    ["a fourth kind", { fields: [{ question: "When?", kind: "date" }] }],
+    ["a near-miss spelling of a kind", { fields: [{ question: "Go?", kind: "choose-one" }] }],
+    ["a kind that is not a string", { fields: [{ question: "Go?", kind: true }] }],
+    ["no kind at all", { fields: [{ question: "Go?", options: ["Yes"] }] }],
+  ])("rejects %s", (_name, value) => {
+    expect(FormSchema.safeParse(value).success).toBe(false);
+  });
+
+  it.each([
+    ["a choose-one carrying no options", { fields: [{ question: "Go?", kind: "choose one" }] }],
+    [
+      "a write field carrying options",
+      { fields: [{ question: "Go?", kind: "write", options: ["Yes"] }] },
+    ],
+    [
+      "an empty options list",
+      { fields: [{ question: "Go?", kind: "choose any", options: [] as string[] }] },
+    ],
+  ])("rejects %s rather than coercing it", (_name, value) => {
+    expect(FormSchema.safeParse(value).success).toBe(false);
+  });
+
+  it.each([
+    ["a form with no fields", { fields: [] as unknown[] }],
+    ["a blank question", { fields: [{ question: "   ", kind: "write" }] }],
+    [
+      "a blank option",
+      { fields: [{ question: "Go?", kind: "choose one", options: ["Yes", " "] }] },
+    ],
     ["an empty prompt", { prompt: "", options: ["Yes"] }],
     ["a missing prompt", { options: ["Yes"] }],
-    ["no options at all", { prompt: "Ready?", options: [] }],
     ["a missing options list", { prompt: "Ready?" }],
-    ["an empty option", { prompt: "Ready?", options: ["Yes", ""] }],
+    ["both spellings at once", { prompt: "Go?", options: ["Yes"], fields: [] as unknown[] }],
+    ["an unknown key on the form", { fields: [{ question: "Go?", kind: "write" }], title: "x" }],
+    [
+      "a misspelled optional marker",
+      { fields: [{ question: "Go?", kind: "write", optionnal: true }] },
+    ],
   ])("rejects %s", (_name, value) => {
     expect(FormSchema.safeParse(value).success).toBe(false);
   });
 
   /** An answer names an option by its text, so duplicates make it ambiguous. */
-  it("rejects duplicate options", () => {
+  it("rejects duplicate options within a field", () => {
     const parsed = FormSchema.safeParse({ prompt: "Ready?", options: ["Yes", "Yes"] });
     expect(parsed.success).toBe(false);
     expect(JSON.stringify(parsed.error?.issues)).toContain("distinct");
   });
+
+  /** The same rule one level up: an answer names a field by its question. */
+  it("rejects two fields asking the same thing", () => {
+    const parsed = FormSchema.safeParse({
+      fields: [
+        { question: "Ready?", kind: "write" },
+        { question: "Ready?", kind: "choose one", options: ["Yes"] },
+      ],
+    });
+    expect(parsed.success).toBe(false);
+    expect(JSON.stringify(parsed.error?.issues)).toContain("distinct");
+  });
+
+  /**
+   * Distinctness is compared on the string as written. Two questions differing
+   * only by Unicode normalisation form are two questions — pinned as the chosen
+   * behaviour rather than left to be discovered: an answer matches verbatim, so
+   * folding them here would accept an answer naming a string the fence does not
+   * contain.
+   */
+  it("treats questions differing only by Unicode normalisation as distinct", () => {
+    const composed = "caf\u00E9?";
+    const decomposed = "cafe\u0301?";
+    expect(composed).not.toBe(decomposed);
+    const parsed = FormSchema.safeParse({
+      fields: [
+        { question: composed, kind: "write" },
+        { question: decomposed, kind: "write" },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  /** Options are the same string, kept as written — no trimming, no folding. */
+  it("keeps question and option text exactly as written", () => {
+    const parsed = FormSchema.parse({
+      fields: [{ question: " Ready? ", kind: "choose one", options: [" Yes"] }],
+    });
+    expect(parsed.fields[0]?.question).toBe(" Ready? ");
+  });
 });
 
 describe("answering a form", () => {
+  const SHEETS = "Which sheets did you check?";
+  const ELSE = "Anything else?";
+
+  /** Every required field answered, one entry per field, in the form's order. */
+  const fullAnswer = {
+    answers: [
+      { question: RATE, option: "6.4%" },
+      { question: SHEETS, options: ["Q1", "Q3"] },
+      { question: ELSE, text: "nothing" },
+    ],
+  };
+
   it("round-trips an answer with a note", () => {
-    const answer = { option: "6.1%", note: "matches the Q2 sheet" };
+    const answer = { answers: [{ question: RATE, option: "6.1%" }], note: "matches the Q2 sheet" };
     expect(FormAnswerRequestSchema.parse(answer)).toEqual(answer);
   });
 
   it("leaves the note out entirely rather than defaulting it", () => {
-    expect(FormAnswerRequestSchema.parse({ option: "6.1%" })).toEqual({ option: "6.1%" });
+    const answer = { answers: [{ question: RATE, option: "6.1%" }] };
+    expect(FormAnswerRequestSchema.parse(answer)).toEqual(answer);
+  });
+
+  /**
+   * A form whose fields are all optional is still unanswered until it is
+   * submitted, so the empty submit has to be expressible (SPEC.md §6).
+   */
+  it("accepts an empty answers list, which is a legal submit", () => {
+    expect(FormAnswerRequestSchema.parse({ answers: [] })).toEqual({ answers: [] });
   });
 
   it.each([
-    ["a missing option", {}],
-    ["an empty option", { option: "" }],
-    ["an empty note", { option: "6.1%", note: "" }],
+    ["a missing answers list", { note: "hmm" }],
+    ["an empty note", { answers: [], note: "" }],
+    ["an unknown top-level key", { answers: [], option: "6.1%" }],
   ])("rejects %s", (_name, value) => {
     expect(FormAnswerRequestSchema.safeParse(value).success).toBe(false);
   });
 
-  it("passes an option the form offers", () => {
-    expect(validateFormAnswer(form, { option: "6.4%" })).toBeUndefined();
+  /**
+   * Absence is the one spelling of "nothing was given", so an entry that names
+   * a question and gives nothing — or gives two things — is not an answer.
+   */
+  it.each([
+    ["an entry giving nothing", { question: RATE }],
+    ["an entry giving two things", { question: RATE, option: "6.1%", text: "hmm" }],
+    ["an empty selection list", { question: SHEETS, options: [] as string[] }],
+    ["a blank option", { question: RATE, option: " " }],
+    ["a blank text", { question: ELSE, text: "\n" }],
+    ["a blank question", { question: "  ", text: "hmm" }],
+    ["an unknown key", { question: RATE, option: "6.1%", kind: "choose one" }],
+  ])("rejects %s", (_name, value) => {
+    expect(FormFieldAnswerSchema.safeParse(value).success).toBe(false);
   });
 
-  it("rejects an option the form does not offer, naming the field and the choices", () => {
-    const rejection = validateFormAnswer(form, { option: "5.0%" });
+  it("passes an answer that fits the form, one entry per field", () => {
+    expect(validateFormAnswer(RICH_FORM, fullAnswer)).toBeUndefined();
+  });
+
+  it("passes the shorthand form's single field", () => {
+    expect(
+      validateFormAnswer(form, { answers: [{ question: RATE, option: "6.4%" }] }),
+    ).toBeUndefined();
+  });
+
+  /** The optional write field may be left out; the two required ones may not. */
+  it("passes an answer that omits only the optional field", () => {
+    expect(
+      validateFormAnswer(RICH_FORM, { answers: fullAnswer.answers.slice(0, 2) }),
+    ).toBeUndefined();
+  });
+
+  it("rejects an option the field does not offer, naming the field and the choices", () => {
+    const rejection = validateFormAnswer(form, { answers: [{ question: RATE, option: "5.0%" }] });
     expect(rejection?.code).toBe("bad_request");
     expect(rejection?.issues).toHaveLength(1);
-    expect(rejection?.issues[0]?.path).toBe("body.option");
+    expect(rejection?.issues[0]?.path).toBe("body.answers[0].option");
     expect(rejection?.issues[0]?.message).toContain("`6.1%`");
     expect(rejection?.issues[0]?.message).toContain("`6.4%`");
   });
 
+  it("names the offending selection in a choose any, by position", () => {
+    const rejection = validateFormAnswer(RICH_FORM, {
+      answers: [{ question: SHEETS, options: ["Q1", "Q9"] }],
+    });
+    expect(rejection?.issues[0]?.path).toBe("body.answers[0].options[1]");
+    expect(rejection?.issues[0]?.message).toContain("`Q9`");
+  });
+
+  it("rejects the same option named twice in one choose any", () => {
+    const rejection = validateFormAnswer(RICH_FORM, {
+      answers: [{ question: SHEETS, options: ["Q1", "Q1"] }],
+    });
+    const paths = rejection?.issues.map((issue) => issue.path);
+    expect(paths).toContain("body.answers[0].options");
+  });
+
+  it("rejects an answer to a field the form does not ask, listing what it does", () => {
+    const rejection = validateFormAnswer(RICH_FORM, {
+      answers: [{ question: "When is it due?", text: "Friday" }],
+    });
+    expect(rejection?.issues[0]?.path).toBe("body.answers[0].question");
+    expect(rejection?.issues[0]?.message).toContain("does not ask");
+    expect(rejection?.issues[0]?.message).toContain(RATE);
+  });
+
+  it("rejects the same question answered twice", () => {
+    const rejection = validateFormAnswer(form, {
+      answers: [
+        { question: RATE, option: "6.1%" },
+        { question: RATE, option: "6.4%" },
+      ],
+    });
+    expect(rejection?.issues[0]?.path).toBe("body.answers[1].question");
+    expect(rejection?.issues[0]?.message).toContain("more than once");
+  });
+
+  it("rejects a required field with no answer, against `answers` as a whole", () => {
+    const rejection = validateFormAnswer(RICH_FORM, { answers: [] });
+    expect(rejection?.issues.map((issue) => issue.path)).toEqual(["body.answers", "body.answers"]);
+    expect(JSON.stringify(rejection?.issues)).toContain("is required and has no answer");
+  });
+
+  /** Nothing selected is an omitted entry, which a required choose any refuses. */
+  it("says a required choose any needs at least one option", () => {
+    const rejection = validateFormAnswer(RICH_FORM, {
+      answers: [{ question: RATE, option: "6.1%" }],
+    });
+    expect(rejection?.issues).toHaveLength(1);
+    expect(rejection?.issues[0]?.message).toContain("at least one option");
+  });
+
+  /** …and an optional choose any left blank is simply a legal omission. */
+  it("lets an optional choose any be left unselected", () => {
+    const optionalPick = FormSchema.parse({
+      fields: [{ question: SHEETS, kind: "choose any", options: ["Q1", "Q2"], optional: true }],
+    });
+    expect(validateFormAnswer(optionalPick, { answers: [] })).toBeUndefined();
+  });
+
+  it.each([
+    ["text where a choose one belongs", { question: RATE, text: "6.1%" }, "body.answers[0].text"],
+    [
+      "a list where a choose one belongs",
+      { question: RATE, options: ["6.1%"] },
+      "body.answers[0].options",
+    ],
+    [
+      "a single option where a choose any belongs",
+      { question: SHEETS, option: "Q1" },
+      "body.answers[0].option",
+    ],
+    ["an option where a write belongs", { question: ELSE, option: "Q1" }, "body.answers[0].option"],
+  ])("rejects %s, naming the key it belongs under", (_name, entry, path) => {
+    const rejection = validateFormAnswer(RICH_FORM, { answers: [entry] });
+    expect(rejection?.issues[0]?.path).toBe(path);
+    expect(rejection?.issues[0]?.message).toContain("belongs under");
+  });
+
+  /** Every problem at once: a submit should not take four round trips to fix. */
+  it("reports every problem it finds rather than the first", () => {
+    const rejection = validateFormAnswer(RICH_FORM, {
+      answers: [
+        { question: RATE, option: "5.0%" },
+        { question: "Not asked", text: "x" },
+      ],
+    });
+    expect(rejection?.issues.map((issue) => issue.path)).toEqual([
+      "body.answers[0].option",
+      "body.answers[1].question",
+      "body.answers",
+    ]);
+  });
+
   /** Matching is verbatim: a near miss is a rejection, not a fuzzy accept. */
   it.each(["6.1", " 6.1%", "6.1% ", "6.1%\n", "6.4%%"])("rejects the near miss %j", (option) => {
-    expect(validateFormAnswer(form, { option })).toBeDefined();
+    expect(validateFormAnswer(form, { answers: [{ question: RATE, option }] })).toBeDefined();
+  });
+
+  /** The question is matched verbatim too — it is the field's whole identity. */
+  it("rejects a near miss on the question itself", () => {
+    const rejection = validateFormAnswer(form, {
+      answers: [{ question: `${RATE} `, option: "6.4%" }],
+    });
+    expect(rejection?.issues[0]?.path).toBe("body.answers[0].question");
   });
 
   it("carries the answer through the response shape, with the enqueued event", () => {
@@ -275,10 +546,24 @@ describe("answering a form", () => {
 });
 
 describe("the form.respond payload", () => {
+  const chosen = {
+    question: "Which rate should the model assume?",
+    kind: "choose one",
+    option: "6.4%",
+    options: null,
+    text: null,
+  };
+  const blank = {
+    question: "Anything else?",
+    kind: "write",
+    option: null,
+    options: null,
+    text: null,
+  };
   const payload = {
     threadId: "th_x9y8",
     formTs: "2026-07-19T10:07:12Z",
-    option: "6.4%",
+    answers: [chosen, blank],
     note: null,
   };
 
@@ -286,21 +571,72 @@ describe("the form.respond payload", () => {
     expect(CORE_QUEUE_EVENT_TYPES).toContain(FORM_RESPOND_EVENT_TYPE);
   });
 
-  it("round-trips, naming the thread and the answered form", () => {
+  it("round-trips, naming the thread, the answered form and every field", () => {
     expect(FormRespondPayloadSchema.parse(payload)).toEqual(payload);
     expect(FormRespondPayloadSchema.parse({ ...payload, note: "a note" }).note).toBe("a note");
+  });
+
+  /**
+   * The asymmetry §7 exists to make: the request may omit an optional field, the
+   * payload may not. "They declined" and "it was never asked" must never be the
+   * same bytes — so a blank field is present with every value key null, and the
+   * agent never has to guess whether a question went unanswered or unasked.
+   */
+  it("keeps a blank optional field present and marked, never omitted", () => {
+    const parsed = FormRespondPayloadSchema.parse(payload);
+    expect(parsed.answers).toHaveLength(2);
+    expect(parsed.answers[1]).toEqual(blank);
+  });
+
+  it("carries a choose any's several selections", () => {
+    const several = {
+      ...payload,
+      answers: [
+        {
+          question: "Which sheets did you check?",
+          kind: "choose any",
+          option: null,
+          options: ["Q1", "Q3"],
+          text: null,
+        },
+      ],
+    };
+    expect(FormRespondPayloadSchema.parse(several)).toEqual(several);
   });
 
   it.each([
     ["a document id where a thread belongs", { ...payload, threadId: "doc_a1b2c3" }],
     ["a timestamp that is not an instant", { ...payload, formTs: "yesterday" }],
-    ["an empty option", { ...payload, option: "" }],
+    ["no answers at all, though a form has at least one field", { ...payload, answers: [] }],
+    ["an omitted answers list", { threadId: "th_x9y8", formTs: payload.formTs, note: null }],
     [
       "an omitted note rather than a null one",
-      { threadId: "th_x9y8", formTs: payload.formTs, option: "6.4%" },
+      { threadId: "th_x9y8", formTs: payload.formTs, answers: [chosen] },
+    ],
+    ["a fourth kind", { ...payload, answers: [{ ...blank, kind: "date" }] }],
+    [
+      "an entry omitting a value key rather than nulling it",
+      { ...payload, answers: [{ question: "Q", kind: "write" }] },
+    ],
+    [
+      "an empty selection list",
+      { ...payload, answers: [{ ...blank, kind: "choose any", options: [] }] },
     ],
   ])("rejects %s", (_name, value) => {
     expect(FormRespondPayloadSchema.safeParse(value).success).toBe(false);
+  });
+
+  /**
+   * A record that could say two things at once would be worse than none: the
+   * value lives under the key the field's `kind` names, and nowhere else.
+   */
+  it("rejects a value under a key the field's kind does not name", () => {
+    expect(
+      FormRespondPayloadSchema.safeParse({
+        ...payload,
+        answers: [{ ...blank, text: "hmm", option: "6.4%" }],
+      }).success,
+    ).toBe(false);
   });
 
   it("narrows a matching queue event", () => {
@@ -316,5 +652,21 @@ describe("the form.respond payload", () => {
   it("declines a form.respond whose payload does not match", () => {
     expect(parseFormRespondPayload({ type: "form.respond", payload: {} })).toBeUndefined();
     expect(parseFormRespondPayload({ type: "form.respond", payload: null })).toBeUndefined();
+  });
+
+  /**
+   * The pre-CONTRACT-038 payload, which some workspace may still hold under
+   * `.corpus/queue/`. It is skipped rather than thrown on — queue events are
+   * runtime state, not corpus content, which is exactly what made widening this
+   * payload cheap where widening the *turn format* would not have been.
+   */
+  it("skips a payload written by an older server rather than crashing", () => {
+    const legacy = {
+      threadId: "th_x9y8",
+      formTs: "2026-07-19T10:07:12Z",
+      option: "6.4%",
+      note: null,
+    };
+    expect(parseFormRespondPayload({ type: "form.respond", payload: legacy })).toBeUndefined();
   });
 });

@@ -2384,7 +2384,6 @@ describe("the forms surface", () => {
       "prompt",
       "options",
       "distinct",
-      "single",
       "verbatim",
       "form.respond",
     ]) {
@@ -2392,10 +2391,62 @@ describe("the forms surface", () => {
     }
   });
 
-  it("says a rejected option is a 400 naming the offending field", () => {
+  /**
+   * CONTRACT-038. The field grammar is published on the route for the same
+   * reason the fence grammar is: the agent that writes the YAML, the server that
+   * validates it and the UI that renders it read it from the document rather
+   * than from three private assumptions.
+   */
+  it("publishes the field grammar, the three kinds and the required default", () => {
+    const description = operation(FORM_PATH, "post").description ?? "";
+    for (const phrase of [
+      "`fields`",
+      "`question`",
+      "`choose one`",
+      "`choose any`",
+      "`write`",
+      "required unless",
+      "`optional: true`",
+      "no field ids",
+      "one entry per field",
+      "all-or-nothing",
+    ]) {
+      expect(description, phrase).toContain(phrase);
+    }
+  });
+
+  it("says a rejected answer is a 400 naming the offending entry", () => {
     const op = operation(FORM_PATH, "post");
-    expect(op.description).toContain("body.option");
+    expect(op.description).toContain("body.answers");
     expect(op.responses?.["400"]).toBeDefined();
+  });
+
+  /**
+   * A form is answered once (SPEC.md §6), so a second answer is refused — and
+   * with `409` rather than `400`: the body is well formed and the *state* is
+   * what refuses it, so retrying with a different body will not help. That is
+   * the distinction this repo already draws everywhere else it returns `409`
+   * (a taken skill name, a deferral of unclaimed work, a second upgrade).
+   */
+  it("refuses a second answer with a 409, and says why", () => {
+    const op = operation(FORM_PATH, "post");
+    expect(op.responses?.["409"]).toBeDefined();
+    expect(op.description).toContain("already answered");
+    expect(op.description).toContain("ordinary reply");
+  });
+
+  /**
+   * §6: "Only the person answers a form: the agent never answers a form,
+   * including its own." A signal the agent can clear for you is not a signal, so
+   * this is a refusal in §9.2's user-only family (deletion, force-unlock), not a
+   * silent no-op — and it is `403` for the same reason those are: retrying with
+   * a token does not help (SERVER-068).
+   */
+  it("refuses an agent actor with a 403, and says why", () => {
+    const op = operation(FORM_PATH, "post");
+    expect(op.responses?.["403"]).toBeDefined();
+    expect(op.description).toContain("User-only");
+    expect(op.description).toContain("never answers a form");
   });
 
   it("declares only the codes an answer can produce", () => {
@@ -2403,16 +2454,32 @@ describe("the forms surface", () => {
       "201",
       "400",
       "401",
+      "403",
       "404",
+      "409",
     ]);
   });
 
   it("keeps the answer body to the answer", () => {
     expect(Object.keys(componentSchemas?.["FormAnswerRequest"]?.properties ?? {})).toEqual([
-      "option",
+      "answers",
       "note",
     ]);
-    expect(componentSchemas?.["FormAnswerRequest"]?.required).toEqual(["option"]);
+    // `answers` is required but may be empty — a form whose fields are all
+    // optional is still unanswered until it is submitted.
+    expect(componentSchemas?.["FormAnswerRequest"]?.required).toEqual(["answers"]);
+  });
+
+  /**
+   * The entry names its field by the question and carries the value under the
+   * key that field's kind names. There is no `kind` here and no field id: the
+   * form already says what kind the field is, and a second copy could drift.
+   */
+  it("names a field by its question, with one value key per kind", () => {
+    const entry = componentSchemas?.["FormFieldAnswer"];
+    expect(Object.keys(entry?.properties ?? {})).toEqual(["question", "option", "options", "text"]);
+    expect(entry?.required).toEqual(["question"]);
+    expect(entry?.additionalProperties).toBe(false);
   });
 
   /** Nullable, not optional — a resolved thread stops re-triggering the agent (§8). */
@@ -2436,7 +2503,7 @@ describe("the forms surface", () => {
     expect(payload?.enum).toBeUndefined();
     const description = JSON.stringify(componentSchemas?.["QueueEvent"]);
     expect(description).toContain("form.respond");
-    expect(description).toContain("{threadId, formTs, option, note}");
+    expect(description).toContain("{threadId, formTs, answers, note}");
   });
 });
 

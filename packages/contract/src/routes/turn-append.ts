@@ -58,7 +58,14 @@ const createAppendTurnRoute = (required: boolean) =>
       "`400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since " +
       "`openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from " +
       "`@corpus/contract`, which dispatches validation on `content-type`. An upload past the " +
-      "workspace's size caps is a `413`.",
+      "workspace's size caps is a `413`.\n\n" +
+      "**A form fence in the body is validated here.** Forms are written only through this " +
+      "endpoint (SPEC.md §6), so a turn whose ```` ```form ```` block does not parse against the " +
+      "grammar — unreadable YAML, a fourth field kind, duplicate questions, a duplicate option, a " +
+      "`write` field carrying `options` — is a `400` and never reaches disk. Refusing at write " +
+      "time is what makes the reader's rule (§11: an unreadable form renders as the visibly " +
+      "broken code block it is, never as a partial set of controls) a safety net for bytes that " +
+      "arrived some other way, rather than the only line of defence.",
     request: {
       params: ThreadIdParamSchema,
       headers: ActorHeaderSchema,

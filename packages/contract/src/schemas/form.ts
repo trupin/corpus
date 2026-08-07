@@ -49,20 +49,57 @@ import { warningsField } from "./warning.js";
  *   `` ```form `` line inside any open fenced block — an outer
  *   ```` ````markdown ```` example block quoting one, say — is content, not a
  *   form. The first form fence in the body wins.
- * - **The fields.** `prompt` (required, non-empty) and `options` (required, at
- *   least one, each non-empty, all distinct). Nothing else is pinned —
- *   required/optional markers, field types, validation rules and multi-select are
- *   all absent from §6, and every one of them is a rendering decision that
- *   belongs to the UI issue that needs it, not to this schema.
- * - **Cardinality.** Single-select: an answer names exactly one option, verbatim.
- *   Options must be distinct precisely because the answer names one by its text.
- * - **The note.** A free-text note is separate from, and optional beside, the
- *   chosen option — §6's "chosen option + optional note".
+ * - **The fields (CONTRACT-038).** A form is a list of `fields`, each carrying
+ *   its own non-empty `question`, **distinct within the form** — an answer names
+ *   a field by its question, which is the same rule `options` already follows one
+ *   level down, for the same reason. A field is one of exactly **three kinds**
+ *   ({@link FORM_FIELD_KINDS}) and there are no others: `choose one` and
+ *   `choose any` carry `options` (at least one, each non-empty, all distinct),
+ *   `write` carries none. A field is **required unless** it carries
+ *   `optional: true`.
+ * - **The short spelling stays.** A top-level `prompt` plus `options` — the only
+ *   grammar §6 had before the 2026-08-05 rider — **is** a form with one required
+ *   choose-one field, and {@link FormSchema} normalises it into the field list at
+ *   the parse boundary. Exactly one shape exists downstream, so no consumer ever
+ *   asks "is this an old form?", and nothing already committed to disk is
+ *   rewritten or stops parsing.
+ * - **Cardinality is the field's, not the form's.** `choose one` takes exactly
+ *   one option, verbatim; `choose any` takes none, one or several, each verbatim;
+ *   `write` takes free text. Options must be distinct precisely because an answer
+ *   names one by its text.
+ * - **The note.** A free-text note sits beside the answer *as a whole*, not
+ *   inside any field — §6's "one optional free-text note about the ask as a
+ *   whole". It is deliberately not re-modelled as an optional `write` field: it
+ *   means something different, and collapsing the two would change the meaning of
+ *   every answer already recorded.
  * - **Identity.** A form is identified by the timestamp of the turn carrying it,
  *   which is already that turn's identity (SPEC.md §6). A turn therefore carries
- *   **at most one form**, and the answer route addresses the form through its
- *   turn's path rather than through an id invented for it: no second identifier
- *   exists to drift from the first.
+ *   **at most one form** — several questions are several *fields of one form* —
+ *   and the answer route addresses the form through its turn's path rather than
+ *   through an id invented for it: no second identifier exists to drift from the
+ *   first. **Fields have no ids either**, for the same reason and at the same
+ *   cost: a long question travels in the form, in the answer request and in the
+ *   event payload, and that repetition is the point — it is what lets the answer
+ *   turn read on its own (§6) and what pairs an answer with its form by content
+ *   rather than by order.
+ * - **Answered once, as a whole.** There is no partial save and no per-field
+ *   submit: a form is unanswered until it is submitted, and submitting records
+ *   every field's answer in one act. Answering an already-answered form is a
+ *   `409` on the answer route — changing your mind is an ordinary reply, not a
+ *   second answer to the same question (§6, §11).
+ * - **A form that cannot be read is never half-read.** Unparseable YAML, a
+ *   fourth kind however spelled, an unknown key, a `write` field carrying
+ *   `options`: all of them fail {@link FormSchema} whole, and a reader that
+ *   cannot parse a fence renders it as the visibly broken code block it is,
+ *   never as a subset of working controls (§6, §11). The two postures are not
+ *   alternatives but a pair: because forms are written **only through the
+ *   server's thread endpoints** (§6), a turn carrying an unreadable form fence is
+ *   refused at write time (`400`) and never reaches disk through the API — and
+ *   the rendering rule is the safety net for bytes that arrived some other way
+ *   (a hand-edited file, an older server), where refusing to render is the only
+ *   move left. Every object in this grammar is therefore strict: a misspelled key
+ *   fails loudly at the boundary instead of silently meaning something else —
+ *   `optionnal: true` must not quietly leave a field required.
  *
  * The grammar is a line scanner rather than a regex because two of its rules —
  * outer fences shadow inner ones, and a closer must be a whole line — are about
@@ -182,61 +219,263 @@ export function containsFormFence(body: string): boolean {
  * *structure* travels in the `form.respond` event payload
  * ({@link FormRespondPayloadSchema}), which is what the agent consumes.
  *
+ * **What follows the label is now every question.** §6 requires the answer turn
+ * to name, for **every** field the form asked, the question and what was given
+ * for it — the chosen option, the chosen options, or the text written — and to
+ * say explicitly when an optional field was left blank, so a reader months later
+ * reconstructs the exchange from the answer turn alone, with the fence out of
+ * view. The label stays exactly as it was, so every `**Answered:** …` turn
+ * already committed still reads as an answer; what changed is the body beneath
+ * it. **The exact line format is the server's** (SERVER-068), not this module's:
+ * the contract owns the marker both sides match on and the structure the agent
+ * consumes, and deliberately does not turn the prose into a wire format.
+ *
  * It lives in the contract for the same reason the rest of the grammar does:
  * two sides depend on it and neither may import the other. The server's form
  * route composes the body with it; the UI matches turn bodies against it to know
  * whether the form above is already answered — and `apps/ui` cannot import
  * `apps/server`. One spelling, in the module that owns the grammar (CONTRACT-013).
  *
- * **A deliberate gap, kept (CONTRACT-014).** The answer names its option but not
- * the form it answers, so a thread read back off disk pairs answers to forms by
- * an order rule (earliest still-open form offering that option — the UI's
- * `mapFormAnswers`), and a multi-form thread can in principle mis-attribute one.
- * Closing it needs the form's identity (its turn's `ts`) written *into* the
- * answer turn — and the turn format has nowhere to put it except the prose,
- * which §6 keeps deliberately plain ("no form id") and this module's own
- * rationale keeps machine-markup-free. The failure it buys is narrow (two forms
- * open at once, sharing an option string, answered across a reload), visible,
- * and self-limiting — answering again is legal and re-pairs it — so the wire
- * stays as it is. Revisit via a SPEC.md §6 revision, not a silent format change,
- * if multi-form threads become a real pattern.
+ * **The pairing gap, mostly closed (CONTRACT-014, narrowed by CONTRACT-038).**
+ * The answer still does not name the *form* it answers — §6 keeps the prose
+ * plain and gives a form no id to put there — so a thread read back off disk
+ * pairs answers to forms by matching what the answer names against the open
+ * forms above it. That used to be an order rule over a single option string;
+ * now the answer names **its questions**, so the pairing is by content and the
+ * residual failure narrows to two open forms in one thread asking a *literally
+ * identical* question. Multi-field forms also make multiple open forms rarer,
+ * since the reason to open a second one — a second question — is now a field.
+ * The remainder is narrow, visible and self-limiting, and §6 accepts it
+ * (SHARED-021 Q7). Revisit via a SPEC.md §6 revision, not a silent format
+ * change, if multi-form threads become a real pattern.
  */
 export const FORM_ANSWER_LABEL = "**Answered:**";
+
+/**
+ * The three field kinds, and there are no others (SPEC.md §6). Spelled exactly
+ * as §6 spells them, deliberately: the agent writes this YAML by hand, in a
+ * turn, with no schema in front of it and §6 as its only reference, so the
+ * spelling that is hardest to get subtly wrong is the one it can copy from the
+ * text it is already reading. A snake_case or hyphenated variant would be a
+ * second name for §6's words and a translation step to get wrong; the space is
+ * a plain YAML scalar and needs no quoting.
+ *
+ * A fourth kind, however spelled, fails to parse — and a form that fails to
+ * parse renders raw rather than partially (§11).
+ */
+export const FORM_FIELD_KINDS = ["choose one", "choose any", "write"] as const;
+
+export const FormFieldKindSchema = z.enum(FORM_FIELD_KINDS);
+
+/**
+ * Non-empty **after trimming**. `"   "` is blank, and blank is not a question,
+ * an option or an answer: without this, `""` and `"  "` would be two distinct
+ * questions, which is exactly the ambiguity distinctness exists to prevent.
+ *
+ * The value is kept **as written** rather than trimmed, because the answer names
+ * a question (and an option) verbatim: normalising here would create a second
+ * spelling — the stored one — for the string the YAML shows.
+ */
+const nonBlank = z
+  .string()
+  .refine((value) => value.trim().length > 0, { message: "must not be blank" });
+
+/**
+ * Distinctness is compared on the string **as written** — no case folding, no
+ * Unicode normalisation. Two questions differing only by normalisation form are
+ * two questions here, because an answer matches verbatim: folding them together
+ * would accept an answer naming a string the form does not contain, and would
+ * make the payload's `question` differ from the fence's.
+ */
+const areDistinct = (values: readonly string[]) => new Set(values).size === values.length;
+
+/** A choose-one or choose-any field's offered answers. */
+const OfferedOptionsSchema = z
+  .array(nonBlank)
+  .min(1)
+  .refine(areDistinct, {
+    message: "Form options must be distinct: an answer names an option by its text.",
+  })
+  .describe("The offered answers, each non-empty and all distinct.");
+
+/**
+ * `optional` defaults to **false**: a field is required unless it is explicitly
+ * marked optional (§6). The default is applied on parse rather than left
+ * implicit so exactly one shape reaches consumers — `optional` is a boolean on
+ * every field, never `undefined` — which is what `./index.ts`'s
+ * "optional-in, defaulted-out" rule reserves `.default()` for. This is a
+ * parse-side schema (a fence's YAML), never a request body.
+ */
+const optionalField = z
+  .boolean()
+  .default(false)
+  .describe("True when the person may leave this field blank. Absent means required.");
+
+const questionField = nonBlank.describe(
+  "The question, which is also the field's identity: distinct within the form, and named verbatim " +
+    "by the answer and by the event payload. Fields have no ids (SPEC.md §6).",
+);
+
+const ChooseOneFieldSchema = z.strictObject({
+  question: questionField,
+  kind: z.literal("choose one"),
+  options: OfferedOptionsSchema,
+  optional: optionalField,
+});
+
+const ChooseAnyFieldSchema = z.strictObject({
+  question: questionField,
+  kind: z.literal("choose any"),
+  options: OfferedOptionsSchema,
+  optional: optionalField,
+});
+
+const WriteFieldSchema = z.strictObject({
+  question: questionField,
+  kind: z.literal("write"),
+  optional: optionalField,
+});
+
+/**
+ * One field. A discriminated union on `kind` rather than one object with
+ * conditionally-present keys, so the two malformed shapes the rider names are
+ * structural rejections instead of lenient coercions: a `write` field carrying
+ * `options` fails (the strict object has no such key), and a `choose one`
+ * carrying none fails (the key is required).
+ */
+const FormFieldSchema = z.discriminatedUnion("kind", [
+  ChooseOneFieldSchema,
+  ChooseAnyFieldSchema,
+  WriteFieldSchema,
+]);
+
+/** The canonical form: the long spelling, which is the only shape downstream. */
+const FieldsFormSchema = z.strictObject({
+  fields: z
+    .array(FormFieldSchema)
+    .min(1)
+    .refine((fields) => areDistinct(fields.map((field) => field.question)), {
+      message: "Form questions must be distinct: an answer names a field by its question.",
+    })
+    .describe("The questions, in the order they are asked."),
+});
+
+export type FormField = z.infer<typeof FormFieldSchema>;
+export type Form = z.infer<typeof FieldsFormSchema>;
+
+/**
+ * The short spelling, §6's "single-question form stays spelled the short way".
+ *
+ * It **normalises into the field list here**, at the parse boundary, rather than
+ * surviving as a union member: a union that reached `Form` would put "is this an
+ * old form?" into the server, the UI and every test, where collapsing it puts
+ * that question in one place. Which is also what makes "a bare `prompt` plus
+ * `options` is a form with one required choose-one field" testable as a
+ * *behaviour* rather than as a tolerated input — the two spellings parse to
+ * values that are `toEqual` each other.
+ */
+const ShorthandFormSchema = z
+  .strictObject({
+    prompt: nonBlank.describe("The question put to the user."),
+    options: OfferedOptionsSchema,
+  })
+  .transform((shorthand): Form => ({
+    fields: [
+      {
+        question: shorthand.prompt,
+        kind: "choose one",
+        options: shorthand.options,
+        optional: false,
+      },
+    ],
+  }));
 
 /**
  * The parsed contents of a form fence. Deliberately **not** a registered OpenAPI
  * component: no route returns a form — turn bodies travel as markdown — and a
  * component with no producer would be contract surface nobody can reach. The
  * grammar it defines is published in the answer route's description instead.
+ *
+ * Both spellings parse; both yield {@link Form}.
  */
 export const FormSchema = z
-  .object({
-    prompt: z.string().min(1).describe("The question put to the user."),
-    options: z
-      .array(z.string().min(1))
-      .min(1)
-      .refine((options) => new Set(options).size === options.length, {
-        message: "Form options must be distinct: an answer names an option by its text.",
-      })
-      .describe("The offered answers. Single-select: an answer names exactly one, verbatim."),
-  })
-  .describe("A form fence's YAML: a prompt and its options (SPEC.md §6).");
+  .union([FieldsFormSchema, ShorthandFormSchema])
+  .describe("A form fence's YAML: the questions the agent is asking (SPEC.md §6).");
 
-export const FormAnswerRequestSchema = z
+/** The three keys an answer entry may carry, one per field kind. */
+const ANSWER_VALUE_KEYS = ["option", "options", "text"] as const;
+
+type AnswerValueKey = (typeof ANSWER_VALUE_KEYS)[number];
+
+/** Which key carries the answer to a field of each kind. */
+const ANSWER_VALUE_KEY_BY_KIND: Readonly<Record<FormFieldKind, AnswerValueKey>> = {
+  "choose one": "option",
+  "choose any": "options",
+  write: "text",
+};
+
+/**
+ * What was given for one field.
+ *
+ * **A field with nothing given has no entry.** Absence is the one spelling of
+ * "nothing was given" — there is no empty-selection entry and no blank text
+ * entry — so `answers` is a list of answers rather than a list of fields, and
+ * whether an omission is legal is a question about the *form* (is the field
+ * optional?), answered by {@link validateFormAnswer} with the fence in hand.
+ * The corresponding entry in the event payload is the mirror image: there, every
+ * field is present and a blank one is marked ({@link FormFieldRecordSchema}).
+ */
+export const FormFieldAnswerSchema = z
   .strictObject({
-    option: z
-      .string()
-      .min(1)
-      .describe(
-        "The chosen option, matched verbatim against the answered form's `options`. An option the " +
-          "form does not offer is a `400` naming `body.option` — validating the answer against the " +
-          "fence it answers is the point of the route.",
-      ),
-    note: z
-      .string()
+    question: nonBlank.describe(
+      "The field's question, verbatim from the form. A question the form does not ask is a `400`.",
+    ),
+    option: nonBlank
+      .optional()
+      .describe("`choose one`: the chosen option, verbatim from that field's `options`."),
+    options: z
+      .array(nonBlank)
       .min(1)
       .optional()
-      .describe("Free-text note recorded beside the chosen option (SPEC.md §6). Optional."),
+      .describe(
+        "`choose any`: the chosen options, each verbatim from that field's `options` and each " +
+          "named at most once. Selecting nothing is spelled by omitting the entry, not by an " +
+          "empty list.",
+      ),
+    text: nonBlank.optional().describe("`write`: the text written."),
+  })
+  .refine((entry) => ANSWER_VALUE_KEYS.filter((key) => entry[key] !== undefined).length === 1, {
+    message:
+      "An answer entry carries exactly one of `option` (choose one), `options` (choose any) or " +
+      "`text` (write); a field left blank is omitted from `answers` entirely.",
+  })
+  .openapi("FormFieldAnswer");
+
+/**
+ * The answer submitted for a form: one entry per field the person answered,
+ * plus the optional note about the ask as a whole.
+ *
+ * `answers` is required but may be **empty** — a form whose fields are all
+ * optional is still unanswered until it is submitted, so an empty submit is a
+ * legal answer and has to be expressible. Making the key itself optional would
+ * give "I answered nothing" two spellings.
+ */
+export const FormAnswerRequestSchema = z
+  .strictObject({
+    answers: z
+      .array(FormFieldAnswerSchema)
+      .describe(
+        "One entry per field answered, in any order — entries are matched to fields by question, " +
+          "not by position. A field left blank has no entry, which is a `400` unless that field is " +
+          "optional. Submitting is all-or-nothing: there is no partial save and no per-field " +
+          "submit (SPEC.md §6).",
+      ),
+    note: nonBlank
+      .optional()
+      .describe(
+        "Free-text note about the ask as a whole, recorded beside the answers (SPEC.md §6). " +
+          "Optional, and never a field's answer.",
+      ),
   })
   .openapi("FormAnswerRequest");
 
@@ -249,15 +488,59 @@ export const FormAnswerRequestSchema = z
 export const FormAnswerResponseSchema = z
   .object({
     thread: ThreadSummarySchema,
-    turn: TurnSchema.describe("The appended answer turn: the chosen option and any note."),
+    turn: TurnSchema.describe(
+      "The appended answer turn: prose naming every field the form asked and what was given for " +
+        "it, blanks included and marked as blank (SPEC.md §6), plus any note.",
+    ),
     eventId: EventIdSchema.nullable().describe(
       "The enqueued `form.respond` event, which re-triggers the agent like any engaged-thread " +
-        "reply (SPEC.md §6). Null when the answer does not re-trigger it — a resolved thread stops " +
-        "re-triggering the agent even while it is engaged (SPEC.md §8).",
+        "reply (SPEC.md §6). Null when the answer does not re-trigger it — which, since only the " +
+        "person answers a form, is exactly the thread the agent is not engaged in. A **resolved** " +
+        "thread does not stay silent: a person's answer reopens it and then re-triggers on §8's " +
+        "ordinary terms (SHARED-019 Amendment 1, corrected by SERVER-062).",
     ),
     warnings: warningsField,
   })
   .openapi("FormAnswerResponse");
+
+/**
+ * What was recorded for one field, in the `form.respond` payload.
+ *
+ * **This is not the request entry, and merging the two would lose the
+ * distinction §7 exists to make.** A request may legitimately omit an optional
+ * field; the payload may not. Here every field of the form is present, in the
+ * form's order, and a field left blank is present with all three value keys
+ * null — so "they declined" and "it was never asked" are never the same bytes,
+ * and the agent never has to guess whether a question went unanswered or
+ * unasked. `kind` travels with it so the entry reads on its own: it is what
+ * tells a reader whether `options: null` means "chose none of several" or
+ * "wrote nothing".
+ *
+ * The two keys that do not belong to the field's kind are always null, which is
+ * checked rather than assumed — the payload is the agent's record, and a record
+ * that could say two things at once would be worse than none.
+ */
+export const FormFieldRecordSchema = z
+  .object({
+    question: nonBlank.describe("The field's question, verbatim from the form."),
+    kind: FormFieldKindSchema.describe("Which of §6's three kinds the field is."),
+    option: nonBlank.nullable().describe("`choose one`: the chosen option, or null when blank."),
+    options: z
+      .array(nonBlank)
+      .min(1)
+      .nullable()
+      .describe("`choose any`: the chosen options, or null when nothing was chosen."),
+    text: nonBlank.nullable().describe("`write`: the text written, or null when blank."),
+  })
+  .refine(
+    (record) =>
+      ANSWER_VALUE_KEYS.every(
+        (key) => key === ANSWER_VALUE_KEY_BY_KIND[record.kind] || record[key] === null,
+      ),
+    {
+      message: "A field's record carries a value only under the key its `kind` names.",
+    },
+  );
 
 /**
  * The payload of a `form.respond` queue event.
@@ -273,11 +556,23 @@ export const FormAnswerResponseSchema = z
  *
  * It names the thread and the answered form unambiguously: `formTs` is the
  * timestamp of the turn carrying the form, which is that turn's identity.
+ *
+ * **The payload widened with CONTRACT-038 and nothing had to be migrated.**
+ * Queue events are runtime state under `.corpus/`, not corpus content, so an
+ * event written by an older server is skipped by `parseFormRespondPayload`
+ * rather than read — which is exactly what makes widening this cheap where
+ * widening the *turn format* would not have been.
  */
 export const FormRespondPayloadSchema = z.object({
   threadId: ThreadIdSchema,
   formTs: IsoDateTimeSchema.describe("Timestamp of the agent turn whose form was answered."),
-  option: z.string().min(1).describe("The chosen option, verbatim from the form."),
+  answers: z
+    .array(FormFieldRecordSchema)
+    .min(1)
+    .describe(
+      "One entry per field **of the answered form**, in the form's order — not per field answered. " +
+        "A form has at least one field, so this is never empty (SPEC.md §7).",
+    ),
   note: z.string().nullable().describe("The free-text note, or null when none was given."),
 });
 
@@ -304,39 +599,139 @@ export function parseFormRespondPayload(event: {
   return parsed.success ? parsed.data : undefined;
 }
 
-/** Where an offending answer field is reported, in the dotted form §2.3 uses. */
-const OPTION_PATH = "body.option";
+/** Where the answers live in the request, in the dotted form §2.3 uses. */
+const ANSWERS_PATH = "body.answers";
+
+const quoted = (values: readonly string[]) => values.map((value) => `\`${value}\``).join(", ");
+
+/** The keys an entry actually carries, in declaration order. */
+const givenKeys = (entry: FormFieldAnswer): readonly AnswerValueKey[] =>
+  ANSWER_VALUE_KEYS.filter((key) => entry[key] !== undefined);
 
 /**
  * Validates an answer against the form it answers — the half of the forms
- * surface no static schema can express, since the legal values are whatever the
- * agent wrote into the fence. Returns the `400` body to send, or `undefined` when
- * the answer is good.
+ * surface no static schema can express, since the legal questions and values are
+ * whatever the agent wrote into the fence. Returns the `400` body to send, or
+ * `undefined` when the answer is good.
  *
  * It lives in the contract rather than in the server so that the wire's own
  * definition of a valid answer has one implementation: the server rejects with
  * it, and a client can pre-check with it before spending a round trip.
+ *
+ * It reports **every** problem it finds rather than the first: a four-field form
+ * answered wrong in two places should not take four round trips to submit.
+ * SPEC.md §6 names exactly the rejections it makes, and it makes no others —
+ * there is no validation engine here (no formats, no lengths, no regexes):
+ *
+ * - an option a field does not offer, and an answer to a field the form does not
+ *   ask;
+ * - a required field with no answer — including a required `choose any` with
+ *   nothing selected, which is an omitted entry;
+ * - a value given under the wrong key for the field's kind;
+ * - the same option named twice in one `choose any`, and the same question
+ *   answered twice.
  */
 export function validateFormAnswer(
   form: Form,
   answer: FormAnswerRequest,
 ): ValidationError | undefined {
-  // Verbatim membership, deliberately: a near miss is a rejection. Trimming or
-  // case-folding here would accept an option the form does not offer, and the
-  // answer turn would then record a choice nobody was given.
-  if (form.options.includes(answer.option)) return undefined;
+  const issues: ValidationIssue[] = [];
+  const fields = new Map(form.fields.map((field) => [field.question, field]));
+  const answered = new Set<string>();
+  const asked = () => quoted(form.fields.map((field) => field.question));
 
-  const offered = form.options.map((option) => `\`${option}\``).join(", ");
-  const issues: ValidationIssue[] = [
-    {
-      path: OPTION_PATH,
-      message: `\`${answer.option}\` is not one of this form's options: ${offered}.`,
-    },
-  ];
+  answer.answers.forEach((entry, index) => {
+    const at = `${ANSWERS_PATH}[${String(index)}]`;
+    const field = fields.get(entry.question);
+    if (field === undefined) {
+      issues.push({
+        path: `${at}.question`,
+        message: `This form does not ask \`${entry.question}\`. It asks: ${asked()}.`,
+      });
+      return;
+    }
+    if (answered.has(entry.question)) {
+      issues.push({
+        path: `${at}.question`,
+        message: `\`${entry.question}\` is answered more than once; a form is answered once, as a whole.`,
+      });
+      return;
+    }
+    answered.add(entry.question);
+
+    const expected = ANSWER_VALUE_KEY_BY_KIND[field.kind];
+    const given = givenKeys(entry);
+    // The schema's refine already guarantees exactly one; a caller that built
+    // the object without parsing it gets the same message rather than a crash.
+    if (given.length !== 1) {
+      issues.push({
+        path: at,
+        message:
+          `\`${field.question}\` is a \`${field.kind}\` field: give its answer under ` +
+          `\`${expected}\` and nothing else.`,
+      });
+      return;
+    }
+    if (given[0] !== expected) {
+      issues.push({
+        path: `${at}.${String(given[0])}`,
+        message: `\`${field.question}\` is a \`${field.kind}\` field: its answer belongs under \`${expected}\`.`,
+      });
+      return;
+    }
+
+    // Verbatim membership, deliberately: a near miss is a rejection. Trimming or
+    // case-folding here would accept an option the form does not offer, and the
+    // answer turn would then record a choice nobody was given.
+    if (field.kind === "choose one" && entry.option !== undefined) {
+      if (!field.options.includes(entry.option)) {
+        issues.push({
+          path: `${at}.option`,
+          message: `\`${entry.option}\` is not one of this field's options: ${quoted(field.options)}.`,
+        });
+      }
+    }
+
+    if (field.kind === "choose any" && entry.options !== undefined) {
+      const chosen = entry.options;
+      chosen.forEach((option, chosenIndex) => {
+        if (!field.options.includes(option)) {
+          issues.push({
+            path: `${at}.options[${String(chosenIndex)}]`,
+            message: `\`${option}\` is not one of this field's options: ${quoted(field.options)}.`,
+          });
+        }
+      });
+      if (!areDistinct(chosen)) {
+        issues.push({
+          path: `${at}.options`,
+          message: `\`${field.question}\` names the same option more than once; each choice is named at most once.`,
+        });
+      }
+    }
+  });
+
+  // Required-and-missing is a statement about the form, so it is reported
+  // against `answers` as a whole: there is no entry to point at.
+  for (const field of form.fields) {
+    if (field.optional || answered.has(field.question)) continue;
+    issues.push({
+      path: ANSWERS_PATH,
+      message:
+        `\`${field.question}\` is required and has no answer` +
+        (field.kind === "choose any"
+          ? "; a required `choose any` needs at least one option."
+          : "."),
+    });
+  }
+
+  if (issues.length === 0) return undefined;
   return { code: "bad_request", message: "request failed validation", issues };
 }
 
-export type Form = z.infer<typeof FormSchema>;
+export type FormFieldKind = z.infer<typeof FormFieldKindSchema>;
+export type FormFieldAnswer = z.infer<typeof FormFieldAnswerSchema>;
 export type FormAnswerRequest = z.infer<typeof FormAnswerRequestSchema>;
 export type FormAnswerResponse = z.infer<typeof FormAnswerResponseSchema>;
+export type FormFieldRecord = z.infer<typeof FormFieldRecordSchema>;
 export type FormRespondPayload = z.infer<typeof FormRespondPayloadSchema>;

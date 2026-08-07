@@ -94,7 +94,8 @@ export const QueueEventSchema = z
         "Type-specific payload; plugins own the shape of their own event types, which is why this " +
           "stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads " +
           "are declared beside their features: `form.respond` carries " +
-          "`{threadId, formTs, option, note}` (SPEC.md §6).",
+          "`{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the " +
+          "answered form (SPEC.md §6, §7).",
       ),
   })
   .openapi("QueueEvent");
@@ -396,7 +397,7 @@ export const HaltQueueRequestSchema = z
  * verb.** §7 asks for a state that "re-enters automatically on lock release",
  * which is only implementable if the deferral says *which* lock — and the event
  * cannot always be asked: `comment.created` carries `parentId` in its payload,
- * `form.respond` carries `{threadId, formTs, option, note}` and names no
+ * `form.respond` carries `{threadId, formTs, answers, note}` and names no
  * document. The defer call is made by the party that just tried the edit and
  * knows exactly what it was blocked on, so the document is supplied here rather
  * than inferred from a payload shape that plugins are free to define.

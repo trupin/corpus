@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "vitest";
 import { ACTOR_HEADER } from "../actor.js";
 import { contractRoutes, mountAppendTurn } from "../routes/index.js";
+import { FormSchema, validateFormAnswer } from "../schemas/form.js";
 import * as client from "./index.js";
 import { createCorpusClient, isApiError, type FetchPaths, type paths } from "./index.js";
 
@@ -26,6 +27,29 @@ const frontmatter = {
   column: null,
   extra: {},
 };
+
+const threadSummary = {
+  id: "th_x9y8",
+  title: "Re: rates",
+  status: "open" as const,
+  parent: frontmatter.id,
+  anchor: null,
+  agent: "engaged" as const,
+  created: "2026-07-19T10:05:00Z",
+  updated: "2026-07-19T10:09:00Z",
+  turnCount: 2,
+  lastAuthor: "user" as const,
+  lastTs: "2026-07-19T10:09:00Z",
+};
+
+/** The form the stub thread's agent turn carries: one field of each kind. */
+const FORM = FormSchema.parse({
+  fields: [
+    { question: "Which rate?", kind: "choose one", options: ["6.1%", "6.4%"] },
+    { question: "Which sheets?", kind: "choose any", options: ["Q1", "Q2"] },
+    { question: "Anything else?", kind: "write", optional: true },
+  ],
+});
 
 /**
  * A Hono app mounting the real contract definitions. The client is exercised
@@ -337,6 +361,27 @@ function createServer() {
       200,
     ),
   );
+
+  // The forms surface, mounted from the real definition so the generated client
+  // is exercised over the same validation path the server will use.
+  app.openapi(contractRoutes.respondToForm, (c) => {
+    const answer = c.req.valid("json");
+    const rejection = validateFormAnswer(FORM, answer);
+    if (rejection) return c.json(rejection, 400);
+    return c.json(
+      {
+        thread: threadSummary,
+        turn: {
+          author: "user" as const,
+          ts: "2026-07-19T10:09:00Z",
+          body: answer.answers.map((entry) => entry.question).join("; "),
+        },
+        eventId: "evt_7c1d",
+        warnings: [],
+      },
+      201,
+    );
+  });
 
   app.openapi(contractRoutes.rebuildIndex, (c) =>
     c.json(
@@ -744,6 +789,79 @@ describe("the optional halt body", () => {
 
     expect(response.status).toBe(400);
     expect(data).toBeUndefined();
+  });
+});
+
+/**
+ * CONTRACT-038. The form answer travels through the generated client — the one
+ * both `apps/cli` and `apps/ui` use — against the real route definition, so the
+ * multi-field body is exercised over the same validation path the server will
+ * use rather than asserted against the Zod schema a second time.
+ */
+describe("the typed form answer", () => {
+  type FormAnswerBody = NonNullable<
+    paths["/api/threads/{id}/turns/{ts}/form"]["post"]["requestBody"]
+  >["content"]["application/json"];
+
+  const answerForm = (body: FormAnswerBody) =>
+    createTestClient("user").api.POST("/api/threads/{id}/turns/{ts}/form", {
+      params: { path: { id: "th_x9y8", ts: "2026-07-19T10:07:12Z" } },
+      body,
+    });
+
+  /**
+   * The generated entry type, hand-transcribed rather than derived from the Zod
+   * schema: `z.infer` widens an optional to `?: T | undefined` while
+   * `openapi-typescript` emits `?: T`, so a schema-derived probe would test the
+   * wrong shape (CONTRACT-025).
+   */
+  type GeneratedAnswer = {
+    answers: {
+      question: string;
+      option?: string;
+      options?: string[];
+      text?: string;
+    }[];
+    note?: string;
+  };
+
+  it("types the body as one entry per field, each naming its question", () => {
+    const body: GeneratedAnswer = {
+      answers: [
+        { question: "Which rate?", option: "6.4%" },
+        { question: "Which sheets?", options: ["Q1", "Q2"] },
+        { question: "Anything else?", text: "nothing" },
+      ],
+      note: "matches the Q2 sheet",
+    };
+    const generated: FormAnswerBody = body;
+    expect(generated.answers).toHaveLength(3);
+  });
+
+  it("answers a three-field form through the client", async () => {
+    const { data, error } = await answerForm({
+      answers: [
+        { question: "Which rate?", option: "6.4%" },
+        { question: "Which sheets?", options: ["Q1"] },
+      ],
+    });
+
+    expect(error).toBeUndefined();
+    // The optional `write` field was left blank, which is a legal omission.
+    expect(data?.turn.body).toBe("Which rate?; Which sheets?");
+    expect(data?.eventId).toBe("evt_7c1d");
+  });
+
+  it("rejects an answer that leaves a required field blank, naming it", async () => {
+    const { data, error, response } = await answerForm({
+      answers: [{ question: "Which rate?", option: "6.4%" }],
+    });
+
+    expect(data).toBeUndefined();
+    expect(response.status).toBe(400);
+    expect(isApiError(error) && error.code === "bad_request" && error.issues[0]?.message).toContain(
+      "Which sheets?",
+    );
   });
 });
 
