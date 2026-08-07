@@ -388,6 +388,27 @@ describe("validateBeforeWrite", () => {
     ).not.toThrow();
   });
 
+  /**
+   * SERVER-066. The finding is an *error* — `corpus doc check` fails on it — and
+   * it still must not refuse a save, for two reasons that are properties of the
+   * write path rather than of the defect: a blocking rule is judged over the
+   * whole body about to be written, so a document that *already* carries an
+   * unclosed fence would become unwritable (the user's reply and the agent's own
+   * repair attempt included), and refusing an agent's turn mid-loop turns a
+   * cosmetic mistake into a stalled loop. `anchor-unused` has the same shape.
+   */
+  it("does not block a save whose body leaves a fenced code block open", () => {
+    validating("validate-fence");
+    const text = doc("doc_fence001", "Here is the snippet:\n\n```\nconst x = 1;```");
+    expect(
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        "data/docs/inbox/x.md",
+        text,
+      ),
+    ).toEqual([]);
+  });
+
   it("returns no warnings for a document with nothing wrong with it", () => {
     validating("validate-clean");
     expect(

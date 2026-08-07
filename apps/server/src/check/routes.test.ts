@@ -213,6 +213,75 @@ describe("the whole-corpus rules are not filtered to what a save may block on", 
 });
 
 /**
+ * SERVER-066. The reported bug: an agent closed a fence on the same line as the
+ * content, `turns.ts` (which excludes fenced regions from turn-delimiter
+ * scanning, deliberately) stopped seeing every heading after it, and a person's
+ * reply vanished into the agent's turn with no error anywhere. This is the
+ * "anywhere".
+ */
+describe("an unterminated fenced code block", () => {
+  const SWALLOWING_THREAD = [
+    "## agent · 2026-01-01T00:00:00Z",
+    "",
+    "Here is the snippet:",
+    "",
+    "```",
+    "const x = 1;```",
+    "",
+    "## user · 2026-01-01T00:01:00Z",
+    "",
+    "Actually, no.",
+    "",
+  ].join("\n");
+
+  it("is reported on the wire, at error severity, naming the file line it opened on", async () => {
+    const content = `---\nid: th_fence1\ntype: thread\ntitle: Fenced\nparent: doc_nobody\nstatus: open\n${STAMPS}\n---\n\n${SWALLOWING_THREAD}`;
+    const { report } = await check({
+      documents: [{ path: "data/threads/th_fence1.md", content }],
+    });
+
+    const finding = report.errors.find((f) => f.code === "unterminated-fence");
+    expect(finding?.severity).toBe("error");
+    expect(finding?.docId).toBe("th_fence1");
+    expect(finding?.path).toBe("data/threads/th_fence1.md");
+    // The line an editor's gutter shows, derived from the submitted bytes rather
+    // than counted by hand.
+    const expected = content.split("\n").findIndex((line) => line === "```") + 1;
+    expect(finding?.detail).toContain(`opened at line ${expected}`);
+    // The consequence a thread suffers, spelled out where a person will read it.
+    expect(finding?.detail).toContain("turn heading");
+    expect(report.ok).toBe(false);
+  });
+
+  it("is an error the write path nonetheless accepted — the check is the only gate", async () => {
+    // The document is created through the real API. That it exists at all is the
+    // point: `unterminated-fence` is out of `LOCAL_CHECK_CODES` on purpose, so a
+    // save is never refused for it and a person is told about it here instead.
+    const created = await createDoc(ws, {
+      type: "note",
+      title: "Fenced",
+      body: "Here is the snippet:\n\n```\nconst x = 1;```",
+    });
+    expect(created.warnings).toEqual([]);
+
+    const { report } = await check({ ids: [created.id] });
+    expect(codes(report.errors)).toEqual(["unterminated-fence"]);
+    // An ordinary document loses no turns, and the finding does not pretend it does.
+    expect(report.errors[0]?.detail).not.toContain("turn heading");
+  });
+
+  it("says nothing about a fence that closes on its own line", async () => {
+    const created = await createDoc(ws, {
+      type: "note",
+      title: "Closed",
+      body: "Here is the snippet:\n\n```\nconst x = 1;\n```\n",
+    });
+    const { report } = await check({ ids: [created.id] });
+    expect(report).toEqual({ ok: true, errors: [], warnings: [] });
+  });
+});
+
+/**
  * SERVER-019 FAIL-1 (sprint-013 evaluation): `anchor-unused` is a cross-document
  * rule and was answered from the submitted set alone, so every subset request —
  * `corpus doc check <id>` and *every* `--staged` run, which is a subset by

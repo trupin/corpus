@@ -248,6 +248,103 @@ Body.
   });
 });
 
+/**
+ * SERVER-066 — the bug this rule exists for: an agent closed a fence on the same
+ * line as the content, so the fence never closed, so `turns.ts` (which excludes
+ * fenced regions when locating turn delimiters, deliberately) stopped seeing
+ * every heading after it and folded the user's reply into the agent's turn.
+ * Nothing reported anything.
+ */
+describe("§14 unterminated fenced code blocks", () => {
+  /** The reported shape: the closing run shares a line with the content. */
+  const SWALLOWING_TURN = [
+    "## agent · 2026-07-19T10:07:12Z",
+    "",
+    "Here is the snippet:",
+    "",
+    "```",
+    "const x = 1;```",
+    "",
+    "## user · 2026-07-19T10:09:00Z",
+    "",
+    "Actually, no.",
+    "",
+  ].join("\n");
+
+  /**
+   * The expected line, derived from the raw file rather than counted by hand —
+   * an independent answer to the question the rule answers, so a bug in
+   * `bodyStartLine`'s arithmetic cannot be encoded into the expectation.
+   */
+  const fileLineOfFirstFence = (raw: string): number =>
+    raw.split("\n").findIndex((line) => line === "```") + 1;
+
+  it("reports the reported shape as an error naming the line the fence opened on", () => {
+    const raw = `---\n${yaml(THREAD)}\n---\n${SWALLOWING_TURN}`;
+    const report = checkCorpus([toCheckDocument("data/threads/th_x9y8.md", raw)]);
+    const finding = report.errors.find((f) => f.code === CHECK_CODES.unterminatedFence);
+    expect(finding?.severity).toBe("error");
+    expect(finding?.docId).toBe("th_x9y8");
+    expect(finding?.path).toBe("data/threads/th_x9y8.md");
+    expect(finding?.detail).toContain(`opened at line ${fileLineOfFirstFence(raw)}`);
+    // The run is described, not quoted — quoting a backtick run in backticks is
+    // the ambiguity this finding exists to report.
+    expect(finding?.detail).toContain("a run of 3 backticks");
+    expect(finding?.detail).not.toContain("```");
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("names the turn consequence when the document is a thread", () => {
+    const report = checkCorpus([
+      doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY),
+      doc("data/threads/th_x9y8.md", THREAD, SWALLOWING_TURN),
+    ]);
+    const finding = report.errors.find((f) => f.code === CHECK_CODES.unterminatedFence);
+    expect(finding?.detail).toContain("turn heading");
+  });
+
+  it("does not claim turns are lost in an ordinary document", () => {
+    const report = checkCorpus([doc("data/docs/notes.md", NOTE, "```\nunclosed\n")]);
+    expect(codes(report.errors)).toEqual([CHECK_CODES.unterminatedFence]);
+    expect(report.errors[0]?.detail).not.toContain("turn heading");
+    expect(report.errors[0]?.detail).toContain("reads as code");
+  });
+
+  it("reports nothing for a fence closed on its own line", () => {
+    const closed = SWALLOWING_TURN.replace("const x = 1;```", "const x = 1;\n```");
+    const report = checkCorpus([
+      doc("data/docs/mortgage.md", { ...NOTE, anchors: ANCHOR }, ANCHORED_BODY),
+      doc("data/threads/th_x9y8.md", THREAD, closed),
+    ]);
+    expect(report.errors).toEqual([]);
+  });
+
+  it("reports nothing when the closing run is wider than the opening one", () => {
+    // AGENT-012's widening means openers vary; a wider close is still a close.
+    expect(checkCorpus([doc("data/docs/notes.md", NOTE, "```\ncode\n`````\n")]).errors).toEqual([]);
+  });
+
+  it("reports nothing for a closing fence indented up to three spaces", () => {
+    expect(checkCorpus([doc("data/docs/notes.md", NOTE, "```\ncode\n  ```\n")]).errors).toEqual([]);
+  });
+
+  it("still reports it when the frontmatter is also invalid", () => {
+    // The two are independent, and a bad field must not hide a fence that is
+    // eating the rest of the document.
+    const report = checkCorpus([
+      doc("data/docs/notes.md", { ...NOTE, created: 42 }, "```\nunclosed\n"),
+    ]);
+    expect(codes(report.errors)).toContain(CHECK_CODES.unterminatedFence);
+    expect(codes(report.errors)).toContain(CHECK_CODES.frontmatterInvalid);
+  });
+
+  it("reports nothing for a document that does not parse at all", () => {
+    // There is no body to scan; `frontmatter-unparseable` is the whole story.
+    const report = checkCorpus([toCheckDocument("data/docs/broken.md", "```\nunclosed\n")]);
+    expect(codes(report.errors)).toEqual([CHECK_CODES.frontmatterUnparseable]);
+  });
+});
+
 describe("§14 warnings", () => {
   it("warns — never errors — on an anchor that no longer resolves", () => {
     const corpus = [

@@ -420,6 +420,9 @@ belongs to the same fix wave.
 | SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | todo | P1 | INFRA-008 |
+| AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
+| SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P0 | — |
+| SERVER-067 | The save path drops non-blocking errors: they reach no response and no log | todo | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |

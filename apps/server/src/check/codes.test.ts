@@ -26,12 +26,12 @@ const document = (frontmatter: string, body = "Body.\n"): string =>
   `---\n${frontmatter}\n${STAMPS}\n---\n\n${body}`;
 
 describe("the validator's codes and the wire's", () => {
-  it("are the same thirteen, member for member, in declaration order", () => {
+  it("are the same fourteen, member for member, in declaration order", () => {
     expect(Object.values(CHECK_CODES)).toEqual([...WIRE_CODES]);
   });
 
-  it("are thirteen — a count neither side states, so a paired addition still shows", () => {
-    expect(Object.values(CHECK_CODES)).toHaveLength(13);
+  it("are fourteen — a count neither side states, so a paired addition still shows", () => {
+    expect(Object.values(CHECK_CODES)).toHaveLength(14);
   });
 
   it("carry no duplicate value on the server side", () => {

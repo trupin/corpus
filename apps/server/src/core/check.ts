@@ -1,6 +1,7 @@
 import type { TextQuoteSelector } from "@corpus/contract";
+import { unterminatedFence } from "./code.js";
 import type { ParsedDocument } from "./document.js";
-import { DocumentParseError, duplicateKeysAt, parseDocument } from "./document.js";
+import { DocumentParseError, bodyStartLine, duplicateKeysAt, parseDocument } from "./document.js";
 import type { FileFrontmatter } from "./frontmatter.js";
 import { isThreadFrontmatter, threadFrontmatter, validateFrontmatter } from "./frontmatter.js";
 import { idPrefixForDocType, isAnchorId } from "./ids.js";
@@ -14,7 +15,10 @@ import { duplicateTurnTimestamps } from "./turns.js";
  * - **Errors** are structural lies — a document that cannot be read, an id that
  *   two documents claim, a thread pointing at an anchor nobody wrote, an anchor
  *   entry no thread claims. These break the projection's ability to describe the
- *   corpus.
+ *   corpus. A body whose fenced code block never closes joins them (SERVER-066):
+ *   it reads perfectly well and quietly swallows everything after it, threads'
+ *   turns included — see {@link checkUnterminatedFence} for why that is an error
+ *   and why it still never blocks a write.
  * - **Warnings** are exactly the two states §14 carves out, and no others: an
  *   anchor that is well-formed but no longer resolves (an orphaned thread — a
  *   normal outcome of editing, §6), and a `[[ref]]` to a document that does not
@@ -45,6 +49,7 @@ export const CHECK_CODES = {
   anchorClaimedTwice: "anchor-claimed-twice",
   anchorUnused: "anchor-unused",
   duplicateTurnTimestamp: "duplicate-turn-timestamp",
+  unterminatedFence: "unterminated-fence",
   anchorUnresolved: "anchor-unresolved",
   refUnresolved: "ref-unresolved",
 } as const;
@@ -216,6 +221,65 @@ const checkAnchorEntries = (
 };
 
 /**
+ * A fenced code block the body never closed (SERVER-066).
+ *
+ * **Why this is an error rather than a warning.** §14's warning family is the
+ * two states it carves out by name, and both are normal outcomes of using the
+ * system as designed — an anchor the author edited out from under a thread (§6),
+ * a `[[ref]]` written before its target exists (§5). An unclosed fence is never
+ * that. It is a mistake in the bytes, and in a thread it *destroys content*
+ * silently: `turns.ts` excludes fenced regions when locating `## author · ts`
+ * delimiters so a snippet can quote the turn format without faking a turn, so a
+ * fence that runs to the end of the body makes every later turn heading
+ * invisible and folds those turns into the one before them. That exclusion is
+ * correct and stays; this finding is how the consequence stops being silent.
+ *
+ * **Why it is nonetheless not in `docs/write.ts`'s `LOCAL_CHECK_CODES`.** It is
+ * decidable from one file, so it would otherwise qualify — but a blocking rule is
+ * evaluated over the *whole body about to be written*, and an unclosed fence is
+ * a property a document can already have. Blocking would therefore refuse every
+ * subsequent write to such a thread, the user's reply and the agent's own
+ * attempt to fix it included, making the document unwritable — strictly worse
+ * than the swallow it would be trying to prevent. A save is refused for what a
+ * save can *break*; this breaks nothing structural, and the document projects
+ * normally. `anchor-unused` already has exactly this shape: an error a check
+ * fails on and no save is refused for.
+ *
+ * **One code, not two.** A thread loses turns and an ordinary document merely
+ * reads the rest of its body as code (losing its `[[refs]]` and headings with
+ * it), but the defect and its fix are identical, and the wire partitions
+ * severity *by code* — so a second code would exist only to carry a second
+ * severity nobody would act on differently. The consequence is spelled out in
+ * `detail` instead, which is what the CLI renders verbatim.
+ */
+const checkUnterminatedFence = (
+  parsed: ParsedDocument,
+  path: string,
+  docId: string | null,
+  isThread: boolean,
+  report: ReturnType<typeof findings>,
+): void => {
+  const open = unterminatedFence(parsed.body);
+  if (open === null) return;
+  // The run is described by count rather than quoted verbatim: a backtick run
+  // inside backticks is the very ambiguity being reported, and `detail` is
+  // rendered as-is by `corpus doc check`.
+  const runName = open.marker.startsWith("`") ? "backticks" : "tildes";
+  const turnConsequence = isThread
+    ? " — and every `## author · timestamp` turn heading after it is invisible, so those turns are lost"
+    : "";
+  report.error(
+    CHECK_CODES.unterminatedFence,
+    docId,
+    path,
+    `unterminated fenced code block opened at line ${bodyStartLine(parsed) + open.line - 1} ` +
+      `with a run of ${open.marker.length} ${runName}: it closes only on a line holding nothing ` +
+      `but ${open.marker.length} or more ${runName}, so everything after it reads as ` +
+      `code${turnConsequence}`,
+  );
+};
+
+/**
  * Check a whole corpus. Every document is checked independently first, then the
  * cross-document rules run over whatever parsed and validated — one bad file
  * never hides the rest of the corpus's problems.
@@ -258,6 +322,17 @@ export const checkCorpus = (
     // validation would reject the whole document for one bad selector, and the
     // specific rule is what a §14 report is for.
     checkAnchorEntries(entry.document, entry.path, docId, report);
+
+    // Before the validation gate below, and asked of every document type: a body
+    // is markdown whatever the frontmatter says about it, and a document with one
+    // bad field must not hide a fence that is eating the rest of its content.
+    checkUnterminatedFence(
+      entry.document,
+      entry.path,
+      docId,
+      isThreadFrontmatter(entry.document.data),
+      report,
+    );
 
     const validated = validateFrontmatter(entry.document.data);
     if (!validated.ok) {

@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-02T00:00:00Z
+updated: 2026-08-06T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -307,19 +307,24 @@ Rules:
   the block's raw text, so the fence boundary is exactly what the person gets. This changes
   nothing else you write — prose stays prose, and code you are explaining rather than handing
   over is fenced however the explanation reads best.
-- **Open the fence wider than anything inside it.** A fence ends at the first line that is
-  **nothing but** a backtick run at least as long as the one that opened it. So three backticks
-  around a payload that itself contains a fence closes early — the payload's own ``` line ends
-  your block: one deliverable becomes several, your prose spills out between them, and each
-  copy button hands over a fragment, which defeats the whole point of handing the thing over in
-  one gesture. Before you write the fence, find the **longest backtick run in the payload and
-  open with one more than that**: four around a payload containing three, five around one
-  containing four, and so on. The rule is the count, not the number four. Counting every run
-  rather than only the ones alone on a line is deliberate — a run in the middle of a sentence
-  closes nothing, so the rule is stricter than it strictly needs to be, and being one backtick
-  too wide costs nothing while being one too narrow splits the deliverable. This bites most
-  often on what matters most: a prompt written for another agent, which is itself markdown and
-  routinely contains fenced examples.
+- **A fence closes only on a line that is nothing but backticks.** It ends at the first line
+  that is **nothing but** a backtick run at least as long as the one that opened it. That one
+  sentence is the whole mechanism, and it fails in two directions: a fence opened too narrow
+  closes early, and a fence whose closing run is not alone on its line never closes at all.
+  Both cost the person something, and neither announces itself.
+
+  **Open it wider than anything inside it.** Three backticks around a payload that itself
+  contains a fence closes early — the payload's own ``` line ends your block: one deliverable
+  becomes several, your prose spills out between them, and each copy button hands over a
+  fragment, which defeats the whole point of handing the thing over in one gesture. Before you
+  write the fence, find the **longest backtick run in the payload and open with one more than
+  that**: four around a payload containing three, five around one containing four, and so on.
+  The rule is the count, not the number four. Counting every run rather than only the ones
+  alone on a line is deliberate — a run in the middle of a sentence closes nothing, so the rule
+  is stricter than it strictly needs to be, and being one backtick too wide costs nothing while
+  being one too narrow splits the deliverable. This bites most often on what matters most: a
+  prompt written for another agent, which is itself markdown and routinely contains fenced
+  examples.
 
   A prompt whose body contains a fence is handed over like this, four backticks outside and
   three inside:
@@ -336,7 +341,21 @@ Rules:
   ````
   `````
 
-  Documents written before this rule are **not** repaired retroactively — a deliverable that
+  **Close it on a line of its own.** The closing run has to stand alone: write it at the end of
+  the payload's last content line — the last word and the backticks together — and it closes
+  nothing, because that line is not *nothing but* the run. The fence then stays open to the end
+  of the turn, and this is the failure that costs the most while looking like the least. A
+  thread is a sequence of turns delimited by a level-2 heading naming the author and the turn's
+  timestamp, and such a heading **inside a fence is deliberately not a delimiter** — that is
+  exactly what lets a turn quote the thread format without faking a turn. So an unclosed fence
+  swallows every heading after it: the next person's reply stops being a turn of its own and is
+  absorbed into the body of yours. They see your opening sentence, their own message is gone
+  from the conversation, and nothing anywhere reports an error — the same exchange that reads
+  as two turns with the run alone on its line reads as **one** with the run riding the content
+  line. It does not render badly; it makes the next message vanish. So: a newline after the
+  payload's last character, then the closing run by itself, every time.
+
+  Documents written before these rules are **not** repaired retroactively — a deliverable that
   already split stays split until someone rewrites it. If you are asked why an old snippet
   renders as several canvases, this is why, and the repair is to re-emit it with a wider fence.
 - **Close a turn that wrote with a trace line.** When the turn's work changed the corpus, the

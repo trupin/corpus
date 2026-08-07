@@ -10,7 +10,7 @@ import { DocumentIdSchema } from "./id.js";
  * ships in `apps/server/src/core/check.ts`, and this module is deliberately a
  * transcription of its vocabulary rather than a second description of it:
  *
- * - {@link CHECK_CODES} is `CHECK_CODES`' thirteen values, verbatim.
+ * - {@link CHECK_CODES} is `CHECK_CODES`' fourteen values, verbatim.
  * - {@link CheckFindingSchema}'s fields are `CheckFinding`'s field names,
  *   verbatim (`code`, `severity`, `docId`, `path`, `detail`).
  * - {@link CheckReportSchema}'s `errors`/`warnings` are `CheckReport`'s, plus
@@ -48,6 +48,7 @@ export const CHECK_CODES = [
   "anchor-claimed-twice",
   "anchor-unused",
   "duplicate-turn-timestamp",
+  "unterminated-fence",
   "anchor-unresolved",
   "ref-unresolved",
 ] as const;
@@ -61,13 +62,18 @@ export const CHECK_CODES = [
  * `anchor-unused` is deliberately **not** here: §14 lists "every anchor belongs
  * to an existing thread" among the rules a mutation must satisfy, so a highlight
  * pointing at no conversation is structural drift, not an evolving-corpus state.
+ * Nor is `unterminated-fence`: an unclosed fence swallows everything after it,
+ * a thread's later turns included, so it destroys content rather than describing
+ * a corpus mid-growth. Like `anchor-unused` it fails a check without blocking a
+ * save — the two families here are about the *verdict*, not about what the write
+ * path refuses.
  */
 export const CHECK_WARNING_CODES = ["anchor-unresolved", "ref-unresolved"] as const;
 
 /** Widened so the partition below reads as a set membership test, not a tuple search. */
 const WARNING_CODES: ReadonlySet<string> = new Set(CHECK_WARNING_CODES);
 
-/** The eleven codes that fail a check — the exit-6 class. */
+/** The twelve codes that fail a check — the exit-6 class. */
 export const CHECK_ERROR_CODES: readonly CheckCode[] = CHECK_CODES.filter(
   (code) => !WARNING_CODES.has(code),
 );
@@ -77,8 +83,8 @@ export const CHECK_SEVERITIES = ["error", "warning"] as const;
 export const CheckCodeSchema = z.enum(CHECK_CODES).openapi({
   description:
     "Which §14 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned " +
-    "thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other eleven " +
-    "are errors, `anchor-unused` among them.",
+    "thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other twelve " +
+    "are errors, `anchor-unused` and `unterminated-fence` among them.",
   example: "ref-unresolved",
 });
 

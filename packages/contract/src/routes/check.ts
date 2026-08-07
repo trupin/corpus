@@ -41,10 +41,12 @@ export const checkDocuments = createRoute({
     "**Severity is fixed by §14, not by the caller.** Warnings are exactly `anchor-unresolved` " +
     "(a well-formed anchor whose quote no longer resolves — an orphaned thread, a normal outcome " +
     "of editing) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet — how a corpus " +
-    "grows). The other eleven codes are errors, `anchor-unused` among them: §14 requires every " +
+    "grows). The other twelve codes are errors, `anchor-unused` among them: §14 requires every " +
     "anchor to belong to an existing thread, so a highlight pointing at no conversation is " +
-    "structural drift. `ok` is `errors.length === 0` and is what `corpus doc check` turns into " +
-    "exit 0 or exit 6.\n\n" +
+    "structural drift. `unterminated-fence` is one too — a fenced code block the body never " +
+    "closes reads as code to the end of the document, so a thread's later turns disappear into " +
+    "the turn before them. `ok` is `errors.length === 0` and is what `corpus doc check` turns " +
+    "into exit 0 or exit 6.\n\n" +
     "A drifted corpus is a `200` carrying the findings, never an error status — the check " +
     "succeeded; the corpus is what has the problem.",
   request: {

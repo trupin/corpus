@@ -49,14 +49,35 @@ export const splitLines = (text: string): Line[] => {
   return lines;
 };
 
+/** A fence that opened and was never closed — what {@link unterminatedFence} reports. */
+export type OpenFence = {
+  /**
+   * The delimiter run the fence opened with, e.g. `` "```" `` or `"~~~~"`. A
+   * closing line must repeat this character at least this many times, so
+   * reporting it is reporting what the fix has to look like.
+   */
+  readonly marker: string;
+  /** Offset of the start of the opening fence line. */
+  readonly start: number;
+  /** 1-based line number of the opening fence line within the scanned text. */
+  readonly line: number;
+};
+
 /**
- * Ranges covered by fenced code blocks, fence lines included. An unterminated
- * fence runs to the end of the text, matching CommonMark.
+ * The one fence scanner. It answers both questions the module is asked — which
+ * ranges are code, and whether a fence was left open — from a single pass, so
+ * "is this inside code" and "where did the unclosed fence open" can never be
+ * decided by two grammars that drift apart.
+ *
+ * `ranges` holds only the fences that *closed*; the still-open one, if any, is
+ * returned separately because the two readers want opposite things from it.
  */
-export const fencedCodeRanges = (text: string): TextRange[] => {
+const scanFences = (text: string): { ranges: TextRange[]; open: OpenFence | null } => {
   const ranges: TextRange[] = [];
-  let open: { marker: string; start: number } | null = null;
+  let open: OpenFence | null = null;
+  let lineNumber = 0;
   for (const line of splitLines(text)) {
+    lineNumber += 1;
     const match = FENCE_LINE.exec(line.text);
     const marker = match?.[1] ?? "";
     const info = match?.[2] ?? "";
@@ -64,7 +85,7 @@ export const fencedCodeRanges = (text: string): TextRange[] => {
       if (match === null) continue;
       // An info string may not contain a backtick when the fence is backticks.
       if (marker.startsWith("`") && info.includes("`")) continue;
-      open = { marker, start: line.start };
+      open = { marker, start: line.start, line: lineNumber };
       continue;
     }
     const closes =
@@ -77,9 +98,33 @@ export const fencedCodeRanges = (text: string): TextRange[] => {
       open = null;
     }
   }
+  return { ranges, open };
+};
+
+/**
+ * Ranges covered by fenced code blocks, fence lines included. An unterminated
+ * fence runs to the end of the text, matching CommonMark.
+ */
+export const fencedCodeRanges = (text: string): TextRange[] => {
+  const { ranges, open } = scanFences(text);
   if (open !== null) ranges.push({ start: open.start, end: text.length });
   return ranges;
 };
+
+/**
+ * The fence this text left open, or `null` when every fence closed.
+ *
+ * {@link fencedCodeRanges} already *models* the state — it runs the range to the
+ * end of the text, which is what CommonMark says — but a mask cannot say where
+ * the mistake is. §14's validator needs the opening line, because the whole
+ * reason to report an unclosed fence is that a person has to go and close it
+ * (SERVER-066): everything after it reads as code, so the body's `[[refs]]` and
+ * — in a thread — its `## author · timestamp` turn headings stop being seen.
+ *
+ * This deliberately does not judge whether that is a problem. It reports the
+ * grammar; `core/check.ts` decides what a corpus makes of it.
+ */
+export const unterminatedFence = (text: string): OpenFence | null => scanFences(text).open;
 
 const isMasked = (ranges: readonly TextRange[], offset: number): boolean =>
   ranges.some((range) => offset >= range.start && offset < range.end);
