@@ -61,14 +61,28 @@
  * them on a passage the anchor's author never commented on, and only a rebuild
  * clears them. A workspace that never ran v10 pays one extra rebuild.
  *
- * 11 → 12 (SERVER-068): no DDL change — `turns.form_answered` is now decided by
- * pairing an answer turn with a form **by content** (the contract's
- * `parseFormAnswerBody`, against each open form) instead of by the option string
- * its first line named. A v11 database can therefore hold either verdict for the
- * same bytes, and both directions are visible: a thread wrongly cleared sits out
- * of Attention with a question nobody answered, and a thread wrongly lit has no
- * remaining action that clears it. Derived from the file like everything else
- * here, so the rebuild this bump triggers is the whole migration.
+ * 11 → 12 (SERVER-068, widened by PR #28's review): no DDL change, but **two**
+ * columns change verdict for bytes already on disk.
+ *
+ * `turns.form_answered` is now decided by pairing an answer turn with a form
+ * **by content** (the contract's `parseFormAnswerBody`, against each open form)
+ * instead of by the option string its first line named. A v11 database can
+ * therefore hold either verdict for the same bytes, and both directions are
+ * visible: a thread wrongly cleared sits out of Attention with a question nobody
+ * answered, and a thread wrongly lit has no remaining action that clears it.
+ *
+ * `turns.has_form` changes too, and that half was missing from this note. The
+ * grammar now refuses a newline inside a question or an option, and an option
+ * spelled as one of the answer prose's own delimiters (`**Note:**`,
+ * `_(left blank)_`, or one of this form's questions) — because such a form
+ * posts, answers, and then cannot be read back, leaving an Attention row no
+ * action can clear. Those forms no longer parse, so a turn that stored
+ * `has_form = 1` under v11 stores `0` under v12 and renders as the broken block
+ * §11 asks for. That is the intended outcome: an inert failure rather than a
+ * silent, permanent one.
+ *
+ * Both are derived from the file like everything else here, so the rebuild this
+ * bump triggers is the whole migration.
  */
 export const SCHEMA_VERSION = 12;
 

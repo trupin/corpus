@@ -277,13 +277,9 @@ describe("a flip whose card went away before it settled", () => {
       status: "open",
       failing: { "POST /api/threads/th_a/resolve": 423 },
     });
-    expect(notices).toEqual([
-      {
-        tone: "error",
-        message:
-          "Resolve failed — POST /api/threads/{id}/resolve failed (HTTP 423): the server refused",
-      },
-    ]);
+    // The server's sentence, not the route template it arrived through
+    // (`CorpusRequestError`): this string is what a person reads in a toast.
+    expect(notices).toEqual([{ tone: "error", message: "Resolve failed — the server refused" }]);
   });
 
   it("still reports a refused reopen", async () => {
@@ -291,13 +287,7 @@ describe("a flip whose card went away before it settled", () => {
       status: "resolved",
       failing: { "POST /api/threads/th_a/reopen": 423 },
     });
-    expect(notices).toEqual([
-      {
-        tone: "error",
-        message:
-          "Reopen failed — POST /api/threads/{id}/reopen failed (HTTP 423): the server refused",
-      },
-    ]);
+    expect(notices).toEqual([{ tone: "error", message: "Reopen failed — the server refused" }]);
   });
 });
 

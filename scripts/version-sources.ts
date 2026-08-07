@@ -16,6 +16,12 @@
  * check — never skipped. A workspace that quietly stops being checked is the
  * same defect as INFRA-022 itself: a guard that looks like it covers something
  * it does not.
+ *
+ * Every read here refuses the same way. A glob it cannot resolve fails the check
+ * because the repository's configuration outran the checker and the message can
+ * name the fix; a manifest git listed and then could not produce (`gitOrThrow`)
+ * throws, because there is no version verdict to report over data that was never
+ * read. Neither is ever dropped.
  */
 
 import { execFileSync } from "node:child_process";
@@ -152,11 +158,47 @@ function git(repoRoot: string, args: readonly string[]): string | undefined {
 }
 
 /**
+ * A read from a treeish already proven to resolve, where failure is not an
+ * answer — hence no `undefined` in the return type.
+ *
+ * `readCommittedSource` calls this only after `git show <treeish>:package.json`
+ * has succeeded, and only for paths `git ls-tree` itself just listed at that very
+ * treeish. Git refusing at that point means the ref moved under the check
+ * mid-read, or the object store is damaged (both reproducible, both covered in
+ * `version-sources.test.ts`).
+ *
+ * Deliberately not routed through `unsupportedGlobs`. That channel describes a
+ * healthy repository whose *configuration* outran this module, so it belongs in
+ * the report and its message can name the fix. An object git listed and then
+ * could not produce is not a version problem and has no manifest-level fix —
+ * there is simply no answer to give. What it must never become is a shrug:
+ * skipping the manifest would make the check quietly cover less than it claims,
+ * which is the INFRA-022 defect this module exists to prevent. So it throws, and
+ * `version:check` dies here instead of printing ✓ over manifests it never read —
+ * the same thing that already happens one step later when a committed manifest
+ * turns out not to be parseable JSON.
+ */
+function gitOrThrow(repoRoot: string, args: readonly string[], treeish: string): string {
+  const output = git(repoRoot, args);
+  if (output === undefined) {
+    throw new Error(
+      `\`git ${args.join(" ")}\` failed although \`${treeish}\` had already been read — the ` +
+        "tree moved mid-check, or this repository's object store is damaged. Refusing to " +
+        "report a version check over manifests that could not be read: re-run, and if it " +
+        "persists, check the repository with `git fsck`.",
+    );
+  }
+  return output;
+}
+
+/**
  * Manifests as they are committed — what a `v*` tag would carry.
  *
- * `undefined` when there is nothing to read: not a git repository, no commits
- * yet, or a treeish that does not resolve. The caller says so out loud rather
- * than treating an unreadable tree as a passing one.
+ * `undefined` when there is nothing to read at all: not a git repository, no
+ * commits yet, or a treeish that does not resolve. The caller says so out loud
+ * rather than treating an unreadable tree as a passing one. A tree that resolves
+ * but then reads back incompletely is a different thing and throws — see
+ * `gitOrThrow`.
  */
 export function readCommittedSource(
   repoRoot: string,
@@ -166,20 +208,19 @@ export function readCommittedSource(
   if (rootSource === undefined) return undefined;
 
   const globs = workspaceGlobs(rootSource);
-  const tracked = git(repoRoot, ["ls-tree", "-r", "--name-only", treeish]);
-  const paths = tracked === undefined ? [] : tracked.split("\n").filter((line) => line !== "");
+  // An empty listing here would be indistinguishable from a tree with no
+  // workspaces in it, and would take every one of them out of the check at once.
+  const tracked = gitOrThrow(repoRoot, ["ls-tree", "-r", "--name-only", treeish], treeish);
+  const paths = tracked.split("\n").filter((line) => line !== "");
 
   const selection = selectWorkspaceManifests(globs, paths);
-  const workspaces: ManifestVersion[] = [];
-  for (const path of selection.selected) {
-    const source = git(repoRoot, ["show", `${treeish}:${path}`]);
-    if (source !== undefined) workspaces.push(parseManifest(source, path));
-  }
 
   return {
     label: committedTreeLabel(treeish),
     root: parseManifest(rootSource, "package.json"),
-    workspaces,
+    workspaces: selection.selected.map((path) =>
+      parseManifest(gitOrThrow(repoRoot, ["show", `${treeish}:${path}`], treeish), path),
+    ),
     unsupportedGlobs: selection.unsupported,
   };
 }

@@ -116,19 +116,18 @@ describe("parseFormBlock", () => {
       return parsed.status === "invalid" ? parsed.reason : "";
     };
 
-    it("degrades unparseable YAML rather than throwing", () => {
-      expect(invalid(["```form", "prompt: [unclosed", "```"].join("\n"))).not.toBe("");
-    });
-
-    it("refuses a fourth kind, however spelled", () => {
-      const fourth = [
-        "```form",
-        "fields:",
-        "  - question: How much?",
-        "    kind: number",
-        "```",
-      ].join("\n");
-      expect(invalid(fourth)).not.toBe("");
+    /**
+     * The `yaml` library throws on this, and the reason has to be *its* message
+     * rather than the schema's: the fence never reached `FormSchema` at all, so
+     * a reason that named a field path would be describing a value nobody built.
+     * Asserted on the substance — the line it broke on and what it wanted — and
+     * not merely on "some string came back", which is true of every outcome.
+     */
+    it("degrades unparseable YAML rather than throwing, and says where it broke", () => {
+      const reason = invalid(["```form", "prompt: [unclosed", "```"].join("\n"));
+      expect(reason).toContain("]");
+      expect(reason).toContain("line 1");
+      expect(reason).not.toContain("fields");
     });
 
     /**
@@ -166,55 +165,47 @@ describe("parseFormBlock", () => {
       expect(reason).not.toBe("Invalid input");
     });
 
-    it("refuses a write field carrying options, and a choose-one carrying none", () => {
-      const writeWithOptions = [
-        "```form",
-        "fields:",
-        "  - question: Anything?",
-        "    kind: write",
-        "    options:",
-        "      - a",
-        "```",
-      ].join("\n");
-      const chooseWithout = [
-        "```form",
-        "fields:",
-        "  - question: Which?",
-        "    kind: choose one",
-        "```",
-      ].join("\n");
-      expect(invalid(writeWithOptions)).not.toBe("");
-      expect(invalid(chooseWithout)).not.toBe("");
+    /*
+     * The four cases that used to stand here — a fourth kind, a misspelled
+     * `optional`, a duplicate question, a `choose one` with no `options` — are
+     * the table above, and each asserted only `not.toBe("")` against a helper
+     * that already asserts `status === "invalid"` and can never return `""`.
+     * An assertion that cannot fail is worse than none, because it reads as
+     * coverage (PR #28 re-review, MINOR). What remains here is what the table
+     * does not cover, asserted on the substance of the sentence.
+     */
+
+    /**
+     * A `write` field carrying options: the branch it comes closest to is
+     * `write`, whose object has no `options` key at all, so the sentence has to
+     * name the key it does **not** recognise rather than one that is missing.
+     */
+    it("refuses a write field carrying options, naming the key it does not know", () => {
+      const reason = invalid(
+        [
+          "```form",
+          "fields:",
+          "  - question: Anything?",
+          "    kind: write",
+          "    options:",
+          "      - a",
+          "```",
+        ].join("\n"),
+      );
+      expect(reason).toContain("fields.0");
+      expect(reason).toContain("options");
     });
 
-    it("refuses a misspelled key rather than quietly leaving a field required", () => {
-      const typo = [
-        "```form",
-        "fields:",
-        "  - question: Anything?",
-        "    kind: write",
-        "    optionnal: true",
-        "```",
-      ].join("\n");
-      expect(invalid(typo)).not.toBe("");
-    });
-
-    it("refuses two fields asking the same question", () => {
-      const duplicate = [
-        "```form",
-        "fields:",
-        "  - question: Which?",
-        "    kind: choose one",
-        "    options: [a, b]",
-        "  - question: Which?",
-        "    kind: write",
-        "```",
-      ].join("\n");
-      expect(invalid(duplicate)).not.toBe("");
-    });
-
-    it("rejects a form with no options", () => {
-      expect(invalid(["```form", "prompt: pick", "options: []", "```"].join("\n"))).not.toBe("");
+    /**
+     * The legacy `prompt` + `options` spelling fails on its own terms — it never
+     * becomes a `fields` list to fail as — so the sentence names `options` and
+     * not `fields.0.options`. A form offering nothing to choose is unanswerable,
+     * and §11 wants it visibly broken rather than rendered as an empty group.
+     */
+    it("rejects a legacy form offering no options, on the legacy key", () => {
+      const reason = invalid(["```form", "prompt: pick", "options: []", "```"].join("\n"));
+      expect(reason).toContain("options");
+      expect(reason).not.toContain("fields");
     });
   });
 

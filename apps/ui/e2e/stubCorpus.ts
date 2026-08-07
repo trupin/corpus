@@ -1,10 +1,11 @@
 import {
   extractFormSource,
-  formAnswerRecords,
+  formAnswerRecord,
   formatFormAnswerBody,
   FormSchema,
   isFormAnswerBody,
   parseFormAnswerBody,
+  unreadableAnswer,
   validateFormAnswer,
   type Form,
   type FormAnswerRequest,
@@ -614,7 +615,22 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
      * stub that recorded the call without recording the answer would show the
      * row clearing on a fiction. The refusals are the ones §6 names — `404` for
      * a turn carrying no form, `409` for a form already answered, `400` for an
-     * answer the form does not fit (the contract's own `validateFormAnswer`).
+     * answer the form does not fit (the contract's own `validateFormAnswer`),
+     * and `400` for an answer whose own text would not read back out of the turn
+     * it writes (the contract's own `unreadableAnswer`, the third of the three
+     * checks the server's `assertAppendableAnswer` makes).
+     *
+     * **Both refusals are called, not restated** — unlike anchor resolution and
+     * the turn split, which live in `apps/server` and had to be ported into
+     * `serverParity.ts` and pinned by fixture. These two live in
+     * `@corpus/contract`, which this file already imports, so the stub runs the
+     * identical function the server runs and there is no copy that could drift.
+     * The halves of `assertAppendableAnswer` that are **not** here — an
+     * unterminated fence, a fabricated `## user · <ts>` heading — are the
+     * server's own `unterminatedFence` / `parseTurns`, and porting those without
+     * a parity fixture would be precisely the unpinned copy `serverParity.ts`
+     * exists to refuse. So the stub is more permissive than the server about
+     * those two, and never about these.
      */
     const formAnswer = /^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/form$/.exec(url.pathname);
     if (formAnswer !== null && method === "POST") {
@@ -637,16 +653,31 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       const invalid = validateFormAnswer(form, answer);
       if (invalid !== undefined) return json(route, invalid, 400);
 
+      const record = formAnswerRecord(form, answer);
+      const unreadable = unreadableAnswer(form, record);
+      if (unreadable !== undefined) {
+        return json(
+          route,
+          {
+            code: "bad_request",
+            message: unreadable,
+            issues: [
+              { path: "body", message: "the answer turn would not read back as this answer" },
+            ],
+          },
+          400,
+        );
+      }
+
       stampUpdated(doc);
       // Seconds precision, `Z`: the turn-heading grammar rejects milliseconds,
       // and a heading the parser rejects is a turn that silently disappears.
+      // The body is written from the same record the refusal above was asked
+      // about, so what lands in the thread is what was judged.
       const turn: StubTurn = {
         author: "user",
         ts: canonicalInstant(doc.updated),
-        body: formatFormAnswerBody({
-          answers: formAnswerRecords(form, answer),
-          note: answer.note ?? null,
-        }),
+        body: formatFormAnswerBody(record),
       };
       doc.body = `${doc.body.trimEnd()}\n\n${renderTurn(turn)}`;
       return json(

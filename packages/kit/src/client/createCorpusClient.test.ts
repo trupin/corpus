@@ -246,9 +246,28 @@ describe("errors", () => {
     await expect(client(recorder).getHealth()).rejects.toThrow(/204/);
   });
 
-  it("names the operation in the message", async () => {
+  /**
+   * Around thirty surfaces render a failure as `<verb> failed — ${message}`, in
+   * a toast that dismisses itself after six seconds. The message is therefore
+   * the server's own sentence and nothing else: a route template with `{id}`
+   * still in it, plus an HTTP status, told the reader nothing and pushed the
+   * sentence out of the box (PR #28 re-review).
+   */
+  it("speaks the server's sentence, without the route template or the status", async () => {
     const recorder = recording({ code: "unauthorized", message: "no token" }, 401);
-    await expect(client(recorder).listLocks()).rejects.toThrow(/GET \/api\/locks/);
+    await expect(client(recorder).listLocks()).rejects.toMatchObject({
+      message: "no token",
+      operation: "GET /api/locks",
+      status: 401,
+    });
+  });
+
+  /** With no `ApiError` to speak, the request's own shape is all there is to say. */
+  it("falls back to the operation and the status when the body is not an error", async () => {
+    const recorder = recording("<html>gateway</html>", 502);
+    await expect(client(recorder).listLocks()).rejects.toThrow(
+      /GET \/api\/locks failed \(HTTP 502\)/,
+    );
   });
 });
 

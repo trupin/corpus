@@ -133,8 +133,12 @@ they land:
       holding an agent turn with an unanswered form — and the projection's
       `has_form` / `form_answered` flags are computed correctly for multi-field
       forms **and** for legacy ones
-      — `docs/query.test.ts` "needs=form — what counts as an unanswered form";
-      `projection/db.test.ts` pins both columns. Live: the thread was listed
+      — `threads/forms.test.ts:299` (listed while unanswered) and `:985`,
+      `:1061`, `:1070` (drops out once answered, legacy short spelling
+      included). **Citation corrected on re-review**: this criterion previously
+      cited `docs/query.test.ts` and `projection/db.test.ts`, neither of which
+      this branch touches and whose form fixtures are legacy `prompt`+`options`
+      — the claim was true, the pointer was not. Live: the thread was listed
       before the answer, gone after it, and **still gone after `corpus db
       rebuild`**, which re-derives the flags from the file alone
 - [x] The answer still enqueues `form.respond` and re-triggers per §8, unchanged

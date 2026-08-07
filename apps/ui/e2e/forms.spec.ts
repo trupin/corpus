@@ -326,6 +326,80 @@ test.describe("the Attention row a form leaves behind", () => {
   });
 
   /**
+   * PR #28 re-review, MAJOR. An answer whose own text would make the record
+   * unreadable is refused by the server — and `**Note:**` on its own line is
+   * ordinary markdown in a documents app, while AGENT-017 pushes the agent
+   * toward `write` fields. Before this, that typo cost a round trip and came
+   * back as `POST /api/threads/{id}/turns/{ts}/form failed (HTTP 400): …` in a
+   * toast that dismissed itself, with no field marked and no line pointed at.
+   *
+   * The whole point is the *absence* of a request, so that is what this asserts
+   * alongside the message: `corpus.of("POST")` must never see the answer.
+   */
+  test("refuses an answer that would not read back, in the form and before the wire", async ({
+    page,
+  }) => {
+    const corpus = await stubCorpus(page, [
+      ATTENTION_VIEW,
+      {
+        ...FORM_THREAD,
+        id: "th_write",
+        path: "data/threads/th_write.md",
+        body: threadBody([
+          [
+            "agent",
+            FORM_TS,
+            [
+              "```form",
+              "fields:",
+              "  - question: What happened?",
+              "    kind: write",
+              "  - question: Anything I should know?",
+              "    kind: write",
+              "    optional: true",
+              "```",
+            ].join("\n"),
+          ],
+        ]),
+      },
+    ]);
+    await page.goto("/");
+
+    await row(page, "th_write").click();
+    const form = column(page).locator(".form-comment");
+    await expect(form).toBeVisible();
+
+    const first = form.locator(".form-field").first();
+    const second = form.locator(".form-field").nth(1);
+    await first.locator("textarea").fill("the file moved\n\n**Note:**\n\nmine");
+
+    // Said at the field that earned it, naming the line to rewrite — and not at
+    // the innocent one beside it.
+    const fault = first.locator(".form-unreadable");
+    await expect(fault).toBeVisible();
+    await expect(fault).toContainText("**Note:**");
+    await expect(fault).toContainText("rewrite that line");
+    await expect(second.locator(".form-unreadable")).toHaveCount(0);
+    await expect(first.locator("textarea")).toHaveAttribute("aria-invalid", "true");
+
+    // Submit is unavailable, and the key that submits does nothing either.
+    const submit = form.locator(".form-submit");
+    await expect(submit).toBeDisabled();
+    await page.keyboard.press("ControlOrMeta+Enter");
+    expect((await corpus.of("POST")).filter((call) => call.path.endsWith("/form"))).toHaveLength(0);
+
+    // Rewriting the line is all it takes; the rest of the draft never moved.
+    await first.locator("textarea").fill("the file moved. Note: mine");
+    await expect(first.locator(".form-unreadable")).toHaveCount(0);
+    await expect(submit).toBeEnabled();
+    await page.keyboard.press("ControlOrMeta+Enter");
+
+    const record = column(page).locator(".form-comment.form-answered");
+    await expect(record).toBeVisible();
+    await expect(record.locator(".form-record-a").nth(0)).toHaveText("the file moved. Note: mine");
+  });
+
+  /**
    * PR #28 finding 7. A radio group cannot un-click itself, so an optional
    * single-select had no way back to blank — and §6 answers a form once, as a
    * whole, so a mis-click was unrecoverable and silently changed what the agent

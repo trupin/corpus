@@ -369,6 +369,44 @@ describe("an optional choose-one can be returned to blank", () => {
   });
 
   /**
+   * PR #28 re-review, MINOR. `Leave blank` is a legal option — `collidingOption`
+   * correctly does not ban it — so a `choose one` that offers it would put two
+   * radios with the same accessible name in one group, and nothing but DOM order
+   * would tell them apart. The escape hatch is the one control the UI adds
+   * itself, so it is the one that says which field it empties; the visible label
+   * is unchanged and is a prefix of the name (WCAG 2.5.3).
+   */
+  it("stays distinguishable from an option literally spelled “Leave blank”", async () => {
+    const colliding = [
+      "```form",
+      "fields:",
+      "  - question: Which quote should I file?",
+      "    kind: choose one",
+      "    optional: true",
+      "    options:",
+      "      - Leave blank",
+      "      - Lemonade — $1,840/yr",
+      "```",
+    ].join("\n");
+    const { container } = render(<Host transport={wire([agentTurn(colliding)])} />);
+    await mounted(container);
+
+    const field = fieldFor(container, "Which quote should I file?");
+    const names = within(field)
+      .getAllByRole("radio")
+      .map((radio) => radio.getAttribute("aria-label") ?? radio.closest("label")?.textContent);
+    expect(new Set(names).size).toBe(names.length);
+
+    // The offered answer keeps the form's own words, verbatim.
+    expect(names).toContain("Leave blank");
+    // And the escape hatch still reads as "Leave blank" on screen.
+    expect(field.querySelector(".form-opt-blank .form-opt-label")?.textContent).toBe("Leave blank");
+    expect(field.querySelector(".form-opt-blank input")?.getAttribute("aria-label")).toContain(
+      "Which quote should I file?",
+    );
+  });
+
+  /**
    * A member of the group, not a button beside it: that is what puts it under
    * the same arrow keys as every other option (SPEC.md §11 — no answer is
    * available only to a pointer).
@@ -523,6 +561,15 @@ describe("an answered form is a record", () => {
     expect(container.querySelector(".form-submit")).not.toBeNull();
   });
 
+  /**
+   * The backstop is still a backstop, and what it says is a sentence rather
+   * than a request (PR #28 re-review, MAJOR). A refusal the client cannot
+   * anticipate — an unterminated fence, a fabricated turn heading, anything a
+   * later server grows — still arrives as a toast, and that toast used to lead
+   * with `POST /api/threads/{id}/turns/{ts}/form failed (HTTP 400): `: an
+   * un-substituted route template and a status ahead of the only sentence a
+   * person can act on, in a 360px box that dismisses itself after six seconds.
+   */
   it("surfaces any other rejection as itself and keeps the controls", async () => {
     const notify = vi.fn();
     const transport = wire([agentTurn(THREE_KINDS)], { [`POST ${formPost}`]: 400 });
@@ -545,7 +592,106 @@ describe("an answered form is a record", () => {
     const notice = notify.mock.calls[0]?.[0] as { tone: string; message: string } | undefined;
     expect(notice?.tone).toBe("error");
     expect(notice?.message).not.toBe(ALREADY_ANSWERED_NOTICE);
+    // The server's own sentence, and nothing of the request's shape.
+    expect(notice?.message).toBe("Answer failed — the server refused");
+    expect(notice?.message).not.toContain("/api/");
+    expect(notice?.message).not.toContain("HTTP");
     expect(container.querySelector(".form-submit")).not.toBeNull();
+  });
+});
+
+/**
+ * PR #28 re-review, MAJOR. An answer whose own text would make the record
+ * unreadable is refused by the server; `**Note:**` on its own line is ordinary
+ * markdown in a documents app, and AGENT-017 pushes the agent toward `write`
+ * fields, so this is a mainline typo rather than an exotic one. §11's posture
+ * for a form that cannot be submitted is that the form says which question is
+ * the problem — not that the attempt fails and a toast explains it afterwards.
+ */
+describe("an answer that would not read back is refused in the form", () => {
+  const TWO_WRITES = [
+    "```form",
+    "fields:",
+    "  - question: What happened?",
+    "    kind: write",
+    "  - question: Anything I should know?",
+    "    kind: write",
+    "    optional: true",
+    "```",
+  ].join("\n");
+
+  const typeInto = (container: HTMLElement, question: string, value: string): void => {
+    fireEvent.change(
+      fieldFor(container, question).querySelector("textarea") as HTMLTextAreaElement,
+      { target: { value } },
+    );
+  };
+
+  const faultIn = (container: HTMLElement, question: string): HTMLElement | null =>
+    fieldFor(container, question).querySelector(".form-unreadable");
+
+  it("says so at the field, names the offending line, and sends nothing", async () => {
+    const transport = wire([agentTurn(TWO_WRITES)]);
+    const { container } = render(<Host transport={transport} />);
+    await mounted(container);
+
+    typeInto(container, "What happened?", "the file moved\n\n**Note:**\n\nmine");
+
+    const fault = faultIn(container, "What happened?");
+    expect(fault?.textContent).toContain("**Note:**");
+    expect(fault?.textContent).toContain("rewrite that line");
+    // The other field is innocent and is not marked.
+    expect(faultIn(container, "Anything I should know?")).toBeNull();
+
+    // The control points at its own explanation, and so does the submit.
+    const textarea = fieldFor(container, "What happened?").querySelector("textarea");
+    expect(textarea?.getAttribute("aria-invalid")).toBe("true");
+    expect(textarea?.getAttribute("aria-describedby")).toBe(fault?.id);
+    expect(submitButton(container).getAttribute("aria-describedby")).toContain(fault?.id ?? "");
+
+    // Nothing reaches the wire: the round trip is what this replaces.
+    expect(submitButton(container).disabled).toBe(true);
+    fireEvent.click(submitButton(container));
+    fireEvent.keyDown(container.querySelector(".form-comment") as HTMLElement, {
+      key: "Enter",
+      metaKey: true,
+    });
+    expect(transport.of("POST").filter((call) => call.path.endsWith("/form"))).toHaveLength(0);
+  });
+
+  it("clears the moment the line is rewritten, and then submits", async () => {
+    const transport = wire([agentTurn(TWO_WRITES)]);
+    const { container } = render(<Host transport={transport} />);
+    await mounted(container);
+
+    typeInto(container, "What happened?", "**Note:**");
+    expect(submitButton(container).disabled).toBe(true);
+
+    typeInto(container, "What happened?", "Note: the file moved");
+    expect(faultIn(container, "What happened?")).toBeNull();
+    expect(submitButton(container).disabled).toBe(false);
+
+    fireEvent.click(submitButton(container));
+    await waitFor(() => {
+      expect(transport.of("POST").some((call) => call.path.endsWith("/form"))).toBe(true);
+    });
+  });
+
+  /** The note is arbitrary text too, and it is checked with the rest of the record. */
+  it("keeps the draft intact so the person can fix it rather than retype it", async () => {
+    const { container } = render(<Host transport={wire([agentTurn(TWO_WRITES)])} />);
+    await mounted(container);
+
+    typeInto(container, "What happened?", "the roof leaked");
+    typeInto(container, "Anything I should know?", "**Note:**");
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "keep me" } });
+
+    expect(faultIn(container, "Anything I should know?")).not.toBeNull();
+    expect(
+      (fieldFor(container, "What happened?").querySelector("textarea") as HTMLTextAreaElement)
+        .value,
+    ).toBe("the roof leaked");
+    expect(screen.getByLabelText<HTMLInputElement>("Note").value).toBe("keep me");
   });
 });
 

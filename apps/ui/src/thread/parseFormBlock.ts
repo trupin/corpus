@@ -61,15 +61,30 @@ export function splitFormFence(body: string): FormFenceSplit {
   };
 }
 
-export type ParsedForm =
-  | { readonly status: "none" }
+export type ReadForm =
   | { readonly status: "ok"; readonly form: Form }
   | { readonly status: "invalid"; readonly source: string; readonly reason: string };
 
+export type ParsedForm = { readonly status: "none" } | ReadForm;
+
+/**
+ * A body's form, in one pass: the fence scan, then the YAML.
+ *
+ * A caller that has already split the fence out — because it renders what
+ * surrounds the form as well as the form — must call {@link parseFormSource}
+ * with the source it holds instead. `Turn` did neither: it split the fence and
+ * then handed the **whole body** back to this function, which scanned for the
+ * fence a second time and re-parsed the YAML, on every render of every agent
+ * turn carrying a form (PR #28 re-review, MINOR).
+ */
 export function parseFormBlock(body: string): ParsedForm {
   const { source } = splitFormFence(body);
   if (source === undefined) return { status: "none" };
+  return parseFormSource(source);
+}
 
+/** The fence's YAML, read as a form — {@link parseFormBlock} without the scan. */
+export function parseFormSource(source: string): ReadForm {
   let value: unknown;
   try {
     value = YAML.parse(source) ?? undefined;

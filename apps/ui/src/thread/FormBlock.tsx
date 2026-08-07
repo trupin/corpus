@@ -5,7 +5,7 @@ import {
   type FormField,
   type FormFieldRecord,
 } from "@corpus/contract";
-import { useState, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import { GrowingTextarea } from "./GrowingTextarea";
 import {
   draftRequest,
@@ -17,6 +17,7 @@ import {
   type FieldDraft,
   type FormDraft,
 } from "./formDraft";
+import { answerFaults, type AnswerFault } from "./formPreflight";
 import { optionParts, type AnsweredForm } from "./parseFormBlock";
 
 /**
@@ -116,6 +117,18 @@ const LEAVE_BLANK_LABEL = "Leave blank";
 export const ALREADY_ANSWERED_NOTICE =
   "Already answered — this form was answered elsewhere. Changing your mind is an ordinary reply, not a second answer.";
 
+/**
+ * The id of the message under one field, so the control it belongs to can point
+ * at it and the submit can name every reason it is unavailable.
+ *
+ * Keyed by the field's **index**, never by its question: `aria-describedby` is a
+ * space-separated list of ids, and a question is a sentence.
+ */
+const faultId = (formTs: string, index: number): string => `form-fault-${formTs}-${String(index)}`;
+
+/** The message about the form as a whole, when no single field can carry it. */
+const formFaultId = (formTs: string): string => `form-fault-${formTs}`;
+
 export function FormBlock({
   form,
   threadId,
@@ -127,18 +140,41 @@ export function FormBlock({
   const [draft, setDraft] = useState<FormDraft>(() => emptyDraft(form));
   const [note, setNote] = useState("");
   const respond = useRespondToForm(threadId);
+  /*
+   * The request as it stands, and what the contract makes of it — asked on every
+   * keystroke rather than on submit, because the whole point is that the person
+   * is told *before* the round trip (`formPreflight.ts`). It costs one
+   * format-and-parse of the answer's own text while the answer is readable,
+   * which is every render but the ones that are already refusing.
+   *
+   * Both sit **above** the answered-record early return: a `useMemo` below it
+   * would run on some renders and not others, and React refuses a component
+   * whose hook count changes.
+   */
+  const request = useMemo(() => draftRequest(form, draft, note), [form, draft, note]);
+  const faults = useMemo(() => answerFaults(form, request), [form, request]);
 
   if (answered !== null) {
     return <AnsweredRecord formTs={formTs} answer={answered} />;
   }
 
   const missing = missingRequired(form, draft);
-  const canSubmit = missing.length === 0 && !respond.isPending;
+  const formFault = faults.find((fault) => fault.question === null);
+  const canSubmit = missing.length === 0 && faults.length === 0 && !respond.isPending;
   const missingId = `form-missing-${formTs}`;
+
+  // Every reason the submit is unavailable, in the order they appear on screen,
+  // so the button announces the whole of it rather than the first one.
+  const describedBy = [
+    ...(missing.length > 0 ? [missingId] : []),
+    ...form.fields.flatMap((field, index) =>
+      faults.some((fault) => fault.question === field.question) ? [faultId(formTs, index)] : [],
+    ),
+    ...(formFault === undefined ? [] : [formFaultId(formTs)]),
+  ].join(" ");
 
   const submit = (): void => {
     if (!canSubmit) return;
-    const request = draftRequest(form, draft, note);
     respond.mutate(
       {
         ts: formTs,
@@ -189,12 +225,14 @@ export function FormBlock({
         submit();
       }}
     >
-      {form.fields.map((field) => (
+      {form.fields.map((field, index) => (
         <FieldControl
           key={field.question}
           field={field}
           formTs={formTs}
           draft={draft}
+          fault={faults.find((entry) => entry.question === field.question)}
+          faultId={faultId(formTs, index)}
           onChange={(next) => {
             setDraft((current) => withField(current, field.question, next));
           }}
@@ -218,11 +256,18 @@ export function FormBlock({
         </p>
       ) : null}
 
+      {/* A refusal with no field to hang it on — see `AnswerFault.question`. */}
+      {formFault === undefined ? null : (
+        <p className="form-unreadable" id={formFaultId(formTs)} role="status">
+          This answer cannot be recorded — {formFault.reason}
+        </p>
+      )}
+
       <button
         type="button"
         className="form-submit"
         disabled={!canSubmit}
-        {...(missing.length > 0 ? { "aria-describedby": missingId } : {})}
+        {...(describedBy === "" ? {} : { "aria-describedby": describedBy })}
         onClick={submit}
       >
         Answer <span className="form-submit-key">{SUBMIT_KEY_HINT}</span>
@@ -235,6 +280,9 @@ interface FieldControlProps {
   readonly field: FormField;
   readonly formTs: string;
   readonly draft: FormDraft;
+  /** Why this field's own text could not be recorded, if it could not. */
+  readonly fault: AnswerFault | undefined;
+  readonly faultId: string;
   readonly onChange: (next: FieldDraft) => void;
 }
 
@@ -246,7 +294,14 @@ interface FieldControlProps {
  * unlabelled sets of choices. `write` gets one too so the three kinds stay one
  * visual and structural rhythm.
  */
-function FieldControl({ field, formTs, draft, onChange }: FieldControlProps): ReactElement {
+function FieldControl({
+  field,
+  formTs,
+  draft,
+  fault,
+  faultId: faultDomId,
+  onChange,
+}: FieldControlProps): ReactElement {
   const value = fieldDraft(draft, field.question);
   const group = `form-${formTs}-${field.question}`;
 
@@ -271,6 +326,8 @@ function FieldControl({ field, formTs, draft, onChange }: FieldControlProps): Re
         <div className="form-write">
           <GrowingTextarea
             aria-label={field.question}
+            aria-invalid={fault === undefined ? undefined : true}
+            {...(fault === undefined ? {} : { "aria-describedby": faultDomId })}
             value={value.text}
             onChange={(event) => {
               onChange({ ...value, text: event.target.value });
@@ -317,6 +374,19 @@ function FieldControl({ field, formTs, draft, onChange }: FieldControlProps): Re
                 className="form-opt-input"
                 type="radio"
                 name={group}
+                /*
+                 * Named for the question it belongs to, because "Leave blank" is
+                 * a legal option (PR #28 re-review, MINOR): a `choose one`
+                 * offering it would otherwise put two radios with the same
+                 * accessible name in one group, and nothing but the DOM order
+                 * would tell them apart. The label the *form* wrote stays the
+                 * label; only this row — the one control the UI adds itself —
+                 * says which field it empties, which also stops three optional
+                 * selects announcing "Leave blank" three indistinguishable
+                 * times. The visible text is a prefix of the name, so
+                 * voice control still reaches it by what it reads (WCAG 2.5.3).
+                 */
+                aria-label={`${LEAVE_BLANK_LABEL} — no answer for “${field.question}”`}
                 checked={value.option === null}
                 onChange={() => {
                   onChange({ ...value, option: null });
@@ -326,6 +396,19 @@ function FieldControl({ field, formTs, draft, onChange }: FieldControlProps): Re
             </label>
           ) : null}
         </>
+      )}
+
+      {/*
+       * The refusal, at the field that earned it and before the round trip —
+       * §11's posture for a missing required field, applied to an answer that
+       * would not read back (`formPreflight.ts`). The contract's sentence is
+       * printed as it comes: it names the line to rewrite, which is the only
+       * thing the person can act on.
+       */}
+      {fault === undefined ? null : (
+        <p className="form-unreadable" id={faultDomId} role="status">
+          {fault.reason}
+        </p>
       )}
     </fieldset>
   );

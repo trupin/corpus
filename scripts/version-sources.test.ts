@@ -232,6 +232,34 @@ describe("reading a real repository", () => {
     );
   });
 
+  /**
+   * Deleting a loose object is the honest way to reach "git resolved the treeish
+   * and then could not read it": the tree objects still list the path, so the
+   * selector still selects it, and only the read fails — exactly the shape a
+   * damaged object store or a ref moving mid-check produces.
+   */
+  function deleteObject(hash: string): void {
+    rmSync(join(repo, ".git", "objects", hash.slice(0, 2), hash.slice(2)));
+  }
+
+  it("throws when a listed manifest cannot be read, rather than checking one fewer", () => {
+    deleteObject(git("rev-parse", "HEAD:apps/cli/package.json").trim());
+
+    // The path is still in the tree, so the old code selected it, failed to read
+    // it, and dropped it — leaving a ✓ over a manifest nothing had looked at.
+    expect(git("ls-tree", "-r", "--name-only", "HEAD")).toContain("apps/cli/package.json");
+    expect(() => readCommittedSource(repo)).toThrow(/show HEAD:apps\/cli\/package\.json.*failed/s);
+  });
+
+  it("throws when the tree listing fails, rather than reporting a tree with no workspaces", () => {
+    // Worse than dropping one manifest: an unreadable listing dropped them all,
+    // and a committed source with zero workspaces has zero problems to report.
+    deleteObject(git("rev-parse", "HEAD:apps").trim());
+
+    expect(git("show", "HEAD:package.json")).toContain("scratch-root");
+    expect(() => readCommittedSource(repo)).toThrow(/ls-tree -r --name-only HEAD.*failed/s);
+  });
+
   it("returns undefined outside a repository, rather than pretending the tree passed", () => {
     const bare = mkdtempSync(join(tmpdir(), "corpus-nogit-"));
     try {

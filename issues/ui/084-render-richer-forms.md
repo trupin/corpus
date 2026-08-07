@@ -84,8 +84,13 @@ that hid one of them would be lying about the other.
       choose one, choose any, write
 - [x] **Required fields are marked**; submit is unavailable until every required
       field has an answer, and the form **names the question still missing**
-- [x] A **choose-any** field accepts none, one, or several options; a **write**
-      field accepts free text and grows to fit
+- [~] A **choose-any** field accepts none, one, or several options; a **write**
+      field accepts free text and grows to fit — **partially earned, corrected on
+      re-review.** The choose-any half is asserted. The growth half is not: there
+      is no `GrowingTextarea.test.tsx`, and the only e2e touch on `.form-write`
+      checks a border width. The component exists and the behaviour is real; what
+      is missing is any assertion that it holds, so this reads as coverage it
+      does not have
 - [x] One submit for the **whole form**, naming its key like every other composer
       control, and one place for the optional **note about the ask as a whole**
 - [x] **Everything is keyboard-reachable**, submit included — asserted, not

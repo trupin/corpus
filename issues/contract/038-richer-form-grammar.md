@@ -93,8 +93,12 @@ rider, and a contract that needs one is the wrong contract.
 - [x] A field is **required unless explicitly marked optional**; the default is
       required with no marker present
 - [x] **A bare `prompt` + `options` parses as a form with one required choose-one
-      field** — asserted directly, on the exact shape found in the repo's existing
-      fixtures, not on a reconstruction of it
+      field** — asserted directly in `form.test.ts:200`. **Wording corrected on
+      re-review**: that assertion builds the shape as an object literal, so it
+      *is* a reconstruction, not the repo's fixture YAML driven through a fence.
+      The parse is genuinely asserted; the earlier claim that it avoided a
+      reconstruction was false. Driving the real fixture bytes through the fence
+      would be the stronger test and is not done
 - [x] **No field ids.** A field is named by its question, in the form, in the
       answer request, and in the event payload. Nothing inside a form can drift
       from anything else in it

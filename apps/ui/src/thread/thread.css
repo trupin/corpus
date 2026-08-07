@@ -302,6 +302,19 @@
   color: var(--ink-2);
 }
 
+/* An answer that would not read back as itself, said where it was typed rather
+   than as a failed round trip (`formPreflight.ts`). Louder than `.form-missing`
+   — a missing required field is a form not finished yet, while this is text
+   already written that has to change — and monospaced, because the sentence
+   quotes the offending line and the backticks around it are the point. */
+.form-unreadable {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--sepia-ink);
+}
+
 .form-opt {
   display: flex;
   gap: 9px;

@@ -241,9 +241,18 @@ describe("the job feed", () => {
 describe("rollback", () => {
   // TEST-37: three failure shapes, each restoring the pre-mutation snapshot and
   // surfacing the error instead of swallowing it.
+  //
+  // The status is asserted on the error's own field rather than by looking for
+  // its digits in the message: `CorpusRequestError` speaks the server's sentence
+  // now, because that string is what a toast shows a person, and the route and
+  // the status live on `operation` and `status` (PR #28 re-review).
   it.each([
-    ["a forbidden response", { kind: "status", status: 403, code: "forbidden" } as const, /403/],
-    ["a locked response", { kind: "status", status: 423, code: "locked" } as const, /423/],
+    [
+      "a forbidden response",
+      { kind: "status", status: 403, code: "forbidden" } as const,
+      /refused/,
+    ],
+    ["a locked response", { kind: "status", status: 423, code: "locked" } as const, /refused/],
     ["a transport failure", { kind: "transport" } as const, /Failed to fetch/],
   ])("restores the cache after %s", async (_label, failure, message) => {
     const script = scripted();
@@ -261,6 +270,9 @@ describe("rollback", () => {
     await waitFor(() => {
       expect(result.current.append.error?.message).toMatch(message);
     });
+    if (failure.kind === "status") {
+      expect(result.current.append.error).toMatchObject({ status: failure.status });
+    }
   });
 
   it("leaves no cache entry behind when there was none to restore", async () => {
