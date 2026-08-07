@@ -1,20 +1,34 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openProjection, type ProjectionConfig, type ProjectionDb } from "./db.js";
 import { clearProjection, populateFromFiles } from "./populate.js";
+import { projectDocument } from "./project-document.js";
+import { UNREADABLE_REASON, writeUnreadableDocument } from "./unreadable-fixture.js";
 
 let root: string;
 let config: ProjectionConfig;
 let db: ProjectionDb;
+/**
+ * `silent` deliberately: SERVER-064 asserts the *level* of the skip, and a
+ * server run this way is the one where only `error` survives — so a logger that
+ * accepted everything could not tell the two faults apart.
+ */
+let logger: {
+  level: "silent";
+  info: ReturnType<typeof vi.fn>;
+  debug: ReturnType<typeof vi.fn>;
+  error: ReturnType<typeof vi.fn>;
+};
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "corpus-s004-populate-"));
   const ws = join(root, "ws");
   mkdirSync(join(ws, "data", "docs"), { recursive: true });
   config = { workspaceRoot: ws, corpusDir: join(ws, ".corpus") };
-  db = openProjection(config, { populate: false });
+  logger = { level: "silent", info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+  db = openProjection(config, { populate: false, logger });
 });
 
 afterEach(() => {
@@ -96,6 +110,97 @@ describe("populateFromFiles", () => {
       expect(db.prepare("SELECT path FROM documents").all()).toEqual([{ path: "data/docs/a.md" }]);
       expect(report.skipped.map((entry) => entry.path)).toEqual(["data/docs/b.md"]);
     }
+  });
+
+  // SERVER-064. This function runs from `openProjection`, i.e. during boot, so
+  // the pre-fix rethrow was not "the projection is degraded": it was `corpus
+  // server start` reporting that the server exited during startup, over one
+  // ordinary `.md` in `data/`, with no server left to ask why. The docblock
+  // above it already promised otherwise; this is what makes the promise true.
+  describe("a document it cannot read at all", () => {
+    const seedWorkspace = (): string => {
+      write("data/docs/a.md", doc("doc_aaa"));
+      write("data/docs/z.md", doc("doc_zzz"));
+      // Between the two by path order, so the readable document *after* it
+      // proves the loop carried on rather than merely surviving the last entry.
+      const unreadable = join(config.workspaceRoot, "data", "docs", "m.md");
+      writeUnreadableDocument(unreadable);
+      return unreadable;
+    };
+
+    it("skips it and still populates every other document", () => {
+      seedWorkspace();
+
+      const report = populateFromFiles(db);
+
+      expect(report.documents).toBe(2);
+      expect(db.prepare("SELECT id FROM documents ORDER BY id").all()).toEqual([
+        { id: "doc_aaa" },
+        { id: "doc_zzz" },
+      ]);
+      // Reported rather than swallowed: a caller that cannot see what was
+      // skipped reads a partial rebuild as a complete one, which is what
+      // `corpus db rebuild` prints and `POST /api/db/rebuild` returns.
+      expect(report.skipped).toHaveLength(1);
+      expect(report.skipped[0]?.path).toBe("data/docs/m.md");
+      expect(report.skipped[0]?.reason).toMatch(UNREADABLE_REASON);
+    });
+
+    it("names it, with its reason, at the one level a `silent` server still writes", () => {
+      seedWorkspace();
+
+      populateFromFiles(db);
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.error).toHaveBeenCalledWith("skipping unreadable document", {
+        path: "data/docs/m.md",
+        reason: expect.stringMatching(UNREADABLE_REASON) as string,
+      });
+      // The operator has to find this file by hand, so the line is the whole
+      // remedy — and it must not be gated behind `debug` to be seen.
+      expect(logger.debug).not.toHaveBeenCalled();
+    });
+
+    it("logs a merely malformed document at `debug` instead — expected residue, not a workspace fault", () => {
+      write("data/docs/broken.md", `---\nid: doc_x\ntitle: [unclosed\n---\n\nBody.\n`);
+
+      populateFromFiles(db);
+
+      expect(logger.debug).toHaveBeenCalledWith("skipping document", {
+        path: "data/docs/broken.md",
+        reason: expect.stringContaining("invalid YAML frontmatter") as string,
+      });
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it("moves nothing, quarantines nothing, writes nothing: boot is a read", () => {
+      const unreadable = seedWorkspace();
+      const before = statSync(unreadable);
+
+      populateFromFiles(db);
+
+      expect(readdirSync(join(config.workspaceRoot, "data", "docs")).sort()).toEqual([
+        "a.md",
+        "m.md",
+        "z.md",
+      ]);
+      const after = statSync(unreadable);
+      expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
+      // Nor a row describing it as something it is not — no `documents` row, and
+      // no `file_hashes` row claiming its bytes were seen.
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM file_hashes WHERE path = ?").get("data/docs/m.md"),
+      ).toEqual({ n: 0 });
+    });
+
+    it("leaves `projectDocument` itself throwing: the store stays honest, the reader decides", () => {
+      const unreadable = seedWorkspace();
+
+      // The write path projects inline before responding, and a save that cannot
+      // read its own file back must fail loudly rather than answer 200 over a
+      // row nobody derived. Only the boot reader turns that into a skip.
+      expect(() => projectDocument(db, unreadable)).toThrow(UNREADABLE_REASON);
+    });
   });
 
   it("produces an empty but valid database for an empty workspace", () => {

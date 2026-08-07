@@ -14,6 +14,7 @@ import { ProjectionError, cacheDbPath, openProjection, type ProjectionConfig } f
 import { DRIFT_KINDS, doctor, inspectProjection } from "./doctor.js";
 import { projectDocument, removeDocument } from "./project-document.js";
 import { rebuild } from "./rebuild.js";
+import { UNREADABLE_REASON, writeUnreadableDocument } from "./unreadable-fixture.js";
 
 let root: string;
 let config: ProjectionConfig;
@@ -156,6 +157,35 @@ describe("doctor", () => {
       "data/docs/broken.md",
       "data/docs/noid.md",
     ]);
+  });
+
+  // SERVER-064. Boot now survives a document it cannot read, which makes this
+  // check the recovery loop: the file is on disk, the projection does not
+  // describe it, and `db doctor` is the only thing that can say so. Reporting
+  // `ok` here would be the worst available outcome — a workspace quietly short
+  // of a document, and the check whose whole job is to notice agreeing that
+  // nothing is wrong.
+  it("detects a document it cannot read, which is why it produced no row", () => {
+    cleanWorkspace();
+    const abs = join(config.workspaceRoot, "data/docs/m.md");
+    writeUnreadableDocument(abs);
+    // The boot the file survived: its own populate skipped this file.
+    rebuild(config);
+
+    const report = doctor(config);
+    expect(report.ok).toBe(false);
+    expect(kindsOf(report)).toEqual(["unparseable"]);
+    expect(report.drift[0]?.path).toBe("data/docs/m.md");
+    expect(report.drift[0]?.detail).toMatch(UNREADABLE_REASON);
+
+    // `unparseable`, not `missing_row`, on purpose: the kind is what the boot
+    // catch-up keys on, and no number of repopulates will make this file
+    // readable — see `watcher/catch-up.test.ts` for the other half of that.
+    //
+    // Clears the moment the file does, with no rebuild in between: this is a
+    // state of the workspace, and the workspace is where it is fixed.
+    rmSync(abs);
+    expect(doctor(config).ok).toBe(true);
   });
 
   it("detects a second file claiming an id that is already projected", () => {
