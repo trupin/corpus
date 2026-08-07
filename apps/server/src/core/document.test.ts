@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DocumentParseError,
+  bodyStartLine,
   duplicateKeysAt,
   hasFrontmatterKey,
   parseDocument,
@@ -241,6 +242,42 @@ describe("parseDocument / serializeDocument", () => {
   it("records the BOM so it survives serialization", () => {
     expect(parseDocument(`\uFEFF${MINIMAL}`).source.bom).toBe("\uFEFF");
     expect(parseDocument(MINIMAL).source.bom).toBe("");
+  });
+});
+
+/**
+ * SERVER-066: §14 findings about the body report **file** lines, so an operator
+ * can go to the number their editor shows. Every case is cross-checked against
+ * the raw source with `indexOf`, so the expectation is not a hand count.
+ */
+describe("bodyStartLine", () => {
+  const lineOf = (raw: string, marker: string): number =>
+    raw.slice(0, raw.indexOf(marker)).split("\n").length;
+
+  it.each([
+    ["---\ntitle: T\n---\nFIRST\n"],
+    ["---\n---\nFIRST\n"],
+    ["---\ntitle: T\nanchors:\n  anc_a1b2c3:\n    exact: q\n---\nFIRST\n"],
+    ["﻿---\ntitle: T\n---\nFIRST\n"],
+    ["---\r\ntitle: T\r\n---\r\nFIRST\r\n"],
+  ])("puts the body's first line where the file's own line count puts it (%j)", (raw) => {
+    expect(bodyStartLine(parseDocument(raw))).toBe(lineOf(raw, "FIRST"));
+  });
+
+  it.each([
+    ["---\ntitle: T\n---\nalpha\nbeta\nFIRST\n"],
+    // A blank first body line — the conventional shape, where the body starts a
+    // line *before* anything an `indexOf` on content would find.
+    ["---\ntitle: T\n---\n\nFIRST\n"],
+  ])("counts an interior body line by offsetting from the body's first line (%j)", (raw) => {
+    const bodyLine = parseDocument(raw).body.split("\n").indexOf("FIRST") + 1;
+    expect(bodyStartLine(parseDocument(raw)) + bodyLine - 1).toBe(lineOf(raw, "FIRST"));
+  });
+
+  it("names the closing fence's own line for a document that ends there", () => {
+    // No trailing newline, so the body is empty and there is no first body line;
+    // the honest answer is the last line the file has.
+    expect(bodyStartLine(parseDocument("---\ntitle: T\n---"))).toBe(3);
   });
 });
 

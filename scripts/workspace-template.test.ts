@@ -367,6 +367,39 @@ describe("skills", () => {
       expect(body).toMatch(/`command`/);
     });
 
+    /**
+     * AGENT-012 (widening) and AGENT-016 (own-line closing) are the two failures
+     * of one mechanism, so both skills state the mechanism once and derive both.
+     * AGENT-016's half is pinned **with its cost**, because a rule whose reason is
+     * invisible gets optimised away: a fence closed on the content line never
+     * closes, and `turns.ts` excludes fenced regions from delimiter scanning, so
+     * every later turn heading is swallowed and the next person's message
+     * disappears from the conversation with no error anywhere.
+     */
+    it.each(skills)("$name states both halves from one mechanism", ({ relPath }) => {
+      const body = documentAt(relPath).body;
+      expect(body).toMatch(/closes only on a line that is nothing but backticks/i);
+      expect(body).toMatch(/wider than anything inside/i);
+      expect(body).toMatch(/longest backtick run in the payload/i);
+      expect(body).toMatch(/on a line of its own/i);
+      // The consequence, never the mere fact of malformed markup.
+      expect(body).toMatch(/closes nothing/i);
+      expect(body).toMatch(/heading \*{0,2}inside a fence is (?:deliberately )?not a delimiter/i);
+      expect(body).toMatch(/swallow/i);
+      expect(body).toMatch(/no error anywhere|nothing anywhere reports an error/i);
+    });
+
+    it("spells out, in the comment skill, what an unclosed fence costs the reader", () => {
+      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      expect(body).toMatch(/stays open to the end\s+of the turn/);
+      expect(body).toMatch(/absorbed into the body of yours/);
+      expect(body).toMatch(/It does not render badly; it makes the next message vanish/);
+      // The fix is mechanical and stated as one: newline, then the run alone.
+      expect(body).toMatch(
+        /newline after the\s+payload's last character, then the closing run by itself/,
+      );
+    });
+
     it("scopes the rule to lift-and-reuse deliverables only", () => {
       const body = documentAt("claude/skills/comment/SKILL.md").body;
       expect(body).toMatch(/lift and reuse/i);

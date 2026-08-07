@@ -7,7 +7,7 @@ import type { QueryKey } from "@corpus/contract";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../errors.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
-import { silentLogger } from "../logger.js";
+import { silentLogger, type LogFields } from "../logger.js";
 import { classifyPath } from "../projection/index.js";
 import { createSelfWriteRegistry, type SelfWriteRegistry } from "../watcher/index.js";
 import { setArchived } from "./archive.js";
@@ -386,6 +386,115 @@ describe("validateBeforeWrite", () => {
         "---\nname: demo\n---\n\nDo the thing.\n",
       ),
     ).not.toThrow();
+  });
+
+  /**
+   * SERVER-066. The finding is an *error* — `corpus doc check` fails on it — and
+   * it still must not refuse a save, for two reasons that are properties of the
+   * write path rather than of the defect: a blocking rule is judged over the
+   * whole body about to be written, so a document that *already* carries an
+   * unclosed fence would become unwritable (the user's reply and the agent's own
+   * repair attempt included), and refusing an agent's turn mid-loop turns a
+   * cosmetic mistake into a stalled loop. `anchor-unused` has the same shape.
+   */
+  it("does not block a save whose body leaves a fenced code block open", () => {
+    validating("validate-fence");
+    const text = doc("doc_fence001", "Here is the snippet:\n\n```\nconst x = 1;```");
+    expect(
+      validateBeforeWrite(
+        { logger: silentLogger, projection: ws.db },
+        "data/docs/inbox/x.md",
+        text,
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * SERVER-066 review, finding B. Not blocking the save is deliberate; dropping
+   * the finding entirely was not. `checkSave` returned only the validator's
+   * *warnings*, so an error the save let through reached no response and no log
+   * — the rule was computed on every save and discarded, and on the exact path
+   * the bug happens on (an agent appending a turn) the swallow stayed silent.
+   *
+   * `logger.error` rather than `logger.info` on purpose: that level is the one
+   * the logger never gates, so a server run at `--log-level silent` still says
+   * that a thread's turns are being eaten as they are written.
+   */
+  it("logs an unterminated fence as an error, at a level nothing gates", () => {
+    validating("validate-fence-log");
+    const logged: { message: string; fields: LogFields | undefined }[] = [];
+    const logger = {
+      ...silentLogger,
+      error: (message: string, fields?: LogFields) => logged.push({ message, fields }),
+    };
+    const text = doc("doc_fence002", "Here is the snippet:\n\n```\nconst x = 1;```");
+
+    const warnings = validateBeforeWrite(
+      { logger, projection: ws.db },
+      "data/docs/inbox/x.md",
+      text,
+    );
+
+    expect(warnings).toEqual([]);
+    expect(logged.map((entry) => entry.message)).toEqual(["document saved with validation errors"]);
+    expect(logged[0]?.fields?.["path"]).toBe("data/docs/inbox/x.md");
+    expect(logged[0]?.fields?.["errors"]).toEqual([
+      expect.stringContaining("unterminated-fence: unterminated fenced code block opened at line"),
+    ]);
+  });
+
+  /**
+   * The other error a save lets through, and why it is *not* logged.
+   *
+   * `anchor-unused` is a cross-document rule answered here through the
+   * projection, and during a multi-file mutation the projection is one write
+   * behind by construction: this is the exact text `threads/create.ts` validates
+   * for the parent — the new anchor entry is already in the frontmatter, and the
+   * thread that claims it has not been written yet. Reporting it would put a
+   * false error in the log on *every anchored comment*, which is how a reader
+   * learns to skip the channel the fence finding needs them to read.
+   */
+  it("stays silent for the anchor an anchored comment has not yet written its thread for", () => {
+    validating("validate-unused-log");
+    const logged: LogFields[] = [];
+    const logger = {
+      ...silentLogger,
+      error: (_message: string, fields?: LogFields) => logged.push(fields ?? {}),
+      info: (_message: string, fields?: LogFields) => logged.push(fields ?? {}),
+    };
+    const text = doc("doc_unus0001", "The body says something specific.", [
+      "anchors:",
+      "  anc_unus0001:",
+      "    exact: something specific",
+    ]);
+
+    expect(
+      validateBeforeWrite({ logger, projection: ws.db }, "data/docs/inbox/x.md", text),
+    ).toEqual([]);
+    expect(logged).toEqual([]);
+  });
+
+  /**
+   * The waiver is not a tolerated problem, it is a rule that does not apply
+   * (§7's sparse skill files), so it must not reach the channel either — a log
+   * line on every skill save is how a reader learns to stop reading the channel.
+   */
+  it("stays silent for the finding it deliberately waives", () => {
+    validating("validate-skill-log");
+    const logged: string[] = [];
+    const logger = {
+      ...silentLogger,
+      error: (message: string) => logged.push(message),
+      info: (message: string) => logged.push(message),
+    };
+
+    validateBeforeWrite(
+      { logger, projection: ws.db },
+      ".claude/skills/demo/SKILL.md",
+      "---\nname: demo\n---\n\nDo the thing.\n",
+    );
+
+    expect(logged).toEqual([]);
   });
 
   it("returns no warnings for a document with nothing wrong with it", () => {

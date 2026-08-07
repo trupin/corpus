@@ -3299,7 +3299,7 @@ export interface paths {
          *
          *     **Cross-document rules see the whole corpus, not just the request.** Duplicate ids, thread parents, anchor claims and `[[refs]]` are judged against the workspace, so checking one file does not report every reference in it as unresolved merely because its target was not submitted.
          *
-         *     **Severity is fixed by §14, not by the caller.** Warnings are exactly `anchor-unresolved` (a well-formed anchor whose quote no longer resolves — an orphaned thread, a normal outcome of editing) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet — how a corpus grows). The other eleven codes are errors, `anchor-unused` among them: §14 requires every anchor to belong to an existing thread, so a highlight pointing at no conversation is structural drift. `ok` is `errors.length === 0` and is what `corpus doc check` turns into exit 0 or exit 6.
+         *     **Severity is fixed by §14, not by the caller.** Warnings are exactly `anchor-unresolved` (a well-formed anchor whose quote no longer resolves — an orphaned thread, a normal outcome of editing) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet — how a corpus grows). The other twelve codes are errors, `anchor-unused` among them: §14 requires every anchor to belong to an existing thread, so a highlight pointing at no conversation is structural drift. `unterminated-fence` is one too — a fenced code block the body never closes reads as code to the end of the document, so a thread's later turns disappear into the turn before them. `ok` is `errors.length === 0` and is what `corpus doc check` turns into exit 0 or exit 6.
          *
          *     A drifted corpus is a `200` carrying the findings, never an error status — the check succeeded; the corpus is what has the problem.
          */
@@ -5124,11 +5124,11 @@ export interface components {
         };
         CheckFinding: {
             /**
-             * @description Which §14 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other eleven are errors, `anchor-unused` among them.
+             * @description Which §14 rule the finding reports. Warnings are exactly `anchor-unresolved` (an orphaned thread) and `ref-unresolved` (a `[[ref]]` whose target does not exist yet); the other twelve are errors, `anchor-unused` and `unterminated-fence` among them.
              * @example ref-unresolved
              * @enum {string}
              */
-            code: "frontmatter-unparseable" | "frontmatter-invalid" | "id-prefix-mismatch" | "duplicate-id" | "anchor-malformed" | "duplicate-anchor-id" | "thread-parent-missing" | "thread-anchor-missing" | "anchor-claimed-twice" | "anchor-unused" | "duplicate-turn-timestamp" | "anchor-unresolved" | "ref-unresolved";
+            code: "frontmatter-unparseable" | "frontmatter-invalid" | "id-prefix-mismatch" | "duplicate-id" | "anchor-malformed" | "duplicate-anchor-id" | "thread-parent-missing" | "thread-anchor-missing" | "anchor-claimed-twice" | "anchor-unused" | "duplicate-turn-timestamp" | "unterminated-fence" | "anchor-unresolved" | "ref-unresolved";
             /**
              * @description `error` fails the check (the CLI's exit 6); `warning` is reported and does not. Derivable from `code`, and sent anyway so a consumer never has to hold the partition itself.
              * @enum {string}

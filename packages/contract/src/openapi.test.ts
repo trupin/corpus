@@ -2025,17 +2025,17 @@ describe("the validation and skill-rollback surface", () => {
      * The published enum is the validator's, and the route says which two of it
      * are warnings — the one fact a consumer cannot read off the enum itself.
      */
-    it("publishes the closed thirteen-code vocabulary", () => {
+    it("publishes the closed fourteen-code vocabulary", () => {
       expect(componentSchemas?.["CheckFinding"]?.properties?.["code"]?.enum).toEqual([
         ...CHECK_CODES,
       ]);
-      expect(CHECK_CODES).toHaveLength(13);
+      expect(CHECK_CODES).toHaveLength(14);
     });
 
     it("records the two warning codes, and only those, in the route description", () => {
       const description = operation(CHECK_PATH, "post").description ?? "";
       for (const code of CHECK_WARNING_CODES) expect(description, code).toContain(code);
-      expect(description).toContain("The other eleven codes are errors");
+      expect(description).toContain("The other twelve codes are errors");
       expect(description).toContain("`anchor-unused` among them");
     });
 

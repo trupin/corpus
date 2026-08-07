@@ -211,7 +211,7 @@ describe("the generated client types describe the check surface", () => {
 
   it("types the report's closed code vocabulary", () => {
     const codes: CheckOk["errors"][number]["code"][] = [...CHECK_CODES];
-    expect(codes).toHaveLength(13);
+    expect(codes).toHaveLength(14);
 
     // @ts-expect-error the code enum is closed; an unlisted code is not one.
     const unknownCode: CheckOk["errors"][number]["code"] = "vibes-off";

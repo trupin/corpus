@@ -263,14 +263,18 @@ than assuming them:
   `command`), one deliverable per fence, prose outside it: the board renders that fence as a
   **copyable canvas** titled by the label. The comment skill states the convention; it binds
   the turns you post yourself just as it binds a subagent's.
-- **The fence must be wider than anything inside it** — longest backtick run in the payload,
-  plus one. A three-backtick fence closes at the payload's own three backticks, and the
-  deliverable arrives as several canvases with prose leaking between them. This is not a
-  corner case for you: the payload you hand over most often is a **prompt written for a
-  subagent**, which is markdown and usually contains fenced examples of its own. Check the
-  payload before you write the fence, every time. The comment skill carries the rule and an
-  example; a subagent that never read it will get this wrong, so it belongs in what you brief
-  them with.
+- **A fence closes only on a line that is nothing but backticks**, and both halves of that
+  follow from it. **Wider than anything inside** — longest backtick run in the payload, plus
+  one: a three-backtick fence closes at the payload's own three backticks, and the deliverable
+  arrives as several canvases with prose leaking between them. **Closed on a line of its own** —
+  a run left at the end of the payload's last content line closes nothing, so the fence stays
+  open to the end of the turn, and a turn heading inside a fence is not a delimiter: every
+  later heading is swallowed, and the next person's reply disappears into the body of yours
+  with no error anywhere. This is not a corner case for you: the payload you hand over most
+  often is a **prompt written for a subagent**, which is markdown and usually contains fenced
+  examples of its own. Check the payload before you write the fence and the newline before you
+  close it, every time. The comment skill carries both halves and an example; a subagent that
+  never read it will get this wrong, so it belongs in what you brief them with.
 
 **Queue state never crosses the boundary.** A subagent never runs `corpus queue
 claim-all`, `corpus queue complete`, `corpus queue fail`, or `corpus queue defer`: it

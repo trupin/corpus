@@ -33,7 +33,7 @@ describe("the check code vocabulary", () => {
    * Pinned literally so a drifted transcription is a failing test rather than a
    * `400` nobody can explain.
    */
-  it("names the validator's thirteen codes, in its order", () => {
+  it("names the validator's fourteen codes, in its order", () => {
     expect([...CHECK_CODES]).toEqual([
       "frontmatter-unparseable",
       "frontmatter-invalid",
@@ -46,6 +46,7 @@ describe("the check code vocabulary", () => {
       "anchor-claimed-twice",
       "anchor-unused",
       "duplicate-turn-timestamp",
+      "unterminated-fence",
       "anchor-unresolved",
       "ref-unresolved",
     ]);
@@ -60,8 +61,8 @@ describe("the check code vocabulary", () => {
     expect([...CHECK_WARNING_CODES]).toEqual(["anchor-unresolved", "ref-unresolved"]);
   });
 
-  it("partitions the vocabulary into eleven errors and two warnings", () => {
-    expect(CHECK_ERROR_CODES).toHaveLength(11);
+  it("partitions the vocabulary into twelve errors and two warnings", () => {
+    expect(CHECK_ERROR_CODES).toHaveLength(12);
     expect(CHECK_WARNING_CODES).toHaveLength(2);
     expect([...CHECK_ERROR_CODES, ...CHECK_WARNING_CODES].sort()).toEqual([...CHECK_CODES].sort());
   });

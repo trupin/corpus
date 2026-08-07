@@ -7,7 +7,7 @@
 // implementations that agree today. It calls `checkCorpus` — the same function
 // `docs/write.ts`'s `checkSave` calls, with the same seams from the same
 // `checkSeams` factory — and translates nothing: the server's `CheckFinding` and
-// the wire's are the same five fields under the same names, and the thirteen
+// the wire's are the same five fields under the same names, and the fourteen
 // codes are pinned to the contract's enum by `codes.test.ts`.
 //
 // Three things distinguish this call site from the save one, and all three are
@@ -67,7 +67,7 @@ function readForCheck(absPath: string, path: string): CheckDocument {
  * answer with no restart and no watcher involvement.
  *
  * Ids naming no document contribute nothing: no finding, no `404`, no code
- * outside the closed thirteen (sprint-012 Adjudication 23, and the route declares
+ * outside the closed fourteen (sprint-012 Adjudication 23, and the route declares
  * no `404` at all). The report describes what was read; `GET /api/docs/{id}` is
  * how a caller asks whether a document exists.
  *

@@ -86,6 +86,37 @@ a turn body
   it("parses turns in a CRLF body", () => {
     expect(parseTurns(THREE_TURNS.replaceAll("\n", "\r\n"))).toHaveLength(3);
   });
+
+  /**
+   * SERVER-066's measurement, pinned. The parser is **not** made tolerant of an
+   * unclosed fence — the exclusion above is what lets a turn quote the turn
+   * format, and a parser that guessed where the code "really" ended would break
+   * it. So this asserts the loss rather than a fix: the shape a user actually hit
+   * (a closing run sharing a line with the content) yields one turn where the
+   * corrected shape yields two, with the reply folded into the turn before it.
+   * `core/check.ts`'s `unterminated-fence` finding is what makes that visible;
+   * this test is what fails if anyone ever "fixes" it here instead.
+   */
+  it("loses every later turn to a fence whose closing run shares a line with the content", () => {
+    const swallowing = [
+      "## agent · 2026-07-19T10:06:00Z",
+      "",
+      "Here is the snippet:",
+      "",
+      "```",
+      "const x = 1;```",
+      "",
+      "## user · 2026-07-19T10:07:12Z",
+      "",
+      "Actually, no.",
+      "",
+    ].join("\n");
+    const corrected = swallowing.replace("const x = 1;```", "const x = 1;\n```");
+
+    expect(parseTurns(swallowing).map((turn) => turn.author)).toEqual(["agent"]);
+    expect(parseTurns(corrected).map((turn) => turn.author)).toEqual(["agent", "user"]);
+    expect(parseTurns(swallowing)[0]?.body).toContain("Actually, no.");
+  });
 });
 
 describe("nextTurnTs", () => {

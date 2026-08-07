@@ -184,6 +184,29 @@ export const parseDocument = (raw: string, path?: string): ParsedDocument => {
 export const emptyDocument = (body = ""): ParsedDocument => parseDocument(`---\n---\n${body}`);
 
 /**
+ * The 1-based **file** line number of {@link ParsedDocument.body}'s first line.
+ *
+ * A body-relative line number is arithmetic the operator has to do: the whole
+ * value of a §14 finding that names a line is that the line matches what an
+ * editor's gutter shows. Derived from the recorded source rather than from a
+ * stored offset, because every part of the file is already kept verbatim — the
+ * concatenation `bom + openFence + frontmatterText + closeFence + closeFenceEol`
+ * *is* the prefix, by {@link serializeDocument}'s definition.
+ *
+ * Counting terminators rather than lines is what makes this exact at the edges:
+ * `closeFenceEol` is `""` for a document that ends at its closing fence, and
+ * such a document has an empty body whose (nonexistent) first line is the fence's
+ * own — which is the number this returns.
+ */
+export const bodyStartLine = (parsed: ParsedDocument): number => {
+  const { bom, openFence, frontmatterText, closeFence, closeFenceEol } = parsed.source;
+  const prefix = `${bom}${openFence}${frontmatterText}${closeFence}${closeFenceEol}`;
+  let lines = 1;
+  for (const character of prefix) if (character === "\n") lines += 1;
+  return lines;
+};
+
+/**
  * The frontmatter YAML source, LF-normalized. Mutations work in LF and
  * {@link serializeDocument} restores the file's own line endings, so a CRLF
  * file never grows a mixed-ending frontmatter block.

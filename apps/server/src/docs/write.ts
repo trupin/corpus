@@ -82,6 +82,38 @@ const LOCAL_CHECK_CODES: ReadonlySet<CheckCode> = new Set([
 ]);
 
 /**
+ * The §14 errors a single file *also* decides on its own but that a save
+ * deliberately does not refuse — reported to the log by
+ * {@link validateBeforeWrite} instead of thrown (SERVER-066 review, finding B).
+ *
+ * Two sets rather than one because "decidable from this file" and "worth
+ * refusing the write for" are different questions, and `unterminated-fence` is
+ * the first code to answer them differently: it is a property of the body's
+ * bytes and of nothing else, yet blocking on it would make a document that
+ * already carries an unclosed fence unwritable — the user's reply and the
+ * agent's own repair attempt included (see {@link checkUnterminatedFence} in
+ * `core/check.ts`). So it is neither refused nor discarded: it is said out loud.
+ *
+ * **`anchor-unused` is deliberately not a member, and it is the reason this is a
+ * list rather than "every error that is not blocking".** It is a cross-document
+ * rule answered here through the projection, and during a multi-file mutation
+ * the projection is one write behind by construction: anchored thread creation
+ * validates the parent document carrying the *new* anchor entry immediately
+ * before writing the thread that claims it (`threads/create.ts`, and the same in
+ * `capture.ts`), so the seam truthfully reports that nothing claims it yet.
+ * Measured across the server suite, that is every anchored comment in the
+ * product — a finding that is false on the commonest path in the system, and
+ * logging it would train the reader to skip the channel that the fence finding
+ * needs them to read. The whole-corpus `corpus doc check` has no such blind
+ * spot, and remains where a genuinely dangling anchor is reported.
+ *
+ * A code added to neither set is therefore silent on the save path, which is the
+ * safe default. `write.test.ts` pins both directions: the fence reaches the log,
+ * and the parent text `threads/create.ts` produces does not.
+ */
+const REPORTED_CHECK_CODES: ReadonlySet<CheckCode> = new Set([CHECK_CODES.unterminatedFence]);
+
+/**
  * Which check findings become §14 response warnings, and under which code.
  *
  * The checker already produces both halves of §14's validation family while
@@ -320,9 +352,27 @@ export function validationError(message: string, issues: readonly ValidationIssu
 export type SaveCheck = {
   /** Empty exactly when {@link validateBeforeWrite} would let these bytes through. */
   readonly blocking: readonly CheckFinding[];
-  /** The validator's own findings, verbatim — what a §14 report would carry. */
+  /**
+   * What this save is letting through and still reporting, verbatim and at the
+   * severity §14 gives it: the two warnings, **and the errors in
+   * {@link REPORTED_CHECK_CODES}**.
+   *
+   * That second half used to be dropped here (this field was literally
+   * `report.warnings`), which made the non-blocking error family unobservable on
+   * the write path: computed on every save and discarded, so
+   * `unterminated-fence` — a rule whose entire purpose is that a swallowed turn
+   * stops being silent — surfaced only if somebody later ran `corpus doc check`
+   * by hand, i.e. never on the path the bug happens on (SERVER-066 review,
+   * finding B).
+   */
   readonly findings: readonly CheckFinding[];
-  /** Those findings translated into the §14 response warnings a mutation carries. */
+  /**
+   * Those findings translated into the §14 response warnings a mutation carries
+   * — the two-member set and nothing else. An error the save let through has no
+   * `WarningCode` to be reported under, and inventing one would put an
+   * error-severity finding into the wire's *warning* channel; it reaches the
+   * operator through {@link validateBeforeWrite}'s log instead.
+   */
   readonly warnings: readonly Warning[];
 };
 
@@ -340,12 +390,14 @@ export function checkSave(projection: ProjectionDb, path: string, text: string):
   const blocking = report.errors.filter(
     (finding) => LOCAL_CHECK_CODES.has(finding.code) && !isSkillFrontmatterException(finding),
   );
+  // Errors this save lets through and still reports (see REPORTED_CHECK_CODES).
+  const tolerated = report.errors.filter((finding) => REPORTED_CHECK_CODES.has(finding.code));
   const warnings: Warning[] = [];
   for (const finding of report.warnings) {
     const code = WARNING_CODE_BY_CHECK[finding.code];
     if (code !== undefined) warnings.push({ code, detail: finding.detail });
   }
-  return { blocking, findings: report.warnings, warnings };
+  return { blocking, findings: [...tolerated, ...report.warnings], warnings };
 }
 
 export function validateBeforeWrite(
@@ -360,10 +412,25 @@ export function validateBeforeWrite(
       blocking.map((finding) => ({ path: finding.code, message: finding.detail })),
     );
   }
-  if (findings.length > 0) {
+  // The two families are logged apart, and the error one is logged through
+  // `logger.error` on purpose: that is the level the logger never gates, and a
+  // §14 *error* the save let through is precisely what must not be silenced —
+  // an unterminated fence in a thread is destroying turns as it is written, and
+  // "silence is why a user had to notice their own reply had vanished". The
+  // response cannot carry it (see {@link SaveCheck.warnings}), so this line is
+  // the surface, and it costs no contract change to have.
+  const failed = findings.filter((finding) => finding.severity === "error");
+  if (failed.length > 0) {
+    workspace.logger.error("document saved with validation errors", {
+      path,
+      errors: failed.map((finding) => `${finding.code}: ${finding.detail}`),
+    });
+  }
+  const advisory = findings.filter((finding) => finding.severity === "warning");
+  if (advisory.length > 0) {
     workspace.logger.info("document saved with validation warnings", {
       path,
-      warnings: findings.map((finding) => `${finding.code}: ${finding.detail}`),
+      warnings: advisory.map((finding) => `${finding.code}: ${finding.detail}`),
     });
   }
   return [...warnings];
