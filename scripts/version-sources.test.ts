@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkVersionSources } from "./versions.js";
 import {
+  isSupportedWorkspaceGlob,
   readCommittedSource,
   readWorkingTreeSource,
   selectWorkspaceManifests,
@@ -22,22 +23,50 @@ describe("selectWorkspaceManifests", () => {
 
   it("selects one level below a glob's parent", () => {
     expect(
-      selectWorkspaceManifests(globs, ["apps/cli/package.json", "packages/kit/package.json"]),
+      selectWorkspaceManifests(globs, ["apps/cli/package.json", "packages/kit/package.json"])
+        .selected,
     ).toEqual(["apps/cli/package.json", "packages/kit/package.json"]);
   });
 
   it("ignores a nested package.json — a dependency of a workspace is not a workspace", () => {
-    expect(selectWorkspaceManifests(globs, ["apps/cli/node_modules/dep/package.json"])).toEqual([]);
+    expect(
+      selectWorkspaceManifests(globs, ["apps/cli/node_modules/dep/package.json"]).selected,
+    ).toEqual([]);
   });
 
   it("selects a non-glob workspace entry by exact path", () => {
-    expect(selectWorkspaceManifests(globs, ["tools/solo/package.json"])).toEqual([
+    expect(selectWorkspaceManifests(globs, ["tools/solo/package.json"]).selected).toEqual([
       "tools/solo/package.json",
     ]);
   });
 
   it("ignores paths outside every glob", () => {
-    expect(selectWorkspaceManifests(globs, ["scripts/package.json"])).toEqual([]);
+    expect(selectWorkspaceManifests(globs, ["scripts/package.json"]).selected).toEqual([]);
+  });
+
+  it("reports every supported glob as supported", () => {
+    expect(globs.every(isSupportedWorkspaceGlob)).toBe(true);
+  });
+
+  // The point of the whole `unsupported` channel: npm accepts these, this
+  // selector does not resolve them, and the difference must be loud.
+  it.each(["plugins/**", "apps/{cli,server}", "!plugins/_fixture", "apps/pkg-*", "*"])(
+    "reports %s as unsupported rather than silently selecting nothing",
+    (glob) => {
+      expect(isSupportedWorkspaceGlob(glob)).toBe(false);
+      const selection = selectWorkspaceManifests([glob], ["plugins/todos/package.json"]);
+      expect(selection.selected).toEqual([]);
+      expect(selection.unsupported).toEqual([glob]);
+    },
+  );
+
+  it("keeps resolving the globs it understands alongside one it does not", () => {
+    const selection = selectWorkspaceManifests(
+      ["apps/*", "plugins/**"],
+      ["apps/cli/package.json", "plugins/todos/package.json"],
+    );
+    expect(selection.selected).toEqual(["apps/cli/package.json"]);
+    expect(selection.unsupported).toEqual(["plugins/**"]);
   });
 });
 
@@ -168,6 +197,39 @@ describe("reading a real repository", () => {
       "packages/kit/package.json",
     ]);
     expect(check().ok).toBe(true);
+  });
+
+  it("fails the check on a glob it cannot resolve, instead of covering less than it claims", () => {
+    // A drifted workspace *inside* the unresolvable glob: the old selector
+    // returned nothing for `plugins/**` and the check went green over it.
+    write("plugins/todos/package.json", "9.9.9");
+    writeFileSync(
+      join(repo, "package.json"),
+      `${JSON.stringify(
+        {
+          name: "scratch-root",
+          private: true,
+          version: "0.1.0",
+          workspaces: ["apps/*", "packages/*", "plugins/**"],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    git("add", "-A");
+    git("commit", "-qm", "add a plugins workspace under a glob form we do not resolve");
+
+    const result = check();
+    expect(result.ok).toBe(false);
+    expect(result.problems).toEqual([
+      'working tree and committed tree (HEAD): the workspaces glob "plugins/**" is not a form ' +
+        "this check resolves, so any workspace it selects is unchecked — declare it as an exact " +
+        "path or `<dir>/*`, or teach scripts/version-sources.ts the form",
+    ]);
+    // And it is not a false alarm: the workspace really was going unchecked.
+    expect(readWorkingTreeSource(repo).workspaces.map((manifest) => manifest.path)).not.toContain(
+      "plugins/todos/package.json",
+    );
   });
 
   it("returns undefined outside a repository, rather than pretending the tree passed", () => {

@@ -8,7 +8,14 @@
  * the root moved.
  *
  * Both readers enumerate workspaces from the root manifest's `workspaces` globs
- * rather than a hard-coded list, so a new workspace joins the check by existing.
+ * rather than a hard-coded list, so a new workspace under an already-declared
+ * glob joins the check by existing.
+ *
+ * That only holds for the glob forms below, and npm accepts more than these. A
+ * form this module cannot resolve is reported (`unsupportedGlobs`) and fails the
+ * check — never skipped. A workspace that quietly stops being checked is the
+ * same defect as INFRA-022 itself: a guard that looks like it covers something
+ * it does not.
  */
 
 import { execFileSync } from "node:child_process";
@@ -31,19 +38,49 @@ export function committedTreeLabel(treeish: string): string {
   return `committed tree (${treeish})`;
 }
 
+/** Anything that makes a path segment mean more than itself to npm's glob engine. */
+const GLOB_META = /[*?[\]{}()!+@]/;
+
 /**
- * The workspace manifests a glob list selects out of `candidates`.
+ * The two forms this module resolves: an exact directory (`tools/solo`) and one
+ * level below a literal parent (`apps/*`). Between them they cover every glob
+ * this repo has ever declared.
  *
- * Every glob npm workspaces uses here is one level deep (`apps/*`), so this is
- * a path filter rather than a glob engine — and keeping it one pure function
- * means the disk reader and the git reader cannot select different sets.
+ * Deliberately a path filter and not a glob engine. Keeping it one small pure
+ * function is what stops the disk reader and the git reader selecting different
+ * sets — and a real matcher would have to be paired with a directory walk on the
+ * disk side, whose skip rules are their own silent-omission risk. The cost is
+ * that `plugins/**`, `apps/{a,b}` and `!plugins/_fixture` are not understood;
+ * the answer to that is to say so, loudly, not to drop them.
  */
+export function isSupportedWorkspaceGlob(glob: string): boolean {
+  const literal = glob.endsWith("/*") ? glob.slice(0, -2) : glob;
+  return literal !== "" && !GLOB_META.test(literal);
+}
+
+export interface WorkspaceSelection {
+  /** Manifest paths the supported globs select, sorted and deduplicated. */
+  readonly selected: readonly string[];
+  /**
+   * Globs this selector cannot resolve. The caller reports them as a failure:
+   * a workspace they would have selected is going unchecked, and silence about
+   * that is the whole class of bug INFRA-022 belongs to.
+   */
+  readonly unsupported: readonly string[];
+}
+
+/** The workspace manifests a glob list selects out of `candidates`. */
 export function selectWorkspaceManifests(
   globs: readonly string[],
   candidates: readonly string[],
-): string[] {
+): WorkspaceSelection {
   const selected = new Set<string>();
+  const unsupported: string[] = [];
   for (const glob of globs) {
+    if (!isSupportedWorkspaceGlob(glob)) {
+      unsupported.push(glob);
+      continue;
+    }
     if (!glob.endsWith("/*")) {
       const direct = `${glob}/package.json`;
       if (candidates.includes(direct)) selected.add(direct);
@@ -57,7 +94,7 @@ export function selectWorkspaceManifests(
       if (candidate.slice(prefix.length).split("/").length === 2) selected.add(candidate);
     }
   }
-  return [...selected].sort();
+  return { selected: [...selected].sort(), unsupported };
 }
 
 function parseManifest(source: string, displayPath: string): ManifestVersion {
@@ -77,6 +114,7 @@ export function readWorkingTreeSource(repoRoot: string): VersionSource {
 
   const candidates: string[] = [];
   for (const glob of globs) {
+    if (!isSupportedWorkspaceGlob(glob)) continue;
     if (!glob.endsWith("/*")) {
       candidates.push(`${glob}/package.json`);
       continue;
@@ -89,13 +127,15 @@ export function readWorkingTreeSource(repoRoot: string): VersionSource {
     }
   }
   const present = candidates.filter((path) => existsSync(join(repoRoot, path)));
+  const selection = selectWorkspaceManifests(globs, present);
 
   return {
     label: WORKING_TREE_LABEL,
     root: parseManifest(rootSource, "package.json"),
-    workspaces: selectWorkspaceManifests(globs, present).map((path) =>
+    workspaces: selection.selected.map((path) =>
       parseManifest(readFileSync(join(repoRoot, path), "utf8"), path),
     ),
+    unsupportedGlobs: selection.unsupported,
   };
 }
 
@@ -129,8 +169,9 @@ export function readCommittedSource(
   const tracked = git(repoRoot, ["ls-tree", "-r", "--name-only", treeish]);
   const paths = tracked === undefined ? [] : tracked.split("\n").filter((line) => line !== "");
 
+  const selection = selectWorkspaceManifests(globs, paths);
   const workspaces: ManifestVersion[] = [];
-  for (const path of selectWorkspaceManifests(globs, paths)) {
+  for (const path of selection.selected) {
     const source = git(repoRoot, ["show", `${treeish}:${path}`]);
     if (source !== undefined) workspaces.push(parseManifest(source, path));
   }
@@ -139,5 +180,6 @@ export function readCommittedSource(
     label: committedTreeLabel(treeish),
     root: parseManifest(rootSource, "package.json"),
     workspaces,
+    unsupportedGlobs: selection.unsupported,
   };
 }

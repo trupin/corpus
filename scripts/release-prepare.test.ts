@@ -5,7 +5,7 @@
  */
 
 import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -155,6 +155,127 @@ describe("release:prepare", () => {
     const run = prepare("patch");
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("not an explicit version");
+  });
+
+  /**
+   * A hook that fails is how the real pre-commit gate fails: `git commit`
+   * returns non-zero after everything has been bumped and staged. Nothing here
+   * is a stand-in for the gate's *checks* — only for its verdict.
+   */
+  function installFailingPreCommit(): void {
+    const hooks = join(repo, ".hooks");
+    mkdirSync(hooks, { recursive: true });
+    writeFileSync(
+      join(hooks, "pre-commit"),
+      "#!/bin/sh\necho 'pre-commit: typecheck failed' >&2\nexit 1\n",
+    );
+    chmodSync(join(hooks, "pre-commit"), 0o755);
+    git("config", "core.hooksPath", ".hooks");
+  }
+
+  function versionOf(path: string): unknown {
+    const manifest: unknown = JSON.parse(readFileSync(join(repo, path), "utf8"));
+    return (manifest as { version?: unknown }).version;
+  }
+
+  describe("when the gate rejects the release commit", () => {
+    // The likeliest failure there is, and the one least often rehearsed. Left
+    // alone it reproduces INFRA-022 exactly: every manifest bumped and staged,
+    // no commit, no tag — and the only obvious next move is a hand-made commit
+    // with the wrong subject and no tag.
+    it(
+      "leaves the tree exactly as it found it",
+      () => {
+        installFailingPreCommit();
+        const run = prepare("0.2.0");
+
+        expect(run.status).toBe(1);
+        expect(run.stderr).toContain("the release commit failed");
+        expect(run.stderr).toContain("the bump was undone");
+        expect(run.stderr).toContain("npm run release:prepare 0.2.0");
+
+        expect(git("status", "--porcelain", "--untracked-files=no")).toBe("");
+        for (const path of MANIFESTS) expect(versionOf(path)).toBe("0.1.0");
+        expect(git("tag").trim()).toBe("");
+        expect(
+          git("log", "--oneline")
+            .split("\n")
+            .filter((line) => line !== ""),
+        ).toHaveLength(1);
+      },
+      SLOW,
+    );
+
+    it(
+      "leaves a retry that just works, rather than a dirty-tree refusal",
+      () => {
+        installFailingPreCommit();
+        expect(prepare("0.2.0").status).toBe(1);
+
+        // The reason unwinding beats a hint: the second run is the *first* run.
+        git("config", "core.hooksPath", "");
+        const retry = prepare("0.2.0");
+        expect(retry.stderr).not.toContain("uncommitted changes");
+        expect(retry.status).toBe(0);
+        expect(git("tag").trim()).toBe("v0.2.0");
+        expect(git("rev-parse", "v0.2.0^{commit}")).toBe(git("rev-parse", "HEAD"));
+      },
+      SLOW,
+    );
+  });
+
+  it(
+    "refuses a lockfile that changed beyond the bump, rather than shipping the repair unread",
+    () => {
+      // A lockfile that has drifted from the manifests: `npm version` runs an
+      // install, the install prunes this, and the pruning would otherwise ride
+      // into a commit whose subject promises a version bump and nothing else.
+      const lock: unknown = JSON.parse(readFileSync(join(repo, "package-lock.json"), "utf8"));
+      (lock as { packages: Record<string, unknown> }).packages["node_modules/leftpad"] = {
+        version: "1.0.0",
+        resolved: "https://registry.npmjs.org/leftpad/-/leftpad-1.0.0.tgz",
+      };
+      writeFileSync(join(repo, "package-lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
+      git("add", "--", "package-lock.json");
+      git("commit", "-qm", "a lockfile that drifted from the manifests");
+
+      const run = prepare("0.2.0");
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain("package-lock.json changed beyond the version bump");
+      expect(run.stderr).toContain('packages["node_modules/leftpad"]');
+      expect(run.stderr).toContain("npm install");
+
+      // And, as everywhere before the commit: nothing left behind.
+      expect(git("status", "--porcelain", "--untracked-files=no")).toBe("");
+      expect(versionOf("package.json")).toBe("0.1.0");
+      expect(git("tag").trim()).toBe("");
+    },
+    SLOW,
+  );
+
+  it("refuses a workspaces glob it cannot resolve, before writing anything", () => {
+    writeFileSync(
+      join(repo, "package.json"),
+      `${JSON.stringify(
+        {
+          name: "scratch-root",
+          private: true,
+          version: "0.1.0",
+          workspaces: ["apps/*", "packages/*", "plugins/**"],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    git("add", "--", "package.json");
+    git("commit", "-qm", "declare a glob the version guard does not resolve");
+
+    const run = prepare("0.2.0");
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("plugins/**");
+    expect(run.stderr).toContain("neither staged nor version-checked");
+    expect(git("status", "--porcelain", "--untracked-files=no")).toBe("");
+    expect(versionOf("package.json")).toBe("0.1.0");
   });
 
   it(

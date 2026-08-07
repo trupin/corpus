@@ -65,9 +65,88 @@ export function releaseTagMessage(version: string, title?: string): string {
   return title === undefined || title === "" ? tag : `${tag} — ${title}`;
 }
 
-/** Repo-relative paths a version bump is expected to have rewritten. */
+export const LOCKFILE = "package-lock.json";
+
+/**
+ * Repo-relative paths a version bump is expected to have rewritten.
+ *
+ * The lockfile is here because `npm version` always rewrites it — but "expected
+ * to have changed" is not "expected to contain anything"; what it is allowed to
+ * contain is `classifyLockfileChange`'s job.
+ */
 export function expectedBumpPaths(workspaceManifestPaths: readonly string[]): string[] {
-  return ["package.json", "package-lock.json", ...workspaceManifestPaths];
+  return ["package.json", LOCKFILE, ...workspaceManifestPaths];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const PLAIN_KEY = /^[A-Za-z_$][\w$]*$/;
+
+/** `packages["apps/cli"].version` — readable enough to act on in an error message. */
+function childPath(parent: string, key: string): string {
+  if (!PLAIN_KEY.test(key)) return `${parent}[${JSON.stringify(key)}]`;
+  return parent === "" ? key : `${parent}.${key}`;
+}
+
+/** A `version` field, and not merely a key that happens to end in those letters. */
+function isVersionField(path: string): boolean {
+  return path === "version" || path.endsWith(".version");
+}
+
+function collectDifferences(
+  before: unknown,
+  after: unknown,
+  version: string,
+  path: string,
+  out: string[],
+): void {
+  if (isRecord(before) && isRecord(after)) {
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      collectDifferences(before[key], after[key], version, childPath(path, key), out);
+    }
+    return;
+  }
+  if (Array.isArray(before) && Array.isArray(after)) {
+    for (let index = 0; index < Math.max(before.length, after.length); index += 1) {
+      collectDifferences(before[index], after[index], version, `${path}[${index}]`, out);
+    }
+    return;
+  }
+  if (before === after) return;
+  // The one difference a bump is *for*: a `version` field moved to the release
+  // version. A `version` moved to anything else is not this bump's doing.
+  if (isVersionField(path) && after === version) return;
+  out.push(path === "" ? "(the whole document)" : path);
+}
+
+export interface LockfileChange {
+  /**
+   * Everything the lockfile moved that is not a `version` field carrying the
+   * release version, as readable JSON paths.
+   */
+  readonly unexpected: readonly string[];
+}
+
+/**
+ * What the lockfile changed, beyond the bump itself.
+ *
+ * `npm version` runs an install, so a lockfile that had drifted from the
+ * manifests — a dependency edited without reinstalling, a changed `overrides`
+ * block, a different npm major — is *repaired* by the bump. The repair is not
+ * wrong, but it would ride into a commit whose subject promises a version bump
+ * and nothing else, and be reviewed by nobody. Naming what else moved is what
+ * turns that into a decision instead of an accident.
+ */
+export function classifyLockfileChange(
+  before: string,
+  after: string,
+  version: string,
+): LockfileChange {
+  const unexpected: string[] = [];
+  collectDifferences(JSON.parse(before), JSON.parse(after), version, "", unexpected);
+  return { unexpected };
 }
 
 /**

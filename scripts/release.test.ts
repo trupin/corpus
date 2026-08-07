@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyBumpChanges,
+  classifyLockfileChange,
   expectedBumpPaths,
   parsePorcelainPaths,
   parseReleaseArgs,
@@ -116,5 +117,73 @@ describe("classifyBumpChanges", () => {
 
   it("reports nothing to stage when the version is already what was asked for", () => {
     expect(classifyBumpChanges([], expected).toStage).toEqual([]);
+  });
+});
+
+describe("classifyLockfileChange", () => {
+  /** The shape of a lockfileVersion-3 file, trimmed to what a bump touches. */
+  function lock(version: string, extra: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      name: "corpus",
+      version,
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": { name: "corpus", version, workspaces: ["apps/*"] },
+        "apps/cli": { name: "@corpus/cli", version, dependencies: { "@corpus/contract": "*" } },
+        "node_modules/type-check": { version: "0.4.0", resolved: "https://example.test/tc.tgz" },
+        ...extra,
+      },
+    });
+  }
+
+  it("accepts the version churn a bump is for — root, workspace and every nesting", () => {
+    expect(classifyLockfileChange(lock("0.4.0"), lock("0.5.0"), "0.5.0").unexpected).toEqual([]);
+  });
+
+  it("leaves an unrelated `version` that happens to match alone", () => {
+    // `node_modules/type-check` is 0.4.0 by coincidence and does not move.
+    expect(classifyLockfileChange(lock("0.4.0"), lock("0.4.1"), "0.4.1").unexpected).toEqual([]);
+  });
+
+  // An entry that appeared or vanished is reported once, at the entry — not once
+  // per field inside it, which for a real stale-lockfile repair would bury the
+  // reader under thousands of lines saying one thing.
+  it("names a dependency the install added while bumping", () => {
+    const after = lock("0.5.0", {
+      "node_modules/leftpad": { version: "1.0.0", resolved: "https://example.test/lp.tgz" },
+    });
+    expect(classifyLockfileChange(lock("0.4.0"), after, "0.5.0").unexpected).toEqual([
+      'packages["node_modules/leftpad"]',
+    ]);
+  });
+
+  it("names a dependency the install removed", () => {
+    const before = lock("0.4.0", { "node_modules/leftpad": { version: "1.0.0" } });
+    expect(classifyLockfileChange(before, lock("0.5.0"), "0.5.0").unexpected).toEqual([
+      'packages["node_modules/leftpad"]',
+    ]);
+  });
+
+  it("catches a resolved-url or integrity rewrite, which no bump produces", () => {
+    const after = lock("0.5.0").replace("https://example.test/tc.tgz", "https://evil.test/tc.tgz");
+    expect(classifyLockfileChange(lock("0.4.0"), after, "0.5.0").unexpected).toEqual([
+      'packages["node_modules/type-check"].resolved',
+    ]);
+  });
+
+  it("catches a `version` moved to something that is not the release version", () => {
+    const after = lock("0.5.0").replace('"@corpus/contract":"*"', '"@corpus/contract":"^0.5.0"');
+    expect(classifyLockfileChange(lock("0.4.0"), after, "0.5.0").unexpected).toEqual([
+      'packages["apps/cli"].dependencies["@corpus/contract"]',
+    ]);
+  });
+
+  it("descends into arrays rather than calling the whole list one change", () => {
+    const before = lock("0.4.0", { "node_modules/a": { engines: ["node"], version: "1.0.0" } });
+    const after = lock("0.5.0", { "node_modules/a": { engines: ["deno"], version: "1.0.0" } });
+    expect(classifyLockfileChange(before, after, "0.5.0").unexpected).toEqual([
+      'packages["node_modules/a"].engines[0]',
+    ]);
   });
 });

@@ -20,13 +20,20 @@ going to create has to be known before anything is written. The title is optiona
 becomes the headline of both the commit and the tag, matching the release commits already on `main`
 (`[RELEASE] v0.3.0 — comments that stay where you put them`). The script:
 
-1. refuses to start if the working tree has tracked modifications, or if `v<x.y.z>` already exists;
+1. refuses to start if the working tree has tracked modifications, if `v<x.y.z>` already exists, or
+   if the root manifest declares a `workspaces` glob the version guard cannot resolve;
 2. runs `npm version <x.y.z> --workspaces --include-workspace-root --no-git-tag-version`;
 3. stages the root manifest, the lockfile and **every** workspace manifest — by name, never `-A`;
-   anything else the bump touched aborts the run instead of riding along;
+   anything else the bump touched aborts the run instead of riding along, and the lockfile is
+   checked to have moved nothing but `version` fields;
 4. makes one commit (the pre-commit gate runs; this takes a few minutes);
 5. re-reads the manifests **out of that commit** and refuses to tag it if they disagree;
 6. creates the annotated tag, and stops. Pushing is yours.
+
+Every failure between step 2 and step 4 **undoes the bump** before it reports: a run that does not
+finish leaves the tree as it found it. See _Recovery: `release:prepare` stopped_ below. What is not
+traded away for that tidiness: the tag is still only ever created from a commit whose tree has
+already passed step 5.
 
 Release commits go **directly to `main`** — they are bookkeeping, not a change under review, and
 every previous one (`v0.1.0`…`v0.4.0`) landed that way. Cut them from an up-to-date `main`, after the
@@ -62,6 +69,43 @@ distribution is the repo-hosted tarball.
 The steps are ordered inside one job, so a failure anywhere stops everything after it. In particular
 a failure before `gh release create` means **nothing was published** — the tag is orphaned, not
 half-released.
+
+## Recovery: `release:prepare` stopped
+
+The ordinary failure, and the one worth knowing by heart. `release:prepare` runs the pre-commit gate
+— lint, typecheck, the whole unit suite — as part of making the release commit, and a gate failing is
+not an exotic event. **Nothing is committed and no tag exists**, so nothing needs undoing by hand:
+the run already restored every manifest and the lockfile before it printed.
+
+```
+release:prepare ✗ the release commit failed — the pre-commit gate runs here, so its output is above
+  nothing was committed and no tag was created; the bump was undone (9 file(s) restored)
+  fix what it reported, then re-run: npm run release:prepare 0.5.0 "the headline"
+```
+
+Fix what the gate reported, commit that fix like any other change, and run the same
+`release:prepare` command again. There is nothing release-specific to clean up first.
+
+**Do not hand-commit a leftover bump.** If a run ever does leave bumped manifests behind — the undo
+itself failed, or you interrupted the run — the message names the command that clears them:
+
+```sh
+git restore --staged --worktree -- package.json package-lock.json apps/*/package.json packages/*/package.json plugins/*/package.json
+```
+
+Committing them instead produces a commit with neither the `[RELEASE]` subject nor a tag, which is
+precisely the INFRA-022 shape this script exists to prevent.
+
+Two other stops need a decision rather than a retry:
+
+- **`package-lock.json changed beyond the version bump`** — the bump runs an install, and the
+  install repaired a lockfile that had drifted from the manifests. The repair is probably fine, but
+  it is a change to review, not to smuggle into a commit whose subject promises a version bump and
+  nothing else. Run `npm install`, commit the lockfile on its own, then re-run.
+- **`cannot resolve every workspaces glob`** — the root manifest declares a `workspaces` entry the
+  version guard does not resolve (`plugins/**`, `apps/{a,b}`, `!plugins/_fixture`). npm would bump
+  the workspaces it selects; nothing would stage or check them. Declare them as an exact path or
+  `<dir>/*`, or teach `scripts/version-sources.ts` the form.
 
 ## Recovery: the tag is pushed and the release failed
 

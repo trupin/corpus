@@ -68,6 +68,13 @@ export interface VersionSource {
   readonly label: string;
   readonly root: ManifestVersion;
   readonly workspaces: readonly ManifestVersion[];
+  /**
+   * Workspace globs the reader could not resolve into manifest paths. Each one
+   * fails the check rather than reducing what it covers: a workspace that
+   * silently stops being checked is the INFRA-022 defect again — a guard that
+   * looks like it covers something it does not.
+   */
+  readonly unsupportedGlobs?: readonly string[];
 }
 
 export interface VersionSourceCheck {
@@ -88,6 +95,14 @@ export interface VersionSourcesResult {
   readonly problems: readonly string[];
 }
 
+export function unsupportedGlobProblem(glob: string): string {
+  return (
+    `the workspaces glob "${glob}" is not a form this check resolves, so any workspace ` +
+    "it selects is unchecked — declare it as an exact path or `<dir>/*`, or teach " +
+    "scripts/version-sources.ts the form"
+  );
+}
+
 export function checkVersionSources(
   sources: readonly VersionSource[],
   gitRef?: string,
@@ -97,12 +112,16 @@ export function checkVersionSources(
 
   for (const source of sources) {
     const result = checkVersions({ root: source.root, workspaces: source.workspaces, gitRef });
-    checks.push({ label: source.label, version: result.version, ok: result.ok });
-    if (result.ok) continue;
-    const key = result.problems.join("\n");
+    const problems = [
+      ...(source.unsupportedGlobs ?? []).map((glob) => unsupportedGlobProblem(glob)),
+      ...result.problems,
+    ];
+    const ok = problems.length === 0;
+    checks.push({ label: source.label, version: result.version, ok });
+    if (ok) continue;
+    const key = problems.join("\n");
     const group = grouped.get(key);
-    if (group === undefined)
-      grouped.set(key, { labels: [source.label], problems: result.problems });
+    if (group === undefined) grouped.set(key, { labels: [source.label], problems });
     else group.labels.push(source.label);
   }
 

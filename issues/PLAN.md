@@ -431,6 +431,7 @@ belongs to the same fix wave.
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
 | INFRA-023 | New nanoid advisory blocks every commit; scoped override clears it | done | P1 | INFRA-010 |
+| AGENT-019 | Loop block renders dispatch as a comment; chaining `claim-all && idle` drops it | todo | P0 | — |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
 | SERVER-067 | Non-blocking errors reach the log but not the response: needs a §14 warning-channel decision | todo | P2 | SERVER-066 |

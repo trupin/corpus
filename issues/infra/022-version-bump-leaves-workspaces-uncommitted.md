@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -306,6 +306,118 @@ version:check ✓ every manifest is 0.4.0 (working tree, committed tree (HEAD)) 
 - `version:check` reads `HEAD`, not the refs being pushed. For pre-push on the branch being pushed
   they are the same commit; a push of an older ref is not modelled.
 
+### Review follow-up — PR #28 findings 5 and 8 (2026-08-07, opus, infra-dev)
+
+**Finding 5 (MAJOR) — the gate-failure path left the INFRA-022 shape behind.** Reproduced against a
+`cp -Rc` copy of this repo with a stub `pre-commit` that exits 1 (a stand-in for the gate's verdict,
+not its checks). The script as reviewed:
+
+```
+release:prepare ▶ committing (the pre-commit gate runs now — this takes a few minutes)
+pre-commit: tsc --noEmit failed in apps/server
+release:prepare ✗ `git commit -m [RELEASE] v0.5.0 — forms and the release trap` failed
+$ git status --porcelain -uno
+M  apps/cli/package.json    M  apps/server/package.json   M  apps/ui/package.json
+M  package-lock.json        M  package.json               M  packages/contract/package.json
+M  packages/kit/package.json  M  plugins/_fixture/package.json  M  plugins/todos/package.json
+$ git tag --points-at HEAD                                  # (none)
+```
+
+Nine files bumped **and staged**, no commit, no tag, no hints. And the retry, verbatim:
+
+```
+release:prepare ✗ the working tree has uncommitted changes: apps/cli/package.json, …
+  commit or stash them first — a release commit contains the version bump and nothing else
+```
+
+**Chose unwind over hints.** Hints only fix the first message; the second one — the dirty-tree
+refusal a retry meets — still says "commit or stash them first", which is the one thing that must
+not be done with a leftover bump, and no hint on the *first* command can reach the person who has
+already typed the second. Unwinding removes the state that produces the wrong advice instead of
+annotating it. The clean-tree precondition is what makes it safe: `git status --porcelain -uno`
+covers the index too, so index and worktree both matched `HEAD` before `npm version` ran and every
+tracked modification afterwards is npm's, never the user's. The cost is a re-reified `node_modules`
+on retry, which the retry's own `npm version` does anyway. The tag-only-from-a-verified-commit rule
+is untouched: unwinding happens strictly *before* any commit exists.
+
+Every failure between the bump and the commit now goes through `unwindAndFail`, with one deliberate
+exception — the "bump touched files that are not manifests" abort. There the script has just
+discovered it does not model what `npm version` did, and those files are the only record of it;
+discarding them is the reader's call, so it prints the exact restore command instead.
+
+After, on the same copy and the same failing gate:
+
+```
+release:prepare ✗ the release commit failed — the pre-commit gate runs here, so its output is above
+  nothing was committed and no tag was created; the bump was undone (9 file(s) restored)
+  fix what it reported, then re-run: npm run release:prepare 0.5.0 "forms and the release trap"
+$ git status --porcelain -uno     # (empty)
+$ node -p "require('./package.json').version"   → 0.4.0
+$ git tag --points-at HEAD         # (none)
+```
+
+Then, with the gate fixed, the retry is simply the first run again — no dirty-tree refusal:
+
+```
+release:prepare ✓ [RELEASE] v0.5.0 — forms and the release trap committed and tagged v0.5.0
+$ git show --stat --pretty= HEAD    → 9 files changed, 17 insertions(+), 17 deletions(-)
+$ git checkout --detach refs/tags/v0.5.0
+$ GITHUB_REF=refs/tags/v0.5.0 npm run version:check
+version:check ✓ every manifest is 0.5.0 (working tree, committed tree (HEAD))   exit=0
+```
+
+`docs/RELEASING.md` → **Recovery: `release:prepare` stopped** carries it, including the
+"do not hand-commit a leftover bump" case and the restore command.
+
+**Finding 8a — the lockfile rode in unreviewed.** `expectedBumpPaths` still lists
+`package-lock.json` (the bump does rewrite it), but *what* it may contain is now checked:
+`classifyLockfileChange` diffs `HEAD:package-lock.json` against the bumped one and allows only
+`version` fields moved to the release version. Anything else aborts and unwinds. Demonstrated on the
+repo copy with a lockfile drifted from the manifests (a stray `node_modules/leftpad` entry that the
+bump's install prunes):
+
+```
+release:prepare ✗ package-lock.json changed beyond the version bump — the release commit would carry it unreviewed
+    packages["node_modules/leftpad"]
+  nothing was committed and no tag was created; the bump was undone (9 file(s) restored)
+  the bump runs an install, so a lockfile that had drifted gets repaired here; …
+  run `npm install`, commit the lockfile, then re-run: npm run release:prepare 0.5.0 "…"
+```
+
+No false positive on a healthy lockfile: the successful rehearsal above committed an 18-line
+lockfile diff (nine `version` fields) and the check passed it.
+
+**Finding 8b — the header lied about "joins the check by existing".** Chose to make the check total
+rather than to build a glob engine: `selectWorkspaceManifests` now returns `{ selected, unsupported }`,
+`VersionSource.unsupportedGlobs` carries the second, and both `version:check` and `release:prepare`
+**fail** on it. A real glob matcher would have to be paired with a directory walk on the disk side to
+keep the two readers selecting identical sets, and that walk's skip rules are a fresh source of the
+same silent-omission bug. Refusing what is not understood cannot omit anything.
+
+The non-coverage was real, not theoretical — same repo copy, `workspaces: [… "plugins/**"]` and
+`plugins/todos` drifted to 9.9.9:
+
+```
+--- BEFORE (version-sources.ts as committed) ---
+version:check ✓ every manifest is 0.4.0 (working tree, committed tree (HEAD))   exit=0
+--- AFTER ---
+version:check ✗ working tree and committed tree (HEAD): the workspaces glob "plugins/**" is not a
+  form this check resolves, so any workspace it selects is unchecked — declare it as an exact path
+  or `<dir>/*`, or teach scripts/version-sources.ts the form                    exit=1
+$ npm run release:prepare 0.5.0
+release:prepare ✗ cannot resolve every workspaces glob: plugins/**
+  a workspace one of them selects would be bumped by npm but neither staged nor version-checked
+```
+
+The real repo, with its real `plugins/*`, is unaffected: `version:check ✓ every manifest is 0.4.0`.
+
+**Tests** — `VITEST_MAX_THREADS=4 npx vitest run scripts` → **478 passed, 0 failed** (was 449; +29).
+New: the gate-failure unwind and the retry-just-works pair, the lockfile refusal, and the
+unsupported-glob refusal in `release-prepare.test.ts` (all against a real scratch repo with a real
+failing hook); `classifyLockfileChange` in `release.test.ts`; the `unsupported` channel and a
+committed `plugins/**` drift in `version-sources.test.ts`.
+`npx eslint scripts/`, `tsc --noEmit -p scripts/tsconfig.json`, `prettier --check` → clean.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing
@@ -316,4 +428,6 @@ version:check ✓ every manifest is 0.4.0 (working tree, committed tree (HEAD)) 
 
 ## Completion Checklist (orchestrator)
 
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [x] Committed with `[ISSUE-ID]` prefix — `930919f7 [INFRA-022] Release bump commits every
+      workspace manifest, or fails locally` (its body under-lists the changed files; noted by the
+      PR #28 reviewer, message-only, no code impact)
