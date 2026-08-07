@@ -173,23 +173,24 @@ All acceptance criteria met · tests pass, no regressions · combined coverage �
 
 ## Available Skills
 
-| Skill        | Purpose                                                           |
-| ------------ | ----------------------------------------------------------------- |
-| `/dashboard` | Quick project dashboard: issues, git state, what's actionable now |
-| `/decompose` | Decompose a feature into phased issues across domains             |
-| `/implement` | Pick ready issues from plan and implement via domain agents       |
-| `/issue`     | Manage issues: create, close, implement, plan, refine, list, show |
-| `/evaluate`  | Run the behavioral evaluator against completed issues             |
-| `/audit`     | Audit recent changes for defects, missing tests, spec drift       |
-| `/lint`      | ESLint + Prettier check + tsc across workspaces                   |
-| `/test`      | Vitest suite with optional filters                                |
-| `/pr`        | Create a pull request from the current branch                     |
+| Skill        | Purpose                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `/dashboard` | Quick project dashboard: issues, git state, what's actionable now                                |
+| `/decompose` | Decompose a feature into phased issues across domains                                            |
+| `/implement` | Pick ready issues from plan and implement via domain agents                                      |
+| `/issue`     | Manage issues: create, close, implement, plan, refine, list, show                                |
+| `/evaluate`  | Run the behavioral evaluator against completed issues                                            |
+| `/audit`     | Audit recent changes for defects, missing tests, spec drift                                      |
+| `/lint`      | ESLint + Prettier check + tsc across workspaces                                                  |
+| `/test`      | Vitest suite with optional filters                                                               |
+| `/pr`        | Create a pull request from the current branch                                                    |
+| `/learn`     | Record a durable lesson in the right guideline file, then check for contradictions it introduced |
 
 ## Git Workflow
 
 **Only the orchestrator agent (you) creates commits.** Domain agents write code and run tests but never commit or push.
 
-1. **Every significant change lands via a PR — one PR per plan phase** _(user decision, 2026-07-26)_. Each phase of `issues/PLAN.md` is implemented on a branch named `phase-<n>-<slug>`; issues within the phase are committed individually on that branch (each commit `[ISSUE-ID]`-prefixed) and reach `main` (at `github.com:trupin/corpus`) only through the phase's pull request (`/pr`). After cutting a phase PR the orchestrator **babysits it to merge**: watch CI, fix failures, run the pr-reviewer, address findings, merge when green (per-issue history stays visible in the PR; the squash commit carries the phase title). An urgent standalone fix may still ship on its own `<issue-id-lowercase>-<slug>` branch. Only trivial bookkeeping (typo fixes, issue/plan status updates) may commit directly to `main`.
+1. **Every significant change lands via a PR — one PR per plan phase** _(user decision, 2026-07-26)_. Each phase of `issues/PLAN.md` is implemented on a branch named `phase-<n>-<slug>`; issues within the phase are committed individually on that branch (each commit `[ISSUE-ID]`-prefixed) and reach `main` (at `github.com:trupin/corpus`) only through the phase's pull request (`/pr`). After cutting a phase PR the orchestrator **babysits it to merge**: watch CI, fix failures, run the pr-reviewer, address findings, merge when green. **Wait for CI with `gh pr checks <n> --watch`** — it blocks until every check settles and exits non-zero if any failed. Never hand-roll a poll loop over `gh run list`/`gh pr view`: it burns turns, its interval is a guess, and it reports "no checks yet" indistinguishably from "checks not created" (which is a real state — GitHub occasionally fails to create a run at all, and the fix is to re-fire the event by closing and reopening the PR, not to keep polling) (per-issue history stays visible in the PR; the squash commit carries the phase title). An urgent standalone fix may still ship on its own `<issue-id-lowercase>-<slug>` branch. Only trivial bookkeeping (typo fixes, issue/plan status updates) may commit directly to `main`.
 2. **A PR merges only when all validation GitHub Actions are green.** The `CI / validate` workflow (lint, format, typecheck, unit tests + coverage gate, e2e) must pass on the PR's head commit before landing — no exceptions, no merging on "it passes locally". **Merges are squash-only** (`gh pr merge --squash`) — never merge commits, never rebase-merges; enforced by repo settings and the `main-protection` ruleset. The squash commit takes the PR title (which carries the `[ISSUE-ID]`) and body.
 3. **Every PR gets an objective local review before merge.** Spawn the **pr-reviewer** agent (`.claude/agents/pr-reviewer.md`) as a **fresh** subagent — never a fork — so it sees only the diff, the issue file(s), the cited spec sections, and the touched files, not the implementing conversation. It always runs on **Fable** (pinned in its frontmatter; never downgrade it). CRITICAL and MAJOR findings must be fixed (and re-reviewed) or explicitly waived by the user before merging.
 4. **Commit before starting new work** — never start a task with uncommitted changes from a previous one.
