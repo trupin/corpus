@@ -227,6 +227,189 @@ describe("unterminatedFence inside container blocks", () => {
   });
 });
 
+/**
+ * SERVER-066 review round 2: indentation is measured in *columns*, and a tab is
+ * how a container's body is most often indented.
+ *
+ * The first round modelled containers by counting spaces, which saw the opener
+ * behind a space-delimited marker and then failed to see a tab-indented closer —
+ * so a shape CommonMark closes was reported unterminated, and masked from the
+ * marker to the end of the body. That is strictly worse than the silence it
+ * replaced: on the pre-container scanner these texts produced no fence, no
+ * finding and no masking at all. Every case below is valid CommonMark whose
+ * fence closes (checked against a CommonMark renderer, not by eye), so the point
+ * of each is `null`.
+ */
+describe("unterminatedFence with tab-indented containers", () => {
+  it.each([
+    ["a bulleted item with a tab-indented body", "- ```js\n\tcode\n\t```\n\nAfter.\n"],
+    ["an ordered item with a tab-indented body", "1. ```js\n\tcode\n\t```\n\nAfter.\n"],
+    ["an ordered item with `)` and a tab", "1) ```js\n\tcode\n\t```\n"],
+    ["a `*` bullet with a tab", "* ```js\n\tcode\n\t```\n"],
+    ["a `+` bullet with a tab", "+ ```js\n\tcode\n\t```\n"],
+    ["a tilde fence with a tab", "- ~~~\n\tcode\n\t~~~\n"],
+    ["a body indented with a space then a tab", "- ```js\n \tcode\n \t```\n"],
+    ["a bullet marker followed by a tab", "-\t```js\n\tcode\n\t```\n"],
+    ["an ordered marker followed by a tab", "1.\t```js\n\tcode\n\t```\n"],
+    ["a block-quote marker followed by a tab", ">\t```js\n>\tcode\n>\t```\n"],
+    ["a tab-indented body under a nested item", "- outer\n  - ```js\n\tcode\n\t```\n"],
+  ])("reports nothing for a closed fence in %s", (_name, text) => {
+    expect(unterminatedFence(text)).toBeNull();
+  });
+
+  it("masks the item rather than running to the end of the body", () => {
+    const text = "- ```\n\t## user · 2026-01-01T00:00:00Z\n\t```\nafter\n";
+    expect(slices(text, fencedCodeRanges(text))).toEqual([
+      "- ```\n\t## user · 2026-01-01T00:00:00Z\n\t```",
+    ]);
+  });
+
+  it("still refuses a closer four or more columns past the content column", () => {
+    // One tab under a `- ` marker is four columns, two past a content column of
+    // 2 — that closes, above. Two tabs are eight columns, six past it, so
+    // CommonMark swallows that line into the block as indented code rather than
+    // closing on it (verified by rendering: the ``` appears inside the <code>).
+    // CommonMark then closes the block at the item's end; this scanner does not,
+    // which is the "containers never end" divergence pinned below.
+    expect(unterminatedFence("- ```js\n\t\tcode\n\t\t```\n")).toEqual({
+      marker: "```",
+      start: 0,
+      line: 1,
+    });
+  });
+
+  it("still treats a tab at the margin as indented code, not a fence", () => {
+    expect(fencedCodeRanges("\t```js\n\tcode\n\t```\n")).toEqual([]);
+    expect(unterminatedFence("\t```js\n\tcode\n\t```\n")).toBeNull();
+  });
+
+  /**
+   * A block quote inside an indented list item: its continuation lines carry
+   * more indentation before the `>` than BLOCKQUOTE_MARKER tolerates on its own,
+   * so the item's allowance has to be spent before the marker is looked for.
+   */
+  it("finds a quote marker indented past its own three-space tolerance", () => {
+    expect(unterminatedFence("  - > ```\n    > code\n    > ```\n\nAfter.\n")).toBeNull();
+  });
+});
+
+/**
+ * The two divergences from CommonMark that are known, deliberate and *not*
+ * fixed, pinned here so that changing either is a decision rather than an
+ * accident. Both err toward a false error — the loud direction — and the module
+ * docblock says so; these tests exist to keep that description true.
+ */
+describe("unterminatedFence divergences that are accepted", () => {
+  it("keeps a fence open past the end of the list item that opened it", () => {
+    // CommonMark closes the fence at the item's boundary, so this text is clean
+    // there and unterminated here. Closing a container needs block structure
+    // this module does not build.
+    expect(unterminatedFence("- ```js\n  code\n\nAfter the list.\n")).toEqual({
+      marker: "```",
+      start: 0,
+      line: 1,
+    });
+  });
+
+  it("reads an ordered marker as a container even where it cannot interrupt a paragraph", () => {
+    // CommonMark: an ordered item may interrupt a paragraph only when it starts
+    // at 1, so there is no list and no fence here at all.
+    expect(unterminatedFence("Some prose\n2. ```\nmore text\n")).toEqual({
+      marker: "```",
+      start: 11,
+      line: 2,
+    });
+  });
+
+  it("is why that divergence is not repaired by refusing a marker after a paragraph", () => {
+    // The same shape one line earlier is a genuine sibling item. Refusing it
+    // would leave the item's closing fence reading as a fresh opener — the very
+    // failure the container model was added to fix.
+    expect(unterminatedFence("1. a\n2. ```js\n   code\n   ```\n")).toBeNull();
+  });
+});
+
+/**
+ * The safety property the container model rests on, asserted rather than
+ * described: a text carrying no container marker takes the path it took before
+ * containers (or tabs) were modelled at all.
+ *
+ * `preContainerScan` is that scanner, transcribed — FENCE_LINE against the line
+ * as given, no prefix removed, no tab expanded. Every permutation below is
+ * container-free and tab-bearing, which is exactly the region where an
+ * expand-everything implementation could drift without anyone noticing: the
+ * repository's own markdown contains only two files with a tab in them.
+ */
+describe("the container-free path is unchanged", () => {
+  const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+  const preContainerScan = (text: string): string => {
+    const ranges: { start: number; end: number }[] = [];
+    let open: { marker: string; start: number; line: number } | null = null;
+    let lineNumber = 0;
+    for (const line of splitLines(text)) {
+      lineNumber += 1;
+      const match = FENCE_LINE.exec(line.text);
+      if (open === null) {
+        if (match === null) continue;
+        const marker = match[1] ?? "";
+        if (marker.startsWith("`") && (match[2] ?? "").includes("`")) continue;
+        open = { marker, start: line.start, line: lineNumber };
+        continue;
+      }
+      const marker = match?.[1] ?? "";
+      if (
+        match !== null &&
+        (match[2] ?? "").trim() === "" &&
+        marker[0] === open.marker[0] &&
+        marker.length >= open.marker.length
+      ) {
+        ranges.push({ start: open.start, end: line.contentEnd });
+        open = null;
+      }
+    }
+    if (open !== null) ranges.push({ start: open.start, end: text.length });
+    return JSON.stringify({ ranges, open });
+  };
+
+  const lines = [
+    "```",
+    "```js",
+    "~~~",
+    "``` ",
+    "```\t",
+    "\t```",
+    " \t```",
+    "\t\t```",
+    "  \t```",
+    "   \t```",
+    "\tcode",
+    "code\ttail",
+    "\t",
+    "",
+    "text",
+    "```\tjs",
+    "\t~~~",
+    "a\t`b`\tc",
+  ];
+
+  it("agrees with the pre-container scanner on every tab-bearing permutation", () => {
+    const divergent: string[] = [];
+    for (const first of lines) {
+      for (const second of lines) {
+        for (const third of lines) {
+          const text = `${first}\n${second}\n${third}\n`;
+          const actual = JSON.stringify({
+            ranges: fencedCodeRanges(text),
+            open: unterminatedFence(text),
+          });
+          if (actual !== preContainerScan(text)) divergent.push(JSON.stringify(text));
+        }
+      }
+    }
+    expect(divergent).toEqual([]);
+  });
+});
+
 describe("inlineCodeRanges", () => {
   it("covers a span including its delimiters", () => {
     const text = "a `code` b";

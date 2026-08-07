@@ -42,20 +42,43 @@ const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
  * happens to read as a bulleted fence close the block it belongs to.
  *
  * A text with no container markers therefore takes exactly the path it took
- * before: both widths are zero and the regex is applied to the raw line.
+ * before: both widths are zero and the regex is applied to the line as given.
+ *
+ * Indentation is measured in **columns**, not characters — see expandTabs.
  *
  * What stays approximate, and is accepted as such (full container parsing is a
- * markdown parser, which this module deliberately is not):
+ * markdown parser, which this module deliberately is not). Each entry names the
+ * direction it errs in, because the two directions are not equally bad: a *miss*
+ * is silent and leaves the bytes reading as they read today, while a *false
+ * error* fails `corpus doc check` on valid CommonMark and — since the same scan
+ * feeds fencedCodeRanges — hides everything after the supposed fence.
  *
  * - **Containers never end.** A fence opened inside a list item stays open past
- *   the end of that item; CommonMark would close it at the item's boundary. The
- *   scanner errs toward "still inside code", and — the property that matters —
- *   fencedCodeRanges and unterminatedFence err *together*, so the report always
- *   describes what the corpus's own readers will really do with the bytes rather
- *   than contradicting them.
- * - **Tabs are not expanded.** A container marker followed by a tab is not seen.
- * - **Setext underlines, link reference definitions and HTML blocks** are not
- *   modelled at all; none of them can contain or terminate a fence.
+ *   the end of that item; CommonMark closes it at the item's boundary, so
+ *   `"- ```js\n  code\n\nAfter.\n"` is a *closed* fence there and an unterminated
+ *   one here. Direction: **false error** — and, with it, masking that runs to the
+ *   end of the text. What keeps that honest rather than merely wrong is that
+ *   fencedCodeRanges and unterminatedFence err *together*: the report describes
+ *   what the corpus's own readers will really do with those bytes instead of
+ *   contradicting them. Closing a container needs the block structure this
+ *   module declines to build.
+ * - **A list marker is a container wherever it appears.** CommonMark lets an
+ *   ordered item interrupt a paragraph only when it starts at 1, so in
+ *   `"Some prose\n2. ```\nmore text\n"` there is no list and no fence at all,
+ *   while this scanner reads a container fence that never closes. Direction:
+ *   **false error**, and narrow — it needs an ordered marker numbered other than
+ *   1, immediately after a paragraph line, opening a run that never closes. It
+ *   is left alone because the obvious repair is wrong: `"1. a\n2. ```js\n   code\n   ```\n"`
+ *   is a *sibling item*, a genuine container, and refusing it there would make
+ *   the item's closing fence read as a fresh opener — finding A's failure exactly.
+ *   Telling the two apart is paragraph tracking, i.e. a parser.
+ * - **HTML blocks are not modelled.** A line inside a raw HTML block that reads
+ *   as a fence is a fence to this scanner and is raw text to CommonMark.
+ *   Direction: **false error** if such a block holds an odd number of them,
+ *   otherwise mis-placed masking with no report.
+ * - **Setext underlines and link reference definitions** are not modelled
+ *   either, and cannot err in either direction: neither construct can contain a
+ *   line that reads as a fence, nor terminate one.
  */
 
 /** Up to three spaces, `>`, and the one optional space that belongs to the marker. */
@@ -64,18 +87,54 @@ const BLOCKQUOTE_MARKER = /^ {0,3}> ?/;
 /** Up to three spaces, a bullet or ordered marker, and the spaces that follow it. */
 const LIST_MARKER = /^ {0,3}(?:[-+*]|\d{1,9}[.)])( *)/;
 
-/** Leading spaces of a line, as a count. */
-const leadingSpaces = (text: string): number => /^ */.exec(text)?.[0].length ?? 0;
+/** CommonMark advances a tab to the next multiple of four columns. */
+const TAB_STOP = 4;
 
 /**
- * Width of the container prefix an opening fence line may sit behind, and how
- * many block quotes it entered.
+ * A line with every tab replaced by the spaces it stands for, so that a
+ * character offset into the result *is* a CommonMark column.
+ *
+ * Indentation is the one thing this scanner measures, and CommonMark measures it
+ * in columns: `"\t```"` under a bullet whose content column is 2 is a closer with
+ * two columns of relative indent, and a fence it closes. Expanding once, here, is
+ * what lets the opener's `FENCE_LINE` test and the continuation allowance below
+ * both be written in spaces and still mean columns — neither can disagree with
+ * the other about a tab because neither ever sees one. (Doing it in only one of
+ * the two places is how a bulleted fence came to be opened and never closed:
+ * SERVER-066 review round 2.)
+ *
+ * A line holding no tab is returned unchanged, which is what keeps a tab-free
+ * text on exactly the path it took before containers were modelled at all.
+ *
+ * Columns are counted in UTF-16 code units, so a tab following an astral
+ * character lands one column late. Nothing decided here depends on that: every
+ * measurement is of the whitespace and container markers *preceding* a delimiter
+ * run, and that region is ASCII by construction.
+ */
+const expandTabs = (text: string): string => {
+  if (!text.includes("\t")) return text;
+  let expanded = "";
+  for (const char of text) {
+    expanded += char === "\t" ? " ".repeat(TAB_STOP - (expanded.length % TAB_STOP)) : char;
+  }
+  return expanded;
+};
+
+/** Columns of leading indentation. Lines reach this tab-expanded, so a space is a column. */
+const leadingIndent = (text: string): number => /^ */.exec(text)?.[0].length ?? 0;
+
+/**
+ * Content column of the container prefix an opening fence line may sit behind,
+ * and how many block quotes it entered. `text` is tab-expanded, so the returned
+ * width is a column.
  *
  * A list marker counts only when content follows it on the same line — that is
  * the only case a fence can be in. CommonMark puts the item's content column one
- * space after the marker when five or more spaces follow (the rest is the
- * content's own indentation, which `FENCE_LINE` then judges), and directly after
- * the run of one to four spaces otherwise.
+ * space after the marker when five or more columns of whitespace follow (the
+ * rest is the content's own indentation, which `FENCE_LINE` then judges), and
+ * directly after the run of one to four otherwise. Because the line arrives
+ * expanded, `"-\t```js"` is `"-   ```js"` here: three columns of whitespace, and
+ * a content column of 4, which is what CommonMark gives it.
  */
 const containerOpenPrefix = (text: string): { width: number; quoteDepth: number } => {
   let width = 0;
@@ -97,22 +156,31 @@ const containerOpenPrefix = (text: string): { width: number; quoteDepth: number 
 };
 
 /**
- * Width of the container continuation to remove from a line while `open`'s fence
+ * Columns of container continuation to remove from a line while `open`'s fence
  * is open: its block quotes' markers, then whatever the containers' content
  * column contributes that this line spells as plain indentation.
+ *
+ * The two are interleaved rather than sequenced, mirroring the opener's walk,
+ * because a block quote can itself sit inside an indented container: in
+ * `"  - > ```"` the marker of the continuation line `"    > code"` is preceded by
+ * four columns belonging to the list item, which is more than the three
+ * `BLOCKQUOTE_MARKER` tolerates on its own. Spending the item's allowance first
+ * is what lets that marker be found.
  */
 const containerContinuationWidth = (
   text: string,
   open: { readonly column: number; readonly quoteDepth: number },
 ): number => {
   let width = 0;
+  const spend = (from: number): number =>
+    Math.min(Math.max(0, open.column - from), leadingIndent(text.slice(from)));
   for (let depth = 0; depth < open.quoteDepth; depth += 1) {
-    const quote = BLOCKQUOTE_MARKER.exec(text.slice(width));
+    const indent = spend(width);
+    const quote = BLOCKQUOTE_MARKER.exec(text.slice(width + indent));
     if (quote === null) break;
-    width += quote[0].length;
+    width += indent + quote[0].length;
   }
-  const allowance = Math.max(0, open.column - width);
-  return width + Math.min(allowance, leadingSpaces(text.slice(width)));
+  return width + spend(width);
 };
 
 export type Line = {
@@ -177,9 +245,11 @@ const scanFences = (text: string): { ranges: TextRange[]; open: OpenFence | null
   let lineNumber = 0;
   for (const line of splitLines(text)) {
     lineNumber += 1;
+    // The one place a tab becomes a column; everything below measures in spaces.
+    const lineText = expandTabs(line.text);
     if (open === null) {
-      const prefix = containerOpenPrefix(line.text);
-      const match = FENCE_LINE.exec(line.text.slice(prefix.width));
+      const prefix = containerOpenPrefix(lineText);
+      const match = FENCE_LINE.exec(lineText.slice(prefix.width));
       if (match === null) continue;
       const marker = match[1] ?? "";
       // An info string may not contain a backtick when the fence is backticks.
@@ -193,7 +263,7 @@ const scanFences = (text: string): { ranges: TextRange[]; open: OpenFence | null
       };
       continue;
     }
-    const match = FENCE_LINE.exec(line.text.slice(containerContinuationWidth(line.text, open)));
+    const match = FENCE_LINE.exec(lineText.slice(containerContinuationWidth(lineText, open)));
     const marker = match?.[1] ?? "";
     const closes =
       match !== null &&

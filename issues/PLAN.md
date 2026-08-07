@@ -411,7 +411,7 @@ belongs to the same fix wave.
 | UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) | todo | P1 | CONTRACT-038 |
 | AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | todo | P1 | SERVER-068 |
 | AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | todo | P1 | SHARED-023 |
-| CONTRACT-039 | A chosen weight travels with the request into the queue event (SHARED-022) | todo | P2 | SHARED-022 |
+| CONTRACT-039 | A chosen weight has no way to reach the work it governs (SHARED-022) | todo | P2 | SHARED-022 |
 | SERVER-069 | Carry the chosen weight into the dispatch, and name it in the job log (SHARED-022) | todo | P2 | CONTRACT-039 |
 | SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
 | SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
@@ -432,7 +432,7 @@ belongs to the same fix wave.
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | todo | P1 | INFRA-008 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
-| SERVER-067 | The save path drops non-blocking errors: they reach no response and no log | todo | P2 | SERVER-066 |
+| SERVER-067 | Non-blocking errors reach the log but not the response: needs a §14 warning-channel decision | todo | P2 | SERVER-066 |
 | UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |

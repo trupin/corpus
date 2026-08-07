@@ -551,6 +551,189 @@ six touched files. `core/code.ts` is server-only (grep: no importer in
 `apps/cli`, `apps/ui` or `packages`), so no consumer outside the scoped run is
 affected.
 
+### Review-fix round 2 — PR #26, MAJOR (tab-indented container bodies)
+
+_Fixed on: **opus**._ Real workspace `/tmp/corpus-066r2` (`corpus init --port 8815`),
+real server process, real HTTP, real CLI. Port 8765 untouched; server stopped and
+8815 confirmed free at the end. `markdown-it` in commonmark mode was used as an
+oracle throughout, so every claim about "what CommonMark does" below is a
+rendering, not an opinion.
+
+#### The regression, reproduced
+
+The reviewer is right, and the fixture class is worse than the one round 1 fixed.
+Round 1 measured the container prefix in **characters**; CommonMark measures
+indentation in **columns**, where a tab advances to the next multiple of 4. A
+fence opened behind a space-delimited marker was therefore seen, and a
+tab-indented closer was not — `leadingSpaces` counted no allowance to strip and
+`FENCE_LINE` rejects a leading tab.
+
+Against the shipped `core/code.ts` under `tsx`, no test harness:
+
+```
+bullet + tab body        "- ```js\n\tcode\n\t```\n"     {"marker":"```","start":0,"line":1}  masks [0,19)
+ordered + tab body       "1. ```js\n\tcode\n\t```\n"    {"marker":"```","start":0,"line":1}  masks [0,20)
+nested bullet/quote      "  - > ```\n    > code\n    > ```\n"  {"marker":"```",...}         masks [0,31)
+bullet + space (control) "- ```js\n  code\n  ```\n"     null
+```
+
+markdown-it closes all three. **On the pre-container scanner all three produced
+no fence, no finding and no masking at all**, so the round-1 change converted
+silent-and-harmless into loud-and-harmful.
+
+Then through the product, with the fix backed out at its two seams (`expandTabs`
+returning its argument, the sequential continuation walk restored) and the server
+restarted, so the "before" is the running binary:
+
+```
+$ corpus doc check                     (shipped scanner, three tab/quote docs on disk)
+error unterminated-fence data/docs/inbox/tab-ordered.md:  … opened at line 16 …
+error unterminated-fence data/docs/inbox/tab-bullet.md:   … opened at line 16 …
+error unterminated-fence data/docs/inbox/nested-quote.md: … opened at line 16 …
+corpus: 3 errors in 12 documents.
+exit=6
+```
+
+And the turn loss — this issue's own harm, now caused *by* its fix, on valid
+CommonMark. Three turns written through the real API:
+
+```
+POST /api/threads/th_yl4nlbhf/turns (agent) {"body":"Try this:\n\n- ```js\n\tconst x = 1;\n\t```\n\nThat should do it."}  -> 201
+POST /api/threads/th_yl4nlbhf/turns (user)  {"body":"Thanks, that worked."}                                              -> 201
+GET  /api/threads/th_yl4nlbhf  -> turns: 2 ['user','agent']
+last turn body: "Try this:\n\n- ```js\n\tconst x = 1;\n\t```\n\nThat should do it.\n\n## user · 2026-08-07T07:17:08Z\nThanks, that worked."
+```
+
+#### How tabs are handled
+
+**Expanded once, at the top of the scan, and never again** — `expandTabs(line.text)`
+is the first statement of the loop body, and every measurement below it (the
+opener's `FENCE_LINE` test, `containerOpenPrefix`'s content-column arithmetic,
+`containerContinuationWidth`'s allowance) then reads a line in which a character
+offset *is* a column. The two readings cannot disagree about a tab because
+neither ever sees one, which is the same argument that makes `fencedCodeRanges`
+and `unterminatedFence` one scan rather than two. No caller does its own
+expansion and no second constant exists; `TAB_STOP = 4` appears once.
+
+This is what makes the within-line offsets safe: `scanFences` uses only
+`line.start` and `line.contentEnd`, both taken from the *raw* line, and never an
+offset derived from a match — so expansion cannot move a reported range by a byte.
+
+It also deletes the old "a container marker followed by a tab is not seen"
+caveat outright: `"-\t```js"` expands to `"-   ```js"`, giving a content column
+of 4, which is exactly what CommonMark gives it.
+
+#### Same round: the two MINORs
+
+**Fixed — a quote marker indented past its own tolerance.**
+`containerContinuationWidth` stripped block quotes *before* spending the
+indentation allowance, so in `"  - > ```"` the continuation line `"    > code"`
+carried four columns before its `>` and `BLOCKQUOTE_MARKER` (three spaces) matched
+nothing. The walk now interleaves — spend the remaining allowance, then look for
+the marker — mirroring the opener's walk, which had it right.
+
+**Left approximate, and named: an ordered marker is a container wherever it
+appears.** `"Some prose\n2. ```\nmore text\n"` has no list and no fence in
+CommonMark (an ordered item may interrupt a paragraph only when it starts at 1),
+and this scanner reads a container fence that never closes. Direction: **false
+error**, narrow — it needs a non-1 ordered marker, immediately after a paragraph
+line, opening a run that never closes.
+
+It is left alone because **the obvious repair is wrong, and the oracle says so**:
+`"1. a\n2. ```js\n   code\n   ```\n"` is a *sibling item* — markdown-it renders it
+as a two-item list with a code block — because the "cannot interrupt a paragraph"
+rule governs *starting* a list, not continuing one. Refusing the marker after a
+non-blank line would make that item's closing fence read as a fresh opener, which
+is finding A's failure returning through the front door, on a shape far commoner
+than the one being fixed. Restricting the refusal by inspecting the previous line
+does not rescue it either: `"# Heading\n2. ```js\n   code\n   ```\n"` is a genuine
+list too. Telling these apart is paragraph tracking, i.e. a parser. Both the
+divergence and this counterexample are now tests, so changing the policy is a
+decision rather than an accident.
+
+#### The docblock now names a direction for every entry
+
+The reviewer's charge that the "what stays approximate" list read as exhaustive
+and was not is accepted; it is rewritten to state the miss/false-error
+distinction explicitly and to be true:
+
+- **Containers never end** → **false error**. Newly stated, and it was previously
+  spun as merely "errs toward still inside code". `"- ```js\n  code\n\nAfter.\n"`
+  is a *closed* fence in CommonMark (the item's boundary closes it) and an
+  unterminated one here. Pinned as a test.
+- **A list marker is a container wherever it appears** → **false error**, narrow;
+  above. New entry.
+- **HTML blocks** → **false error** when a raw block holds an odd number of
+  fence-looking lines. The old text claimed setext underlines, link reference
+  definitions *and* HTML blocks "cannot contain or terminate a fence", which is
+  false for HTML blocks; they are now a separate entry.
+- **Setext underlines and link reference definitions** → genuinely cannot err in
+  either direction; that claim is kept because it is true.
+- **Tabs** → removed from the list; no longer approximate.
+
+#### The container-free path is unchanged — how that was checked
+
+Three ways, because it is the property the whole container model rests on.
+
+1. **Structurally.** `expandTabs` returns its argument unchanged when the line
+   holds no tab, and for a container-free line with tabs the outcome is provably
+   the same: a tab anywhere in leading whitespace lands at column ≥ 4 from any
+   starting column ≤ 3, so no tab can produce the ≤ 3-space indent `FENCE_LINE`
+   requires — both the old and new code reject it. Expansion elsewhere in the line
+   maps whitespace to whitespace, and the only two tests applied to `match[2]`
+   are `.includes("`")` and `.trim() === ""`, both invariant under that.
+2. **Over the repository.** The new scanner and a transcription of the
+   pre-container scanner were run side by side over every markdown file in the
+   tree — **560 files, 559 byte-identical, 1 difference, container-bearing**:
+   `issues/server/001-document-model-core.md` lines 238–243, a `>`-quoted fence
+   that the old scanner did not see as a fence at all and the new one reads as a
+   closed range. Both agree the file has no unterminated fence. That is the
+   reviewer's "exactly one intended difference", reproduced. Only 2 files in the
+   tree contain a tab at all, and both bear containers — which is precisely why
+   this sweep alone would not have caught the regression, hence (3).
+3. **Over the shape the repository does not have.** 8000 container-free
+   three-line permutations built from 18 tab-bearing line shapes (tab at the
+   margin, space-then-tab, tab inside an info string, tab-only lines, tab after a
+   delimiter run, …), diffed against the same transcription: **0 divergences**.
+   This one is now a permanent test — `describe("the container-free path is
+   unchanged")` in `core/code.test.ts` carries the transcription and the
+   permutation sweep, so a future change that quietly alters the container-free
+   path fails there.
+
+#### Tests
+
+The regression tests are the point, and the previous round's covered
+space-indented containers only. New in `core/code.test.ts`:
+
+- `unterminatedFence with tab-indented containers` — 12 shapes that must close:
+  tab bodies under `-`, `*`, `+`, `1.`, `1)`, tildes, space-then-tab, a marker
+  itself followed by a tab (bullet, ordered, block quote), a tab body under a
+  nested item, plus the quote-marker-indented-past-its-tolerance shape. Each
+  fails on the shipped code. Plus: masking stays inside the item rather than
+  running to end of body; a closer two tabs deep (8 columns, 6 past the content
+  column) still does not close; a tab at the margin is still indented code.
+- `unterminatedFence divergences that are accepted` — the two named false errors,
+  plus the sibling-item counterexample that explains why the second is not
+  repaired.
+- `the container-free path is unchanged` — the differential above.
+
+**Every "must close" fixture was verified against markdown-it, not by eye, and
+two of my own drafts were wrong**: `"- ```js\n\t\tcode\n\t\t```\n"` and the same
+under a nested item do *not* close in CommonMark (two tabs is 8 columns, ≥ 4 past
+the content column, so the closer is swallowed into the block as indented code).
+They were moved out of the closing list and one became the "four or more columns
+past" assertion.
+
+#### Checks
+
+`vitest run apps/server packages/contract` — 221 files, **5288 tests, all pass**
+(`VITEST_MAX_THREADS=4`); 5269 → 5288 is the 19 new cases. `tsc --noEmit` clean in
+`apps/server`. `eslint` and `prettier --check` clean on both touched files
+(`core/code.ts`, `core/code.test.ts`). `core/code.ts` remains server-only, so no
+consumer outside the scoped run is affected. `corpus db doctor` clean over the
+E2E workspace (14 documents from 14 files), and every mutation auto-committed
+with the acting party as git author.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing
