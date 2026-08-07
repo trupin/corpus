@@ -4,6 +4,7 @@ import { useContextMenu } from "../menu/ContextMenuHost";
 import { MenuItems } from "../menu/MenuItems";
 import type { MenuAction } from "../menu/menuModel";
 import { CollapsedThread, type ThreadSummary } from "./CollapsedThread";
+import { threadStatusNotice } from "./resolveNotice";
 import { ThreadCard, type ThreadHost } from "./ThreadCard";
 import { useThreadCollapse } from "./ThreadCollapseContext";
 import { RESOLVED_STATUS, type ThreadCollapseSubject } from "./threadCollapse";
@@ -101,12 +102,7 @@ export function ThreadPanel({
 
   const setStatus = useSetThreadStatus({
     onSuccess: (_result, variables) => {
-      onNotify({
-        tone: "info",
-        message: variables.resolved
-          ? "Thread resolved — committed. Replying reopens it."
-          : "Thread reopened — committed.",
-      });
+      onNotify({ tone: "info", message: threadStatusNotice(variables.resolved) });
     },
     onError: (error, variables) => {
       onNotify({
