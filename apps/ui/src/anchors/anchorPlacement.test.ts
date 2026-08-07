@@ -5,11 +5,13 @@ import { serializeDoc } from "../editor/markdown/serialize.js";
 import { threadRowFixture } from "../testing/readerFixture.js";
 import type { TextQuoteSelector } from "../editor/selection.js";
 import {
+  anchoredSummary,
   detachedThreads,
   isPlaced,
   offsetsComparable,
   placeAnchors,
   segmentsOf,
+  summaryFromAnchor,
   unplacedThreads,
   type AnchoredThread,
 } from "./anchorPlacement.js";
@@ -81,6 +83,7 @@ function underHighlight(traced: DocumentTrace, segments: readonly PmRange[]): st
 describe("placing an anchor", () => {
   it("puts the highlight where the server's character range says", () => {
     const [placed] = placeAnchors({
+      rowsSettled: true,
       anchors: [anchor()],
       rows: [row()],
       body: BODY,
@@ -93,6 +96,7 @@ describe("placing an anchor", () => {
 
   it("marks a resolved thread's placement resolved", () => {
     const [placed] = placeAnchors({
+      rowsSettled: true,
       anchors: [anchor({ threadStatus: "resolved" })],
       rows: [row({ status: "resolved" })],
       body: BODY,
@@ -103,6 +107,7 @@ describe("placing an anchor", () => {
 
   it("gives an orphan no segments at all", () => {
     const [placed] = placeAnchors({
+      rowsSettled: true,
       anchors: [anchor({ orphaned: true, range: null })],
       rows: [row()],
       body: BODY,
@@ -115,6 +120,7 @@ describe("placing an anchor", () => {
   it("orders anchors by where they appear in the document", () => {
     const second = BODY.indexOf("Friday");
     const placed = placeAnchors({
+      rowsSettled: true,
       anchors: [
         anchor({
           anchorId: "anc_2",
@@ -135,6 +141,7 @@ describe("placing an anchor", () => {
     const repeated = "rate rate rate\n";
     const at = repeated.indexOf("rate", 5);
     const [placed] = placeAnchors({
+      rowsSettled: true,
       anchors: [
         anchor({
           range: { start: at, end: at + 4 },
@@ -189,6 +196,7 @@ describe("offsets the trace cannot vouch for", () => {
     it("places the highlight on a body that ends without a newline", () => {
       const raw = "The rate is 6.1% today.";
       const [placed] = placeAnchors({
+        rowsSettled: true,
         anchors: [anchor({ range: { start: 12, end: 16 } })],
         rows: [row()],
         body: raw,
@@ -228,6 +236,7 @@ describe("offsets the trace cannot vouch for", () => {
     it("places it through the rendered text rather than the raw offsets", () => {
       const traced = source(raw);
       const [placed] = placeAnchors({
+        rowsSettled: true,
         anchors: [anchor({ range: { start: 0, end: 5 } })],
         rows: [row()],
         body: raw,
@@ -249,6 +258,7 @@ describe("offsets the trace cannot vouch for", () => {
     const traced = source(raw);
     const start = raw.indexOf("6.1%");
     const [placed] = placeAnchors({
+      rowsSettled: true,
       anchors: [anchor({ range: { start, end: start + 4 } })],
       rows: [row()],
       body: raw,
@@ -268,6 +278,7 @@ describe("offsets the trace cannot vouch for", () => {
   it("draws nothing when the two spellings say different things", () => {
     const raw = "Title\n=====\n\nThe rate is 6.1% today.\n";
     const [placed] = placeAnchors({
+      rowsSettled: true,
       anchors: [anchor({ range: { start: 24, end: 28 } })],
       rows: [row()],
       body: raw,
@@ -318,6 +329,7 @@ describe("threads that hang off no text", () => {
   it("lists an unplaceable thread, and never counts an orphan among them", () => {
     const traced = source();
     const placed = placeAnchors({
+      rowsSettled: true,
       anchors: [
         anchor(),
         anchor({ anchorId: "anc_2", threadId: "th_2", orphaned: true, range: null }),
@@ -327,6 +339,87 @@ describe("threads that hang off no text", () => {
       source: traced,
     });
     expect(unplacedThreads(placed).map((each) => each.id)).toEqual(["th_1"]);
+  });
+});
+
+/**
+ * PR #25 review, MINOR: a document's threads arrive as one paginated list while
+ * its anchors do not, so a placement has to be able to describe a conversation
+ * whose row is not in the answer — otherwise it disappears from the margin while
+ * its highlight stays in the body, which SPEC.md §11 forbids in as many words.
+ */
+describe("an anchored conversation whose row has not arrived", () => {
+  const placedAnchor = (overrides: Partial<ResolvedAnchor> = {}): AnchoredThread => {
+    const [only] = placeAnchors({
+      rowsSettled: true,
+      anchors: [anchor(overrides)],
+      rows: [],
+      body: BODY,
+      source: source(),
+    });
+    return only as AnchoredThread;
+  };
+
+  it("describes itself from the anchor: which thread, what passage, what status", () => {
+    const summary = summaryFromAnchor(placedAnchor({ threadStatus: "resolved" }), "doc_m");
+    expect(summary.id).toBe("th_1");
+    expect(summary.quote).toBe("6.1%");
+    expect(summary.status).toBe("resolved");
+    expect(summary.parent).toBe("doc_m");
+  });
+
+  /**
+   * PR #25 re-review, MAJOR. This used to answer `unread: true` — the right
+   * placement reached by asserting a fact an anchor does not carry. It says it
+   * does not know instead, which stands the rule down just the same and keeps a
+   * "new" badge off the line of a conversation nobody has evidence about.
+   */
+  it("does not know whether it holds anything unseen, and says so", () => {
+    expect(summaryFromAnchor(placedAnchor({ threadStatus: "resolved" }), "doc_m").readState).toBe(
+      "unknown",
+    );
+  });
+
+  it("defers to the row the moment the list has one", () => {
+    const withRow: AnchoredThread = {
+      ...placedAnchor({ threadStatus: "resolved" }),
+      row: row({ id: "th_1", status: "resolved", turnCount: 4, lastAuthor: "agent" }),
+    };
+    const summary = anchoredSummary(withRow, "doc_m");
+    expect(summary.turnCount).toBe(4);
+    expect(summary.lastAuthor).toBe("agent");
+    expect(summary.readState).toBe("read");
+  });
+});
+
+/**
+ * UI-077: "no row yet" and "no row, ever" are different facts, and only the
+ * second may be placed on — a placement is latched once, so a decision taken
+ * against a list still in flight is permanent (`AnchoredThreads.tsx`).
+ */
+describe("whether the row list has answered", () => {
+  const placedWith = (rows: DocRow[], rowsSettled: boolean): AnchoredThread => {
+    const [only] = placeAnchors({
+      rowsSettled,
+      anchors: [anchor({ threadStatus: "resolved" })],
+      rows,
+      body: BODY,
+      source: source(),
+    });
+    return only as AnchoredThread;
+  };
+
+  it("is unanswered while the list is in flight and the row is absent", () => {
+    expect(placedWith([], false).rowKnown).toBe(false);
+  });
+
+  it("is answered once the list has come back without it — the paginated case", () => {
+    expect(placedWith([], true).rowKnown).toBe(true);
+  });
+
+  it("is answered by the row itself, whatever the list is still doing", () => {
+    // A row in hand is the answer; there is nothing further to wait for.
+    expect(placedWith([row({ id: "th_1", status: "resolved" })], false).rowKnown).toBe(true);
   });
 });
 
@@ -373,6 +466,7 @@ describe("a comment whose selection straddles inline markup", () => {
     if (selection === null) throw new Error("the selection quoted nothing");
     const range = resolve(body, selection.selector);
     const [placed] = placeAnchors({
+      rowsSettled: true,
       anchors: [anchor({ range, orphaned: range === null })],
       rows: [row()],
       body,

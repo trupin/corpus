@@ -1038,15 +1038,21 @@ Show recent jobs and their last log line.
 
 The console's master list from the terminal: one row per queue event with its status and most recent log line, most recent first.
 
+The two filters are what make the rest of the queue surface reachable from here. `corpus queue claim-all` reports what the server still holds `in-progress` and caps that report at twenty rows, ending in `… and N more held, not shown`; `--status in-progress` is how that number is expanded. `--origin` answers the other question — _is anything still outstanding on this document?_ — and the server answers **that** one completely.
+
+**The list is windowed unless `--origin` is given.** `--recent` bounds it, the server applies its own default, and a `--status` filter narrows within that window rather than lifting it. `--origin` is the exception, and the only one: one document's jobs are bounded by that document's own history, so the server drops the window instead of applying it.
+
 ```
 corpus job list [flags]
 ```
 
 **Flags**
 
-| Flag               | Type   | Default | Description                                                                   |
-| ------------------ | ------ | ------- | ----------------------------------------------------------------------------- |
-| `--recent <count>` | number | —       | How many of the most recent jobs to show. The server applies its own default. |
+| Flag                | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--status <a,b>`    | string | —       | Comma-separated job statuses; values OR together. Legal values: pending, in-progress, deferred, processed, failed, abandoned. Sent to the server unchanged, so a misspelled value comes back as an error naming the legal set rather than as an empty list. The window still applies: this returns the `--recent` most recent jobs **with these statuses**, not every one that ever had them. |
+| `--origin <doc-id>` | string | —       | Only jobs originating from this document or thread — the `originId` the console links through. A predicate about one document rather than a narrowing of the list, so it is answered **completely**: `--recent` is not applied.                                                                                                                                                               |
+| `--recent <count>`  | number | —       | How many of the most recent jobs to show. The server applies its own default. Bounds this list only, and is **ignored once `--origin` is given**.                                                                                                                                                                                                                                             |
 
 **Examples**
 
@@ -1054,6 +1060,18 @@ What has the agent been doing?
 
 ```
 corpus job list
+```
+
+Everything the server still thinks is running — the whole set behind `corpus queue claim-all`'s capped `… and N more held` line (SPEC.md §7).
+
+```
+corpus job list --status in-progress
+```
+
+Every job that thread has produced, unwindowed — _does the agent still owe this thread an answer?_
+
+```
+corpus job list --origin th_5f1c2a
 ```
 
 One JSON value: `{"jobs":[{"eventId":"evt_9f2a","status":"processed",…}]}`.
@@ -1265,7 +1283,7 @@ corpus lock release doc_a1b2c3
 
 Park on, claim and settle the agent's event queue.
 
-The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work blocked on a user-held edit lock waits rather than failing, and returns to `pending` by itself when that lock clears. `halt` is the kill switch: it stops consumption without stopping production.
+The event queue is how work reaches the agent: a comment that requests it enqueues an event, and the orchestrate skill loops `corpus queue idle` → `corpus queue claim-all` → handle → `corpus queue complete`. `idle` observes and never claims, `claim-all` is the atomic step, and every transition is idempotent so a retried call is never a crash. `defer` is the fourth, non-terminal outcome: work blocked on a user-held edit lock waits rather than failing, and returns to `pending` by itself when that lock clears. `halt` is the kill switch: it stops consumption without stopping production. The loop's two entry points — `idle` when it returns work, and `claim-all` — additionally report what the server still holds `in-progress`, as a list beside the claimed batch and never mixed into it, so the agent can reconcile the server's view against its own memory (SPEC.md §7).
 
 ### `corpus queue abandon`
 
@@ -1295,7 +1313,11 @@ corpus queue abandon evt_9f2a
 
 Claim every pending event as one batch.
 
-Moves all `pending/*` events to `in-progress/` in a single call and prints them as **one JSON line on stdout, in both human and `--json` mode** — no prose, no summary line, no pretty-printing, and no pagination however large the batch. This command exists for machine consumption and the batch is the payload; do not add a human-readable line to it. An empty batch is still a batch: `{"events":[]}` and exit 0, which is the normal outcome when another idle client claimed first or the queue is halted. Concurrent claims never hand the same event to two callers.
+Moves all `pending/*` events to `in-progress/` in a single call and prints them as **one JSON line on stdout, in both human and `--json` mode** — no prose, no summary line, no pretty-printing, and no pagination however large the batch. This command exists for machine consumption and the batch is the payload; do not add a human-readable line to stdout. An empty batch is still a batch: `events` is `[]` and the exit code is 0, which is the normal outcome when another idle client claimed first or the queue is halted. Concurrent claims never hand the same event to two callers.
+
+**The response also reports what the server still thinks you are doing** (SPEC.md §7). Alongside `events` it carries `inProgress`, the events already sitting in `in-progress/` when the call arrived — **a different list from the one you just claimed, and never mixed into it**. Each row gives the event's id and type, the document or thread it came from, and `heldSince` as an ISO instant so you compute its age against your own clock. The list is capped at the 20 most recently claimed and says so rather than trailing off: `total` is how many are really held and `truncated` is true when the cap bit. Read it and reconcile — settle what you have already done with the ordinary verbs, leave what you are still working, and never settle an event you cannot account for. Nothing here is claimed, and the server settles none of it by itself.
+
+In human mode that same list is also printed as a readable block **on stderr** — ages as `held 3h`, one row per event, with an explicit _and N more held_ line when the cap bit — so stdout stays the single JSON line a pipe can parse. Under `--json` the block is suppressed and stderr carries only failures. Either way nothing at all is printed when nothing is held.
 
 ```
 corpus queue claim-all [flags]
@@ -1303,7 +1325,7 @@ corpus queue claim-all [flags]
 
 **Examples**
 
-One JSON line: `{"events":[{"id":"evt_…","type":"comment.created",…}]}`.
+One JSON line: `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false}}`.
 
 ```
 corpus queue claim-all
@@ -1313,6 +1335,12 @@ Drive a loop over the claimed event ids.
 
 ```
 corpus queue claim-all | jq -r '.events[].id'
+```
+
+Inspect only what the server still holds — `total` and `truncated` say whether the list you are looking at is the whole of it.
+
+```
+corpus queue claim-all | jq '.inProgress'
 ```
 
 ### `corpus queue complete`
@@ -1464,6 +1492,8 @@ Park until work arrives, then exit.
 
 Long-polls `GET /api/queue/idle` and returns the instant a pending event exists or arrives. Parking costs the agent zero tokens and prints nothing at all: the command is blocked on a response, not looping. When the window elapses with nothing pending it exits **0** with a timeout value (`{"idle":true,"reason":"timeout"}`), so the orchestrate skill's loop simply re-invokes it — a timeout is not an error. While the queue is halted, idle parks for the full window and reports `reason: "halted"` instead, which costs one extra `GET /api/queue/status` on expiry (the `204` carries no halted indicator). **Idle observes and never claims**: the events stay in `pending/` until `corpus queue claim-all`, so a crash between the two loses nothing. Ctrl-C exits 0 with no output.
 
+**When it returns work, it also reports what the server still thinks you are doing** (SPEC.md §7) — the same `inProgress` field `corpus queue claim-all` carries, as its own key beside `events` and never mixed into them: those events are already in `in-progress/` and are not the ones waiting to be claimed. In human mode it prints as a readable block on stderr with ages rendered as `held 3h`; under `--json` `heldSince` stays an ISO instant so you compute the age against your own clock, and `total` plus `truncated` say whether the 20-row cap cut the list. A timeout carries no list at all — the `204` has no body, and an agent with nothing to claim has nothing to reconcile against.
+
 ```
 corpus queue idle [flags]
 ```
@@ -1482,7 +1512,7 @@ Park for the default rearm window; prints one line per event when work lands.
 corpus queue idle
 ```
 
-The agent loop's form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}]}` on work, `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` on expiry.
+The agent loop's form: one JSON value — `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false}}` on work, `{"idle":true,"reason":"timeout"}` or `{"idle":true,"reason":"halted"}` on expiry.
 
 ```
 corpus queue idle --json

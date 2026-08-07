@@ -1,4 +1,4 @@
-import { MAX_IDLE_TIMEOUT_SECONDS, type QueueEvent } from "@corpus/contract";
+import { MAX_IDLE_TIMEOUT_SECONDS, type InProgressSet, type QueueEvent } from "@corpus/contract";
 import { responseError, transportError, type CliClient } from "../../client.js";
 import { isCliError, ServerResponseError } from "../../errors.js";
 import { delay } from "../../signals.js";
@@ -34,8 +34,21 @@ export const IDLE_RETRY_BACKOFF_MS = 2_000;
  */
 export const IDLE_REQUEST_MARGIN_MS = 5_000;
 
+/**
+ * A window that returned work carries the whole `200` body, not just its events:
+ * the in-progress set is the other half of what the loop's entry point owes the
+ * agent (SPEC.md §7), and a poll that kept only `events` would drop it before
+ * `idle` ever saw it. The `expired` outcome has no set by construction — the
+ * `204` has no body, and an agent with nothing to claim has nothing to reconcile
+ * against.
+ */
 export type PollOutcome =
-  | { readonly kind: "events"; readonly events: readonly QueueEvent[]; readonly requests: number }
+  | {
+      readonly kind: "events";
+      readonly events: readonly QueueEvent[];
+      readonly inProgress: InProgressSet;
+      readonly requests: number;
+    }
   | { readonly kind: "expired"; readonly requests: number }
   | { readonly kind: "interrupted"; readonly requests: number };
 
@@ -83,7 +96,9 @@ export async function pollWindow(options: PollWindowOptions): Promise<PollOutcom
     }
 
     consecutiveFailures = 0;
-    if (attempt.kind === "events") return { kind: "events", events: attempt.events, requests };
+    if (attempt.kind === "events") {
+      return { kind: "events", events: attempt.events, inProgress: attempt.inProgress, requests };
+    }
     // A clock that jumped, or a hold that answered late, must not buy the window
     // another segment: the deadline is fixed when the window opens.
     if (now() >= deadline) return { kind: "expired", requests };
@@ -100,7 +115,11 @@ function segmentFor(remainingMs: number, maxSegmentSeconds: number): number {
 }
 
 type IdleAttempt =
-  | { readonly kind: "events"; readonly events: readonly QueueEvent[] }
+  | {
+      readonly kind: "events";
+      readonly events: readonly QueueEvent[];
+      readonly inProgress: InProgressSet;
+    }
   | { readonly kind: "expired" }
   | { readonly kind: "failure"; readonly cause: unknown };
 
@@ -134,7 +153,7 @@ async function requestIdle(
         { code: "empty_response", status: result.response.status },
       );
     }
-    return { kind: "events", events: result.data.events };
+    return { kind: "events", events: result.data.events, inProgress: result.data.inProgress };
   } catch (cause) {
     if (isCliError(cause)) throw cause;
     return { kind: "failure", cause };

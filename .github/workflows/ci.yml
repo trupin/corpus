@@ -26,8 +26,13 @@ jobs:
       # Supply-chain gate (INFRA-013): zero `npm audit` findings of ANY severity.
       # Not `--audit-level` — that tolerates the `info` bucket — but a
       # `metadata.vulnerabilities.total === 0` assertion, which has no floor.
-      # There is no allowlist, no waiver file and no per-package skip, by user
-      # directive: an advisory nobody can fix is an escalation, not a mechanism.
+      # There is still no allowlist, no waiver file and no per-package skip. What
+      # INFRA-021 added instead (user decision 2026-08-06) is a register of dated
+      # exceptions in `scripts/audit-report.ts`, each keyed on one GHSA id AND the
+      # dependency route `package-lock.json` declares, each with a hard expiry, and
+      # each printed in full on every run — so a carried finding is visible in this
+      # job's log and the success line says the tree is not clean. It fails closed
+      # on expiry, on a route change, and on a route that stops being dev-only.
       # Early and before `npm run build` so it costs a registry round-trip rather
       # than a full compile. Fail-closed by omission — the pre-commit hook passes
       # `--tolerate-unreachable-registry`, and this step deliberately does not, so

@@ -191,7 +191,10 @@ describe("FocusMode", () => {
       expect(titleOf(document)).toBe("Mortgage options");
     });
     expect(document.querySelectorAll("[data-reveal-flash]")).toHaveLength(0);
-    expect(document.querySelector(".focus .thread-slot.expanded")).toBeNull();
+    // Nothing was jumped to: no conversation is flashing. (Whether one is
+    // expanded is no longer the question — an open thread is placed expanded
+    // now, and a reveal is what *flashes* it.)
+    expect(document.querySelector(".thread-card.flash")).toBeNull();
   });
 
   /**
@@ -228,7 +231,7 @@ describe("FocusMode", () => {
   it("keeps its own stack: navigating in focus leaves the column's history alone", async () => {
     render(<Stacked transport={wire()} />);
     await waitFor(() => {
-      expect(document.querySelector("[data-depth]")?.textContent).toBe("doc_m");
+      expect(document.querySelector("output[data-depth]")?.textContent).toBe("doc_m");
     });
 
     fireEvent.click(document.querySelector("[data-expand]:not([data-doc-menu])") as HTMLElement);
@@ -243,7 +246,7 @@ describe("FocusMode", () => {
     });
 
     // The column behind it never moved.
-    expect(document.querySelector("[data-depth]")?.textContent).toBe("doc_m");
+    expect(document.querySelector("output[data-depth]")?.textContent).toBe("doc_m");
     expect(document.querySelector(".col.reading .doc-title")).not.toBeNull();
   });
 

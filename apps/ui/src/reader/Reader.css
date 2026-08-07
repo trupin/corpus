@@ -466,18 +466,13 @@
   background: var(--surface-2);
 }
 
-.thread-slot .thread-card {
-  display: none;
-}
-
-.thread-slot.expanded .thread-card {
-  display: block;
-}
-
-.thread-slot.expanded > .t-chip {
-  display: none;
-}
-
+/*
+ * A conversation is either its collapsed line or its card — never both, and
+ * never one hidden behind the other. The swap is a **mount**, not a `display`
+ * rule, because SPEC.md §7 counts displayed content as read and a card that was
+ * merely invisible would still have fetched its turns and marked them seen.
+ * The old `display: none` pair is gone for exactly that reason.
+ */
 .thread-card {
   position: relative;
   margin: 12px 0 16px;

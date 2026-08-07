@@ -347,15 +347,15 @@ describe("the §8 enqueue matrix", () => {
     expect(pendingEvents(ws)).toEqual([]);
   });
 
-  it("does not re-trigger once the thread is resolved", async () => {
+  // Sprint-006 Adjudication 5: an explicit request is an explicit request, and
+  // it reaches the agent on a resolved thread by short-circuiting §8's automatic
+  // clause — which since SHARED-019 Amendment 1 is no longer the only way
+  // through, only the way that also wins where the automatic clause says no.
+  it("still lets an explicit request through on a resolved thread", async () => {
     const id = await engagedThread();
     expect((await ws.post(`/api/threads/${id}/resolve`, {})).status).toBe(200);
     const before = pendingEvents(ws).length;
 
-    expect((await appendTurn(ws, id, { body: "plain" })).eventId).toBeNull();
-    expect(pendingEvents(ws)).toHaveLength(before);
-
-    // Sprint-006 Adjudication 5: an explicit request is an explicit request.
     expect((await appendTurn(ws, id, { body: "actually", requestsAgent: true })).eventId).toMatch(
       /^evt_/,
     );
@@ -368,6 +368,149 @@ describe("the §8 enqueue matrix", () => {
     const mentioning = await createThread(ws, { parent, body: "@agent please look" });
     expect(plain.eventId).toBeNull();
     expect(mentioning.eventId).toMatch(/^evt_/);
+  });
+});
+
+// SPEC.md §8 (SHARED-019 Amendment 1): "Resolved is a closed door, not a locked
+// one: a person's reply reopens it… A turn written by the **agent** never
+// reopens a thread, so a conversation the agent closes stays closed. Reopening
+// this way is an ordinary status change: it is committed, it is visible on the
+// thread, and it is indistinguishable afterwards from reopening by hand."
+//
+// The defect this pins is UI-078: before SERVER-062 no reply path wrote
+// `status` at all, so a person's reply to a resolved thread reached nobody and
+// left no sign of it.
+describe("§8's reopen", () => {
+  /** An engaged thread the user has resolved, outside §4's squash window. */
+  async function resolvedThread(): Promise<string> {
+    const id = await engagedThread();
+    expect((await ws.post(`/api/threads/${id}/resolve`, {})).status).toBe(200);
+    expect(threadFrontmatterOf(ws, id)["status"]).toBe("resolved");
+    // Past SQUASH_IDLE_MS, so the reply that follows makes a commit of its own
+    // and its diff shows exactly what that one write carried.
+    ws.advance(31_000);
+    return id;
+  }
+
+  it("reopens the thread and wakes the agent, in the turn's own commit", async () => {
+    const id = await resolvedThread();
+    const before = { events: pendingEvents(ws).length, commits: ws.log("%H").length };
+
+    const appended = await appendTurn(ws, id, { body: "actually, one more thing" });
+
+    expect(appended.eventId).toMatch(/^evt_/);
+    expect(pendingEvents(ws)).toHaveLength(before.events + 1);
+    // The response, the file and the projection agree before the response is
+    // sent — read-your-write, exactly as `POST …/reopen` promises.
+    expect(appended.body["thread"]).toMatchObject({ status: "open", agent: "engaged" });
+    expect(threadFrontmatterOf(ws, id)["status"]).toBe("open");
+    expect(ws.db.prepare("SELECT status FROM threads WHERE id = ?").get(id)).toEqual({
+      status: "open",
+    });
+
+    // One commit, authored by the acting party (§4), carrying *both* the turn
+    // and the status flip — never a second write.
+    expect(ws.log("%H")).toHaveLength(before.commits + 1);
+    expect(ws.git("log", "-1", "--format=%an <%ae>%n%s").trim().split("\n")).toEqual([
+      "user <user@corpus.local>",
+      `comment: turn on ${id} by user (reopened)`,
+    ]);
+    const diff = ws.git("show", "--format=", "HEAD", "--", threadPath(id));
+    expect(diff).toContain("-status: resolved");
+    expect(diff).toContain("+status: open");
+    expect(diff).toContain("+actually, one more thing");
+    expect(ws.git("show", `HEAD~1..HEAD`, "--name-only", "--format=").trim()).toBe(threadPath(id));
+  });
+
+  it("reopens without waking anybody for a note-only reply", async () => {
+    const id = await resolvedThread();
+    const before = pendingEvents(ws).length;
+
+    const appended = await appendTurn(ws, id, {
+      body: "just for the record",
+      requestsAgent: false,
+    });
+
+    expect(appended.eventId).toBeNull();
+    expect(pendingEvents(ws)).toHaveLength(before);
+    expect(threadFrontmatterOf(ws, id)["status"]).toBe("open");
+  });
+
+  it("reopens a resolved thread the agent was never engaged in", async () => {
+    const created = await createThread(ws, { body: "a note to myself" });
+    expect((await ws.post(`/api/threads/${created.id}/resolve`, {})).status).toBe(200);
+
+    const appended = await appendTurn(ws, created.id, { body: "picking this back up" });
+
+    expect(appended.eventId).toBeNull();
+    expect(threadFrontmatterOf(ws, created.id)["status"]).toBe("open");
+  });
+
+  it("reopens beside the explicit request rather than instead of it", async () => {
+    const id = await resolvedThread();
+    const before = pendingEvents(ws).length;
+
+    const appended = await appendTurn(ws, id, { body: "@agent one more thing" });
+
+    expect(appended.eventId).toMatch(/^evt_/);
+    expect(pendingEvents(ws)).toHaveLength(before + 1);
+    expect(threadFrontmatterOf(ws, id)["status"]).toBe("open");
+  });
+
+  it.each([
+    ["a plain turn", {}],
+    ["a turn asking for the agent back", { requestsAgent: true }],
+  ])("keeps the thread closed when the agent writes %s", async (_label, body) => {
+    const id = await resolvedThread();
+
+    await appendTurn(ws, id, { body: "nothing further from me", ...body }, "agent");
+
+    expect(threadFrontmatterOf(ws, id)["status"]).toBe("resolved");
+    expect(ws.log("%s")[0]).toBe(`comment: turn on ${id} by agent`);
+  });
+
+  it("is indistinguishable afterwards from reopening by hand", async () => {
+    const id = await resolvedThread();
+    await appendTurn(ws, id, { body: "actually" });
+    const head = ws.head();
+
+    // `POST …/reopen` is idempotent and silent on a thread that is already open
+    // (`status.ts`): a 200 that writes no commit is only possible if the reply
+    // left the thread genuinely open, not merely reported as open.
+    const response = await ws.post(`/api/threads/${id}/reopen`, {});
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { thread: { status: string } }).thread.status).toBe("open");
+    expect(ws.head()).toBe(head);
+  });
+
+  it("leaves an open thread's `status` out of the write entirely", async () => {
+    const id = await engagedThread();
+    // A fresh commit rather than a fold, so the diff is this turn's alone.
+    ws.advance(31_000);
+    await appendTurn(ws, id, { body: "still open here" });
+
+    // Context lines carry `status: open`; what must not appear is a *changed*
+    // one, in either direction.
+    const changed = ws
+      .git("show", "--format=", "HEAD", "--", threadPath(id))
+      .split("\n")
+      .filter((line) => /^[+-]status:/.test(line));
+    expect(changed).toEqual([]);
+    expect(ws.log("%s")[0]).toBe(`comment: turn on ${id} by user`);
+  });
+
+  it("never rewrites an archived thread's status", async () => {
+    // `read.ts` reports an archived thread as `open` — an archived thread is
+    // still an unresolved conversation — so a reply that restated `status`
+    // would silently unarchive it.
+    const created = await createThread(ws, { body: "filed away" });
+    const path = threadPath(created.id);
+    ws.write(path, ws.read(path).replace("status: open", "status: archived"));
+    ws.reproject();
+
+    await appendTurn(ws, created.id, { body: "a later thought" });
+
+    expect(threadFrontmatterOf(ws, created.id)["status"]).toBe("archived");
   });
 });
 

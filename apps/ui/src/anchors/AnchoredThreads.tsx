@@ -2,9 +2,9 @@ import type { DocRow } from "@corpus/contract";
 import type { RowNotice } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
-import { ThreadSlot } from "../reader/ThreadSlot";
-import { ThreadCard } from "../thread/ThreadCard";
-import type { AnchoredThread } from "./anchorPlacement";
+import { summaryFromRow } from "../thread/CollapsedThread";
+import { ThreadPanel } from "../thread/ThreadPanel";
+import { anchoredSummary, type AnchoredThread } from "./anchorPlacement";
 import "./anchors.css";
 
 /**
@@ -12,20 +12,53 @@ import "./anchors.css";
  * is (SPEC.md §11).
  *
  * - **A chip at its anchor**, in a narrow column — a widget between the two
- *   blocks the anchor sits between, with the real `ThreadSlot` portalled into
- *   it. The slot itself is UI-008's; this decides *where*.
+ *   blocks the anchor sits between, with the real `ThreadPanel` portalled into
+ *   it. This decides *where*; the panel decides whether it is folded.
  * - **A card in the margin**, in focus mode or a wide reader, cascaded beside
  *   its highlight.
  * - **Below the body**, for whole-document threads, for threads whose anchor the
  *   server could no longer resolve, and for the ones it did resolve that this
  *   view cannot point at (`anchorPlacement.segmentsOf`).
+ *
+ * **All three render the same component**, which is the point of UI-077: which
+ * placement a thread gets depends on the width, and whether it can be collapsed
+ * does not. The margin used to be the exception — it received no expansion state
+ * at all, so a conversation could be folded in a narrow column and not in a wide
+ * one, which is the incoherence the live report was actually about.
+ *
+ * <a id="PLACEMENT_WAITS"></a>
+ * **A placement waits for the row list to answer, and both of these say so.**
+ * SPEC.md §11 applies the rule "when a conversation is **placed**", and
+ * `ThreadPanel` latches that decision once — deliberately, so that reading a
+ * conversation can never fold it. The cost of latching is that a decision taken
+ * against a guess is permanent, so there must be no guesses: an anchor whose row
+ * has not arrived *yet* is not a conversation this surface can place, and drawing
+ * it anyway placed every resolved thread **expanded** whenever
+ * `useDocs({parent, type: thread})` was a beat slower than the document read —
+ * for the life of the reader, because the row that landed afterwards carried the
+ * same status and so never re-armed the latch. That was reproducible under a
+ * loaded machine roughly one open in eight, and deterministically with the list
+ * delayed by a second.
+ *
+ * So a chip or a card appears when the surface knows what it is drawing, which
+ * is a beat later on a slow list and not at all on a fast one — the two queries
+ * are issued in the same tick and the body does not paint until the first
+ * returns. Nothing is lost meanwhile: **the anchored highlight is in the body
+ * from the first paint** and is not a placement, so §11's "the passage still says
+ * it has been discussed" holds throughout. And the case this guard was once
+ * confused with — a thread past the first page of `useDocs`, whose row is never
+ * coming — is *answered*, not pending, so it keeps the panel PR #25 gave it
+ * (`AnchoredThread.rowKnown`, `summaryFromAnchor`).
  */
 
 export interface AnchorThreadsProps {
   readonly threads: readonly AnchoredThread[];
-  readonly expandedThreads: readonly string[];
+  /**
+   * The document these anchors belong to — what a conversation whose row has not
+   * arrived reports as its parent (`anchoredSummary`).
+   */
+  readonly parentId: string;
   readonly flashThread: string | null;
-  readonly onToggleThread: (threadId: string) => void;
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -38,9 +71,8 @@ export interface AnchorChipsProps extends AnchorThreadsProps {
 /** Chips at their anchors — rendered through the editor's widget decorations. */
 export function AnchorChips({
   threads,
-  expandedThreads,
+  parentId,
   flashThread,
-  onToggleThread,
   onOpenDoc,
   onNotify,
   hostFor,
@@ -48,16 +80,16 @@ export function AnchorChips({
   return (
     <>
       {threads.map((thread) => {
-        const host = thread.row === undefined ? null : hostFor(thread.threadId);
-        if (host === null || thread.row === undefined) return null;
+        // Two preconditions, and they fail for opposite reasons: no widget means
+        // there is nowhere to draw this chip, and no answer about the row means
+        // there is nothing to draw it *as* — see `PLACEMENT_WAITS`.
+        const host = hostFor(thread.threadId);
+        if (host === null || !thread.rowKnown) return null;
         return createPortal(
-          <ThreadSlot
-            row={thread.row}
-            expanded={expandedThreads.includes(thread.threadId)}
+          <ThreadPanel
+            summary={anchoredSummary(thread, parentId)}
+            host="slot"
             flashing={flashThread === thread.threadId}
-            onToggle={() => {
-              onToggleThread(thread.threadId);
-            }}
             onOpenDoc={onOpenDoc}
             onNotify={onNotify}
           />,
@@ -74,14 +106,15 @@ export interface MarginColumnProps extends AnchorThreadsProps {
 }
 
 /**
- * The margin column. Cards are absolutely positioned by `useMarginLayout`, so
+ * The margin column. Panels are absolutely positioned by `useMarginLayout`, so
  * their order in the DOM is irrelevant and their `top` is everything.
  *
- * No `onCollapse`: a margin card has no chip to fold back into, and
- * `ThreadCard` renders the `–` control exactly when the host gives it one.
+ * **Every anchor whose row has been answered for gets a panel** — see
+ * `PLACEMENT_WAITS`.
  */
 export function MarginColumn({
   threads,
+  parentId,
   flashThread,
   onOpenDoc,
   onNotify,
@@ -89,17 +122,18 @@ export function MarginColumn({
 }: MarginColumnProps): ReactElement {
   return (
     <div className="focus-margin" ref={innerRef} data-anchor-margin>
-      {threads.map((thread) => (
-        <ThreadCard
-          key={thread.threadId}
-          threadId={thread.threadId}
-          host="margin"
-          row={thread.row}
-          flashing={flashThread === thread.threadId}
-          onOpenDoc={onOpenDoc}
-          onNotify={onNotify}
-        />
-      ))}
+      {threads.map((thread) =>
+        !thread.rowKnown ? null : (
+          <ThreadPanel
+            key={thread.threadId}
+            summary={anchoredSummary(thread, parentId)}
+            host="margin"
+            flashing={flashThread === thread.threadId}
+            onOpenDoc={onOpenDoc}
+            onNotify={onNotify}
+          />
+        ),
+      )}
     </div>
   );
 }
@@ -109,9 +143,7 @@ export interface DetachedThreadsProps {
   readonly orphaned: readonly DocRow[];
   /** Anchored, resolved, but with nothing on this screen to sit beside. */
   readonly unplaced?: readonly DocRow[];
-  readonly expandedThreads: readonly string[];
   readonly flashThread: string | null;
-  readonly onToggleThread: (threadId: string) => void;
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
@@ -143,9 +175,7 @@ export function DetachedThreads({
   wholeDocument,
   orphaned,
   unplaced = [],
-  expandedThreads,
   flashThread,
-  onToggleThread,
   onOpenDoc,
   onNotify,
 }: DetachedThreadsProps): ReactElement | null {
@@ -156,14 +186,11 @@ export function DetachedThreads({
       <div className="thread-slots" data-thread-section={kind}>
         <div className="slots-label">{label}</div>
         {rows.map((row) => (
-          <ThreadSlot
+          <ThreadPanel
             key={row.id}
-            row={row}
-            expanded={expandedThreads.includes(row.id)}
+            summary={summaryFromRow(row)}
+            host="slot"
             flashing={flashThread === row.id}
-            onToggle={() => {
-              onToggleThread(row.id);
-            }}
             onOpenDoc={onOpenDoc}
             onNotify={onNotify}
           />

@@ -157,10 +157,9 @@ function Probe({
     body: served.body,
     anchors: served.anchors,
     threads,
+    threadsSettled: true,
     locked: false,
     editable: true,
-    expandedThreads: [],
-    onToggleThread: () => undefined,
     onNotify,
   });
   onLayer(layer);

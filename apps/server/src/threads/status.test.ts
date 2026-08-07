@@ -86,7 +86,12 @@ describe("POST /api/threads/{id}/resolve and /reopen", () => {
     await appendTurn(ws, created.id, { body: "on it" }, "agent");
     expect(threadFrontmatterOf(ws, created.id)["agent"]).toBe("engaged");
     await ws.post(`/api/threads/${created.id}/resolve`, {});
-    expect((await appendTurn(ws, created.id, { body: "quiet" })).eventId).toBeNull();
+    // The *agent's* turn is the one that leaves a resolved thread resolved and
+    // silent (§8: a conversation the agent closes stays closed). A person's
+    // reply would reopen it here — that is the reopen §8 grants replies, pinned
+    // in `turns.test.ts`; this test is about the explicit verb.
+    expect((await appendTurn(ws, created.id, { body: "quiet" }, "agent")).eventId).toBeNull();
+    expect(threadFrontmatterOf(ws, created.id)["status"]).toBe("resolved");
 
     // Past the auto-commit's squash window, so this is a commit of its own
     // rather than an amend of the turn before it.

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus } from "./stubCorpus";
 
@@ -73,6 +73,29 @@ async function openNote(page: Page): Promise<StubCorpus> {
   await page.locator('.row[data-row-doc="doc_wrapped"]').click();
   await expect(page.locator(".reader .doc-editor .ProseMirror p").first()).toBeVisible();
   return corpus;
+}
+
+/**
+ * Puts the caret in the body and **waits until it is actually there**.
+ *
+ * `click()` resolves when the mouse events have been delivered, which is not
+ * when the editor has taken focus: ProseMirror sets its selection from the
+ * mousedown, but the surface becomes `document.activeElement` a beat later.
+ * A caret-movement key that arrives inside that beat goes to a page with no
+ * editable focus, where Chrome treats `End` as "scroll", and the *next*
+ * keystroke — by then focused — inserts at wherever the mousedown left the
+ * caret.
+ *
+ * That is the whole of the `offic!e` failure this suite produced under the
+ * pre-push gate, and it is a race in the test rather than in the product: the
+ * caret was mid-word because `End` never ran, not because anything moved under
+ * it. Reproduced exactly by blurring the surface between the click and the key,
+ * which writes `offic!e opens later.` byte for byte. So the wait is on the
+ * condition — this element has the caret — and not on a duration.
+ */
+async function caretIn(page: Page, target: Locator): Promise<void> {
+  await target.click();
+  await expect(page.locator(".reader .doc-editor .ProseMirror")).toBeFocused();
 }
 
 /** The height of one rendered line of the body's own type. */
@@ -173,7 +196,7 @@ test.describe("merely reading the document", () => {
     // with the agent's wrapping, and everything the user did not touch, exactly
     // as they were.
     const corpus = await openNote(page);
-    await page.locator(".reader .doc-editor .ProseMirror p").first().click();
+    await caretIn(page, page.locator(".reader .doc-editor .ProseMirror p").first());
     await page.keyboard.press("End");
     await page.keyboard.type("!");
 
@@ -200,6 +223,9 @@ test.describe("merely reading the document", () => {
     // Double-click selects "Tomorrow", on the paragraph's *first* source line;
     // the wraps that must survive are the two below it.
     await paragraph.dblclick({ position: { x: 5, y: 5 } });
+    // Same wait as `caretIn`, for the same reason — a double click selects the
+    // word from the mousedown, and focus lands after it.
+    await expect(page.locator(".reader .doc-editor .ProseMirror")).toBeFocused();
     await page.keyboard.type("Today");
 
     await expect.poll(async () => (await corpus.of("PUT")).length).toBeGreaterThan(0);

@@ -12,6 +12,13 @@
 // §7's lock is the edit lock, nothing in the parent is touched by a turn, and
 // `appendTurn` declares no `423`.
 //
+// **A person's turn reopens a resolved thread** (SPEC.md §8, SHARED-019
+// Amendment 1). It is one write — the turn and the `status` flip in the same
+// bytes, the same commit, the same re-projection — and it happens *before* the
+// enqueue question, so §8's ordinary rules then run against an open thread with
+// no clause of their own. Which is why nothing here mentions `resolved`:
+// `participation.ts` answers it, once, for this path and the form path alike.
+//
 // **Attachments** (SPEC.md §6, SERVER-010). The multipart form may carry files;
 // the bytes land under `.corpus/attachments/<thread-id>/<turn-ts>/` — gitignored
 // — and the *committed* turn body gains one relative markdown reference per
@@ -30,6 +37,7 @@ import type {
   Actor,
   AppendTurnBody,
   ThreadAgent,
+  ThreadStatus,
   ThreadSummary,
   Turn,
   Warning,
@@ -116,6 +124,12 @@ export interface PreparedTurn {
  * copies of the "append a turn" bytes is how one path stops stamping `updated`,
  * or stops moving `agent`, and nothing notices until a thread's list row goes
  * stale for good.
+ *
+ * **§8's reopen is part of this write, not a second one.** A person's turn on a
+ * resolved thread carries the status flip in the same bytes, the same commit and
+ * the same re-projection as the turn — so there is no instant at which the turn
+ * exists and the reopen does not, and no way for one to land and the other to
+ * fail.
  */
 export function buildTurnAppend(
   workspace: ThreadsWorkspace,
@@ -126,6 +140,8 @@ export function buildTurnAppend(
     readonly ts: string;
     /** The thread's `agent` field after this turn, per §8's matrix. */
     readonly agent: ThreadAgent;
+    /** The thread's `status` after this turn, per §8's reopen. */
+    readonly status: ThreadStatus;
   },
 ): PreparedTurn {
   const appended = appendTurn(thread.loaded.parsed.body, {
@@ -140,10 +156,39 @@ export function buildTurnAppend(
     setFrontmatterFields(setBody(thread.loaded.parsed, appended.body), {
       updated: appended.turn.ts,
       agent: input.agent,
+      // Patched only when it moves. `read.ts` reports an **archived** thread's
+      // status as `open` (an archived thread is still an unresolved
+      // conversation), so a `status` restated on every reply would quietly
+      // unarchive it — this is not the equal-value no-op `setFrontmatterFields`
+      // already gives us, it is a lossy write that must never be attempted.
+      ...(input.status === thread.status ? {} : { status: input.status }),
     }),
   );
   return { appended, text, warnings: validateBeforeWrite(workspace, thread.loaded.path, text) };
 }
+
+/**
+ * What a turn's auto-commit says: the act, the thread, the acting party, and
+ * whether this turn reopened the thread (SPEC.md §4, §8).
+ *
+ * The `(reopened)` marker is not decoration. §8's reopen rides in the *turn's*
+ * commit rather than in one of its own, so without it `git log` would record a
+ * status change with nothing to say about it — while every explicit status
+ * change names itself (`status.ts`'s `thread reopen: …`). §4's session folding
+ * takes the newer save's subject, so the marker survives a fold into the resolve
+ * commit it may be amending.
+ *
+ * `act` is the caller's for the reason `commitTurnAppend`'s subject is: a reply
+ * and a form answer are both turns on the same file, and a reader of `git log`
+ * should be able to tell which one happened without opening the diff.
+ */
+export const turnCommitSubject = (input: {
+  readonly act: string;
+  readonly threadId: string;
+  readonly actor: Actor;
+  readonly reopened: boolean;
+}): string =>
+  `${input.act} on ${input.threadId} by ${input.actor}${input.reopened ? " (reopened)" : ""}`;
 
 /**
  * Write, commit and re-project a prepared turn, and announce it.
@@ -221,6 +266,7 @@ export async function appendThreadTurn(
         ),
         ts,
         agent: decision.agent,
+        status: decision.status,
       }),
     );
 
@@ -230,7 +276,12 @@ export async function appendThreadTurn(
       thread,
       actor,
       prepared,
-      `comment: turn on ${id} by ${actor}`,
+      turnCommitSubject({
+        act: "comment: turn",
+        threadId: id,
+        actor,
+        reopened: decision.status !== thread.status,
+      }),
     );
 
     const eventId = decision.enqueue

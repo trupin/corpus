@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { classifyAuditReport, formatFinding, type AuditVerdict } from "./audit-report.js";
+import {
+  AUDIT_EXCEPTIONS,
+  classifyAuditReport,
+  formatExceptionRoute,
+  formatFinding,
+  resolveDependencyRoutes,
+  type AuditException,
+  type AuditVerdict,
+} from "./audit-report.js";
 
 /**
  * The three payloads below are **recorded**, not invented — `npm audit --json`
@@ -228,5 +236,355 @@ describe("formatFinding", () => {
       range: undefined,
     });
     expect(line).toBe("low      orphan — vulnerable via minimist");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The documented exception (INFRA-021)
+// ---------------------------------------------------------------------------
+
+/**
+ * Recorded: `npm audit --json` in this repository on 2026-08-06 (npm 11.6.2),
+ * verbatim. Note the **two** entries for one advisory — `js-yaml` carries it, and
+ * `@redocly/openapi-core` is flagged purely for depending on js-yaml. An exception
+ * that tolerated only the first would leave the gate red, so the shape of this
+ * payload is what the carrier rule is written against.
+ */
+const JS_YAML_PAYLOAD = JSON.stringify({
+  auditReportVersion: 2,
+  vulnerabilities: {
+    "@redocly/openapi-core": {
+      name: "@redocly/openapi-core",
+      severity: "high",
+      isDirect: false,
+      via: ["js-yaml"],
+      effects: [],
+      range: "<=0.0.0-snapshot.1782825774 || 1.34.8 - 1.34.18",
+      nodes: ["node_modules/@redocly/openapi-core"],
+      fixAvailable: true,
+    },
+    "js-yaml": {
+      name: "js-yaml",
+      severity: "high",
+      isDirect: false,
+      via: [
+        {
+          source: 1138115,
+          name: "js-yaml",
+          dependency: "js-yaml",
+          title:
+            "JS-YAML: Quadratic CPU consumption in !!omap resolution (3.x and 4.x) — " +
+            "CVE-2026-59870 fix not backported",
+          url: "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+          severity: "high",
+          cwe: ["CWE-407"],
+          cvss: { score: 7.5, vectorString: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H" },
+          range: ">=4.0.0 <4.3.1",
+        },
+      ],
+      effects: ["@redocly/openapi-core"],
+      range: "4.0.0 - 4.3.0",
+      nodes: ["node_modules/js-yaml"],
+      fixAvailable: true,
+    },
+  },
+  metadata: {
+    vulnerabilities: { info: 0, low: 0, moderate: 0, high: 2, critical: 0, total: 2 },
+    dependencies: { prod: 260, dev: 359, optional: 54, peer: 22, peerOptional: 0, total: 627 },
+  },
+});
+
+type LockPackages = Record<string, Record<string, unknown>>;
+
+/**
+ * Trimmed from the real `package-lock.json` (lockfileVersion 3): the exact chain
+ * the exception claims, the workspace symlink entry npm writes beside it, and one
+ * production package so "dev-only" is a distinction the fixture can actually draw.
+ */
+const LOCK_PACKAGES: LockPackages = {
+  "": { name: "corpus", dependencies: { zod: "^4.1.13" } },
+  "packages/contract": {
+    name: "@corpus/contract",
+    devDependencies: { "openapi-typescript": "^7.13.0" },
+  },
+  "node_modules/@corpus/contract": { resolved: "packages/contract", link: true },
+  "node_modules/openapi-typescript": {
+    version: "7.13.0",
+    dev: true,
+    dependencies: { "@redocly/openapi-core": "^1.34.6" },
+  },
+  "node_modules/@redocly/openapi-core": {
+    version: "1.34.18",
+    dev: true,
+    dependencies: { "js-yaml": "4.3.0" },
+  },
+  "node_modules/js-yaml": { version: "4.3.0", dev: true, dependencies: { argparse: "^2.0.1" } },
+  "node_modules/argparse": { version: "2.0.1", dev: true },
+  "node_modules/zod": { version: "4.1.13" },
+};
+
+function lockfileWith(overrides: LockPackages, drop: readonly string[] = []): unknown {
+  const packages: LockPackages = { ...LOCK_PACKAGES, ...overrides };
+  for (const key of drop) delete packages[key];
+  return { lockfileVersion: 3, packages };
+}
+
+const LOCKFILE = lockfileWith({});
+
+/** The shipped record, read rather than restated, so the tests move with it. */
+const shippedException: AuditException = (() => {
+  const [only] = AUDIT_EXCEPTIONS;
+  if (only === undefined) throw new Error("AUDIT_EXCEPTIONS is empty");
+  return only;
+})();
+
+const DAY = 86_400_000;
+const expiryMs = Date.parse(`${shippedException.expires}T00:00:00Z`);
+const BEFORE_EXPIRY = new Date(expiryMs - DAY);
+const AFTER_EXPIRY = new Date(expiryMs + 30 * DAY);
+
+/** The advisory payload with only its GHSA id changed — same package, same route. */
+const otherAdvisoryPayload = JS_YAML_PAYLOAD.replace("GHSA-5p4m-2wfm-xmqj", "GHSA-0000-0000-0000");
+
+describe("AUDIT_EXCEPTIONS (the shipped register)", () => {
+  it("holds exactly one entry — the js-yaml advisory INFRA-021 was written for", () => {
+    expect(AUDIT_EXCEPTIONS).toHaveLength(1);
+    expect(shippedException.advisory).toBe("GHSA-5p4m-2wfm-xmqj");
+    expect(shippedException.package).toBe("js-yaml");
+  });
+
+  it("names the whole route, workspace first and the vulnerable package last", () => {
+    expect(shippedException.route).toEqual([
+      "packages/contract",
+      "openapi-typescript",
+      "@redocly/openapi-core",
+      "js-yaml",
+    ]);
+    expect(formatExceptionRoute(shippedException)).toBe(
+      "packages/contract (devDependency) → openapi-typescript → @redocly/openapi-core → js-yaml",
+    );
+  });
+
+  it("carries a readable expiry date and its justification as data, not as a comment", () => {
+    expect(shippedException.expires).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(Number.isNaN(Date.parse(`${shippedException.expires}T00:00:00Z`))).toBe(false);
+    // The four things a reader needs six months from now, all printed on every run.
+    expect(shippedException.reason).toContain("devDependency");
+    expect(shippedException.reason).toContain("no attacker-supplied YAML");
+    expect(shippedException.invalidatedBy.length).toBeGreaterThan(0);
+    expect(shippedException.invalidatedBy.join(" ")).toContain("runtime dependency tree");
+  });
+});
+
+describe("resolveDependencyRoutes", () => {
+  it("finds the single dev route from the workspace manifest down to the leaf", () => {
+    expect(resolveDependencyRoutes(LOCKFILE, "js-yaml")).toEqual([
+      {
+        owner: "packages/contract",
+        hops: ["openapi-typescript", "@redocly/openapi-core", "js-yaml"],
+        declaredDev: true,
+      },
+    ]);
+  });
+
+  it("reports every route when a package is reachable more than one way", () => {
+    const routes = resolveDependencyRoutes(
+      lockfileWith({ "": { name: "corpus", dependencies: { "js-yaml": "^4.0.0" } } }),
+      "js-yaml",
+    );
+    expect(routes).toHaveLength(2);
+  });
+
+  it("cannot be determined without a readable lockfile", () => {
+    expect(resolveDependencyRoutes(undefined, "js-yaml")).toBeUndefined();
+    expect(resolveDependencyRoutes({ lockfileVersion: 3 }, "js-yaml")).toBeUndefined();
+  });
+});
+
+describe("classifyAuditReport with the documented exception", () => {
+  it("tolerates the exact advisory on the exact route — including the carrier entry", () => {
+    const verdict = classifyAuditReport(JS_YAML_PAYLOAD, {
+      lockfile: LOCKFILE,
+      now: BEFORE_EXPIRY,
+    });
+    expect(verdict.kind).toBe("tolerated");
+    if (verdict.kind !== "tolerated") return;
+    expect(verdict.total).toBe(2);
+    expect(verdict.tolerated).toHaveLength(1);
+    const [entry] = verdict.tolerated;
+    expect(entry?.exception.advisory).toBe("GHSA-5p4m-2wfm-xmqj");
+    expect(entry?.findings.map((finding) => finding.package).sort()).toEqual([
+      "@redocly/openapi-core",
+      "js-yaml",
+    ]);
+    expect(entry?.daysRemaining).toBe(1);
+  });
+
+  it("is a different verdict from clean — a carried exception can never read as clean", () => {
+    expect(classifyAuditReport(CLEAN_PAYLOAD, { lockfile: LOCKFILE }).kind).toBe("clean");
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: LOCKFILE, now: BEFORE_EXPIRY }).kind,
+    ).not.toBe("clean");
+  });
+
+  it("fails on a DIFFERENT advisory against the same package on the same route", () => {
+    const verdict = classifyAuditReport(otherAdvisoryPayload, {
+      lockfile: LOCKFILE,
+      now: BEFORE_EXPIRY,
+    });
+    expect(verdict.kind).toBe("findings");
+    if (verdict.kind !== "findings") return;
+    // Both entries fail, not just the leaf: a carrier rides on the excepted
+    // advisory, so an unexcepted advisory leaves the carrier unexcepted too.
+    expect(verdict.findings.map((finding) => finding.package).sort()).toEqual([
+      "@redocly/openapi-core",
+      "js-yaml",
+    ]);
+    expect(verdict.tolerated).toEqual([]);
+    expect(verdict.expired).toEqual([]);
+  });
+
+  it("fails on the SAME advisory arriving by a different route", () => {
+    const elsewhere = lockfileWith(
+      {
+        "node_modules/some-other-tool": {
+          version: "1.0.0",
+          dev: true,
+          dependencies: { "js-yaml": "^4.0.0" },
+        },
+        "packages/contract": {
+          name: "@corpus/contract",
+          devDependencies: { "some-other-tool": "^1.0.0" },
+        },
+      },
+      ["node_modules/openapi-typescript", "node_modules/@redocly/openapi-core"],
+    );
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: elsewhere, now: BEFORE_EXPIRY }).kind,
+    ).toBe("findings");
+  });
+
+  it("fails when the declared route still exists but a second route appears alongside it", () => {
+    const alsoDirect = lockfileWith({
+      "": { name: "corpus", dependencies: { zod: "^4.1.13", "js-yaml": "^4.0.0" } },
+    });
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: alsoDirect, now: BEFORE_EXPIRY }).kind,
+    ).toBe("findings");
+  });
+
+  it("fails once the route stops being dev-only — the tool entering the shipped tree", () => {
+    const shipped = lockfileWith({
+      "node_modules/openapi-typescript": {
+        version: "7.13.0",
+        dev: false,
+        dependencies: { "@redocly/openapi-core": "^1.34.6" },
+      },
+    });
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: shipped, now: BEFORE_EXPIRY }).kind,
+    ).toBe("findings");
+  });
+
+  it("fails when the workspace declares the tool as a runtime dependency", () => {
+    const runtime = lockfileWith({
+      "packages/contract": {
+        name: "@corpus/contract",
+        dependencies: { "openapi-typescript": "^7.13.0" },
+      },
+    });
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: runtime, now: BEFORE_EXPIRY }).kind,
+    ).toBe("findings");
+  });
+
+  it("fails when a carrier is vulnerable via something off the excepted route", () => {
+    const payload = JSON.parse(JS_YAML_PAYLOAD) as {
+      vulnerabilities: Record<string, { via: unknown[] }>;
+    };
+    const carrier = payload.vulnerabilities["@redocly/openapi-core"];
+    if (carrier === undefined) throw new Error("fixture lost its carrier entry");
+    carrier.via = ["js-yaml", "something-else"];
+    const verdict = classifyAuditReport(JSON.stringify(payload), {
+      lockfile: LOCKFILE,
+      now: BEFORE_EXPIRY,
+    });
+    expect(verdict.kind).toBe("findings");
+    if (verdict.kind !== "findings") return;
+    expect(verdict.findings.map((finding) => finding.package)).toEqual(["@redocly/openapi-core"]);
+    // js-yaml itself is still legitimately tolerated — and still printed.
+    expect(verdict.tolerated).toHaveLength(1);
+  });
+
+  it("tolerates nothing without a lockfile: an unverifiable route is not a route", () => {
+    expect(classifyAuditReport(JS_YAML_PAYLOAD, { now: BEFORE_EXPIRY }).kind).toBe("findings");
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: "not json", now: BEFORE_EXPIRY }).kind,
+    ).toBe("findings");
+  });
+});
+
+describe("expiry", () => {
+  it("fails closed after the expiry date", () => {
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: LOCKFILE, now: AFTER_EXPIRY }).kind,
+    ).toBe("findings");
+  });
+
+  it("reports an expired exception as expired, not as a newly discovered advisory", () => {
+    const verdict = classifyAuditReport(JS_YAML_PAYLOAD, {
+      lockfile: LOCKFILE,
+      now: AFTER_EXPIRY,
+    });
+    expect(verdict.kind).toBe("findings");
+    if (verdict.kind !== "findings") return;
+    // The whole point: the findings land in `expired` (which names the lapsed
+    // exception) rather than in the anonymous `findings` bucket.
+    expect(verdict.findings).toEqual([]);
+    expect(verdict.expired).toHaveLength(1);
+    const [lapsed] = verdict.expired;
+    expect(lapsed?.exception.advisory).toBe("GHSA-5p4m-2wfm-xmqj");
+    expect(lapsed?.exception.expires).toBe(shippedException.expires);
+    expect(lapsed?.daysExpired).toBe(30);
+    expect(lapsed?.findings.map((finding) => finding.package).sort()).toEqual([
+      "@redocly/openapi-core",
+      "js-yaml",
+    ]);
+  });
+
+  it("is still live on the last day and dead at the stroke of the expiry date", () => {
+    const lastMoment = new Date(expiryMs - 1);
+    expect(classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: LOCKFILE, now: lastMoment }).kind).toBe(
+      "tolerated",
+    );
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, { lockfile: LOCKFILE, now: new Date(expiryMs) }).kind,
+    ).toBe("findings");
+  });
+
+  it("treats an unreadable expiry date as already expired", () => {
+    const malformed: AuditException = { ...shippedException, expires: "whenever" };
+    const verdict = classifyAuditReport(JS_YAML_PAYLOAD, {
+      lockfile: LOCKFILE,
+      now: BEFORE_EXPIRY,
+      exceptions: [malformed],
+    });
+    expect(verdict.kind).toBe("findings");
+    if (verdict.kind !== "findings") return;
+    expect(verdict.expired[0]?.daysExpired).toBe(-1);
+  });
+
+  it("ignores an exception whose route does not end at the package it names", () => {
+    const incoherent: AuditException = {
+      ...shippedException,
+      route: ["packages/contract", "openapi-typescript"],
+    };
+    expect(
+      classifyAuditReport(JS_YAML_PAYLOAD, {
+        lockfile: LOCKFILE,
+        now: BEFORE_EXPIRY,
+        exceptions: [incoherent],
+      }).kind,
+    ).toBe("findings");
   });
 });

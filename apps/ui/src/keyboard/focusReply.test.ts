@@ -15,12 +15,19 @@ function reader(inner: string, columnId = "one"): HTMLElement {
   return board;
 }
 
+/*
+ * The collapsed line carries `data-thread-expand`, and the expanded card carries
+ * none: a conversation is one or the other, never both (UI-077). The fallback
+ * below finds the fold by that marker rather than by a placement's class, which
+ * is what makes `r` work on a margin card and a chip alike.
+ */
 const collapsedSlot = (id: string) =>
-  `<div class="thread-slot" data-slot-thread="${id}"><button class="t-chip">💬 2</button></div>`;
+  `<div class="thread-slot collapsed" data-slot-thread="${id}" data-thread-panel="${id}">
+     <button class="t-chip" data-thread-expand="${id}">💬 2 turns · agent</button>
+   </div>`;
 
 const expandedSlot = (id: string) =>
-  `<div class="thread-slot expanded" data-slot-thread="${id}">
-     <button class="t-chip">💬 2</button>
+  `<div class="thread-slot expanded" data-slot-thread="${id}" data-thread-panel="${id}">
      <div class="thread-card"><input data-composer="${id}" /></div>
    </div>`;
 
@@ -57,7 +64,7 @@ describe("focusReplyComposer", () => {
   it("expands the first collapsed thread and focuses the composer it renders", () => {
     const board = reader(collapsedSlot("thr_1") + collapsedSlot("thr_2"));
     const root = replyRoot(board, "one") as HTMLElement;
-    const chip = root.querySelector<HTMLElement>(".t-chip") as HTMLElement;
+    const chip = root.querySelector<HTMLElement>("[data-thread-expand]") as HTMLElement;
     // Standing in for React: the click expands the slot, then the composer exists.
     chip.addEventListener("click", () => {
       const composer = document.createElement("input");

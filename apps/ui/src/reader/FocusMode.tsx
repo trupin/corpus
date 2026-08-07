@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import { SaveStatusProvider } from "../editor/SaveChip";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
+import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
+import { FOCUS_SURFACE } from "../thread/threadCollapse";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
 import { rootEntry, useMemoryNavStack } from "./useNavStack";
@@ -48,7 +50,23 @@ export interface FocusModeProps {
  */
 export const FOCUS_HINT = "esc closes · click anywhere to edit";
 
-export function FocusMode({
+export function FocusMode(props: FocusModeProps): ReactElement {
+  /*
+   * Focus mode is one surface, because there is only ever one full-screen
+   * reader — and it is its **own**, distinct from the column it was opened
+   * from: SPEC.md §11 makes a fold per reader, and focus mode keeps its own
+   * navigation stack for exactly the same reason (it is a reading excursion,
+   * not a place the board was left).
+   */
+  return (
+    <ThreadCollapseProvider surfaceKey={FOCUS_SURFACE}>
+      <FocusReader {...props} />
+    </ThreadCollapseProvider>
+  );
+}
+
+/** The overlay proper, under the fold provider — see `Reader`'s split. */
+function FocusReader({
   docId,
   listTitle,
   reveal,
@@ -165,9 +183,7 @@ export function FocusMode({
             <DocView
               reader={reader}
               selectTitle={false}
-              expandedThreads={surface.expandedThreads}
               flashThread={surface.flashThread}
-              onToggleThread={surface.toggleThread}
               onNavigate={navigate}
               onNotify={onNotify}
             />

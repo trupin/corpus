@@ -105,11 +105,11 @@ describe("idle", () => {
     const service = makeService();
     const [first] = await enqueueMany(service, 2);
 
-    const events = await service.idle({ timeoutMs: 60_000 });
-    expect(events?.map((event) => event.id).sort()).toEqual(
+    const available = await service.idle({ timeoutMs: 60_000 });
+    expect(available?.events.map((event) => event.id).sort()).toEqual(
       (await service.store.listIds("pending")).sort(),
     );
-    expect(events).toHaveLength(2);
+    expect(available?.events).toHaveLength(2);
     expect(await service.store.listIds("in-progress")).toEqual([]);
     expect(first).toBeDefined();
   });
@@ -130,7 +130,7 @@ describe("idle", () => {
     });
 
     const event = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
-    expect((await parked)?.map((each) => each.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual([event.id]);
     expect(service.parked).toBe(0);
   });
 
@@ -152,7 +152,7 @@ describe("idle", () => {
       }),
     );
 
-    expect((await parked)?.map((each) => each.id)).toEqual(["evt_outofband00"]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual(["evt_outofband00"]);
   });
 
   it("releases a dropped client without answering", async () => {
@@ -205,14 +205,14 @@ describe("halt and resume", () => {
     });
 
     expect(await service.idle({ timeoutMs: 60 })).toBeUndefined();
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
     expect((await service.store.listIds("pending")).sort()).toEqual(
       events.map((event) => event.id).sort(),
     );
 
     const resumed = await service.resume();
     expect(resumed.halted).toBe(false);
-    expect(await service.claimAll()).toHaveLength(2);
+    expect((await service.claimAll()).events).toHaveLength(2);
   });
 
   it("is idempotent in both directions", async () => {
@@ -237,7 +237,7 @@ describe("halt and resume", () => {
     });
 
     await service.resume();
-    expect((await parked)?.map((each) => each.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual([event.id]);
   });
 });
 
@@ -246,7 +246,7 @@ describe("claimAll", () => {
     const service = makeService();
     const enqueued = await enqueueMany(service, 3);
 
-    const claimed = await service.claimAll();
+    const claimed = (await service.claimAll()).events;
     expect(claimed.map((event) => event.id).sort()).toEqual(
       enqueued.map((event) => event.id).sort(),
     );
@@ -270,10 +270,19 @@ describe("claimAll", () => {
       service.claimAll(),
     ]);
 
-    const ids = batches.flat().map((event) => event.id);
+    const ids = batches.flatMap((batch) => batch.events).map((event) => event.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.sort()).toEqual(enqueued.map((event) => event.id).sort());
     expect(await service.store.listIds("pending")).toEqual([]);
+
+    // Each caller's held set was read before its own moves, so no batch reports
+    // the events it is handing over — and a later caller sees what the earlier
+    // ones took (the chain is FIFO, so the last one sees the other four).
+    for (const batch of batches) {
+      const claimedHere = new Set(batch.events.map((event) => event.id));
+      expect(batch.held.events.filter((event) => claimedHere.has(event.id))).toEqual([]);
+    }
+    expect(Math.max(...batches.map((batch) => batch.held.total))).toBeGreaterThan(0);
   });
 
   it("quarantines a malformed file instead of poisoning the batch", async () => {
@@ -281,7 +290,7 @@ describe("claimAll", () => {
     const good = await service.enqueue({ type: "comment.created", source: "ui", payload: {} });
     writeFileSync(service.store.pathFor("pending", "evt_bad000000000"), "{ truncated");
 
-    const claimed = await service.claimAll();
+    const claimed = (await service.claimAll()).events;
     expect(claimed.map((event) => event.id)).toEqual([good.id]);
     expect(await service.store.listIds("failed")).toEqual(["evt_bad000000000"]);
     const quarantined: unknown = JSON.parse(
@@ -293,7 +302,7 @@ describe("claimAll", () => {
 
   it("returns an empty batch, and invalidates nothing, when there is no work", async () => {
     const service = makeService();
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
     expect(invalidations).toEqual([]);
   });
 });
@@ -460,7 +469,7 @@ describe("defer", () => {
     await service.defer(event.id, { blockedOn: "doc_locked01" });
 
     // Handing it back would spin the agent against a lock it still cannot take.
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
     expect(await service.idle({ timeoutMs: 20 })).toBeUndefined();
     expect(await service.store.listIds("deferred")).toEqual([event.id]);
   });
@@ -515,7 +524,9 @@ describe("requeueDeferredFor", () => {
     expect((await service.store.listIds("pending")).sort()).toEqual([first.id, second.id].sort());
     expect(await service.store.listIds("deferred")).toEqual([elsewhere.id]);
     expect(invalidations).toEqual([QUEUE_QUERY_KEYS]);
-    expect((await parked)?.map((event) => event.id).sort()).toEqual([first.id, second.id].sort());
+    expect((await parked)?.events.map((event) => event.id).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
   });
 
   it("clears the deferral bookkeeping as the event re-enters", async () => {
@@ -596,7 +607,9 @@ describe("requeueDeferredFor", () => {
 
     expect(requeued.sort()).toEqual([first.id, second.id].sort());
     // Waits on the condition — both events available — not on a duration.
-    expect((await parked)?.map((event) => event.id).sort()).toEqual([first.id, second.id].sort());
+    expect((await parked)?.events.map((event) => event.id).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
   });
 
   it("quarantines a corrupt file in deferred/ rather than skipping it forever", async () => {
@@ -634,7 +647,7 @@ describe("requeue", () => {
     expect(onDisk).toMatchObject({ status: "pending", attempts: 0 });
     expect(onDisk).not.toHaveProperty("error");
     expect(invalidations).toContainEqual(QUEUE_QUERY_KEYS);
-    expect((await parked)?.map((pending) => pending.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((pending) => pending.id)).toEqual([event.id]);
   });
 
   it("is a no-op for an event that is already pending", async () => {
@@ -704,7 +717,7 @@ describe("reapStale", () => {
 
     clock += 60_000;
     await service.reapStale();
-    expect((await parked)?.map((each) => each.id)).toEqual([event.id]);
+    expect((await parked)?.events.map((each) => each.id)).toEqual([event.id]);
   });
 
   it("quarantines a corrupt in-progress file", async () => {
@@ -733,7 +746,7 @@ describe("losing a race with another actor", () => {
     await enqueueMany(service, 1);
     vi.spyOn(service.store, "move").mockResolvedValue(false);
 
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
   });
 
   it("skips an event whose file disappeared between the move and the read", async () => {
@@ -741,7 +754,7 @@ describe("losing a race with another actor", () => {
     await enqueueMany(service, 1);
     vi.spyOn(service.store, "readEvent").mockResolvedValue(undefined);
 
-    expect(await service.claimAll()).toEqual([]);
+    expect((await service.claimAll()).events).toEqual([]);
   });
 
   it("skips an event that left in-progress mid-reap", async () => {
@@ -894,6 +907,103 @@ describe("the projection mirror", () => {
     );
     expect(mirror.replacements[0]).toEqual([]);
     expect(service.parked).toBe(0);
+  });
+
+  // SERVER-063. The rebuild runs from the *constructor*, so the pre-fix rethrow
+  // was not "the queue is degraded": it was `corpus server start` reporting that
+  // the server exited during startup, over one file, with no server left to ask
+  // why. The projection's own boot pass was already skipping the same file one
+  // line above the crash — this makes the readers agree.
+  it("skips a file it cannot read at all at boot, and still boots and serves", async () => {
+    const seeded = makeService();
+    const [held] = await enqueueMany(seeded, 1);
+    if (held === undefined) throw new Error("expected one event");
+    await seeded.claimAll();
+    // A real unreadable entry, and one no user can read by accident: `readdir`
+    // lists it as an event file and every read of it fails with EISDIR. A
+    // `chmod` would be bypassed by root and let this pass without proving
+    // anything.
+    mkdirSync(join(corpusDir, "queue", "in-progress", "evt_unreadable00.json"));
+    mirror = makeMirror();
+    const logger = { level: "silent" as const, info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+
+    const service = makeService({ logger });
+
+    // Booted — and the mirror carries the readable event *only*: an event the
+    // projection could not read must not be reported as present, nor counted as
+    // something it is not.
+    expect(mirror.replacements[0]?.map((event) => [event.id, event.status])).toEqual([
+      [held.id, "in-progress"],
+    ]);
+    // Named, with its reason, at the one level a `silent` server still writes.
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith("skipping unreadable queue event", {
+      id: "evt_unreadable00",
+      status: "in-progress",
+      reason: expect.stringContaining("EISDIR") as string,
+    });
+    // Skipped, never quarantined: boot is a read, and moving a file the process
+    // could not read is not something a boot should attempt (SPEC.md §7).
+    expect(readdirSync(join(corpusDir, "queue", "in-progress")).sort()).toEqual(
+      ["evt_unreadable00.json", `${held.id}.json`].sort(),
+    );
+    expect(readdirSync(join(corpusDir, "queue", "failed"))).toEqual([]);
+
+    // Serving: a full round trip through the very directory the bad entry sits
+    // in, with the in-progress report skipping it exactly as the boot scan did.
+    const fresh = await service.enqueue({ type: "comment.created", source: "cli", payload: {} });
+    const batch = await service.claimAll();
+    expect(batch.events.map((event) => event.id)).toEqual([fresh.id]);
+    expect(batch.held.events.map((event) => event.id)).toEqual([held.id]);
+    expect(batch.held.total).toBe(1);
+    expect((await service.complete(fresh.id)).status).toBe("processed");
+  });
+
+  // SERVER-063 review round. The rebuild also runs from `attachMirror`, which
+  // `attachProjection` calls during boot — and a status directory that cannot be
+  // listed used to throw straight out of it, with the same result as the file
+  // case above: no server, and no server left to ask why.
+  it("skips a status directory it cannot list at boot, and still boots and serves", async () => {
+    const logger = { level: "silent" as const, info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+    const service = makeService({ logger });
+    const [held, done] = await enqueueMany(service, 2);
+    if (held === undefined || done === undefined) throw new Error("expected two events");
+    await service.claimAll();
+    await service.complete(done.id);
+    // Unlistable for every user, root included — `readdirSync` on a path that is
+    // not a directory is ENOTDIR for everyone, the directory-level twin of the
+    // EISDIR trick above. A `chmod 000` (the shape this was reported as) would
+    // be bypassed by root, and is pinned at the store's seam in project.test.ts.
+    const processedDir = join(corpusDir, "queue", "processed");
+    rmSync(processedDir, { recursive: true });
+    writeFileSync(processedDir, "not a directory\n");
+    const late = makeMirror();
+
+    const scan = service.attachMirror(late);
+
+    // Alive, and honest about the loss: the processed event is excluded from the
+    // mirror rather than counted as something it is not, and the *other* status
+    // directories are still scanned.
+    expect(scan.unlistable).toEqual([
+      { status: "processed", reason: expect.stringContaining("ENOTDIR") as string },
+    ]);
+    expect(late.replacements[0]?.map((event) => [event.id, event.status])).toEqual([
+      [held.id, "in-progress"],
+    ]);
+    // Named, with the consequence an operator needs, at the one level a `silent`
+    // server still writes.
+    expect(logger.error).toHaveBeenCalledWith(
+      "cannot list queue status directory; its events are missing from the projection",
+      { status: "processed", reason: expect.stringContaining("ENOTDIR") as string },
+    );
+    // Nothing moved or quarantined: boot is a read.
+    expect(readFileSync(processedDir, "utf8")).toBe("not a directory\n");
+
+    // Serving: a full round trip through the directories that are still there.
+    const fresh = await service.enqueue({ type: "comment.created", source: "cli", payload: {} });
+    const batch = await service.claimAll();
+    expect(batch.events.map((event) => event.id)).toEqual([fresh.id]);
+    expect(batch.held.events.map((event) => event.id)).toEqual([held.id]);
   });
 
   it("rebuilds into a mirror attached after construction, and uses it from then on", async () => {

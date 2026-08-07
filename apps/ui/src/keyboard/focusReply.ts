@@ -11,8 +11,13 @@
  * The auto-expansion is deliberate and its side effect is intended: expanding a
  * thread renders its conversation, and SPEC.md §7 counts displayed content as
  * read, so `r` on a document whose threads are all collapsed does mark the first
- * one seen. That is the same thing clicking the chip does, which is what the
- * user just asked for by a faster route.
+ * one seen. That is the same thing clicking the collapsed line does, which is
+ * what the user just asked for by a faster route.
+ *
+ * **It keeps working now that folds are sticky and by-rule** (UI-077). SPEC.md
+ * §11's rider requires exactly that of the existing `r` binding, and the fallback
+ * below is what delivers it: a document whose only conversation is a resolved
+ * one, folded by the rule, still has a composer one activation away.
  */
 
 export type ReplyFocusResult =
@@ -59,7 +64,10 @@ export function focusReplyComposer(
   if (root === null) return "none";
   if (focusComposer(root)) return "focused";
 
-  const chip = root.querySelector<HTMLElement>(".thread-slot .t-chip");
+  // The collapsed line, wherever it is placed — a chip at an anchor, a folded
+  // card in the margin, a thread listed below the body. One marker, because
+  // there is one collapsed representation (SPEC.md §11).
+  const chip = root.querySelector<HTMLElement>("[data-thread-expand]");
   if (chip === null) return "none";
   chip.click();
   schedule(() => {

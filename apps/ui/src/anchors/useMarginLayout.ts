@@ -8,9 +8,10 @@ import { applyMargin, cascade, measureMargin } from "./marginLayout";
  * changes a card's height (sprint-011 TEST-118):
  *
  * - the first render, and every change to which threads are shown;
- * - a card growing or shrinking — expanding, collapsing, a reply appended —
- *   watched per card, because absolutely positioned cards change no ancestor's
- *   box and a `ResizeObserver` on the column alone would never fire;
+ * - a conversation growing or shrinking — folding to its one line, expanding
+ *   back, a reply appended — watched per panel, because absolutely positioned
+ *   panels change no ancestor's box and a `ResizeObserver` on the column alone
+ *   would never fire;
  * - the main column reflowing, which is what an editor content-height change
  *   and a window resize both look like from here;
  * - the fonts finishing loading, which moves every anchor at once.
@@ -74,7 +75,9 @@ export function useMarginLayout({ main, margin, active, threadIds }: MarginLayou
     }
     const observer = new ResizeObserver(schedule);
     observer.observe(mainElement);
-    for (const card of marginElement.querySelectorAll<HTMLElement>(":scope > .thread-card")) {
+    for (const card of marginElement.querySelectorAll<HTMLElement>(
+      ":scope > [data-thread-panel]",
+    )) {
       observer.observe(card);
     }
     return () => {

@@ -90,7 +90,14 @@
   position: relative;
 }
 
-.focus-margin .thread-card {
+/*
+ * The cascade positions the **panel**, not the card inside it: a conversation in
+ * the margin is a card when it is expanded and a single line when it is folded
+ * (SPEC.md §11), and both have to sit beside their anchor. Direct children only
+ * — a nested child thread is a panel too, and it is laid out by the card that
+ * contains it.
+ */
+.focus-margin > [data-thread-panel] {
   display: block;
   position: absolute;
   left: 0;
@@ -99,8 +106,13 @@
   max-width: none;
 }
 
-/* The 23px hairline from the card back to the text it is about. */
-.focus-margin .thread-card::before {
+.focus-margin > [data-thread-panel] > .thread-card {
+  margin: 0;
+  max-width: none;
+}
+
+/* The 23px hairline from the conversation back to the text it is about. */
+.focus-margin > [data-thread-panel]::before {
   content: "";
   position: absolute;
   left: -23px;
@@ -108,18 +120,6 @@
   width: 23px;
   height: 1px;
   background: var(--line-strong);
-}
-
-/* A nested child thread is laid out by its parent card, not by the cascade. */
-.focus-margin .thread-card .thread-card {
-  position: relative;
-  left: auto;
-  right: auto;
-  margin: 10px 0 0;
-}
-
-.focus-margin .thread-card .thread-card::before {
-  content: none;
 }
 
 /* ── The comment composer popover ── */

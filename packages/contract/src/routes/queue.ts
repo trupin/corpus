@@ -56,7 +56,11 @@ export const idleQueue = createRoute({
     `window expires (default and maximum ${MAX_IDLE_TIMEOUT_SECONDS} s) so the skill loop re-invokes ` +
     "it. Both outcomes are normal; `204` is not an error. **Idle reports availability and never " +
     "claims** — follow a `200` with `POST /api/queue/claim-all`. While the queue is halted, idle " +
-    "parks for the full window and never returns events (SPEC.md §7).",
+    "parks for the full window and never returns events (SPEC.md §7).\n\n" +
+    "A `200` also carries `inProgress`: what the server still thinks the agent is doing. It is " +
+    "reported here and on `claim-all` — the loop's two entry points — and nowhere else; the `204` " +
+    "that ends an empty window has no body and therefore no list. See `claim-all` for the " +
+    "reconciliation contract.",
   request: { query: IdleQuerySchema },
   responses: {
     200: jsonContent(IdleResultSchema, "Pending events exist; claim them next."),
@@ -66,19 +70,48 @@ export const idleQueue = createRoute({
   },
 });
 
+/**
+ * The loop's entry point, and — since CONTRACT-033 — the place the agent finds
+ * out what the server believes it is already doing.
+ *
+ * That second half answers a failure the queue had no path out of. An event gets
+ * stranded in `in-progress/` two ways: the session died holding it (`reap-stale`
+ * recovers that, by *requeueing* it), or the agent is alive, did the work, and
+ * simply never called `complete`. The second is the common one, and for it the
+ * agent is not merely *a* source of truth but the only one — the work happened
+ * in its context. Nothing in the loop ever showed it the server's view, so the
+ * discrepancy was invisible to the one party able to resolve it (SPEC.md §7,
+ * SHARED-015).
+ */
 export const claimAll = createRoute({
   method: "post",
   path: "/api/queue/claim-all",
   tags: ["queue"],
-  summary: "Atomically claim every pending event",
+  summary: "Atomically claim every pending event, and report what is already held",
   description:
     "Moves all `pending/*` events to `in-progress/` in one call and returns them as a batch; concurrent " +
-    "claims never hand the same event to two callers. Returns an empty batch while halted (SPEC.md §7).",
+    "claims never hand the same event to two callers. Returns an empty batch while halted (SPEC.md §7).\n\n" +
+    "**The response also reports what the server still thinks the agent is doing**, as `inProgress` " +
+    "— its own field, never mixed into `events`. The two answer different questions, and an agent " +
+    "that confused them would either redo settled work or settle work it never did. Nothing in " +
+    "`inProgress` was claimed by this call: those events were already in `in-progress/` when it " +
+    "arrived.\n\n" +
+    "**The loop is expected to reconcile it** (SPEC.md §7). An event whose work this agent has " +
+    "already done is settled on the spot with the ordinary verbs; one it is genuinely still " +
+    "working is left alone; and an event it **cannot account for is never settled** — closing an " +
+    "unfamiliar event to tidy the list would silently kill a concurrent run's work. Reconciliation " +
+    "is the agent's judgement and never an inference the server draws on its behalf: this endpoint " +
+    "reports, and settles nothing by itself. `reap-stale` remains the recovery for the other case " +
+    "— a session that died with its context — and stays a requeue.\n\n" +
+    "**The list is capped, and says so.** Past the cap it reports the true `total` and sets " +
+    "`truncated`; the complete set is `GET /api/jobs?status=in-progress`. A short list that looked " +
+    "complete would defeat the whole field.",
   request: { headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(
       ClaimBatchSchema,
-      "The claimed events; empty while halted or when nothing is pending.",
+      "The claimed events — empty while halted or when nothing is pending — beside the events the " +
+        "server already holds `in-progress`.",
     ),
     400: VALIDATION_RESPONSE,
     401: UNAUTHORIZED_RESPONSE,

@@ -391,22 +391,36 @@ belongs to the same fix wave.
 | SERVER-059 | Orphan repair, not fuzzy resolution — the read path provably cannot decide | todo | P1 | — |
 | UI-075 | UI-069's per-thread jobs query fans out once per thread card (PR #24 review MAJOR) | done | P1 | UI-069 |
 | SHARED-015 | Agent sees the server's in-progress set and reconciles it — DRAFT, awaiting sign-off | blocked | P1 | — |
-| CONTRACT-033 | claim-all/idle carry the in-progress set (id, type, origin, held-since) | blocked | P1 | SHARED-015 |
-| SERVER-061 | Populate the in-progress set from `in-progress/`; settle nothing | blocked | P1 | CONTRACT-033 |
-| CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | blocked | P1 | CONTRACT-033 |
-| AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | blocked | P1 | CLI-029 |
+| CONTRACT-033 | claim-all/idle carry the in-progress set (id, type, origin, held-since) | done | P1 | SHARED-015 |
+| SERVER-061 | Populate the in-progress set from `in-progress/`; settle nothing | done | P1 | CONTRACT-033 |
+| CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | done | P1 | CONTRACT-033 |
+| AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | done | P1 | CLI-029 |
 | SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
 | SHARED-016 | Mentions, invocations and bare doc ids render as handles — DRAFT, awaiting sign-off | blocked | P2 | — |
 | UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
 | CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
-| UI-077 | Collapse anything, anywhere: by rule + on demand, every placement | todo | P1 | SHARED-018 |
+| UI-077 | Collapse anything, anywhere: by rule + on demand, every placement | done | P1 | SHARED-018 |
 | AGENT-014 | Agent resolves a settled subthread in the same turn as its reply | todo | P1 | SHARED-019 |
-| SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | todo | P1 | SHARED-019 |
+| SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | done | P1 | SHARED-019 |
 | SHARED-017 | Multi-select + bulk actions — DRAFT, awaiting sign-off | blocked | P2 | — |
 | SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
 | SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
 | UI-078 | Resolve confirmation promises replying reopens the thread; it does not | todo | P1 | — |
-| SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry (SIGNED, applied) | done | P1 | — |
+| SHARED-022 | Choosing the model for a request — weight levels, honoured as a directive (SIGNED, applied) | done | P2 | — |
+| UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | todo | P2 | SHARED-022 |
+| AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | todo | P2 | SHARED-022 |
+| CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
+| CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
+| SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |
+| SERVER-064 | One unreadable document stops the server booting; the docblock forbids it | todo | P1 | — |
+| UI-079 | `reveal.spec` waits on a decoration with a finite lifetime (duration-shaped) | todo | P2 | — |
+| UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
+| SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
+| INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
+| UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
+| CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
+| CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
 
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |

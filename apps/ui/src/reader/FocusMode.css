@@ -67,7 +67,30 @@
   align-items: start;
 }
 
-.focus-inner.with-margin .t-chip {
+/*
+ * In margin mode an **anchored** conversation lives in the margin, so its
+ * anchor's own widget in the body draws nothing.
+ *
+ * Scoped to `.anchor-slot`, and that scope is the whole rule (PR #25 re-review,
+ * CRITICAL). `.t-chip` is no longer "the anchor's chip": since UI-077 it is the
+ * one collapsed representation a conversation has **anywhere** (SPEC.md §11),
+ * and `.doc-main` holds placements the margin never takes over — the
+ * whole-document threads, the orphans and the ones this view cannot point at,
+ * all of which `DetachedThreads` renders inside the body while the margin is
+ * up. Scoped only to `.doc-main`, this rule hid every one of those the moment it
+ * was folded, by rule or by hand: one line with `display: none`, no card, and no
+ * expander left anywhere on the surface — a conversation you could not reach,
+ * with the fold sticky in `localStorage` so a reload did not bring it back. §11
+ * says the opposite twice over: "collapsed is never hidden" and "every collapse
+ * expands again in place".
+ *
+ * The narrow scope also states what is actually true. `useAnchorLayer.slotHost`
+ * already returns `null` in margin mode, so `AnchorChips` portals nothing into
+ * the anchor widgets — this is belt and braces over the editor's own decorations
+ * and nothing else, which is why the column reader's `.reader-scroll.with-margin`
+ * has never needed a rule of its own.
+ */
+.focus-inner.with-margin .doc-main .anchor-slot .t-chip {
   display: none;
 }
 

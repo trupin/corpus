@@ -92,7 +92,7 @@ export interface DecorationHosts {
    * SPEC.md §11 puts the chip **at the anchor** in a narrow column, and the
    * body is one contenteditable surface — so the chip is a widget decoration
    * placed after the anchor's top-level block, and React portals the real
-   * `ThreadSlot` into the element this returns. The element is owned by the
+   * `ThreadPanel` into the element this returns. The element is owned by the
    * host and reused across rebuilds, which is what keeps an expanded card's
    * state (and its composer's text) alive through a keystroke elsewhere in the
    * document.

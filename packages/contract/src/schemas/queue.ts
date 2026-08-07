@@ -99,9 +99,179 @@ export const QueueEventSchema = z
   })
   .openapi("QueueEvent");
 
-/** Result of an atomic batch claim: every `pending/*` event moved to `in-progress/`. */
+/**
+ * How many held events a single claim reports before it starts saying "and N
+ * more" (CONTRACT-033, the rider's resolved Q2).
+ *
+ * Small on purpose. This list is read on **every** claim, and its job is to make
+ * a discrepancy *noticeable* — not to be an inventory. A healthy loop holds a
+ * handful; past twenty rows the actionable fact is "many, and here is the
+ * total", and the complete inventory is one documented route away
+ * (`GET /api/jobs?status=in-progress`), so the cap never puts anything out of
+ * reach.
+ */
+export const MAX_IN_PROGRESS_REPORTED = 20;
+
+/**
+ * One event the server currently holds `in-progress` — reported to the agent
+ * that is claiming work, so it can reconcile the server's view against its own
+ * (SPEC.md §7, "The agent can see what the server still thinks it is doing").
+ *
+ * **`heldSince` is an instant, not an elapsed duration**, and that choice is the
+ * one worth writing down:
+ *
+ * - An instant stays true. A duration is computed against the server's clock at
+ *   serialisation time and is stale the moment the response is read — and this
+ *   response is read by an agent that may sit on it for a whole turn.
+ * - It survives clock skew *visibly*. The caller subtracts against whichever
+ *   clock it trusts and can see the two disagree; a pre-computed duration hides
+ *   which clock produced it, so a skewed server silently reports a plausible
+ *   wrong number.
+ * - It is the unit the rest of this wire already speaks. `created`, `started`
+ *   and `updated` are all ISO instants; a duration would be the only
+ *   unit-bearing number in the queue surface, and would have to carry its unit
+ *   in its name to be readable at all.
+ * - Readability is a presentation concern. "held 3h" is what `corpus queue
+ *   claim-all` prints (CLI-029), computed one layer up, where the rendering
+ *   rules already live.
+ *
+ * The origin fields are deliberately `Job`'s (`./job.ts`), spelling and
+ * derivation both: same names, same nullability, same rule — the first of
+ * `threadId`, `parentId`, `docId` in the payload that names a document the
+ * corpus still holds, with the title read at response time rather than stored,
+ * so a renamed document shows its new title on the next read. Saying where an
+ * event came from twice, two different ways, would make the console row and the
+ * reconciliation row disagree for no reason.
+ */
+export const InProgressEventSchema = z
+  .object({
+    id: EventIdSchema,
+    type: z
+      .string()
+      .min(1)
+      .describe(
+        "The held event's type — the same open string `QueueEvent.type` and `Job.type` carry, for " +
+          `the same reason: plugins define their own. Core values: ${CORE_QUEUE_EVENT_TYPES.join(", ")}. ` +
+          "It is half of what makes the row checkable: an agent recognises *what kind of work* it " +
+          "is being told it still owes.",
+      ),
+    heldSince: IsoDateTimeSchema.describe(
+      "**When the event was claimed**, as an instant — not how long ago that was. An instant is " +
+        "still true after the agent has sat on this response for a turn, and it lets the caller " +
+        "compute the age against whichever clock it trusts instead of inheriting the server's. " +
+        "Rendering it as `held 3h` is the CLI's job (SPEC.md §7).",
+    ),
+    originId: DocumentIdSchema.nullable().describe(
+      "Document or thread the held event originated from, or null — **the same field `Job.originId` " +
+        "is, derived by the same rule**: the first of `threadId`, `parentId`, `docId` in the event " +
+        "payload that names a document the corpus still holds. `form.respond` names a thread; a " +
+        "plugin event may name nothing, which is what null is for.",
+    ),
+    originTitle: z
+      .string()
+      .nullable()
+      .describe(
+        "**The current title of whatever `originId` names, or null** — null exactly when `originId` " +
+          "is null, or when the document it names no longer exists. Read at response time rather " +
+          "than stored, exactly as `Job.originTitle` is. This is the field that makes the row " +
+          '*checkable* rather than merely present: "you are apparently still working on ' +
+          '`comment.created` for **Re: the rate assumption**" is a sentence an agent can hold ' +
+          "against its own memory, and a bare event id is not.",
+      ),
+  })
+  .openapi("InProgressEvent");
+
+/**
+ * What the server is currently holding, reported alongside a claim
+ * (CONTRACT-033; SPEC.md §7's reconciliation bullet, SHARED-015).
+ *
+ * **Bounded, and never silently so.** The cap is
+ * {@link MAX_IN_PROGRESS_REPORTED}, published as `maxItems`, and the overflow
+ * signal is the pairing `DocDiff` established (CONTRACT-032): a boolean that
+ * says the cut happened and a number that says the real size. Both, rather than
+ * either: `truncated` is what a caller branches on and must not have to derive,
+ * `total` is the magnitude it reports. A short list that looks complete is the
+ * failure mode this whole field exists to prevent — an agent that reads six rows
+ * and settles all six would otherwise conclude it is square with the server.
+ *
+ * **Ordered most recently claimed first.** That ordering is load-bearing when the
+ * cap bites: the rows an agent can actually account for are the ones it claimed
+ * recently, and ancient residue — a session that died with its context — is
+ * `reap-stale`'s problem, not reconciliation's. Oldest-first would let permanent
+ * residue occupy the window forever and hide every fresh discrepancy behind it.
+ *
+ * **It reports and settles nothing.** SPEC.md §7 is explicit that reconciliation
+ * is the agent's judgement and never an inference the server draws on its
+ * behalf. Nothing here asks for an action; the agent settles what it recognises
+ * with the ordinary verbs and leaves the rest alone.
+ */
+export const InProgressSetSchema = z
+  .object({
+    events: z
+      .array(InProgressEventSchema)
+      .max(MAX_IN_PROGRESS_REPORTED)
+      .describe(
+        `The held events, most recently claimed first, capped at ${MAX_IN_PROGRESS_REPORTED}. ` +
+          "**Disjoint from the events just claimed** — an event cannot be in both, since a claim " +
+          "moves it out of `pending/` and this list is read from `in-progress/` as it stood " +
+          "beforehand. When the cap bites, the newest are kept: those are the ones this session " +
+          "can still account for, and the ancient ones are `reap-stale`'s job.",
+      ),
+    total: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "How many events the server holds `in-progress` **in total**, equal to `events.length` " +
+          'whenever `truncated` is false. It is the "and N more" the cap owes the caller: ' +
+          `subtract the list's length to get it. For the complete set past ${MAX_IN_PROGRESS_REPORTED}, ` +
+          "ask `GET /api/jobs?status=in-progress` — the cap bounds this report, never the caller's " +
+          "reach.",
+      ),
+    truncated: z
+      .boolean()
+      .describe(
+        "True when the cap cut the list — `total` is then greater than `events.length`. Stated " +
+          "rather than left to be derived (the rule `DocDiff.truncated` sets): this is the flag " +
+          "that stops a capped list from reading as a complete one, and a caller must not have to " +
+          "compute the one fact that keeps it honest.",
+      ),
+  })
+  .openapi("InProgressSet", {
+    description:
+      "What the server still thinks the agent is doing (SPEC.md §7) — reported beside a claim as " +
+      "**its own field, never mixed into the claimed events**. The two answer different " +
+      "questions, and an agent that confused them would either redo settled work or settle work " +
+      "it never did. Nothing here was claimed by the call that returned it: these events were " +
+      "already in `in-progress/` when it arrived. The loop reconciles: settle what you have " +
+      "already done with the ordinary verbs, leave what you are still working, and never settle " +
+      "an event you cannot account for. The server reports and settles nothing by itself.",
+  });
+
+/**
+ * Result of an atomic batch claim: every `pending/*` event moved to
+ * `in-progress/`, plus what the server was already holding.
+ *
+ * **`inProgress` is a sibling of `events`, never merged into it** (SPEC.md §7,
+ * SHARED-015). The two answer different questions — "work I just claimed" and
+ * "work you apparently think I already had" — and an agent that confused them
+ * would either redo settled work or settle work it never did. One array with a
+ * discriminating flag would have made that confusion a one-character mistake;
+ * two fields make it impossible.
+ *
+ * It is **required**, not optional. An absent field is indistinguishable from an
+ * empty one, which is precisely the silent-incompleteness failure the cap's
+ * overflow signal exists to prevent; nothing held is `{events: [], total: 0,
+ * truncated: false}`.
+ */
 export const ClaimBatchSchema = z
-  .object({ events: z.array(QueueEventSchema) })
+  .object({
+    events: z.array(QueueEventSchema),
+    // Referenced unmodified, deliberately: `.describe()` on a registered schema
+    // makes zod-to-openapi carry the component's name onto the derived one and
+    // rewrite the shared definition. The prose lives on the component itself.
+    inProgress: InProgressSetSchema,
+  })
   .openapi("ClaimBatch");
 
 export const QueueStatusSchema = z
@@ -130,6 +300,14 @@ export const QueueStatusSchema = z
  * Events available to claim right now, returned by the long-poll idle endpoint.
  * Structurally identical to {@link ClaimBatchSchema} but a distinct resource:
  * idle *reports* availability and never claims (SPEC.md §7).
+ *
+ * It carries the in-progress set for the same reason `claim-all` does, and only
+ * here: SHARED-015's resolved Q1 puts the list on the loop's entry points —
+ * `claim-all`, and `idle` **when it returns work** — rather than on every queue
+ * verb, where it would land on `complete` and read as a nag mid-settle. The
+ * `204` that ends an empty window has no body and therefore no list, which is
+ * deliberate: an agent with nothing to claim has nothing to reconcile against,
+ * and the list arrives on the next `200` regardless.
  */
 export const IdleResultSchema = z
   .object({
@@ -139,6 +317,8 @@ export const IdleResultSchema = z
       .describe(
         "Pending events, still in `pending/`. Claim them with `POST /api/queue/claim-all`.",
       ),
+    // Unmodified, for the reason `ClaimBatchSchema` gives.
+    inProgress: InProgressSetSchema,
   })
   .openapi("IdleResult");
 
@@ -259,6 +439,8 @@ export type IdleQuery = z.infer<typeof IdleQuerySchema>;
 export type ReapStaleResult = z.infer<typeof ReapStaleResultSchema>;
 export type QueueEventStatus = z.infer<typeof QueueEventStatusSchema>;
 export type QueueEvent = z.infer<typeof QueueEventSchema>;
+export type InProgressEvent = z.infer<typeof InProgressEventSchema>;
+export type InProgressSet = z.infer<typeof InProgressSetSchema>;
 export type ClaimBatch = z.infer<typeof ClaimBatchSchema>;
 export type QueueStatus = z.infer<typeof QueueStatusSchema>;
 export type DeferEventRequest = z.infer<typeof DeferEventRequestSchema>;

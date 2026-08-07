@@ -160,22 +160,31 @@ test.describe("a document that arrives with an anchor already on it", () => {
     await expect(page.locator(".reader .anchor-hl")).toHaveText("lender spreads");
   });
 
+  /**
+   * The highlight is the way back to a conversation that has been folded — which
+   * is what "collapsed is never hidden … its anchored highlight stays in the
+   * body" buys (SPEC.md §11, UI-077). So the thread is folded by hand first, and
+   * the click is what brings it back.
+   */
   test("opens the thread when the highlight is clicked (SPEC.md §11)", async ({ page }) => {
     await openNote(page, [VIEW, NOTE, THREAD]);
-    await expect(page.locator(".thread-slot.expanded")).toHaveCount(0);
+    const slot = page.locator('.thread-slot[data-slot-thread="th_1"]');
+    await expect(slot).toHaveClass(/expanded/);
+
+    await slot.locator(".t-collapse").click();
+    await expect(slot).toHaveClass(/collapsed/);
 
     await page.locator(".reader .anchor-hl").click();
 
-    const expanded = page.locator('.thread-slot.expanded[data-slot-thread="th_1"]');
-    await expect(expanded).toHaveCount(1);
+    await expect(slot).toHaveClass(/expanded/);
     // It is the anchored thread that opened, and it says which words it is about.
-    await expect(expanded).toContainText("lender spreads");
+    await expect(slot).toContainText("lender spreads");
   });
 
-  test("keeps the chip at the anchor while the column is narrow", async ({ page }) => {
+  test("keeps the conversation at its anchor while the column is narrow", async ({ page }) => {
     await openNote(page, [VIEW, NOTE, THREAD]);
 
-    await expect(page.locator(".reader .anchor-slot .t-chip")).toHaveCount(1);
+    await expect(page.locator('.reader .anchor-slot [data-thread-panel="th_1"]')).toHaveCount(1);
     // A narrow column is chip mode: no margin gutter, no margin cards.
     await expect(page.locator(".reader .with-margin")).toHaveCount(0);
     await expect(page.locator(".focus-margin")).toHaveCount(0);
@@ -190,14 +199,14 @@ test.describe("a document that arrives with an anchor already on it", () => {
     await expect(focus).toHaveCount(1);
     await expect(focus.locator(".with-margin")).toHaveCount(1);
 
-    const card = focus.locator('.focus-margin > .thread-card[data-thread="th_1"]');
+    const card = focus.locator('.focus-margin > [data-thread-panel="th_1"]');
     await expect(card).toHaveCount(1);
     // The cascade positions absolutely; until it runs every card sits at 0.
     const offsets = await focus.evaluate((root) => {
       const main = root.querySelector(".doc-main");
       const origin = main?.getBoundingClientRect().top ?? 0;
       const anchor = main?.querySelector('.anchor-hl[data-thread="th_1"]') ?? null;
-      const placed = root.querySelector('.focus-margin > .thread-card[data-thread="th_1"]');
+      const placed = root.querySelector('.focus-margin > [data-thread-panel="th_1"]');
       return {
         anchorTop: anchor === null ? null : Math.round(anchor.getBoundingClientRect().top - origin),
         cardTop: placed === null ? null : Math.round(placed.getBoundingClientRect().top - origin),
@@ -205,8 +214,8 @@ test.describe("a document that arrives with an anchor already on it", () => {
     });
     expect(offsets.anchorTop).not.toBeNull();
     expect(offsets.cardTop).toBe(offsets.anchorTop);
-    // The margin replaces the chip rather than doubling it.
-    await expect(focus.locator(".anchor-slot .t-chip")).toBeHidden();
+    // The margin replaces the body's own placement rather than doubling it.
+    await expect(focus.locator(".doc-main .anchor-slot [data-thread-panel]")).toHaveCount(0);
   });
 });
 
@@ -309,8 +318,10 @@ test.describe("an anchor whose quote has left the body", () => {
     await expect(page.locator('[data-thread-section="detached"]')).toHaveCount(1);
     await expect(page.locator(".reader .anchor-hl")).toHaveCount(0);
     await expect(page.locator(".reader .anchor-pip")).toHaveCount(0);
-    // Still fully usable: the thread is listed, with its quote.
-    await expect(page.locator('[data-thread-section="detached"] .t-chip')).toHaveCount(1);
+    // Still fully usable: the conversation is listed and fully repliable.
+    await expect(
+      page.locator('[data-thread-section="detached"] [data-thread-panel="th_1"]'),
+    ).toHaveCount(1);
   });
 });
 
@@ -379,7 +390,7 @@ test.describe("a comment whose selection began inside inline markup", () => {
       const main = root.querySelector(".doc-main");
       const origin = main?.getBoundingClientRect().top ?? 0;
       const anchor = main?.querySelector('.anchor-hl[data-thread="th_1"]') ?? null;
-      const card = root.querySelector('.focus-margin > .thread-card[data-thread="th_1"]');
+      const card = root.querySelector('.focus-margin > [data-thread-panel="th_1"]');
       return {
         anchorTop: anchor === null ? null : Math.round(anchor.getBoundingClientRect().top - origin),
         cardTop: card === null ? null : Math.round(card.getBoundingClientRect().top - origin),

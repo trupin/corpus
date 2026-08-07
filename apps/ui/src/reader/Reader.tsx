@@ -4,6 +4,8 @@ import { useAbandonEmptyDoc } from "../abandon/useAbandonEmpty";
 import type { NavEntry } from "../board/useBoardLocalState";
 import { useReaderContextMenu } from "../menu/useReaderContextMenu";
 import { SaveStatusProvider } from "../editor/SaveChip";
+import { ThreadCollapseProvider } from "../thread/ThreadCollapseContext";
+import { columnSurface } from "../thread/threadCollapse";
 import { DocView } from "./DocView";
 import { ReaderHead } from "./ReaderHead";
 import { dropMissing, useNavStack } from "./useNavStack";
@@ -48,6 +50,57 @@ export function Reader({
   const stack = useNavStack({ stack: nav, setStack: setNav });
   const docId = stack.docId ?? "";
   const reader = useReaderDoc(docId);
+
+  return (
+    /*
+     * The folds are the column's, and they outlive every document it opens
+     * (SPEC.md §11): "two columns showing the same document keep their own",
+     * which is the same division that already gives each column its own scroll
+     * position and its own navigation stack. So the provider wraps the reader
+     * rather than sitting inside it, and is keyed by the column.
+     */
+    <ThreadCollapseProvider surfaceKey={columnSurface(columnId)}>
+      <ColumnReader
+        columnId={columnId}
+        columnTitle={columnTitle}
+        nav={nav}
+        setNav={setNav}
+        selectTitle={selectTitle}
+        isActive={isActive}
+        stack={stack}
+        reader={reader}
+        onFocusMode={onFocusMode}
+        onNotify={onNotify}
+      />
+    </ThreadCollapseProvider>
+  );
+}
+
+interface ColumnReaderProps extends ReaderProps {
+  readonly stack: ReturnType<typeof useNavStack>;
+  readonly reader: ReturnType<typeof useReaderDoc>;
+}
+
+/**
+ * The reader proper, under the fold provider.
+ *
+ * Split out only so `useReaderSurface` runs **inside** the provider: the surface
+ * expands a conversation when the 💬 popover jumps to it, and a hook called
+ * beside a provider reads the context above it rather than the one it renders.
+ */
+function ColumnReader({
+  columnId,
+  columnTitle,
+  nav,
+  setNav,
+  selectTitle,
+  isActive,
+  stack,
+  reader,
+  onFocusMode,
+  onNotify,
+}: ColumnReaderProps): ReactElement | null {
+  const docId = stack.docId ?? "";
 
   const surface = useReaderSurface({
     reader,
@@ -154,9 +207,7 @@ export function Reader({
           <DocView
             reader={reader}
             selectTitle={selectTitle}
-            expandedThreads={surface.expandedThreads}
             flashThread={surface.flashThread}
-            onToggleThread={surface.toggleThread}
             onNavigate={navigate}
             onNotify={onNotify}
           />

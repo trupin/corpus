@@ -660,6 +660,89 @@ describe("orchestrate skill body", () => {
     });
   });
 
+  /**
+   * Reconciling the server's in-progress set (AGENT-013, SPEC.md §7's rider
+   * signed 2026-08-05). The feature is data the CLI already prints; this is the
+   * only place that tells the agent to *act* on it, so each of the rider's
+   * load-bearing claims is pinned — the shape, the two-list separation, both
+   * branches, and above all the never-settle clause **with its reason**, which
+   * is the one a reader who does not know why would optimise away.
+   */
+  describe("in-progress reconciliation", () => {
+    it("documents the payload the CLI actually prints, both lists in one line", () => {
+      // The claim example carries `events` and `inProgress` as siblings, with a
+      // populated row: the old `{"events":[…]}` shape is not the wire shape and
+      // an agent matching it exactly would miss the field entirely.
+      expect(body).toMatch(
+        /\{"events":\[\{"id":"evt_7c1d9a".*\}\],"inProgress":\{"events":\[\{"id":"evt_2e4f8b","type":"comment\.created","heldSince":"[^"]+","originId":"th_9d2f7a","originTitle":"[^"]+"\}\],"total":1,"truncated":false\}\}/,
+      );
+      // The overflow pair reaches the reader as a rule, not only as an example,
+      // and the uncapped view is named.
+      expect(body).toMatch(/capped at the 20 most recently claimed/);
+      expect(body).toMatch(/`total` is how\s+many are really held/);
+      expect(body).toMatch(/`truncated` is true when the cap bit/);
+      expect(body).toContain("corpus job list --status in-progress");
+      // `idle` carries it too, so the loop is not told to look in one place only.
+      expect(body).toMatch(/`corpus queue idle` reports the same field/);
+    });
+
+    it("no longer names an exact empty-batch payload as the halted signal", () => {
+      // `{"events":[]}` stopped being the literal shape when `inProgress` became
+      // required; the signal is the empty array, not the whole payload.
+      expect(body).not.toContain('{"events":[]}');
+      expect(body).toMatch(/An \*\*empty `events` array\*\* is not an\s+error/);
+      // And the reconciliation still happens on a claim that returned nothing.
+      expect(body).toMatch(/reported on every claim, empty batch included/);
+    });
+
+    it("separates the held list from the claimed batch, as a fact about ordering", () => {
+      expect(body).toMatch(
+        /\*\*`inProgress` is a different list from the one you just claimed, and never work to do\s+again\.\*\*/,
+      );
+      // The server reads `in-progress/` before the claim's moves, which is what
+      // makes "never do this work again" safe rather than a hedge.
+      expect(body).toMatch(/as it stood \*before\* this call's moves/);
+      expect(body).toMatch(/the events of this\s+batch are never in it/);
+    });
+
+    it("gives both branches, and forbids redoing settled work", () => {
+      expect(body).toMatch(/\*\*You already did this work\*\*/);
+      expect(body).toMatch(/\*\*do not do the work again\*\*/);
+      expect(body).toContain("corpus queue complete evt_2e4f8b");
+      expect(body).toContain(
+        'corpus job log evt_2e4f8b "settled late — the reply on th_9d2f7a was already posted"',
+      );
+      expect(body).toMatch(/\*\*You are still working it\*\*/);
+      expect(body).toMatch(/Leave it\s+exactly where it is/);
+    });
+
+    it("states the never-settle clause together with the reason for it", () => {
+      expect(body).toMatch(/\*\*Never settle an event you cannot account for\.\*\*/);
+      // Reconciliation is the agent's own judgement, and the server abstains.
+      expect(body).toMatch(/the server reports this list and settles nothing on it\s+by itself/);
+      // The reason, in full: the failure of tidying is silent and asymmetric.
+      expect(body).toMatch(/kills that run's accounting silently/);
+      expect(body).toMatch(/visible problem/);
+      expect(body).toMatch(/invisible failure is much the worse/);
+      expect(body).toMatch(/shortening the list is never a reason to settle anything/);
+    });
+
+    it("leaves dead sessions to reap-stale, and says it is a requeue", () => {
+      expect(body).toMatch(/\*\*You are not the cleanup for sessions that died, either\.\*\*/);
+      expect(body).toMatch(/it is a \*\*requeue\*\*/);
+      expect(body).toMatch(/done again rather\s+than dropped/);
+      expect(body).toMatch(/Nothing is lost by leaving an unfamiliar row alone/);
+    });
+
+    it("keeps the loop one literal bash block that names the reconciliation step", () => {
+      const loop = body.slice(body.indexOf("## The loop"), body.indexOf("## Claiming"));
+      const blocks = fencedBlocks(loop);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]?.info).toBe("bash");
+      expect(blocks[0]?.content).toMatch(/reconcile that held list against your own work/);
+    });
+  });
+
   it("hardwires no plugin name and hedges nothing", () => {
     // The `<plugin>.<action>` routing row is a convention, never an example
     // naming a shipped plugin (sprint-012 adjudication 1).

@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-04T00:00:00Z
+updated: 2026-08-06T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -46,7 +46,10 @@ everything after depends on them.
    `corpus queue defer` — on success, on error, on a blocking lock, and on interruption
    alike. Complete and fail reach a terminal state; a deferred event is settled
    accounting, not a dangling one — it leaves `in-progress/` and returns to `pending/` on
-   its own when the lock it names clears. Work may fail or wait; accounting may not.
+   its own when the lock it names clears. Work may fail or wait; accounting may not. The
+   way this invariant actually breaks is that you finish a job and forget the settling
+   call, which nothing in the work itself reveals — so every claim reports what the server
+   still holds, and reading that report is a step of the loop (Claiming and batching).
 5. **`corpus queue idle` is the only wait.** Never `sleep`, never poll the queue, never
    busy-wait: `idle` parks you on a held response, so waiting costs zero tokens and ends the
    instant work arrives.
@@ -66,8 +69,9 @@ Run it exactly like this, in order, indefinitely:
 ```bash
 export CORPUS_FROM=agent    # once per session, before anything else
 corpus queue reap-stale     # returns events a dead session stranded in-progress
-corpus queue claim-all      # the whole pending batch, as one JSON payload
-# dispatch every claimed event to a subagent (Routing and Delegation below), then park:
+corpus queue claim-all      # the pending batch, plus what the server still holds in-progress
+# reconcile that held list against your own work first (Claiming and batching below),
+# then dispatch every claimed event to a subagent (Routing and Delegation below), and park:
 corpus queue idle           # returns on a new event or on its ~8-minute rearm
 # on every return, settle each event whose subagent has reported —
 corpus queue complete evt_7c1d9a
@@ -94,21 +98,69 @@ nothing and stays silent, and after an unclean stop it is what returns stranded 
 ## Claiming and batching
 
 `corpus queue claim-all` atomically moves everything in `pending/` to `in-progress/` and
-prints the batch as **one JSON payload** on stdout:
+prints **one JSON payload** on stdout, in both human and `--json` mode. It carries two
+separate lists: `events`, the batch you have just claimed, and `inProgress`, what the
+server still thinks you are doing.
 
 ```bash
 corpus queue claim-all
-{"events":[{"id":"evt_7c1d9a","type":"comment.created","created":"2026-07-28T09:14:02Z","source":"ui","payload":{"threadId":"th_4b8e2c","parentId":"doc_a1b2c3"}}]}
+{"events":[{"id":"evt_7c1d9a","type":"comment.created","created":"2026-07-28T09:14:02Z","source":"ui","payload":{"threadId":"th_4b8e2c","parentId":"doc_a1b2c3"}}],"inProgress":{"events":[{"id":"evt_2e4f8b","type":"comment.created","heldSince":"2026-07-28T08:41:17Z","originId":"th_9d2f7a","originTitle":"Q3 planning"}],"total":1,"truncated":false}}
 ```
 
-Parse it, group it by the documents each event touches (Concurrency and ordering below),
-and dispatch the whole batch before claiming again — never call `claim-all` in the middle
-of dispatching, because a second claim splices new events into an ordering you have
+Parse `events`, group it by the documents each event touches (Concurrency and ordering
+below), and dispatch the whole batch before claiming again — never call `claim-all` in the
+middle of dispatching, because a second claim splices new events into an ordering you have
 already computed. That is the whole rule: once the batch is dispatched, claiming again
 when parking returns is the normal loop, and events claimed then are simply dispatched
-behind whatever overlapping work is still running. An empty batch (`{"events":[]}`) is not
-an error: it means the queue is halted or another consumer claimed first. Go straight to
-`corpus queue idle`.
+behind whatever overlapping work is still running. An **empty `events` array** is not an
+error: it means the queue is halted or another consumer claimed first. Reconcile
+`inProgress` anyway — it is reported on every claim, empty batch included — and then go
+straight to `corpus queue idle`.
+
+**`inProgress` is a different list from the one you just claimed, and never work to do
+again.** It is `in-progress/` as it stood *before* this call's moves, so the events of this
+batch are never in it: every row is something the server was already holding for you. Each
+row names the event's `id` and `type`, the thread or document it came from (`originId`,
+`originTitle`), and `heldSince` as an instant you age against your own clock. The list is
+capped at the 20 most recently claimed and says so rather than trailing off — `total` is how
+many are really held, `truncated` is true when the cap bit, and
+`corpus job list --status in-progress` shows the whole set. In human mode that same list is
+also printed as a readable block on stderr, ages rendered as `held 3h`; under `--json` the
+block is suppressed and the field alone carries it. Nothing is printed at all when nothing
+is held, which is the ordinary case. `corpus queue idle` reports the same field on the
+returns that carry work.
+
+**Read every row, and take exactly one of two actions on it.** This is the loop's own
+check on itself: the way a job gets stuck is almost never a crash, it is you finishing the
+work and never making the settling call, and nothing else in the loop shows you the server's
+view of it.
+
+- **You already did this work** — the reply is posted, the edits landed, the subagent
+  reported, and the only thing missing was the settling call. Settle it now with the
+  ordinary verbs and **do not do the work again**: `corpus queue complete evt_2e4f8b`, or
+  `corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"` when
+  the work itself is what failed. Record it, so the console's story matches:
+  `corpus job log evt_2e4f8b "settled late — the reply on th_9d2f7a was already posted"`.
+- **You are still working it** — a subagent you dispatched has not reported yet. Leave it
+  exactly where it is. The row disappears from the next claim the moment you record that
+  subagent's outcome.
+
+**Never settle an event you cannot account for.** Reconciliation is your judgement about
+your own work, and it is the only judgement available: the work happened in your context and
+nowhere else, which is precisely why the server reports this list and settles nothing on it
+by itself. A row you do not recognise — another session's, or residue from a run whose
+context is gone — is left where it is. Completing it to make the list shorter tells the
+server a job was done that nobody did; if that work is in fact still running somewhere, it
+kills that run's accounting silently, and the person waiting on it gets no reply and no
+failed row to explain the silence. A list that stays long is a visible problem. A list
+tidied by guesswork is an invisible one, and the invisible failure is much the worse of the
+two — so shortening the list is never a reason to settle anything.
+
+**You are not the cleanup for sessions that died, either.** The loop's opening
+`corpus queue reap-stale` is what returns a stranded event to `pending/` once the staleness
+window passes, and it is a **requeue**: an event nobody can account for is done again rather
+than dropped. Nothing is lost by leaving an unfamiliar row alone, which is what makes
+guessing about it unnecessary as well as harmful.
 
 ## Routing
 
@@ -627,7 +679,7 @@ the rate assumption to be updated.
 
 ```bash
 corpus queue claim-all
-{"events":[{"id":"evt_7c1d9a","type":"comment.created","created":"2026-07-28T09:14:02Z","source":"ui","payload":{"threadId":"th_4b8e2c","parentId":"doc_a1b2c3"}}]}
+{"events":[{"id":"evt_7c1d9a","type":"comment.created","created":"2026-07-28T09:14:02Z","source":"ui","payload":{"threadId":"th_4b8e2c","parentId":"doc_a1b2c3"}}],"inProgress":{"events":[],"total":0,"truncated":false}}
 corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c"
 corpus search "rate assumption" --limit 5
 doc_a1b2c3  Mortgage options › Rates  …the working rate assumption is 6.1% as of 2026-05-02…
@@ -635,8 +687,9 @@ doc_7e3a91  Refinance plan › Costs    …every projection here assumes 6.1% fo
 corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — one document, prescribed change)"
 ```
 
-Two ranked lines, no bodies: that is the whole cost of finding out where the rate
-assumption lives. Launch the subagent in the background — its prompt carries `evt_7c1d9a`,
+`inProgress` came back empty, so there is nothing to reconcile and nothing printed on
+stderr — the ordinary shape of a loop that has been settling its events. Two ranked lines,
+no bodies: that is the whole cost of finding out where the rate assumption lives. Launch the subagent in the background — its prompt carries `evt_7c1d9a`,
 `th_4b8e2c`, `doc_a1b2c3`, those two retrieved lines as the anchors to start from, the
 comment skill, and the binding rules from Delegation — and go straight back to parking:
 

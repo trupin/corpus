@@ -9,7 +9,10 @@ import {
   HaltQueueRequestSchema,
   IdleQuerySchema,
   IdleResultSchema,
+  InProgressEventSchema,
+  InProgressSetSchema,
   MAX_IDLE_TIMEOUT_SECONDS,
+  MAX_IN_PROGRESS_REPORTED,
   QUEUE_EVENT_STATUSES,
   QueueEventSchema,
   QueueEventStatusSchema,
@@ -84,13 +87,198 @@ describe("queue vocabularies", () => {
   });
 });
 
+const held = {
+  id: "evt_held",
+  type: "comment.created",
+  heldSince: "2026-07-19T09:41:00Z",
+  originId: "th_x9y8",
+  originTitle: "Re: 30-year fixed assumption",
+};
+
+/** Nothing held — the shape a healthy loop sees on every claim. */
+const nothingHeld = { events: [], total: 0, truncated: false };
+
+/**
+ * CONTRACT-033, the wire half of SHARED-015. SPEC.md §7: "Claiming work also
+ * reports the events the server currently holds `in-progress`, each with what it
+ * is and how long it has been held." Everything pinned here is that sentence
+ * and the rider's four resolved questions — nothing else.
+ */
+describe("InProgressEvent", () => {
+  it("round-trips a held event", () => {
+    expect(InProgressEventSchema.parse(held)).toEqual(held);
+  });
+
+  /**
+   * The four facts §7's sentence and the rider's Q4 name: what it is (`id`,
+   * `type`), where it came from (`originId`/`originTitle`), and how long it has
+   * been held (`heldSince`). Pinned as an exact set so a fifth field is a
+   * deliberate contract change rather than a drive-by.
+   */
+  it("carries what it is, where it came from, and since when", () => {
+    expect(Object.keys(InProgressEventSchema.shape)).toEqual([
+      "id",
+      "type",
+      "heldSince",
+      "originId",
+      "originTitle",
+    ]);
+  });
+
+  /**
+   * The instant-not-duration decision. A duration would parse here as a plain
+   * number or a `PT3H`-style string; both are rejected, so a server that decided
+   * to "help" by pre-computing the age cannot do it silently.
+   */
+  it("takes an instant, not an elapsed duration", () => {
+    expect(InProgressEventSchema.safeParse({ ...held, heldSince: 10_800 }).success).toBe(false);
+    expect(InProgressEventSchema.safeParse({ ...held, heldSince: "PT3H" }).success).toBe(false);
+    expect(InProgressEventSchema.safeParse({ ...held, heldSince: "3h" }).success).toBe(false);
+  });
+
+  /** The `Job.originId` rule: an event whose payload names no document reports null, not "". */
+  it("reports a missing origin as null on both halves", () => {
+    const anonymous = { ...held, originId: null, originTitle: null };
+    expect(InProgressEventSchema.parse(anonymous)).toEqual(anonymous);
+  });
+
+  /**
+   * A title with no id would be a second, weaker way of saying where an event
+   * came from — the thing reusing `Job`'s shape exists to avoid. Both halves are
+   * required keys even though both are nullable, so neither can be omitted.
+   */
+  it("requires both origin halves as keys, nullable but never absent", () => {
+    for (const key of ["originId", "originTitle"] as const) {
+      const { [key]: _dropped, ...rest } = held;
+      expect(InProgressEventSchema.safeParse(rest).success, key).toBe(false);
+    }
+  });
+
+  it("rejects an id that is not an event id, so a document cannot be listed as held", () => {
+    expect(InProgressEventSchema.safeParse({ ...held, id: "doc_a1b2c3" }).success).toBe(false);
+  });
+
+  /** `originId` is a document id: a thread is a document (§6), an event is not. */
+  it("accepts a thread as an origin and refuses an event", () => {
+    expect(InProgressEventSchema.parse({ ...held, originId: "th_x9y8" }).originId).toBe("th_x9y8");
+    expect(InProgressEventSchema.safeParse({ ...held, originId: "evt_7c1d" }).success).toBe(false);
+  });
+
+  /** Open, for the reason `QueueEvent.type` is: plugins define their own event types. */
+  it("leaves the type open to plugin-defined values", () => {
+    expect(InProgressEventSchema.parse({ ...held, type: "todo.due" }).type).toBe("todo.due");
+    expect(InProgressEventSchema.safeParse({ ...held, type: "" }).success).toBe(false);
+  });
+});
+
+describe("InProgressSet", () => {
+  it("round-trips a set with one held event", () => {
+    const set = { events: [held], total: 1, truncated: false };
+    expect(InProgressSetSchema.parse(set)).toEqual(set);
+  });
+
+  it("round-trips the empty set a healthy loop sees", () => {
+    expect(InProgressSetSchema.parse(nothingHeld)).toEqual(nothingHeld);
+  });
+
+  /**
+   * The rider's Q2. The cap is published so a client author reads it, and
+   * enforced so a server cannot quietly exceed it — a list longer than the cap
+   * would mean the cap is not the contract it claims to be.
+   */
+  it("caps the list at the documented size and rejects a longer one", () => {
+    const at = Array.from({ length: MAX_IN_PROGRESS_REPORTED }, (_, index) => ({
+      ...held,
+      id: `evt_${String(index).padStart(4, "0")}`,
+    }));
+    expect(
+      InProgressSetSchema.safeParse({ events: at, total: at.length, truncated: false }).success,
+    ).toBe(true);
+    expect(
+      InProgressSetSchema.safeParse({ events: [...at, held], total: 21, truncated: true }).success,
+    ).toBe(false);
+  });
+
+  /**
+   * The overflow signal, and the whole reason the cap is tolerable: a truncated
+   * list still reports how many there really are. `total` minus the list's
+   * length is the "and N more" — never a silent truncation (CONTRACT-030 set
+   * this precedent on this very route, and `DocDiff` set the field pairing).
+   */
+  it("reports the real total alongside a truncated list", () => {
+    const overflowing = {
+      events: Array.from({ length: MAX_IN_PROGRESS_REPORTED }, () => held),
+      total: 57,
+      truncated: true,
+    };
+    const parsed = InProgressSetSchema.parse(overflowing);
+    expect(parsed.total - parsed.events.length).toBe(57 - MAX_IN_PROGRESS_REPORTED);
+    expect(parsed.truncated).toBe(true);
+  });
+
+  /**
+   * Both halves of the signal are required. A set that omitted `truncated` would
+   * make a capped list indistinguishable from a complete one at exactly the
+   * boundary where it matters most, and one that omitted `total` could say it
+   * was cut without ever saying by how much.
+   */
+  it("requires both halves of the overflow signal", () => {
+    expect(InProgressSetSchema.safeParse({ events: [], total: 0 }).success).toBe(false);
+    expect(InProgressSetSchema.safeParse({ events: [], truncated: false }).success).toBe(false);
+  });
+
+  it("rejects a negative or fractional total", () => {
+    for (const total of [-1, 1.5]) {
+      expect(InProgressSetSchema.safeParse({ ...nothingHeld, total }).success, `${total}`).toBe(
+        false,
+      );
+    }
+  });
+});
+
 describe("ClaimBatch", () => {
   it("round-trips a batch of claimed events", () => {
-    expect(ClaimBatchSchema.parse({ events: [event] })).toEqual({ events: [event] });
+    const batch = { events: [event], inProgress: nothingHeld };
+    expect(ClaimBatchSchema.parse(batch)).toEqual(batch);
   });
 
   it("round-trips the empty batch a halted queue returns", () => {
-    expect(ClaimBatchSchema.parse({ events: [] })).toEqual({ events: [] });
+    const batch = { events: [], inProgress: nothingHeld };
+    expect(ClaimBatchSchema.parse(batch)).toEqual(batch);
+  });
+
+  /**
+   * The separation SPEC.md §7 depends on: "work I just claimed" and "work you
+   * apparently think I already had" are different questions, and an agent that
+   * confused them would either redo settled work or settle work it never did.
+   * Two fields make that confusion impossible; one array with a flag would have
+   * made it a one-character mistake.
+   */
+  it("keeps the held events out of the claimed batch entirely", () => {
+    const batch = ClaimBatchSchema.parse({
+      events: [event],
+      inProgress: { events: [held], total: 1, truncated: false },
+    });
+    expect(batch.events.map((claimed) => claimed.id)).toEqual([event.id]);
+    expect(batch.inProgress.events.map((entry) => entry.id)).toEqual([held.id]);
+  });
+
+  /**
+   * Required rather than optional: an absent field is indistinguishable from an
+   * empty one, which is the same silent-incompleteness failure the overflow
+   * signal exists to prevent. Nothing held is a stated empty set.
+   */
+  it("demands the in-progress set rather than letting a server omit it", () => {
+    expect(ClaimBatchSchema.safeParse({ events: [] }).success).toBe(false);
+  });
+
+  /** A halted queue claims nothing, but it can still be holding plenty. */
+  it("allows a non-empty held set beside an empty claim", () => {
+    const batch = ClaimBatchSchema.parse({
+      events: [],
+      inProgress: { events: [held], total: 1, truncated: false },
+    });
+    expect(batch.inProgress.events).toHaveLength(1);
   });
 });
 
@@ -117,12 +305,32 @@ describe("IdleQuery", () => {
 
 describe("IdleResult", () => {
   it("round-trips the events available to claim", () => {
-    expect(IdleResultSchema.parse({ events: [event] })).toEqual({ events: [event] });
+    const result = { events: [event], inProgress: nothingHeld };
+    expect(IdleResultSchema.parse(result)).toEqual(result);
   });
 
   /** An empty 200 would be indistinguishable from the 204 timeout, so it is not a valid body. */
   it("rejects an empty list, because nothing pending is a 204 with no body", () => {
-    expect(IdleResultSchema.safeParse({ events: [] }).success).toBe(false);
+    expect(IdleResultSchema.safeParse({ events: [], inProgress: nothingHeld }).success).toBe(false);
+  });
+
+  /**
+   * The rider's resolved Q1: the list rides on the loop's two entry points —
+   * `claim-all`, and `idle` when it returns work. The `204` that ends an empty
+   * window has no body and so cannot carry it, which is why the field is on the
+   * `200` body rather than on a header.
+   */
+  it("carries the same in-progress set claim-all does", () => {
+    const result = IdleResultSchema.parse({
+      events: [event],
+      inProgress: { events: [held], total: 1, truncated: false },
+    });
+    expect(result.inProgress.events.map((entry) => entry.id)).toEqual([held.id]);
+    expect(result.events.map((pending) => pending.id)).toEqual([event.id]);
+  });
+
+  it("demands it, so a server cannot report availability without its own view", () => {
+    expect(IdleResultSchema.safeParse({ events: [event] }).success).toBe(false);
   });
 });
 

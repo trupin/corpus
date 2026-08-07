@@ -338,7 +338,9 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     },
     now,
   });
-  mountQueueRoutes(app, queue);
+  // The projection is what resolves a held event's origin document; a server
+  // built without one still reports the set, with null origins (SERVER-061).
+  mountQueueRoutes(app, queue, deps.projection);
 
   const invalidate = (keys: readonly QueryKey[]): void => {
     bus.invalidate(keys);

@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,10 +6,12 @@ import {
   ApiErrorSchema,
   ClaimBatchSchema,
   IdleResultSchema,
+  MAX_IN_PROGRESS_REPORTED,
   QueueEventSchema,
   QueueStatusSchema,
   ReapStaleResultSchema,
   ValidationErrorSchema,
+  type ClaimBatch,
 } from "@corpus/contract";
 import { createServer, type CorpusServer } from "../app.js";
 import { DEFAULT_MAX_ATTEMPTS } from "./service.js";
@@ -202,8 +204,139 @@ describe("POST /api/queue/claim-all", () => {
 
     const response = await request("/api/queue/claim-all", { method: "POST" });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ events: [] });
+    // Nothing claimed, nothing held — and the in-progress set is still a real
+    // value rather than an absent field (SPEC.md §7, CONTRACT-033).
+    expect(await response.json()).toEqual({
+      events: [],
+      inProgress: { events: [], total: 0, truncated: false },
+    });
     expect(await server.queue.status()).toMatchObject({ pending: 2, halted: true });
+  });
+});
+
+// SPEC.md §7: "the server reports what it is holding and settles nothing by
+// itself" (SHARED-015, SERVER-061).
+describe("the in-progress set on the loop's entry points", () => {
+  const claim = async (): Promise<ClaimBatch> => {
+    const response = await request("/api/queue/claim-all", { method: "POST" });
+    expect(response.status).toBe(200);
+    const parsed = ClaimBatchSchema.safeParse(await response.json());
+    if (!parsed.success)
+      throw new Error(`claim-all response off contract: ${parsed.error.message}`);
+    return parsed.data;
+  };
+
+  it("reports the batch it is handing over as claimed, never as already in progress", async () => {
+    const ids = await seed(3);
+
+    // The first claim of a fresh queue: the whole point of reading `in-progress/`
+    // *before* the moves. Reported after, this would hand the agent three events
+    // and tell it, in the same breath, that it was apparently already working on
+    // them — useless on the most common call there is.
+    const first = await claim();
+    expect(first.events.map((event) => event.id).sort()).toEqual([...ids].sort());
+    expect(first.inProgress).toEqual({ events: [], total: 0, truncated: false });
+    // They really are held now — the emptiness above is the snapshot's timing,
+    // not an empty directory.
+    expect((await server.queue.status()).inProgress).toBe(3);
+
+    // And the next claim reports them, disjoint from its own (empty) batch.
+    const second = await claim();
+    expect(second.events).toEqual([]);
+    expect(second.inProgress.events.map((event) => event.id).sort()).toEqual([...ids].sort());
+    expect(second.inProgress.total).toBe(3);
+    expect(second.inProgress.truncated).toBe(false);
+  });
+
+  it("carries what an event is and when it was claimed, with a null origin for a payload naming nothing", async () => {
+    await seed(1);
+    await claim();
+
+    const [held] = (await claim()).inProgress.events;
+    expect(held?.type).toBe("comment.created");
+    // An instant, not an elapsed duration (CONTRACT-033).
+    expect(held?.heldSince).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(held).toMatchObject({ originId: null, originTitle: null });
+  });
+
+  it("caps the list at the contract's maximum and says so, without hiding the total", async () => {
+    const over = MAX_IN_PROGRESS_REPORTED + 3;
+    await seed(over);
+    await claim();
+
+    const { inProgress } = await claim();
+    expect(inProgress.events).toHaveLength(MAX_IN_PROGRESS_REPORTED);
+    expect(inProgress.total).toBe(over);
+    expect(inProgress.truncated).toBe(true);
+    // The complete set is still one documented call away, so the cap bounds the
+    // report and never the caller's reach.
+    expect((await server.queue.status()).inProgress).toBe(over);
+  });
+
+  it("still reports what is held while the queue is halted", async () => {
+    await seed(1);
+    await claim();
+    await request("/api/queue/halt", { method: "POST" });
+
+    // A halt stops work being handed out; it does not stop the agent
+    // reconciling what it already has.
+    const halted = await claim();
+    expect(halted.events).toEqual([]);
+    expect(halted.inProgress.total).toBe(1);
+  });
+
+  it("hands over the batch even when a held file cannot be read at all", async () => {
+    await seed(1);
+    await claim();
+    await seed(2);
+    // Not malformed — unreadable: `readdir` lists it as an event file and every
+    // read of it fails with EISDIR, the same class as EACCES or EIO. The report
+    // is produced before the moves, so a throw would strand the two events the
+    // agent came for (PR #25 review).
+    mkdirSync(join(root, ".corpus", "queue", "in-progress", "evt_unreadable0.json"));
+
+    const batch = await claim();
+    expect(batch.events).toHaveLength(2);
+    // The diagnostic degrades by exactly one row, and stays self-consistent:
+    // the unreadable file is out of `total` as well as out of the list.
+    expect(batch.inProgress.events).toHaveLength(1);
+    expect(batch.inProgress.total).toBe(1);
+    expect(batch.inProgress.truncated).toBe(false);
+  });
+
+  it("settles nothing: reading it moves no file and changes no status", async () => {
+    await seed(2);
+    await claim();
+    const before = await server.queue.status();
+
+    for (let index = 0; index < 3; index += 1) await claim();
+
+    expect(await server.queue.status()).toEqual(before);
+    expect(readdirSync(join(root, ".corpus", "queue", "in-progress")).sort()).toHaveLength(2);
+    for (const status of ["processed", "failed", "abandoned", "deferred"]) {
+      expect(readdirSync(join(root, ".corpus", "queue", status))).toEqual([]);
+    }
+  });
+
+  it("carries the set on idle's 200, and the 204 stays body-less", async () => {
+    await seed(1);
+    await claim();
+
+    await seed(1);
+    const response = await request("/api/queue/idle?timeout=60");
+    expect(response.status).toBe(200);
+    const parsed = IdleResultSchema.safeParse(await response.json());
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.events).toHaveLength(1);
+    expect(parsed.success && parsed.data.inProgress.total).toBe(1);
+    // Availability only: idle claims nothing, so the pending event stays pending.
+    expect(await server.queue.status()).toMatchObject({ pending: 1, inProgress: 1 });
+
+    // Take the pending event out of the way so the next window really expires.
+    await claim();
+    const expired = await request("/api/queue/idle?timeout=1");
+    expect(expired.status).toBe(204);
+    expect(await expired.text()).toBe("");
   });
 });
 

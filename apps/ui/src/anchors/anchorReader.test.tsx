@@ -163,41 +163,81 @@ describe("a resolved anchor", () => {
   });
 });
 
-describe("the chip at the anchor", () => {
-  it("renders in the body, between the blocks its anchor sits in", async () => {
-    mount(docWith([anchorAt("6.1%")]), [row()]);
-    const chip = await screen.findByRole("button", { name: /💬 3 · agent/u });
-    expect(chip.className).toBe("t-chip");
-    const slot = chip.closest(".anchor-slot");
-    expect(slot).not.toBeNull();
-    expect(slot?.getAttribute("data-anchor-slot")).toBe("th_1");
-    expect(slot?.closest(".doc-body")).not.toBeNull();
-  });
-
-  it("labels a resolved thread as resolved", async () => {
-    mount(docWith([anchorAt("6.1%", { threadStatus: "resolved" })]), [row({ status: "resolved" })]);
-    const chip = await screen.findByRole("button", { name: /💬 3 · agent · resolved/u });
-    expect(chip.className).toBe("t-chip resolved-chip");
-  });
-
-  it("expands in place, and marks the thread seen exactly once", async () => {
+/**
+ * UI-077, in the narrow-column placement: the conversation at its anchor, and
+ * which of its two states it is placed in.
+ *
+ * jsdom reports every element as zero-width, which is narrower than the 1100px
+ * margin threshold — so this whole file exercises the chip-at-the-anchor
+ * placement, and `MarginColumn`'s is covered in `marginJobRequests.test.tsx`.
+ */
+describe("a conversation at its anchor", () => {
+  it("is placed expanded when it is open, and marks itself seen", async () => {
     const wire = mount(docWith([anchorAt("6.1%")]), [row()]);
-    const chip = await screen.findByRole("button", { name: /💬 3 · agent/u });
-    expect(wire.of("POST", "/api/threads/th_1/seen")).toHaveLength(0);
-
-    fireEvent.click(chip);
     await waitFor(() => {
       expect(document.querySelector(".thread-slot.expanded")).not.toBeNull();
     });
+    // The card is in the body, between the blocks its anchor sits in.
+    const card = document.querySelector<HTMLElement>(".thread-card");
+    expect(card?.closest(".anchor-slot")?.getAttribute("data-anchor-slot")).toBe("th_1");
+    expect(card?.closest(".doc-body")).not.toBeNull();
+    expect(document.querySelector("[data-thread-expand]")).toBeNull();
+    await waitFor(() => {
+      expect(wire.of("POST", "/api/threads/th_1/seen")).toHaveLength(1);
+    });
+  });
+
+  /**
+   * The by-rule half of UI-077 — SPEC.md §6's `status` line, kept at last, and
+   * §11's "a `resolved` thread is collapsed by default".
+   */
+  it("is placed collapsed when it is resolved, and displays nothing", async () => {
+    const wire = mount(docWith([anchorAt("6.1%", { threadStatus: "resolved" })]), [
+      row({ status: "resolved" }),
+    ]);
+    const line = await screen.findByRole("button", { name: /💬 3 turns · agent · resolved/u });
+    expect(line.className).toBe("t-chip resolved-chip");
+    expect(document.querySelector(".thread-slot.expanded")).toBeNull();
+    expect(document.querySelector(".thread-card")).toBeNull();
+    // Collapsed is never hidden: it still says what it is about.
+    expect(line.textContent).toContain("“6.1%”");
+    // And it has displayed nothing, so it has read nothing (SPEC.md §7).
+    expect(wire.of("POST", "/api/threads/th_1/seen")).toHaveLength(0);
+  });
+
+  /**
+   * The safety interlock. A collapsed conversation displays nothing and so never
+   * counts as read — which would leave a resolved-and-unread thread unread
+   * forever, with nothing ever prompting anyone to open it. So the rule does not
+   * touch it.
+   */
+  it("is not collapsed by the rule while it holds a turn nobody has seen", async () => {
+    mount(docWith([anchorAt("6.1%", { threadStatus: "resolved" })]), [
+      row({ status: "resolved", unread: true }),
+    ]);
+    await waitFor(() => {
+      expect(document.querySelector(".thread-slot.expanded")).not.toBeNull();
+    });
+    expect(document.querySelector("[data-thread-expand]")).toBeNull();
+  });
+
+  it("folds and unfolds in place, and reads nothing while it is folded", async () => {
+    const wire = mount(docWith([anchorAt("6.1%")]), [row()]);
     await waitFor(() => {
       expect(wire.of("POST", "/api/threads/th_1/seen")).toHaveLength(1);
     });
 
-    // And the `–` control folds it back into the chip.
     fireEvent.click(screen.getByRole("button", { name: "Collapse thread" }));
+    const line = await screen.findByRole("button", { name: /💬 3 turns · agent/u });
+    expect(document.querySelector(".thread-card")).toBeNull();
+    // Folded where it stood: still inside its own anchor's widget.
+    expect(line.closest(".anchor-slot")?.getAttribute("data-anchor-slot")).toBe("th_1");
+
+    fireEvent.click(line);
     await waitFor(() => {
-      expect(document.querySelector(".thread-slot.expanded")).toBeNull();
+      expect(document.querySelector(".thread-slot.expanded")).not.toBeNull();
     });
+    // Re-displaying a conversation the kit already marked costs no second POST.
     expect(wire.of("POST", "/api/threads/th_1/seen")).toHaveLength(1);
   });
 
@@ -232,8 +272,8 @@ describe("threads with no anchor", () => {
       expect(document.querySelector('[data-thread-section="detached"]')).not.toBeNull();
     });
     expect(highlights()).toHaveLength(0);
-    // Still fully usable: the chip is there, and its quote survived.
-    expect(screen.getByRole("button", { name: /💬 3 · agent/u })).toBeTruthy();
+    // Still fully usable: the conversation is there, with its quote.
+    expect(document.querySelector('[data-thread-panel="th_1"]')).not.toBeNull();
   });
 
   it("shows no section at all when there are none", async () => {
@@ -299,7 +339,9 @@ describe("the layout", () => {
 
   it("keeps a narrow column in chip mode", async () => {
     mount(docWith([anchorAt("6.1%")]), [row()]);
-    await screen.findByRole("button", { name: /💬 3 · agent/u });
+    await waitFor(() => {
+      expect(document.querySelector('[data-anchor-slot="th_1"]')).not.toBeNull();
+    });
     // jsdom reports every element as zero-width, which is narrower than the
     // 1100px threshold — the case a column reader is in.
     expect(document.querySelector(".with-margin")).toBeNull();

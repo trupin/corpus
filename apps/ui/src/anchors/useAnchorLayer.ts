@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { useIsEditing } from "../editor/editingRegistry";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
+import { useThreadCollapse } from "../thread/ThreadCollapseContext";
+import { readStateOf } from "../thread/threadCollapse";
 import {
   anchorDecorationPlugin,
   anchorPluginKey,
@@ -15,6 +17,7 @@ import {
   detachedThreads,
   isPlaced,
   placeAnchors,
+  summaryFromAnchor,
   unplacedThreads,
   type AnchoredThread,
 } from "./anchorPlacement";
@@ -53,14 +56,18 @@ export interface AnchorLayerOptions {
   readonly anchors: readonly ResolvedAnchor[];
   /** Threads on this document, from `GET /api/docs?parent=…&type=thread`. */
   readonly threads: readonly DocRow[];
+  /**
+   * Whether {@link threads} is that query's answer rather than the empty array
+   * it reports while in flight — what tells a placement the difference between
+   * "no row yet" and "no row, ever" (`anchorPlacement.AnchoredThread.rowKnown`).
+   */
+  readonly threadsSettled: boolean;
   /** Another party holds the lock: no selection toolbar, no comment creation (SPEC.md §7). */
   readonly locked: boolean;
   /** The document is rendered by the editor at all — a `view` or a thread is not. */
   readonly editable: boolean;
-  readonly expandedThreads: readonly string[];
   /** The thread the 💬 popover just jumped to; its anchor is scrolled to. */
   readonly flashThread?: string | null;
-  readonly onToggleThread: (threadId: string) => void;
   readonly onNotify: (notice: RowNotice) => void;
 }
 
@@ -141,13 +148,17 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     body,
     anchors,
     threads,
+    threadsSettled,
     locked,
     editable,
-    expandedThreads,
     flashThread = null,
-    onToggleThread,
     onNotify,
   } = options;
+  const collapse = useThreadCollapse();
+  const rows = useRef(threads);
+  rows.current = threads;
+  const docIdRef = useRef(docId);
+  docIdRef.current = docId;
 
   const mainRef = useRef<HTMLDivElement>(null);
   const marginRef = useRef<HTMLDivElement>(null);
@@ -243,8 +254,15 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   }, [anchors, overlay]);
 
   const all = useMemo(
-    () => placeAnchors({ anchors: effective, rows: threads, body, source }),
-    [body, effective, source, threads],
+    () =>
+      placeAnchors({
+        anchors: effective,
+        rows: threads,
+        rowsSettled: threadsSettled,
+        body,
+        source,
+      }),
+    [body, effective, source, threads, threadsSettled],
   );
 
   const anchored = useMemo(() => all.filter(isPlaced), [all]);
@@ -396,19 +414,39 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   /* ── Opening a thread from a highlight ─────────────────────────────── */
 
-  const expanded = useRef(expandedThreads);
-  expanded.current = expandedThreads;
-  const toggle = useRef(onToggleThread);
-  toggle.current = onToggleThread;
+  /**
+   * Clicking an anchored highlight opens its thread — and **expands** it, which
+   * is the reader's own act and therefore overrides the rule (SPEC.md §11's
+   * precedence). A resolved conversation folded by default is still one click
+   * away from its own highlight, which is the route back the "collapsed is never
+   * hidden" clause promises: the passage keeps saying it has been discussed.
+   */
+  const expand = useRef(collapse.expand);
+  expand.current = collapse.expand;
+  /*
+   * The placed anchors, for the conversations whose row has not arrived — a
+   * document with more threads than one page of `useDocs` holds, or any document
+   * in the beat before that list lands. Without this the highlight of such a
+   * conversation was a dead click: no row, no subject, nothing expanded.
+   */
+  const placed = useRef(all);
+  placed.current = all;
 
   useEffect(() => {
     activate.current = (threadId: string) => {
-      if (!expanded.current.includes(threadId)) toggle.current(threadId);
-      const card = marginRef.current?.querySelector<HTMLElement>(
-        `:scope > .thread-card[data-thread="${escapeSelectorValue(threadId)}"]`,
+      const row = rows.current.find((candidate) => candidate.id === threadId);
+      const anchor = placed.current.find((candidate) => candidate.threadId === threadId);
+      if (row !== undefined) {
+        expand.current({ threadId, status: row.status, readState: readStateOf(row.unread) });
+      } else if (anchor !== undefined) {
+        const summary = summaryFromAnchor(anchor, docIdRef.current);
+        expand.current({ threadId, status: summary.status, readState: summary.readState });
+      }
+      const panel = marginRef.current?.querySelector<HTMLElement>(
+        `:scope > [data-thread-panel="${escapeSelectorValue(threadId)}"]`,
       );
-      if (card !== null && card !== undefined && typeof card.scrollIntoView === "function") {
-        card.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (panel !== null && panel !== undefined && typeof panel.scrollIntoView === "function") {
+        panel.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     };
   }, []);

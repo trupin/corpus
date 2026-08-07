@@ -129,6 +129,26 @@ const queueEvent = {
   payload: {},
 };
 
+/**
+ * What the server was already holding when the claim arrived (CONTRACT-033).
+ * Deliberately a *different* event from `queueEvent`: the two fields answer
+ * different questions, and a stub that reused the same id could not show them
+ * staying apart.
+ */
+const inProgressSet = {
+  events: [
+    {
+      id: "evt_held",
+      type: "comment.created",
+      heldSince: "2026-07-19T09:41:00Z",
+      originId: "th_x9y8",
+      originTitle: "Re: 30-year fixed assumption",
+    },
+  ],
+  total: 1,
+  truncated: false,
+};
+
 const queueStatus = {
   halted: false,
   pending: 0,
@@ -481,9 +501,16 @@ function createStubApp() {
 
   app.openapi(contractRoutes.getQueueStatus, (c) => c.json(queueStatus, 200));
   app.openapi(contractRoutes.idleQueue, (c) =>
-    c.req.valid("query").timeout === 1 ? c.body(null, 204) : c.json({ events: [queueEvent] }, 200),
+    c.req.valid("query").timeout === 1
+      ? c.body(null, 204)
+      : c.json({ events: [queueEvent], inProgress: inProgressSet }, 200),
   );
-  app.openapi(contractRoutes.claimAll, (c) => c.json({ events: [queueEvent] }, 200));
+  // The claimed batch and the held set are distinct fields carrying distinct
+  // events (CONTRACT-033) — a handler that merged them would still satisfy the
+  // route, so the stub keeps them visibly disjoint and the assertions check it.
+  app.openapi(contractRoutes.claimAll, (c) =>
+    c.json({ events: [queueEvent], inProgress: inProgressSet }, 200),
+  );
   app.openapi(contractRoutes.reapStale, (c) =>
     c.json({ reaped: ["evt_7c1d"], failed: ["evt_dead"] }, 200),
   );
@@ -1181,6 +1208,33 @@ describe("routes mounted on a Hono app", () => {
     const response = await createStubApp().request("/api/queue/idle");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ events: [{ id: "evt_7c1d" }] });
+  });
+
+  /**
+   * CONTRACT-033. The point of the field is that an agent can tell the two
+   * lists apart, so the assertion is about separation as much as presence: the
+   * claimed event is in `events` and only there, the held one is in
+   * `inProgress.events` and only there.
+   */
+  it("hands the agent the in-progress set beside the events it just claimed", async () => {
+    const response = await createStubApp().request("/api/queue/claim-all", { method: "POST" });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      events: { id: string }[];
+      inProgress: { events: { id: string; heldSince: string; originTitle: string }[] };
+    };
+    expect(body.events.map((event) => event.id)).toEqual(["evt_7c1d"]);
+    expect(body.inProgress.events.map((event) => event.id)).toEqual(["evt_held"]);
+    expect(body.inProgress.events[0]?.heldSince).toBe("2026-07-19T09:41:00Z");
+    expect(body.inProgress.events[0]?.originTitle).toBe("Re: 30-year fixed assumption");
+  });
+
+  /** The rider's resolved Q1: the list rides on `idle` too, whenever it returns work. */
+  it("reports the in-progress set on a live long-poll too", async () => {
+    const response = await createStubApp().request("/api/queue/idle");
+    await expect(response.json()).resolves.toMatchObject({
+      inProgress: { events: [{ id: "evt_held" }], total: 1, truncated: false },
+    });
   });
 
   /**

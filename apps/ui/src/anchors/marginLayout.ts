@@ -75,13 +75,19 @@ export function cascade(items: readonly MarginItem[]): MarginLayout {
   return { cards, minHeight: lastBottom };
 }
 
-/** Reads the live geometry: where each anchor is, and how tall each card is. */
+/** Reads the live geometry: where each anchor is, and how tall each panel is. */
 export function measureMargin(main: HTMLElement, margin: HTMLElement): MarginItem[] {
   const origin = main.getBoundingClientRect().top;
-  // Direct children only: a nested child thread is a `.thread-card` too, and it
-  // is laid out by the card that contains it, not by this cascade.
-  return [...margin.querySelectorAll<HTMLElement>(":scope > .thread-card")].map((card) => {
-    const id = card.getAttribute("data-thread") ?? "";
+  /*
+   * Direct children only, and by the **panel** marker rather than by the card's
+   * class: a conversation in the margin is a card when it is expanded and a
+   * single line when it is folded (SPEC.md §11), and both have to be cascaded —
+   * a fold that dropped out of the layout would leave the ones below it stacked
+   * where the card used to be. A nested child thread is a panel too, and it is
+   * laid out by the card that contains it, not by this cascade.
+   */
+  return [...margin.querySelectorAll<HTMLElement>(":scope > [data-thread-panel]")].map((card) => {
+    const id = card.getAttribute("data-thread-panel") ?? "";
     // The highlight itself is the anchor: it carries `data-thread`, it is in
     // the main column, and it is exactly the text the card is about.
     //
@@ -104,7 +110,7 @@ export function measureMargin(main: HTMLElement, margin: HTMLElement): MarginIte
 export function applyMargin(margin: HTMLElement, layout: MarginLayout): void {
   for (const card of layout.cards) {
     const element = margin.querySelector<HTMLElement>(
-      `:scope > .thread-card[data-thread="${escapeSelectorValue(card.id)}"]`,
+      `:scope > [data-thread-panel="${escapeSelectorValue(card.id)}"]`,
     );
     if (element === null) continue;
     const top = `${String(Math.round(card.top))}px`;

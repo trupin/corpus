@@ -299,6 +299,7 @@ describe("nothing outside input.ts touches process.stdin", () => {
       "queue/control.ts",
       "queue/defer.ts",
       "queue/idle.ts",
+      "queue/in-progress.ts",
       "queue/index.ts",
       "queue/poll.ts",
       "queue/transitions.ts",

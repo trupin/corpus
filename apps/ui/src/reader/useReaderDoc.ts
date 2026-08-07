@@ -40,8 +40,30 @@ export interface ReaderDoc {
   readonly isThread: boolean;
   /** The conversation, for a `type: thread` document. */
   readonly thread: ThreadView | undefined;
+  /**
+   * The conversation read is still in flight.
+   *
+   * Distinct from `thread === undefined`, which is also what a *failed* read
+   * looks like: a placement that waited on the data would then wait forever,
+   * where what it wants is to wait for the answer and then place the
+   * conversation — card, error and all (`DocView`'s thread branch).
+   */
+  readonly threadPending: boolean;
   /** Threads *on* this document (SPEC.md §6), for the 💬 popover and the slots. */
   readonly threads: readonly DocRow[];
+  /**
+   * That list has **answered** — it is not still in flight.
+   *
+   * `threads` is `[]` both for a document with no conversations and for one whose
+   * list has not landed, and a placement cannot tell those apart from the array
+   * alone. It has to: the fold is decided once per conversation, when it is
+   * placed, so placing on the empty stand-in makes a wrong answer permanent
+   * (`anchors/AnchoredThreads.tsx`). Distinct from `threads.length === 0` for the
+   * same reason {@link threadPending} is distinct from `thread === undefined` —
+   * and false-on-error for the same reason too, so a failed list moves the reader
+   * on rather than holding it.
+   */
+  readonly threadsSettled: boolean;
   /** Documents referencing this one — the "Referenced by" panel. */
   readonly backlinks: readonly DocRow[];
   /**
@@ -82,7 +104,9 @@ export function useReaderDoc(docId: string): ReaderDoc {
     isArchived: doc.data?.frontmatter.status === "archived",
     isThread,
     thread: thread.data,
+    threadPending: isThread && thread.isPending,
     threads: threads.data?.items ?? [],
+    threadsSettled: !threads.isPending,
     backlinks: backlinks.data?.items ?? [],
     related: related.data?.related ?? [],
     lock,

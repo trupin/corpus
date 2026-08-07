@@ -1,18 +1,27 @@
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
+import { reportInProgress } from "./in-progress.js";
 
 /**
- * The atomic step of the agent loop (SPEC.md §7). Its output is deliberately
+ * The atomic step of the agent loop (SPEC.md §7). Its **stdout** is deliberately
  * identical in both modes — the batch *is* the payload, and a human-readable
  * variant would be a different command — so it writes through `out.write`
  * rather than `out.emit`, which only speaks under `--json`.
+ *
+ * That invariant is why the in-progress set's human rendering goes to stderr
+ * (`out.note`) rather than being appended here: the orchestrate skill runs the
+ * bare verb and parses stdout, and one line of prose would break it. The set
+ * itself rides along inside the batch in both modes — it is the contract's own
+ * `inProgress` key, passed through untouched — so `--json` keeps the instants
+ * and the overflow pair intact for the agent to branch on.
  */
 export async function runClaimAll(context: WorkspaceCommandContext): Promise<void> {
   const batch = await context.client.request((api) => api.POST("/api/queue/claim-all"));
   if (context.out.json) {
     context.out.emit(batch);
-    return;
+  } else {
+    context.out.write(`${JSON.stringify(batch)}\n`);
   }
-  context.out.write(`${JSON.stringify(batch)}\n`);
+  reportInProgress(context.out, batch.inProgress);
 }
 
 export const claimAllCommand: WorkspaceCommandSpec = {
@@ -22,20 +31,41 @@ export const claimAllCommand: WorkspaceCommandSpec = {
     "Moves all `pending/*` events to `in-progress/` in a single call and prints them as **one " +
     "JSON line on stdout, in both human and `--json` mode** — no prose, no summary line, no " +
     "pretty-printing, and no pagination however large the batch. This command exists for machine " +
-    "consumption and the batch is the payload; do not add a human-readable line to it. An empty " +
-    'batch is still a batch: `{"events":[]}` and exit 0, which is the normal outcome when another ' +
-    "idle client claimed first or the queue is halted. Concurrent claims never hand the same event " +
-    "to two callers.",
+    "consumption and the batch is the payload; do not add a human-readable line to stdout. An " +
+    "empty batch is still a batch: `events` is `[]` and the exit code is 0, which is the normal " +
+    "outcome when another idle client claimed first or the queue is halted. Concurrent claims " +
+    "never hand the same event to two callers.\n\n" +
+    "**The response also reports what the server still thinks you are doing** (SPEC.md §7). " +
+    "Alongside `events` it carries `inProgress`, the events already sitting in `in-progress/` " +
+    "when the call arrived — **a different list from the one you just claimed, and never mixed " +
+    "into it**. Each row gives the event's id and type, the document or thread it came from, and " +
+    "`heldSince` as an ISO instant so you compute its age against your own clock. The list is " +
+    "capped at the 20 most recently claimed and says so rather than trailing off: `total` is how " +
+    "many are really held and `truncated` is true when the cap bit. Read it and reconcile — " +
+    "settle what you have already done with the ordinary verbs, leave what you are still " +
+    "working, and never settle an event you cannot account for. Nothing here is claimed, and the " +
+    "server settles none of it by itself.\n\n" +
+    "In human mode that same list is also printed as a readable block **on stderr** — ages as " +
+    "`held 3h`, one row per event, with an explicit _and N more held_ line when the cap bit — so " +
+    "stdout stays the single JSON line a pipe can parse. Under `--json` the block is suppressed " +
+    "and stderr carries only failures. Either way nothing at all is printed when nothing is held.",
   args: [],
   flags: [],
   examples: [
     {
       command: "corpus queue claim-all",
-      description: 'One JSON line: `{"events":[{"id":"evt_…","type":"comment.created",…}]}`.',
+      description:
+        'One JSON line: `{"events":[{"id":"evt_…","type":"comment.created",…}],"inProgress":{"events":[],"total":0,"truncated":false}}`.',
     },
     {
       command: "corpus queue claim-all | jq -r '.events[].id'",
       description: "Drive a loop over the claimed event ids.",
+    },
+    {
+      command: "corpus queue claim-all | jq '.inProgress'",
+      description:
+        "Inspect only what the server still holds — `total` and `truncated` say whether the list " +
+        "you are looking at is the whole of it.",
     },
   ],
   handler: (context) => runClaimAll(context),
