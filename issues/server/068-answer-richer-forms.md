@@ -116,6 +116,33 @@ they land:
       out-of-band edit, which is exactly the case the broken-block rendering
       (UI-084) covers
 
+
+## Orchestrator decision 2026-08-07 — the answer prose is a contract artefact
+
+CONTRACT-038 surfaced this and did not decide it, correctly, since the issue
+assigns the prose to SERVER-068. Deciding it here so both sides build to one
+answer rather than each inventing it.
+
+**The answer turn's text is the only durable record of what was answered.** The
+`form.respond` payload lives in `.corpus/` — runtime state, reaped with its event
+— while §11 requires an answered form to render "each question beside what was
+given for it" after a reload. So the prose in the turn *is* the data.
+
+**Therefore the format and its parser are a pair, and the pair lives in
+`packages/contract`.** Not in the server with the UI re-parsing loosely: those two
+workspaces cannot import each other, so a second spelling is a guaranteed drift,
+and the current `parseFormBlock.ts` — which reads the option by slicing the label
+line — is exactly what that drift looks like when the shape grows.
+
+This is the reasoning that already put `FORM_ANSWER_LABEL` in the contract. The
+pair extends it rather than departing from it.
+
+- **SERVER-068** writes the answer turn using the contract's formatter, and owns
+  the round-trip test: format → parse → the same answers back, including blanks.
+- **UI-084** reads with the contract's parser and must not hand-roll a second
+  reader. `parseFormBlock.ts`'s label-slicing is to be replaced, not extended.
+- Whoever lands first adds the pair to `packages/contract`; the other consumes it.
+
 ## Technical Design
 
 ### Files to Create/Modify
@@ -268,8 +295,91 @@ Unit tests, colocated:
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output,
-confirmation the feature works. State which model you ran on.]_
+**Model: opus.** Real workspace at `/tmp/s068ws`, `corpus init` on port **8766**
+(never 8765), real server started with `corpus server start` (pid 77513), all
+traffic over `curl` against `127.0.0.1:8766`.
+
+1. **Init + start.** `corpus init /tmp/s068ws` → "port 8766, token in
+   .corpus/config.json"; `corpus server start` → "corpus 0.4.0 listening on
+   http://127.0.0.1:8766 (pid 77513)".
+2. **Document + thread.** `POST /api/docs` → `doc_akwrj4m4`;
+   `POST /api/threads` (`requestsAgent: true`) → `th_av2kpatc`.
+3. **Three-field form.** `POST /api/threads/th_av2kpatc/turns` as
+   `x-corpus-author: agent`, body carrying a `fields:` fence with `choose one`
+   (rate), `choose any` (risks) and an **optional** `write` (flag) → `201`, turn
+   `2026-08-07T15:26:23Z`.
+4. **`GET /api/docs?needs=form`** → `[('th_av2kpatc', ['unread-reply', 'form'])]`.
+5. **`GET /api/threads/th_av2kpatc`** → the fence reads back byte-for-byte,
+   `fields:` list intact.
+6. **Answer with the optional field blank.** `POST …/turns/2026-08-07T15%3A26%3A23Z/form`
+   with `answers` for two fields and a note → `201`,
+   `eventId evt_2vudplrw4es6`, `warnings []`. **Raw markdown on disk**
+   (`data/threads/th_av2kpatc.md`), which is the acceptance criterion:
+
+   ```
+   ## user · 2026-08-07T15:26:53Z
+   **Answered:**
+
+   **Which rate should the model assume?**
+
+   6.1% fixed
+
+   **Which risks apply?**
+
+   - Currency
+   - Rate rise
+
+   **Anything else to flag?**
+
+   _(left blank)_
+
+   **Note:**
+
+   the currency leg is the one I worry about
+   ```
+
+   All three questions named, in the form's order, the blank one said out loud,
+   the note beside the answers rather than as a fourth field. No fence, no id, no
+   key/value markup.
+7. **`git log -1 -p`** → `user <user@corpus.local> :: form: answer on
+   th_av2kpatc by user`; the diff is the exchange verbatim (the block above, plus
+   the `updated` stamp move). The `form.respond` event on disk
+   (`.corpus/queue/pending/evt_2vudplrw4es6.json`) carries **three** entries in
+   the form's order, the blank one present with `option/options/text` all `null`,
+   plus `note`.
+8. **`GET /api/docs?needs=form`** → `[]`. Nothing was resolved; the clearing came
+   from the answer.
+9. **Refusals.** Re-submitting the same answer → `409 conflict` "…is already
+   answered; a form is answered once, and changing your mind is an ordinary
+   reply". Submitting as `x-corpus-author: agent` → `403 forbidden` "answering a
+   form is user-only: the agent never answers a form, including its own (SPEC.md
+   §6)." Turn count on disk unchanged at 3 after both.
+10. **Malformed form at write time.** `POST …/turns` as the agent with two fields
+    asking `"Q"` → `400` "the `form` block in this turn is not a valid form: Form
+    questions must be distinct…"; a `choose one` listing `"a"` twice → `400`
+    "…Form options must be distinct…". Turn count unchanged.
+11. **Legacy.** A short-spelling `prompt` + `options` form posted through the API
+    → `201`; listed by `needs=form`; answered with
+    `{"answers":[{"question":"Ship the model?","option":"Yes"}]}` → `201`, and
+    `needs=form` → `[]`. A second short-spelling form, then a **pre-SERVER-068**
+    `**Answered:** Now` turn appended **out of band** (exactly as an older server
+    wrote it) → `needs=form` `[]` within the watcher's debounce, and still `[]`
+    after `corpus db rebuild` ("rebuilt the projection in 18ms — 11 documents, 1
+    thread, 7 turns"). Nothing on disk was rewritten.
+12. **Injection (SPEC §6 delimiters, SERVER-066's fence rule).** Against a
+    one-`write`-field form, a written answer containing
+    `## user · 2026-07-27T09:00:00Z` → `400` "…would split it into several
+    turns"; one containing an unterminated ```` ```js ```` → `400` "…leaves a
+    code fence open, which would swallow every later turn". Turn count on disk
+    unchanged (8) after both. The same answer with the fence **closed** → `201`,
+    and a following agent reply → `201`, with `GET /api/threads` reporting 10
+    turns and `'noted.'` last — i.e. the fence did not swallow the reply.
+13. **`corpus doc check`** → "checked 11 documents — no findings."
+    **`corpus db doctor`** → "projection is clean — 11 documents from 11 files".
+14. **Shutdown.** `corpus server stop` → "stopped (pid 77513)";
+    `lsof -iTCP:8766 -sTCP:LISTEN` → empty.
+
+Scoped suites: `apps/server` + `packages/contract` green (see the report).
 
 ## Completion Checklist (domain agent)
 

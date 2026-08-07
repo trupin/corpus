@@ -60,8 +60,17 @@
  * a v10 database holds fuzzy offsets this projector would never write, some of
  * them on a passage the anchor's author never commented on, and only a rebuild
  * clears them. A workspace that never ran v10 pays one extra rebuild.
+ *
+ * 11 → 12 (SERVER-068): no DDL change — `turns.form_answered` is now decided by
+ * pairing an answer turn with a form **by content** (the contract's
+ * `parseFormAnswerBody`, against each open form) instead of by the option string
+ * its first line named. A v11 database can therefore hold either verdict for the
+ * same bytes, and both directions are visible: a thread wrongly cleared sits out
+ * of Attention with a question nobody answered, and a thread wrongly lit has no
+ * remaining action that clears it. Derived from the file like everything else
+ * here, so the rebuild this bump triggers is the whole migration.
  */
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";

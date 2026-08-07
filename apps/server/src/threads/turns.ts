@@ -68,6 +68,7 @@ import {
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { internalError } from "../errors.js";
 import { enqueueComment } from "./events.js";
+import { assertWritableForm } from "./forms.js";
 import { parseMentions } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
@@ -236,6 +237,10 @@ export async function appendThreadTurn(
   // Before the lane, so an over-cap upload never queues behind another turn and
   // never reaches the filesystem.
   assertWithinLimits(input.files, workspace.attachmentLimits ?? DEFAULT_ATTACHMENT_LIMITS);
+  // Likewise for a malformed form: forms are written only through this endpoint
+  // (§6), so this is where the agent finds out — not the person, later, when
+  // they try to answer it.
+  assertWritableForm(actor, input.text);
 
   return mutex.run(id, async () => {
     const thread = loadThread(workspace, id);
