@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-06T00:00:00Z
+updated: 2026-08-07T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -35,11 +35,39 @@ your own.
 `parentId` is `null` on a standalone thread. `turnTs` names the turn that woke you — a thread
 can have many, and it is how you tell the new request from the exchange around it.
 
-`form.respond` — a form you raised was answered. Its payload is
-`{"threadId":"th_4b8e2c","formTs":"2026-07-28T09:20:11Z","option":"finance","note":null}`,
-where `formTs` is the timestamp of the turn carrying the answered form and `note` is `null`
-when the answerer added none. **There is no `parentId` on this payload**: re-derive the parent
-with `corpus thread show <threadId>`, which prints it.
+`form.respond` — a form you raised was answered. Its payload names the thread, the turn that
+carried the form, and what was given for **every** field the form asked:
+
+```json
+{
+  "threadId": "th_4b8e2c",
+  "formTs": "2026-07-28T09:20:11Z",
+  "answers": [
+    {
+      "question": "Where should this note live?",
+      "kind": "choose one",
+      "option": "finance",
+      "options": null,
+      "text": null
+    },
+    {
+      "question": "Which quarter does the current policy renew in?",
+      "kind": "write",
+      "option": null,
+      "options": null,
+      "text": null
+    }
+  ],
+  "note": null
+}
+```
+
+`formTs` is the timestamp of the turn carrying the answered form. Every field of that form has
+an entry, in the order the form asked them, and a field the person left blank is the entry
+whose three value keys are all `null` — so a question they declined and a question you never
+asked never look the same. `note` is `null` when the answerer added none. **There is no
+`parentId` on this payload**: re-derive the parent with `corpus thread show <threadId>`, which
+prints it.
 
 A person is watching a pending indicator from the moment the event was enqueued. Every path
 through this skill ends in a reply.
@@ -201,6 +229,10 @@ Pick the smallest shape that actually answers the request.
 
 - **Answer in the reply** when the answer is short and the corpus needs nothing new. Not every
   question deserves a document.
+- **Ask with a form** when the turn's purpose is to get something from the person rather than
+  to tell them something — a decision, a preference, a missing fact, a go/no-go before you
+  start. Every question you need answered to proceed goes into that **one** form, as fields, in
+  **one** turn. *Forms* below carries the grammar and the batching rule.
 - **Edit the parent** with `corpus doc edit <id> --from agent` and a heredoc body when the
   request is about the document's content. The heredoc *is* the document's whole new body, so
   this is the escalation of *Gather context*: read the document whole before you rewrite it.
@@ -271,10 +303,11 @@ capture's id is the event's `parentId`. File it end to end:
 6. **Tag it** — `corpus doc edit <id> --add-tag finance --add-tag housing --from agent`.
 7. **Reply with what it became and where it lives**, naming the document by `[[id]]`.
 
-**When the right home is genuinely ambiguous, leave it in `inbox/` and ask.** A two- or
-three-way choice is exactly what a form is for; an open question is just a reply. Either way
-the document stays in `inbox/` until the answer arrives — a wrong filing is harder to notice
-than an unfiled one.
+**When the right home is genuinely ambiguous, leave it in `inbox/` and ask** — with a form, and
+with every question the filing still needs in it: the destination, the tags, the fact the
+capture assumed and did not state. One form finishes the filing; three separate questions
+across three turns finish nothing three times. The document stays in `inbox/` until the answer
+arrives — a wrong filing is harder to notice than an unfiled one.
 
 ## Reply
 
@@ -399,31 +432,100 @@ with the "note only" toggle. So end turns like someone who will be asked again:
 
 ## Forms
 
-Raise a form when a **bounded choice unblocks the work** — two or three destinations for a
-capture, two readings of an ambiguous request. An open question is not a form; it is a reply.
-A form is the last thing in the turn body you pass to `corpus thread reply <id> --from agent`,
-and it looks exactly like this — a fence whose info string is `form`, written with backticks:
+**When a turn's purpose is to get something from the person, ask with a form.** A decision, a
+preference, a missing fact, a go/no-go before you start work: you ask those as a form, not as a
+question inside a paragraph. What makes the difference is what happens after the thread has
+been read. A question asked in prose leaves no trace that anyone is waiting the moment someone
+looks at it; a thread carrying an unanswered form sits in Attention as *awaiting your answer*
+and stays there until the form is answered or the thread is resolved. Reading a question is not
+answering it, and the form is the only thing in the system that knows the difference.
+
+**Ask the whole batch at once.** Every question you need answered to proceed goes into **one
+form, in one turn**, one field per question — never one question per turn, and never a second
+form while the first is still open. Three questions spread over three turns cost the person
+three interruptions and cost you the job of working out which sentence answered which; asked as
+three fields they come back together, each answer keyed to the question it answers. A form with
+a single field is still right when a single answer is all you need — the rule is "everything
+you need", not "at least three".
+
+**Mark a field optional whenever you can proceed without it.** A field is required unless it
+carries `optional: true`, so every field you leave unmarked is a gate the person has to get
+past before they can submit anything at all. Mark generously: when a form feels like an
+interrogation the fix is more optional fields, never fewer forms and never fewer questions.
+Keep each question short enough to read as a control — one line, not a paragraph — and put the
+detail in the prose above the fence.
+
+**Say in the same turn what you will do with the answers.** The prose above the form is where
+you commit to the work: what you will change, where, and what each answer decides. A form with
+no such sentence asks the person to submit without telling them what they are authorising.
+
+**An open question is not a form; it is a reply.** A form is for questions that have answers.
+Anything open-ended — what do you make of this, where is this heading, is it worth doing at all
+— is ordinary prose, and wrapping it in a form is worse than asking it plainly, because it
+demands a submit for something with nothing to submit.
+
+**The grammar.** The form is a fenced block whose info string is `form`, written with
+backticks, and it comes last in the turn body you pass to
+`corpus thread reply <id> --from agent` — after the prose, with only a trace line after it when
+the turn also wrote. Written out, the ask is one turn: the sentence that commits to the work,
+then the fence. This one asks for a decision, a selection and a fact, with the fact optional:
+
+> I can finish filing this as soon as I know where it belongs and how you want it tagged — I'll
+> move it, tag it, and write the renewal quarter into the document as the answer to the open
+> question it already carries.
 
 ```form
-prompt: Where should this note live?
-options:
-  - finance
-  - housing
-  - leave it in inbox for now
+fields:
+  - question: Where should this note live?
+    kind: choose one
+    options:
+      - finance
+      - housing
+      - leave it in inbox for now
+  - question: What should it be tagged?
+    kind: choose any
+    options:
+      - insurance
+      - review
+      - mortgage
+  - question: Which quarter does the current policy renew in?
+    kind: write
+    optional: true
 ```
 
-The grammar is not negotiable, because **nothing validates the block when it is posted**: a
-malformed form is accepted, renders as nothing useful, and fails only when the person tries to
-answer it. So: `prompt` non-empty; `options` at least one entry, each non-empty and all
-distinct; **at most one form per turn** (a form is identified by its turn's timestamp);
-**single-select** — the answer names one option verbatim, plus an optional free-text note.
+`fields` carries at least one entry. Each `question` is non-empty and **distinct within the
+form** — an answer names its field by the question text, so two fields never ask the same
+thing. `kind` is exactly one of `choose one`, `choose any` and `write`, spelled with the space
+exactly as written here, and there is no fourth kind: `choose one` and `choose any` each carry
+`options` (at least one, each non-empty, all distinct) and the person picks one or picks any
+number; `write` carries no options and takes free text. `optional: true` marks a field the
+person may leave blank, and a field with no `optional` line is required. **At most one form per
+turn** — a form is identified by its turn's timestamp, so several questions are several fields
+of one form, never two forms.
 
-Answering appends a turn and enqueues `form.respond`, which comes back to you. **It is a
-continuation, not a new request.** Re-read the thread with `corpus thread show <threadId>`,
-find the form you raised at `formTs`, and resume from exactly there: the payload's `option` is
-the decision you were waiting on, and `note` is anything they added. Do the work you had
-staged. Never re-ask, never re-explain from the top, and never restart the exchange — the
-person answered a question and expects the next step, not the same conversation again.
+Get any of that wrong — a fourth kind, a misspelled key, a repeated option, YAML that does not
+parse — and **the server refuses the whole turn with a `400`** naming what it could not read.
+The reply does not post at all, so fix the fence and post it again; nothing half-written
+reaches the thread. A turn carrying a form is never revised either: when you need to ask
+something else, ask it in a **new** turn rather than rewriting the question under the person
+answering it.
+
+**You never answer a form — not the person's, and not your own.** Answering belongs to the
+person alone, and the server refuses an answer from you.
+
+**The answer comes back as `form.respond`, and it is a continuation, not a new request.** Its
+`answers` list carries one entry per field **of the form**, in the order the form asked them,
+each naming the `question` and its `kind` and carrying exactly one of `option`, `options` or
+`text` — all three `null` when that field was left blank — plus `note`, the free-text remark
+about the ask as a whole. Re-read the thread with `corpus thread show <threadId>`, find the
+form you raised at `formTs`, and resume from exactly there: do the work you had staged, and
+never re-ask, never re-explain from the top, never restart the exchange. Because each answer
+arrives keyed to its question, resuming is a matter of reading the list, not of matching prose
+to intent. Every optional field left blank is a **complete** answer: proceed, and do not go
+back for the optional ones. And when the person writes a prose reply instead of answering, the
+form is still unanswered and its Attention row still stands — answer what they said, ask again
+in a new turn if you still need those answers, and never resolve the thread to make the row go
+away.
 
 ## Stewardship in service of a thread
 
@@ -608,16 +710,20 @@ it: I don't know which quarter the policy renews in.
 EOF
 ```
 
-**4 — A `form.respond` continuation.** The payload was
-`{"threadId":"th_1a7d33","formTs":"2026-07-28T09:20:11Z","option":"finance","note":"put it with the mortgage stuff"}`.
+**4 — A `form.respond` continuation.** The three-field form above was answered on `th_6c0a18`:
+`finance` for the destination, `insurance` and `review` for the tags, the renewal quarter left
+blank, and `note: "put it with the mortgage stuff"`. Three answers, one submit, one event.
 
 ```bash
-corpus thread show th_1a7d33
-corpus doc move doc_5c8b2f --folder finance --from agent
-corpus job log evt_9b4c02 "form answered: finance — completed the filing of [[doc_5c8b2f]]"
-corpus thread reply th_1a7d33 --from agent <<'EOF'
-Finance it is — [[doc_5c8b2f]] now lives in `finance/`, next to the mortgage
-notes. That closes the filing I paused on; nothing else is outstanding here.
-↳ moved [[doc_5c8b2f]] into finance/
+corpus thread show th_6c0a18
+corpus doc move doc_2f7b91 --folder finance --from agent
+corpus doc edit doc_2f7b91 --add-tag insurance --add-tag review --from agent
+corpus job log evt_9b4c02 "form answered — filed [[doc_2f7b91]] into finance/, tagged insurance and review"
+corpus thread reply th_6c0a18 --from agent <<'EOF'
+Finance it is — [[doc_2f7b91]] now lives in `finance/` next to the mortgage
+notes, tagged insurance and review. You left the renewal quarter blank, so it
+stays the open question already written into the document. That closes the
+filing I paused on; nothing else is outstanding here.
+↳ moved [[doc_2f7b91]] into finance/ and tagged it insurance, review
 EOF
 ```

@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -72,30 +72,30 @@ worse than one that teaches nothing.
 
 ## Acceptance Criteria
 
-- [ ] The comment skill instructs the agent to ask with a **form** when a turn's
+- [x] The comment skill instructs the agent to ask with a **form** when a turn's
       purpose is to get something from the person, rather than with a question in
       prose
-- [ ] It states the **batching** rule: every question needed to proceed, as
+- [x] It states the **batching** rule: every question needed to proceed, as
       **fields of one form, in one turn** — never one question per turn
-- [ ] It tells the agent to mark a field **optional** when it can proceed without
+- [x] It tells the agent to mark a field **optional** when it can proceed without
       it, and to mark generously (required-by-default is the grammar's default,
       and the fix for forms feeling like gates is more optional fields, not
       fewer forms)
-- [ ] It says to keep questions **short enough to read as controls**, and to say
+- [x] It says to keep questions **short enough to read as controls**, and to say
       **in the same turn** what will be done with the answers
-- [ ] It keeps the exclusion: open-ended conversation is **not** a form. A form
+- [x] It keeps the exclusion: open-ended conversation is **not** a form. A form
       is for questions that have answers; everything else is ordinary prose
-- [ ] The grammar block documents the **three field kinds** and required-vs-
+- [x] The grammar block documents the **three field kinds** and required-vs-
       optional, and the worked ```` ```form ```` example is a **multi-field** form
       the product actually accepts
-- [ ] The stale claims go: **single-select**, and "nothing validates the block
+- [x] The stale claims go: **single-select**, and "nothing validates the block
       when it is posted" (SERVER-068 refuses a malformed form at write time)
-- [ ] It states that the agent **never answers a form**, including its own (§6)
-- [ ] The `form.respond` continuation guidance survives and is updated to the
+- [x] It states that the agent **never answers a form**, including its own (§6)
+- [x] The `form.respond` continuation guidance survives and is updated to the
       richer payload — the answers arrive **keyed to the questions**, so the "find
       the form you raised at `formTs` and resume from exactly there; never re-ask,
       never re-explain from the top" rule gets easier to follow, not harder
-- [ ] `scripts/workspace-template.test.ts` passes, including its exact section
+- [x] `scripts/workspace-template.test.ts` passes, including its exact section
       count and its pinned form-fence assertion
 
 ## Technical Design
@@ -224,17 +224,104 @@ repo:
 
 ### Post-Implementation Verification
 
-_[Agent fills: workspace created from the built package, application restarted,
-exact commands, observed output, the actual form the agent produced. State which
-model you ran on.]_
+Implemented and verified on **Opus 5 (1M context)**, 2026-08-07. Scratch workspace
+`/tmp/agent017-ws`, port **8791** (8765 and 5173 are held on this machine and were
+never bound). Session transcripts kept at `/tmp/agent017/session.jsonl` and
+`/tmp/agent017/session2.jsonl`.
+
+**0 — The template is the built one.** `npm run build && npm run package:build`
+staged `dist-package/`; `diff -q dist-package/assets/workspace/claude/skills/comment/SKILL.md assets/workspace/…`
+→ identical (staged verbatim). Everything below was driven by the packaged CLI,
+`node dist-package/dist/corpus.js`, exposed on `PATH` as `corpus` through a shim
+so every command in the skill runs literally as written. **Not** exercised: an
+`npm pack` + `npm install` of the tarball — the bundled CLI was run in place, so
+its third-party deps resolved from the repo's `node_modules` rather than from an
+installed tree.
+
+**1 — `corpus init` lands the skill.** `corpus init /tmp/agent017-ws --port 8791`
+→ "installed 8 template files". `.claude/skills/comment/SKILL.md` carries the new
+`## Forms` section and `updated: 2026-08-07T00:00:00Z`.
+
+**2 — The skill's own worked fence is a form the product accepts.** The
+```` ```form ```` block was extracted from the *installed* file with `awk` and
+posted verbatim as an agent turn: `corpus thread reply th_mxwdj63x --from agent`
+→ `replied to th_mxwdj63x — turn 2026-08-07T18:02:48Z`. Independently, parsing
+that same fence with the contract's `findFormFence` + `FormSchema` yields three
+fields — `choose one`, `choose any`, and a `write` with `optional: true`.
+
+**3 — SERVER-068 refuses exactly the malformed shapes the section names**, each
+with a `400` (CLI exit `5`) and the reply never posting (`grep -c '^## '` stayed
+at 2 turns throughout):
+
+- fourth kind (`kind: pick one`) → `fields.0.kind: Invalid discriminator value. Expected 'choose one' | 'choose any' | 'write'`
+- repeated option → `Form options must be distinct: an answer names an option by its text.`
+- `write` field carrying `options` → `fields.0: Unrecognized key: "options"`
+- misspelled key (`optionnal: true`) → `fields.0: Unrecognized key: "optionnal"`
+- unparseable YAML → `the \`form\` block in this turn is not valid YAML: Missing closing "quote…`
+
+**4 — Attention survives being read; only answering clears it.**
+`corpus doc list --needs form` listed the thread; `POST /api/threads/th_u5em5gev/seen`
+→ `200`; the row was still listed afterwards. After the form on `th_iu3aoe43` was
+answered, that thread dropped out of `--needs form` while the unanswered one
+stayed.
+
+**5 — The agent never answers a form.** `POST …/turns/<ts>/form` with
+`x-corpus-author: agent` → `403 forbidden`, "answering a form is user-only: the
+agent never answers a form, including its own".
+
+**6 — The behavioural test SHARED-021 named, run for real.** A whole-document
+thread on an inbox capture with three genuine unknowns: `@agent write me a plan
+for this I can actually act on.` A real Claude Code session in the workspace was
+handed the `comment.created` payload and the installed skill, with tools limited
+to `Bash(corpus:*)`, `Read`, `Glob`, `Grep`, `Skill`. It came back with **one
+turn carrying one form of three fields** — not three prose questions, not three
+turns:
+
+```
+- question: What is the total budget for the refresh?      kind: write
+- question: Standing desk, or keep the current desk…?      kind: choose one (3 options)
+- question: Is there a date this needs to be finished by?  kind: write, optional: true
+```
+
+The same turn said what the answers would buy ("Answer these and I'll write them
+into the plan, collapse steps 1 and 3 into the decision you've made, and take the
+open-questions section down to whatever is left"), and closed with its trace line
+*after* the fence, as the grammar paragraph now instructs. Zero `corpus queue`
+invocations and zero `lock break` in the transcript.
+
+**7 — The continuation, also for real.** The form was answered as the person
+(`201`), leaving the optional deadline blank. The enqueued `form.respond` payload
+matched the skill's documented shape byte for byte in structure: `answers` with
+one entry per field **of the form**, in the form's order, each with `question`,
+`kind`, and exactly one of `option`/`options`/`text` — all three `null` for the
+blank field — plus `note: null`. A second Claude session handed that payload
+resumed from the staged work: it rewrote the parent around the two answers, did
+not re-ask and did not re-explain from the top, and handled the blank optional
+field as a complete answer ("You left the deadline blank, so that stays as the
+one open question in the document").
+
+**8 — Clean.** `corpus doc check` → "checked 13 documents — no findings";
+`corpus db doctor` → "projection is clean — 13 documents from 13 files";
+`corpus server stop` → stopped, port 8791 free.
+
+**Repo gates**: `npx vitest run scripts/workspace-template.test.ts` → 126 passed,
+0 failed; `eslint scripts/workspace-template.test.ts` clean; `prettier --check`
+clean (`assets/workspace/` is prettier-ignored by design);
+`tsc --noEmit -p scripts/tsconfig.json` clean. A real CommonMark parse of the
+skill body (`mdast-util-from-markdown`) independently confirms **13** top-level
+`##` headings and **zero** unclosed fences.
+
+**Not exercised**: the board UI — the form's controls were not clicked, only the
+route behind them (UI-084 covers the rendering). Step 6's outcome is one
+session's behaviour, not a statistical claim.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
