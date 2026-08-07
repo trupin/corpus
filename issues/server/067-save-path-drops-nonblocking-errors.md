@@ -1,4 +1,4 @@
-# [SERVER-067] The save path drops non-blocking errors: they reach no response and no log
+# [SERVER-067] The save path drops non-blocking errors: they reach the log but not the response
 
 ## Domain
 

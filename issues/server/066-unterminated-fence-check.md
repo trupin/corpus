@@ -684,14 +684,14 @@ Three ways, because it is the property the whole container model rests on.
    are `.includes("`")` and `.trim() === ""`, both invariant under that.
 2. **Over the repository.** The new scanner and a transcription of the
    pre-container scanner were run side by side over every markdown file in the
-   tree — **560 files, 559 byte-identical, 1 difference, container-bearing**:
+   tree — **520 tracked files, 519 byte-identical, 1 difference, container-bearing**:
    `issues/server/001-document-model-core.md` lines 238–243, a `>`-quoted fence
    that the old scanner did not see as a fence at all and the new one reads as a
    closed range. Both agree the file has no unterminated fence. That is the
    reviewer's "exactly one intended difference", reproduced. Only 2 files in the
    tree contain a tab at all, and both bear containers — which is precisely why
    this sweep alone would not have caught the regression, hence (3).
-3. **Over the shape the repository does not have.** 8000 container-free
+3. **Over the shape the repository does not have.** 5832 container-free
    three-line permutations built from 18 tab-bearing line shapes (tab at the
    margin, space-then-tab, tab inside an info string, tab-only lines, tab after a
    delimiter run, …), diffed against the same transcription: **0 divergences**.

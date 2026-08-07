@@ -41,8 +41,17 @@ const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
  * of the ones already entered, and stripping one would let a line of code that
  * happens to read as a bulleted fence close the block it belongs to.
  *
- * A text with no container markers therefore takes exactly the path it took
- * before: both widths are zero and the regex is applied to the line as given.
+ * A text with no container markers therefore reaches exactly the outcome it
+ * reached before: both widths are zero, so the slice is a no-op. The line has
+ * still been through {@link expandTabs} first — that is not the pre-container
+ * path byte-for-byte, and the equivalence is a proof rather than an identity.
+ * It holds because a tab anywhere in leading whitespace advances to a multiple
+ * of four, so from any start within the three-space budget it lands at column
+ * four or beyond: neither the old regex (literal spaces, so it rejects the tab)
+ * nor the expanded one can match. `code.test.ts` pins it against a transcription
+ * of the pre-container scanner. Do not weaken this sentence to "the line as
+ * given" — it was written that way once, and it is the sentence a later reader
+ * leans on when deciding whether a change here is safe.
  *
  * Indentation is measured in **columns**, not characters — see expandTabs.
  *
@@ -56,8 +65,12 @@ const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
  * - **Containers never end.** A fence opened inside a list item stays open past
  *   the end of that item; CommonMark closes it at the item's boundary, so
  *   `"- ```js\n  code\n\nAfter.\n"` is a *closed* fence there and an unterminated
- *   one here. Direction: **false error** — and, with it, masking that runs to the
- *   end of the text. What keeps that honest rather than merely wrong is that
+ *   one here. Direction: **usually a false error** — and, with it, masking that
+ *   runs to the end of the text. Not always, though, and the exception is worth
+ *   naming: the same root cause can also *miss*. In `"> ```js\ncode\n> ```\n"`
+ *   CommonMark ends the block quote at the unprefixed line, closes the fence
+ *   there and opens a fresh one; this scanner closes on the `> ``` ` line and
+ *   reports nothing at all. What keeps that honest rather than merely wrong is that
  *   fencedCodeRanges and unterminatedFence err *together*: the report describes
  *   what the corpus's own readers will really do with those bytes instead of
  *   contradicting them. Closing a container needs the block structure this

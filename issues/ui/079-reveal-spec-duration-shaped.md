@@ -35,8 +35,8 @@ opus
 
 `apps/ui/e2e/reveal.spec.ts:268` — the test "wears the flash treatment the rest of
 the board's flashes wear" — asserts against `.reveal-flash`, a **decoration the
-product deliberately destroys on a timer**. `apps/ui/src/reader/reveal.ts:25` sets
-`REVEAL_FLASH_MS = 1200`, and `reveal.ts:313-315` removes the whole layer when it
+product deliberately destroys on a timer**. `apps/ui/src/reader/reveal.ts:26` sets
+`REVEAL_FLASH_MS = 1200`, and `reveal.ts:314-316` removes the whole layer when it
 fires:
 
 ```
