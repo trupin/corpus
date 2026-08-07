@@ -419,6 +419,7 @@ belongs to the same fix wave.
 | UI-080 | Ten e2e sites send a key straight after click() with no focus wait | todo | P2 | — |
 | SERVER-065 | Plugin discovery says "never throws" and throws, killing boot | todo | P2 | — |
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
+| INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | todo | P1 | INFRA-008 |
 | UI-081 | Console's job list / log split is not resizable (SIGNED §11 line applied) | todo | P2 | — |
 | CONTRACT-036 | Thread resource carries no `unread`; the UI derives it (PR #25 re-review) | todo | P2 | — |
 | CONTRACT-035 | `JobList` carries no `total`, so a windowed answer looks complete (CLI-031 finding) | todo | P2 | CLI-031 |
