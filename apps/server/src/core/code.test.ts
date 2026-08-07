@@ -158,6 +158,75 @@ describe("unterminatedFence", () => {
   });
 });
 
+/**
+ * SERVER-066 review, finding A: a fence inside a list item or a block quote.
+ *
+ * The scanner used to see neither the opener (the delimiter run is not at the
+ * line start) nor, therefore, the *closer* as anything but a fresh opener — so
+ * a perfectly ordinary bulleted code block masked from its last line onward and
+ * failed `corpus doc check` at error severity. Every shape below is valid
+ * CommonMark that closes; the point of each is `null`.
+ */
+describe("unterminatedFence inside container blocks", () => {
+  it.each([
+    ["the reviewer's fixture, body at the margin", "- ```js\ncode\n  ```\n"],
+    ["a bulleted item with its body indented under it", "- ```js\n  code\n  ```\n\nAfter.\n"],
+    ["a `*` bullet", "* ```js\n  code\n  ```\n"],
+    ["a `+` bullet", "+ ```js\n  code\n  ```\n"],
+    ["an ordered item", "1. ```js\n   code\n   ```\n"],
+    ["an ordered item with `)`", "1) ```js\n   code\n   ```\n"],
+    ["a nested item", "- outer\n  - ```js\n    code\n    ```\n"],
+    ["a block quote", "> ```js\n> code\n> ```\n"],
+    ["a bullet inside a block quote", "> - ```js\n>   code\n>   ```\n"],
+    ["a tilde fence in an item", "- ~~~\n  code\n  ~~~\n"],
+    ["a closer dedented to the margin", "- ```js\n  code\n```\n"],
+    ["a closer indented past the item's content column", "- ```js\n    code\n    ```\n"],
+    ["a marker followed by several spaces", "-   ```js\n    code\n    ```\n"],
+  ])("reports nothing for a closed fence in %s", (_name, text) => {
+    expect(unterminatedFence(text)).toBeNull();
+  });
+
+  it("masks the whole item, so a turn heading inside a bulleted snippet stays quoted", () => {
+    const text = "- ```\n  ## user · 2026-01-01T00:00:00Z\n  ```\nafter\n";
+    expect(slices(text, fencedCodeRanges(text))).toEqual([
+      "- ```\n  ## user · 2026-01-01T00:00:00Z\n  ```",
+    ]);
+  });
+
+  it("still reports a fence an item really did leave open", () => {
+    expect(unterminatedFence("- ```js\n  code\n")).toEqual({
+      marker: "```",
+      start: 0,
+      line: 1,
+    });
+  });
+
+  /**
+   * The narrowness of the model, asserted rather than described: inside an open
+   * fence there are no *new* containers, only continuations of the ones already
+   * entered. A line of code that reads as a bulleted or quoted fence is code.
+   */
+  it("does not let a bulleted fence line close a block opened at the margin", () => {
+    const text = "```\n- ```\n```\n";
+    expect(slices(text, fencedCodeRanges(text))).toEqual(["```\n- ```\n```"]);
+  });
+
+  it("does not let a quoted fence line close a block opened outside a quote", () => {
+    const text = "```\n> ```\n```\n";
+    expect(slices(text, fencedCodeRanges(text))).toEqual(["```\n> ```\n```"]);
+  });
+
+  it("leaves a four-space-indented block alone — that is indented code, not a fence", () => {
+    expect(fencedCodeRanges("    ```js\n    code\n    ```\n")).toEqual([]);
+    expect(unterminatedFence("    ```js\n    code\n    ```\n")).toBeNull();
+  });
+
+  it("does not mistake a thematic break for a bulleted fence", () => {
+    expect(unterminatedFence("***\ntext\n")).toBeNull();
+    expect(unterminatedFence("- - -\ntext\n")).toBeNull();
+  });
+});
+
 describe("inlineCodeRanges", () => {
   it("covers a span including its delimiters", () => {
     const text = "a `code` b";

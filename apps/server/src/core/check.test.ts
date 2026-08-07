@@ -338,6 +338,28 @@ describe("§14 unterminated fenced code blocks", () => {
     expect(codes(report.errors)).toContain(CHECK_CODES.frontmatterInvalid);
   });
 
+  /**
+   * SERVER-066 review, finding A. The scanner missed a fence opened on a
+   * list-bullet line and then read its indented closer as a fresh opener, so
+   * this — valid CommonMark — failed the check at *error* severity. A false
+   * error on correct content is worse than the silence the rule replaced,
+   * because it teaches the reader to ignore the check.
+   */
+  it("reports nothing for a fence opened inside a list item", () => {
+    const body = ["- ```js", "  const x = 1;", "  ```", "", "Prose after the list.", ""].join("\n");
+    expect(checkCorpus([doc("data/docs/notes.md", NOTE, body)]).errors).toEqual([]);
+  });
+
+  it("reports nothing for a fence opened inside a block quote", () => {
+    const body = ["> ```js", "> const x = 1;", "> ```", ""].join("\n");
+    expect(checkCorpus([doc("data/docs/notes.md", NOTE, body)]).errors).toEqual([]);
+  });
+
+  it("still reports a fence a list item really did leave open", () => {
+    const report = checkCorpus([doc("data/docs/notes.md", NOTE, "- ```js\n  const x = 1;```\n")]);
+    expect(codes(report.errors)).toEqual([CHECK_CODES.unterminatedFence]);
+  });
+
   it("reports nothing for a document that does not parse at all", () => {
     // There is no body to scan; `frontmatter-unparseable` is the whole story.
     const report = checkCorpus([toCheckDocument("data/docs/broken.md", "```\nunclosed\n")]);

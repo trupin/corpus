@@ -380,6 +380,177 @@ no rows).
 clean across all 7 workspaces + scripts. `eslint` and `prettier --check` clean on
 every touched file.
 
+### Review-fix round — PR #26, findings A / B / C
+
+_Fixed on: **opus**._ Real workspace `/tmp/corpus-066r` (`corpus init --port 8813`),
+real server process, real HTTP, real CLI. Port 8765 untouched; server stopped and
+8813 confirmed free at the end.
+
+#### Finding A — a false `unterminated-fence` on valid CommonMark
+
+**Reproduced first, against the shipped scanner, then against the real server.**
+`unterminatedFence` run under `tsx` over the shipped `core/code.ts` (no test
+harness):
+
+```
+list item                  {"marker":"```","start":13,"line":3}  ranges [{13,19}]
+list item indented body    {"marker":"```","start":15,"line":3}  ranges [{15,29}]
+ordered list               {"marker":"```","start":17,"line":3}  ranges [{17,24}]
+blockquote                 null                                  ranges []
+indented 4                 null                                  ranges []
+```
+
+The reviewer's fixture is one of a **class**, and the worst member is the shape
+people actually write — marker and opening run on one line, body and closer
+indented under it. And it is not only the error: `fencedCodeRanges` masked from
+the *closer* to end-of-text, i.e. the wrong region, so `[[refs]]` and turn
+headings after a bulleted snippet were invisible too.
+
+Then through the product, with the container model disabled at its single seam so
+the "before" is the running binary and not an argument about it:
+
+```
+POST /api/docs  {"title":"Bulleted fence","body":"Intro paragraph.\n\n- ```js\n  const x = 1;\n  ```\n\nAfter the list.\n"}
+  -> 201 doc_h5gwarsy
+$ corpus doc check          (container model off — the pre-fix scanner)
+error unterminated-fence data/docs/inbox/bulleted-fence.md: … opened at line 18 …
+corpus: 2 errors in 11 documents.
+exit=6
+$ corpus doc check          (fix live, same workspace, same bytes)
+checked 11 documents — no findings.
+exit=0
+```
+
+**How far containers are modelled, and where the line is drawn.** A fence's
+**opening** line may sit behind a run of block-quote markers (`>`) and list-item
+markers (`-`, `+`, `*`, `1.`, `1)`), and the fence records the block-quote depth
+and the content column it opened behind. While that fence is open, each line has
+exactly that many block-quote markers and up to that much indentation removed
+before the closing rule is applied — and **nothing more**. In particular a *new*
+list marker is never stripped from a line inside an open fence: inside a fence
+there are no new containers, only continuations of the ones already entered, and
+stripping one would let a line of code reading as a bulleted fence close the block
+it belongs to (pinned by two tests: a bulleted and a quoted fence line inside a
+margin-opened block are code, not closers).
+
+The safety property that makes this cheap to reason about: **a text with no
+container markers takes byte-for-byte the path it took before** — both widths are
+zero and the regex is applied to the raw line, so every pre-existing case is
+unchanged by construction.
+
+What stays approximate, deliberately (full container parsing is a markdown
+parser, which this module is not):
+
+- **Containers never end.** A fence opened inside a list item stays open past the
+  end of that item; CommonMark closes it at the item's boundary. The scanner errs
+  toward "still inside code" — and errs *together*, because `fencedCodeRanges` and
+  `unterminatedFence` are two readings of one scan, so the report always describes
+  what `turns.ts` and `refs.ts` will really do with those bytes rather than
+  contradicting them. That self-consistency is the invariant; CommonMark fidelity
+  is the approximation.
+- **Tabs are not expanded**; a container marker followed by a tab is not seen.
+- **Setext underlines, link reference definitions and HTML blocks** are not
+  modelled at all — none of them can contain or terminate a fence.
+- A closer indented ≥4 spaces past its item's content column still fails to close
+  (`FENCE_LINE`'s own rule, applied after the container prefix is removed).
+
+#### Finding B — the fix now reaches the path the bug happens on
+
+Fixed here, not deferred. `checkSave` returned `findings: report.warnings`, so a
+non-blocking *error* was computed on every save and dropped: no response, no log.
+It now returns the warnings **plus** the errors in a new `REPORTED_CHECK_CODES`
+set, and `validateBeforeWrite` logs the two families apart —
+`logger.error("document saved with validation errors", …)` and the existing
+`logger.info(… warnings …)`.
+
+**Log, not response — and the response half is a genuine contract question, not a
+shortcut.** §14's wire warning family is a closed two-member set (the contract's
+`CHECK_WARNING_CODES`; `check/codes.test.ts` asserts behaviourally that no code
+appears on both sides of the severity partition, and `isSkillFrontmatterException`
+already refuses to re-grade a finding for exactly this reason). Putting
+`unterminated-fence` on a mutation response would need a third `WarningCode`,
+which puts an **error**-severity §14 finding into the wire's *warning* channel —
+a §14 semantics change, not a transcription. That belongs with the two SPEC-level
+findings already going to the user, and SERVER-067's remaining scope is now
+exactly that one question (the orchestrator should re-scope and re-rate it; this
+round closed the silent half). `logger.error` was chosen over `logger.info`
+deliberately: it is the one level the logger never gates, so a server run at
+`--log-level silent` still says a thread's turns are being eaten as they are
+written.
+
+E2E on the exact path the user hit — the agent appends a turn:
+
+```
+POST /api/threads/th_rlnx5npg/turns  (x-corpus-author: agent)
+     {"body":"Here is the snippet:\n\n```\nconst x = 1;```"}
+  -> 201, warnings []
+```
+
+Before this round that produced nothing anywhere. Now, in `.corpus/server.log`:
+
+```
+{"level":"error","msg":"document saved with validation errors",
+ "path":"data/threads/th_rlnx5npg.md",
+ "errors":["unterminated-fence: unterminated fenced code block opened at line 19
+   with a run of 3 backticks: … so everything after it reads as code — and every
+   `## author · timestamp` turn heading after it is invisible, so those turns are lost"]}
+```
+
+The consequence still happens (the write is not blocked, per this issue's
+severity decision) and is now announced as it happens:
+
+```
+POST … /turns  (x-corpus-author: user)  {"body":"Actually, no."}  -> 201
+GET  /api/threads/th_rlnx5npg  -> turns: 2 ['user','agent']   # three were written
+$ corpus doc check  -> error unterminated-fence data/threads/th_rlnx5npg.md …  exit=6
+PUT  /api/docs/th_rlnx5npg  (closing fence moved onto its own line) -> 200
+$ corpus doc check  -> checked 12 documents — no findings.  exit=0
+GET  /api/threads/th_rlnx5npg  -> turns: 3 ['user','agent','user']
+$ corpus db doctor  -> projection is clean — 12 documents from 12 files (2ms)  exit=0
+```
+
+**Does it generalise to `anchor-unused`? The mechanism does; the code is
+deliberately excluded, and finding that out was the substantive discovery of this
+round.** Wiring the log to "every error the save does not refuse" — the obvious
+generalisation — made the server suite emit 8 log lines reading
+`anchor-unused: anchor \`anc_…\` has no thread referencing it`, all of them false.
+`anchor-unused` is a *cross-document* rule answered on the save path through the
+projection, and during a multi-file mutation the projection is one write behind by
+construction: `threads/create.ts:302` validates the parent document carrying the
+**new** anchor entry immediately before writing the thread that claims it (and
+`capture.ts:191-192` does the same). So the seam truthfully reports that nothing
+claims it *yet* — on **every anchored comment**, the commonest write in the
+product. Logging that would teach the reader to skip the very channel the fence
+finding needs them to read, which is the same failure mode as finding A one level
+up. So the reported set is explicit (`REPORTED_CHECK_CODES`, today
+`unterminated-fence` alone: a property of the body's bytes and of nothing else),
+a code in neither set is silent on the save path — the safe default — and
+`corpus doc check`, which has no such blind spot, stays where a genuinely dangling
+anchor is reported. Both directions are pinned in `write.test.ts`: the fence
+reaches the log, and the exact parent text `threads/create.ts` produces does not.
+Verified live: 1 validation-error line in the whole session, 0 mentioning
+`anchor-unused`.
+
+#### Finding C — stale count
+
+`check/codes.test.ts:82` "two of the eleven error codes" → "twelve". Swept the
+repo for the whole family (`eleven|twelve|thirteen|fourteen` across
+`apps/server/src`, `packages/contract/src`, `apps/cli/src`): that comment was the
+only stale one — the contract's prose, the generated client, `openapi.test.ts`,
+`schemas/check.test.ts` and `check/routes.ts` all already read twelve/fourteen.
+
+#### Checks
+
+`vitest run apps/server packages/contract` — 221 files, **5269 tests, all pass**
+(`VITEST_MAX_THREADS=4`), including the `turns.test.ts` 1-vs-2 pin and
+`write.test.ts`'s not-refused case. New tests: 13 container shapes in
+`core/code.test.ts` plus masking, non-closing and thematic-break guards; three
+rule-level cases in `core/check.test.ts`; three log cases in `docs/write.test.ts`.
+`tsc --noEmit` clean in `apps/server`; `eslint` and `prettier --check` clean on all
+six touched files. `core/code.ts` is server-only (grep: no importer in
+`apps/cli`, `apps/ui` or `packages`), so no consumer outside the scoped run is
+affected.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

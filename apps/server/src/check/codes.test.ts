@@ -79,7 +79,7 @@ describe("the warning/error split", () => {
       ),
     ),
     // A second document claiming the first one's id, and a thread naming a
-    // parent nobody wrote: two of the eleven error codes.
+    // parent nobody wrote: two of the twelve error codes.
     toCheckDocument("data/docs/dupe.md", document("id: doc_note01\ntype: note\ntitle: Dupe")),
     toCheckDocument(
       "data/threads/th_bbbbbb.md",
