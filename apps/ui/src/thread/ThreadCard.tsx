@@ -19,6 +19,7 @@ import { NewChildThread } from "./NewChildThread";
 import { agentWaitSince, useOutstandingAgentJob } from "./outstandingAgentRequest";
 import { mapFormAnswers, type SubmittedAnswer } from "./parseFormBlock";
 import { PendingIndicator } from "./PendingIndicator";
+import { threadStatusNotice } from "./resolveNotice";
 import { MAX_NESTED_DEPTH } from "./threadDepth";
 import { ThreadPanel } from "./ThreadPanel";
 import { ThreadComposer } from "./ThreadComposer";
@@ -96,12 +97,7 @@ export function ThreadCard({
    */
   const setStatus = useSetThreadStatus({
     onSuccess: (_result, variables) => {
-      onNotify({
-        tone: "info",
-        message: variables.resolved
-          ? "Thread resolved — committed. Replying reopens it."
-          : "Thread reopened — committed.",
-      });
+      onNotify({ tone: "info", message: threadStatusNotice(variables.resolved) });
     },
     onError: (error, variables) => {
       onNotify({
@@ -315,11 +311,11 @@ export function ThreadCard({
               threadId={threadId}
               turn={turn}
               answeredForm={answers.get(turn.ts) ?? null}
-              onAnsweredForm={(formTs, option) => {
+              onAnsweredForm={(formTs, answer) => {
                 setSubmitted((current) =>
                   current.some((entry) => entry.formTs === formTs)
                     ? current
-                    : [...current, { formTs, option }],
+                    : [...current, { formTs, answer }],
                 );
               }}
               onOpenRef={onOpenDoc}

@@ -1,4 +1,16 @@
+import {
+  extractFormSource,
+  formAnswerRecords,
+  formatFormAnswerBody,
+  FormSchema,
+  isFormAnswerBody,
+  parseFormAnswerBody,
+  validateFormAnswer,
+  type Form,
+  type FormAnswerRequest,
+} from "@corpus/contract";
 import type { Page, Route } from "@playwright/test";
+import * as YAML from "yaml";
 import {
   canonicalInstant,
   parseThreadTurns,
@@ -241,6 +253,61 @@ function subjectWantsArchived(url: URL): boolean {
   return url.searchParams.get("includeArchived") === "true";
 }
 
+/** The form an agent turn carries, or `undefined` — the contract's grammar, whole. */
+function formIn(turn: StubTurn): Form | undefined {
+  if (turn.author !== "agent") return undefined;
+  const source = extractFormSource(turn.body);
+  if (source === undefined) return undefined;
+  try {
+    const parsed = FormSchema.safeParse(YAML.parse(source) ?? undefined);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The forms of a thread that are still unanswered, in order — the projection's
+ * `needs=form` condition (SPEC.md §6), read the same way the server reads it:
+ * a form is open until a later turn is an answer to **it**.
+ *
+ * The stub derives this rather than taking a seed for it, because the whole
+ * point of the Attention half of UI-084 is that the row clears by *answering*
+ * and by nothing else. A seeded boolean would clear whenever a spec said so,
+ * which would make the asymmetry untestable here.
+ */
+function openForms(turns: readonly StubTurn[]): readonly StubTurn[] {
+  const open: { turn: StubTurn; form: Form }[] = [];
+  for (const turn of turns) {
+    if (isFormAnswerBody(turn.body)) {
+      const at = open.findIndex(
+        (entry) => parseFormAnswerBody(turn.body, entry.form) !== undefined,
+      );
+      if (at !== -1) open.splice(at, 1);
+    }
+    const form = formIn(turn);
+    if (form !== undefined) open.push({ turn, form });
+  }
+  return open.map((entry) => entry.turn);
+}
+
+/**
+ * The row's attention reasons (SPEC.md §11), derived rather than seeded.
+ *
+ * Two of the five, which are the two UI-084's asymmetry is about: an unanswered
+ * form (which survives being read) and an unread agent reply (which does not).
+ * Both are computed from the thread's own state, so `POST …/seen` clears one and
+ * only answering clears the other — exactly the difference the spec asserts.
+ */
+function attentionOf(doc: StoredDoc): readonly string[] {
+  if (doc.type !== "thread" || doc.status !== "open") return [];
+  const turns = parseThreadTurns(doc.body);
+  const reasons: string[] = [];
+  if (doc.unread && turns.at(-1)?.author === "agent") reasons.push("unread-reply");
+  if (openForms(turns).length > 0) reasons.push("form");
+  return reasons;
+}
+
 /** The instant a write stamps: monotonic, so two saves never collide. */
 function stampUpdated(doc: StoredDoc): void {
   writes += 1;
@@ -319,7 +386,7 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       unread: doc.type === "thread" ? doc.unread : null,
       awaitingAgent: doc.type === "thread" ? false : null,
       unreadThreads: 0,
-      attention: [],
+      attention: attentionOf(doc),
       snippets: [],
       parentTitle: doc.parent === null ? null : (store.get(doc.parent)?.title ?? null),
       pinned: doc.pinned,
@@ -382,6 +449,17 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     }
     const folder = params.get("folder");
     if (folder !== null && !doc.path.includes(`/${folder.replace(/\/+$/, "")}/`)) return false;
+    /*
+     * `needs=` — the Attention column's filter (SPEC.md §11). `me` is the union
+     * of every reason; every other value names one. Derived from the same
+     * `attentionOf` the row reports, so a row can never appear in Attention
+     * carrying no reason chip, or carry one and be filtered out.
+     */
+    const needs = params.get("needs");
+    if (needs !== null) {
+      const reasons = attentionOf(doc);
+      if (needs === "me" ? reasons.length === 0 : !reasons.includes(needs)) return false;
+    }
     const status = params.get("status");
     if (status !== null) return status.split(",").includes(doc.status);
     return doc.status !== "archived";
@@ -526,6 +604,75 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
      * Absent before UI-056, which is why a `ThreadCard` never rendered a turn
      * under the stub and turn-level commenting had no Playwright coverage.
      */
+    /*
+     * `POST /api/threads/{id}/turns/{ts}/form` — answering a form (SPEC.md §6).
+     *
+     * It **writes the answer turn into the thread's body**, with the contract's
+     * own formatter, rather than answering `201` and changing nothing. That is
+     * what makes the Attention half of UI-084 assertable here at all: the row
+     * carrying "awaiting your answer" is derived from the thread's turns, so a
+     * stub that recorded the call without recording the answer would show the
+     * row clearing on a fiction. The refusals are the ones §6 names — `404` for
+     * a turn carrying no form, `409` for a form already answered, `400` for an
+     * answer the form does not fit (the contract's own `validateFormAnswer`).
+     */
+    const formAnswer = /^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/form$/.exec(url.pathname);
+    if (formAnswer !== null && method === "POST") {
+      const id = decodeURIComponent(formAnswer[1] ?? "");
+      const ts = canonicalInstant(decodeURIComponent(formAnswer[2] ?? ""));
+      const doc = store.get(id);
+      if (doc === undefined || doc.type !== "thread") {
+        return json(route, { code: "not_found", message: id }, 404);
+      }
+      const turns = parseThreadTurns(doc.body);
+      const target = turns.find((turn) => canonicalInstant(turn.ts) === ts);
+      const form = target === undefined ? undefined : formIn(target);
+      if (target === undefined || form === undefined) {
+        return json(route, { code: "not_found", message: ts }, 404);
+      }
+      if (!openForms(turns).some((turn) => canonicalInstant(turn.ts) === ts)) {
+        return json(route, { code: "conflict", message: "form already answered" }, 409);
+      }
+      const answer = (requests.at(-1)?.body ?? { answers: [] }) as FormAnswerRequest;
+      const invalid = validateFormAnswer(form, answer);
+      if (invalid !== undefined) return json(route, invalid, 400);
+
+      stampUpdated(doc);
+      // Seconds precision, `Z`: the turn-heading grammar rejects milliseconds,
+      // and a heading the parser rejects is a turn that silently disappears.
+      const turn: StubTurn = {
+        author: "user",
+        ts: canonicalInstant(doc.updated),
+        body: formatFormAnswerBody({
+          answers: formAnswerRecords(form, answer),
+          note: answer.note ?? null,
+        }),
+      };
+      doc.body = `${doc.body.trimEnd()}\n\n${renderTurn(turn)}`;
+      return json(
+        route,
+        {
+          thread: {
+            id,
+            title: doc.title,
+            status: doc.status,
+            parent: doc.parent,
+            anchor: null,
+            agent: doc.agent,
+            created: SEEDED_AT,
+            updated: doc.updated,
+            turnCount: turns.length + 1,
+            lastAuthor: "user",
+            lastTs: turn.ts,
+          },
+          turn,
+          eventId: "evt_stub",
+          warnings: [],
+        },
+        201,
+      );
+    }
+
     /*
      * `POST /api/threads/{id}/seen` (SPEC.md §7) and the resolve/reopen pair
      * (§6). Both mutate the store rather than answering flatly, because both are

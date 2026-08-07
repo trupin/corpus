@@ -760,11 +760,10 @@ describe("two forms offering the same option", () => {
       ).toHaveLength(1);
     });
     await waitFor(() => {
-      expect(formCard(container, SECOND_TS).querySelector(".form-answered")?.textContent).toContain(
-        "Yes",
-      );
+      expect(formCard(container, SECOND_TS).dataset["answered"]).toBe("true");
     });
-    expect(formCard(container, FIRST_TS).querySelector(".form-answered")).toBeNull();
+    expect(formCard(container, SECOND_TS).querySelector(".form-record-a")?.textContent).toBe("Yes");
+    expect(formCard(container, FIRST_TS).dataset["answered"]).toBeUndefined();
     expect(formCard(container, FIRST_TS).querySelector(".form-submit")).not.toBeNull();
   });
 });

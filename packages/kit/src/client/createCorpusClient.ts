@@ -11,6 +11,7 @@ import type {
   DocMutationResponse,
   FolderTree,
   FormAnswerResponse,
+  FormFieldAnswer,
   Health,
   IndexStatus,
   Job,
@@ -140,11 +141,21 @@ export interface CaptureInput {
   readonly files?: readonly File[] | undefined;
 }
 
-/** The answer to the form in one agent turn (SPEC.md §6). */
+/**
+ * The answer to the form in one agent turn (SPEC.md §6), submitted whole.
+ *
+ * **One entry per field *answered*, never per field asked.** A field with
+ * nothing given carries no entry at all — absence is the single spelling of
+ * blank (CONTRACT-038), so an empty string or an empty selection must never be
+ * sent in its place: the server reads one as a value and rejects it against a
+ * field's options, where the omission it meant is legal on an optional field.
+ * `answers` may itself be empty, which is the real answer a form of only
+ * optional fields gets.
+ */
 export interface FormAnswerInput {
   /** Timestamp of the agent turn carrying the form — the form's identity. */
   readonly ts: string;
-  readonly option: string;
+  readonly answers: readonly FormFieldAnswer[];
   readonly note?: string | undefined;
 }
 
@@ -782,7 +793,20 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         await api.POST("/api/threads/{id}/turns/{ts}/form", {
           params: { path: { id: threadId, ts: input.ts } },
           body: {
-            option: input.option,
+            /*
+             * Rebuilt key by key rather than spread: under
+             * `exactOptionalPropertyTypes` the generated body type spells an
+             * absent value as a *missing key*, and `{ option: undefined }` is
+             * not that. It is also the wire rule — a field with nothing given
+             * has no entry, and an entry carries exactly one value key — so the
+             * two agree by construction rather than by a cast.
+             */
+            answers: input.answers.map((entry) => ({
+              question: entry.question,
+              ...(entry.option === undefined ? {} : { option: entry.option }),
+              ...(entry.options === undefined ? {} : { options: [...entry.options] }),
+              ...(entry.text === undefined ? {} : { text: entry.text }),
+            })),
             ...(input.note === undefined ? {} : { note: input.note }),
           },
         }),

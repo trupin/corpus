@@ -94,12 +94,23 @@ describe("respondToForm", () => {
     });
     const result = await client.respondToForm("th_a", {
       ts: TS,
-      option: "Lemonade",
+      answers: [
+        { question: "Which quote?", option: "Lemonade" },
+        { question: "Which riders?", options: ["Water backup"] },
+        { question: "Anything else?", text: "the roof is new" },
+      ],
       note: "cheap",
     });
     expect(result.eventId).toBe("evt_1");
     expect(calls[0]?.url).toBe(`http://127.0.0.1:9099/api/threads/th_a/turns/${ENCODED}/form`);
-    expect(JSON.parse(calls[0]?.body as string)).toEqual({ option: "Lemonade", note: "cheap" });
+    expect(JSON.parse(calls[0]?.body as string)).toEqual({
+      answers: [
+        { question: "Which quote?", option: "Lemonade" },
+        { question: "Which riders?", options: ["Water backup"] },
+        { question: "Anything else?", text: "the roof is new" },
+      ],
+      note: "cheap",
+    });
   });
 
   it("omits an absent note rather than sending undefined", async () => {
@@ -107,10 +118,12 @@ describe("respondToForm", () => {
       status: 400,
       payload: { code: "bad_request", message: "no", issues: [] },
     });
-    await expect(client.respondToForm("th_a", { ts: TS, option: "x" })).rejects.toBeInstanceOf(
-      CorpusRequestError,
-    );
-    expect(JSON.parse(calls[0]?.body as string)).toEqual({ option: "x" });
+    await expect(
+      client.respondToForm("th_a", { ts: TS, answers: [{ question: "q", option: "x" }] }),
+    ).rejects.toBeInstanceOf(CorpusRequestError);
+    expect(JSON.parse(calls[0]?.body as string)).toEqual({
+      answers: [{ question: "q", option: "x" }],
+    });
   });
 });
 

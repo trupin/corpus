@@ -2,7 +2,7 @@ import { isPendingTurn, MarkdownView, type RowNotice, type ThreadTurn } from "@c
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { FormBlock } from "./FormBlock";
-import { parseFormBlock, splitFormFence } from "./parseFormBlock";
+import { parseFormBlock, splitFormFence, type AnsweredForm } from "./parseFormBlock";
 import { splitTurnAttachments } from "./attachmentRefs";
 import { TurnAttachments } from "./TurnAttachments";
 import { turnStamp } from "./turnStamp";
@@ -72,10 +72,10 @@ export function splitTrace(body: string, author: string): TurnSplit {
 export interface TurnProps {
   readonly threadId: string;
   readonly turn: ThreadTurn;
-  /** The answer a later turn recorded for this turn's form, if any. */
-  readonly answeredForm: string | null;
+  /** The record a later turn holds for this turn's form, if any. */
+  readonly answeredForm: AnsweredForm | null;
   /** This turn's form was answered from here — see `FormBlock.onAnswered`. */
-  readonly onAnsweredForm?: ((formTs: string, option: string) => void) | undefined;
+  readonly onAnsweredForm?: ((formTs: string, answer: AnsweredForm) => void) | undefined;
   readonly onOpenRef: (docId: string) => void;
   readonly onDelete: (ts: string) => void;
   /** Absent suppresses the per-turn comment affordance (a nested card at depth). */

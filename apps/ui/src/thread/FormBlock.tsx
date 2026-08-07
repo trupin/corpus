@@ -1,22 +1,56 @@
-import { useRespondToForm, type RowNotice } from "@corpus/kit";
-import type { Form } from "@corpus/contract";
+import { CorpusRequestError, useRespondToForm, type RowNotice } from "@corpus/kit";
+import {
+  formAnswerRecords,
+  type Form,
+  type FormField,
+  type FormFieldRecord,
+} from "@corpus/contract";
 import { useState, type ReactElement } from "react";
-import { optionParts } from "./parseFormBlock";
+import { GrowingTextarea } from "./GrowingTextarea";
+import {
+  draftRequest,
+  emptyDraft,
+  fieldDraft,
+  missingRequired,
+  toggleOption,
+  withField,
+  type FieldDraft,
+  type FormDraft,
+} from "./formDraft";
+import { optionParts, type AnsweredForm } from "./parseFormBlock";
 
 /**
- * A ```` ```form ```` fence rendered as live controls (SPEC.md §6,
- * `design/index.html`'s `.form-comment`).
+ * A ```` ```form ```` fence rendered as live controls, and — once answered — as
+ * the record it becomes (SPEC.md §6, §11; `design/index.html`'s
+ * `.form-comment`).
+ *
+ * **One control per field, matched to what the field asks.** §6 has exactly
+ * three kinds and the contract's `FormSchema` is what decides which one a field
+ * is, so nothing here sniffs the YAML: `choose one` is a radio group,
+ * `choose any` a checkbox group, `write` a growing textarea. The legacy
+ * `prompt` + `options` spelling never reaches this component as a second shape
+ * — it normalises into one required `choose one` field at the contract's parse
+ * boundary — so there is no "is this an old form?" branch to get wrong.
+ *
+ * **Native inputs, visible and focusable.** The mockup hides its radios
+ * (`<input type="radio" hidden>`) and paints the whole row; `hidden` removes an
+ * element from the tab order, and §11 says every answer is reachable from the
+ * keyboard — "a form the person cannot answer without a mouse is a question they
+ * cannot answer". So the inputs are real and on screen, the row is still the
+ * card the mockup draws, and arrow keys move within a radio group exactly as
+ * they do everywhere else on the web.
  *
  * **Submitting goes through `POST /api/threads/{id}/turns/{ts}/form`**, never a
- * hand-composed turn posted to `/turns`. That route is what validates the option
- * against the fence, writes the structured answer turn *and* enqueues the
- * `form.respond` event that re-triggers the agent (SPEC.md §8). A UI that built
- * the answer itself would produce a conversation that looks right and an agent
- * that never wakes up — and the difference is invisible until someone reads
- * `.corpus/queue/pending/`.
+ * hand-composed turn posted to `/turns`. That route is what validates the
+ * answers against the fence, writes the structured answer turn *and* enqueues
+ * the `form.respond` event that re-triggers the agent (SPEC.md §8). A UI that
+ * built the answer itself would produce a conversation that looks right and an
+ * agent that never wakes up — and the difference is invisible until someone
+ * reads `.corpus/queue/pending/`.
  *
- * Single-select and verbatim: the contract pins both (`schemas/form.ts`), so the
- * whole option string is what travels, and the `.price` split is presentation.
+ * **All-or-nothing.** There is no partial save and no per-field submit: the form
+ * is unanswered until it is submitted, so "unanswered" means one thing in the
+ * controls, in the Attention row and in the projection.
  */
 
 export interface FormBlockProps {
@@ -24,20 +58,35 @@ export interface FormBlockProps {
   readonly threadId: string;
   /** The carrying turn's timestamp — the form's identity (SPEC.md §6). */
   readonly formTs: string;
-  /** The option a later answer turn recorded, or `null` while unanswered. */
-  readonly answered: string | null;
+  /** What a later turn recorded for this form, or `null` while unanswered. */
+  readonly answered: AnsweredForm | null;
   /**
-   * This form was answered from here, with this option.
+   * This form was answered from here, with this record.
    *
    * The route addresses the form by `ts`; the turn it writes back is prose and
-   * says only which option was chosen. Reporting the pairing lets the thread
-   * attribute the answer to the form the user clicked rather than inferring it
-   * from the conversation's order — which two open forms offering the same
-   * option make ambiguous (PR #10 finding 12).
+   * names only the questions and what was given. Reporting the pairing lets the
+   * thread attribute the answer to the form the user clicked rather than
+   * inferring it from the conversation's order — which two open forms asking
+   * identical questions make ambiguous (PR #10 finding 12).
    */
-  readonly onAnswered?: ((formTs: string, option: string) => void) | undefined;
+  readonly onAnswered?: ((formTs: string, answer: AnsweredForm) => void) | undefined;
   readonly onNotify: (notice: RowNotice) => void;
 }
+
+/** The submit's key, named on the control like every other composer's (§11). */
+const SUBMIT_KEY_HINT = "⌘↵";
+
+/**
+ * The refusal a second answer earns, said as what it is.
+ *
+ * `409` is not a validation failure and must not read like one: the request was
+ * well formed and the *state* refused it, which happens when the same form was
+ * answered in another column or another browser between render and submit. §6
+ * says changing your mind is an ordinary reply, so that is what the message
+ * offers — retrying the same submit never helps.
+ */
+export const ALREADY_ANSWERED_NOTICE =
+  "Already answered — this form was answered elsewhere. Changing your mind is an ordinary reply, not a second answer.";
 
 export function FormBlock({
   form,
@@ -47,85 +96,225 @@ export function FormBlock({
   onAnswered,
   onNotify,
 }: FormBlockProps): ReactElement {
-  const [picked, setPicked] = useState<string | null>(null);
+  const [draft, setDraft] = useState<FormDraft>(() => emptyDraft(form));
   const [note, setNote] = useState("");
   const respond = useRespondToForm(threadId);
 
-  const chosen = answered ?? picked;
-  const isAnswered = answered !== null;
+  if (answered !== null) {
+    return <AnsweredRecord formTs={formTs} answer={answered} />;
+  }
+
+  const missing = missingRequired(form, draft);
+  const canSubmit = missing.length === 0 && !respond.isPending;
+  const missingId = `form-missing-${formTs}`;
+
+  const submit = (): void => {
+    if (!canSubmit) return;
+    const request = draftRequest(form, draft, note);
+    respond.mutate(
+      {
+        ts: formTs,
+        answers: request.answers,
+        ...(request.note === undefined ? {} : { note: request.note }),
+      },
+      {
+        onSuccess: (result) => {
+          const record: AnsweredForm = {
+            answers: formAnswerRecords(form, request),
+            note: request.note ?? null,
+          };
+          setNote("");
+          onAnswered?.(formTs, record);
+          onNotify({
+            tone: "info",
+            message:
+              result.eventId === null
+                ? "Answered — recorded; the agent was not re-triggered."
+                : "Answered — the agent was asked to continue.",
+          });
+        },
+        onError: (error) => {
+          const conflict = error instanceof CorpusRequestError && error.status === 409;
+          onNotify(
+            conflict
+              ? { tone: "error", message: ALREADY_ANSWERED_NOTICE }
+              : { tone: "error", message: `Answer failed — ${error.message}` },
+          );
+        },
+      },
+    );
+  };
 
   return (
-    <div className="form-comment" data-form={formTs}>
-      <p className="form-prompt">{form.prompt}</p>
-      {form.options.map((option) => {
-        const { label, detail } = optionParts(option);
-        const isPicked = chosen === option;
-        return (
-          <button
-            type="button"
-            key={option}
-            className={isPicked ? "form-opt picked" : "form-opt"}
-            aria-pressed={isPicked}
-            // An answered form is a record, not a control.
-            disabled={isAnswered}
-            onClick={() => {
-              setPicked(option);
-            }}
-          >
-            <span className="form-opt-label">{label}</span>
-            {detail === null ? null : <span className="price">{detail}</span>}
-          </button>
-        );
-      })}
+    <div
+      className="form-comment"
+      data-form={formTs}
+      /*
+       * The key the submit names, actually bound (§11 — "a single submit for the
+       * whole form that names its key like every other composer control"). It
+       * fires from anywhere inside the form, including the `write` textarea,
+       * where `↵` stays a newline exactly as the composer contract says it does.
+       */
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+        event.preventDefault();
+        submit();
+      }}
+    >
+      {form.fields.map((field) => (
+        <FieldControl
+          key={field.question}
+          field={field}
+          formTs={formTs}
+          draft={draft}
+          onChange={(next) => {
+            setDraft((current) => withField(current, field.question, next));
+          }}
+        />
+      ))}
 
-      {isAnswered ? (
-        <p className="form-answered">Answered — {answered}</p>
-      ) : (
-        <>
-          <input
-            className="form-note"
-            placeholder="Note (optional)"
-            aria-label="Note"
-            value={note}
-            onChange={(event) => {
-              setNote(event.target.value);
-            }}
-          />
-          <button
-            type="button"
-            className="form-submit"
-            disabled={picked === null || respond.isPending}
-            onClick={() => {
-              if (picked === null) return;
-              respond.mutate(
-                {
-                  ts: formTs,
-                  option: picked,
-                  ...(note.trim() === "" ? {} : { note: note.trim() }),
-                },
-                {
-                  onSuccess: (result) => {
-                    setNote("");
-                    onAnswered?.(formTs, picked);
-                    onNotify({
-                      tone: "info",
-                      message:
-                        result.eventId === null
-                          ? `Answered “${picked}” — recorded; the agent was not re-triggered.`
-                          : `Answered “${picked}” — the agent was asked to continue.`,
-                    });
-                  },
-                  onError: (error) => {
-                    onNotify({ tone: "error", message: `Answer failed — ${error.message}` });
-                  },
-                },
-              );
-            }}
-          >
-            Answer
-          </button>
-        </>
-      )}
+      {/* One place for the note, beside the answers and never a field's own (§6). */}
+      <input
+        className="form-note"
+        placeholder="Note about the ask as a whole (optional)"
+        aria-label="Note"
+        value={note}
+        onChange={(event) => {
+          setNote(event.target.value);
+        }}
+      />
+
+      {missing.length > 0 ? (
+        <p className="form-missing" id={missingId} role="status">
+          Still needed: {missing.map((field) => `“${field.question}”`).join(", ")}
+        </p>
+      ) : null}
+
+      <button
+        type="button"
+        className="form-submit"
+        disabled={!canSubmit}
+        {...(missing.length > 0 ? { "aria-describedby": missingId } : {})}
+        onClick={submit}
+      >
+        Answer <span className="form-submit-key">{SUBMIT_KEY_HINT}</span>
+      </button>
     </div>
   );
+}
+
+interface FieldControlProps {
+  readonly field: FormField;
+  readonly formTs: string;
+  readonly draft: FormDraft;
+  readonly onChange: (next: FieldDraft) => void;
+}
+
+/**
+ * One field, as a `fieldset`/`legend` whichever kind it is.
+ *
+ * The grouping is not decoration: a radio group without one announces each
+ * option with no question attached, which for a form of three fields is three
+ * unlabelled sets of choices. `write` gets one too so the three kinds stay one
+ * visual and structural rhythm.
+ */
+function FieldControl({ field, formTs, draft, onChange }: FieldControlProps): ReactElement {
+  const value = fieldDraft(draft, field.question);
+  const group = `form-${formTs}-${field.question}`;
+
+  return (
+    <fieldset className={`form-field kind-${field.kind.replace(" ", "-")}`}>
+      <legend className="form-prompt">
+        {field.question}
+        {field.optional ? null : <span className="form-required"> (required)</span>}
+      </legend>
+
+      {field.kind === "write" ? (
+        /*
+         * The **box** is the wrapper, not the textarea — the composer's own
+         * pattern (`thread.css`). `GrowingTextarea` measures by stacking a
+         * hidden copy of the value in the same grid cell, so anything that
+         * decides a line break has to be identical on the field and the mirror;
+         * padding or a border on the field alone would make the mirror measure a
+         * different string and the row grow to the wrong height. `.composer-grow
+         * > textarea` also out-specifies a bare class on the field, so styling
+         * it there does not even take effect.
+         */
+        <div className="form-write">
+          <GrowingTextarea
+            aria-label={field.question}
+            value={value.text}
+            onChange={(event) => {
+              onChange({ ...value, text: event.target.value });
+            }}
+          />
+        </div>
+      ) : (
+        field.options.map((option) => {
+          const { label, detail } = optionParts(option);
+          const picked =
+            field.kind === "choose one" ? value.option === option : value.options.includes(option);
+          return (
+            <label key={option} className={picked ? "form-opt picked" : "form-opt"}>
+              <input
+                className="form-opt-input"
+                type={field.kind === "choose one" ? "radio" : "checkbox"}
+                name={group}
+                checked={picked}
+                onChange={() => {
+                  onChange(
+                    field.kind === "choose one"
+                      ? { ...value, option }
+                      : { ...value, options: toggleOption(field, value.options, option) },
+                  );
+                }}
+              />
+              <span className="form-opt-label">{label}</span>
+              {detail === null ? null : <span className="price">{detail}</span>}
+            </label>
+          );
+        })
+      )}
+    </fieldset>
+  );
+}
+
+/**
+ * The record an answered form becomes — §11's "once submitted, the form stops
+ * being a question… each question beside what was given for it".
+ *
+ * There are **no controls here at all**, disabled or otherwise. A disabled
+ * control still says "this is a thing you could have done"; the record says what
+ * the exchange was, which is what the turn afterwards has to read as. It is also
+ * what makes "there is no way to submit a second answer" structural rather than
+ * a `disabled` attribute one keyboard away from being wrong.
+ */
+function AnsweredRecord({
+  formTs,
+  answer,
+}: {
+  readonly formTs: string;
+  readonly answer: AnsweredForm;
+}): ReactElement {
+  return (
+    <div className="form-comment form-answered" data-form={formTs} data-answered="true">
+      <dl className="form-record">
+        {answer.answers.map((record) => (
+          <div className="form-record-row" key={record.question} data-question={record.question}>
+            <dt className="form-record-q">{record.question}</dt>
+            <dd className="form-record-a">{givenText(record)}</dd>
+          </div>
+        ))}
+      </dl>
+      {answer.note === null ? null : <p className="form-record-note">Note: {answer.note}</p>}
+    </div>
+  );
+}
+
+/** What was given for one field, as one readable string. */
+export function givenText(record: FormFieldRecord): string {
+  if (record.option !== null) return record.option;
+  if (record.options !== null) return record.options.join(", ");
+  if (record.text !== null) return record.text;
+  return "left blank";
 }

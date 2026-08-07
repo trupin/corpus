@@ -80,41 +80,95 @@ that hid one of them would be lying about the other.
 
 ### The controls
 
-- [ ] A form renders **one control per field**, matched to what the field asks:
+- [x] A form renders **one control per field**, matched to what the field asks:
       choose one, choose any, write
-- [ ] **Required fields are marked**; submit is unavailable until every required
+- [x] **Required fields are marked**; submit is unavailable until every required
       field has an answer, and the form **names the question still missing**
-- [ ] A **choose-any** field accepts none, one, or several options; a **write**
+- [x] A **choose-any** field accepts none, one, or several options; a **write**
       field accepts free text and grows to fit
-- [ ] One submit for the **whole form**, naming its key like every other composer
+- [x] One submit for the **whole form**, naming its key like every other composer
       control, and one place for the optional **note about the ask as a whole**
-- [ ] **Everything is keyboard-reachable**, submit included — asserted, not
+- [x] **Everything is keyboard-reachable**, submit included — asserted, not
       assumed
-- [ ] **Once submitted the form stops being a question**: the controls become the
+- [x] **Once submitted the form stops being a question**: the controls become the
       recorded answer, shown in place, each question beside what was given for it,
       so the turn afterwards reads as the exchange it was. There is no way to
       submit a second answer
-- [ ] A **legacy** `prompt` + `options` form renders as one required choose-one
+- [x] A **legacy** `prompt` + `options` form renders as one required choose-one
       control and answers exactly as it does today
-- [ ] A form the app cannot read — YAML that does not parse, or a field outside
+- [x] A form the app cannot read — YAML that does not parse, or a field outside
       §6's three kinds — renders as the **visibly broken code block** it is,
       **never as a partial set of controls**, and is not answerable
 
 ### The attention asymmetry
 
-- [ ] A thread with an unanswered form shows an Attention row reading "awaiting
+- [x] A thread with an unanswered form shows an Attention row reading "awaiting
       your answer"
-- [ ] **Opening the thread and closing it again leaves the row in place** — the
+- [x] **Opening the thread and closing it again leaves the row in place** — the
       test that distinguishes this feature from every other Attention reason
 - [ ] Answering clears the row **live** over SSE; resolving the thread also clears
       it
 - [ ] A thread holding **more than one** unanswered form says how many are still
       open
-- [ ] A control case in the same test: a thread whose only signal is an unread
+- [x] A control case in the same test: a thread whose only signal is an unread
       agent reply **does** clear on open — otherwise the assertion above proves
       nothing
 - [ ] A thread with an unanswered form **and** an outstanding agent reply shows
       **both** signals at once; neither suppresses the other
+
+#### The three left unticked, and exactly why
+
+- **"Answering clears the row live over SSE."** The *behaviour* is verified —
+  `forms.spec.ts` answers the form and the Attention row is gone on the way back
+  to the column, with no reload — and resolving clears it in the same file. What
+  is **not** verified is the transport: the browser stub pushes no `invalidate`
+  events at all (`stubCorpus.ts` says so in its own docblock), so what drives the
+  refetch in that test is the mutation's own query invalidation, not SSE. The two
+  paths land on the same `DOCS_KEY`, but I can point at one and not the other, so
+  this stays unticked.
+- **"A thread holding more than one unanswered form says how many are still
+  open."** Not implemented. `DocRow.attention` is a list of reason *codes* and
+  carries no number, and a row carries no turns, so counting in the UI would mean
+  one `GET /api/threads/{id}` per row per render. Filed as
+  `issues/contract/040-open-form-count-on-the-row.md` rather than approximated,
+  which is what this issue's own Technical Design asks for.
+- **"An unanswered form and an outstanding agent reply show both signals at
+  once."** Half done. Both *Attention reasons* coexisting is tested end to end
+  (`unread-reply` + `form` on one row, and reading the thread takes the first and
+  leaves the second) and was also observed on the real server
+  (`['unread-reply', 'form']`). What is untested is §8's **pending-agent
+  indicator** beside the form's "awaiting your answer": the stub answers
+  `GET /api/jobs` with a flat `{jobs: []}`, so `useOutstandingAgentJob` can never
+  find one there. §8 was not touched — the indicator is rendered by `ThreadCard`
+  off the queue and knows nothing about forms, so nothing can suppress it — but
+  "not touched" is an argument, not evidence, so this stays unticked.
+
+
+## Orchestrator decision 2026-08-07 — the answer prose is a contract artefact
+
+CONTRACT-038 surfaced this and did not decide it, correctly, since the issue
+assigns the prose to SERVER-068. Deciding it here so both sides build to one
+answer rather than each inventing it.
+
+**The answer turn's text is the only durable record of what was answered.** The
+`form.respond` payload lives in `.corpus/` — runtime state, reaped with its event
+— while §11 requires an answered form to render "each question beside what was
+given for it" after a reload. So the prose in the turn *is* the data.
+
+**Therefore the format and its parser are a pair, and the pair lives in
+`packages/contract`.** Not in the server with the UI re-parsing loosely: those two
+workspaces cannot import each other, so a second spelling is a guaranteed drift,
+and the current `parseFormBlock.ts` — which reads the option by slicing the label
+line — is exactly what that drift looks like when the shape grows.
+
+This is the reasoning that already put `FORM_ANSWER_LABEL` in the contract. The
+pair extends it rather than departing from it.
+
+- **SERVER-068** writes the answer turn using the contract's formatter, and owns
+  the round-trip test: format → parse → the same answers back, including blanks.
+- **UI-084** reads with the contract's parser and must not hand-roll a second
+  reader. `parseFormBlock.ts`'s label-slicing is to be replaced, not extended.
+- Whoever lands first adds the pair to `packages/contract`; the other consumes it.
 
 ## Technical Design
 
@@ -247,16 +301,163 @@ meaningful end-to-end:
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output,
-confirmation the feature works. State which model you ran on.]_
+Run on **opus** (`claude-opus-5[1m]`), 2026-08-07.
+
+#### Half 1 — the real application, real server, real workspace, real disk
+
+A scratch workspace on a non-default port, so nothing collided with the server a
+sibling agent was holding on 8765:
+
+```
+npm run dev -w apps/cli -- init /tmp/ui084-ws          # port rewritten to 8899
+npm run dev -w apps/cli -- server start --workspace /tmp/ui084-ws
+  → corpus 0.4.0 listening on http://127.0.0.1:8899 (pid 8427)
+```
+
+Through the real API: a note, a thread on it, then an **agent** turn
+(`x-corpus-author: agent`) carrying a three-field form — one `choose one`, one
+`choose any`, one optional `write`.
+
+**The attention asymmetry, on the real projection.** Before any read:
+
+```
+GET /api/docs?needs=form → [('th_jx4bav2z', ['unread-reply', 'form'])]
+```
+
+Both signals at once, neither suppressing the other. Then the read — `POST
+/api/threads/th_jx4bav2z/seen` — and the same query again:
+
+```
+GET /api/docs?needs=me   → [('th_jx4bav2z', ['form'])]
+```
+
+**The unread reason cleared by being read; the form reason did not.** That is the
+asymmetry, from the server's own projection.
+
+**The answer, with exactly the body the UI's client builds** — one entry per
+field *answered*, the optional `write` field carrying **no entry at all**, note
+trimmed:
+
+```json
+{"answers":[{"question":"Which quote should I file?","option":"Lemonade — $1,840/yr"},
+            {"question":"Which riders do you want?","options":["Water backup"]}],
+ "note":"cheapest one"}
+```
+
+`201`. The answer turn the server wrote, verbatim, and the same bytes now in
+`data/threads/th_jx4bav2z.md` under `## user · 2026-08-07T15:32:28Z`:
+
+```markdown
+**Answered:**
+
+**Which quote should I file?**
+
+Lemonade — $1,840/yr
+
+**Which riders do you want?**
+
+- Water backup
+
+**Anything I should know?**
+
+_(left blank)_
+
+**Note:**
+
+cheapest one
+```
+
+Every field the form asked is named, the blank one said out loud. `git log`:
+`fe5e07a form: answer on th_jx4bav2z by user`. Attention afterwards:
+`GET /api/docs?needs=me → []` — answering, and only answering, cleared it.
+Submitting the identical body a second time: **`409 conflict`**, not a validation
+error.
+
+**The loop closed.** The thread file from disk was fed through `parseThreadTurns`
+and this issue's own `mapFormAnswers`, and the reader recovered the record
+exactly: `option: "Lemonade — $1,840/yr"`, `options: ["Water backup"]`,
+`text: null` for the blank field, `note: "cheapest one"` — keyed by the form
+turn's `ts`. The server writes with the contract's `formatFormAnswerBody`; the UI
+reads with the same module's `parseFormAnswerBody`; the bytes on disk are the
+only thing between them.
+
+Server stopped (`stopped (pid 8427)`); 8899 and 5273 confirmed free.
+
+#### Half 2 — the real browser
+
+`CORPUS_UI_PORT=5273 npx playwright test --config apps/ui/playwright.config.ts` —
+**310 passed**, plus the new `apps/ui/e2e/forms.spec.ts` (6/6). The stub now
+*derives* `attention` from each thread's own turns rather than taking a seeded
+flag, so no spec can clear a row by fiat, and it answers `POST
+…/turns/{ts}/form` by writing the real answer turn into the thread's body.
+
+- **"survives being read, while an unread reply's row does not"** — the assertion
+  this feature exists for. Two rows in Attention; opening the reply-only thread
+  and going back removes its row; opening the form thread and going back leaves
+  its row in place, still reading "awaiting your answer".
+- **"clears when the form is answered, from the keyboard alone"** — submit
+  disabled with `.form-missing` naming both required questions; radio focused and
+  `Space`; one question drops off the message; checkbox focused and `Space`; the
+  message goes and submit enables; `ControlOrMeta+Enter` submits. The request
+  body carried two entries and no entry for the blank optional field. The
+  controls became the record in place (three rows: the option, the rider,
+  "left blank"), no `.form-submit` left, and the Attention row cleared.
+- **"survives a reload as the record it is"**, **"shows both signals at once"**,
+  **"clears when the thread is resolved"**, **"renders a form it cannot read as
+  the broken block it is"** — all pass.
+
+**Two pre-existing failures, environmental and not mine**: `console.spec.ts`'s
+two health-notice specs assert the strip reads "server unreachable", which
+requires `127.0.0.1:8765` to be **unbound**. A sibling agent's real `corpus`
+server (pid 29851) was listening there for the duration
+(`curl …:8765/api/health → 200`). They pass once that port is free.
+
+#### Unit
+
+`VITEST_MAX_THREADS=4 npx vitest run apps/ui packages/kit` → **2923 passed**.
+`npx eslint` and `npx prettier --check` clean; `npm run typecheck` clean.
+
+#### One defect found and fixed during self-review
+
+The `write` field rendered as a **borderless strip**. `GrowingTextarea` wraps its
+field in `.composer-grow`, and `thread.css`'s `.composer-grow > textarea` (0-1-1)
+out-specifies a bare `.form-write` class on the field (0-1-0) — so the border,
+padding and background I had put on the textarea never applied. It is also the
+wrong place for them regardless: the grow trick measures by stacking a hidden
+copy of the value in the same grid cell, so padding on the field alone makes the
+mirror measure a different string and the row grow to the wrong height. Fixed the
+way the composer already does it — the box is the wrapper, the field stays
+transparent — and guarded in `forms.spec.ts` with a computed-style assertion
+(`.form-write` has a 1px border), which is the assertion that was missing when
+the bug shipped into my own first pass.
+
+#### `403` — reachable in the contract, unreachable from this UI
+
+`POST …/turns/{ts}/form` does carry a `403`: it rejects a request naming itself
+`x-corpus-author: agent`, because only the person answers a form (§6). The UI
+**never sends that header** on any route — it is served same-origin and the
+contract defaults the actor to `user` — so this surface cannot produce a `403`,
+and I deliberately did not write a message for it: a branch no test can honestly
+exercise is a claim about behaviour nobody has. If one ever arrived it renders
+through the generic `Answer failed — <message>` path. The `409` is the refusal
+§6 and §11 actually name for this UI, and it has its own wording and its own
+test.
+
+#### Left open
+
+The last Attention criterion — "a thread holding **more than one** unanswered
+form says how many are still open" — is **not** implemented. `DocRow.attention`
+is a list of reason codes and carries no number, and a row carries no turns, so
+counting in the UI would mean one `GET /api/threads/{id}` per row. Filed as
+**`issues/contract/040-open-form-count-on-the-row.md`** rather than approximated.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
