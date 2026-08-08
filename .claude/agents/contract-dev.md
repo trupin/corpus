@@ -34,7 +34,7 @@ When given an issue ID (e.g., CONTRACT-001):
 
 _Durable facts, decisions, and gotchas for this domain. Append as you learn; keep entries dated._
 
-- **2026-07-26 — Contract-first via code (Architecture Decision 3).** Routes are _defined_ here with `createRoute` from `@hono/zod-openapi`; the server imports the definitions and attaches handlers. The OpenAPI doc is _derived_ — never hand-edited. `openapi.json` and the generated client types are committed; pre-push regenerates and diffs (drift check).
+- **2026-07-26 — Contract-first via code (Architecture Decision 3).** Routes are _defined_ here with `createRoute` from `@hono/zod-openapi`; the server imports the definitions and attaches handlers. The OpenAPI doc is _derived_ — never hand-edited. `openapi.json` and the generated client types are committed; **CI** regenerates and diffs (drift check). It was in pre-push until INFRA-025 moved it — regenerating needs a full build, so the drift check is now CI's and a hand-edited artifact survives locally until CI catches it. Run `npm run generate -w packages/contract` and diff before pushing.
 - **2026-07-26 — Client shape.** `@corpus/contract/client` exports a factory taking `{ baseUrl, token }`, wrapping `openapi-fetch` over `openapi-typescript` types. Both `apps/cli` and `packages/kit`/`apps/ui` consume this — never a second client implementation.
 - **2026-07-26 — Schemas are the only type source.** Resource types are `z.infer` of schemas here. If server or UI hand-declares an API shape, that's a bug to flag.
 - **2026-07-26 — Non-fetch surfaces.** SSE (`/events`) and multipart attachment upload get hand-written helpers beside the generated client; they're still documented in the OpenAPI doc.
