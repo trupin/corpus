@@ -290,3 +290,92 @@ test.describe("a thread that arrives with anchors already on it", () => {
     await expect(unanchored.locator(".turn-body")).toContainText("Which one of the two?");
   });
 });
+
+/**
+ * UI-087, in the browser the user reported it from: **once, not twice.**
+ *
+ * `DocView` keyed its below-body thread list off `anchorsHost`, which is false
+ * for every thread, so a thread reader listed `reader.threads` in full under a
+ * conversation that had already placed every one of them per turn (SPEC.md §11).
+ * Both hosts, because the report named both and the duplicate sat above the
+ * placement split — it was never a width behaviour.
+ *
+ * Counted rather than found: the defect is a *second* render, so a `toBeVisible`
+ * on either conversation passed before the fix and after it.
+ */
+test.describe("a thread's children, counted", () => {
+  const placements = (scope: string, threadId: string): string =>
+    `${scope} [data-thread-panel="${threadId}"]`;
+
+  test("renders each child once in a column and once in full screen", async ({ page }) => {
+    await openThread(page, [THREADS_VIEW, SEEDED_THREAD, FRAMED_CHILD, ORPHANED_CHILD]);
+
+    // Both children are on screen — the per-turn one and the orphaned one…
+    await expect(page.locator(placements(".reader", "th_framed"))).toHaveCount(1);
+    await expect(page.locator(placements(".reader", "th_orphan"))).toHaveCount(1);
+    // …and there is no second listing of the set below the conversation. The
+    // list itself is not gone (a plugin view still needs it); it is a thread
+    // that no longer takes it.
+    await expect(page.locator(".reader .thread-slots")).toHaveCount(0);
+
+    // ⤢ — the same document view at the other measure.
+    await page.locator(".reader [data-expand]").click();
+    await expect(page.locator(".focus.open")).toBeVisible();
+    await expect(page.locator('.focus.open [data-thread="th_dup"] > .turns > .turn')).toHaveCount(
+      1,
+    );
+    await expect(page.locator(placements(".focus.open", "th_framed"))).toHaveCount(1);
+    await expect(page.locator(placements(".focus.open", "th_orphan"))).toHaveCount(1);
+    await expect(page.locator(".focus.open .thread-slots")).toHaveCount(0);
+    // The orphaned child is still reachable full screen, and still a real
+    // conversation rather than a line the fix left behind.
+    await expect(
+      page.locator(`${placements(".focus.open", "th_orphan")} .turn-body`),
+    ).toContainText("Which one of the two?");
+  });
+
+  /**
+   * The branch the fix had to keep. A `view` document's body is its stored query,
+   * so it renders statically and hosts no anchor layer — nothing places its
+   * threads, and this list is the only render they get. A fix that deleted the
+   * catch-all with the duplicate would have dropped them silently.
+   */
+  test("still lists the threads on a document whose body places none", async ({ page }) => {
+    await stubCorpus(page, [VIEWS_VIEW, TARGET_VIEW, ON_THE_VIEW]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator(`.col[data-col="${VIEWS_VIEW.id}"] .row[data-row-doc="doc_v"]`).click();
+    await expect(page.locator('.reader[data-reader-doc="doc_v"]')).toBeVisible();
+
+    await expect(page.locator(".reader .thread-slots")).toHaveCount(1);
+    await expect(page.locator(placements(".reader", "th_on_view"))).toHaveCount(1);
+  });
+});
+
+/** A column listing view documents, so one can be opened in a reader at all. */
+const VIEWS_VIEW: StubRow = {
+  id: "doc_view_views",
+  type: "view",
+  title: "Views",
+  path: "data/docs/views/views.md",
+  pinned: true,
+  order: 2,
+  query: { type: "view" },
+};
+
+const TARGET_VIEW: StubRow = {
+  id: "doc_v",
+  type: "view",
+  title: "Saved search",
+  path: "data/docs/views/saved.md",
+  query: { type: "note" },
+};
+
+const ON_THE_VIEW: StubRow = {
+  id: "th_on_view",
+  type: "thread",
+  title: "About this view",
+  path: "data/docs/threads/th_on_view.md",
+  parent: "doc_v",
+  body: "## user · 2026-08-07T09:00:00Z\nShould this be pinned?\n",
+};

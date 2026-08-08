@@ -246,6 +246,33 @@ export function DocView({
     !reader.isThread &&
     PluginView === null &&
     editorHandlesType(doc.frontmatter.type);
+  /**
+   * Whether the body branch below has **already placed this document's threads**
+   * (UI-087).
+   *
+   * Not the same question as `anchorsHost`, and that conflation is the defect:
+   * the below-body list was written as the `anchorsHost` false branch, on the
+   * reading that a body with no anchor layer is a body that places nothing. That
+   * held when it was written and stopped holding when child threads gained
+   * per-turn placement — a thread has no anchor layer either, yet `ThreadCard`
+   * places **every** child it has, `placeChildThreads` splitting them into the
+   * ones under their turn and the ones after the last turn, two sets that are
+   * exhaustive and mutually exclusive. So the list below it was a second,
+   * complete rendering of the same conversations: SPEC.md §11 says child threads
+   * are shown per-turn, and reserves the below-body list for threads with **no
+   * place in the body**.
+   *
+   * `reader.isThread` would fix the count and describe the wrong property. Two
+   * body branches place threads and two do not, and what separates them is
+   * whether they place, not what type the document is: the editor puts anchored
+   * threads at their anchors, a thread's conversation puts its children under
+   * their turns, while a plugin `View` and the static markdown fallback place
+   * nothing at all — which is why the list is load-bearing there and must not be
+   * removed with the duplicate. Naming the property the branches actually share
+   * is what makes the next body branch answer the question rather than inherit
+   * an answer.
+   */
+  const bodyPlacesThreads = anchorsHost || reader.isThread;
 
   /*
    * Hooks run before the early returns below, so the layer is asked about a
@@ -487,9 +514,7 @@ export function DocView({
          * Anchored threads sit at their anchors (a chip between two blocks, or a
          * card in the margin); only the ones with no place in the body are listed
          * here — never anchored, orphaned, or anchored somewhere this view cannot
-         * point at (`anchorPlacement.segmentsOf`). A document the editor does not
-         * own has no anchors to place, so every thread on it stays below the
-         * body, where UI-005 put them.
+         * point at (`anchorPlacement.segmentsOf`).
          */}
         {anchorsHost ? (
           <>
@@ -510,7 +535,23 @@ export function DocView({
               onNotify={onNotify}
             />
           </>
-        ) : reader.threads.length === 0 ? null : (
+        ) : null}
+
+        {/*
+         * And the threads **nothing above has placed** — the list UI-005 put
+         * here, now asking the question it always meant (see
+         * `bodyPlacesThreads`).
+         *
+         * A plugin `View` and the static markdown fallback host no anchor layer
+         * and no conversation, so for them this is the only render their threads
+         * ever get: the branch is load-bearing and removing it would silently
+         * drop every thread on those documents. A thread reaches this line with
+         * its children already placed per turn (SPEC.md §11), so it lists
+         * nothing — and a child whose anchor went orphaned is not lost with the
+         * list, because `placeChildThreads` has already put it after the last
+         * turn rather than leaving it for this one.
+         */}
+        {bodyPlacesThreads || reader.threads.length === 0 ? null : (
           <div className="thread-slots">
             {reader.threads.map((row) => (
               <ThreadPanel

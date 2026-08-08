@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -72,20 +72,20 @@ stay.
 
 ## Acceptance Criteria
 
-- [ ] In a thread reader, each child thread renders **once** — under its turn,
+- [x] In a thread reader, each child thread renders **once** — under its turn,
       or after the last turn when it belongs to no single turn
-- [ ] True in a column and in full screen (the report names both), since the
+- [x] True in a column and in full screen (the report names both), since the
       duplicate is above the placement split and not a width behaviour
-- [ ] A child thread whose anchor is **orphaned** still renders exactly once and
+- [x] A child thread whose anchor is **orphaned** still renders exactly once and
       is still reachable — `placeChildThreads` already routes it to `unanchored`;
       the fix must not drop it on the way to removing the duplicate
-- [ ] **A plugin-view or non-markdown document still lists its threads below the
+- [x] **A plugin-view or non-markdown document still lists its threads below the
       body.** The catch-all is load-bearing there. A fix that removes the branch
       outright silently drops every thread on those documents
-- [ ] A regression test pins the count, not just the presence — the defect is a
+- [x] A regression test pins the count, not just the presence — the defect is a
       *second* render, so an assertion that a thread "is shown" passes both
       before and after and proves nothing
-- [ ] The stale comment at `DocView.tsx:486-493` is corrected rather than left
+- [x] The stale comment at `DocView.tsx:486-493` is corrected rather than left
       describing behaviour that no longer holds
 
 ## Technical Design
@@ -124,15 +124,77 @@ unchanged.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: opus** (`claude-opus-5[1m]`), 2026-08-07. Vite dev server on **port
+5473** (`CORPUS_UI_PORT=5473`) — 8765 and 5173 deliberately untouched. The git
+hooks no longer build or test (INFRA-025), so every run below was invoked by
+hand.
+
+### The predicate, and why it is not `reader.isThread`
+
+`reader.isThread` would have made the count right while naming the wrong
+property. The question the call site is actually asking is **"has the body
+already placed this document's threads?"** — that is what separates the four
+body branches: the editor places anchored threads at their anchors, a thread's
+conversation places its children under their turns, and a plugin `View` and the
+static markdown fallback place nothing at all. So the branch is now keyed off a
+named `bodyPlacesThreads = anchorsHost || reader.isThread`, documented at the
+point of definition, and the below-body list is a second JSX expression rather
+than the `anchorsHost` else-branch. That is what keeps the list load-bearing
+where it is the only render, and what makes the next body branch answer the
+question instead of inheriting an answer.
+
+### Reproduced before fixed, in a real browser
+
+The regression tests were written first and run against the **pre-fix**
+predicate (`anchorsHost` restored at the call site, nothing else changed):
+
+- jsdom, both hosts: `expected [ <div …>, <div …> ] to have a length of 1 but
+  got 2` — `renders each child exactly once in a column` and `… in full screen`
+  both failed; the four placement/guard tests passed, as they must.
+- Chromium, `e2e/turn-comment.spec.ts -g "counted"`: `locator('.reader
+  [data-thread-panel="th_framed"]')` — `Expected: 1 / Received: 2`,
+  `14 × locator resolved to 2 elements`. That is the user's report, driven.
+
+And the deletion trap, driven too: with the catch-all removed outright
+(`{true || …}`), the new e2e `still lists the threads on a document whose body
+places none` fails at `.reader .thread-slots` → expected 1, received 0. The
+branch is proved load-bearing rather than assumed to be.
+
+### After the fix
+
+- `apps/ui/src/reader/childThreadPlacement.test.tsx` — **6 passed**. Each of the
+  four children counted at exactly 1 in a column (`Reader`) and in full screen
+  (`FocusMode`), `.thread-slots` at 0 in both; `th_c1` under `ASK`'s turn and
+  nowhere else, `th_c2` under `REPLY`'s; the whole-thread and **orphaned**
+  children (`range: null`, the server's verdict) outside `.turns` and after it
+  by `compareDocumentPosition`, once each; the plugin-`View` and `view`-type
+  documents still listing theirs, at exactly 1 `.thread-slots` each.
+- Chromium, `e2e/turn-comment.spec.ts` — **4 passed**, including the new
+  `a thread's children, counted` pair. In a column: `th_framed` ×1, `th_orphan`
+  ×1, `.reader .thread-slots` ×0. Then ⤢ (`.reader [data-expand]`): in
+  `.focus.open`, one turn, `th_framed` ×1, `th_orphan` ×1, `.thread-slots` ×0,
+  and the orphaned child still a real conversation full screen — its
+  `.turn-body` still reads "Which one of the two?".
+- Regression sweep, Chromium: `turn-comment` + `thread` + `collapse` + `reader`
+  — **41 passed** (19.8s).
+- `npx vitest run apps/ui packages/kit` — **2954 passed, 0 failed**.
+- `npm run typecheck -w apps/ui` — clean. ESLint + Prettier on the three touched
+  files — clean.
+
+### Not claimed
+
+No `corpus` server was started: 8765 is the user's live one, and this repo's e2e
+harness is the real Vite app over `stubCorpus` at the transport boundary. The
+duplicate was a pure render-placement defect with no write path, so the browser
+evidence above is the whole of it.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
