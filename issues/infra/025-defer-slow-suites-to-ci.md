@@ -44,37 +44,50 @@ fast gate wins that race, so this buys correctness as well as minutes.
 
 ## What changed
 
-- **pre-commit** runs `vitest run --changed` instead of the whole suite: the
-  tests *related to what changed*, resolved through vitest's own module graph.
-- **pre-push** no longer runs the full unit suite or Playwright. It keeps
-  version singularity, the generated-artifact drift check, build, eslint,
-  prettier and typecheck.
-- Both print what they deferred and how to run it by hand.
+The target was set explicitly by the user mid-session: **10-15 seconds max**.
+Two intermediate attempts missed it, and the arithmetic is why — type-aware
+eslint builds the whole TypeScript program even to lint one file, and a
+libs-only build is still five `tsc` runs. Neither fits in fifteen seconds. So
+the gate stops doing compile-class work at all.
 
-## Why the module graph, not a hand-picked subset
+- **pre-commit**: `npm audit` (one registry round-trip) and `prettier --check`
+  on **staged files only**. Nothing else.
+- **pre-push**: `version:check` only.
+- Everything else — build, eslint, `tsc --noEmit`, the unit suite, the
+  generated-artifact drift check, Playwright — runs in `CI / validate`.
 
-A curated "fast suites" list would be a second inventory that drifts from the
-first — the failure this project has fixed three times elsewhere (INFRA-022's
-manifest set, `version-sources`' globs, the four copies of one sentence in
-PR #28). A derived set cannot drift.
+## Why version:check is the one survivor
+
+It reads manifests and `git show`; it starts no compiler. And it guards the one
+failure CI cannot un-break after the fact: a `v*` tag pointing at a tree the
+release guard rejects is already published by the time CI reports it (INFRA-022),
+and unwinding a pushed tag is a documented recovery procedure rather than a
+re-run. Everything else CI catches costs a red PR and a second push.
 
 ## What this gives up, stated plainly
 
-`--changed` sees imports. It does **not** see a dependency that is not an
-import: a fixture read at runtime, a generated artifact, a rule two workspaces
-restate independently. Those now fail in CI rather than locally.
+A broken build, a type error, a lint violation and a failing test now all reach
+the remote before anything objects. The developer finds out from CI, minutes
+later, instead of from the commit.
 
-That is an accepted trade, and it is bounded by an existing rule: **a PR merges
-only when `CI / validate` is green on its head commit**, and CI runs everything.
-So the cost is a red PR and a second push, never a bad merge.
+That is a real loss and it was chosen deliberately. It is bounded by an existing
+rule: **a PR merges only when `CI / validate` is green on its head commit**, and
+CI runs everything. So the cost is a red PR and a second push — never a bad
+merge, and never a bad `main`.
+
+The honest counterweight: for most of this session the local gate was not
+catching defects, it was re-proving a green suite for the twelfth time while the
+laptop swapped.
 
 ## Acceptance Criteria
 
-- [x] The local gate no longer runs the full unit suite or Playwright
-- [x] Related tests still run on commit, derived rather than listed
-- [x] Both hooks say what they deferred and how to run it
+- [x] A commit finishes within the 10-15s target
+- [x] The local gate runs no compile-class work — no build, no type-aware lint,
+      no `tsc`, no test suite
+- [x] Prettier is scoped to staged files, so a prose commit pays milliseconds
+- [x] Both hooks say what they deferred and how to run it by hand
 - [x] CI is untouched and still runs everything
-- [x] `--passWithNoTests` so a prose-only commit is not a failure
+- [x] `version:check` survives on pre-push, for the reason above
 
 ## E2E Verification Log
 

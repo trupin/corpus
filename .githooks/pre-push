@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Pre-push gate — everything pre-commit runs (build first, so cross-workspace
-# imports resolve through each package's dist/), plus version singularity, the
-# generated-artifact drift check and Playwright e2e.
+# Pre-push gate — deliberately tiny (INFRA-025). One check runs here: version
+# singularity. Everything else is CI's, which runs the full validate workflow on
+# this same head and gates the merge.
 # Escape hatch (documented, use sparingly): git push --no-verify
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -47,6 +47,7 @@ readonly refs_to_push
 # already has running there — and on the maintainer's machine 5173 is held by an
 # unrelated ssh tunnel, so an unqualified `git push` fails at this step. An
 # explicit value always wins: `CORPUS_UI_PORT=5999 git push`.
+# (kept for a hand-run `npm run e2e` from this shell; the hook no longer runs it)
 export CORPUS_UI_PORT="${CORPUS_UI_PORT:-5273}"
 
 # The e2e suite's hermetic premise is a *dead* API origin: `vite.config.ts`
@@ -68,41 +69,30 @@ step() {
   fi
 }
 
-# First because it is the cheapest and needs no build: one version number
-# describes the whole tool (INFRA-008), and drift is far easier to fix here than
-# after a `v*` tag has been pushed, where the same check is the publish guard.
-# It reads the committed tree as well as the working tree (INFRA-022), so this
-# step sees what is about to be pushed rather than what is merely on disk.
-# The tarball audit (`pack:check`) deliberately stays CI-only — it bundles and
-# packs, which is too slow for a push.
+# Version singularity (INFRA-008) reads the committed tree as well as the
+# working tree (INFRA-022), so it sees what is about to be pushed rather than
+# what is merely on disk. It is the one check that stays, and it is cheap — it reads
+# manifests and `git show`, and starts no compiler. It stays because it is the
+# one failure CI cannot un-break after the fact: a `v*` tag pointing at a tree
+# the release guard rejects has already been published by the time CI says so
+# (INFRA-022), and unwinding a pushed tag is a documented recovery procedure
+# rather than a re-run.
 step "version singularity"         npm run --silent version:check
-step "build"                       npm run --silent build
-# One inventory, two consumers: this and the `generated artifacts drift` step in
-# CI both run scripts/check-generated-artifacts.ts (openapi.json,
-# schema.generated.ts, docs/cli.md). Never re-list the artifacts here.
-step "generated artifacts drift"   node --import tsx scripts/check-generated-artifacts.ts
-step "eslint"                      npm run --silent lint
-step "prettier check"              npm run --silent format:check
-step "typecheck"                   npm run --silent typecheck
 
-# Slow suites are CI's, by explicit user decision (2026-08-07, INFRA-025). The
-# full unit suite (~10,500 tests) and the Playwright e2e suite both run in
-# `CI / validate` on every pushed head, and a PR cannot merge until that is
-# green — so nothing reaches `main` without them. What they were buying here was
-# earlier notice, at a cost of several minutes on every push.
-#
-# It is not only a speed trade. Read the exit-141 note above: git opens the
-# transport to the remote *before* running this hook, and a gate slow enough to
-# outlast the remote's idle timeout makes the push die with SIGPIPE **after**
-# printing that every check passed — nothing on the remote, no error from git.
-# The e2e suite is what pushed this gate over that line. A fast gate wins the
-# race; that is a correctness property, not a comfort.
-#
-# What stays here is what is cheap and what CI cannot easily un-break after the
-# fact: version singularity (a bad `v*` tag is expensive to unwind), the
-# generated-artifact drift check, and the static gates.
-echo "pre-push ▷ full unit suite and playwright e2e deferred to CI (INFRA-025)"
-echo "pre-push ▷   run them locally with 'npm test' and 'npm run e2e' when a change warrants it"
+# Everything else — build, the generated-artifact drift check, eslint, prettier,
+# typecheck, the unit suite and Playwright — is CI's (INFRA-025). The drift check
+# in particular needs a full build to regenerate what it compares, which is
+# exactly the compile-class work this gate no longer does; CI runs the identical
+# script (`scripts/check-generated-artifacts.ts`) on the same head.
+echo "pre-push ▷ build, lint, typecheck, drift check, unit suite and e2e all run in CI"
+echo "pre-push ▷   locally when a change warrants it: npm run lint / typecheck / test / e2e"
+
+# Deferring the slow suites is not only a speed trade — read the exit-141 note
+# above. git opens the transport before running this hook, so a gate that
+# outlasts the remote's idle timeout kills the push with SIGPIPE *after* printing
+# that everything passed: nothing lands and git reports nothing. The e2e suite is
+# what pushed this gate over that line, and this session hit it repeatedly. A
+# fast gate wins that race, which makes this a correctness property.
 
 if [ "$fail" -ne 0 ]; then
   echo "pre-push: blocked."
