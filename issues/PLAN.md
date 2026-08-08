@@ -441,6 +441,7 @@ belongs to the same fix wave.
 | SHARED-025 | A changelog in the document instead of a thread per change (SIGNED, applied) | done | P1 | — |
 | SHARED-026 | A write is refused when it would not read back (SIGNED, applied) | done | P1 | — |
 | SHARED-027 | An agent turn says which model wrote it (SIGNED, applied) | done | P1 | — |
+| SHARED-028 | Four riders signed one by one; §4 contradiction with SHARED-025 found and fixed (SIGNED, applied) | done | P1 | — |
 | CONTRACT-043 | A turn has nowhere to record the model that wrote it | done | P1 | SHARED-027 |
 | SERVER-074 | Write the deciding model onto the agent's turn | todo | P1 | CONTRACT-043 |
 | UI-090 | Show which model wrote an agent turn | todo | P1 | CONTRACT-043, SERVER-074 |
