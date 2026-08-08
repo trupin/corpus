@@ -27,6 +27,7 @@ import {
 } from "./schemas/retrieval.js";
 import { SKILL_NAME_MAX_LENGTH, SKILL_NAME_PATTERN } from "./schemas/skill.js";
 import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
+import { REQUESTED_WEIGHT_MAX_LENGTH } from "./schemas/weight.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
 import { QUERY_KEY_NAMES, QUERY_KEY_VOCABULARY } from "./query-keys.js";
@@ -3138,5 +3139,103 @@ describe("request bodies are strict (CONTRACT-017)", () => {
     // The sweep must not pass by matching nothing: the surface carries at least
     // the fifteen bodies it had when the rule landed.
     expect(seen.length).toBeGreaterThanOrEqual(15);
+  });
+});
+
+/**
+ * CONTRACT-039 — the published half of SHARED-022's transport. Two properties of
+ * the document carry the rider's two load-bearing decisions, and both are the
+ * kind that a later "tidy-up" undoes without noticing:
+ *
+ *   - **The levels are never enumerated.** §7 keeps model tiers in the workspace's
+ *     own orchestrate skill and §2.4 lets a workspace edit it on its own
+ *     schedule, so an `enum` here would reject a workspace's own vocabulary.
+ *   - **Absence is not a default.** Stating no weight means the orchestrator
+ *     decides, exactly as it does today — so the property is optional, carries no
+ *     `default`, and no request body makes it required.
+ */
+describe("a stated weight rides the request (CONTRACT-039)", () => {
+  function deref(node: SchemaNode | undefined): SchemaNode | undefined {
+    if (node?.$ref === undefined) return node;
+    return componentSchemas?.[node.$ref.split("/").pop() ?? ""];
+  }
+
+  /** Every published request body, as `signature → schema`. */
+  function requestBodies(): { where: string; schema: SchemaNode | undefined }[] {
+    const found: { where: string; schema: SchemaNode | undefined }[] = [];
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      for (const method of MUTATING_METHODS) {
+        if (!item || !(method in (item as object))) continue;
+        for (const [mediaType, mediaObject] of Object.entries(
+          operation(path, method).requestBody?.content ?? {},
+        )) {
+          found.push({
+            where: `${method.toUpperCase()} ${path} (${mediaType})`,
+            schema: deref((mediaObject as { schema?: SchemaNode }).schema),
+          });
+        }
+      }
+    }
+    return found;
+  }
+
+  /**
+   * §11 states the control once for the set of composers rather than per surface
+   * (SHARED-012's lesson: per-surface phrasing is how three of five composers
+   * shipped without attachments). These are those surfaces on the wire.
+   */
+  const COMPOSER_BODIES = [
+    "POST /api/threads (application/json)",
+    "POST /api/threads (multipart/form-data)",
+    "POST /api/threads/{id}/turns (application/json)",
+    "POST /api/threads/{id}/turns (multipart/form-data)",
+    "POST /api/capture (multipart/form-data)",
+  ];
+
+  it("offers a weight on every composer's request body", () => {
+    const carrying = requestBodies()
+      .filter((body) => body.schema?.properties?.weight !== undefined)
+      .map((body) => body.where)
+      .sort();
+    expect(carrying).toEqual([...COMPOSER_BODIES].sort());
+  });
+
+  it("publishes it as a plain bounded string, never an enumerated set of levels", () => {
+    for (const where of COMPOSER_BODIES) {
+      const weight = requestBodies().find((body) => body.where === where)?.schema?.properties
+        ?.weight;
+      expect(weight?.type, where).toBe("string");
+      expect(weight?.enum, where).toBeUndefined();
+      expect(weight?.maxLength, where).toBe(REQUESTED_WEIGHT_MAX_LENGTH);
+    }
+  });
+
+  it("never makes it required and never gives it a default: absence means the orchestrator decides", () => {
+    for (const where of COMPOSER_BODIES) {
+      const schema = requestBodies().find((body) => body.where === where)?.schema;
+      expect(schema?.required ?? [], where).not.toContain("weight");
+      expect(Object.hasOwn(schema?.properties?.weight ?? {}, "default"), where).toBe(false);
+    }
+  });
+
+  it("says what the field is for, so the next reader does not re-derive it", () => {
+    const weight = requestBodies().find((body) => body.where === COMPOSER_BODIES[0])?.schema
+      ?.properties?.weight;
+    for (const phrase of [
+      "directive, not a hint",
+      "never enumerates the levels",
+      "never silently substituted in either direction",
+      "cannot be honoured",
+      "the orchestrator decides",
+    ]) {
+      expect(weight?.description, phrase).toContain(phrase);
+    }
+  });
+
+  /** The other end of the ride: the dispatch reads it off the queue event. */
+  it("documents the payload key the event carries it under", () => {
+    const payload = componentSchemas?.["QueueEvent"]?.properties?.payload;
+    expect(payload?.description).toContain("`weight`");
+    expect(payload?.description).toContain("the orchestrator decides");
   });
 });

@@ -6,6 +6,7 @@ import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from 
 import { IsoDateTimeSchema } from "./time.js";
 import { turnModelRequestField, turnModelResponseField } from "./turn-model.js";
 import { warningsField } from "./warning.js";
+import { requestedWeightField } from "./weight.js";
 
 /**
  * Whether the agent participates in a thread (SPEC.md §6, §8). `requested` is
@@ -160,6 +161,7 @@ export const CreateThreadRequestSchema = z
     body: z.string().min(1).describe("Body of the thread's first turn."),
     requestsAgent: requestsAgentField(THREAD_CREATE_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
+    weight: requestedWeightField,
   })
   .openapi("CreateThreadRequest");
 
@@ -218,6 +220,7 @@ export const MultipartCreateThreadRequestSchema = z
       .describe("Body of the thread's first turn. Optional: a first turn may be attachment-only."),
     requestsAgent: requestsAgentFormField(THREAD_CREATE_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
+    weight: requestedWeightField,
     files: AttachmentFilesSchema,
   })
   .refine((value) => value.text !== undefined || value.files.length > 0, {
@@ -258,6 +261,7 @@ export const AppendTurnRequestSchema = z
     body: z.string().min(1),
     requestsAgent: requestsAgentField(TURN_APPEND_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
+    weight: requestedWeightField,
   })
   .openapi("AppendTurnRequest");
 
@@ -275,6 +279,7 @@ export const MultipartAppendTurnRequestSchema = z
       .describe("Markdown body of the turn. Optional: a turn may be attachment-only."),
     requestsAgent: requestsAgentFormField(TURN_APPEND_OMITTED_BEHAVIOUR),
     model: turnModelRequestField,
+    weight: requestedWeightField,
     files: AttachmentFilesSchema,
   })
   .refine((value) => value.text !== undefined || value.files.length > 0, {

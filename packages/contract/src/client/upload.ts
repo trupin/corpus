@@ -41,12 +41,22 @@ export interface TurnUpload {
    * even in an engaged thread, and is why this is not defaulted here.
    */
   readonly requestsAgent?: boolean;
+  /**
+   * The weight the work should be done at (SPEC.md §7, §11) — a level name from
+   * the workspace's own agent guidance. **Omit it to state no weight**, which
+   * means the orchestrator decides; there is no default and no other spelling of
+   * absence, so a picker nobody touched must send nothing rather than an empty
+   * string. `../schemas/weight.ts` carries the decision.
+   */
+  readonly weight?: string;
   readonly files?: readonly File[];
 }
 
 export interface CaptureUpload {
   readonly text: string;
   readonly requestsAgent?: boolean;
+  /** As {@link TurnUpload.weight}: omit for "the orchestrator decides". */
+  readonly weight?: string;
   readonly files?: readonly File[];
 }
 
@@ -66,6 +76,8 @@ export interface ThreadUpload {
   readonly title?: string;
   readonly text?: string;
   readonly requestsAgent?: boolean;
+  /** As {@link TurnUpload.weight}: omit for "the orchestrator decides". */
+  readonly weight?: string;
   readonly files?: readonly File[];
 }
 
@@ -94,6 +106,10 @@ export function buildTurnFormData(upload: Omit<TurnUpload, "threadId">): FormDat
   if (upload.requestsAgent !== undefined) {
     form.append("requestsAgent", String(upload.requestsAgent));
   }
+  // Appended only when a weight was stated: an empty part is a `400`, not a
+  // second spelling of "no choice" (SPEC.md §7 — absence means the orchestrator
+  // decides).
+  if (upload.weight !== undefined) form.append("weight", upload.weight);
   for (const file of upload.files ?? []) form.append(FILES_FIELD, file);
   return form;
 }
@@ -113,6 +129,8 @@ export function buildThreadFormData(upload: ThreadUpload): FormData {
   if (upload.requestsAgent !== undefined) {
     form.append("requestsAgent", String(upload.requestsAgent));
   }
+  // Omitted when unstated, for the reason `buildTurnFormData` gives.
+  if (upload.weight !== undefined) form.append("weight", upload.weight);
   for (const file of upload.files ?? []) form.append(FILES_FIELD, file);
   return form;
 }
@@ -123,6 +141,8 @@ export function buildCaptureFormData(upload: CaptureUpload): FormData {
   if (upload.requestsAgent !== undefined) {
     form.append("requestsAgent", String(upload.requestsAgent));
   }
+  // Omitted when unstated, for the reason `buildTurnFormData` gives.
+  if (upload.weight !== undefined) form.append("weight", upload.weight);
   for (const file of upload.files ?? []) form.append(FILES_FIELD, file);
   return form;
 }
