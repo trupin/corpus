@@ -443,8 +443,8 @@ belongs to the same fix wave.
 | SHARED-027 | An agent turn says which model wrote it (SIGNED, applied) | done | P1 | — |
 | SHARED-028 | Four riders signed one by one; §4 contradiction with SHARED-025 found and fixed (SIGNED, applied) | done | P1 | — |
 | CONTRACT-043 | A turn has nowhere to record the model that wrote it | done | P1 | SHARED-027 |
-| SERVER-074 | Write the deciding model onto the agent's turn | todo | P1 | CONTRACT-043 |
-| UI-090 | Show which model wrote an agent turn | todo | P1 | CONTRACT-043, SERVER-074 |
+| SERVER-074 | Write the deciding model onto the agent's turn | done | P1 | CONTRACT-043 |
+| UI-090 | Show which model wrote an agent turn | done | P1 | CONTRACT-043, SERVER-074 |
 | SERVER-075 | A person's reply with an unterminated fence swallows every later turn | done | P0 | — |
 | SERVER-076 | A turn body can still fabricate a turn heading on the reply path (SERVER-075 finding) | done | P2 | SERVER-075 |
 | CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | done | P1 | — |
@@ -452,7 +452,7 @@ belongs to the same fix wave.
 | INFRA-024 | A prose-only commit pays the full ten-minute gate — **superseded by INFRA-025** | closed | P1 | — |
 | INFRA-025 | Defer the slow suites to CI; run only fast tests locally | done | P1 | — |
 | AGENT-020 | Noting a change writes to the document's changelog, not a new thread | done | P1 | SHARED-025 |
-| UI-089 | The changelog's older entries need a fold that reports its size | todo | P2 | SHARED-025, AGENT-020 |
+| UI-089 | The changelog's older entries clip, and the clip reports its size | done | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
 | SERVER-067 | Non-blocking errors reach the log but not the response: needs a §14 warning-channel decision | todo | P2 | SERVER-066 |
@@ -464,7 +464,7 @@ belongs to the same fix wave.
 | UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | todo | P2 | — |
 | UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | done | P1 | UI-062 |
 | SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
-| CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | todo | P1 | — |
-| SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-071 |
+| CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | done | P1 | — |
+| SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-071 |
 | UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-072 |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
