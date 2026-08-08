@@ -17,7 +17,11 @@
 // **Resolution is not a write-time gate.** A selector whose text is absent from
 // the parent still creates the thread — §6 resolves anchors at projection/render
 // time and calls an unresolvable one *orphaned*, which is a normal state of a
-// living corpus, not a rejected request.
+// living corpus, not a rejected request. The one refusal that looks like a gate
+// and is not is *ambiguity*: a quote the parent contains more than once names no
+// single passage, so there is nothing to be right or wrong about later. See
+// `anchor-context.ts`, which also explains why the stored `prefix`/`suffix` are
+// read off the parent rather than taken from the request.
 
 import {
   isMultipartThreadCreate,
@@ -59,6 +63,7 @@ import {
   type LoadedDocument,
   type MutationResult,
 } from "../docs/index.js";
+import { contextualizeSelector } from "./anchor-context.js";
 import { enqueueComment } from "./events.js";
 import { TURN_SUBJECT, assertClosedFences } from "./fences.js";
 import { parseMentions } from "./mentions.js";
@@ -124,10 +129,15 @@ export interface ThreadCreation {
 }
 
 /**
- * The selector as it will be stored: **verbatim**, with absent context as the
- * empty string the contract documents. Nothing is trimmed or normalised — the
- * selection was captured from the real body and the resolver matches on those
- * exact characters, so "tidying" it here is how an anchor stops resolving.
+ * The request's selector, shaped for the write path: `exact` **verbatim**, with
+ * absent context as the empty string the contract documents. Nothing is trimmed
+ * or normalised — the quote is matched against the file character for
+ * character, so "tidying" it here is how an anchor stops resolving.
+ *
+ * The context that arrives here is only ever used to disambiguate a repeated
+ * quote; what is *stored* is read off the parent's bytes by
+ * {@link contextualizeSelector}, inside the lane, against the copy of the file
+ * this write is about to rewrite.
  *
  * A blank `exact` is refused: it names no text, so it can never resolve and no
  * later edit can make it resolve — an anchor that is orphaned by construction.
@@ -246,6 +256,16 @@ export async function createThread(
         ? null
         : loadDocument(workspace.workspaceRoot, workspace.projection, parentId);
 
+    // The stored selector's context comes from the parent's own bytes, not from
+    // the request (SERVER-071) — and from *this* read of them, inside the lane,
+    // so the context describes the body the anchor is being written against
+    // rather than one an earlier request has since edited. A quote naming more
+    // than one passage is refused here rather than guessed at.
+    const anchorSelector =
+      selector === null || parent === null
+        ? selector
+        : contextualizeSelector(parent.parsed.body, selector);
+
     const existing = parent === null ? {} : anchorEntries(parent.parsed.data["anchors"]);
     const anchorId =
       selector === null
@@ -300,10 +320,10 @@ export async function createThread(
       const operations: FileOperation[] = [];
       const stage = [path];
       const project = [path];
-      if (parent !== null && anchorId !== null && selector !== null) {
+      if (parent !== null && anchorId !== null && anchorSelector !== null) {
         const parentText = serializeDocument(
           setFrontmatterFields(parent.parsed, {
-            anchors: withAnchorEntry(parent.parsed.data["anchors"], anchorId, selector),
+            anchors: withAnchorEntry(parent.parsed.data["anchors"], anchorId, anchorSelector),
           }),
         );
         warnings.push(...validateBeforeWrite(workspace, parent.path, parentText));
