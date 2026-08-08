@@ -507,6 +507,28 @@ function createStubApp() {
     );
   });
 
+  // The repair (CONTRACT-041): the stub echoes the range it was given back as
+  // the anchor's resolved range, which is the promise the route makes — a
+  // re-attach lands where the person pointed, never anywhere else.
+  app.openapi(contractRoutes.reattachThread, (c) => {
+    const { range, expectedText } = c.req.valid("json");
+    return c.json(
+      {
+        thread: threadSummary,
+        anchor: {
+          anchorId: "anc_k4f7",
+          selector: { exact: expectedText, prefix: "the model we ", suffix: " over 30 years" },
+          threadId: c.req.valid("param").id,
+          threadStatus: "open" as const,
+          range,
+          orphaned: false,
+        },
+        warnings: [],
+      },
+      200,
+    );
+  });
+
   app.openapi(contractRoutes.getQueueStatus, (c) => c.json(queueStatus, 200));
   app.openapi(contractRoutes.idleQueue, (c) =>
     c.req.valid("query").timeout === 1

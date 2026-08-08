@@ -82,6 +82,25 @@
  * awaits the same sign-off. The derivation is recorded here so the gap is a
  * pending amendment rather than an undocumented route.
  *
+ * `POST /api/threads/{id}/reattach` (CONTRACT-041) is derived from SPEC.md §6
+ * rather than from §9.2, and the derivation is the whole issue. §6 guarantees
+ * that an orphaned anchor is "still fully functional" and "never re-attached to
+ * a lookalike", and SERVER-059 established that no reader can lift that
+ * restriction: an anchor that never byte-matched is detached for the life of its
+ * document, because reconciliation only ever carries an anchor forward or
+ * orphans it. §6 therefore promises a state the corpus can enter and never
+ * leave, which is a gap in the guarantee rather than a feature request — and the
+ * only party holding the evidence is the person who wrote the comment, who can
+ * reach the workspace only through the server (Architecture Decision 2). It sits
+ * immediately after the resolve/reopen/seen group, where a §9.2 bullet for it
+ * would go. **§9.2 does not list it yet**: like the upgrade pair above, the
+ * bullet is drafted in CONTRACT-041's issue file and awaits user sign-off, so
+ * the gap here is a pending amendment rather than an undocumented route. The
+ * same is true of its user-only rule, which §9.2's "the user-only endpoints
+ * (deletion) reject agent actors" clause does not yet cover; the route declares
+ * and documents it regardless, because leaving it to an actor check nobody wrote
+ * down is how it would quietly stop being true.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -124,6 +143,7 @@ export const ENDPOINT_INVENTORY = [
   "POST /api/threads/{id}/resolve",
   "POST /api/threads/{id}/reopen",
   "POST /api/threads/{id}/seen",
+  "POST /api/threads/{id}/reattach",
 
   "GET /api/queue/status",
   "GET /api/queue/idle",

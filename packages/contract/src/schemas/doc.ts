@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { TextQuoteSelectorSchema } from "./anchor.js";
+import { BodyRangeSchema, TextQuoteSelectorSchema } from "./anchor.js";
 import { ExtraFrontmatterSchema } from "./extra.js";
 import { AnchorIdSchema, DocumentIdSchema, ThreadIdSchema } from "./id.js";
 import { ThreadStatusSchema } from "./thread.js";
@@ -168,12 +168,11 @@ export const ResolvedAnchorSchema = z
     selector: TextQuoteSelectorSchema,
     threadId: ThreadIdSchema,
     threadStatus: ThreadStatusSchema,
-    range: z
-      .object({ start: z.number().int().min(0), end: z.number().int().min(0) })
-      .nullable()
-      .describe(
-        "Character range in the current body, or null when the selector no longer resolves.",
-      ),
+    range: BodyRangeSchema.nullable().describe(
+      "Character range in the current body, or null when the selector no longer resolves. The " +
+        "same coordinate space `POST /api/threads/{id}/reattach` accepts, so a range read here " +
+        "can be sent straight back.",
+    ),
     orphaned: z
       .boolean()
       .describe(

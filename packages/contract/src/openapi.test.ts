@@ -2352,6 +2352,10 @@ describe("§14 warnings reach every mutation response", () => {
     // auto-commits (§7), so the workspace's hooks can reject it exactly as they
     // can reject any other write.
     "SkillRollbackResult",
+    // CONTRACT-041: a re-attach rewrites one `anchors` entry in the **parent
+    // document's** frontmatter and auto-commits it, so a rejected hook is
+    // exactly as reachable here as it is on a create.
+    "ReattachThreadResponse",
   ];
 
   /**
@@ -3006,7 +3010,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(16);
+    expect(bodies).toHaveLength(17);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3060,6 +3064,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/docs/{id}/move": true,
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,
+      "POST /api/threads/{id}/reattach": true,
       "POST /api/queue/{id}/defer": true,
       "POST /api/skills": true,
       "POST /api/locks/{docId}": false,

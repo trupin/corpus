@@ -119,7 +119,8 @@ export const QUERY_KEY_VOCABULARY: Readonly<Record<QueryKeyName, QueryKeyShape>>
     parameterised: false,
     emittedBy:
       "every document or thread mutation (create, update, move, archive, unarchive, delete, " +
-      "thread create, turn append, resolve/reopen, mark-seen) and every out-of-band file change " +
+      "thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band " +
+      "file change " +
       "the watcher projects",
     refetchedBy:
       "`GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete",
