@@ -13,6 +13,14 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * "already resolved" instead of claiming a change that did not happen. The
  * agent's loop must never have to branch on this.
  *
+ * **Neither verb is the only way the status moves** (SERVER-062, SPEC.md §8's
+ * signed rider): a turn a *person* writes on a resolved thread reopens it as
+ * part of the same write that appends it, so `corpus thread reply --from user`
+ * is a third door onto `status: open`. That is not re-implemented here — it is
+ * the server's rule, and the reply verb's own help carries it — but the
+ * descriptions below have to state it, because "resolve, then it stays resolved"
+ * is what a reader assumes of a status verb and it is not what happens.
+ *
  * Both routes answer with the `{thread, warnings}` mutation envelope, because
  * flipping the status rewrites the thread file's frontmatter and auto-commits
  * it: a workspace git hook that refuses that commit leaves the change on disk
@@ -51,9 +59,16 @@ export const resolveCommand: WorkspaceCommandSpec = {
   name: "resolve",
   summary: "Resolve a thread.",
   description:
-    "Sets `status: resolved`. The thread collapses in the document view and later turns stop " +
-    "re-triggering the agent even while it is `engaged` (SPEC.md §8) — resolving is how a " +
-    "conversation is closed without deleting anything. Resolving an already-resolved thread " +
+    "Sets `status: resolved`. The thread collapses in the document view — resolving is how a " +
+    "conversation is closed without deleting anything.\n\n" +
+    "**Resolved is a closed door, not a locked one** (SPEC.md §8). A later turn written by a " +
+    "**person** reopens the thread to `open` in the same write that appends it, and §8's " +
+    "ordinary rules then apply to the reopened thread: on an `engaged` thread an ordinary " +
+    "reply — no `@agent` mention needed — enqueues `comment.created` just as it would have " +
+    "before it was resolved. Only a turn written by the **agent** leaves a resolved thread " +
+    "resolved and enqueues nothing. So resolving stops the agent's own follow-ups, not the " +
+    "person's.\n\n" +
+    "Resolving an already-resolved thread " +
     "reports “already resolved” and exits 0, having written and committed nothing. A real flip " +
     "rewrites the thread's frontmatter and commits it, so any SPEC.md §14 warning it raises " +
     "(`commit_failed`, say) is appended to the printed line.",
@@ -79,7 +94,10 @@ export const reopenCommand: WorkspaceCommandSpec = {
   summary: "Reopen a resolved thread.",
   description:
     "Sets `status: open` again; an `engaged` thread resumes re-triggering the agent on later " +
-    "turns (SPEC.md §8). Reopening an already-open thread reports “already open” and exits 0, " +
+    "turns (SPEC.md §8). Reaching for this after a person has already replied is redundant — " +
+    "that reply reopened the thread itself — so this verb is for reopening a thread **without** " +
+    "adding a turn, and for the agent, whose turns never reopen. Reopening an already-open " +
+    "thread reports “already open” and exits 0, " +
     "having written and committed nothing. A real flip rewrites the thread's frontmatter and " +
     "commits it, so any SPEC.md §14 warning it raises is appended to the printed line.",
   args: [{ name: "id", required: true, description: "The thread's id." }],

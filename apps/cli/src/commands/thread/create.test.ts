@@ -267,6 +267,45 @@ describe("corpus thread create", () => {
     expect(JSON.parse(harness.stdout())).toEqual(ANCHORED);
   });
 
+  /**
+   * CLI-032. Until SERVER-071 this help promised that a quote occurring twice
+   * "still creates the thread and comes back with the `orphaned_anchor`
+   * warning". That is now a `400`, and the CLI's tests run against a stub
+   * server, so nothing failed and nothing would have: the help was the only
+   * place the change was visible and the only place it could be wrong. These
+   * assertions are what makes a future divergence fail rather than mislead.
+   */
+  describe("the repeated-quote help (SERVER-071)", () => {
+    const help = (): string =>
+      `${createCommand.description ?? ""} ` +
+      createCommand.flags.map((flag) => flag.description).join(" ");
+
+    it("no longer promises a thread for a doubly-occurring quote", () => {
+      expect(help()).not.toMatch(/contains twice/i);
+      expect(help()).not.toMatch(/more than once[^.]*still creates/i);
+    });
+
+    it("says the repeated quote is refused, with the exit code", () => {
+      expect(help()).toContain("more than once");
+      expect(help()).toContain("**is refused**");
+      expect(help()).toContain("exit 5");
+    });
+
+    it("still promises a thread for a quote the document does not contain", () => {
+      expect(help()).toContain("does not contain");
+      expect(help()).toContain("orphaned_anchor");
+    });
+
+    it("says how to disambiguate", () => {
+      expect(help()).toContain("`--prefix`/`--suffix`");
+      expect(help()).toContain("occur exactly once");
+      // The flag itself has to carry it too: a caller reading `--help` for one
+      // flag does not necessarily read the command's prose.
+      const prefix = createCommand.flags.find((flag) => flag.name === "prefix");
+      expect(prefix?.description).toContain("Required");
+    });
+  });
+
   it("documents the three creation shapes and that resolution is the server's", () => {
     const text = `${createCommand.summary} ${createCommand.description ?? ""}`;
     expect(text).toContain("standalone");

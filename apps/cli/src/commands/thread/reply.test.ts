@@ -146,4 +146,63 @@ describe("corpus thread reply", () => {
     expect(text).toContain("heredoc");
     expect(text).toContain("@agent");
   });
+
+  /**
+   * CLI-032. This help said "an explicit `@agent` mention … in a resolved thread
+   * still enqueues", which reads as: nothing else does. SERVER-062 made a
+   * person's ordinary reply reopen the thread and enqueue under the engaged
+   * rule, so the sentence described a rule that no longer decides anything for
+   * the common case.
+   */
+  describe("the resolved-thread reopen (SERVER-062)", () => {
+    const help = (): string => replyCommand.description ?? "";
+
+    it("no longer implies only an @agent mention enqueues on a resolved thread", () => {
+      expect(help()).not.toMatch(/Resolving a thread stops\s+only the automatic re-trigger/);
+      expect(help()).not.toContain("in a resolved thread still enqueues");
+    });
+
+    it("says a person's turn reopens the thread in the same write", () => {
+      expect(help()).toContain("reopens a resolved thread");
+      expect(help()).toContain("same write that appends");
+      expect(help()).toContain("no `@agent` mention");
+    });
+
+    it("keeps the agent-authored exception", () => {
+      expect(help()).toContain("`--from agent`");
+      expect(help()).toContain("never reopens");
+    });
+  });
+
+  /**
+   * CLI-032. SERVER-075 and SERVER-076 added two write-time refusals on this
+   * path. The help promised verbatim pass-through and said nothing about them,
+   * which teaches a caller to expect a `201` it will not get — and the stub
+   * server these tests run against will never say otherwise, so the assertion
+   * has to be on the prose.
+   */
+  describe("the write-time refusals (SERVER-075, SERVER-076)", () => {
+    const help = (): string => replyCommand.description ?? "";
+
+    it("names the unterminated fence and what it would cost", () => {
+      expect(help()).toContain("leaves a code fence open");
+      expect(help()).toContain("swallow");
+    });
+
+    it("names the fabricated turn heading", () => {
+      expect(help()).toContain("## user · <ts>");
+      expect(help()).toContain("turn delimiter");
+    });
+
+    it("states they are refusals, not warnings, and that nothing is appended", () => {
+      expect(help()).toContain("refused rather than written");
+      expect(help()).toContain("exit 5");
+      expect(help()).toContain("nothing appended");
+    });
+
+    it("says quoting either shape is still accepted, so the escape is visible", () => {
+      expect(help()).toContain("block quote");
+      expect(help()).toContain("accepted");
+    });
+  });
 });

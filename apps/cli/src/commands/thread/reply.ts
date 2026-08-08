@@ -12,10 +12,28 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  * fences, deliberately: `~~~form` is not a form fence — the contract's settled
  * grammar, CONTRACT-014.)
  *
+ * Byte-for-byte is not the same as always accepted, and the help says so.
+ * SERVER-075 and SERVER-076 added two **write-time** refusals on this path: a
+ * body that leaves a code fence open (every later turn in the thread would be
+ * swallowed into it and become invisible to every reader) and a body carrying a
+ * bare `## <author> · <ts>` line (§6 reads it as a turn delimiter, so the message
+ * splits into turns signed by someone who never wrote them). They are the
+ * server's, not re-implemented here — but a help text promising verbatim
+ * pass-through and silent about them is a help text that teaches an agent to
+ * expect a `201` it will not get.
+ *
  * Participation is not the CLI's decision either (SPEC.md §8): whether the turn
  * enqueues a `comment.created` event depends on the thread's state and on
  * `@agent` in the text, both of which the server judges. The response's
  * `eventId` is what actually happened, and it is printed.
+ *
+ * Nor is the thread's **status**. SERVER-062 made a person's turn reopen a
+ * resolved thread as part of this same write, and the enqueue question is then
+ * asked against the reopened status — so `--from` decides two things here, not
+ * one, and the response's `thread.status` is the answer to the second. The help
+ * used to say a resolved thread enqueued only on an explicit `@agent`, which
+ * that change falsified; the reply verb is now a third door onto `status: open`
+ * beside `corpus thread reopen`.
  */
 
 export async function runThreadReply(
@@ -46,11 +64,24 @@ export const replyCommand: WorkspaceCommandSpec = {
     "uses — and appends it to the thread, committed with `--from` as the git author. An empty " +
     "body is a usage error (exit 2), never a request. Whether the turn wakes the agent is the " +
     "server's call (SPEC.md §8): a turn in an `engaged` thread, or one mentioning `@agent`, " +
-    "enqueues a `comment.created` event and the printed line names it. Resolving a thread stops " +
-    "only the automatic re-trigger — an explicit `@agent` mention (or `/skill` invocation) in " +
-    "a resolved thread still enqueues, because resolved is not a mute button on someone " +
-    "deliberately asking. The body is passed through unchanged — fenced code blocks (a " +
-    "` ```form ` fence among them) and interior newlines all survive verbatim.",
+    "enqueues a `comment.created` event and the printed line names it.\n\n" +
+    "**A person's turn reopens a resolved thread** (SPEC.md §8), in the same write that appends " +
+    "it: `status` goes back to `open` and §8's ordinary rules then apply to the reopened " +
+    "thread, so an ordinary reply on an `engaged` thread enqueues with no `@agent` mention " +
+    "needed. Resolved is a closed door, not a locked one. A turn written by the agent " +
+    "(`--from agent`) never reopens and never re-triggers — the silence resolving buys is " +
+    "silence from the agent, not from the person. The body is passed through unchanged — fenced code blocks (a " +
+    "` ```form ` fence among them) and interior newlines all survive verbatim.\n\n" +
+    "**Two body shapes are refused rather than written** (`400`, exit 5, nothing appended), and " +
+    "the refusal names the offending line. A body that leaves a code fence open would swallow " +
+    "every later turn in the thread into it, leaving them on disk but invisible to the board, " +
+    "the projection and the agent — close it with a line holding nothing but the backtick run. A " +
+    "body carrying a bare `## user · <ts>` or `## agent · <ts>` line would be read as SPEC.md " +
+    "§6's turn delimiter and split the message into turns attributed to someone who never wrote " +
+    "them. Both apply to every actor: neither failure depends on who typed it. Quoting either " +
+    "shape is ordinary content and is accepted — a fence opened wider and closed on its own " +
+    "line, and a turn heading inside a fence, an inline code span or a block quote, all go " +
+    "through untouched.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
   flags: [...bodyFlags("The turn body")],
   examples: [

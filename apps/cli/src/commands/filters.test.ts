@@ -64,6 +64,7 @@ describe("the shared document filters", () => {
       "author",
       "unread",
       "pinned",
+      "is-parent",
       "due",
       "since",
       "stale",
@@ -71,6 +72,20 @@ describe("the shared document filters", () => {
       "limit",
       "offset",
     ]);
+  });
+
+  /**
+   * CLI-032. `isParent` is a structural filter that would belong in the shared
+   * set on the merits, and is held out of it only because §9.2's signed
+   * `/api/search` parameter string does not carry it (CONTRACT-042). A flag for
+   * it on `search` would therefore go nowhere on the wire, which is the one
+   * failure this whole module exists to prevent — so it is pinned on both sides:
+   * absent from the shared list, present on `doc list`.
+   */
+  it("keeps --is-parent off search, where the contract does not declare it", () => {
+    expect(DOC_FILTER_FLAGS.map((flag) => flag.name)).not.toContain("is-parent");
+    expect(searchCommand.flags.map((flag) => flag.name)).not.toContain("is-parent");
+    expect(listCommand.flags.map((flag) => flag.name)).toContain("is-parent");
   });
 });
 

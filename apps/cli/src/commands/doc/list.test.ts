@@ -160,6 +160,70 @@ describe("corpus doc list", () => {
     });
   });
 
+  /**
+   * CLI-032. `isParent` is the one filter on this verb where `false` is a real
+   * question ("the children") rather than the absence of one, so the three-way
+   * distinction is the property worth testing: `true`, `false` and absent must
+   * reach the wire as three different requests. A bare boolean flag would fold
+   * `false` into absent and answer a caller asking for children with everything.
+   */
+  describe("--is-parent", () => {
+    it.each([
+      ["true", "true"],
+      ["false", "false"],
+    ])("sends is-parent %s as isParent=%s", async (given, sent) => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(stubContext(stub, { flags: { "is-parent": given } }).context);
+
+      expect(query(stub.requests[0])).toEqual({ isParent: sent });
+    });
+
+    it("sends nothing when it is absent, so an existing command line is untouched", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(stubContext(stub, { flags: { type: "note" } }).context);
+
+      expect(query(stub.requests[0])).toEqual({ type: "note" });
+    });
+
+    it("is a distinct request from the false one, not the same absence", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(stubContext(stub, { flags: {} }).context);
+      await runDocList(stubContext(stub, { flags: { "is-parent": "false" } }).context);
+
+      expect(query(stub.requests[0])).not.toEqual(query(stub.requests[1]));
+    });
+
+    it("refuses a value that is neither, without sending a request", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+      const harness = stubContext(stub, { flags: { "is-parent": "root" } });
+
+      const error: unknown = await runDocList(harness.context).catch((cause: unknown) => cause);
+
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+      expect(String(error)).toContain("is-parent");
+      expect(stub.requests).toHaveLength(0);
+    });
+
+    /**
+     * The contradiction `parent=<id>&isParent=true` is the server's `400`, and
+     * deliberately not re-implemented here: the CLI is a thin typed-client call,
+     * and a second copy of the rule is a copy that can disagree with the one
+     * that decides.
+     */
+    it("leaves the --parent contradiction to the server rather than pre-judging it", async () => {
+      const stub = await startStubServer(jsonResponder(200, EMPTY));
+
+      await runDocList(
+        stubContext(stub, { flags: { parent: "doc_a1b2c3", "is-parent": "true" } }).context,
+      );
+
+      expect(query(stub.requests[0])).toEqual({ parent: "doc_a1b2c3", isParent: "true" });
+    });
+  });
+
   it("lists skills, which is the discovery gap the verb was filed for", async () => {
     const stub = await startStubServer(
       jsonResponder(
@@ -323,6 +387,7 @@ describe("the doc list command spec", () => {
       "author",
       "unread",
       "pinned",
+      "is-parent",
       "due",
       "since",
       "stale",
@@ -332,6 +397,49 @@ describe("the doc list command spec", () => {
     ]) {
       expect(declared, `--${filter} is undeclared`).toContain(filter);
     }
+  });
+
+  /**
+   * CLI-032. The whole risk in `--is-parent` is its name: a reader who trusts it
+   * concludes "documents that have children", which is the reading CONTRACT-042
+   * considered and rejected. Help text is where an agent learns what a flag
+   * does, so the correction is pinned here — the failure this guards is a later
+   * rewrite that "tidies" the description into agreement with the name.
+   */
+  describe("--is-parent's help text", () => {
+    const isParent = (): string =>
+      listCommand.flags.find((flag) => flag.name === "is-parent")?.description ?? "";
+
+    it("says it selects roots, in those words", () => {
+      expect(isParent()).toContain("selects **roots**");
+      expect(isParent()).toContain("no parent");
+      expect(isParent()).toContain("top-level only");
+    });
+
+    it("denies the reading the name invites, rather than leaving it open", () => {
+      expect(isParent()).toContain("does **not** mean");
+      expect(isParent()).toContain("_has children_");
+      expect(isParent().toLowerCase()).not.toContain("documents that have children");
+    });
+
+    it("says absent is not false, since that is the other way to misread it", () => {
+      expect(isParent()).toContain("absent is not `false`");
+    });
+
+    it("takes a value, so absent and false stay distinguishable", () => {
+      const flag = listCommand.flags.find((candidate) => candidate.name === "is-parent");
+      expect(flag?.type).toBe("string");
+      expect(flag?.valueName).toBe("true|false");
+    });
+
+    /**
+     * The thread-only note lists which filters no-op for non-thread types. This
+     * one does not, so the note has to say so or the list of exceptions is a
+     * list a reader can act on wrongly.
+     */
+    it("is excluded from the description's thread-only note", () => {
+      expect(listCommand.description).toContain("`--is-parent` is **not** one of them");
+    });
   });
 
   it("documents the pagination and is reachable as `corpus doc list`", () => {

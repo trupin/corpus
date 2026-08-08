@@ -6,7 +6,7 @@ import {
   startStubServer,
   stubContext,
 } from "../../testing/stub-server.js";
-import { runThreadStatus } from "./status.js";
+import { reopenCommand, resolveCommand, runThreadStatus } from "./status.js";
 
 const ARGS = { id: "th_a1b2c3" };
 
@@ -164,5 +164,39 @@ describe("corpus thread reopen", () => {
 
     expect(exitCodeFor(error)).toBe(ExitCode.serverError);
     expect(harness.stdout()).toBe("");
+  });
+});
+
+/**
+ * CLI-032. `resolve`'s help promised that after resolving, "later turns stop
+ * re-triggering the agent even while it is `engaged`". SERVER-062 made that
+ * false for the turns that matter most: a person's reply reopens the thread and
+ * then enqueues under the ordinary engaged rule, no `@agent` needed. The verbs
+ * here are the ones a reader consults to learn what resolving *means*, so the
+ * correction has to live on them and not only on `thread reply`.
+ */
+describe("the resolve/reopen help after SERVER-062", () => {
+  it("no longer says resolving stops later turns re-triggering the agent", () => {
+    expect(resolveCommand.description).not.toMatch(/later turns stop\s+re-triggering/);
+    expect(resolveCommand.description).not.toMatch(/stop re-triggering the agent even while/);
+  });
+
+  it("says a person's turn reopens the thread, in the same write", () => {
+    expect(resolveCommand.description).toContain("**person**");
+    expect(resolveCommand.description).toContain("reopens the thread to `open`");
+    expect(resolveCommand.description).toContain("closed door, not a locked one");
+  });
+
+  it("says an ordinary reply then enqueues, with no mention needed", () => {
+    expect(resolveCommand.description).toContain("no `@agent` mention needed");
+  });
+
+  it("keeps the agent-authored exception, which is the half that still holds", () => {
+    expect(resolveCommand.description).toContain("**agent**");
+    expect(resolveCommand.description).toContain("leaves a resolved thread");
+  });
+
+  it("stops reopen from reading as the only door onto `status: open`", () => {
+    expect(reopenCommand.description).toContain("that reply reopened the thread itself");
   });
 });
