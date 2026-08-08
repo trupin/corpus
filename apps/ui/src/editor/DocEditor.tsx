@@ -3,6 +3,7 @@ import { Node as PmModelNode, Slice } from "@tiptap/pm/model";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { ChangelogClip } from "./changelogClip.js";
 import { cleanPastedHtml, clipboardSerializer, sliceMarkdown } from "./clipboard.js";
 import { imageWithView } from "./ImageNodeView.js";
 import { refResolver } from "./refResolver.js";
@@ -181,6 +182,9 @@ export function DocEditor({
       // `corpusExtensions()` — which parsing and serialising share — stays the
       // list of what a *file* can contain.
       SoftWrap,
+      // View-only for the same reason (UI-089): a changelog past §11's
+      // threshold is *drawn* clipped, and the file keeps every entry.
+      ChangelogClip,
     ],
     [],
   );
