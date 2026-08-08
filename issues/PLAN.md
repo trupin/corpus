@@ -446,7 +446,8 @@ belongs to the same fix wave.
 | SERVER-074 | Write the deciding model onto the agent's turn | done | P1 | CONTRACT-043 |
 | UI-090 | Show which model wrote an agent turn | done | P1 | CONTRACT-043, SERVER-074 |
 | CLI-033 | Nothing can state a model, so every turn shows blank (SERVER-074 finding) | todo | P1 | SERVER-074 |
-| AGENT-021 | The agent states the model that wrote the turn | todo | P1 | CLI-033 |
+| AGENT-021 | The agent states the model that wrote the turn | done | P1 | CLI-033 |
+| PLUGINS-013 | An installed plugin skill teaches a reply without `--model` (AGENT-021 finding) | done | P1 | AGENT-021 |
 | SERVER-075 | A person's reply with an unterminated fence swallows every later turn | done | P0 | — |
 | SERVER-076 | A turn body can still fabricate a turn heading on the reply path (SERVER-075 finding) | done | P2 | SERVER-075 |
 | CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | done | P1 | — |

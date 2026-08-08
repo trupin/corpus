@@ -17,6 +17,14 @@ export const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 export const TEMPLATE_ROOT = path.join(REPO_ROOT, "assets", "workspace");
 export const CONTRACT_DOC_PATH = path.join(REPO_ROOT, "docs", "workspace-template.md");
 
+/**
+ * The bundled plugins tree. `corpus init` installs each plugin's
+ * `skills/<name>/` into the same `.claude/skills/` the template fills, so the
+ * two trees are one product surface once a workspace exists — which is why the
+ * rules this module's test applies to skills read from both roots (PLUGINS-013).
+ */
+export const PLUGINS_ROOT = path.join(REPO_ROOT, "plugins");
+
 /** Raised for any malformed template input, always naming the offending path. */
 export class TemplateError extends Error {
   override readonly name = "TemplateError";

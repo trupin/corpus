@@ -27,7 +27,11 @@ which cannot make that promise.
 The verbs accept a document's id, its exact title, or an unambiguous fragment
 of the title, so work from what the thread actually said — "the shopping list"
 resolves; a guessed id does not. An ambiguous name is refused with the
-candidates named: ask which one rather than picking.
+candidates named: ask which one **with a form** — a single `choose one` field
+whose options are the candidates the refusal printed — rather than picking one
+yourself. The comment skill states the grammar; what matters here is that this
+ask is a form and not a sentence, because a question in prose stops signalling
+that anyone is waiting the moment the thread is read.
 
 ## Adding items
 
@@ -49,6 +53,14 @@ A new todo document starts from the todo template's starter lines; a list with
 nothing on it is a valid list, not a broken one. Do not create a second list
 for something an existing one covers.
 
+`add` and `check` take the document's edit lock, so the write is refused with a
+`423` while the person has that document open. That one is **not** a refusal you
+report and finish: reply saying the change is ready and will land as soon as the
+document is free, then hand the event back to the orchestrate skill naming the
+locked document, exactly as the comment skill teaches. Never retry it, never
+break the lock, and never complete the event — a completed write nobody made is
+the one outcome the person cannot see.
+
 If `corpus todos add` or `check` refuses with "has malformed `items`" or
 "carries items in its body _and_ in its `items` frontmatter", the document is a
 pre-migration one that needs a person: say so in the thread rather than editing
@@ -63,7 +75,10 @@ corpus todos check "Week of Jul 20" "Renew passport" --from agent
 
 By text, or by the number `corpus todos list "<list>"` prints. `--uncheck`
 puts an item back. If the text matches more than one item the command refuses
-and prints the numbers — use one. Check off only what the person said is done.
+and prints the numbers: re-run with the number the person's own words pick out,
+and when they pick out none of them, ask with a form the same way an ambiguous
+list is asked about. Check off only what the person said is done — an item
+checked off on a guess is a fact about their life that nobody stated.
 
 ## Reporting back
 
@@ -71,11 +86,18 @@ Reply in the thread that woke you, naming the list by `[[id]]` and saying what
 changed:
 
 ```
-corpus thread reply <threadId> --from agent <<'EOF'
+corpus thread reply <threadId> --from agent --model claude-sonnet-4-5 <<'EOF'
 Added “Renew passport” to [[doc_a1b2c3]] — 3 open, 1 done.
 ↳ added one item to the Week of Jul 20 list
 EOF
 ```
+
+`--model` names what actually ran — the model you are running as, as your own
+runtime reports it, never what the request asked for. Where the work ran in
+stages, name the deciding stage: the one that read the thread and chose what
+went on the list, never the one that only fetched it, and one model rather than
+a list of them. When you do not know what ran, leave the flag out entirely — a
+blank is honest and a guess is not, and `--model ""` is a usage error.
 
 The trace line is the same convention every action-taking agent turn uses: one
 past-tense line, last, and none at all on a turn that changed nothing.
