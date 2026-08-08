@@ -27,13 +27,25 @@ import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../regist
  *
  * **No selector is constructed here.** The CLI sends the quote it was given and
  * nothing else: it does not fetch the parent, does not search its body for the
- * quote, and does not compute `prefix`/`suffix` context. Resolution is the
- * server's ladder (SPEC.md §6) and it is not a write-time gate — a quote the
- * parent does not contain, or one it contains twice with no context to tell the
- * occurrences apart, still creates the thread and comes back carrying §14's
- * `orphaned_anchor` warning, which the printed line reports like every other
- * warning. That is the server's judgement surfacing, not a check re-implemented
- * here; `--prefix`/`--suffix` are how a caller disambiguates a repeated quote.
+ * quote, and does not compute `prefix`/`suffix` context. Locating the quote is
+ * the server's, and it answers the two failure shapes differently (SERVER-071):
+ *
+ *   - A quote the parent **does not contain** still creates the thread and comes
+ *     back carrying §14's `orphaned_anchor` warning, which the printed line
+ *     reports like every other warning. An orphan is a normal state of a living
+ *     corpus, not a rejected request.
+ *   - A quote the parent contains **more than once** is **refused** with a `400`
+ *     (exit 5) and nothing is written. That request names several passages with
+ *     no evidence for any of them, and §6's "a visible orphan beats a silent
+ *     misattachment" puts an error at creation — cheap and in front of the
+ *     caller — above a conversation quietly anchored to a passage nobody meant.
+ *     `--prefix`/`--suffix` are the escape: framing that makes
+ *     `prefix + quote + suffix` occur exactly once names the occurrence.
+ *
+ * Framing only *selects* the occurrence; it is never stored. The server reads
+ * the anchor's context off the parent's own bytes once it knows where the quote
+ * sits, so what this verb sends is not what lands in the frontmatter — which is
+ * why the CLI computing context would be work thrown away, not a shortcut.
  */
 
 /** A flag whose presence is an instruction: given but blank is a typo, not a value. */
@@ -133,15 +145,27 @@ export const createCommand: WorkspaceCommandSpec = {
     "alone comments on the whole document, and neither flag opens a standalone thread whose " +
     "conversation is its own context. The first turn's body comes from `-m`, `--file` or stdin — " +
     "the heredoc form the agent's skills use — and is mandatory: a thread with no first turn is " +
-    "not a thread (exit 2, no request). Bytes are passed through untouched.\n\n" +
+    "not a thread (exit 2, no request).\n\n" +
+    "**Bytes are passed through untouched**, but two shapes are refused at write time (`400`, " +
+    "exit 5, nothing written) — the same two `corpus thread reply` refuses, since both write a " +
+    "turn. A first turn that leaves a code fence open would swallow every later turn in the " +
+    "thread; one carrying a bare `## user · <ts>` line reads as §6's turn delimiter and would " +
+    "split the message into turns signed by someone who never wrote them. Both refusals name the " +
+    "offending line. A fence that is properly closed, and a turn heading quoted inside a fence, " +
+    "an inline code span or a block quote, are ordinary content and are accepted.\n\n" +
     "**The quote is not resolved here.** The CLI never reads the parent document and never " +
-    "computes the surrounding context: it sends the text you quoted, and the server matches it " +
-    "(SPEC.md §6). Matching is not a gate — a quote the document does not contain, or one it " +
-    "contains twice with nothing to tell the occurrences apart, still creates the thread and " +
-    "comes back with the `orphaned_anchor` warning appended to the printed line, because an " +
-    "orphaned anchor is a normal state of a living corpus rather than a rejected request. Pass " +
-    "`--prefix`/`--suffix` — the text immediately before and after the quote — to disambiguate a " +
-    "repeated quote. An unknown `--parent` is a `404` (exit 5), and a parent held by the other " +
+    "computes the surrounding context: it sends the text you quoted, and the server locates it " +
+    "(SPEC.md §6). A quote the document **does not contain** is not a refusal — the thread is " +
+    "created and comes back with the `orphaned_anchor` warning appended to the printed line, " +
+    "because an orphaned anchor is a normal state of a living corpus. A quote the document " +
+    "contains **more than once** is a different matter and **is refused**, `400` (exit 5), " +
+    "nothing written: the request names several passages and there is nothing to choose between " +
+    "them, so an error you can see beats a conversation silently anchored to the wrong one. " +
+    "Disambiguate with `--prefix`/`--suffix` — the text immediately before and after the " +
+    "occurrence you mean, copied from the document — so that prefix, quote and suffix together " +
+    "occur exactly once; framing that is itself repeated is refused the same way. The framing " +
+    "only picks the occurrence and is **not** stored: the server reads the anchor's context off " +
+    "the document's own bytes. An unknown `--parent` is a `404` (exit 5), and a parent held by the other " +
     "party's edit lock refuses an _anchored_ create with a `423`, since anchoring rewrites it " +
     "(SPEC.md §7); a whole-document or standalone thread takes no lock. Prints the new thread's " +
     "id, where it landed, and any enqueued event; `--json` emits the server's " +
@@ -169,14 +193,17 @@ export const createCommand: WorkspaceCommandSpec = {
       type: "string",
       valueName: "text",
       description:
-        "Text immediately preceding the quote, for disambiguation. Only needed when the quote " +
-        "occurs more than once in the parent.",
+        "Text immediately preceding the occurrence you mean, copied from the parent. **Required " +
+        "when the quote occurs more than once** — without it that create is refused (`400`, exit " +
+        "5), not accepted with a warning. Either this or `--suffix` is enough, as long as prefix, " +
+        "quote and suffix together occur exactly once. It selects the occurrence and is not " +
+        "stored; the anchor's context comes from the parent's own bytes.",
     },
     {
       name: "suffix",
       type: "string",
       valueName: "text",
-      description: "Text immediately following the quote, for disambiguation.",
+      description: "Text immediately following that occurrence. Same role as `--prefix`.",
     },
     {
       name: "title",
@@ -215,7 +242,8 @@ export const createCommand: WorkspaceCommandSpec = {
       command:
         'corpus thread create --parent doc_a1b2c3 --quote "6.1%" --prefix "fixed at " --suffix " which"',
       description:
-        "Disambiguating a quote that appears more than once, with the text around it. Body from stdin.",
+        "A quote that appears more than once, disambiguated with the text around the occurrence " +
+        "meant. Without the framing this exact create is refused, not warned about. Body from stdin.",
     },
     {
       command: 'corpus thread create -m "Where did the Q3 numbers end up?" --requests-agent true',

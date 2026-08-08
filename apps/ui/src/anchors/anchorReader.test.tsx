@@ -103,7 +103,14 @@ function mount(doc: Doc, rows: readonly DocRow[]): ReaderTransport {
         id: "th_1",
         parent: "doc_m",
         anchor: "anc_1",
-        turns: [{ author: "user", ts: "2026-07-02T09:00:00.000Z", body: "Where is this from?" }],
+        turns: [
+          {
+            author: "user",
+            ts: "2026-07-02T09:00:00.000Z",
+            body: "Where is this from?",
+            model: null,
+          },
+        ],
       }),
     ],
     rows: { [threadsSearch("doc_m")]: rows },

@@ -4,6 +4,7 @@ import { TextQuoteSelectorRequestSchema } from "./anchor.js";
 import { AttachmentFilesSchema } from "./attachment.js";
 import { AnchorIdSchema, DocumentIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
 import { IsoDateTimeSchema } from "./time.js";
+import { turnModelRequestField, turnModelResponseField } from "./turn-model.js";
 import { warningsField } from "./warning.js";
 
 /**
@@ -25,12 +26,18 @@ export const ThreadStatusSchema = z.enum(THREAD_STATUSES).openapi({
 /**
  * One turn of a thread. `ts` is the turn's identity — the server guarantees
  * timestamps are unique and monotonic within a thread (SPEC.md §6).
+ *
+ * `model` is the one field with no counterpart in the turn's own bytes: it is
+ * stored in the thread document's frontmatter, keyed by this `ts`, and surfaces
+ * here so the API reads with the locality the file gives up. `./turn-model.ts`
+ * carries the decision and what it cost.
  */
 export const TurnSchema = z
   .object({
     author: ActorSchema,
     ts: IsoDateTimeSchema,
     body: z.string().describe("Markdown body of the turn, without its `## author · ts` heading."),
+    model: turnModelResponseField,
   })
   .openapi("Turn");
 
@@ -152,6 +159,7 @@ export const CreateThreadRequestSchema = z
     title: z.string().min(1).optional().describe("Defaults to the anchor quote or the first turn."),
     body: z.string().min(1).describe("Body of the thread's first turn."),
     requestsAgent: requestsAgentField(THREAD_CREATE_OMITTED_BEHAVIOUR),
+    model: turnModelRequestField,
   })
   .openapi("CreateThreadRequest");
 
@@ -209,6 +217,7 @@ export const MultipartCreateThreadRequestSchema = z
       .optional()
       .describe("Body of the thread's first turn. Optional: a first turn may be attachment-only."),
     requestsAgent: requestsAgentFormField(THREAD_CREATE_OMITTED_BEHAVIOUR),
+    model: turnModelRequestField,
     files: AttachmentFilesSchema,
   })
   .refine((value) => value.text !== undefined || value.files.length > 0, {
@@ -248,6 +257,7 @@ export const AppendTurnRequestSchema = z
   .strictObject({
     body: z.string().min(1),
     requestsAgent: requestsAgentField(TURN_APPEND_OMITTED_BEHAVIOUR),
+    model: turnModelRequestField,
   })
   .openapi("AppendTurnRequest");
 
@@ -264,6 +274,7 @@ export const MultipartAppendTurnRequestSchema = z
       .optional()
       .describe("Markdown body of the turn. Optional: a turn may be attachment-only."),
     requestsAgent: requestsAgentFormField(TURN_APPEND_OMITTED_BEHAVIOUR),
+    model: turnModelRequestField,
     files: AttachmentFilesSchema,
   })
   .refine((value) => value.text !== undefined || value.files.length > 0, {

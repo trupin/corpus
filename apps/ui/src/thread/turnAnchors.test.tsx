@@ -26,7 +26,13 @@ const REPEATED =
   "I said revisit the rate assumption because 6.1% looks stale.";
 
 function turnFixture(overrides: Partial<ThreadTurn> = {}): ThreadTurn {
-  return { author: "user", ts: "2026-08-03T10:00:00.000Z", body: REPEATED, ...overrides };
+  return {
+    author: "user",
+    ts: "2026-08-03T10:00:00.000Z",
+    body: REPEATED,
+    model: null,
+    ...overrides,
+  };
 }
 
 /** The thread file a turn lives in — what the server resolves selectors against. */

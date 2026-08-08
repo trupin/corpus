@@ -79,7 +79,7 @@ const row = {
   ],
 };
 
-const turn = { author: "user" as const, ts: "2026-07-19T10:05:00Z", body: "hi" };
+const turn = { author: "user" as const, ts: "2026-07-19T10:05:00Z", body: "hi", model: null };
 
 const contextExcerpt = {
   id: "doc_b2c3d4",

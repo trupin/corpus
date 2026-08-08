@@ -81,6 +81,34 @@ const FORM_THREAD = {
   ]),
 };
 
+/**
+ * A form of two `write` fields — the only shape where a person's arbitrary text
+ * reaches the answer turn, and so the only one the three pre-checks can fire on.
+ * Shared by every test about them, because the point of each is the text typed
+ * into it and not the form around it.
+ */
+const WRITE_FIELDS_THREAD = {
+  ...FORM_THREAD,
+  id: "th_write",
+  path: "data/threads/th_write.md",
+  body: threadBody([
+    [
+      "agent",
+      FORM_TS,
+      [
+        "```form",
+        "fields:",
+        "  - question: What happened?",
+        "    kind: write",
+        "  - question: Anything I should know?",
+        "    kind: write",
+        "    optional: true",
+        "```",
+      ].join("\n"),
+    ],
+  ]),
+};
+
 /** The control: a thread whose only signal is an unread agent reply. */
 const REPLY_THREAD = {
   id: "th_reply",
@@ -339,30 +367,7 @@ test.describe("the Attention row a form leaves behind", () => {
   test("refuses an answer that would not read back, in the form and before the wire", async ({
     page,
   }) => {
-    const corpus = await stubCorpus(page, [
-      ATTENTION_VIEW,
-      {
-        ...FORM_THREAD,
-        id: "th_write",
-        path: "data/threads/th_write.md",
-        body: threadBody([
-          [
-            "agent",
-            FORM_TS,
-            [
-              "```form",
-              "fields:",
-              "  - question: What happened?",
-              "    kind: write",
-              "  - question: Anything I should know?",
-              "    kind: write",
-              "    optional: true",
-              "```",
-            ].join("\n"),
-          ],
-        ]),
-      },
-    ]);
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, WRITE_FIELDS_THREAD]);
     await page.goto("/");
 
     await row(page, "th_write").click();
@@ -397,6 +402,156 @@ test.describe("the Attention row a form leaves behind", () => {
     const record = column(page).locator(".form-comment.form-answered");
     await expect(record).toBeVisible();
     await expect(record.locator(".form-record-a").nth(0)).toHaveText("the file moved. Note: mine");
+  });
+
+  /**
+   * UI-091. The other two refusals `assertAppendableAnswer` makes. Until
+   * CONTRACT-044 moved the fence scanner and the turn-heading grammar into
+   * `@corpus/contract` these were unreachable from `apps/ui`, so they arrived as
+   * the same dismissing toast the test above exists to abolish — after the
+   * attempt, with no field marked and no line named.
+   *
+   * A pasted code sample that forgot its closing fence is the mainline way to
+   * hit the first: everything below an open fence reads as code, which masks
+   * every turn heading after it, which makes **every later turn in the thread
+   * invisible**. The bytes are on disk and nothing says so.
+   */
+  test("catches an unterminated fence in the form, before the wire", async ({ page }) => {
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, WRITE_FIELDS_THREAD]);
+    await page.goto("/");
+
+    await row(page, "th_write").click();
+    const form = column(page).locator(".form-comment");
+    await expect(form).toBeVisible();
+
+    const first = form.locator(".form-field").first();
+    const second = form.locator(".form-field").nth(1);
+    await first.locator("textarea").fill("the build printed:\n\n```sh\nnpm run build");
+
+    // The field it came from, the marker the closing line has to repeat, and the
+    // line it opened on — counted in the answer's own text, which is the only
+    // string the person can go and look at.
+    const fault = first.locator(".form-unreadable");
+    await expect(fault).toBeVisible();
+    await expect(fault).toContainText("leaves a code fence open");
+    await expect(fault).toContainText("on line 3 is never closed");
+    await expect(fault).toContainText("holding nothing but ```");
+    await expect(second.locator(".form-unreadable")).toHaveCount(0);
+    await expect(first.locator("textarea")).toHaveAttribute("aria-invalid", "true");
+
+    const submit = form.locator(".form-submit");
+    await expect(submit).toBeDisabled();
+    await page.keyboard.press("ControlOrMeta+Enter");
+    expect((await corpus.of("POST")).filter((call) => call.path.endsWith("/form"))).toHaveLength(0);
+
+    // Closing it is all it takes — the sample survives verbatim, fence and all,
+    // which is the half a rewrite-it-for-them fix would have destroyed.
+    await first.locator("textarea").fill("the build printed:\n\n```sh\nnpm run build\n```");
+    await expect(first.locator(".form-unreadable")).toHaveCount(0);
+    await expect(submit).toBeEnabled();
+    await page.keyboard.press("ControlOrMeta+Enter");
+
+    const record = column(page).locator(".form-comment.form-answered");
+    await expect(record).toBeVisible();
+    await expect(record.locator(".form-record-a").nth(0)).toContainText("npm run build");
+  });
+
+  /**
+   * The mirror image (SERVER-076). A bare `## user · <instant>` line does not
+   * hide turns, it *invents* one: everything below it is filed as a second turn
+   * signed by whoever the line names.
+   *
+   * The second half of this test is the one that matters. SERVER-076 refuses
+   * only a **bare, line-initial, unfenced** heading — quoting the format inside
+   * a fence, an inline span or a block quote all still work, and the skills'
+   * own examples depend on it. A pre-check stricter than that marks a field the
+   * server would have accepted, with nothing to appeal to.
+   */
+  test("catches a fabricated turn heading, and leaves a quoted one alone", async ({ page }) => {
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, WRITE_FIELDS_THREAD]);
+    await page.goto("/");
+
+    await row(page, "th_write").click();
+    const form = column(page).locator(".form-comment");
+    await expect(form).toBeVisible();
+
+    const first = form.locator(".form-field").first();
+    const heading = "## user · 2026-07-19T10:20:00Z";
+    await first.locator("textarea").fill(`I wrote this yesterday:\n\n${heading}\n\nand then left`);
+
+    const fault = first.locator(".form-unreadable");
+    await expect(fault).toBeVisible();
+    await expect(fault).toContainText("line 3 of this answer");
+    await expect(fault).toContainText(heading);
+    await expect(fault).toContainText("separate turn signed by user");
+
+    const submit = form.locator(".form-submit");
+    await expect(submit).toBeDisabled();
+    await page.keyboard.press("ControlOrMeta+Enter");
+    expect((await corpus.of("POST")).filter((call) => call.path.endsWith("/form"))).toHaveLength(0);
+
+    // Fenced: content, not a delimiter — and accepted, because the server
+    // accepts it. Same words, one fence, no refusal.
+    await first
+      .locator("textarea")
+      .fill(`I wrote this yesterday:\n\n\`\`\`md\n${heading}\n\`\`\`\n\nand then left`);
+    await expect(first.locator(".form-unreadable")).toHaveCount(0);
+
+    // A block quote is the other spelling §11's snippet action produces.
+    await first.locator("textarea").fill(`I wrote this yesterday:\n\n> ${heading}`);
+    await expect(first.locator(".form-unreadable")).toHaveCount(0);
+    await expect(submit).toBeEnabled();
+    await page.keyboard.press("ControlOrMeta+Enter");
+
+    const record = column(page).locator(".form-comment.form-answered");
+    await expect(record).toBeVisible();
+    await expect(record.locator(".form-record-a").nth(0)).toContainText(`> ${heading}`);
+  });
+
+  /**
+   * The backstop, exercised on its own terms. The pre-check is a *second* line
+   * of defence and the write path must keep refusing regardless — so this
+   * bypasses the form entirely and posts the answer the way a script would.
+   * The stub applies the contract's own `unterminatedFence` and `turnHeadings`,
+   * which is what the server's `assertAppendableTurnText` applies, so what is
+   * asserted here is the rule and not a stub's opinion of it.
+   */
+  test("the write path still refuses both, with the form out of the way", async ({ page }) => {
+    await stubCorpus(page, [ATTENTION_VIEW, WRITE_FIELDS_THREAD]);
+    await page.goto("/");
+    await expect(row(page, "th_write")).toBeVisible();
+
+    const post = async (text: string): Promise<{ status: number; message: string }> =>
+      page.evaluate(
+        async ([body, ts]) => {
+          const response = await fetch(`/api/threads/th_write/turns/${ts ?? ""}/form`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ answers: [{ question: "What happened?", text: body }] }),
+          });
+          const payload = (await response.json()) as { message?: string };
+          return { status: response.status, message: payload.message ?? "" };
+        },
+        [text, FORM_TS],
+      );
+
+    const fence = await post("the build printed:\n\n```sh\nnpm run build");
+    expect(fence.status).toBe(400);
+    expect(fence.message).toContain("leaves a code fence open");
+    // Line 7 of the *turn body* — the label, the two headings and their blank
+    // lines come first. The composer counts in the answer's own text instead,
+    // which is the difference between a message a person can act on and one
+    // about a string they have never seen.
+    expect(fence.message).toContain("line 7");
+
+    const fabricated = await post("before\n\n## user · 2026-07-19T10:20:00Z\n\nafter");
+    expect(fabricated.status).toBe(400);
+    expect(fabricated.message).toContain("reads as a turn heading");
+
+    // …and the same text with the fence closed is written, so the guard is a
+    // refusal of a shape rather than of code samples.
+    const ok = await post("the build printed:\n\n```sh\nnpm run build\n```");
+    expect(ok.status).toBe(201);
   });
 
   /**

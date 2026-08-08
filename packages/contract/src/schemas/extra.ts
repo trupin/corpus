@@ -60,6 +60,11 @@ export const RESERVED_FRONTMATTER_KEYS = [
   "parent",
   "anchor",
   "agent",
+  // SPEC.md §11 — which model wrote each agent turn, keyed by turn timestamp.
+  // Reserved is what makes it unforgeable: `extra` is a client-supplied merge
+  // patch, so an attribution stored there could be rewritten by an ordinary
+  // `PUT /api/docs/{id}` (see `./turn-model.ts`).
+  "turnModels",
   // SPEC.md §11 — view documents (first-class core keys, see doc.ts)
   "pinned",
   "order",

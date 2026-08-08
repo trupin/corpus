@@ -26,8 +26,16 @@ import type { CommandContext, FlagSpec } from "../registry/types.js";
  * through {@link collectDocFilters}. What stays local to a verb is what the two
  * endpoints genuinely disagree about: `q` (optional on the collection query,
  * required on ranked retrieval), `--limit` (a page size against a top-k cap),
- * and the list-only `--pinned`, `--sort` and `--offset`, which `/api/search`
- * does not accept and which therefore must not appear on `search`.
+ * and the list-only `--pinned`, `--is-parent`, `--sort` and `--offset`, which
+ * `/api/search` does not accept and which therefore must not appear on `search`.
+ *
+ * `--is-parent` is the one of those four that is a genuine structural filter and
+ * would belong in this shared list on the merits — ranked retrieval over roots
+ * only is a sensible ask. It is local to `doc list` because SPEC.md §9.2's
+ * signed `/api/search` parameter string does not carry it while the signed
+ * `GET /api/docs` one does (CONTRACT-042), so the contract declares it on
+ * `DocsQuerySchema` alone. When that rider is signed it moves here and lands on
+ * both verbs; until then a flag for it on `search` would go nowhere on the wire.
  */
 
 /** `GET /api/search`'s query, from which the shared filters are exactly the middle. */

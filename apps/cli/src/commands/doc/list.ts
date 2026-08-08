@@ -1,6 +1,6 @@
 import { DOC_SORTS, type DocList, type DocRow } from "@corpus/contract";
 import type { paths } from "@corpus/contract/client";
-import { plural } from "../../input.js";
+import { parseTriStateBoolean, plural } from "../../input.js";
 import type {
   FlagSpec,
   WorkspaceCommandContext,
@@ -47,6 +47,60 @@ const PINNED_FLAG: FlagSpec = {
     "documents. Selects the pinned side only.",
 };
 
+/**
+ * The structural filter, and the one flag on this verb whose **name argues
+ * against its meaning** (CONTRACT-042). `isParent=true` selects _roots_ —
+ * documents with no parent — and the literal "has at least one child" reading
+ * was considered and rejected upstream; the name is the one the user asked for
+ * and is kept deliberately. Help text is where an agent learns what a flag does,
+ * so the description spends its first two sentences saying what it selects and
+ * its third denying the reading the name invites. The board solved the same
+ * problem with `top-level only` / `children only`
+ * (`apps/ui/src/board/query/grammar.ts`); do not "correct" either of them into
+ * the other meaning.
+ *
+ * **A `true|false` value rather than a bare boolean**, unlike `--pinned` and
+ * `--unread` above it. Those select their true side only and absent may safely
+ * read as false; here `false` is a real query — the children the board's other
+ * chip shows — so `true`, `false` and absent have to stay three distinct
+ * answers, which is exactly what `parseTriStateBoolean` is for (`--evergreen`,
+ * `--requests-agent`, `doc create --pinned`).
+ *
+ * The `--parent`/`--is-parent true` contradiction is documented **here** and not
+ * on `--parent`: that flag is shared with `corpus search`, where this one does
+ * not exist, and a rule stated on a flag whose partner is absent is a rule that
+ * cannot be followed.
+ */
+const IS_PARENT_FLAG: FlagSpec = {
+  name: "is-parent",
+  type: "string",
+  valueName: "true|false",
+  description:
+    "Whether the document is a **child of something** (SPEC.md §9.2). `true` selects **roots** — " +
+    "documents with **no parent** — which is the board's _top-level only_; `false` selects the " +
+    "documents that **are** a child of something, its _children only_. It does **not** mean " +
+    "_has children_: a standalone note that nothing hangs off still matches `true`, because the " +
+    "filter asks what a document is _under_, never what is under it. Omitting the flag filters " +
+    "nothing — absent is not `false`, and the two are different questions. Not thread-only: a " +
+    "non-thread document has no parent at all, so `true` genuinely keeps it and `false` " +
+    "genuinely drops it, and a mixed top-level list of notes and standalone threads is the " +
+    "point. `--parent <id>` alongside `--is-parent true` is a contradiction the server refuses " +
+    "(`400`, exit 5) rather than answering with an empty set; `--parent <id> --is-parent false` " +
+    "is merely redundant and is accepted.",
+};
+
+/**
+ * The shared filters with this verb's own two spliced into the positions they
+ * are published in — `--pinned` after `--unread`, `--is-parent` after
+ * `--pinned`, which is the order `GET /api/docs` publishes its parameters in. A
+ * filter added to the shared list still lands on both verbs with no edit here.
+ */
+const LIST_FILTER_FLAGS = insertFlagAfter(
+  insertFlagAfter(DOC_FILTER_FLAGS, "unread", PINNED_FLAG),
+  "pinned",
+  IS_PARENT_FLAG,
+);
+
 export async function runDocList(context: WorkspaceCommandContext): Promise<void> {
   const query = collectQuery(context);
 
@@ -75,8 +129,8 @@ export async function runDocList(context: WorkspaceCommandContext): Promise<void
  * The fourteen structured filters come from the shared module `corpus search`
  * also uses (`../filters.ts`), because the two endpoints are contracted to take
  * the same set. What is collected here is what is genuinely this verb's: the
- * optional `q`, the board's `--pinned`, and the ordering and paging a ranked
- * top-k has no use for.
+ * optional `q`, the board's `--pinned`, the structural `--is-parent`, and the
+ * ordering and paging a ranked top-k has no use for.
  */
 function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
   const { flags } = context;
@@ -85,6 +139,10 @@ function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
   const sort = oneOf(context, "sort", DOC_SORTS);
   const limit = flags.number("limit");
   const offset = flags.number("offset");
+  // Tri-state, and the tri-state is the whole point: `false` is the children
+  // query, absent is no filter at all, and a bare boolean flag would collapse
+  // the two into one — a caller asking for children would get everything.
+  const isParent = parseTriStateBoolean("is-parent", flags.string("is-parent"));
 
   // Conditional spreads rather than assignment: under
   // `exactOptionalPropertyTypes` an explicit `undefined` is not an absent key,
@@ -98,6 +156,11 @@ function collectQuery(context: WorkspaceCommandContext): DocsListQuery {
     // Selects only its true side: absent means "no such filter", and the false
     // side is a query the board's chips do not offer either.
     ...(flags.boolean("pinned") ? { pinned: true } : {}),
+    // `--is-parent false` *is* a query the board offers, so `false` is sent as
+    // `false` rather than collapsed into absence. The contradiction with
+    // `--parent` is left to the server: it owns the grammar, its `400` names the
+    // pair, and a second copy of the rule here is a copy that can disagree.
+    ...(isParent === undefined ? {} : { isParent }),
   };
 }
 
@@ -135,7 +198,10 @@ export const listCommand: WorkspaceCommandSpec = {
     "comma-separated flag and AND across flags, so `--type note,view --tag finance` reads " +
     '"notes or views tagged finance". Threads are documents too: `--type thread` lists them, and ' +
     "the thread-only filters (`--parent`, `--agent`, `--author`, `--unread`) no-op for other " +
-    "types rather than erroring.\n\n" +
+    "types rather than erroring. `--is-parent` is **not** one of them despite reading like one: " +
+    "no document of any type carries a parent column, so a note's parent is null by genuinely " +
+    "having none, and `--is-parent true` keeps it while `--is-parent false` drops it — an " +
+    "answer, not a no-op.\n\n" +
     "Archived documents are **excluded by default** (SPEC.md §11). `--status archived` selects " +
     "them alone; `--include-archived` widens the default set to the union.\n\n" +
     "**The list is paginated and says so.** The server applies its own page limit, and the last " +
@@ -160,10 +226,10 @@ export const listCommand: WorkspaceCommandSpec = {
         "Full-text query across titles, bodies and turn bodies. Matching rows carry `snippets`, " +
         "which `--json` includes; `--sort relevance` needs this flag and is refused without it.",
     },
-    // The structured filters, from the one definition `corpus search` shares.
-    // `--pinned` is this verb's alone and has always sat between `--unread` and
-    // `--due`, so it is spliced back in rather than the shared list being cut.
-    ...insertFlagAfter(DOC_FILTER_FLAGS, "unread", PINNED_FLAG),
+    // The structured filters, from the one definition `corpus search` shares,
+    // plus this verb's own two spliced back into their published positions
+    // rather than the shared list being cut in pieces.
+    ...LIST_FILTER_FLAGS,
     {
       name: "sort",
       type: "string",
@@ -183,6 +249,9 @@ export const listCommand: WorkspaceCommandSpec = {
       description: "Rows to skip — how the tally line's next page is fetched.",
     },
   ],
+  // Both sides of `--is-parent` get an example, deliberately. A reader who skims
+  // the flag list and stops at the name concludes the wrong thing, and an
+  // example line that says "top-level" is read where a paragraph is not.
   examples: [
     {
       command: "corpus doc list",
@@ -197,6 +266,18 @@ export const listCommand: WorkspaceCommandSpec = {
     {
       command: "corpus doc list --needs me --folder finance",
       description: "What wants attention inside one folder — the board's Attention view, filtered.",
+    },
+    {
+      command: "corpus doc list --is-parent true",
+      description:
+        "Top-level only: every document that hangs off nothing, threads on documents excluded. " +
+        "A note nobody has commented on is in this list — the flag asks what a document is " +
+        "_under_, not what is under it.",
+    },
+    {
+      command: "corpus doc list --is-parent false --type thread",
+      description:
+        "The other side: threads that are a child of some document, standalone threads excluded.",
     },
     {
       command: "corpus doc list --type thread --unread --json",

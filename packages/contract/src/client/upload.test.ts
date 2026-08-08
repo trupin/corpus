@@ -69,6 +69,7 @@ function createServer() {
             `auth=${c.req.header("authorization") ?? ""}`,
             `actor=${c.req.header(ACTOR_HEADER) ?? ""}`,
           ].join(" "),
+          model: null,
         },
         eventId: parsed.requestsAgent === false ? null : "evt_7c1d",
         warnings: [],

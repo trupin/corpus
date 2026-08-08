@@ -74,6 +74,8 @@ export function useAppendTurn(
         author: "user",
         ts: new Date().toISOString(),
         body: provisionalBody(variables),
+        // A person's turn names no model (SPEC.md §11) — never a placeholder.
+        model: null,
         pending: true,
         clientId: nextClientId(),
       };

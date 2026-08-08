@@ -49,11 +49,13 @@ const ASK: ThreadTurn = {
   author: "user",
   ts: "2026-07-01T09:00:00.000Z",
   body: "Which lenders quoted?",
+  model: null,
 };
 const REPLY: ThreadTurn = {
   author: "agent",
   ts: "2026-07-01T09:05:00.000Z",
   body: "Three did, at 6.4%.",
+  model: null,
 };
 const TURNS: ThreadTurn[] = [ASK, REPLY];
 

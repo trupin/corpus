@@ -52,15 +52,25 @@ function wire(): ReaderTransport {
         id: "th_rowed",
         parent: DOC,
         status: "resolved",
-        turns: [{ author: "user", ts: "2026-07-01T09:00:00.000Z", body: "Settled?" }],
+        turns: [{ author: "user", ts: "2026-07-01T09:00:00.000Z", body: "Settled?", model: null }],
       }),
       threadFixture({
         id: "th_overflow",
         parent: DOC,
         status: "resolved",
         turns: [
-          { author: "user", ts: "2026-07-01T09:00:00.000Z", body: "Past the page limit." },
-          { author: "agent", ts: "2026-07-01T09:05:00.000Z", body: "Still a conversation." },
+          {
+            author: "user",
+            ts: "2026-07-01T09:00:00.000Z",
+            body: "Past the page limit.",
+            model: null,
+          },
+          {
+            author: "agent",
+            ts: "2026-07-01T09:05:00.000Z",
+            body: "Still a conversation.",
+            model: null,
+          },
         ],
       }),
     ],

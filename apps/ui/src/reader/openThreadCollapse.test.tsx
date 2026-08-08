@@ -53,8 +53,8 @@ afterEach(() => {
 });
 
 const TURNS = [
-  { author: "user" as const, ts: "2026-07-01T09:00:00.000Z", body: "Settled?" },
-  { author: "agent" as const, ts: "2026-07-01T09:05:00.000Z", body: "Settled." },
+  { author: "user" as const, ts: "2026-07-01T09:00:00.000Z", body: "Settled?", model: null },
+  { author: "agent" as const, ts: "2026-07-01T09:05:00.000Z", body: "Settled.", model: null },
 ];
 
 function threadDoc(id: string): Doc {

@@ -50,9 +50,14 @@ afterEach(() => {
 });
 
 const TURNS = [
-  { author: "user" as const, ts: "2026-07-01T09:00:00.000Z", body: "Which lenders?" },
-  { author: "agent" as const, ts: "2026-07-01T09:05:00.000Z", body: "Three of them." },
-  { author: "agent" as const, ts: "2026-07-01T09:09:00.000Z", body: "Filed under finance." },
+  { author: "user" as const, ts: "2026-07-01T09:00:00.000Z", body: "Which lenders?", model: null },
+  { author: "agent" as const, ts: "2026-07-01T09:05:00.000Z", body: "Three of them.", model: null },
+  {
+    author: "agent" as const,
+    ts: "2026-07-01T09:09:00.000Z",
+    body: "Filed under finance.",
+    model: null,
+  },
 ];
 
 function openRow(overrides: Partial<DocRow> = {}): DocRow {

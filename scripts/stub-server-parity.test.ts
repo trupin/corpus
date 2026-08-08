@@ -11,10 +11,20 @@ import {
 
 /**
  * The e2e stub answers `/api` from inside the browser page, so it re-implements
- * two of the server's rules (SPEC.md §6): how a text-quote selector resolves,
- * and how a thread file splits into turns. This test is what keeps the copy
- * honest — it runs one fixture set through **both** implementations and fails if
- * either side moves.
+ * what is left of the server's rules (SPEC.md §6): how a text-quote selector
+ * resolves, and how a thread file splits into turns. This test is what keeps the
+ * copy honest — it runs one fixture set through **both** implementations and
+ * fails if either side moves.
+ *
+ * **The turn half is now half a copy** (UI-091). CONTRACT-044 moved the
+ * heading grammar and the fence masking into `@corpus/contract`, so both sides
+ * call `turnHeadings` and the regex and the fence scanner `serverParity.ts` used
+ * to transcribe are gone. `TURN_PARITY_BODIES` keeps its fixtures because what
+ * is still local is real: the span each heading owns and `trimTurnText`, which
+ * is `core/turns.ts`'s and cannot be imported across the application boundary.
+ * They pin less than they did, which is the direction to keep going — a rule
+ * that becomes shared code should lose its fixture, and neither the fence
+ * scanner nor the heading grammar has one here.
  *
  * It lives in `scripts/` rather than in either workspace because it is the only
  * place in the repo that may look at two applications at once: `apps/ui` and
@@ -74,8 +84,13 @@ describe("the e2e stub's thread turn parsing", () => {
 
   it("writes turn headings the server's own parser reads back", () => {
     const turns = [
-      { author: "user" as const, ts: "2026-07-01T09:00:00Z", body: "First." },
-      { author: "agent" as const, ts: "2026-07-01T09:05:00Z", body: "Second.\n\nWith a gap." },
+      { author: "user" as const, ts: "2026-07-01T09:00:00Z", body: "First.", model: null },
+      {
+        author: "agent" as const,
+        ts: "2026-07-01T09:05:00Z",
+        body: "Second.\n\nWith a gap.",
+        model: null,
+      },
     ];
     const body = turns.map((turn) => renderTurn(turn)).join("\n");
     expect(parseThreadBody(body).turns).toEqual(turns);

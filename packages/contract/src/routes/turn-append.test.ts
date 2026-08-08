@@ -70,7 +70,7 @@ function createApp(): OpenAPIHono {
     return c.json(
       {
         thread: threadSummary,
-        turn: { author: "user" as const, ts: threadSummary.lastTs, body },
+        turn: { author: "user" as const, ts: threadSummary.lastTs, body, model: null },
         eventId: null,
         warnings: [],
       },
@@ -208,7 +208,7 @@ describe("the dual-media turn-append body", () => {
       c.json(
         {
           thread: threadSummary,
-          turn: { author: "user" as const, ts: "2026-07-19T10:09:00Z", body: "" },
+          turn: { author: "user" as const, ts: "2026-07-19T10:09:00Z", body: "", model: null },
           eventId: null,
           warnings: [],
         },

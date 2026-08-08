@@ -70,7 +70,9 @@ function wireFor(ids: readonly string[], jobs: readonly Job[] = []): ReaderTrans
         id,
         parent: DOC,
         anchor: `a_${String(index)}`,
-        turns: [{ author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" }],
+        turns: [
+          { author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?", model: null },
+        ],
       }),
     ),
     jobs,

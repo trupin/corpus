@@ -36,7 +36,9 @@ const TURN_BODY =
   "Let's revisit the rate assumption.\n\n" +
   "I said revisit the rate assumption because 6.1% looks stale.";
 
-const TURNS = [{ author: "user" as const, ts: "2026-08-03T10:00:00.000Z", body: TURN_BODY }];
+const TURNS = [
+  { author: "user" as const, ts: "2026-08-03T10:00:00.000Z", body: TURN_BODY, model: null },
+];
 
 /** The thread's own file: the heading the server writes, then the turn. */
 const THREAD_BODY = `## user · 2026-08-03T10:00:00.000Z\n\n${TURN_BODY}\n`;

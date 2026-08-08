@@ -79,7 +79,7 @@ function Host({
   );
 }
 
-const agentTurn = (body: string): Turn => ({ author: "agent", ts: FORM_TS, body });
+const agentTurn = (body: string): Turn => ({ author: "agent", ts: FORM_TS, body, model: null });
 
 const formPost = `/api/threads/th_a/turns/${encodeURIComponent(FORM_TS)}/form`;
 
@@ -473,6 +473,7 @@ describe("an answered form is a record", () => {
       }),
       note: "cheapest one",
     }),
+    model: null,
   });
 
   it("shows each question beside what was given, and no controls at all", async () => {
@@ -770,7 +771,7 @@ describe("a form the app cannot read", () => {
 /** §6 says a form is something an *agent* turn carries. */
 it("does not offer controls for a form quoted in a user turn", async () => {
   const { container } = render(
-    <Host transport={wire([{ author: "user", ts: FORM_TS, body: THREE_KINDS }])} />,
+    <Host transport={wire([{ author: "user", ts: FORM_TS, body: THREE_KINDS, model: null }])} />,
   );
   await waitFor(() => {
     expect(container.querySelectorAll(".turn")).toHaveLength(1);

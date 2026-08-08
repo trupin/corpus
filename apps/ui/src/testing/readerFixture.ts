@@ -286,6 +286,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
           author: "user" as const,
           ts: nextTs(thread),
           body: `**Answered:** ${answer.option}`,
+          model: null,
         };
         threads.set(id, { ...thread, turns: [...thread.turns, turn] });
         return json(
@@ -324,6 +325,7 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
           author: "user" as const,
           ts: nextTs(thread),
           body: [text, references.join("\n")].filter((part) => part !== "").join("\n\n"),
+          model: null,
         };
         threads.set(id, { ...thread, turns: [...thread.turns, turn] });
         return json(

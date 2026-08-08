@@ -5,7 +5,9 @@ import {
   FormSchema,
   isFormAnswerBody,
   parseFormAnswerBody,
+  turnHeadings,
   unreadableAnswer,
+  unterminatedFence,
   validateFormAnswer,
   type Form,
   type FormAnswerRequest,
@@ -545,6 +547,7 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
         author: "user",
         ts: canonicalInstant(thread.updated),
         body: typeof input["body"] === "string" ? input["body"] : "",
+        model: null,
       };
       thread.body = renderTurn(firstTurn);
       thread.agent = input["requestsAgent"] === true ? "requested" : "none";
@@ -616,21 +619,21 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
      * row clearing on a fiction. The refusals are the ones §6 names — `404` for
      * a turn carrying no form, `409` for a form already answered, `400` for an
      * answer the form does not fit (the contract's own `validateFormAnswer`),
-     * and `400` for an answer whose own text would not read back out of the turn
-     * it writes (the contract's own `unreadableAnswer`, the third of the three
-     * checks the server's `assertAppendableAnswer` makes).
+     * and, for the exact bytes about to be written, the three checks the
+     * server's `assertAppendableAnswer` makes in the server's own order: a fence
+     * left open, a line that would become a turn heading, and an answer that
+     * would not read back as itself.
      *
-     * **Both refusals are called, not restated** — unlike anchor resolution and
-     * the turn split, which live in `apps/server` and had to be ported into
-     * `serverParity.ts` and pinned by fixture. These two live in
-     * `@corpus/contract`, which this file already imports, so the stub runs the
-     * identical function the server runs and there is no copy that could drift.
-     * The halves of `assertAppendableAnswer` that are **not** here — an
-     * unterminated fence, a fabricated `## user · <ts>` heading — are the
-     * server's own `unterminatedFence` / `parseTurns`, and porting those without
-     * a parity fixture would be precisely the unpinned copy `serverParity.ts`
-     * exists to refuse. So the stub is more permissive than the server about
-     * those two, and never about these.
+     * **Every rule is called, not restated** — unlike anchor resolution, which
+     * lives in `apps/server` and had to be ported into `serverParity.ts` and
+     * pinned by fixture. All three live in `@corpus/contract`
+     * (`unterminatedFence` and `turnHeadings` since CONTRACT-044), which this
+     * file already imports, so the stub runs the identical functions the server
+     * runs and there is no copy that could drift. Only the *sentences* are the
+     * stub's, because the server's messages are `apps/server`'s; the verdicts
+     * never are. Until UI-091 the first two were simply absent and the stub was
+     * more permissive than the server about them, which made a spec asserting
+     * that the composer pre-check fires an assertion about nothing.
      */
     const formAnswer = /^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/form$/.exec(url.pathname);
     if (formAnswer !== null && method === "POST") {
@@ -654,6 +657,57 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       if (invalid !== undefined) return json(route, invalid, 400);
 
       const record = formAnswerRecord(form, answer);
+      const answerBody = formatFormAnswerBody(record);
+
+      /*
+       * `assertAppendableTurnText`'s pair, in its order — the fence first,
+       * because an open fence masks everything below it, so a heading under one
+       * is invisible to the second check and reporting it would name a fault
+       * that cannot be seen until the first is fixed.
+       */
+      const fence = unterminatedFence(answerBody);
+      if (fence !== null) {
+        return json(
+          route,
+          {
+            code: "bad_request",
+            message:
+              `this answer leaves a code fence open: the ${fence.marker} on line ${fence.line} ` +
+              "is never closed, so everything after it reads as code and every later turn in the " +
+              `thread would become invisible. Close it with a line holding nothing but ${fence.marker}.`,
+            issues: [
+              {
+                path: "body",
+                message: `unterminated ${fence.marker} code fence opened on line ${fence.line}`,
+              },
+            ],
+          },
+          400,
+        );
+      }
+
+      const fabricated = turnHeadings(answerBody)[0];
+      if (fabricated !== undefined) {
+        return json(
+          route,
+          {
+            code: "bad_request",
+            message:
+              `this answer contains a line that reads as a turn heading: line ${fabricated.line} ` +
+              "is a turn delimiter, so everything below it would be split off into a separate turn " +
+              `signed by ${fabricated.author}. Reword that line, or quote it inside a code fence, ` +
+              "an inline code span or a block quote, none of which delimit anything.",
+            issues: [
+              {
+                path: "body",
+                message: `line ${fabricated.line} reads as a turn heading`,
+              },
+            ],
+          },
+          400,
+        );
+      }
+
       const unreadable = unreadableAnswer(form, record);
       if (unreadable !== undefined) {
         return json(
@@ -672,12 +726,13 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       stampUpdated(doc);
       // Seconds precision, `Z`: the turn-heading grammar rejects milliseconds,
       // and a heading the parser rejects is a turn that silently disappears.
-      // The body is written from the same record the refusal above was asked
-      // about, so what lands in the thread is what was judged.
+      // The body is the very string the three refusals above were asked about,
+      // so what lands in the thread is what was judged — not a re-render of it.
       const turn: StubTurn = {
         author: "user",
         ts: canonicalInstant(doc.updated),
-        body: formatFormAnswerBody(record),
+        body: answerBody,
+        model: null,
       };
       doc.body = `${doc.body.trimEnd()}\n\n${renderTurn(turn)}`;
       return json(
