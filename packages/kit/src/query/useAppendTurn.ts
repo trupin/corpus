@@ -20,6 +20,16 @@ export interface AppendTurnVariables {
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
   /**
+   * The weight this request states (SPEC.md §7, §11) — a **Key** token from the
+   * workspace's own guidance. Omit for "the orchestrator decides", which is the
+   * ordinary case; there is no default and no other spelling of absence.
+   *
+   * It rides on **both** request shapes below, because §11 names Capture and a
+   * comment carrying a file among the surfaces that may state one: a weight that
+   * survived only the JSON path would be silently dropped by attaching a file.
+   */
+  readonly weight?: string;
+  /**
    * Attachments (SPEC.md §6). Present and non-empty switches the request to
    * `multipart/form-data`; a turn carrying files may have an empty `body`.
    */
@@ -57,13 +67,15 @@ export function useAppendTurn(
       const files = variables.files ?? [];
       const requestsAgent =
         variables.requestsAgent === undefined ? {} : { requestsAgent: variables.requestsAgent };
+      const weight = variables.weight === undefined ? {} : { weight: variables.weight };
       // Two requests, one call site: the JSON route cannot carry a repeated
       // binary part, and the multipart route names the prose field `text`.
       if (files.length === 0)
-        return client.appendTurn(threadId, { body: variables.body, ...requestsAgent });
+        return client.appendTurn(threadId, { body: variables.body, ...requestsAgent, ...weight });
       return client.appendTurnWithFiles(threadId, {
         ...(variables.body === "" ? {} : { text: variables.body }),
         ...requestsAgent,
+        ...weight,
         files,
       });
     },

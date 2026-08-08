@@ -1,5 +1,11 @@
 import type { ResolvedAnchor } from "@corpus/contract";
-import { isPendingTurn, useCreateThread, type RowNotice, type ThreadTurn } from "@corpus/kit";
+import {
+  isPendingTurn,
+  threadWeightScope,
+  useCreateThread,
+  type RowNotice,
+  type ThreadTurn,
+} from "@corpus/kit";
 import {
   useCallback,
   useEffect,
@@ -169,7 +175,7 @@ export function useTurnComments({
   const onContextMenu = useSelectionContextMenu({ editor: null, captureComment, onNotify });
 
   const submit = useCallback(
-    (text: string, requestsAgent: boolean): void => {
+    (text: string, requestsAgent: boolean, weight: { readonly weight?: string }): void => {
       if (draft === null) return;
       const held: PendingHighlight = {
         turnTs: draft.turnTs,
@@ -186,7 +192,7 @@ export function useTurnComments({
       setPending(held);
       setDraft(null);
       create.mutate(
-        { parent: threadId, selector: draft.selector, body: text, requestsAgent },
+        { parent: threadId, selector: draft.selector, body: text, requestsAgent, ...weight },
         { onSuccess: forget, onError: forget },
       );
     },
@@ -249,6 +255,9 @@ export function useTurnComments({
           top={draft.top}
           left={draft.left}
           pending={create.isPending}
+          // A comment on a selection **inside** a turn is made in this
+          // conversation, so it shares the reply box's standing choice.
+          weightScope={threadWeightScope(threadId)}
           onSubmit={submit}
           onClose={() => {
             setDraft(null);

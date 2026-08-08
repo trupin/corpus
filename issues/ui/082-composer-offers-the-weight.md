@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -143,35 +143,76 @@ the control without the transport — in which case say so explicitly in its sco
 because an evaluator reading §7's console bullet will test for the dispatch line
 and fail it.
 
+### Orchestrator adjudication (2026-08-08) — both halves resolved
+
+**Transport: filed and built.** CONTRACT-039 and SERVER-069 were filed as the
+missing middle and land on the same branch as this issue. The field is `weight`,
+the same spelling on the request body and in the queue event payload, defined in
+`packages/contract/src/schemas/weight.ts`. It is an **opaque string**,
+shape-validated only (non-blank, single-line, ≤ 100 chars), on all five composer
+request bodies including the multipart variants. **Absence is modelled as
+absence** — `.optional()` with no `.default()`, not nullable, `""` is a `400`, and
+the payload helper `requestedWeightPayload()` cannot construct the key. Build the
+request the same way: state nothing rather than state a null. So step 4 of the
+E2E plan is testable rather than pre-failed.
+
+**Reading the levels: the parse lives in `packages/kit`, over the projected skill
+document. No new route, no server parse.** The three candidates were the UI,
+`@corpus/kit`, and a server endpoint; kit wins on both counts that matter:
+
+- **One parser, five surfaces plus plugins.** A plugin composer must offer the
+  same levels as a first-party one, and kit is already how a plugin gets a
+  first-party affordance without a copy (SHARED-009's key contract, UI-070's
+  attachment intake, consumed by PLUGINS-011 with one import). A parser in
+  `apps/ui` cannot be reached from a plugin; a second copy in kit is the enum
+  problem again with extra steps.
+- **A server endpoint would make the server a party to the vocabulary.** §7 keeps
+  model names in the skill, and SERVER-069 is under an explicit instruction to
+  record a level and never interpret one. A route publishing "the levels this
+  workspace defines" is the server reading the skill's table — the same coupling
+  the rider spent its Decision 1 removing. It also costs a contract issue, a
+  route, and a §9.2 line for something the existing projection already answers.
+
+The skill is already a projected `skill` document reachable through
+`GET /api/docs` — the same projection the composers' three autocompletes read. So:
+fetch it once at app level (TanStack Query), parse in kit, read from cache in each
+composer. That keeps `CommentPopover` off a blocking fetch, which this issue's own
+Key Implementation Details require.
+
+**The degradation is unchanged and is the part to get right**: a parse that finds
+nothing yields **no control at all**, never a fallback list. That includes a
+workspace on an older template whose skill predates AGENT-015 — §2.4 makes that a
+real state, not a hypothetical.
+
 ## Acceptance Criteria
 
-- [ ] Every surface in the table above offers the control, and the test
+- [x] Every surface in the table above offers the control, and the test
       **enumerates them** rather than testing one and asserting the rest by
       inspection (UI-070's lesson)
-- [ ] The offered levels are **read from the workspace's orchestrate skill**, in
+- [x] The offered levels are **read from the workspace's orchestrate skill**, in
       the order and with the names that document defines. No enum, no constant, no
       fallback list anywhere in `apps/ui`, `packages/kit` or the contract
-- [ ] Renaming a level in the skill changes what the composer offers with **no
+- [x] Renaming a level in the skill changes what the composer offers with **no
       code change**; adding a fourth level adds a fourth option; removing one
       removes it
-- [ ] A workspace whose skill declares **no** parseable levels offers no control
+- [x] A workspace whose skill declares **no** parseable levels offers no control
       at all and behaves exactly as today — never a hardcoded fallback
-- [ ] **Nothing is preselected.** A composer never touched shows no chosen level,
+- [x] **Nothing is preselected.** A composer never touched shows no chosen level,
       and sending from it produces a request that states no weight
-- [ ] After sending with a level chosen, the **same conversation's** composer
+- [x] After sending with a level chosen, the **same conversation's** composer
       starts from that level, visibly, changeable in one gesture
-- [ ] That starting point is **browser-local**: reload clears it, a second browser
+- [x] That starting point is **browser-local**: reload clears it, a second browser
       is unaffected, and no thread or document gains a field
-- [ ] The control is live exactly when the composer says sending will reach the
+- [x] The control is live exactly when the composer says sending will reach the
       agent, and shows as having nothing to act on otherwise — **without** altering
       what reaches the agent
-- [ ] The composer key contract is unchanged and the control claims **no key**;
+- [x] The composer key contract is unchanged and the control claims **no key**;
       it is nonetheless operable from the keyboard like every other affordance
       (§11 adds no pointer-exclusive capability)
-- [ ] Sending is never blocked and typed text is never rewritten
-- [ ] A note-only turn with a level chosen enqueues nothing, produces no job and
+- [x] Sending is never blocked and typed text is never rewritten
+- [x] A note-only turn with a level chosen enqueues nothing, produces no job and
       no dispatch line — and the composer said so before sending
-- [ ] The control is published from `@corpus/kit` so a plugin composer gets it
+- [x] The control is published from `@corpus/kit` so a plugin composer gets it
       without a copy — verified the way UI-070 verifies its intake
 
 ## Technical Design
@@ -305,14 +346,148 @@ skill document, which a stub cannot honestly provide.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. State which model the
-implementing agent ran on ("implemented on: opus | fable")._
+**implemented on: opus** (ui-dev, 2026-08-08).
 
 ### Post-Implementation Verification
 
-_[Agent fills: workspace path, port, per-surface observations, dispatch lines
-quoted from `corpus job log`, the rename round trip, and the on-disk diff showing
-no document gained a field.]_
+**Setup.** `corpus init /tmp/corpus-w082 --port 8791`, real server started
+(`corpus server start` → pid 16082, `/api/health` → `{"status":"ok", "workspace":
+"/private/tmp/corpus-w082"}`), real Vite on `CORPUS_UI_PORT=5291` with
+`CORPUS_SERVER_ORIGIN=http://127.0.0.1:8791` and `VITE_CORPUS_TOKEN` from the
+workspace's own `.corpus/config.json`. Ports 8765 and 5173 were never bound.
+Real headless Chromium (Playwright's), real clicks, real drag selection. Both
+processes torn down at the end; `lsof` on 5291 and 8791 confirms both free.
+
+**Step 1 — the levels come from the workspace's own skill.**
+`GET /api/docs?type=skill` on the real workspace lists
+`doc_skillorchestrate → .claude/skills/orchestrate/SKILL.md`; its projected body
+is 68 625 bytes and `parseWeightLevels` over **that body** yields exactly:
+
+```json
+[{ "label": "Small and mechanical", "key": "light" },
+ { "label": "Standard",             "key": "standard" },
+ { "label": "Heavy or judgment-laden", "key": "heavy" }]
+```
+
+**Step 2 — the global composer.** Observed in the browser:
+`offers: ["Small and mechanical","Standard","Heavy or judgment-laden"]`,
+`keys: ["light","standard","heavy"]`, `preselected: 0`, `live: true`,
+`names a model? false`.
+
+**Steps 3–4 — the choice travels, and absence stays absence.** Ask with `light`
+chosen posted, verbatim off the wire:
+
+```json
+POST /api/threads {"parent":null,"selector":null,"body":"Please tidy the inbox note titles.","requestsAgent":true,"weight":"light"}
+```
+
+and the server's own record, from `.corpus/queue/pending/evt_erjkvtoz7gbc.json`
+and `.corpus/jobs/evt_erjkvtoz7gbc.jsonl`:
+
+```json
+"payload": { "threadId": "th_qmyjilsy", …, "weight": "light" }
+{"ts":"2026-08-08T23:04:55Z","source":"server","line":"weight stated by the request: light"}
+```
+
+A send with nothing chosen posted a body with **no `weight` key at all** (see
+step 10's quote) — absence, not a null and not an empty string.
+
+**Step 5 — the per-conversation starting point.** After the `heavy` reply the
+reply box read `starts from: ["heavy"]` with no further gesture; changing it is
+one click. The reopened global composer read `starts from: ["light"]`.
+
+**Step 6 — reload.** After `page.reload()` the thread's reply box read
+`preselected after reload: 0`, and the already-sent requests are unchanged on
+disk.
+
+**Step 7 — a second browser.** A fresh Chromium context (`drive082b`) opened the
+composer and read `preselected in a fresh browser: 0` while the first browser's
+choices had been `light`/`heavy` — nothing crossed.
+
+**Step 8 — the rename round trip, with no code change and no rebuild.** The
+orchestrate skill was edited through the server (the same write path the app's
+editor uses; the server is the sole writer):
+
+```text
+BEFORE row: "| Standard                | standard | **Sonnet** | Most comment work: … |"
+AFTER  row: "| Ordinary                | standard | **Sonnet** | Most comment work: … |"
+PUT /api/docs/doc_skillorchestrate → 200
+```
+
+The very next browser load, unchanged binary, read
+`offers: ["Small and mechanical","Ordinary","Heavy or judgment-laden"]` with
+`keys (unchanged by the rename): ["light","standard","heavy"]`, and a dispatch at
+the renamed level travelled as its **Key**:
+
+```json
+POST /api/threads {…,"body":"A dispatch at the renamed level.","requestsAgent":true,"weight":"standard"}
+```
+
+**Step 9 — all five surfaces, against the real server.**
+
+| Surface | Observed |
+| --- | --- |
+| Global — **Ask** | offers the three real levels, nothing preselected, live; `POST /api/threads … "weight":"light"` |
+| Global — **Capture** | same control; `POST /api/capture` multipart with a `name="weight"` part carrying `light` |
+| A thread's **reply box** | `POST /api/threads/th_qmyjilsy/turns {"body":"Actually, please restructure the whole note.","requestsAgent":true,"weight":"heavy"}` |
+| A comment on a **document selection** | real drag-select + right-click → popover offers the (renamed) levels, `preselected: 0`, `live: true`; `POST /api/threads {"parent":"doc_yw5bbh62","selector":{"exact":"We assume a 30-year fixed at 6.1% today.",…},"body":"Is this still right?","requestsAgent":true,"weight":"heavy"}` |
+| A comment on a **turn** | offers the levels, `live: false` (this composer never asks the agent); `POST /api/threads {"parent":"th_kn2evdpv","selector":{"exact":"A stray thought about the rate."},"body":"A comment on this turn.","requestsAgent":false,"weight":"light"}` |
+
+Every dispatched event carried its level into the payload and earned exactly one
+server line — eight events, eight lines, no others:
+
+```text
+evt_bspa6aj52kiy → weight stated by the request: standard
+evt_ctvbz2ptr4mh → weight stated by the request: light
+evt_dbbimyfqjqzl → weight stated by the request: standard
+evt_erjkvtoz7gbc → weight stated by the request: light
+evt_hspuknz4rmte → weight stated by the request: heavy
+evt_nrtv2xgpaorc → weight stated by the request: heavy
+evt_ykbfh7vheanj → weight stated by the request: standard
+evt_ynjzb7xzddyg → weight stated by the request: standard
+```
+
+**Step 10 — a note-only turn with a level chosen.** Flipping to `○ note only`
+turned the control's `data-weight-live` to `false` (the composer said so **before**
+sending) and **kept** the choice (`["heavy"]`). Sending was not blocked and the
+text was not rewritten:
+
+```json
+POST /api/threads/th_qmyjilsy/turns {"body":"A note to self, weighted but going nowhere.","requestsAgent":false,"weight":"heavy"}
+```
+
+The thread then held three turns and the queue held **two** events — the
+note-only turn enqueued nothing, produced no job file and therefore no dispatch
+line. The unweighted send earlier in the same run likewise posted a body with no
+`weight` key.
+
+**Step 11 — nothing on disk gained a field.** Every `data/**.md` frontmatter, key
+by key, after the whole run:
+
+```text
+data/threads/*.md            id type title created updated tags status parent anchor agent [anchors …]
+data/docs/inbox/*.md         id type title created updated tags status anchors [exact prefix suffix] due reviewed evergreen
+data/docs/views/*.md         id type title created updated tags status anchors evergreen pinned order query …
+grep -rn "^weight:" data/  → NONE
+git status --porcelain     → (empty)
+```
+
+No thread and no document carries a `weight`; the working tree is clean, so
+every write is accounted for and none is pending. The choice lived only in the
+browser.
+
+**Automated checks.** `npm run build`; `npm run typecheck` (5 workspaces, clean);
+`npm run lint` (clean); `npm run format:check` (clean); unit suites
+`apps/ui/src` + `packages/kit/src` — **192 files, 3235 tests, all passing**;
+Playwright — **349 passed**, plus the new `apps/ui/e2e/weight.spec.ts` (8 tests).
+
+**Known environmental failures, not regressions.** `smoke.spec.ts:241` ("a
+failing health check fails soft…") and `console.spec.ts:62` ("keeps the
+failed-job count off the health notice's class") both assert the console strip
+reads exactly `server unreachable`, which is only true while **nothing** is
+listening on `127.0.0.1:8765`. The user's live corpus server holds that port on
+this machine, so both fail here and only here; they pass in CI, and neither
+touches anything this issue changed. Diagnosed, not chased.
 
 ## Non-goals
 
@@ -332,11 +507,11 @@ From SHARED-022:
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

@@ -410,17 +410,17 @@ belongs to the same fix wave.
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |
 | UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) — **partial, 11/14** | todo | P1 | CONTRACT-038 |
 | AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | done | P1 | SERVER-068 |
-| AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | todo | P1 | SHARED-023 |
-| CONTRACT-039 | A chosen weight has no way to reach the work it governs (SHARED-022) | todo | P2 | SHARED-022 |
-| SERVER-069 | Carry the chosen weight into the dispatch, and name it in the job log (SHARED-022) | todo | P2 | CONTRACT-039 |
+| AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | done | P1 | SHARED-023 |
+| CONTRACT-039 | A chosen weight has no way to reach the work it governs (SHARED-022) | done | P2 | SHARED-022 |
+| SERVER-069 | Carry the chosen weight into the dispatch, and name it in the job log (SHARED-022) | done | P2 | CONTRACT-039 |
 | SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
 | SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
 | SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
 | UI-078 | Resolve confirmation promises replying reopens the thread; it does not | done | P1 | — |
 | SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry (SIGNED, applied) | done | P1 | — |
 | SHARED-022 | Choosing the model for a request — weight levels, honoured as a directive (SIGNED, applied) | done | P2 | — |
-| UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | todo | P2 | SHARED-022 |
-| AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | todo | P2 | SHARED-022 |
+| UI-082 | Composer offers the weight; the orchestrator honours it (SHARED-022) | done | P2 | SHARED-022, CONTRACT-039, SERVER-069, AGENT-015 |
+| AGENT-015 | Skill states the weight levels the picker reads, and honours a stated one | done | P2 | SHARED-022 |
 | CONTRACT-034 | Stale prose: a resolved thread no longer stops re-triggering (SERVER-062 finding) | todo | P2 | SERVER-062 |
 | CLI-031 | `job list --status`/`--origin`: the full in-progress inventory from the CLI | done | P2 | CLI-029 |
 | SERVER-063 | One unreadable queue file stops the server booting (SERVER-061 finding) | done | P1 | — |

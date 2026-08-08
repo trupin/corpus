@@ -44,6 +44,14 @@
   padding: 0 18px 8px;
 }
 
+/* The weight control (SPEC.md §11's rider), inset to the text's measure like the
+   attachment chips above it. It sits above the action bar rather than inside it:
+   at the panel's minimum width three level names plus the two submits and the
+   hint would wrap the bar, and the bar's order is the key contract's order. */
+.compose-panel .weight-pick {
+  padding: 0 18px 10px;
+}
+
 /* The same highlight the thread composer shows while a file is over it. */
 .compose-panel.dropping {
   outline: 2px solid var(--accent);

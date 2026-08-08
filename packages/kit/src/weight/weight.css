@@ -1,0 +1,74 @@
+/**
+ * The weight control (SPEC.md §11's rider, signed 2026-08-06) — `WeightPicker`.
+ *
+ * It ships from the kit with its component because a plugin's composer gets the
+ * control with one import and must not have to reproduce its look:
+ *
+ *     import "@corpus/kit/weight.css";
+ *
+ * Every value is a token from `tokens.css`, so it reads correctly in light and
+ * dark with nothing declared twice, and it speaks the mono voice the composer
+ * feet already use (`design/index.html`'s `.composer-foot`) rather than
+ * introducing a fourth typographic register into a small surface.
+ *
+ * It **wraps**: it sits in a 320px comment popover as well as in a 640px overlay,
+ * and a row that could not wrap would either overflow the popover or force it
+ * wider — which UI-070's criterion for the same surface forbids. Wrapping costs
+ * a line of height at the popover's width, and that height is present from the
+ * first paint (the levels are read from cache), so nothing moves under a pointer
+ * after the popover opens.
+ */
+
+.weight-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.weight-pick .weight-lead {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.weight-opt {
+  font: inherit;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.weight-opt:hover {
+  border-color: var(--accent);
+}
+
+/* Focus is visible on its own terms: the control claims no key, so the keyboard
+   path through it is the browser's, and it has to be followable. */
+.weight-opt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.weight-opt.on {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+  border-color: var(--accent);
+}
+
+/* A level the workspace's guidance no longer declares, still standing as the
+   choice. Marked rather than hidden — it is what the request will state. */
+.weight-opt[data-weight-undeclared="true"] {
+  border-style: dashed;
+}
+
+/* "Shows as having nothing to act on" — dimmed, never disabled: the choice is
+   kept and stays changeable, and §8 alone decides what reaches the agent. */
+.weight-pick[data-weight-live="false"] {
+  opacity: 0.55;
+}

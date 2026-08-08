@@ -1,3 +1,4 @@
+import { useWeightLevels } from "@corpus/kit";
 import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import { BoardNavigationProvider } from "../board/openInColumn";
 import { ComposeOverlay } from "../compose/ComposeOverlay";
@@ -113,6 +114,18 @@ function ShellSurfaces(): ReactElement {
   );
 
   useShortcuts(context);
+  /*
+   * The weight levels this workspace declares (SPEC.md §11's rider), warmed once
+   * here so every composer reads them from cache.
+   *
+   * The shell rather than a composer, and deliberately: `CommentPopover` opens
+   * on a selection and must draw its control in its **first** paint — a control
+   * that appeared a round trip after the popover opened would move things under
+   * the pointer, which is what UI-073 and UI-074 are the standing warning about.
+   * The queries are the ordinary document ones, so this costs one list and one
+   * read for the whole session and refreshes itself when the skill is edited.
+   */
+  useWeightLevels();
   /*
    * SPEC.md §4's close path lives here rather than in a reader because it fires
    * *after* the reader is gone — a surface released, a save that settled behind

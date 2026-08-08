@@ -32,6 +32,16 @@ export interface ComposeTransportOptions {
   readonly warnings?: readonly { readonly code: string; readonly detail: string }[];
   /** Rows for `GET /api/docs`, so the autocompletes have something to list. */
   readonly rows?: readonly unknown[];
+  /**
+   * Documents `GET /api/docs/{id}` answers with, keyed by id.
+   *
+   * The composer reads one: the orchestrate skill, for the weight levels it may
+   * offer (SPEC.md §11's rider). With no entry the read answers `404`, the level
+   * set is empty, and the composer offers no control at all — which is exactly
+   * what a workspace on an older template gets, and is why every suite written
+   * before this feature still describes the composer correctly.
+   */
+  readonly docs?: Readonly<Record<string, unknown>>;
 }
 
 /** JSON bodies reach `fetch` as a string; anything else is not a body this fixture reads. */
@@ -93,6 +103,12 @@ export function composeTransport(options: ComposeTransportOptions = {}): Compose
     if (url.pathname === "/api/docs") {
       const items = options.rows ?? [];
       return json({ items, page: { total: items.length, limit: 50, offset: 0 } });
+    }
+    if (url.pathname.startsWith("/api/docs/")) {
+      const id = url.pathname.slice("/api/docs/".length);
+      const doc = options.docs?.[id];
+      if (doc === undefined) return json({ code: "not_found", message: `no ${id}` }, 404);
+      return json(doc);
     }
     if (url.pathname === "/api/capture") {
       return json({ docId: "doc_cap", threadId: "th_cap", eventId, warnings }, 201);

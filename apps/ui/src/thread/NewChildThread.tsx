@@ -1,7 +1,11 @@
 import {
   COMPOSER_PRIMARY_KEY,
+  composerReachesAgent,
   handleComposerKeyDown,
+  threadWeightScope,
+  useComposerWeight,
   useCreateThread,
+  WeightPicker,
   type RowNotice,
 } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
@@ -44,6 +48,16 @@ export function NewChildThread({
 }: NewChildThreadProps): ReactElement {
   const [text, setText] = useState("");
   const create = useCreateThread();
+  /*
+   * The conversation this comment is made **in** is the parent thread, so this
+   * box and that thread's reply box share one standing choice (SPEC.md §11's
+   * rider). It is offered here rather than withheld because §11 enumerates this
+   * surface; it is never live, because this box sends `requestsAgent: false`
+   * unconditionally — a comment on a turn is a note until the child card's own
+   * composer says otherwise. Presentation only: the choice is kept and travels.
+   */
+  const weight = useComposerWeight(threadWeightScope(parentThreadId));
+  const live = composerReachesAgent({ requestsAgent: false });
 
   const send = (): void => {
     const body = text.trim();
@@ -57,6 +71,7 @@ export function NewChildThread({
         // until the person says otherwise, and the child card's composer is
         // where they say it.
         requestsAgent: false,
+        ...weight.request,
       },
       {
         onSuccess: () => {
@@ -84,6 +99,7 @@ export function NewChildThread({
           handleComposerKeyDown(event, { onPrimary: send, onEscape: onCancel });
         }}
       />
+      <WeightPicker weight={weight} live={live} surface={`child:${parentThreadId}`} />
       <div className="composer-foot">
         <span className="composer-hint">creates a child thread</span>
         <button

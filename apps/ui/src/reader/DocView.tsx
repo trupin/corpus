@@ -1,5 +1,6 @@
 import type { Doc, DocRow, Lock } from "@corpus/contract";
 import {
+  docWeightScope,
   hasSeenMark,
   isPendingTurn,
   MarkdownView,
@@ -598,6 +599,9 @@ export function DocView({
           top={anchors.draft.top}
           left={anchors.draft.left}
           pending={anchors.submitting}
+          // A comment on a document selection is not yet in a conversation, so
+          // the nearest scope §11's rule can mean is the document itself.
+          weightScope={docWeightScope(doc.frontmatter.id)}
           onSubmit={anchors.submitComment}
           onClose={anchors.cancelComment}
         />

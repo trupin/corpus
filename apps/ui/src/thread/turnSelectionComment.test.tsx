@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 import type { Doc } from "@corpus/contract";
-import { resetSeenMarks } from "@corpus/kit";
+import { resetSeenMarks, resetWeightChoices } from "@corpus/kit";
 import { createCorpusTestHarness } from "@corpus/kit/testing";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { anchorHighlightCount, resetAnchorHighlights } from "../anchors/textHighlight";
@@ -15,6 +15,7 @@ import {
   threadsSearch,
   type ReaderTransport,
 } from "../testing/readerFixture";
+import { weightWiring } from "../testing/weightFixture";
 import { ThreadCard } from "./ThreadCard";
 
 /**
@@ -28,6 +29,7 @@ afterEach(() => {
   cleanup();
   resetEscapeLayers();
   resetSeenMarks();
+  resetWeightChoices();
   resetAnchorHighlights();
   globalThis.getSelection?.()?.removeAllRanges();
 });
@@ -161,6 +163,42 @@ describe("commenting on a selection inside a turn", () => {
     const framed = THREAD_BODY.indexOf(sent.selector.prefix + sent.selector.exact);
     expect(framed + sent.selector.prefix.length).toBe(
       THREAD_BODY.indexOf(PHRASE, THREAD_BODY.indexOf(PHRASE) + 1),
+    );
+  });
+
+  /**
+   * SPEC.md §11's rider (UI-082): the popover this path opens offers the weight,
+   * scoped to **this conversation** — the same starting point the card's reply
+   * box uses — and what it states rides out on the comment's own request.
+   */
+  it("states the weight the composer chose, on the child thread's request", async () => {
+    const declaring = weightWiring();
+    const transport = wire({ docs: [threadDoc(), ...declaring.docs], rows: declaring.rows });
+    const { container } = render(<Host transport={transport} />);
+    selectAndRightClick(await loaded(container), PHRASE, 1);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Comment on selection/ }));
+    const popover = await screen.findByRole("dialog", { name: "New comment" });
+
+    // The popover's own control — the card's reply box has one too, and they
+    // share this conversation's standing choice.
+    const picker = await within(popover).findByRole("group", { name: "Weight" });
+    expect([...picker.querySelectorAll("[data-weight-key]")].map((o) => o.textContent)).toEqual([
+      "Small and mechanical",
+      "Standard",
+      "Heavy or judgment-laden",
+    ]);
+    fireEvent.click(within(popover).getByRole("button", { name: "Heavy or judgment-laden" }));
+
+    fireEvent.change(screen.getByLabelText("Comment"), { target: { value: "Still true?" } });
+    const send = document.querySelector("[data-comment-send]");
+    if (send === null) throw new Error("no send control");
+    fireEvent.click(send);
+
+    await waitFor(() => {
+      expect(transport.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    expect((transport.of("POST", "/api/threads")[0]?.body as { weight?: string }).weight).toBe(
+      "heavy",
     );
   });
 

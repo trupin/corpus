@@ -295,6 +295,42 @@ export {
   type ComposerKeyOptions,
 } from "./components/Composer/index.js";
 
+// SPEC.md §11's "every composer can choose how much thought the work gets"
+// (rider signed 2026-08-06). Here rather than in `apps/ui` for the same reason
+// the key contract and the attachment intake are: the sentence binds every
+// composer in the app *and* every composer a plugin contributes, and a plugin
+// may import nothing but this package. Its stylesheet is a subpath, like the
+// tokens: `import "@corpus/kit/weight.css"`.
+//
+// The levels are never enumerated here — `weight/weightLevels.ts` says why an
+// enum in this package would be wrong per workspace rather than merely
+// inelegant.
+export {
+  chooseWeight,
+  composerReachesAgent,
+  docWeightScope,
+  findOrchestrateSkill,
+  GLOBAL_COMPOSE_WEIGHT_SCOPE,
+  ORCHESTRATE_SKILL_NAME,
+  parseWeightLevels,
+  resetWeightChoices,
+  subscribeWeightChoices,
+  threadWeightScope,
+  useComposerWeight,
+  useWeightLevels,
+  weightChoice,
+  WeightPicker,
+  WEIGHT_INERT_TITLE,
+  WEIGHT_LIVE_TITLE,
+  WEIGHT_PICKER_LABEL,
+  WEIGHT_TABLE_HEADER,
+  WEIGHT_UNKNOWN_TITLE,
+  type ComposerReach,
+  type ComposerWeight,
+  type WeightLevel,
+  type WeightPickerProps,
+} from "./weight/index.js";
+
 // The live-update connection.
 export { useConnectionState } from "./events/useConnectionState.js";
 export {

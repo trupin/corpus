@@ -25,6 +25,7 @@
     "./row.css": "./src/row/row.css",
     "./markdown.css": "./src/markdown/markdown.css",
     "./autocomplete.css": "./src/components/Autocomplete/autocomplete.css",
+    "./weight.css": "./src/weight/weight.css",
     "./package.json": "./package.json"
   },
   "files": [
@@ -32,7 +33,8 @@
     "src/tokens.css",
     "src/row/row.css",
     "src/markdown/markdown.css",
-    "src/components/Autocomplete/autocomplete.css"
+    "src/components/Autocomplete/autocomplete.css",
+    "src/weight/weight.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
