@@ -30,6 +30,7 @@ import {
   serializeDocument,
   setBody,
   setFrontmatterFields,
+  turnModelsPatch,
 } from "../core/index.js";
 import {
   anchoredThreadParent,
@@ -116,6 +117,17 @@ export async function deleteThreadTurn(
     const text = serializeDocument(
       setFrontmatterFields(setBody(thread.loaded.parsed, body), {
         updated: formatInstant(workspace.now()),
+        // The turn's model record goes with the turn, in the same bytes and the
+        // same commit (SPEC.md §6, CONTRACT-043). This is not housekeeping:
+        // `nextTurnTs` derives the next stamp from the stamps currently in the
+        // body, so deleting the **last** turn frees its timestamp for reuse, and
+        // an entry left behind would later attribute its model to a different
+        // turn — a silent misattribution, which is worse than recording nothing.
+        // Every surviving turn keeps its own entry; nothing is renumbered.
+        ...turnModelsPatch(
+          thread.loaded.parsed.data,
+          thread.turns.filter((candidate) => candidate.ts !== turn.ts).map(({ ts: kept }) => kept),
+        ),
       }),
     );
     const warnings = validateBeforeWrite(workspace, thread.loaded.path, text);

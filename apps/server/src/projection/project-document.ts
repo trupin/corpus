@@ -25,6 +25,7 @@ import { readThreadForms } from "../core/form.js";
 import { readViewFrontmatter, type ViewFrontmatter } from "../core/view-frontmatter.js";
 import { referencedIds } from "../core/refs.js";
 import { normalizeCalendarDate, normalizeInstant } from "../core/time.js";
+import { turnModelsOf } from "../core/turn-model.js";
 import { parseThreadBody, type TurnAuthor } from "../core/turns.js";
 import { toIndexableText } from "../docs/fts.js";
 import {
@@ -322,9 +323,16 @@ function projectThread(
   // failure that `doc check` reports; the projection keeps the first and does
   // not abort the document over it.
   const insertTurn = db.prepare(
-    `INSERT OR IGNORE INTO turns (thread_id, idx, author, ts, body_md, has_form, form_answered)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO turns (thread_id, idx, author, ts, body_md, has_form, form_answered, model)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  // Which model wrote each turn (§6, §11, CONTRACT-043). The record is in the
+  // thread's own frontmatter keyed by turn timestamp, so the join happens here
+  // once and the board never reparses a file to draw it. `null` for a turn with
+  // no entry — a person's, and one written before the record existed — which is
+  // §11's nothing rather than a guess, and there is no branch here that could
+  // produce anything else.
+  const models = turnModelsOf(data);
   // §6's form grammar, decided here rather than in the `needs=form` SQL: the
   // fence is a regex over the info string and its contents must parse as a form,
   // and a SQL approximation of that is what SERVER-029 fixed. Which of those
@@ -349,6 +357,7 @@ function projectThread(
       turn.body,
       state?.hasForm === true ? 1 : 0,
       answered === null ? null : Number(answered),
+      models[turn.ts] ?? null,
     );
   });
 

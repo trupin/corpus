@@ -101,13 +101,29 @@ function ambiguous(message: string): never {
 }
 
 /**
- * The selector as it will be stored: the caller's `exact` verbatim, with
- * `prefix`/`suffix` **read off the parent's own bytes** around it.
+ * The stored shape of an anchor over a range **whose location is already
+ * known**: the body's own bytes for `exact`, framed by `computeContext`.
+ *
+ * This is the single definition of "what a selector looks like once the server
+ * has written it", and it has two callers that arrive at a location by different
+ * evidence: {@link contextualizeSelector}, which finds the range by matching the
+ * caller's quote (thread creation, SERVER-071), and the re-attach repair, which
+ * is *handed* the range by the person who chose it (SERVER-072). Keeping the
+ * computation here rather than restating it on the repair path is what makes
+ * "a repaired anchor is in the shape a save would have left it in" a fact about
+ * the code instead of a claim about two similar-looking expressions.
  *
  * `computeContext` is the one spelling of "context window around a range" the
- * server has — reconciliation rewrites context with it after every edit — so an
- * anchor is born in exactly the shape a save would have left it in, and the two
- * cannot drift apart.
+ * server has — reconciliation rewrites context with it after every edit — so
+ * every anchor the server writes, however it got its range, is shaped the same.
+ */
+export function selectorForRange(body: string, start: number, end: number): TextQuoteSelector {
+  return { exact: body.slice(start, end), ...computeContext(body, start, end) };
+}
+
+/**
+ * The selector as it will be stored: the caller's `exact` verbatim, with
+ * `prefix`/`suffix` **read off the parent's own bytes** around it.
  *
  * A quote that is absent from `body` keeps whatever context the request carried:
  * there are no bytes to read it from, the anchor is orphaned at birth either
@@ -120,5 +136,8 @@ export function contextualizeSelector(
 ): TextQuoteSelector {
   const start = locateAnchor(body, selector);
   if (start === null) return selector;
-  return { exact: selector.exact, ...computeContext(body, start, start + selector.exact.length) };
+  // The slice `selectorForRange` takes is the caller's `exact` byte for byte —
+  // `locateAnchor` found the range by `indexOf` of that very string — so routing
+  // through it keeps the quote verbatim *and* keeps one definition of the shape.
+  return selectorForRange(body, start, start + selector.exact.length);
 }

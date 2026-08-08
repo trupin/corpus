@@ -51,6 +51,14 @@ export { decideParticipation } from "./participation.js";
 export type { ParticipationDecision, ParticipationInput } from "./participation.js";
 export { loadThread, readThread, toThreadSummary, toWireThread } from "./read.js";
 export type { LoadedThread, ThreadReader } from "./read.js";
+export {
+  AGENT_REATTACH_MESSAGE,
+  NOT_ANCHORED_MESSAGE,
+  RANGE_CHANGED_MESSAGE,
+  reattachConflict,
+  reattachThread,
+} from "./reattach.js";
+export type { ThreadReattachment } from "./reattach.js";
 export { mountThreadRoutes } from "./routes.js";
 export type { ThreadRoutesOptions } from "./routes.js";
 export { markThreadSeen, movesForward, readSeenMarks } from "./seen.js";

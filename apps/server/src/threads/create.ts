@@ -48,6 +48,7 @@ import {
   withAnchorEntry,
   anchorEntries,
   THREADS_ROOT,
+  TURN_MODELS_FRONTMATTER_KEY,
 } from "../core/index.js";
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import {
@@ -70,7 +71,7 @@ import { parseMentions } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toWireThread } from "./read.js";
 import { deriveThreadTitle } from "./title.js";
-import { storeTurnFiles, whileUnreferenced } from "./turns.js";
+import { assertModelNamesAnAgentTurn, storeTurnFiles, whileUnreferenced } from "./turns.js";
 import type { ThreadsWorkspace } from "./workspace.js";
 
 /**
@@ -91,6 +92,8 @@ export interface ThreadCreateInput {
   readonly text: string | undefined;
   /** The §8 tri-state, exactly as it arrived; `undefined` means *omitted*. */
   readonly requestsAgent: boolean | undefined;
+  /** The model that wrote the first turn (SPEC.md §11); `undefined` when unstated. */
+  readonly model: string | undefined;
   readonly files: readonly File[];
 }
 
@@ -107,6 +110,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
       title: body.title,
       text: body.body,
       requestsAgent: body.requestsAgent,
+      model: body.model,
       files: [],
     };
   }
@@ -116,6 +120,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
     title: body.title,
     text: body.text,
     requestsAgent: body.requestsAgent,
+    model: body.model,
     files: body.files,
   };
 }
@@ -163,7 +168,14 @@ export function normalizeSelector(
   return { exact: selector.exact, prefix: selector.prefix ?? "", suffix: selector.suffix ?? "" };
 }
 
-/** The §6 frontmatter of a new thread, in the key order §6's example fixes. */
+/**
+ * The §6 frontmatter of a new thread, in the key order §6's example fixes.
+ *
+ * `turnModels` is written only when the request stated a model, and then holds
+ * exactly one entry: the first turn's (SPEC.md §11, CONTRACT-043). A thread
+ * created without one carries no key at all — the server records and never
+ * invents, so there is nothing to write.
+ */
 function threadFields(input: {
   readonly id: string;
   readonly title: string;
@@ -171,6 +183,7 @@ function threadFields(input: {
   readonly parent: string | null;
   readonly anchor: string | null;
   readonly agent: string;
+  readonly model: string | undefined;
 }): Record<string, unknown> {
   return {
     id: input.id,
@@ -183,6 +196,9 @@ function threadFields(input: {
     parent: input.parent,
     anchor: input.anchor,
     agent: input.agent,
+    ...(input.model === undefined
+      ? {}
+      : { [TURN_MODELS_FRONTMATTER_KEY]: { [input.stamp]: input.model } }),
   };
 }
 
@@ -226,6 +242,10 @@ export async function createThread(
   // being guarded and this one not is how SERVER-070 happened (malformed forms),
   // so the guards are placed together by design.
   assertAppendableTurnText(input.text, TURN_SUBJECT);
+  // And likewise for an attribution nobody made: this route is the second door
+  // onto a turn, so §11's "a person's turn names no model" is refused here too
+  // rather than only on the reply path (SPEC.md §11, CONTRACT-043).
+  assertModelNamesAnAgentTurn(actor, input.model);
 
   // An unknown parent is a 404 before anything is written, and it is answered
   // from the read rather than from the projection alone so a row whose file
@@ -303,6 +323,10 @@ export async function createThread(
           stored.map((file) => file.name),
         ),
       );
+      // The response is re-read from the file this write is about to make
+      // (`toWireThread(loadThread(...))` below), so the turn's model reaches the
+      // wire through the read join rather than from here; `turn` is used only
+      // for the stamp the enqueued event names.
       const { body, turn } = appendTurn("", { author: actor, text: turnText, ts: stamp });
       const text = serializeDocument(
         setFrontmatterFields(
@@ -314,6 +338,7 @@ export async function createThread(
             parent: parentId,
             anchor: anchorId,
             agent: decision.agent,
+            model: input.model,
           }),
         ),
       );
