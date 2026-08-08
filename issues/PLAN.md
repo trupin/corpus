@@ -504,3 +504,5 @@ cheapest moment for that to happen.
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
 | CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | INFRA-026 |
 | UI-083 | Selecting rows and acting on the selection — **rewrite against SHARED-032** | todo | P2 | SHARED-032, CONTRACT-037 |
+| UI-095 | Clicking a comment does not take you to it, opened | todo | P1 | — |
+| UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
