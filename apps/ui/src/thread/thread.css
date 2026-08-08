@@ -14,6 +14,50 @@
  */
 
 /* ── Turns ── */
+
+/*
+ * Which model wrote an agent turn (SPEC.md §11, rider signed 2026-08-07).
+ *
+ * A chip rather than a third grey word, because "quickly identifiable" is the
+ * requirement: in a mono metadata row it is the only bordered object, so the eye
+ * finds it down a long conversation without reading each line. It is also the
+ * *quietest* object there — `--ink-2` on `--surface-2`, a hairline `--line`
+ * border, a step smaller than the author beside it — so the hierarchy stays
+ * "the agent spoke" first and "which model" second.
+ *
+ * **Neutral on purpose.** `packages/kit/src/row/badges.tsx` keeps three colour
+ * axes disjoint — `--accent` for agent/unread, `--signal` for needs-you,
+ * `--sepia` for staleness — and a model is a fact rather than a signal, so it
+ * claims none of them. Tinting it `--accent` would also make it a second accent
+ * object immediately beside `.who.agent`, which is already accent-coloured, and
+ * would read as a variant of the unread pill it has nothing to do with.
+ *
+ * Model names are an open display string, never an enum (CONTRACT-043), so
+ * nothing here can key colour off the name — and this is the one element in the
+ * row that **gives** when space runs out. The contract permits 200 characters,
+ * and a `min-width: auto` flex item would sooner push the hover controls out of
+ * a narrow column than shrink. So: a `max-width` that comfortably clears a full
+ * `claude-opus-4-20250514`-shaped id at rest (measured — 24ch truncated it, the
+ * chip's own padding and border being part of the border-box), and `min-width:
+ * 0` so a genuinely tight column ellipsizes it instead of overflowing. `title`
+ * carries the whole name either way.
+ */
+.turn-model {
+  font-size: 9.5px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 0 6px;
+  max-width: 32ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .turn-comment,
 .turn-del {
   margin-left: auto;
