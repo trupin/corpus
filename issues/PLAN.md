@@ -433,11 +433,16 @@ belongs to the same fix wave.
 | INFRA-023 | New nanoid advisory blocks every commit; scoped override clears it | done | P1 | INFRA-010 |
 | AGENT-019 | Loop block renders dispatch as a comment; chaining `claim-all && idle` drops it | todo | P0 | — |
 | UI-087 | Child threads render twice in a thread reader — per turn and again below the body | todo | P1 | — |
-| SHARED-024 | `isParent` filter + the form-refusal rules — §9.2/§6/§11 riders, DRAFT awaiting sign-off | blocked | P1 | — |
+| SHARED-024 | `isParent`: a view can show top-level documents only (SIGNED, applied) | done | P1 | — |
 | CONTRACT-042 | No filter can express "top-level only", so views cannot exclude children | todo | P1 | SHARED-024 |
 | SERVER-073 | Answer `isParent` in the collection query | todo | P1 | CONTRACT-042 |
 | UI-088 | A view cannot be told to show top-level documents only | todo | P1 | CONTRACT-042, SERVER-073 |
 | CLI-032 | `corpus doc list` cannot ask for top-level documents only | todo | P2 | CONTRACT-042, SERVER-073 |
+| SHARED-025 | A changelog in the document instead of a thread per change (SIGNED, applied) | done | P1 | — |
+| SHARED-026 | A write is refused when it would not read back (SIGNED, applied) | done | P1 | — |
+| SHARED-027 | An agent turn says which model wrote it (SIGNED, applied) | done | P1 | — |
+| AGENT-020 | Noting a change writes to the document's changelog, not a new thread | todo | P1 | SHARED-025 |
+| UI-089 | The changelog's older entries need a fold that reports its size | todo | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
 | SERVER-067 | Non-blocking errors reach the log but not the response: needs a §14 warning-channel decision | todo | P2 | SERVER-066 |
