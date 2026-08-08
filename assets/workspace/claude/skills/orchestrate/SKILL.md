@@ -392,36 +392,90 @@ already holding. `--references doc_a1b2c3` narrows a search to the documents tha
 at it. Both verbs print ids, heading paths and snippets; open a body with
 `corpus doc show <id>` only where a snippet restates the old claim, and open at most three.
 
-**4 — Update or comment, and lean to commenting.** Update another document only when the
-correction is mechanical and entailed — the same fact, stated the same way, now wrong, with
-exactly one way to write the new one: the rate this document quotes is the rate the person
-just corrected. Everything else is a comment on that document: a conclusion drawn from the
-old fact, a rewrite that takes a decision, a passage where the ripple is a question rather
-than a substitution. Comment rather than update whenever the diff came back cut. Anchor that
-comment to the passage that is now wrong when you can quote the span exactly — that is what
-makes it findable — and fall back to a whole-document thread when the passage is not one
-span or when the anchoring write is refused by the user's lock. Stop at three documents:
-past that, name what looks affected in the acknowledgment instead of spraying threads, and
-let the person point at the ones that matter.
+**4 — Update, log, or ask, and lean to logging.** Three outcomes, and only the third one is a
+thread. **Update** another document when the correction is mechanical and entailed — the same
+fact, stated the same way, now wrong, with exactly one way to write the new one: the rate this
+document quotes is the rate the person just corrected. **Log** when the ripple is real and you
+have no question about it — a conclusion drawn from the old fact, a passage that now reads
+oddly, anything you would once have raised in a comment. It becomes an entry in that
+document's changelog, saying what changed upstream and what it means here, and it opens
+nothing. Log rather than update whenever the diff came back cut. **Ask** only when you cannot
+act without a decision from the person: a rewrite that takes a decision, a ripple that could
+go two ways with nothing in the corpus to pick between them. That is one thread on the
+document the decision is about —
+`corpus thread create --parent doc_7e3a91 --from agent --quote "<the passage that is now wrong>"`
+when you can quote the span exactly, because that is what makes it findable, and the same
+command without `--quote` when the passage is not one span or when the anchoring write is
+refused by the user's lock — and it asks with a **form**: a fenced block whose info string is
+`form`, last in the turn body, one field per question, asked once. The comment skill's
+**Forms** section is the whole grammar and binds here unchanged. Stop at three documents: past
+that, name what looks affected in the entry on the edited document instead of spraying entries
+and threads, and let the person point at the ones that matter.
 
-**5 — Acknowledge on the document's own surface.** Every substantive edit gets exactly one
-short whole-document thread on the edited document —
-`corpus thread create --parent doc_a1b2c3 --from agent`, no `--quote`, no `--requests-agent`.
-That shape exists already and is the right one: it takes no edit lock, writes no anchor into
-a document the person may still have open, and enqueues nothing. Anchoring the
-acknowledgment to text that just moved would do all three. Say what you understood the
-change to be, what you checked, and what came of it — two sentences, not a retelling of the
-person's own writing — and close with the trace line when the reflection wrote anything. One
-acknowledgment per session, never a second. A trivial edit gets none of this.
+**5 — Write the entry, and open no thread.** Every substantive edit ends in exactly one entry,
+appended to the changelog at the end of the edited document's own body. **Noticing is written
+down, not asked about.** A thread means _I need something from you_; a changelog entry means
+_I noticed_. Every observation this reflection produced is an entry — the routine ones and the
+ones that look worrying, on the same terms. An observation that troubles you and carries no
+question is still an entry and nothing more; the moment it carries a question you cannot
+proceed without, that is step 4's ask, on one thread, with a form, about that question alone.
+One entry per session, never a second. A trivial edit gets none of this.
 
-The thread you open is a note, not a summons: it carries no request for the agent, so it can
-be read and left alone. The person pulls you back in by mentioning you in it, exactly as in
-any other thread.
+Why the document rather than a thread: an open thread is this corpus's one signal that
+something is waiting on the person, and an acknowledgment nobody needs to answer spends that
+signal until the threads that do want an answer are buried among the ones that do not. The
+entry instead lives where the change lives, is read by whoever next opens the document, and is
+ordinary body text — commentable, anchorable, searchable, and the person's to edit exactly
+like the rest of the body. **The changelog is yours to maintain and theirs to edit; neither of
+you owns it.** Somebody remarking on an entry is an ordinary anchored comment and needs
+nothing special from you. The cost is accepted rather than hidden: an observation nobody reads
+is an observation nobody sees, and that trade was made deliberately against a corpus of
+threads nobody needed to answer.
+
+**Say what you made of it, not what the diff said.** Git holds every diff already, so an entry
+that only restates one is worth less than the room it takes. Name the claim that changed, then
+what it means for the corpus: what you checked, what you found, what you changed elsewhere,
+what you deliberately left alone. A date and two sentences is the size of it. The entry is
+body text rather than a turn, so it carries no trace arrow.
+
+**Append; never rewrite the section.** There is no append verb — `corpus doc edit` replaces
+the body — so it is `corpus doc show doc_a1b2c3` for the body as it now stands, then one
+`corpus doc edit doc_a1b2c3 --from agent` sending that body back with the new entry after the
+last one, every other byte reproduced exactly. The person writes in this section too:
+re-wording, re-ordering, re-dating, merging or condensing an existing entry is how their
+writing disappears — and every thread anchored into an entry you rewrote comes loose, which
+the edit reports as an orphan after the fact rather than refusing beforehand. No reason for
+rewriting is a good one. Entries run oldest first, so the
+newest goes last and the append disturbs nothing above it. Where the section is absent the
+first entry creates it, as the last thing in the body: a blank line, the heading, a blank
+line, the entry. That heading is spelled `## Changelog` and nothing else — a second spelling
+is a second section, and the reader's clip finds neither.
+
+**The word to read in the anchor report is `orphaned`.** Appending at the end moves no
+earlier offset, so nothing above the section shifts and an honest append orphans nothing. An
+orphan after one means what you sent was not what you read: go back to `corpus doc show` and
+redo the append from what the document actually says. A **remap** is a different thing and
+not a warning — the first entry introduces the section directly under whatever text used to
+end the body, so the anchor sitting on that text has its trailing context rewritten and is
+reported as remapped while staying exactly where it was. Later appends land past the section
+and report nothing at all.
+
+**This write takes an edit lock, where posting a thread would not have.** The person's session
+ended, but their editor can be open again by the time you write, and a refused write comes
+back as exit `5` with the holder named. Defer on it exactly as Locks and deferral says, with
+`--blocked-on` naming the edited document; the event returns to `pending` by itself once the
+lock clears, and the entry lands then. Never retry it blind, and never drop the entry because
+the document was busy.
+
+**Length is never a reason to prune.** Past a threshold the reader clips the section and says
+how many entries sit behind the control, and expanding shows them whole; the entries
+themselves stay. You never delete one, never fold two into one, and never start the section
+over — the same rule that has you archive rather than delete everywhere else.
 
 **A cut diff is never reasoned about as if it were whole.** The size slot on the counts line
 says which case you are in — `268 characters` when whole, `showing 16000 of 61200 characters`
-when cut — and a `#` notice repeats it under the body. When it is cut: say so in the
-acknowledgment, in the numbers the counts line printed; never update another document off it,
+when cut — and a `#` notice repeats it under the body. When it is cut: say so in the entry,
+in the numbers the counts line printed; never update another document off it,
 because the correction may sit in the part you did not see; and when the session was more
 than one commit, `corpus doc diff doc_a1b2c3` with no range reads its newest commit whole,
 which is a smaller change you can see all of. `corpus doc show doc_a1b2c3` gives the document
@@ -454,8 +508,8 @@ corpus doc show doc_7e3a91
 ```
 
 One document, one figure, one way to write the new one — mechanical and entailed, so it is
-an update rather than a question. Then the acknowledgment, on the edited document, stating
-the change and closing with the trace:
+an update rather than a question. The update carries its own entry, because with no thread
+opened anywhere nothing else would tell a reader of that document why its figure moved:
 
 ```bash
 corpus doc edit doc_7e3a91 --from agent <<'EOF'
@@ -463,15 +517,35 @@ corpus doc edit doc_7e3a91 --from agent <<'EOF'
 
 Every projection here assumes 6.4% for the whole term, following the rate
 assumption in [[doc_a1b2c3]].
+
+## Changelog
+
+- **2026-07-28** — carried the working rate assumption from 6.1% to 6.4%, following the
+  correction in [[doc_a1b2c3]]. Every projection here reads that one figure, so the change
+  is arithmetic and takes no decision.
 EOF
 corpus job log evt_7c1d9a "edited [[doc_7e3a91]] — carried the 6.4% rate assumption across"
-corpus thread create --parent doc_a1b2c3 --from agent <<'EOF'
-You moved the working rate assumption to 6.4%. One other document copied the
-old 6.1% — [[doc_7e3a91]] — and I carried the new figure across; nothing else
-in the corpus quotes it.
-↳ updated the rate assumption in [[doc_7e3a91]] to 6.4%
+```
+
+Then the entry on the edited document itself, appended to the body exactly as `corpus doc show`
+printed it — the July 14th entry was already there and is passed back through untouched:
+
+```bash
+corpus doc show doc_a1b2c3
+corpus doc edit doc_a1b2c3 --from agent <<'EOF'
+# Mortgage options
+
+The working rate assumption is 6.4% as of 2026-07-28.
+
+## Changelog
+
+- **2026-07-14** — replaced last year's lender table with this year's. Nothing else in the
+  corpus quoted those figures.
+- **2026-07-28** — the working rate assumption moved from 6.1% to 6.4%. [[doc_7e3a91]]
+  projected the whole term at the old figure and I carried the new one across; nothing else
+  quotes it, and nothing here needs a decision from you.
 EOF
-corpus job log evt_7c1d9a "completed — acknowledged on [[doc_a1b2c3]]"
+corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"
 corpus queue complete evt_7c1d9a
 ```
 
@@ -627,6 +701,16 @@ applying the comment skill; delegation dilutes none of it. The charter:
   thread is written into a document — created, or an existing one updated — never left
   buried in conversation. The rule: if you would need it in a future thread, write it down
   now.
+- **Noticing a change is written down, not asked about.** When you notice that a document has
+  changed, what you noticed goes into that document's changelog — the `## Changelog` section
+  at the end of its body — and no thread is opened for it. A thread means _I need something
+  from you_; the changelog means _I noticed_. This holds for every observation, the routine
+  ones and the ones that look worrying alike: you open a thread only when you cannot proceed
+  without a decision from the person, and then you ask for that decision with a form. It
+  narrows what a noticed change may do and narrows nothing else — everywhere else you need a
+  decision, a preference or a missing fact, the ask is exactly what it was. The section is
+  appended to and never rewritten, so the person's own writing inside it survives; it is
+  yours to maintain and theirs to edit, and neither of you owns it.
 - **Stale content is updated** when you touch a document and find it out of date.
 - **Obsolete documents are archived** — you archive, never delete; deletion is the user's
   alone.
@@ -642,7 +726,8 @@ applying the comment skill; delegation dilutes none of it. The charter:
   ever a reason to list the tree or read documents to see what they hold: retrieve, then open
   the one id that earned it.
 - **Every change is stated in the reply that occasioned it** — one line per change, naming
-  the document. Nothing you do is silent.
+  the document. Where the work opened no thread to reply in, which is what reflecting on a
+  user edit now does, the changelog entry is that statement. Nothing you do is silent.
 - **Every turn that wrote closes with a trace line.** When a turn's work changed the corpus,
   its **final line — and only its final line —** is the arrow `↳ `, a space, then a one-line,
   past-tense report of what the work did, as in

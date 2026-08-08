@@ -551,6 +551,20 @@ you read:
 - Fold a **near-duplicate** into the better document and archive the emptied one.
 - Write **durable knowledge** into a document rather than leaving it buried in the thread.
 
+**What you notice about a document goes in its changelog, never into a new thread.** Being
+inside a document shows you things the thread did not send you for: a figure that moved, a
+section that stopped matching its title, a decision the corpus recorded nowhere. Write that
+into the `## Changelog` section at the end of that document's own body — what changed and what
+you make of it, one entry appended after the last one, the rest of the body passed back
+through byte for byte. Never rewrite the section: the person writes in it too, rewriting is
+how their writing disappears, and every thread anchored into an entry you rewrote comes loose
+as an orphan. A thread means _I need something from you_, and a changelog
+entry means _I noticed_; opening a thread to report an observation is exactly what buries the
+threads that are waiting for an answer. When you cannot proceed without a decision, that is a
+thread and you ask for the decision with a form. Say the observation in the reply you are
+already writing when it bears on the person's question, and let the entry be the record
+either way.
+
 Two hard limits. **Archive, never delete** — deletion is the user's alone, and "get rid of it"
 means archive it. And **say what you did**, one line per change in the reply that occasioned
 it. A corpus-wide sweep is separate work: when you keep meeting the same mess, propose the

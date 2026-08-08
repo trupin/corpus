@@ -457,8 +457,14 @@ describe("orchestrate skill body", () => {
   it("gives every section a substantive body, not a bare heading", () => {
     const sections = new Map<string, string[]>();
     let current: string | null = null;
+    // Fence-aware, on the same grounds the comment skill's counter already is:
+    // the worked examples pass whole document bodies through heredocs, and the
+    // `## Changelog` line inside one is that document's content, not a section
+    // of this skill. Counting it would make showing the format impossible.
+    let inFence = false;
     for (const line of body.split("\n")) {
-      if (line.startsWith("## ")) {
+      if (line.trimStart().startsWith("```")) inFence = !inFence;
+      if (!inFence && line.startsWith("## ")) {
         current = line.slice(3);
         sections.set(current, []);
       } else if (current !== null) {
@@ -630,19 +636,11 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/at most three claims/);
       expect(body).toContain("--references doc_a1b2c3");
       expect(body).toMatch(/open at most three/);
-      // Commenting is the default; updating is the entailed-correction case.
-      expect(body).toMatch(/lean to commenting/i);
+      // Logging is the default now (AGENT-020); updating stays the
+      // entailed-correction case, and asking is the only one that is a thread.
+      expect(body).toMatch(/lean to logging/i);
       expect(body).toMatch(/mechanical and entailed/);
       expect(body).toMatch(/Stop at three documents/);
-    });
-
-    it("acknowledges with a whole-document thread and says why that surface", () => {
-      expect(body).toMatch(
-        /corpus thread create --parent doc_a1b2c3 --from agent`, no `--quote`, no `--requests-agent`/,
-      );
-      expect(body).toMatch(/takes no edit lock, writes no anchor/);
-      expect(body).toMatch(/One\s+acknowledgment per session, never a second/);
-      expect(body).toMatch(/A trivial edit gets none of this/);
     });
 
     it("restates the actor guarantee so the reflection cannot cascade or self-suppress", () => {
@@ -689,7 +687,135 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/corpus job log evt_7c1d9a "claimed doc\.edited on \[\[doc_a1b2c3\]\]/);
       expect(body).toMatch(/^\+The working rate assumption is 6\.4%/m);
       expect(body).toMatch(/corpus doc edit doc_7e3a91 --from agent <<'EOF'/);
-      expect(body).toMatch(/↳ updated the rate assumption in \[\[doc_7e3a91\]\] to 6\.4%/);
+      // It ends in an entry, not in a thread: the read that makes an append
+      // possible, the write that carries it, and a job log saying so.
+      expect(body).toMatch(/corpus doc show doc_a1b2c3\ncorpus doc edit doc_a1b2c3 --from agent/);
+      expect(body).toContain(
+        'corpus job log evt_7c1d9a "completed — logged the change on [[doc_a1b2c3]], no thread opened"',
+      );
+    });
+
+    /**
+     * AGENT-020, SPEC §5/§7/§11's rider signed 2026-08-07. Noticing writes an
+     * entry; only needing something opens a thread. Each load-bearing claim is
+     * pinned separately, because the ones that decay quietly are the mechanical
+     * ones — the exact heading, the read-before-write that makes an append an
+     * append, and the refusal to prune — and a decayed one is invisible until a
+     * person's own writing has already been overwritten.
+     */
+    describe("the changelog", () => {
+      it("writes the observation into the document and opens no thread", () => {
+        expect(body).toMatch(/\*\*5 — Write the entry, and open no thread\.\*\*/);
+        expect(body).toMatch(/\*\*Noticing is written\s+down, not asked about\.\*\*/);
+        expect(body).toMatch(/A thread means _I need something from you_/);
+        expect(body).toMatch(/a changelog entry means\s+_I noticed_/);
+        expect(body).toMatch(/One entry per session, never a second/);
+        expect(body).toMatch(/A trivial edit gets none of this/);
+        // The reflection's own acknowledgment thread is gone, in every form.
+        expect(body).not.toMatch(/corpus thread create --parent doc_a1b2c3/);
+      });
+
+      it("leaves no escape hatch for an observation that merely looks serious", () => {
+        // The rejected middle option: "but open a thread if it seems
+        // consequential". A worrying observation is an entry like any other.
+        expect(body).toMatch(
+          /the routine ones and the\s+ones that look worrying, on the same terms/,
+        );
+        expect(body).toMatch(/still an entry and nothing more/);
+        // A thread needs a question the agent cannot proceed without, asked
+        // with a form — the one door, named where the door is.
+        expect(body).toMatch(/a question you cannot\s+proceed without/);
+        expect(body).toMatch(/on one thread, with a form/);
+        // And the accepted cost is written down rather than quietly dropped.
+        expect(body).toMatch(/an observation nobody reads\s+is an observation nobody sees/);
+      });
+
+      it("pins one spelling for the heading and says what a second one costs", () => {
+        expect(body).toContain("`## Changelog`");
+        expect(body).toMatch(/spelled `## Changelog` and nothing else/);
+        expect(body).toMatch(/a second spelling\s+is a second section/);
+        // Both worked heredocs write that exact heading, so the format the
+        // skill describes is the format its example produces.
+        const changelogFences = fencedBlocks(body).filter((block) =>
+          block.content.includes("## Changelog"),
+        );
+        expect(changelogFences.length).toBeGreaterThanOrEqual(2);
+        for (const fence of changelogFences) {
+          expect(fence.content).toMatch(/^## Changelog$/m);
+          expect(fence.content).toMatch(/^- \*\*\d{4}-\d{2}-\d{2}\*\* — /m);
+        }
+      });
+
+      it("appends by reading first, and forbids rewriting the section", () => {
+        expect(body).toMatch(/\*\*Append; never rewrite the section\.\*\*/);
+        expect(body).toMatch(/There is no append verb/);
+        // The read is what makes the write an append rather than a replacement.
+        expect(body).toMatch(/corpus doc show doc_a1b2c3` for the body as it now stands/);
+        expect(body).toMatch(/every other byte reproduced exactly/);
+        // The reason, not only the rule: the person writes in here too, and a
+        // rewrite orphans every thread anchored into what it replaced —
+        // measured against a running server, which reports it only afterwards.
+        expect(body).toMatch(/The person writes in this section too/);
+        expect(body).toMatch(/how their\s+writing disappears/);
+        expect(body).toMatch(/comes loose, which\s+the edit reports as an orphan after the fact/);
+        expect(body).toMatch(/Entries run oldest first/);
+      });
+
+      it("states the shared ownership the format depends on", () => {
+        expect(body).toMatch(
+          /\*\*The changelog is yours to maintain and theirs to edit; neither of\s+you owns it\.\*\*/,
+        );
+        // Ordinary body content: remarking on an entry needs no new machinery.
+        expect(body).toMatch(/commentable, anchorable, searchable/);
+        expect(body).toMatch(/an ordinary anchored comment and needs\s+nothing special/);
+      });
+
+      it("makes the entry a judgement rather than a restatement of the diff", () => {
+        expect(body).toMatch(/\*\*Say what you made of it, not what the diff said\.\*\*/);
+        expect(body).toMatch(/Git holds every diff already/);
+        expect(body).toMatch(/worth less than the room it takes/);
+        expect(body).toMatch(/what you deliberately left alone/);
+        // An entry is body text, so the turn-only trace arrow has no place in it.
+        expect(body).toMatch(/carries no trace arrow/);
+      });
+
+      it("checks the append against the anchor report, and never prunes", () => {
+        // Measured on a running server: a faithful append never orphans, but the
+        // *first* entry does report one remapped anchor — the one whose trailing
+        // context the new section rewrote. Telling the agent to expect a clean
+        // report would have it re-doing a correct append forever, so `orphaned`
+        // is named as the signal and `remapped` is disarmed by name.
+        expect(body).toMatch(/\*\*The word to read in the anchor report is `orphaned`\.\*\*/);
+        expect(body).toMatch(/an honest append orphans nothing/);
+        expect(body).toMatch(/what you sent was not what you read/);
+        expect(body).toMatch(/A \*\*remap\*\* is a different thing and\s+not a warning/);
+        expect(body).toMatch(/reported as remapped while staying exactly where it was/);
+        expect(body).toMatch(/Later appends land past the section\s+and report nothing at all/);
+        // Growth is the reader's problem, not a licence to drop history.
+        expect(body).toMatch(/\*\*Length is never a reason to prune\.\*\*/);
+        expect(body).toMatch(/how many entries sit behind the control/);
+        expect(body).toMatch(/never fold two into one/);
+      });
+
+      it("defers on the edit lock this write newly takes", () => {
+        // The acknowledgment thread took no lock; this write does, so the
+        // deferral path has to be reachable from here or the entry is lost.
+        expect(body).toMatch(
+          /\*\*This write takes an edit lock, where posting a thread would not have\.\*\*/,
+        );
+        expect(body).toMatch(/`--blocked-on` naming the edited document/);
+        expect(body).toMatch(/never drop the entry because\s+the document was busy/);
+      });
+
+      it("puts the rule in the stewardship charter, scoped to noticing alone", () => {
+        expect(body).toMatch(/\*\*Noticing a change is written down, not asked about\.\*\*/);
+        expect(body).toMatch(/no thread is opened for it/);
+        expect(body).toMatch(/ask for that decision with a form/);
+        // It narrows noticing and nothing else — every other ask is unchanged.
+        expect(body).toMatch(/narrows what a noticed change may do and narrows nothing else/);
+        // With no reply to state a change in, the entry is that statement.
+        expect(body).toMatch(/the changelog entry is that statement/);
+      });
     });
   });
 
@@ -1182,6 +1308,28 @@ describe("comment skill body", () => {
     expect(body).toMatch(/leave it better than you\s+found it/i);
     expect(body).toMatch(/Archive, never delete/i);
     expect(body).toMatch(/deletion is the user's alone/i);
+  });
+
+  /**
+   * AGENT-020's half of the rule, where this skill needs it: a subagent working
+   * a thread sees plenty it was not sent for, and the old reflex — open a thread
+   * about it — is exactly what buried the threads that wanted an answer.
+   */
+  it("sends what it notices to the changelog rather than to a new thread", () => {
+    expect(body).toMatch(
+      /\*\*What you notice about a document goes in its changelog, never into a new thread\.\*\*/,
+    );
+    expect(body).toContain("`## Changelog`");
+    expect(body).toMatch(/one entry appended after the last one/);
+    expect(body).toMatch(/the rest of the body passed back\s+through byte for byte/);
+    // Append, with the reason that makes the rule survive an optimising reader.
+    expect(body).toMatch(/Never rewrite the section/);
+    expect(body).toMatch(/how their writing disappears/);
+    expect(body).toMatch(/every thread anchored into an entry you rewrote comes loose/);
+    // The one door to a thread, and the cost of using it for anything else.
+    expect(body).toMatch(/A thread means _I need something from you_/);
+    expect(body).toMatch(/buries the\s+threads that are waiting for an answer/);
+    expect(body).toMatch(/you ask for the decision with a form/);
   });
 
   it("routes plugin-domain work to the plugin's skill, naming no plugin", () => {
