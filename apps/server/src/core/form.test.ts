@@ -1,6 +1,7 @@
-import { FORM_ANSWER_LABEL } from "@corpus/contract";
+import { FORM_ANSWER_LABEL, formAnswerRecords, formatFormAnswerBody } from "@corpus/contract";
+import type { Form, FormAnswerRequest } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
-import { answeredOption, readForm, readThreadForms, type FormTurn } from "./form.js";
+import { isFormAnswered, readForm, readThreadForms, type FormTurn } from "./form.js";
 
 /**
  * What the projection stores in `turns.has_form`, asked of one body. It used to
@@ -15,11 +16,66 @@ const YAML_BODY = "prompt: Ship it?\noptions:\n  - Yes\n  - No";
 const fenced = (info: string, source: string): string =>
   `Some prose.\n\n\`\`\`${info}\n${source}\n\`\`\`\n\nMore prose.\n`;
 
+const MULTI_YAML = [
+  "fields:",
+  '  - question: "Which rate?"',
+  '    kind: "choose one"',
+  "    options:",
+  '      - "6.1% fixed"',
+  '      - "5.4% variable"',
+  '  - question: "Which risks apply?"',
+  '    kind: "choose any"',
+  "    options:",
+  '      - "Rate rise"',
+  '      - "Currency"',
+  '  - question: "Anything to flag?"',
+  '    kind: "write"',
+  "    optional: true",
+].join("\n");
+
 describe("readForm", () => {
   it("reads a well-formed fence", () => {
     const reading = readForm(fenced("form", YAML_BODY));
     expect(reading.ok).toBe(true);
-    expect(reading.ok && reading.form).toEqual({ prompt: "Ship it?", options: ["Yes", "No"] });
+    // The short spelling normalises into the field list at the parse boundary
+    // (CONTRACT-038), so exactly one shape reaches this module.
+    expect(reading.ok && reading.form).toEqual({
+      fields: [
+        { question: "Ship it?", kind: "choose one", options: ["Yes", "No"], optional: false },
+      ],
+    });
+  });
+
+  it("reads the multi-field grammar, through the contract's schema and nowhere else", () => {
+    const reading = readForm(fenced("form", MULTI_YAML));
+    expect(reading.ok && reading.form).toEqual({
+      fields: [
+        {
+          question: "Which rate?",
+          kind: "choose one",
+          options: ["6.1% fixed", "5.4% variable"],
+          optional: false,
+        },
+        {
+          question: "Which risks apply?",
+          kind: "choose any",
+          options: ["Rate rise", "Currency"],
+          optional: false,
+        },
+        { question: "Anything to flag?", kind: "write", optional: true },
+      ],
+    });
+  });
+
+  it.each([
+    ["a fourth kind", 'fields:\n  - question: "Q"\n    kind: "pick a date"'],
+    ["two fields asking the same question", 'fields:\n  - question: "Q"\n    kind: "write"\n  - question: "Q"\n    kind: "write"'], // prettier-ignore
+    ["a `write` field carrying options", 'fields:\n  - question: "Q"\n    kind: "write"\n    options:\n      - "a"'], // prettier-ignore
+    ["a `choose one` with no options", 'fields:\n  - question: "Q"\n    kind: "choose one"'],
+    ["an empty field list", "fields: []"],
+    ["a misspelled `optional`", 'fields:\n  - question: "Q"\n    kind: "write"\n    optionnal: true'], // prettier-ignore
+  ])("never half-reads %s", (_label, yaml) => {
+    expect(readForm(fenced("form", yaml))).toMatchObject({ ok: false, reason: "not-a-form" });
   });
 
   it("reads a fence that opens the body", () => {
@@ -67,17 +123,6 @@ describe("readForm", () => {
     const reading = readForm(fenced("form", "prompt: Pick\noptions:\n  - A\n  - A"));
     expect(reading).toMatchObject({ ok: false, reason: "not-a-form" });
     expect(reading.ok === false && reading.detail).toContain("distinct");
-  });
-});
-
-describe("answeredOption", () => {
-  it("reads the option off the label, and nothing else", () => {
-    expect(answeredOption(`${FORM_ANSWER_LABEL} 6.4%`)).toBe("6.4%");
-    expect(answeredOption(`${FORM_ANSWER_LABEL} Yes\n\nwith caveats`)).toBe("Yes");
-    expect(answeredOption(`${FORM_ANSWER_LABEL}`)).toBeUndefined();
-    expect(answeredOption(`${FORM_ANSWER_LABEL}   `)).toBeUndefined();
-    expect(answeredOption("Answered: Yes")).toBeUndefined();
-    expect(answeredOption(`prose\n${FORM_ANSWER_LABEL} Yes`)).toBeUndefined();
   });
 });
 
@@ -215,17 +260,114 @@ describe("readThreadForms", () => {
     });
   });
 
-  // The evaluator's FINDING-3 on SERVER-032, kept as a test because it is the
-  // documented *limit* of order-based attribution rather than a defect to fix
-  // here: an exact pairing needs the form's `ts` in the answer turn's wire
-  // format, which is SPEC §6's grammar and the renderer's reader as much as it
-  // is this module (see the docblock; filed as a P3).
-  it("mis-attributes a repeated answer when two open forms share an option string", () => {
+  // The evaluator's FINDING-3 on SERVER-032. It survives only for the **short**
+  // spelling, which names an option and no question at all — there is nothing
+  // else in those bytes to pair on. Every answer the server writes now names its
+  // questions, so the case below is reachable only for turns committed before
+  // SERVER-068 (see the block after this one).
+  it("mis-attributes a repeated short answer when two open forms share an option string", () => {
     const shared = ["same", "other"];
     const turns = [form(0, 1, shared), form(1, 2, ["same", "other2"]), answer(2, "same")];
     expect(unanswered(turns)).toEqual([stamp(1)]);
     // Answering form 1 a second time retires form 2, which nobody answered.
     expect(unanswered([...turns, answer(3, "same")])).toEqual([]);
+  });
+
+  // SERVER-068. The answer names, for every field the form asked, the question
+  // and what was given for it — so pairing is a content question, and the
+  // failures the order rule had are not reachable through it.
+  describe("pairing by content", () => {
+    const rich = (index: number, label: number): FormTurn => ({
+      author: "agent",
+      ts: stamp(index),
+      body: `Question ${label}\n\n\`\`\`form\nfields:\n  - question: "Pick ${label}"\n    kind: "choose one"\n    options:\n      - "same"\n      - "other"\n\`\`\`\n`, // prettier-ignore
+    });
+
+    const formOf = (turn: FormTurn): Form => {
+      const reading = readForm(turn.body);
+      if (!reading.ok) throw new Error("fixture is not a form");
+      return reading.form;
+    };
+
+    const answering = (index: number, target: FormTurn, request: FormAnswerRequest): FormTurn => ({
+      author: "user",
+      ts: stamp(index),
+      body: formatFormAnswerBody({
+        answers: formAnswerRecords(formOf(target), request),
+        note: request.note ?? null,
+      }),
+    });
+
+    it("closes the form whose questions the answer names, not the earliest", () => {
+      const first = rich(0, 1);
+      const second = rich(1, 2);
+      const turns = [
+        first,
+        second,
+        answering(2, second, { answers: [{ question: "Pick 2", option: "same" }] }),
+      ];
+      // Both forms offer `same`; the order rule would have closed the first.
+      expect(unanswered(turns)).toEqual([stamp(0)]);
+    });
+
+    it("leaves both open when the answer names a question neither asks", () => {
+      const other = rich(9, 3);
+      const turns = [
+        rich(0, 1),
+        rich(1, 2),
+        answering(2, other, { answers: [{ question: "Pick 3", option: "same" }] }),
+      ];
+      expect(unanswered(turns)).toEqual([stamp(0), stamp(1)]);
+    });
+
+    it("does not let a repeated answer close a form nobody answered", () => {
+      const first = rich(0, 1);
+      const turns = [
+        first,
+        rich(1, 2),
+        answering(2, first, { answers: [{ question: "Pick 1", option: "same" }] }),
+        answering(3, first, { answers: [{ question: "Pick 1", option: "other" }] }),
+      ];
+      expect(unanswered(turns)).toEqual([stamp(1)]);
+    });
+
+    it("still mis-attributes two open forms asking a literally identical question", () => {
+      // The residual §6 accepts: with no form id in the prose, identical
+      // questions are indistinguishable. Documented, not closed.
+      const twin = rich(0, 1);
+      const turns = [
+        twin,
+        { ...rich(1, 1), ts: stamp(1) },
+        answering(2, twin, { answers: [{ question: "Pick 1", option: "same" }] }),
+      ];
+      expect(unanswered(turns)).toEqual([stamp(1)]);
+    });
+
+    it("reads a mixed thread: a legacy form and answer beside a multi-field pair", () => {
+      const legacy = form(0, 1);
+      const modern = rich(1, 2);
+      const turns = [
+        legacy,
+        modern,
+        answer(2, "F1-yes"),
+        answering(3, modern, { answers: [{ question: "Pick 2", option: "other" }] }),
+      ];
+      expect(unanswered(turns)).toEqual([]);
+    });
+  });
+
+  describe("isFormAnswered", () => {
+    it("answers per form, by the turn that carries it", () => {
+      const turns = [form(0, 1), form(1, 2), answer(2, "F1-yes")];
+      expect(isFormAnswered(turns, stamp(0))).toBe(true);
+      expect(isFormAnswered(turns, stamp(1))).toBe(false);
+    });
+
+    it("is false for a turn that carries no form, and for a stamp nothing carries", () => {
+      const turns = [plain(0), form(1, 1)];
+      expect(isFormAnswered(turns, stamp(0))).toBe(false);
+      expect(isFormAnswered(turns, "2026-07-30T23:59:00Z")).toBe(false);
+    });
   });
 
   it("says nothing at all about a thread with no forms", () => {

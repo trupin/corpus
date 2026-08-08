@@ -498,6 +498,15 @@ export function projectDocument(db: ProjectionDb, absPath: string): ProjectionOu
       removeDocument(db, absPath);
       return { kind: "removed", path: relativePath };
     }
+    // Every other way the filesystem can refuse — EACCES, EIO, a file too large
+    // to read — is thrown, and that is deliberate: this function is called from
+    // a write path (`docs/write.ts` projects inline before responding) where a
+    // save that cannot read its own file back must fail loudly rather than
+    // answer `200` over a row nobody derived. Whether a *boot* may survive the
+    // same failure is a different question with a different answer, and it is
+    // `populateFromFiles`'s to make (SERVER-064) — the store stays honest, the
+    // reader decides the policy. Nothing is removed here: the rows this file
+    // last produced still describe a file that exists.
     throw error;
   }
 

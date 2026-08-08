@@ -29,7 +29,13 @@
 // `SCHEMA_VERSION` bump that recomputed `has_form` under the settled rules.
 
 import type { Form } from "@corpus/contract";
-import { FORM_ANSWER_LABEL, FormSchema, extractFormSource } from "@corpus/contract";
+import {
+  FormSchema,
+  describeFormFailure,
+  extractFormSource,
+  isFormAnswerBody,
+  parseFormAnswerBody,
+} from "@corpus/contract";
 import * as YAML from "yaml";
 
 /**
@@ -77,26 +83,14 @@ export function readForm(body: string): FormReading {
     return {
       ok: false,
       reason: "not-a-form",
-      detail: parsed.error.issues[0]?.message ?? null,
+      // The one sentence a malformed form is reported with — the route's `404`
+      // detail and the write path's `400`. It is the contract's
+      // `describeFormFailure` rather than a reader of its own, because the board
+      // shows the *same* sentence for the same bytes (PR #28 finding 6).
+      detail: describeFormFailure(parsed.error),
     };
   }
   return { ok: true, form: parsed.data };
-}
-
-/**
- * The option an answer turn recorded, or `undefined` when the turn is not an
- * answer.
- *
- * The label is the contract's (`FORM_ANSWER_LABEL`), not a spelling chosen here:
- * an answer travels as prose so it reads as prose in `git log`, which means the
- * lead-in *is* the wire format for "this turn answers a form", and the UI reads
- * it the same way to decide whether to draw live controls.
- */
-export function answeredOption(body: string): string | undefined {
-  const first = body.split("\n", 1)[0]?.trim() ?? "";
-  if (!first.startsWith(FORM_ANSWER_LABEL)) return undefined;
-  const option = first.slice(FORM_ANSWER_LABEL.length).trim();
-  return option === "" ? undefined : option;
 }
 
 /** What {@link readThreadForms} needs of a turn; the parsed thread's turns satisfy it. */
@@ -131,39 +125,42 @@ export type TurnFormState = {
  * answering any one form moved `last_author` to `user` and dropped the whole
  * thread out of Attention while its other forms were still live.
  *
- * **Attribution is by order, because the prose carries no back-reference.** The
- * answer turn the server writes is `FORM_ANSWER_LABEL` plus the chosen option
- * and nothing else, so a thread read off disk can only pair answers with forms
- * the way the conversation itself implies: an answer closes the **earliest still
- * open form that offers that option**. An answer naming an option no open form
- * offers belongs to none of them and is left alone — it is an ordinary turn that
- * happens to start with the label. That is deliberately the same rule the UI's
- * `mapFormAnswers` applies when it has no session pairing to go on (its extra
- * rung knows which form *this* browser tab just answered, which no server
- * reading a file can know), so the badge and the controls agree on every thread
- * either of them can be shown.
+ * **Attribution is by content, because the answer now names its questions**
+ * (SERVER-068). §6 requires the answer turn to name, for every field the form
+ * asked, the question and what was given for it — so a thread read off disk
+ * pairs an answer with a form by asking the contract's own reader,
+ * `parseFormAnswerBody(body, form)`, whether that body is an answer to *that*
+ * form. It is, exactly when it names that form's questions and each block fits
+ * its field's kind. The **earliest still-open** form that accepts it wins, which
+ * matters only where two of them would accept the same body.
  *
- * **Where the order rule is knowably wrong, and why it stays** (sprint-017
- * evaluator FINDING-3, wave-3 audit CLEAN 51). "Earliest open form offering the
- * option" is exact while the open forms offer *disjoint* options. When two of
- * them share an option string it is a guess, and one case makes the guess
- * visible: answering form 1 twice with a string form 2 also offers retires
- * form 2, which nobody answered — the second answer finds form 1 already closed
- * and takes the next form offering that text. §6 defines no once-only rule, so
- * the second answer is an ordinary turn that cannot be ignored either.
+ * That replaced an order rule over a single option string, whose failure was
+ * routine rather than exotic: an answer closed the earliest open form *offering
+ * that option*, so two forms sharing an option string were a coin toss. The
+ * pairing is now wrong only for two open forms in one thread asking a
+ * **literally identical** question — and multi-field forms make several open
+ * forms rarer, because the reason to open a second one is now a field.
  *
- * The exact attribution exists but is not reachable from here: the answer
- * *route* knows which form it addressed — the `:ts` in
- * `POST /api/threads/{id}/turns/{ts}/form` is the form's identity (§6) — and
- * throws it away, because the turn it writes is prose so that it reads as prose
- * in `git log`. Recovering it means putting a back-reference to the form's `ts`
- * into the answer turn's wire format: SPEC §6's turn grammar, the contract's
- * `FORM_ANSWER_LABEL`, and the renderer's reader, all at once. That is a
- * cross-domain change rather than a server one, and nothing this module can
- * fake locally, since every column the projection stores must be rebuildable
- * from the file alone. Left as a P3 rather than improvised; until it is taken,
- * this is the rule *both* sides apply, so the badge and the controls agree even
- * where both of them are guessing.
+ * **The short spelling is still an answer.** `**Answered:** Yes` is what every
+ * form answered before SERVER-068 says, and those turns are on disk: the
+ * contract's reader pairs one with a form that is a single required choose-one
+ * field offering exactly that option — the only shape that spelling was ever
+ * written for — so no historical thread changes meaning and nothing on disk is
+ * rewritten. An answer naming an option no open form offers belongs to none of
+ * them and is left alone; it is an ordinary turn that happens to start with the
+ * label.
+ *
+ * **Why the residual is not closed here.** The exact attribution exists but is
+ * not reachable from this module: the answer *route* knows which form it
+ * addressed — the `:ts` in `POST /api/threads/{id}/turns/{ts}/form` is the
+ * form's identity (§6) — and does not write it down, because §6 gives the prose
+ * no identifier to write it with ("no form id, no per-option types, no required
+ * markers"). Recovering it means changing SPEC §6's turn grammar, the contract's
+ * format and the renderer's reader at once, and every column the projection
+ * stores must stay rebuildable from the file alone. Accepted rather than
+ * improvised (SHARED-021 Q7); until §6 revises, this is the rule *both* sides
+ * apply, so the badge and the controls agree even where both of them are
+ * guessing.
  *
  * **A turn that both answers a form and carries one counts as both** (wave-3
  * audit FIX 10). The server never writes such a turn — the answer route writes
@@ -176,7 +173,7 @@ export type TurnFormState = {
  * (`threads/forms.ts`'s `requireForm`) — so the form was answerable while
  * `needs=form` said the thread was waiting on nobody. Having one reader exists
  * precisely to stop that, so the turn now does both jobs in order: it closes
- * the earliest open form offering its option, then opens its own.
+ * the earliest open form its body answers, then opens its own.
  *
  * The alternative — `answered: false` without opening it — advertises the form
  * but makes it unclearable, because no later answer could ever be paired with a
@@ -193,15 +190,18 @@ export type TurnFormState = {
  */
 export function readThreadForms(turns: readonly FormTurn[]): readonly TurnFormState[] {
   const states: TurnFormState[] = [];
-  const open: { readonly index: number; readonly options: readonly string[] }[] = [];
+  const open: { readonly index: number; readonly form: Form }[] = [];
 
   turns.forEach((turn, index) => {
     const reading = readForm(turn.body);
     states.push({ hasForm: reading.ok, answered: null });
 
-    const answer = answeredOption(turn.body);
-    if (answer !== undefined) {
-      const at = open.findIndex((form) => form.options.includes(answer));
+    // `isFormAnswerBody` first so an ordinary turn costs one `startsWith`
+    // rather than one parse attempt per open form.
+    if (isFormAnswerBody(turn.body)) {
+      const at = open.findIndex(
+        (candidate) => parseFormAnswerBody(turn.body, candidate.form) !== undefined,
+      );
       if (at !== -1) {
         const [closed] = open.splice(at, 1);
         if (closed !== undefined) states[closed.index] = { hasForm: true, answered: true };
@@ -212,8 +212,22 @@ export function readThreadForms(turns: readonly FormTurn[]): readonly TurnFormSt
     // has already chosen among the forms that were open before this turn.
     if (turn.author !== "agent" || !reading.ok) return;
     states[index] = { hasForm: true, answered: false };
-    open.push({ index, options: reading.form.options });
+    open.push({ index, form: reading.form });
   });
 
   return states;
+}
+
+/**
+ * Whether the form the turn at `formTs` carries has already been answered — the
+ * `409` the answer route owes §6's "a form is answered once, as a whole".
+ *
+ * It asks {@link readThreadForms} rather than counting labels, so the route and
+ * `needs=form` agree by construction: the form this refuses a second answer for
+ * is exactly the form the board has stopped asking about.
+ */
+export function isFormAnswered(turns: readonly FormTurn[], formTs: string): boolean {
+  const states = readThreadForms(turns);
+  const at = turns.findIndex((turn) => turn.ts === formTs);
+  return at !== -1 && states[at]?.answered === true;
 }

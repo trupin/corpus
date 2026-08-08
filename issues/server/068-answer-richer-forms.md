@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -79,35 +79,76 @@ they land:
 
 ## Acceptance Criteria
 
-- [ ] `readForm` parses the multi-field grammar through CONTRACT-038's schema —
+> Ticked 2026-08-07 by the PR #28 fix pass, walking each criterion against the
+> code and the tests rather than against the implementing agent's report. The
+> evidence is named per line; anything that could not be pointed at was left
+> unticked.
+
+- [x] `readForm` parses the multi-field grammar through CONTRACT-038's schema —
       the fence scanner is still the contract's, still asked once, and is not
       re-implemented here
-- [ ] A **legacy** `prompt` + `options` form on disk still parses, still renders
+      — `core/form.ts` calls the contract's `extractFormSource` then
+      `FormSchema.safeParse`, and holds no fence logic of its own;
+      `core/form.test.ts` parses multi-field fences through it
+- [x] A **legacy** `prompt` + `options` form on disk still parses, still renders
       the same one required choose-one field, and its already-committed
       `**Answered:** …` turn is **still recognised as an answer** — nothing on
       disk is rewritten and no historical thread changes meaning
-- [ ] The answer turn names **every** field the form asked, with the question and
+      — `core/form.test.ts` "reads a mixed thread: a legacy form and answer beside
+      a multi-field pair"; the contract's `readShortAnswer` and its five
+      "the short spelling, still on disk in every older workspace" cases
+- [x] The answer turn names **every** field the form asked, with the question and
       what was given for it, and says explicitly when an optional field was left
       blank
-- [ ] The answer turn carries **no machine markup and no identifiers** — it is
+      — `threads/forms.test.ts` "names every field the form asked, in order, with
+      the blank one said out loud", asserted as **bytes**; confirmed on disk in
+      the E2E below (a three-field form with the blank one marked `_(left blank)_`)
+- [x] The answer turn carries **no machine markup and no identifiers** — it is
       prose, readable with the form fence out of view
-- [ ] The optional note stays what it is: one remark about the ask **as a whole**,
+      — `form-answer.test.ts` "carries no fence, no id and no key/value markup"
+      (no ```` ``` ````, no `th_…`, no `key:` lines), plus the byte assertion above
+- [x] The optional note stays what it is: one remark about the ask **as a whole**,
       beside the answers, not re-modelled as a field
-- [ ] Server-side rejection of: an option a field does not offer; an answer to a
+      — `FormAnswerRequestSchema.note` is a sibling of `answers`, not a field;
+      `form-answer.test.ts` "omits the note block entirely when no note was given";
+      the E2E payload carries `note` beside a three-entry `answers`
+- [x] Server-side rejection of: an option a field does not offer; an answer to a
       field the form does not ask; a **required field with no answer**. The UI
       blocking submit is not enforcement
-- [ ] **An agent actor is refused**, on its own form or any other
-- [ ] **A second answer to an already-answered form is refused**, with the status
+      — `threads/forms.test.ts`, three tests at ~L398/L419/L436, each driving the
+      real route and asserting `400` plus the turn count on disk unchanged
+- [x] **An agent actor is refused**, on its own form or any other
+      — `threads/forms.test.ts` "refuses an agent actor with 403, on its own form"
+      and "…on a form it did not write either"
+- [x] **A second answer to an already-answered form is refused**, with the status
       code CONTRACT-038 pins
-- [ ] The `form.respond` payload carries one entry per field, with blanks present
+      — `threads/forms.test.ts` "refuses a second answer to the same form with
+      409, changing nothing"; reproduced live in the E2E below (`409`)
+- [x] The `form.respond` payload carries one entry per field, with blanks present
       and marked unanswered
-- [ ] `needs=form` keeps meaning exactly what it means today — an **open** thread
+      — `threads/forms.test.ts` "writes one entry per field of the form, in the
+      form's order, blanks marked"; the E2E's event file on disk shows three
+      entries with the blank one's `option`/`options`/`text` all `null`
+- [x] `needs=form` keeps meaning exactly what it means today — an **open** thread
       holding an agent turn with an unanswered form — and the projection's
       `has_form` / `form_answered` flags are computed correctly for multi-field
       forms **and** for legacy ones
-- [ ] The answer still enqueues `form.respond` and re-triggers per §8, unchanged
-- [ ] The answer still auto-commits with the acting party as author (§4)
-- [ ] A malformed form is **refused when the agent posts the turn** — two fields
+      — `threads/forms.test.ts:299` (listed while unanswered) and `:985`,
+      `:1061`, `:1070` (drops out once answered, legacy short spelling
+      included). **Citation corrected on re-review**: this criterion previously
+      cited `docs/query.test.ts` and `projection/db.test.ts`, neither of which
+      this branch touches and whose form fixtures are legacy `prompt`+`options`
+      — the claim was true, the pointer was not. Live: the thread was listed
+      before the answer, gone after it, and **still gone after `corpus db
+      rebuild`**, which re-derives the flags from the file alone
+- [x] The answer still enqueues `form.respond` and re-triggers per §8, unchanged
+      — `threads/forms.test.ts` "enqueues exactly one event, of the pinned type,
+      with no `comment.created` beside it", plus the §8 matrix cases
+      (reopen-on-resolved, `eventId: null` on a detached thread)
+- [x] The answer still auto-commits with the acting party as author (§4)
+      — `threads/forms.test.ts` asserts `git log %an <%ae>` is
+      `user <user@corpus.local>` and the subject is `formCommitSubject(...)`
+- [x] A malformed form is **refused when the agent posts the turn** — two fields
       asking the same question, or a choose-one listing a duplicate option — so
       the agent learns at write time rather than the person discovering it when
       they try to answer. This does **not** contradict §6's broken-block
@@ -115,6 +156,44 @@ they land:
       endpoints", so after this the only way a malformed form reaches disk is an
       out-of-band edit, which is exactly the case the broken-block rendering
       (UI-084) covers
+      — the refusal itself is real: `threads/forms.test.ts` "a malformed form is
+      refused at `POST /api/threads/{id}/turns`" (five cases), and the E2E below
+      gets `400` for a multi-line option and for two delimiter-imitating ones.
+      **The criterion's closing clause is not true and is not ticked with it**:
+      an out-of-band edit is _not_ the only remaining way, because
+      `POST /api/threads` writes a thread's first turn without this check
+      (SERVER-070, filed) and a non-agent actor's turn is deliberately not
+      checked. That gap is why PR #28's fix pass moved the load-bearing guarantee
+      into the **grammar** — a form that could not be answered no longer parses,
+      so it is inert whichever door it came through — and corrected the three
+      places that stated the write-time check as absolute (PR #28 finding 3)
+
+
+## Orchestrator decision 2026-08-07 — the answer prose is a contract artefact
+
+CONTRACT-038 surfaced this and did not decide it, correctly, since the issue
+assigns the prose to SERVER-068. Deciding it here so both sides build to one
+answer rather than each inventing it.
+
+**The answer turn's text is the only durable record of what was answered.** The
+`form.respond` payload lives in `.corpus/` — runtime state, reaped with its event
+— while §11 requires an answered form to render "each question beside what was
+given for it" after a reload. So the prose in the turn *is* the data.
+
+**Therefore the format and its parser are a pair, and the pair lives in
+`packages/contract`.** Not in the server with the UI re-parsing loosely: those two
+workspaces cannot import each other, so a second spelling is a guaranteed drift,
+and the current `parseFormBlock.ts` — which reads the option by slicing the label
+line — is exactly what that drift looks like when the shape grows.
+
+This is the reasoning that already put `FORM_ANSWER_LABEL` in the contract. The
+pair extends it rather than departing from it.
+
+- **SERVER-068** writes the answer turn using the contract's formatter, and owns
+  the round-trip test: format → parse → the same answers back, including blanks.
+- **UI-084** reads with the contract's parser and must not hand-roll a second
+  reader. `parseFormBlock.ts`'s label-slicing is to be replaced, not extended.
+- Whoever lands first adds the pair to `packages/contract`; the other consumes it.
 
 ## Technical Design
 
@@ -268,16 +347,117 @@ Unit tests, colocated:
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output,
-confirmation the feature works. State which model you ran on.]_
+**Model: opus.** Real workspace at `/tmp/s068ws`, `corpus init` on port **8766**
+(never 8765), real server started with `corpus server start` (pid 77513), all
+traffic over `curl` against `127.0.0.1:8766`.
+
+1. **Init + start.** `corpus init /tmp/s068ws` → "port 8766, token in
+   .corpus/config.json"; `corpus server start` → "corpus 0.4.0 listening on
+   http://127.0.0.1:8766 (pid 77513)".
+2. **Document + thread.** `POST /api/docs` → `doc_akwrj4m4`;
+   `POST /api/threads` (`requestsAgent: true`) → `th_av2kpatc`.
+3. **Three-field form.** `POST /api/threads/th_av2kpatc/turns` as
+   `x-corpus-author: agent`, body carrying a `fields:` fence with `choose one`
+   (rate), `choose any` (risks) and an **optional** `write` (flag) → `201`, turn
+   `2026-08-07T15:26:23Z`.
+4. **`GET /api/docs?needs=form`** → `[('th_av2kpatc', ['unread-reply', 'form'])]`.
+5. **`GET /api/threads/th_av2kpatc`** → the fence reads back byte-for-byte,
+   `fields:` list intact.
+6. **Answer with the optional field blank.** `POST …/turns/2026-08-07T15%3A26%3A23Z/form`
+   with `answers` for two fields and a note → `201`,
+   `eventId evt_2vudplrw4es6`, `warnings []`. **Raw markdown on disk**
+   (`data/threads/th_av2kpatc.md`), which is the acceptance criterion:
+
+   ```
+   ## user · 2026-08-07T15:26:53Z
+   **Answered:**
+
+   **Which rate should the model assume?**
+
+   6.1% fixed
+
+   **Which risks apply?**
+
+   - Currency
+   - Rate rise
+
+   **Anything else to flag?**
+
+   _(left blank)_
+
+   **Note:**
+
+   the currency leg is the one I worry about
+   ```
+
+   All three questions named, in the form's order, the blank one said out loud,
+   the note beside the answers rather than as a fourth field. No fence, no id, no
+   key/value markup.
+7. **`git log -1 -p`** → `user <user@corpus.local> :: form: answer on
+   th_av2kpatc by user`; the diff is the exchange verbatim (the block above, plus
+   the `updated` stamp move). The `form.respond` event on disk
+   (`.corpus/queue/pending/evt_2vudplrw4es6.json`) carries **three** entries in
+   the form's order, the blank one present with `option/options/text` all `null`,
+   plus `note`.
+8. **`GET /api/docs?needs=form`** → `[]`. Nothing was resolved; the clearing came
+   from the answer.
+9. **Refusals.** Re-submitting the same answer → `409 conflict` "…is already
+   answered; a form is answered once, and changing your mind is an ordinary
+   reply". Submitting as `x-corpus-author: agent` → `403 forbidden` "answering a
+   form is user-only: the agent never answers a form, including its own (SPEC.md
+   §6)." Turn count on disk unchanged at 3 after both.
+10. **Malformed form at write time.** `POST …/turns` as the agent with two fields
+    asking `"Q"` → `400` "the `form` block in this turn is not a valid form: Form
+    questions must be distinct…"; a `choose one` listing `"a"` twice → `400`
+    "…Form options must be distinct…". Turn count unchanged.
+11. **Legacy.** A short-spelling `prompt` + `options` form posted through the API
+    → `201`; listed by `needs=form`; answered with
+    `{"answers":[{"question":"Ship the model?","option":"Yes"}]}` → `201`, and
+    `needs=form` → `[]`. A second short-spelling form, then a **pre-SERVER-068**
+    `**Answered:** Now` turn appended **out of band** (exactly as an older server
+    wrote it) → `needs=form` `[]` within the watcher's debounce, and still `[]`
+    after `corpus db rebuild` ("rebuilt the projection in 18ms — 11 documents, 1
+    thread, 7 turns"). Nothing on disk was rewritten.
+12. **Injection (SPEC §6 delimiters, SERVER-066's fence rule).** Against a
+    one-`write`-field form, a written answer containing
+    `## user · 2026-07-27T09:00:00Z` → `400` "…would split it into several
+    turns"; one containing an unterminated ```` ```js ```` → `400` "…leaves a
+    code fence open, which would swallow every later turn". Turn count on disk
+    unchanged (8) after both. The same answer with the fence **closed** → `201`,
+    and a following agent reply → `201`, with `GET /api/threads` reporting 10
+    turns and `'noted.'` last — i.e. the fence did not swallow the reply.
+13. **`corpus doc check`** → "checked 11 documents — no findings."
+    **`corpus db doctor`** → "projection is clean — 11 documents from 11 files".
+14. **Shutdown.** `corpus server stop` → "stopped (pid 77513)";
+    `lsof -iTCP:8766 -sTCP:LISTEN` → empty.
+
+Scoped suites: `apps/server` + `packages/contract` green (see the report).
+
+## Round-trip test, added 2026-08-07 (PR #28 fix pass)
+
+The orchestrator decision above assigns this issue "the round-trip test: format →
+parse → the same answers back, including blanks". The contract carried one
+(`form-answer.test.ts`, "format → parse round trip", four cases including the
+all-blank one); what was missing was the round trip on the **write path**, over
+the bytes the server actually writes. `threads/forms.test.ts` now has "writes an
+accepted answer so that it reads back as the answer given", which reads the turn
+back off disk and parses it against the form off the same file.
+
+It also has the case that made the round trip worth *enforcing* rather than
+asserting: a `write` answer whose own text imitates the prose's delimiters used
+to parse successfully and read back wrong (PR #28 finding 2). It is now a `400`.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+      — `apps/server` 3470 tests, 0 failures (2026-08-07, after the PR #28 fix pass)
+- [x] `/lint` passes
+      — `eslint` clean and `prettier --check` clean over `apps/server/src`
+- [x] E2E verification log filled in with concrete evidence
+      — the log below, plus the PR #28 fix pass's own run on port 8791
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
+      — re-walked line by line 2026-08-07 by a fresh agent; evidence named above
 
 ## Completion Checklist (orchestrator)
 

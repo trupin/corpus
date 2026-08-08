@@ -11,6 +11,7 @@ import type {
   DocMutationResponse,
   FolderTree,
   FormAnswerResponse,
+  FormFieldAnswer,
   Health,
   IndexStatus,
   Job,
@@ -140,11 +141,21 @@ export interface CaptureInput {
   readonly files?: readonly File[] | undefined;
 }
 
-/** The answer to the form in one agent turn (SPEC.md §6). */
+/**
+ * The answer to the form in one agent turn (SPEC.md §6), submitted whole.
+ *
+ * **One entry per field *answered*, never per field asked.** A field with
+ * nothing given carries no entry at all — absence is the single spelling of
+ * blank (CONTRACT-038), so an empty string or an empty selection must never be
+ * sent in its place: the server reads one as a value and rejects it against a
+ * field's options, where the omission it meant is legal on an optional field.
+ * `answers` may itself be empty, which is the real answer a form of only
+ * optional fields gets.
+ */
 export interface FormAnswerInput {
   /** Timestamp of the agent turn carrying the form — the form's identity. */
   readonly ts: string;
-  readonly option: string;
+  readonly answers: readonly FormFieldAnswer[];
   readonly note?: string | undefined;
 }
 
@@ -525,9 +536,24 @@ export type CreateThreadInput = CreateThreadRequest;
  * A non-2xx response, or a 2xx with no body. Carries the parsed `ApiError` when
  * the server sent one so a caller can branch on `code` (`locked`, `forbidden`)
  * without re-parsing the response.
+ *
+ * **The message is the server's sentence, not the request's shape** (PR #28
+ * re-review). Roughly thirty surfaces across the board render a failure as
+ * `<verb> failed — ${error.message}`, so what this string leads with is what a
+ * person reads in a 360px toast that dismisses itself after six seconds. It used
+ * to lead with `POST /api/threads/{id}/turns/{ts}/form failed (HTTP 400): ` — an
+ * **un-substituted** route template and a status code, ahead of the one sentence
+ * the server wrote for a human, and one that pushes it out of the toast. The
+ * route and the status did not go anywhere: they are {@link operation} and
+ * {@link status}, which is where a developer was always going to look, and the
+ * message keeps them when there is no `ApiError` to speak instead — a proxy's
+ * HTML error page or an empty `2xx` has no sentence of its own, and there the
+ * shape of the request is all there is to say.
  */
 export class CorpusRequestError extends Error {
   override readonly name = "CorpusRequestError";
+  /** The route template and verb, e.g. `POST /api/threads/{id}/turns/{ts}/form`. */
+  readonly operation: string;
   readonly status: number;
   readonly code: string | undefined;
   readonly issues: readonly { readonly path: string; readonly message: string }[];
@@ -535,8 +561,9 @@ export class CorpusRequestError extends Error {
   constructor(operation: string, status: number, payload: unknown) {
     const api = isApiError(payload) ? payload : undefined;
     super(
-      `${operation} failed (HTTP ${String(status)}): ${api?.message ?? JSON.stringify(payload)}`,
+      api?.message ?? `${operation} failed (HTTP ${String(status)}): ${JSON.stringify(payload)}`,
     );
+    this.operation = operation;
     this.status = status;
     this.code = api?.code;
     this.issues = api !== undefined && api.code === "bad_request" ? api.issues : [];
@@ -782,7 +809,20 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
         await api.POST("/api/threads/{id}/turns/{ts}/form", {
           params: { path: { id: threadId, ts: input.ts } },
           body: {
-            option: input.option,
+            /*
+             * Rebuilt key by key rather than spread: under
+             * `exactOptionalPropertyTypes` the generated body type spells an
+             * absent value as a *missing key*, and `{ option: undefined }` is
+             * not that. It is also the wire rule — a field with nothing given
+             * has no entry, and an entry carries exactly one value key — so the
+             * two agree by construction rather than by a cast.
+             */
+            answers: input.answers.map((entry) => ({
+              question: entry.question,
+              ...(entry.option === undefined ? {} : { option: entry.option }),
+              ...(entry.options === undefined ? {} : { options: [...entry.options] }),
+              ...(entry.text === undefined ? {} : { text: entry.text }),
+            })),
             ...(input.note === undefined ? {} : { note: input.note }),
           },
         }),

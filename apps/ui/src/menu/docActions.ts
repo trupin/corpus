@@ -8,6 +8,7 @@ import {
   type RowNotice,
   type StalenessLevel,
 } from "@corpus/kit";
+import { threadStatusNotice } from "../thread/resolveNotice";
 import type { MenuAction } from "./menuModel";
 
 /**
@@ -90,12 +91,7 @@ export function useDocActions(
    */
   const setThreadStatus = useSetThreadStatus({
     onSuccess: (_result, variables) => {
-      onNotify({
-        tone: "info",
-        message: variables.resolved
-          ? "Thread resolved — committed. Replying reopens it."
-          : "Thread reopened — committed.",
-      });
+      onNotify({ tone: "info", message: threadStatusNotice(variables.resolved) });
     },
     onError: (error, variables) => {
       onNotify({

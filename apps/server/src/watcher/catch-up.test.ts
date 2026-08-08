@@ -18,6 +18,7 @@ import {
   type ProjectionConfig,
   type ProjectionDb,
 } from "../projection/index.js";
+import { writeUnreadableDocument } from "../projection/unreadable-fixture.js";
 import { REPAIRABLE_DRIFT_KINDS, catchUpOnWatcherReady } from "./catch-up.js";
 
 let root: string;
@@ -129,6 +130,19 @@ describe("catchUpOnWatcherReady", () => {
     expect(REPAIRABLE_DRIFT_KINDS).not.toContain("unparseable");
     expect(REPAIRABLE_DRIFT_KINDS).not.toContain("duplicate_id");
     expect(REPAIRABLE_DRIFT_KINDS).not.toContain("count_mismatch");
+  });
+
+  // SERVER-064. A document the process cannot read is the same kind of state:
+  // boot skips it, `doctor` reports it as `unparseable`, and a repopulate would
+  // skip it again — so it must not become a per-boot re-scan either.
+  it("stays silent on a document it cannot read, which no repopulate can fix", async () => {
+    writeUnreadableDocument(docPath("m.md"));
+
+    await runCatchUp();
+
+    expect(batches).toEqual([]);
+    expect(attachMirror).not.toHaveBeenCalled();
+    expect(documentIds()).toEqual(["doc_aaa"]);
   });
 
   it("touches nothing once the server has shut down", async () => {

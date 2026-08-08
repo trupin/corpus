@@ -959,18 +959,94 @@ describe("comment skill body", () => {
     expect(body).toMatch(/Expansion adds structure, never content/i);
   });
 
-  it("specifies the form grammar with backticks and the answer path", () => {
-    expect(body).toContain("```form\nprompt: ");
-    expect(body).toContain("options:");
-    expect(body).not.toContain("~~~");
-    expect(body).toMatch(/nothing validates the block when it is posted/i);
-    expect(body).toMatch(/at most one form per turn/i);
-    expect(body).toMatch(/single-select/i);
-    for (const field of ["formTs", "option", "note"]) {
-      expect(body, `form.respond field ${field} unnamed`).toContain(field);
-    }
-    expect(body).toMatch(/no `parentId`/i);
-    expect(body).toMatch(/continuation, not a new request/i);
+  /**
+   * Forms (AGENT-017, SPEC.md §6 + §7's "asking with a form" rider signed
+   * 2026-08-05). CONTRACT-038 and UI-084 made a form worth reaching for; this
+   * section is the only thing that makes the agent reach for one, so what is
+   * pinned here is the *instruction* — ask with a form, batch the questions —
+   * and not merely the presence of the word "form".
+   */
+  describe("forms", () => {
+    /** The worked ```` ```form ```` example, which is a real multi-field ask. */
+    const example = fencedBlocks(body).find((block) => block.info === "form");
+
+    it("makes a form the default shape for a turn whose purpose is to ask", () => {
+      expect(body).toMatch(/When a turn's purpose is to get something from the person, ask with/);
+      // The asymmetry that is the whole reason to prefer one (SPEC.md §11):
+      // a prose question stops signalling the moment the thread is read.
+      expect(body).toMatch(/awaiting your answer/);
+      expect(body).toMatch(/Reading a question is not\s+answering it/);
+      // And the exclusion, which guards the opposite failure.
+      expect(body).toMatch(/An open question is not a form; it is a reply/);
+    });
+
+    it("states the batching rule, in the register of an instruction", () => {
+      expect(body).toMatch(/Ask the whole batch at once/i);
+      expect(body).toMatch(/\*\*one\s+form, in one turn\*\*/);
+      expect(body).toMatch(/never one question per turn/i);
+      // Batching is "everything you need", never a minimum field count.
+      expect(body).toMatch(/a form with\s+a single field is still right/i);
+      // The routing bullet reaches the agent where it decides what to do, not
+      // only in the section it would have to already be reading.
+      expect(body).toMatch(/\*\*Ask with a form\*\* when the turn's purpose/);
+    });
+
+    it("tells the agent to mark optional generously, and why", () => {
+      expect(body).toMatch(/required unless it\s+carries `optional: true`/);
+      expect(body).toMatch(/Mark generously/);
+      expect(body).toMatch(/more optional fields, never fewer forms/i);
+      expect(body).toMatch(/short enough to read as a control/i);
+      expect(body).toMatch(/what you will do with the answers/i);
+    });
+
+    it("documents the three kinds and shows a genuinely multi-field example", () => {
+      expect(body).toContain("```form\nfields:\n");
+      expect(body).toContain("kind: choose one");
+      expect(body).toContain("kind: choose any");
+      expect(body).toContain("kind: write");
+      expect(body).toContain("optional: true");
+      expect(body).toContain("options:");
+      expect(body).not.toContain("~~~");
+      expect(body).toMatch(/there is no fourth kind/i);
+      expect(body).toMatch(/distinct within the\s+form/i);
+      expect(body).toMatch(/at most one form per\s+turn/i);
+      // A one-field example is what produces one question per turn, so the
+      // example is a decision, a selection and a fact — one of them optional.
+      const questions = example?.content.match(/^\s*- question: /gm) ?? [];
+      expect(questions.length, "the worked form is not a multi-field ask").toBeGreaterThanOrEqual(
+        3,
+      );
+      expect(example?.content).toContain("optional: true");
+      expect(example?.content).toContain("kind: choose any");
+    });
+
+    it("drops the two stale claims, one of which SERVER-068 made false", () => {
+      // A malformed form is refused at write time now; a skill teaching a
+      // grammar nothing checks would be teaching the wrong posture entirely.
+      expect(body).not.toMatch(/nothing validates the block when it is posted/i);
+      expect(body).toMatch(/the server refuses the whole turn with a `400`/i);
+      // `choose any` exists, so the answer is no longer one option verbatim.
+      expect(body).not.toMatch(/single-select/i);
+    });
+
+    it("states that the agent never answers a form, including its own", () => {
+      expect(body).toMatch(/You never answer a form — not the person's, and not your own/);
+      expect(body).toMatch(/the server refuses an answer from you/i);
+    });
+
+    it("resumes from the richer payload, keyed to the questions", () => {
+      for (const field of ["formTs", "answers", "question", "kind", "option", "note"]) {
+        expect(body, `form.respond field ${field} unnamed`).toContain(field);
+      }
+      expect(body).toMatch(/no\s+`parentId`/i);
+      expect(body).toMatch(/continuation, not a new request/i);
+      expect(body).toMatch(/never re-ask, never re-explain from the top/i);
+      expect(body).toMatch(/keyed to its question/i);
+      // The two answers that are easy to mishandle: a blank optional field is a
+      // complete answer, and a prose reply is not an answer at all.
+      expect(body).toMatch(/Every optional field left blank is a \*\*complete\*\* answer/);
+      expect(body).toMatch(/never resolve the thread to make the row go\s+away/);
+    });
   });
 
   it("states skill genesis: threshold, destination, mechanism, announcement, conflicts", () => {

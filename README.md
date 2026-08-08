@@ -131,18 +131,19 @@ npm run dev -w apps/cli -- init ~/scratch
 
 ### Useful scripts
 
-| Script                    | What it does                                                    |
-| ------------------------- | --------------------------------------------------------------- |
-| `npm run lint`            | ESLint across the repo (`lint:fix` to autofix)                  |
-| `npm run format:check`    | Prettier (`format` to write)                                    |
-| `npm run typecheck`       | `tsc --noEmit` in every workspace, plus `scripts/`              |
-| `npm test`                | Vitest across all workspaces                                    |
-| `npm run e2e`             | Playwright against the real app                                 |
-| `npm run coverage`        | unit → e2e → merge → the ≥ 90% gate CI enforces                 |
-| `npm run version:check`   | Version singularity: every manifest matches the root            |
-| `npm run package:build`   | Assembles the publishable package into `dist-package/`          |
-| `npm run pack:check`      | Audits the tarball `npm pack` would produce, in both directions |
-| `npm run publish:dry-run` | `npm publish --dry-run` over the staged package                 |
+| Script                    | What it does                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| `npm run lint`            | ESLint across the repo (`lint:fix` to autofix)                                  |
+| `npm run format:check`    | Prettier (`format` to write)                                                    |
+| `npm run typecheck`       | `tsc --noEmit` in every workspace, plus `scripts/`                              |
+| `npm test`                | Vitest across all workspaces                                                    |
+| `npm run e2e`             | Playwright against the real app                                                 |
+| `npm run coverage`        | unit → e2e → merge → the ≥ 90% gate CI enforces                                 |
+| `npm run version:check`   | Version singularity: every manifest matches the root, on disk and in the commit |
+| `npm run release:prepare` | Bump every manifest, commit them together, verify, tag                          |
+| `npm run package:build`   | Assembles the publishable package into `dist-package/`                          |
+| `npm run pack:check`      | Audits the tarball `npm pack` would produce, in both directions                 |
+| `npm run publish:dry-run` | `npm publish --dry-run` over the staged package                                 |
 
 ### How changes land
 
@@ -159,13 +160,20 @@ One version number describes the whole tool: the root `package.json`'s `version`
 workspace and enforced by `npm run version:check`.
 
 ```sh
-npm version <x.y.z> --workspaces --include-workspace-root
-git push --follow-tags
+npm run release:prepare <x.y.z> "what this release is"
+git push origin HEAD
+git push origin v<x.y.z>
 ```
 
+`release:prepare` bumps every manifest, commits **all** of them together, verifies that commit's own
+tree, and tags it. Do not run `npm version --workspaces` by hand: it commits only the root manifest,
+so its tag points at a tree the release guard rejects.
+
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which re-runs the full validate gate, rebuilds
-everything, refuses to continue if the tag and the manifests disagree, and publishes with npm
-provenance. It requires an `NPM_TOKEN` repository secret.
+everything, refuses to continue if the tag and the manifests disagree, and creates a GitHub Release
+with the installable tarball and its checksum attached. Nothing is published to npm.
+
+Full procedure, and the recovery for a pushed tag whose release failed: **[docs/RELEASING.md](docs/RELEASING.md)**.
 
 ## License
 

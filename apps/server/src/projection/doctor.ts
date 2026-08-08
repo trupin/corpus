@@ -26,7 +26,7 @@ export const DRIFT_KINDS = [
   "content_mismatch",
   /** A count the projection keeps no per-item detail for disagrees with the files. */
   "count_mismatch",
-  /** The file is a document by location but its frontmatter cannot be read. */
+  /** The file is a document by location but neither it nor its frontmatter can be read. */
   "unparseable",
   /** Two files claim one id; only the first by path order is projected. */
   "duplicate_id",
@@ -93,6 +93,12 @@ type HashRow = {
   readonly mtime_ms: number;
 };
 
+const isEnoent = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+
+const causeOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 /** Classify a document file that produced no row: unparseable, a duplicate, or genuinely missing. */
 function classifyUnprojected(
   file: EnumeratedFile,
@@ -101,9 +107,29 @@ function classifyUnprojected(
   let content: string;
   try {
     content = readFileSync(file.absPath, "utf8");
-  } catch {
+  } catch (error) {
     // Vanished between enumeration and read — a removal in flight, not drift.
-    return null;
+    if (isEnoent(error)) return null;
+    // Any other refusal is the reason there is no row, and saying nothing about
+    // it would be the worst outcome available: the projection quietly does not
+    // describe a document the workspace holds, and the check whose entire job is
+    // to notice that reports `ok` (SERVER-064). `doctor` is the recovery loop for
+    // the boot that now survives this, so it has to name the file.
+    //
+    // Classified as `unparseable` rather than `missing_row` on purpose. It is
+    // literally true — a file that cannot be read has no readable frontmatter —
+    // and, more to the point, the kind is what the boot catch-up keys on
+    // (`watcher/catch-up.ts`): `missing_row` means "a repopulate would fix
+    // this", and a repopulate cannot fix a file the process cannot read. Calling
+    // it that would buy every boot of this workspace a full re-scan and a coarse
+    // invalidate, forever, for no repair — exactly the cost SERVER-025 excluded
+    // `unparseable` and `duplicate_id` to avoid, and for exactly the same
+    // reason: this is a state of the *workspace*, and it survives every rebuild.
+    return {
+      kind: "unparseable",
+      path: file.path,
+      detail: `${file.path} is a document under a root but could not be read: ${causeOf(error)}`,
+    };
   }
 
   const identity = readDocumentIdentity(file.root, file.path, content);

@@ -5,65 +5,49 @@
  * in `CI / validate`, and in the release workflow, where `GITHUB_REF` also makes
  * it the tag/version guard: a `v1.2.3` tag against a `1.2.4` manifest fails here
  * rather than half-publishing.
+ *
+ * It reads **both** the working tree and the committed tree (INFRA-022). Reading
+ * only disk made it possible to pass locally and fail on CI: `npm version
+ * --workspaces --include-workspace-root` rewrites every manifest but commits
+ * only the root, so the check saw seven correct files while the tag it had just
+ * created pointed at a tree where six of them were stale. A failure belongs
+ * where it is cheap — before the push, not after the tag.
  */
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { z } from "zod";
-import { checkVersions, type ManifestVersion } from "./versions.js";
+import { resolve } from "node:path";
+import { checkVersionSources } from "./versions.js";
+import { readCommittedSource, readWorkingTreeSource } from "./version-sources.js";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 
-const ManifestSchema = z.looseObject({
-  version: z.string().min(1).optional(),
-  workspaces: z.array(z.string()).optional(),
-});
+const working = readWorkingTreeSource(repoRoot);
+const committed = readCommittedSource(repoRoot);
+const result = checkVersionSources(
+  committed === undefined ? [working] : [working, committed],
+  process.env["GITHUB_REF"],
+);
 
-function readManifest(absolutePath: string, displayPath: string): ManifestVersion {
-  const parsed: unknown = JSON.parse(readFileSync(absolutePath, "utf8"));
-  return { path: displayPath, version: ManifestSchema.parse(parsed).version };
+if (committed === undefined) {
+  // Never silently: half a gate that looks like a whole one is how this went
+  // wrong the first time.
+  process.stdout.write(
+    "version:check ▷ committed tree not checked (no git repository or no commits here)\n",
+  );
 }
-
-/**
- * Expands the root manifest's `workspaces` globs. They are all one level deep
- * (`apps/*`, `packages/*`, `plugins/*`), so a directory listing is the whole
- * story — reading them from the manifest rather than hard-coding them means a
- * new workspace joins the check by existing.
- */
-function workspaceManifestPaths(): readonly string[] {
-  const rootManifest: unknown = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
-  const globs = ManifestSchema.parse(rootManifest).workspaces ?? [];
-  const found: string[] = [];
-  for (const glob of globs) {
-    if (!glob.endsWith("/*")) {
-      const direct = join(glob, "package.json");
-      if (existsSync(join(repoRoot, direct))) found.push(direct);
-      continue;
-    }
-    const parent = glob.slice(0, -2);
-    const parentPath = join(repoRoot, parent);
-    if (!existsSync(parentPath)) continue;
-    for (const entry of readdirSync(parentPath, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const candidate = `${parent}/${entry.name}/package.json`;
-      if (existsSync(join(repoRoot, candidate))) found.push(candidate);
-    }
-  }
-  return found.sort();
-}
-
-const result = checkVersions({
-  root: readManifest(join(repoRoot, "package.json"), "package.json"),
-  workspaces: workspaceManifestPaths().map((path) => readManifest(join(repoRoot, path), path)),
-  gitRef: process.env["GITHUB_REF"],
-});
 
 if (result.ok) {
-  process.stdout.write(`version:check ✓ every manifest is ${String(result.version)}\n`);
+  const versions = new Set(result.checks.map((check) => String(check.version)));
+  const summary =
+    versions.size === 1
+      ? `every manifest is ${[...versions][0] ?? ""}`
+      : result.checks.map((check) => `${check.label} is ${String(check.version)}`).join(", ");
+  const where = result.checks.map((check) => check.label).join(", ");
+  process.stdout.write(`version:check ✓ ${summary} (${where})\n`);
 } else {
   for (const problem of result.problems) process.stderr.write(`version:check ✗ ${problem}\n`);
+  process.stderr.write("Bump versions with: npm run release:prepare <x.y.z>\n");
   process.stderr.write(
-    "Fix with: npm version <x.y.z> --workspaces --include-workspace-root --no-git-tag-version\n",
+    "If a tag is already pushed and the release failed, see docs/RELEASING.md → Recovery.\n",
   );
   process.exitCode = 1;
 }

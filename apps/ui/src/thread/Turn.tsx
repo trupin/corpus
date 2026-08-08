@@ -2,7 +2,13 @@ import { isPendingTurn, MarkdownView, type RowNotice, type ThreadTurn } from "@c
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
 import { FormBlock } from "./FormBlock";
-import { parseFormBlock, splitFormFence } from "./parseFormBlock";
+import {
+  parseFormSource,
+  splitFormFence,
+  type AnsweredForm,
+  type FormFenceSplit,
+  type ParsedForm,
+} from "./parseFormBlock";
 import { splitTurnAttachments } from "./attachmentRefs";
 import { TurnAttachments } from "./TurnAttachments";
 import { turnStamp } from "./turnStamp";
@@ -72,10 +78,10 @@ export function splitTrace(body: string, author: string): TurnSplit {
 export interface TurnProps {
   readonly threadId: string;
   readonly turn: ThreadTurn;
-  /** The answer a later turn recorded for this turn's form, if any. */
-  readonly answeredForm: string | null;
+  /** The record a later turn holds for this turn's form, if any. */
+  readonly answeredForm: AnsweredForm | null;
   /** This turn's form was answered from here — see `FormBlock.onAnswered`. */
-  readonly onAnsweredForm?: ((formTs: string, option: string) => void) | undefined;
+  readonly onAnsweredForm?: ((formTs: string, answer: AnsweredForm) => void) | undefined;
   readonly onOpenRef: (docId: string) => void;
   readonly onDelete: (ts: string) => void;
   /** Absent suppresses the per-turn comment affordance (a nested card at depth). */
@@ -129,9 +135,14 @@ export function Turn({
   // SPEC.md §6 makes a form something an *agent* turn carries, and the server
   // agrees: `POST …/form` 404s on a turn that is not the agent's. A user turn
   // that happens to quote a fence is a code block, not a question to answer.
-  const fence =
+  //
+  // The fence is scanned **once** and its source handed straight to the parser:
+  // going back through `parseFormBlock(body)` re-ran the scan and the YAML parse
+  // on every render (PR #28 re-review, MINOR).
+  const fence: FormFenceSplit =
     turn.author === "agent" ? splitFormFence(body) : { before: body, after: "", source: undefined };
-  const form = fence.source === undefined ? { status: "none" as const } : parseFormBlock(body);
+  const form: ParsedForm =
+    fence.source === undefined ? { status: "none" } : parseFormSource(fence.source);
 
   /*
    * A newline in a **user** turn is a line break (UI-054).

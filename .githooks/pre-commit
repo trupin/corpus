@@ -1,9 +1,31 @@
 #!/usr/bin/env bash
-# Pre-commit gate — full validation by explicit project decision (see CLAUDE.md):
-# build + lint + format + typecheck + unit tests. Playwright e2e runs pre-push only.
-# Build runs first: cross-workspace imports (@corpus/contract, @corpus/kit)
-# resolve through each package's exports map into dist/, so lint, typecheck and
-# tests all need fresh build output to see the real types.
+# Pre-commit gate — deliberately tiny (INFRA-025, user decision 2026-08-07:
+# "we should be aiming for 10-15 second max").
+#
+# The rule (user, 2026-08-07): **a check that can run on the diff runs here; a
+# check that needs the whole codebase is CI's.**
+#
+# On the diff, and therefore here: prettier and eslint, both given an explicit
+# staged-file list, plus the dependency audit (which scans the lockfile, not the
+# tree, and costs one round-trip).
+#
+# Needs the whole codebase, and therefore CI's:
+#   - `tsc --noEmit` — a project-wide program; there is no diff-scoped form
+#   - build, and the generated-artifact drift check that depends on it
+#   - the unit suite — measured too slow for this budget even when scoped to
+#     changed files, so it stays whole and stays in CI
+#   - Playwright
+#
+# `CI / validate` runs all of those on every pushed head and a PR cannot merge
+# until it is green, so the cost of what is deferred is a red PR and a second
+# push — never a bad merge. Run any of them by hand when a change warrants it:
+# `npm run typecheck`, `npm test`, `npm run e2e`.
+#
+# Measured, because the first two attempts at this guessed and were wrong:
+# scoped eslint is ~2s for one file and ~3s across three workspaces. It was
+# `eslint .` that cost ~2.5 minutes at 3 GB — the whole-repo run, not the
+# type-aware machinery.
+#
 # Escape hatch (documented, use sparingly): git commit --no-verify
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -13,29 +35,45 @@ step() {
   local name="$1"; shift
   echo "pre-commit ▶ $name"
   if ! "$@"; then
-    echo "pre-commit ✗ $name failed — fix the errors above (or 'npm run lint:fix' / 'npm run format' for auto-fixables)."
+    echo "pre-commit ✗ $name failed — fix the errors above ('npm run format' fixes formatting)."
     fail=1
   fi
 }
 
-# First, ahead of the expensive build: the supply-chain gate (INFRA-013) needs no
-# build output, costs one registry round-trip (~0.7s), and a dependency advisory
-# is not something the next five minutes of compiling and testing can change. It
-# still goes through step() like everything else, so a developer sees every
-# failing check in one run rather than stopping at the first.
-# `--tolerate-unreachable-registry` is passed HERE and nowhere else: a dead
-# network warns loudly and lets the commit through, while CI runs the identical
-# command without the flag and fails closed. The flag governs only the
-# registry-unreachable branch — advisories block a commit with or without it.
-step "npm audit"       node --import tsx scripts/check-audit.ts --tolerate-unreachable-registry
-step "build"           npm run --silent build
-step "eslint"          npm run --silent lint
-step "prettier check"  npm run --silent format:check
-step "typecheck"       npm run --silent typecheck
-step "unit tests"      npm test --silent
+# Scoped to the diff, and to one list, so nothing can disagree about what
+# changed. `--diff-filter=ACM` drops deletions, which have no file to check.
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+
+# The supply-chain gate (INFRA-013): one registry round-trip, no build output
+# needed, and an advisory is not something the next five minutes of compiling
+# could change. `--tolerate-unreachable-registry` is passed HERE and nowhere
+# else — a dead network warns and lets the commit through, while CI runs the
+# identical command without the flag and fails closed.
+step "npm audit"  node --import tsx scripts/check-audit.ts --tolerate-unreachable-registry
+
+# eslint, given the staged TypeScript explicitly. CI still lints the whole repo
+# on this same head, which is where a violation in a file this commit did not
+# touch belongs — it cannot have been introduced here.
+staged_ts="$(printf '%s\n' "$staged" | /usr/bin/grep -E '\.(ts|tsx|mts|cts)$' | tr '\n' ' ')"
+if [ -n "${staged_ts// /}" ]; then
+  # shellcheck disable=SC2086
+  step "eslint (staged)" npx eslint $staged_ts
+else
+  echo "pre-commit ▷ eslint skipped (no TypeScript staged)"
+fi
+
+# Prettier formats markdown as well as code, so a prose-only commit still pays
+# it — in milliseconds, scoped. `--ignore-unknown` skips a staged file prettier
+# has no parser for rather than failing the commit.
+if [ -n "$staged" ]; then
+  # shellcheck disable=SC2086
+  step "prettier (staged)" npx prettier --check --ignore-unknown $(printf '%s\n' "$staged" | tr '\n' ' ')
+else
+  echo "pre-commit ▷ nothing staged"
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo "pre-commit: blocked. Nothing was committed."
   exit 1
 fi
-echo "pre-commit ✓ all checks passed"
+echo "pre-commit ✓ (build, lint, typecheck and tests run in CI — INFRA-025)"

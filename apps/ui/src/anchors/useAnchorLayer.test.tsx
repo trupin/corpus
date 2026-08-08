@@ -502,7 +502,7 @@ describe("a comment whose reader closed before it settled", () => {
     });
     expect(app.notices[0]).toEqual({
       tone: "error",
-      message: "Comment failed — POST /api/threads failed (HTTP 409): the server refused",
+      message: "Comment failed — the server refused",
     });
   });
 

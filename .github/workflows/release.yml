@@ -1,10 +1,11 @@
 name: Release
 
 # Tag-triggered, and *only* tag-triggered. Releases are a deliberate act
-# (CLAUDE.md, Git Workflow): the orchestrator or the user bumps the version with
-# `npm version <x.y.z> --workspaces --include-workspace-root`, which writes the
-# version everywhere and creates the tag, and pushing that tag runs this. Nothing
-# on `main` reaches this workflow — a merge is not a release.
+# (CLAUDE.md, Git Workflow): the orchestrator or the user runs
+# `npm run release:prepare <x.y.z>`, which bumps every manifest, commits them
+# together and tags that commit, and pushing that tag runs this. Nothing on
+# `main` reaches this workflow — a merge is not a release. Procedure and
+# recovery: docs/RELEASING.md.
 on:
   push:
     tags:
@@ -38,7 +39,9 @@ jobs:
       # The tag/version guard. `check-versions.ts` reads GITHUB_REF: a
       # `refs/tags/v1.2.3` push against a manifest at any other version fails
       # here, before anything is built and long before a release exists.
-      # It also fails if any workspace has drifted from the root version.
+      # It also fails if any workspace has drifted from the root version — in
+      # the working tree *and* in the commit the tag points at, which is what it
+      # is actually protecting (INFRA-022).
       - name: version singularity + tag guard
         run: npm run version:check
 

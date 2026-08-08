@@ -58,7 +58,21 @@ const createAppendTurnRoute = (required: boolean) =>
       "`400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since " +
       "`openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from " +
       "`@corpus/contract`, which dispatches validation on `content-type`. An upload past the " +
-      "workspace's size caps is a `413`.",
+      "workspace's size caps is a `413`.\n\n" +
+      "**A form fence in an agent's turn is validated here.** When the actor is the agent, a turn " +
+      "whose ```` ```form ```` block does not parse against the grammar — unreadable YAML, a " +
+      "fourth field kind, duplicate questions, a duplicate option, a `write` field carrying " +
+      "`options`, a question or option carrying a newline — is a `400` and does not reach disk " +
+      "through this route.\n\n" +
+      "**What that is not.** It is not a guarantee that every form fence on disk parses, and a " +
+      "client must not treat it as one. Two limits are deliberate: a turn from any other actor " +
+      "is not checked, because §6 makes a form something an *agent* turn carries and a person " +
+      "quoting a form fence in a reply is quoting rather than asking; and this is not the only " +
+      "route that writes a turn — `POST /api/threads` creates a thread with its first turn and " +
+      "does not run this check. So the reader's rule (§11: an unreadable form renders as the " +
+      "visibly broken code block it is, never as a partial set of controls) is the safety net " +
+      "for every fence this endpoint did not vet — a hand-edited file, an older server, a " +
+      "person's quoted block, a thread's first turn — and not a formality.",
     request: {
       params: ThreadIdParamSchema,
       headers: ActorHeaderSchema,

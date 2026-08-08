@@ -217,7 +217,7 @@ function WriteButtons(): ReactElement {
       <button
         type="button"
         onClick={() => {
-          respond.mutate({ ts: TS, option: "Lemonade" });
+          respond.mutate({ ts: TS, answers: [{ question: "Which quote?", option: "Lemonade" }] });
         }}
       >
         answer

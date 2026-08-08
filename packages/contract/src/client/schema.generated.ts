@@ -1339,6 +1339,10 @@ export interface paths {
         /**
          * Append a turn to a thread
          * @description The server owns the turn format and guarantees timestamps are unique and monotonic within the thread (SPEC.md §6). Send `application/json` for a plain turn, or `multipart/form-data` to attach files — a turn may be attachment-only, but one carrying neither text nor files is a `400`. Multipart bodies are built by `uploadTurn` in `@corpus/contract/client`, since `openapi-fetch` serialises JSON only. Servers mount this route with `mountAppendTurn` from `@corpus/contract`, which dispatches validation on `content-type`. An upload past the workspace's size caps is a `413`.
+         *
+         *     **A form fence in an agent's turn is validated here.** When the actor is the agent, a turn whose ```` ```form ```` block does not parse against the grammar — unreadable YAML, a fourth field kind, duplicate questions, a duplicate option, a `write` field carrying `options`, a question or option carrying a newline — is a `400` and does not reach disk through this route.
+         *
+         *     **What that is not.** It is not a guarantee that every form fence on disk parses, and a client must not treat it as one. Two limits are deliberate: a turn from any other actor is not checked, because §6 makes a form something an *agent* turn carries and a person quoting a form fence in a reply is quoting rather than asking; and this is not the only route that writes a turn — `POST /api/threads` creates a thread with its first turn and does not run this check. So the reader's rule (§11: an unreadable form renders as the visibly broken code block it is, never as a partial set of controls) is the safety net for every fence this endpoint did not vet — a hand-edited file, an older server, a person's quoted block, a thread's first turn — and not a formality.
          */
         post: {
             parameters: {
@@ -1517,11 +1521,19 @@ export interface paths {
         put?: never;
         /**
          * Answer the form in an agent turn
-         * @description Submits an answer to the ```` ```form ```` block in the turn at `{ts}`: the server appends a structured answer turn carrying the chosen option and any note, and enqueues a `form.respond` event that re-triggers the agent like any engaged-thread reply (SPEC.md §6). The thread then leaves `needs=form`.
+         * @description Submits an answer to the ```` ```form ```` block in the turn at `{ts}`: the server appends a structured answer turn naming every field the form asked and what was given for it, and enqueues a `form.respond` event that re-triggers the agent like any engaged-thread reply (SPEC.md §6). The thread then leaves `needs=form`.
          *
-         *     **The fence grammar**, which this route validates the answer against — settled by CONTRACT-014 as a CommonMark subset: an opening backtick fence at column 0 whose info string is exactly `form` (so ```` ```formula ```` is not one, a tilde fence is not one, and a fence quoted inside an outer fenced block is not one), then YAML with `prompt` (non-empty) and `options` (at least one, each non-empty, all distinct), then a required closing fence — a whole line of at least as many backticks; an unterminated fence is not a form. Selection is single: the answer names exactly one option, verbatim. A `note` is free text and always optional. Nothing else is part of the grammar — no form id, no per-option types, no required markers, no multi-select.
+         *     **The fence**, settled by CONTRACT-014 as a CommonMark subset: an opening backtick fence at column 0 whose info string is exactly `form` (so ```` ```formula ```` is not one, a tilde fence is not one, and a fence quoted inside an outer fenced block is not one), then the YAML, then a required closing fence — a whole line of at least as many backticks; an unterminated fence is not a form. The first form fence in the body wins, and a turn carries at most one form.
          *
-         *     `400` when `option` is not one of the offered options, naming `body.option` in `issues`; `404` when the thread has no such turn, or that turn carries no form.
+         *     **The grammar** the YAML follows (CONTRACT-038). A form is a list of `fields`, each with its own non-empty `question` — the field's whole identity, so questions are **distinct** within the form and there are no field ids. A field is one of exactly three `kind`s and there are no others: `choose one` and `choose any` carry `options` (at least one, each non-empty, all distinct), `write` carries none. A field is **required unless** it carries `optional: true`. The short spelling stays: a top-level `prompt` plus `options` **is** a form with one required `choose one` field, so every form already written keeps parsing. Nothing else is part of the grammar — no form id, no field ids, no defaults, no placeholders, no per-field validation rules, no sections, no conditional fields.
+         *
+         *     **Two rules keep the form answerable**, since the answer turn is the durable record of what was answered and is read back a line at a time (PR #28 finding 1). A `question` and an option are each **a single line**. And no option may be spelled `**Note:**`, `_(left blank)_`, or one of this same form's questions wrapped in `**…**`: the answer writes a chosen option on a line of its own, where those three read as the note heading, the blank marker, and a question heading. A form breaking either rule does not parse at all — so it is a `400` on the turn that would write it and, wherever such bytes already exist, a form to nobody: it renders as the broken code block it is (§11) rather than advertising a question no answer could ever clear.
+         *
+         *     **The answer** carries one entry per field answered, matched to its field by `question` rather than by position, with the value under the key the field's kind names: `option` for `choose one`, `options` for `choose any`, `text` for `write`. A chosen option is matched **verbatim** against that field's `options` — a near miss is a rejection. A field left blank is **omitted from `answers`**, which is legal only when that field is optional — so a form whose fields are all optional accepts an empty `answers`. Submitting is all-or-nothing: there is no partial save and no per-field submit, and a form is unanswered until it is submitted. A `note` is free text about the ask as a whole, and always optional.
+         *
+         *     **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403` — "only the person answers a form: the agent never answers a form, including its own" (SPEC.md §6). A signal the agent can clear for itself is not a signal, so this is a refusal in the same family as user-only deletion, not a silent no-op.
+         *
+         *     `400` when the answer does not fit the form — an option a field does not offer, an answer to a field the form does not ask, a required field with no answer, a value under the wrong key for the field's kind, or the same option named twice in one `choose any` — naming every offending entry under `body.answers` in `issues`. Also `400` when the answer's own text would not survive the turn it writes: a `write` answer or a `note` containing a line that reads as a turn heading, one leaving a code fence open, or one spelled exactly like this form's own `**<question>**` heading, `**Note:**` or `_(left blank)_` — the last of these would be recorded under the wrong question while parsing perfectly well, so it is refused rather than rewritten (a rewrite would record an answer nobody gave). `404` when the thread has no such turn, or that turn carries no form; `409` when that form is **already answered** — a form is answered once, and changing your mind is an ordinary reply, not a second answer to the same question (SPEC.md §6, §11). The `409` is deliberate: the request is well formed and the state is what refuses it, so retrying with a different body will not help.
          */
         post: {
             parameters: {
@@ -1538,7 +1550,7 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            /** @description The answer. `option` is mandatory — an answer that chooses nothing is not an answer — so the body is too. */
+            /** @description The answer. `answers` is mandatory — though it may be empty, for a form whose fields are all optional — so the body is too. */
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["FormAnswerRequest"];
@@ -1572,6 +1584,15 @@ export interface paths {
                         "application/json": components["schemas"]["UnauthorizedError"];
                     };
                 };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
                 /** @description No such resource. */
                 404: {
                     headers: {
@@ -1579,6 +1600,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The request conflicts with state that already exists. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConflictError"];
                     };
                 };
             };
@@ -4794,18 +4824,34 @@ export interface components {
             thread: components["schemas"]["ThreadSummary"];
             turn: components["schemas"]["Turn"] & unknown;
             /**
-             * @description The enqueued `form.respond` event, which re-triggers the agent like any engaged-thread reply (SPEC.md §6). Null when the answer does not re-trigger it — a resolved thread stops re-triggering the agent even while it is engaged (SPEC.md §8).
+             * @description The enqueued `form.respond` event, which re-triggers the agent like any engaged-thread reply (SPEC.md §6). Null when the answer does not re-trigger it — which, since only the person answers a form, is exactly the thread the agent is not engaged in. A **resolved** thread does not stay silent: a person's answer reopens it and then re-triggers on §8's ordinary terms (SHARED-019 Amendment 1, corrected by SERVER-062).
              * @example evt_7c1d
              */
             eventId: string | null;
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
             warnings: components["schemas"]["Warning"][];
         };
+        ConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            lock?: components["schemas"]["Lock"] & unknown;
+        };
         FormAnswerRequest: {
-            /** @description The chosen option, matched verbatim against the answered form's `options`. An option the form does not offer is a `400` naming `body.option` — validating the answer against the fence it answers is the point of the route. */
-            option: string;
-            /** @description Free-text note recorded beside the chosen option (SPEC.md §6). Optional. */
+            /** @description One entry per field answered, in any order — entries are matched to fields by question, not by position. A field left blank has no entry, which is a `400` unless that field is optional. Submitting is all-or-nothing: there is no partial save and no per-field submit (SPEC.md §6). */
+            answers: components["schemas"]["FormFieldAnswer"][];
+            /** @description Free-text note about the ask as a whole, recorded beside the answers (SPEC.md §6). Optional, and never a field's answer. */
             note?: string;
+        };
+        FormFieldAnswer: {
+            /** @description The field's question, verbatim from the form. A question the form does not ask is a `400`. */
+            question: string;
+            /** @description `choose one`: the chosen option, verbatim from that field's `options`. */
+            option?: string;
+            /** @description `choose any`: the chosen options, each verbatim from that field's `options` and each named at most once. Selecting nothing is spelled by omitting the entry, not by an empty list. */
+            options?: string[];
+            /** @description `write`: the text written. */
+            text?: string;
         };
         ThreadMutationResponse: {
             thread: components["schemas"]["ThreadSummary"];
@@ -4866,7 +4912,7 @@ export interface components {
             created: string;
             /** @description What produced the event, e.g. `ui` or `cli`. */
             source: string;
-            /** @description Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, option, note}` (SPEC.md §6). */
+            /** @description Type-specific payload; plugins own the shape of their own event types, which is why this stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads are declared beside their features: `form.respond` carries `{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the answered form (SPEC.md §6, §7). */
             payload: {
                 [key: string]: unknown;
             };
@@ -4919,12 +4965,6 @@ export interface components {
         FailEventRequest: {
             /** @description Human-readable failure reason, shown in the console. */
             reason?: string;
-        };
-        ConflictError: {
-            /** @enum {string} */
-            code: "conflict";
-            message: string;
-            lock?: components["schemas"]["Lock"] & unknown;
         };
         DeferEventRequest: {
             /**
@@ -5083,7 +5123,7 @@ export interface components {
         };
         ProjectionDrift: {
             /**
-             * @description `missing_row`: a document file exists but the projection has no row for it. `orphan_row`: the projection has a row for a path that no longer exists. `content_mismatch`: the file's bytes no longer hash to what was projected. `count_mismatch`: a table the projection keeps no per-item detail for disagrees with the files by count. `unparseable`: the file is a document by location but its frontmatter cannot be read. `duplicate_id`: two files claim one id; only the first by path order is projected.
+             * @description `missing_row`: a document file exists but the projection has no row for it. `orphan_row`: the projection has a row for a path that no longer exists. `content_mismatch`: the file's bytes no longer hash to what was projected. `count_mismatch`: a table the projection keeps no per-item detail for disagrees with the files by count. `unparseable`: the file is a document by location but neither it nor its frontmatter can be read — the bytes are unreadable (an unreadable file, a permission error) or the frontmatter they carry is not valid. `duplicate_id`: two files claim one id; only the first by path order is projected.
              * @enum {string}
              */
             kind: "missing_row" | "orphan_row" | "content_mismatch" | "count_mismatch" | "unparseable" | "duplicate_id";

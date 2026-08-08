@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { checkVersions, versionFromGitRef, type ManifestVersion } from "./versions.js";
+import {
+  checkVersionSources,
+  checkVersions,
+  versionFromGitRef,
+  type ManifestVersion,
+  type VersionSource,
+} from "./versions.js";
 
 function workspaces(...versions: readonly (string | undefined)[]): ManifestVersion[] {
   return versions.map((version, index) => ({
@@ -58,6 +64,83 @@ describe("versionFromGitRef", () => {
       expect(versionFromGitRef(ref)).toBeUndefined();
     },
   );
+});
+
+describe("checkVersionSources", () => {
+  function source(
+    label: string,
+    rootVersion: string,
+    ...workspaceVersions: string[]
+  ): VersionSource {
+    return {
+      label,
+      root: { path: "package.json", version: rootVersion },
+      workspaces: workspaces(...workspaceVersions),
+    };
+  }
+
+  it("passes when every tree is internally consistent", () => {
+    const result = checkVersionSources([
+      source("working tree", "0.4.2", "0.4.2"),
+      source("committed tree (HEAD)", "0.4.2", "0.4.2"),
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.problems).toEqual([]);
+    expect(result.checks).toEqual([
+      { label: "working tree", version: "0.4.2", ok: true },
+      { label: "committed tree (HEAD)", version: "0.4.2", ok: true },
+    ]);
+  });
+
+  it("fails on the committed tree alone — the trap the working tree hides", () => {
+    const result = checkVersionSources([
+      source("working tree", "0.4.2", "0.4.2"),
+      source("committed tree (HEAD)", "0.4.2", "0.4.1"),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.problems).toEqual([
+      "committed tree (HEAD): apps/w0/package.json is 0.4.1, expected 0.4.2",
+    ]);
+  });
+
+  it("says a shared problem once, naming both trees", () => {
+    const result = checkVersionSources([
+      source("working tree", "0.4.2", "0.4.1"),
+      source("committed tree (HEAD)", "0.4.2", "0.4.1"),
+    ]);
+    expect(result.problems).toEqual([
+      "working tree and committed tree (HEAD): apps/w0/package.json is 0.4.1, expected 0.4.2",
+    ]);
+  });
+
+  it("keeps two different problems apart", () => {
+    const result = checkVersionSources([
+      source("working tree", "0.4.2", "9.9.9"),
+      source("committed tree (HEAD)", "0.4.2", "0.4.1"),
+    ]);
+    expect(result.problems).toEqual([
+      "working tree: apps/w0/package.json is 9.9.9, expected 0.4.2",
+      "committed tree (HEAD): apps/w0/package.json is 0.4.1, expected 0.4.2",
+    ]);
+  });
+
+  it("applies the tag guard to every tree it is given", () => {
+    const result = checkVersionSources(
+      [source("committed tree (v9.9.9)", "0.4.2", "0.4.2")],
+      "refs/tags/v9.9.9",
+    );
+    expect(result.ok).toBe(false);
+    expect(result.problems[0]).toContain("the release tag names 9.9.9");
+  });
+
+  it("reports both trees' versions when they differ but each is consistent", () => {
+    const result = checkVersionSources([
+      source("working tree", "0.5.0", "0.5.0"),
+      source("committed tree (HEAD)", "0.4.2", "0.4.2"),
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.checks.map((check) => check.version)).toEqual(["0.5.0", "0.4.2"]);
+  });
 });
 
 describe("the tag guard", () => {

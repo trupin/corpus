@@ -9,7 +9,7 @@
 
 import { REPOPULATED_TABLES } from "./schema.js";
 import { enumerateDocuments } from "./roots.js";
-import { projectDocument } from "./project-document.js";
+import { projectDocument, type ProjectionOutcome } from "./project-document.js";
 import { projectRuntime } from "./project-runtime.js";
 import type { ProjectionDb } from "./db.js";
 
@@ -37,6 +37,10 @@ export function clearProjection(db: ProjectionDb): void {
   }
 }
 
+/** What to put in a log field for a thrown value. */
+const causeOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 /**
  * Re-derives every row from files. Files are visited in sorted
  * workspace-relative path order, which is what makes duplicate-id resolution
@@ -44,6 +48,34 @@ export function clearProjection(db: ProjectionDb): void {
  *
  * A file that cannot be projected is recorded and skipped — never partially
  * inserted, and never fatal: one broken document must not take the server down.
+ *
+ * **That last clause is enforced here, not merely asserted (SERVER-064).** This
+ * runs from `openProjection`, i.e. during boot, so a throw is not "the
+ * projection is degraded" — it is `corpus server start` reporting that the
+ * server exited during startup, over one file in `data/`, with no server left to
+ * ask why and no `db doctor` to run. {@link projectDocument} rethrows every read
+ * failure that is not `ENOENT` — correctly, because on the *write* path a save
+ * that cannot read its own file back must fail loudly — so the boot policy of
+ * skipping belongs to this reader, which is the one that knows it is a boot.
+ * That is SERVER-063's shape one directory over: the store stays honest, the
+ * reader decides.
+ *
+ * "Never partially inserted" survives the catch because the read is
+ * {@link projectDocument}'s first act: a file it cannot read is refused before
+ * any row is written, and the insert phase after it is that function's own
+ * transaction, which rolls itself back on the way out.
+ *
+ * The two faults are logged at different levels, as the queue's readers log
+ * theirs (`queue/held.ts`, `queue/project.ts`): a document whose *content* is
+ * broken is expected residue an operator may already know about (`debug`), while
+ * a file the process could not read at all is a workspace fault only an operator
+ * can fix — so it is named, with its reason, at `error`, the one level a server
+ * running at `silent` still writes. The log line is the whole remedy: the file
+ * has to be found by hand.
+ *
+ * Nothing is moved and nothing is written on either path. **Boot is a read**,
+ * and relocating a file the process could not read is not something a boot
+ * should attempt.
  */
 export function populateFromFiles(db: ProjectionDb): PopulateReport {
   const startedAt = Date.now();
@@ -59,7 +91,18 @@ export function populateFromFiles(db: ProjectionDb): PopulateReport {
   db.transaction(() => {
     clearProjection(db);
     for (const file of files) {
-      const outcome = projectDocument(db, file.absPath);
+      let outcome: ProjectionOutcome;
+      try {
+        outcome = projectDocument(db, file.absPath);
+      } catch (error) {
+        // The path comes from the enumeration rather than from the projection,
+        // because the file that could not be read is exactly the file whose
+        // contents cannot name it.
+        const reason = causeOf(error);
+        skipped.push({ path: file.path, reason });
+        db.logger.error("skipping unreadable document", { path: file.path, reason });
+        continue;
+      }
       switch (outcome.kind) {
         case "projected":
           documents += 1;
@@ -70,7 +113,7 @@ export function populateFromFiles(db: ProjectionDb): PopulateReport {
           break;
         case "skipped":
           skipped.push({ path: outcome.path, reason: outcome.reason });
-          db.logger.info("skipping document", { path: outcome.path, reason: outcome.reason });
+          db.logger.debug("skipping document", { path: outcome.path, reason: outcome.reason });
           break;
         case "removed":
           skipped.push({ path: outcome.path, reason: "file disappeared during the rebuild" });

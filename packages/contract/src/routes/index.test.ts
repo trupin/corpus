@@ -480,7 +480,15 @@ function createStubApp() {
         thread: threadSummary,
         turn: {
           ...turn,
-          body: answer.note === undefined ? answer.option : `${answer.option}\n\n${answer.note}`,
+          // Prose naming every field and what was given for it — the shape §6
+          // requires; the server owns its exact wording (SERVER-068).
+          body: [
+            ...answer.answers.map(
+              (entry) =>
+                `${entry.question} — ${entry.option ?? entry.options?.join(", ") ?? entry.text ?? "(blank)"}`,
+            ),
+            ...(answer.note === undefined ? [] : ["", answer.note]),
+          ].join("\n"),
         },
         eventId: "evt_7c1d",
         warnings: [],
@@ -1107,26 +1115,32 @@ describe("routes mounted on a Hono app", () => {
       body: JSON.stringify(body),
     });
 
+  /** The stub form is the *shorthand* spelling, so this exercises it end to end. */
+  const QUESTION = "Which rate should the model assume?";
+
   it("accepts an option the answered form offers", async () => {
-    const response = await answerForm({ option: "6.4%" });
+    const response = await answerForm({ answers: [{ question: QUESTION, option: "6.4%" }] });
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      turn: { body: "6.4%" },
+      turn: { body: `${QUESTION} — 6.4%` },
       eventId: "evt_7c1d",
       warnings: [],
     });
   });
 
   it("carries the optional note into the answer turn", async () => {
-    const response = await answerForm({ option: "6.1%", note: "matches the Q2 sheet" });
+    const response = await answerForm({
+      answers: [{ question: QUESTION, option: "6.1%" }],
+      note: "matches the Q2 sheet",
+    });
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      turn: { body: "6.1%\n\nmatches the Q2 sheet" },
+      turn: { body: `${QUESTION} — 6.1%\n\nmatches the Q2 sheet` },
     });
   });
 
   it("rejects an option the form does not offer, naming the field", async () => {
-    const response = await answerForm({ option: "5.0%" });
+    const response = await answerForm({ answers: [{ question: QUESTION, option: "5.0%" }] });
     expect(response.status).toBe(400);
     const rejection = (await response.json()) as {
       code: string;
@@ -1134,17 +1148,21 @@ describe("routes mounted on a Hono app", () => {
     };
     expect(rejection.code).toBe("bad_request");
     expect(rejection.issues).toHaveLength(1);
-    expect(rejection.issues[0]?.path).toBe("body.option");
+    expect(rejection.issues[0]?.path).toBe("body.answers[0].option");
     expect(rejection.issues[0]?.message).toContain("6.1%");
   });
 
+  /** The required field is unanswered in every one of these, spelled three ways. */
   it("rejects an answer that chooses nothing at all", async () => {
+    expect((await answerForm({ answers: [], note: "hmm" })).status).toBe(400);
     expect((await answerForm({ note: "hmm" })).status).toBe(400);
-    expect((await answerForm({ option: "" })).status).toBe(400);
+    expect((await answerForm({ answers: [{ question: QUESTION }] })).status).toBe(400);
+    expect((await answerForm({ answers: [{ question: QUESTION, option: "" }] })).status).toBe(400);
   });
 
   it("rejects a form timestamp that is not an instant", async () => {
-    expect((await answerForm({ option: "6.1%" }, "yesterday")).status).toBe(400);
+    const body = { answers: [{ question: QUESTION, option: "6.1%" }] };
+    expect((await answerForm(body, "yesterday")).status).toBe(400);
   });
 
   it("reports both halves of a reap, keeping the given-up events out of `reaped`", async () => {

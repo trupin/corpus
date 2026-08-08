@@ -249,9 +249,70 @@
   margin-top: 6px;
 }
 
+/* One field of a form (SPEC.md §6's three kinds), grouped so its options are
+   announced under their own question rather than as one undifferentiated set. */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
 .form-prompt {
   margin: 0;
+  padding: 0;
   color: var(--ink);
+}
+
+.form-required {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* The `write` field grows with what is typed, like every other composer field.
+   The box is this wrapper and the textarea inside stays borderless and
+   transparent — `.composer-grow` measures by stacking a hidden copy of the value
+   in the same grid cell, so padding or a border on the field alone would make
+   the mirror measure a different string and the row grow to the wrong height. */
+.form-write {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 9px;
+}
+
+.form-write:focus-within {
+  border-color: var(--accent);
+}
+
+.form-opt-input {
+  accent-color: var(--accent);
+  margin: 0;
+  flex: none;
+}
+
+/* The still-missing questions, named rather than left to a silent failed
+   attempt (SPEC.md §11). */
+.form-missing {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+/* An answer that would not read back as itself, said where it was typed rather
+   than as a failed round trip (`formPreflight.ts`). Louder than `.form-missing`
+   — a missing required field is a form not finished yet, while this is text
+   already written that has to change — and monospaced, because the sentence
+   quotes the offending line and the backticks around it are the point. */
+.form-unreadable {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--sepia-ink);
 }
 
 .form-opt {
@@ -275,8 +336,27 @@
   background: var(--accent-wash);
 }
 
-.form-opt:disabled {
-  cursor: default;
+/* The focus ring belongs on the card, not on the small native control inside
+   it: keyboard focus has to be visible at the size the thing being chosen is
+   drawn (SPEC.md §11 — every affordance is operable from the keyboard). */
+.form-opt:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The way out of an optional `choose one` (`FormBlock.tsx`'s LEAVE_BLANK_LABEL).
+   It is a real member of the radio group, so it keeps the card and the picked
+   highlight every other option has — but it is not one of the answers the form
+   offers, and a dashed edge with a quieter label is what says so without adding
+   a second control idiom to the field. */
+.form-opt-blank {
+  border-style: dashed;
+}
+
+.form-opt-blank .form-opt-label {
+  color: var(--ink-2);
+  font-style: italic;
 }
 
 .form-opt .price {
@@ -311,9 +391,42 @@
   cursor: default;
 }
 
-.form-answered {
-  margin: 3px 0 0;
+.form-submit-key {
   font-family: var(--mono);
+  font-weight: 400;
+  opacity: 0.75;
+  margin-left: 6px;
+}
+
+/* An answered form is a record, not a set of dead controls (SPEC.md §11). */
+.form-record {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.form-record-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+}
+
+.form-record-q {
+  color: var(--ink-2);
+  font-size: 11px;
+}
+
+.form-record-a {
+  margin: 0;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.form-record-note {
+  margin: 3px 0 0;
   font-size: 11px;
   color: var(--ink-3);
 }
