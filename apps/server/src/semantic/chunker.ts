@@ -17,14 +17,14 @@
  */
 
 import { createHash } from "node:crypto";
-import { HEADING_PATH_SEPARATOR } from "@corpus/contract";
 import {
+  HEADING_PATH_SEPARATOR,
   fencedCodeRanges,
   overlapsRange,
   splitLines,
   type Line,
   type TextRange,
-} from "../core/code.js";
+} from "@corpus/contract";
 import { headingSections } from "../core/headings.js";
 
 /**

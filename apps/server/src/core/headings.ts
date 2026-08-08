@@ -18,7 +18,7 @@
  * as everywhere else in `core/`.
  */
 
-import { fencedCodeRanges, overlapsRange, splitLines } from "./code.js";
+import { fencedCodeRanges, overlapsRange, splitLines } from "@corpus/contract";
 
 /** ATX headings, CommonMark's rule: up to three leading spaces, then 1–6 `#`. */
 const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/;
