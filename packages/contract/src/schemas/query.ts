@@ -89,6 +89,14 @@ const queryParam = (name: string) => ({ param: { name, in: "query" as const, req
  *   ranking.
  * - `offset` rides on {@link PaginationQuerySchema}, which `/api/search` does not
  *   compose: a ranked result set is a top-k, not a page.
+ * - `isParent` (CONTRACT-042) is a genuine structural filter and would belong
+ *   here on the merits — ranked retrieval over roots only is a sensible ask —
+ *   but §9.2's signed `/api/search` parameter string does not carry it, while
+ *   the signed `GET /api/docs` string does. Publishing it on ranked retrieval is
+ *   therefore a SPEC rider rather than a contract decision, so it lives on
+ *   `DocsQuerySchema` alone until that rider is signed. This is the one
+ *   exclusion here that is bookkeeping rather than principle; moving it into
+ *   this shape is a one-line change and no consumer breaks.
  */
 export const docFilterShape = {
   type: z
@@ -210,8 +218,9 @@ export const docFilterShape = {
 } as const;
 
 /**
- * Published parameter order is `…, unread, pinned, needs, sort`, so the shared
- * filters are spread in two runs with the board-only `pinned` between them.
+ * Published parameter order is `…, unread, pinned, isParent, needs, sort`, so
+ * the shared filters are spread in two runs with the two docs-only parameters
+ * between them.
  * Order is not cosmetic here: `openapi.test.ts` pins the parameter list, and
  * it is what keeps `openapi.json` byte-stable across regenerations. A filter
  * added to {@link docFilterShape} still lands on both endpoints untouched by
@@ -249,6 +258,33 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
         "on the rows, so no per-column follow-up read is ever needed (SPEC.md §11). Not " +
         "thread-only: any type may carry the key, though only views render as columns.",
     }),
+  isParent: z
+    .stringbool()
+    .optional()
+    .openapi({
+      ...queryParam("isParent"),
+      type: "boolean",
+      description:
+        "Whether the document is a **child of something** (SPEC.md §9.2). `true` selects " +
+        "**roots** — documents whose `parent` is null or absent — which is what lets a view show " +
+        "top-level documents without their child threads mixed in among them; `false` selects " +
+        "documents that **are** a child. Absent filters nothing, exactly like every other " +
+        "optional filter: there is no default of `true`, so a view that never sets it shows what " +
+        'it always showed. **It does not mean "has children."** A standalone note that nothing ' +
+        "hangs off still matches `isParent=true` — the filter asks what a document is *under*, " +
+        'never what is *under it*. The "has at least one child" reading matches the name more ' +
+        "literally and was considered and **rejected** (a parents-only view that hid every " +
+        "uncommented note would be nearly empty); the name is the one the user asked for and is " +
+        'kept deliberately, so do not "fix" it into the other meaning. **Not thread-only**, ' +
+        "unlike `parent`: a non-thread document has no parent at all, so `isParent=true` " +
+        "genuinely matches it and `isParent=false` genuinely excludes it — an answer, not a " +
+        "no-op, and a mixed top-level list of notes and standalone threads is the point. " +
+        "`parent=<id>` together with `isParent=true` is a contradiction and is **refused with " +
+        "`400`** rather than answered with an empty set: `parent` no-ops for non-thread types, " +
+        "so an intersection would quietly return every root document that is not a thread — a " +
+        "confident answer to a question nobody asked. `parent=<id>&isParent=false` is merely " +
+        "redundant and is accepted.",
+    }),
   needs: needsFilter,
   sort: DocSortSchema.default(DEFAULT_DOC_SORT).openapi({
     ...queryParam("sort"),
@@ -258,10 +294,30 @@ export const DocsQuerySchema = PaginationQuerySchema.extend({
       "§11 view key — the board's column ordering — with the documented tiebreak: `order` with " +
       "nulls last (a view with no `order` key is placed, never dropped), then `title`, then `id`.",
   }),
-}).refine((query) => query.sort !== "relevance" || query.q !== undefined, {
-  message: "`sort=relevance` is only meaningful with a `q` query.",
-  path: ["sort"],
-});
+})
+  .refine((query) => query.sort !== "relevance" || query.q !== undefined, {
+    message: "`sort=relevance` is only meaningful with a `q` query.",
+    path: ["sort"],
+  })
+  /**
+   * `parent=<id>` names a parent; `isParent=true` demands there be none. The
+   * two are refused together (CONTRACT-042) rather than intersected to an empty
+   * set, because the intersection is **not** empty: `parent` no-ops for
+   * non-thread types (SPEC.md §9.2), so `parent=X&isParent=true` would answer
+   * with every root non-thread document in the workspace — a plausible-looking
+   * list that has nothing to do with what was asked. The repo's own precedent
+   * is the rung above: `sort=relevance` without `q` is a `400` rather than a
+   * silent fallback, for the same reason. A `400` is also the honest code here
+   * — dropping either parameter fixes the request, so the caller is not sent in
+   * circles. `isParent=false` alongside `parent` is redundant, not
+   * contradictory, and passes.
+   */
+  .refine((query) => query.parent === undefined || query.isParent !== true, {
+    message:
+      "`parent=<id>` and `isParent=true` contradict: `parent` asks for the children of a " +
+      "document and `isParent=true` asks for documents with no parent. Drop one.",
+    path: ["isParent"],
+  });
 
 /**
  * FTS5's `snippet()` output, converted server-side into alternating matched and

@@ -58,8 +58,12 @@ describe("TextQuoteSelectorRequest", () => {
     });
   });
 
-  it.each(["prefix", "suffix"] as const)("documents that %s may simply be omitted", (field) => {
+  // A caller holding only a quote must be able to omit context, and must not be
+  // led to believe what it sends is stored: the server reads the stored context
+  // off the parent's own bytes (SERVER-071).
+  it.each(["prefix", "suffix"] as const)("documents that %s is not stored as sent", (field) => {
     const description = TextQuoteSelectorRequestSchema.shape[field].meta()?.description ?? "";
-    expect(description).toContain("Omit it when there is none");
+    expect(description).toContain("Not stored as sent");
+    expect(description).toContain("omitting this costs nothing");
   });
 });

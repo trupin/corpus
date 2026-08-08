@@ -4,10 +4,15 @@ const EXACT_DESCRIPTION = "The quoted text the thread is attached to.";
 const PREFIX_DESCRIPTION = "Text immediately preceding `exact`, for disambiguation.";
 const SUFFIX_DESCRIPTION = "Text immediately following `exact`, for disambiguation.";
 
-/** Absent context is not missing data — a quote at a body boundary genuinely has none. */
-const EMPTY_CONTEXT_NOTE =
-  "Omit it when there is none, which is what a quote at a document boundary produces; the server " +
-  "stores the empty string.";
+/**
+ * Request-side context is a *disambiguator*, not the stored selector. What ends
+ * up in the parent's frontmatter is read off the parent's own bytes around the
+ * quote (SERVER-071), so a caller holding only a quote may omit it.
+ */
+const REQUEST_CONTEXT_NOTE =
+  "**Not stored as sent**: on a request it only says which occurrence a repeated quote means. " +
+  "The context written into the parent's frontmatter is read off the parent document's own bytes " +
+  "around the quote, so omitting this costs nothing whenever the quote occurs once.";
 
 /**
  * W3C-style text-quote selector, stored in the frontmatter of the *commented*
@@ -38,8 +43,8 @@ export const TextQuoteSelectorSchema = z
  */
 export const TextQuoteSelectorRequestSchema = z.object({
   exact: z.string().min(1).describe(EXACT_DESCRIPTION),
-  prefix: z.string().optional().describe(`${PREFIX_DESCRIPTION} ${EMPTY_CONTEXT_NOTE}`),
-  suffix: z.string().optional().describe(`${SUFFIX_DESCRIPTION} ${EMPTY_CONTEXT_NOTE}`),
+  prefix: z.string().optional().describe(`${PREFIX_DESCRIPTION} ${REQUEST_CONTEXT_NOTE}`),
+  suffix: z.string().optional().describe(`${SUFFIX_DESCRIPTION} ${REQUEST_CONTEXT_NOTE}`),
 });
 
 export type TextQuoteSelector = z.infer<typeof TextQuoteSelectorSchema>;

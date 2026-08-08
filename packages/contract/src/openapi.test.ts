@@ -348,6 +348,9 @@ describe("GET /api/docs parameter grammar", () => {
     "stale",
     "unread",
     "pinned",
+    // CONTRACT-042's rider, beside `pinned` because both are docs-only: §9.2's
+    // signed `/api/search` parameter string carries neither.
+    "isParent",
     "needs",
     "sort",
   ];
@@ -408,6 +411,56 @@ describe("GET /api/docs parameter grammar", () => {
       expect(parameter("/api/docs", "get", name)?.description).toContain("no-ops for non-thread");
     },
   );
+
+  /**
+   * CONTRACT-042. The name reads as "has children" and means the opposite, so
+   * the published description is the only thing standing between the next
+   * reader and a well-intentioned inversion of the filter. Each clause the
+   * issue required is pinned individually: what it selects, the rejected
+   * reading, that it is not thread-only, and what happens beside `parent`.
+   */
+  describe("the isParent filter", () => {
+    const description = (): string => parameter("/api/docs", "get", "isParent")?.description ?? "";
+
+    it("types it as a boolean, like every other flag on this endpoint", () => {
+      const param = parameter("/api/docs", "get", "isParent");
+      expect(param?.schema?.type).toBe("boolean");
+      expect(param?.required).toBe(false);
+    });
+
+    it("says plainly that it selects roots, not documents that have children", () => {
+      expect(description()).toContain("**roots**");
+      expect(description()).toContain("no parent");
+      expect(description()).toContain('does not mean "has children."');
+    });
+
+    it("names the rejected reading, so nobody re-derives it as a bug", () => {
+      expect(description()).toContain('"has at least one child"');
+      expect(description()).toContain("rejected");
+      expect(description()).toContain("under");
+    });
+
+    it("states that absent filters nothing rather than defaulting to true", () => {
+      expect(description()).toContain("Absent filters nothing");
+      expect(description()).toContain("no default of `true`");
+    });
+
+    it("states that it is not thread-only, unlike `parent`", () => {
+      expect(description()).toContain("**Not thread-only**");
+      expect(description()).toContain("an answer, not a");
+    });
+
+    it("states the decided outcome of combining it with `parent`", () => {
+      expect(description()).toContain("`400`");
+      expect(description()).toContain("rather than answered with an empty set");
+      expect(description()).toContain("`parent=<id>&isParent=false` is merely redundant");
+    });
+
+    it("is declared on the collection query and deliberately not on search", () => {
+      expect(parameter("/api/docs", "get", "isParent")).toBeDefined();
+      expect(parameter("/api/search", "get", "isParent")).toBeUndefined();
+    });
+  });
 
   it("documents the archived-by-default exclusion and how to override it", () => {
     const description = parameter("/api/docs", "get", "status")?.description ?? "";
@@ -530,13 +583,27 @@ describe("the retrieval surface (CONTRACT-022)", () => {
       }
     });
 
-    it.each(["pinned", "sort", "offset"])("declares no %s", (name) => {
+    it.each(["pinned", "sort", "offset", "isParent"])("declares no %s", (name) => {
       expect(parameter(SEARCH_PATH, "get", name)).toBeUndefined();
     });
 
     it("says what happens to an undeclared parameter, since silence is the alternative", () => {
       expect(operation(SEARCH_PATH, "get").description).toContain(
         "`pinned`, `sort` and `offset` are not among them and are ignored if sent",
+      );
+    });
+
+    /**
+     * CONTRACT-042. `isParent` is a structural filter and would belong in the
+     * shared shape on the merits; it is held back only because §9.2's signed
+     * search parameter string does not carry it. Saying so in the published
+     * description keeps the omission a recorded decision rather than a
+     * suspected oversight.
+     */
+    it("records why isParent is the one structural filter it does not share", () => {
+      expect(operation(SEARCH_PATH, "get").description).toContain(
+        "neither is `isParent`, which §9.2's signed parameter string declares on the collection " +
+          "query alone",
       );
     });
 
