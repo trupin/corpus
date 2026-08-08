@@ -437,17 +437,17 @@ belongs to the same fix wave.
 | CONTRACT-042 | No filter can express "top-level only", so views cannot exclude children | done | P1 | SHARED-024 |
 | SERVER-073 | Answer `isParent` in the collection query | done | P1 | CONTRACT-042 |
 | UI-088 | A view cannot be told to show top-level documents only | done | P1 | CONTRACT-042, SERVER-073 |
-| CLI-032 | `corpus doc list` cannot ask for top-level documents only | todo | P2 | CONTRACT-042, SERVER-073 |
+| CLI-032 | `corpus doc list` cannot ask for top-level documents only | done | P2 | CONTRACT-042, SERVER-073 |
 | SHARED-025 | A changelog in the document instead of a thread per change (SIGNED, applied) | done | P1 | — |
 | SHARED-026 | A write is refused when it would not read back (SIGNED, applied) | done | P1 | — |
 | SHARED-027 | An agent turn says which model wrote it (SIGNED, applied) | done | P1 | — |
-| CONTRACT-043 | A turn has nowhere to record the model that wrote it | todo | P1 | SHARED-027 |
+| CONTRACT-043 | A turn has nowhere to record the model that wrote it | done | P1 | SHARED-027 |
 | SERVER-074 | Write the deciding model onto the agent's turn | todo | P1 | CONTRACT-043 |
 | UI-090 | Show which model wrote an agent turn | todo | P1 | CONTRACT-043, SERVER-074 |
 | SERVER-075 | A person's reply with an unterminated fence swallows every later turn | done | P0 | — |
 | SERVER-076 | A turn body can still fabricate a turn heading on the reply path (SERVER-075 finding) | done | P2 | SERVER-075 |
 | CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | done | P1 | — |
-| UI-091 | Pre-check the two refusals the composer still cannot see | todo | P2 | CONTRACT-044 |
+| UI-091 | Pre-check the two refusals the composer still cannot see | done | P2 | CONTRACT-044 |
 | INFRA-024 | A prose-only commit pays the full ten-minute gate — **superseded by INFRA-025** | closed | P1 | — |
 | INFRA-025 | Defer the slow suites to CI; run only fast tests locally | done | P1 | — |
 | AGENT-020 | Noting a change writes to the document's changelog, not a new thread | done | P1 | SHARED-025 |
