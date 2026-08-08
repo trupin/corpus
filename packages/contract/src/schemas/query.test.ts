@@ -214,6 +214,28 @@ describe("DocsQuery filter grammar", () => {
     });
   });
 
+  /**
+   * CONTRACT-042. `isParent` reads the same wire vocabulary as `pinned`,
+   * `unread` and `includeArchived` — one boolean convention on this endpoint,
+   * not two.
+   */
+  it.each([
+    ["true", true],
+    ["false", false],
+    ["1", true],
+    ["0", false],
+  ])("reads isParent=%s as the boolean it spells", (raw, expected) => {
+    expect(DocsQuerySchema.parse({ isParent: raw }).isParent).toBe(expected);
+  });
+
+  it.each(["maybe", "", "root"])("rejects isParent=%s rather than coercing it", (raw) => {
+    expect(DocsQuerySchema.safeParse({ isParent: raw }).success).toBe(false);
+  });
+
+  it("leaves isParent absent rather than defaulting it to true", () => {
+    expect("isParent" in DocsQuerySchema.parse({})).toBe(false);
+  });
+
   /** The board's one column-set query (SPEC.md §11; sprint-009 TEST-2). */
   it("composes the board query: pinned views sorted by order", () => {
     expect(DocsQuerySchema.parse({ pinned: "true", type: "view", sort: "order" })).toEqual({
@@ -253,6 +275,42 @@ describe("sort=relevance requires a query", () => {
       expect(DocsQuerySchema.parse({ sort }).sort).toBe(sort);
     },
   );
+});
+
+/**
+ * CONTRACT-042. `parent=<id>` names a parent and `isParent=true` demands there
+ * be none. The refusal is deliberate and not a fallout of composition: because
+ * `parent` no-ops for non-thread types, intersecting the two would answer with
+ * every root non-thread document rather than with nothing.
+ */
+describe("parent and isParent=true are refused together", () => {
+  it("rejects the contradiction, naming both parameters", () => {
+    const result = DocsQuerySchema.safeParse({ parent: "doc_a1b2c3", isParent: "true" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain("`parent=<id>` and `isParent=true`");
+    expect(result.error?.issues[0]?.path).toEqual(["isParent"]);
+  });
+
+  it("does not answer an empty set, which would be indistinguishable from a real one", () => {
+    expect(
+      DocsQuerySchema.safeParse({ parent: "doc_a1b2c3", isParent: "true" }).data,
+    ).toBeUndefined();
+  });
+
+  it("accepts the redundant-but-consistent pairing with isParent=false", () => {
+    expect(DocsQuerySchema.parse({ parent: "doc_a1b2c3", isParent: "false" })).toMatchObject({
+      parent: "doc_a1b2c3",
+      isParent: false,
+    });
+  });
+
+  it.each([
+    ["parent alone", { parent: "doc_a1b2c3" }],
+    ["isParent alone", { isParent: "true" }],
+    ["isParent with an unrelated filter", { isParent: "true", type: "note" }],
+  ])("accepts %s", (_label, query) => {
+    expect(DocsQuerySchema.safeParse(query).success).toBe(true);
+  });
 });
 
 describe("filter vocabularies", () => {

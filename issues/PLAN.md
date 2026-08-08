@@ -434,9 +434,9 @@ belongs to the same fix wave.
 | AGENT-019 | Loop block renders dispatch as a comment; chaining `claim-all && idle` drops it | done | P0 | — |
 | UI-087 | Child threads render twice in a thread reader — per turn and again below the body | done | P1 | — |
 | SHARED-024 | `isParent`: a view can show top-level documents only (SIGNED, applied) | done | P1 | — |
-| CONTRACT-042 | No filter can express "top-level only", so views cannot exclude children | todo | P1 | SHARED-024 |
-| SERVER-073 | Answer `isParent` in the collection query | todo | P1 | CONTRACT-042 |
-| UI-088 | A view cannot be told to show top-level documents only | todo | P1 | CONTRACT-042, SERVER-073 |
+| CONTRACT-042 | No filter can express "top-level only", so views cannot exclude children | done | P1 | SHARED-024 |
+| SERVER-073 | Answer `isParent` in the collection query | done | P1 | CONTRACT-042 |
+| UI-088 | A view cannot be told to show top-level documents only | done | P1 | CONTRACT-042, SERVER-073 |
 | CLI-032 | `corpus doc list` cannot ask for top-level documents only | todo | P2 | CONTRACT-042, SERVER-073 |
 | SHARED-025 | A changelog in the document instead of a thread per change (SIGNED, applied) | done | P1 | — |
 | SHARED-026 | A write is refused when it would not read back (SIGNED, applied) | done | P1 | — |
@@ -450,7 +450,7 @@ belongs to the same fix wave.
 | UI-091 | Pre-check the two refusals the composer still cannot see | todo | P2 | CONTRACT-044 |
 | INFRA-024 | A prose-only commit pays the full ten-minute gate — **superseded by INFRA-025** | closed | P1 | — |
 | INFRA-025 | Defer the slow suites to CI; run only fast tests locally | done | P1 | — |
-| AGENT-020 | Noting a change writes to the document's changelog, not a new thread | todo | P1 | SHARED-025 |
+| AGENT-020 | Noting a change writes to the document's changelog, not a new thread | done | P1 | SHARED-025 |
 | UI-089 | The changelog's older entries need a fold that reports its size | todo | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
 | SERVER-066 | `doc check` reports an unterminated fence, naming the line it opened on | done | P1 | — |
@@ -462,7 +462,7 @@ belongs to the same fix wave.
 | SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | todo | P2 | SERVER-068, CONTRACT-038 |
 | UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | todo | P2 | — |
 | UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | todo | P1 | UI-062 |
-| SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | todo | P1 | — |
+| SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
 | CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | todo | P1 | — |
 | SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-071 |
 | UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-072 |

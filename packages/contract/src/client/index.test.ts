@@ -95,7 +95,7 @@ function createServer() {
   });
 
   app.openapi(contractRoutes.listDocs, (c) => {
-    const { limit, offset, q } = c.req.valid("query");
+    const { limit, offset, q, isParent } = c.req.valid("query");
     return c.json(
       {
         items: [
@@ -111,7 +111,9 @@ function createServer() {
             due: null,
             reviewed: null,
             evergreen: false,
-            excerpt: "Body.",
+            // The handler echoes the parsed query so the test can assert what
+            // the typed client actually put on the wire.
+            excerpt: `isParent=${isParent === undefined ? "absent" : String(isParent)}`,
             pinned: false,
             order: null,
             query: null,
@@ -507,6 +509,46 @@ describe("the typed collection query", () => {
     });
     expect(error).toBeUndefined();
     expect(data?.items).toHaveLength(1);
+  });
+
+  /**
+   * CONTRACT-042, end to end over the mounted definitions: the generated client
+   * has to carry `isParent` as a boolean, the route's validator has to parse it
+   * off the wire, and the contradiction with `parent` has to come back as the
+   * declared `400` rather than as an empty list a caller would read as an
+   * answer.
+   */
+  it.each([
+    [true, "isParent=true"],
+    [false, "isParent=false"],
+  ])("puts isParent=%s on the wire as a boolean", async (isParent, echoed) => {
+    const { data, error } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { isParent } },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.items[0]?.excerpt).toBe(echoed);
+  });
+
+  it("sends nothing when isParent is not asked for, so the server filters nothing", async () => {
+    const { data } = await createTestClient().api.GET("/api/docs", { params: { query: {} } });
+    expect(data?.items[0]?.excerpt).toBe("isParent=absent");
+  });
+
+  it("refuses `parent` with `isParent=true` at the route, naming the parameter", async () => {
+    const { data, error, response } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { parent: "doc_a1b2c3", isParent: true } },
+    });
+    expect(response.status).toBe(400);
+    expect(data).toBeUndefined();
+    expect(JSON.stringify(error)).toContain("isParent");
+  });
+
+  it("allows `parent` with `isParent=false`, which is redundant rather than contradictory", async () => {
+    const { data, error } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { parent: "doc_a1b2c3", isParent: false } },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.items[0]?.excerpt).toBe("isParent=false");
   });
 });
 

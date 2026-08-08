@@ -108,6 +108,12 @@ describe("GET /api/docs", () => {
     ["offset=-1", "offset"],
     ["sort=last-activity", "sort"],
     ["sort=relevance", "sort"],
+    ["isParent=maybe", "isParent"],
+    // The contradiction, over HTTP: `parent` asks for a document's children and
+    // `isParent=true` asks for documents with no parent (CONTRACT-042). It is a
+    // 400 rather than an empty list, because `parent` no-ops for non-thread rows
+    // and the intersection would be every root non-thread document.
+    ["parent=doc_mortgage&isParent=true", "isParent"],
   ])("rejects ?%s with a 400 naming %s", async (query, parameter) => {
     const response = await get(`/api/docs?${query}`);
     expect(response.status).toBe(400);
@@ -121,6 +127,24 @@ describe("GET /api/docs", () => {
   it("accepts the boundary values the cap allows", async () => {
     expect((await get("/api/docs?limit=200&offset=0")).status).toBe(200);
     expect((await get("/api/docs?q=escrow&sort=relevance")).status).toBe(200);
+    // The redundant pairing is not the contradictory one, and is accepted.
+    expect((await get("/api/docs?parent=doc_mortgage&isParent=false")).status).toBe(200);
+  });
+
+  it("answers `isParent` over the wire, on both sides", async () => {
+    // `th_one` is the workspace's only child; every other row is a root,
+    // including `doc_note`, which nothing hangs off.
+    const roots = DocListSchema.parse(await json("/api/docs?isParent=true"));
+    expect(roots.items.map((item) => item.id).sort()).toEqual([
+      "doc_mortgage",
+      "doc_note",
+      "doc_old",
+    ]);
+    expect(roots.page.total).toBe(3);
+
+    const children = DocListSchema.parse(await json("/api/docs?isParent=false"));
+    expect(children.items.map((item) => item.id)).toEqual(["th_one"]);
+    expect(children.page.total).toBe(1);
   });
 
   it("runs one SELECT and one COUNT per request", async () => {

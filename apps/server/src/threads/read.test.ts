@@ -92,7 +92,10 @@ describe("GET /api/threads/{id}", () => {
     expect(body["anchors"]).toEqual([
       {
         anchorId: created.anchorId,
-        selector: { exact: QUOTE, prefix: "The model we ", suffix: "" },
+        // The suffix is the file's, not the request's: creation reads context
+        // off the parent's bytes (SERVER-071), so the trailing `.` and newline
+        // the request omitted are there.
+        selector: { exact: QUOTE, prefix: "The model we ", suffix: ".\n" },
         threadId: created.id,
         threadStatus: "open",
         range: { start: 13, end: 13 + QUOTE.length },

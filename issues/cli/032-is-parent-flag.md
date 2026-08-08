@@ -36,7 +36,23 @@ cannot pass is a filter the agent cannot use, and the retrieval rules lean on
 
 P2 rather than P1: the board is what the user asked for, and the CLI can follow.
 
+## Also in scope: a help string SERVER-071 made false
+
+`apps/cli/src/commands/thread/create.ts` (module doc and the `create` command
+description) promises that a quote the document "contains twice with nothing to
+tell the occurrences apart, still creates the thread and comes back with the
+`orphaned_anchor` warning". **SERVER-071 made that a `400` (exit 5)** — a
+repeated quote is underspecified and is now refused, escapably, by supplying
+framing that occurs once.
+
+CLI tests use a stub server, so nothing failed and nothing will. It is purely a
+doc fix, which is exactly why it needs an owner rather than a note in a commit
+message.
+
 ## Acceptance Criteria
+
+- [ ] `thread create`'s help no longer promises a thread for a doubly-occurring
+      quote, and says how to disambiguate (`--prefix`/`--suffix`)
 
 - [ ] A flag on `corpus doc list` selects top-level documents only, and its
       counterpart selects children

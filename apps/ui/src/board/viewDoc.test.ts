@@ -88,6 +88,74 @@ describe("toBoardColumn", () => {
     expect(badValue.error).toContain("folder");
   });
 
+  /**
+   * UI-088. `isParent=true` selects documents with **no** parent
+   * (CONTRACT-042), so `isParent: true` on a chip would tell a user the
+   * opposite of what their column shows. These pin the words, because the words
+   * are the only explanation the board gives.
+   */
+  describe("the isParent chip, whose parameter name contradicts its meaning", () => {
+    it("says top-level only, never that the document is a parent", () => {
+      const column = toBoardColumn(view({ query: { isParent: true } }));
+      expect(column.filter).toEqual({ isParent: "true" });
+      expect(column.chips).toEqual([{ key: "isParent", label: "isParent: top-level only" }]);
+      expect(column.chips[0]?.label).not.toContain("true");
+    });
+
+    it("says children only for the other direction", () => {
+      const column = toBoardColumn(view({ query: { isParent: false } }));
+      expect(column.filter).toEqual({ isParent: "false" });
+      expect(column.chips).toEqual([{ key: "isParent", label: "isParent: children only" }]);
+    });
+
+    /**
+     * The server owns which values are legal. A hand-edited `isParent: yes` is
+     * shown as written and refused on the round trip, rather than dressed up in
+     * a phrase this file invented for it.
+     */
+    it("shows a value it has no phrase for exactly as the file wrote it", () => {
+      expect(toBoardColumn(view({ query: { isParent: "yes" } })).chips[0]?.label).toBe(
+        "isParent: yes",
+      );
+    });
+
+    it("stands alongside the filters already on the view rather than replacing them", () => {
+      const column = toBoardColumn(
+        view({ query: { folder: "finance", type: ["note", "thread"], isParent: true } }),
+      );
+      // Every filter reaches the request; `isParent` is one more `&`, not a mode.
+      expect(column.filter).toEqual({
+        folder: "finance",
+        type: "note,thread",
+        isParent: "true",
+      });
+      expect(formatQueryString(column.filter)).toBe(
+        "folder=finance&type=note,thread&isParent=true",
+      );
+      expect(column.chips.map((chip) => chip.label)).toEqual([
+        "folder: finance/",
+        "type: note, thread",
+        "isParent: top-level only",
+      ]);
+      // A `folder:` column stays a folder column: this filter changes no kind.
+      expect(column.kind).toBe("folder");
+    });
+
+    /**
+     * A view document written before this parameter existed must load, and
+     * render, exactly as it did — nothing here injects `isParent`, so no column
+     * quietly starts hiding rows when this ships.
+     */
+    it("leaves a query that never mentions it completely untouched", () => {
+      const stored = { type: "thread", status: "open", sort: "-updated" };
+      const column = toBoardColumn(view({ query: stored }));
+      expect(column.filter).toEqual(stored);
+      expect(Object.keys(column.filter)).not.toContain("isParent");
+      expect(column.chips.map((chip) => chip.label)).toEqual(["type: thread", "status: open"]);
+      expect(column.error).toBeNull();
+    });
+  });
+
   it("treats an absent query as no filters rather than an error", () => {
     const column = toBoardColumn(view({ query: null }));
     expect(column.error).toBeNull();

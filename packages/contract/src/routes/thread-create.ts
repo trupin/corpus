@@ -47,6 +47,15 @@ const createThreadRoute = (required: boolean) =>
       "With a selector, the server writes the anchor entry into the parent's frontmatter and creates " +
       "the thread file atomically (SPEC.md §6). `423` when the parent is held by the other party's " +
       "edit lock, since anchoring mutates the parent.\n\n" +
+      "**The stored anchor's context is the server's, not the caller's.** `exact` is stored " +
+      "verbatim, but `prefix`/`suffix` on the request are used for one thing only — saying which " +
+      "occurrence a repeated quote means — and are never written as sent: the server reads the " +
+      "context off the parent's own bytes around the quote, so the anchor is byte-faithful to the " +
+      "file even when the caller could not produce context (SERVER-071). A quote occurring more " +
+      "than once with nothing to tell the occurrences apart is a `400`, because guessing one " +
+      "would attach the conversation to a passage nobody chose; a quote the document does not " +
+      "contain is **not** refused, since §6 calls that anchor orphaned and orphaned is a normal " +
+      "state of a living corpus rather than a bad request.\n\n" +
       "Send `application/json` for a plain thread, or `multipart/form-data` to attach files to the " +
       "first turn — the composer's *Ask* with a screenshot (SPEC.md §8). The multipart form takes " +
       "the same repeated `files` part as `POST /api/capture`, names the first turn's prose `text` " +

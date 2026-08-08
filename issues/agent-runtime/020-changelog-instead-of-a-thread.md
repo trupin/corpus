@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -84,24 +84,27 @@ is a shape this project has been burned by more than once.
 
 ## Acceptance Criteria
 
-- [ ] Noticing a change writes an entry to the document's changelog and **does
+- [x] Noticing a change writes an entry to the document's changelog and **does
       not** open a thread
-- [ ] A thread is still opened when the agent needs a decision from the person,
+- [x] A thread is still opened when the agent needs a decision from the person,
       and it asks with a form (§7)
-- [ ] The changelog is a section at the **end of the document body**, so it is
+- [x] The changelog is a section at the **end of the document body**, so it is
       ordinary content: commentable, anchorable, searchable, and editable by the
       person like anything else. The person commenting on it is an ordinary
       anchored thread and needs nothing special
-- [ ] An entry says **what changed and what the agent made of it** — the note is
+- [x] An entry says **what changed and what the agent made of it** — the note is
       the value, since git already holds the diff. An entry that only restates
       the diff is worse than no entry
-- [ ] Older entries **fold** rather than disappear; the fold says how many are
-      inside, the way §11 requires every collapse to report its whole size
-- [ ] The agent **appends** rather than rewriting the section, so a person's own
+- [x] Older entries **fold** rather than disappear; the fold says how many are
+      inside, the way §11 requires every collapse to report its whole size —
+      _the skill's half only_: it is told never to prune, and that the reader
+      clips past a threshold and says how many are behind the control. Rendering
+      the clip is UI-089, which this issue blocks
+- [x] The agent **appends** rather than rewriting the section, so a person's own
       edits inside the changelog survive
-- [ ] The skill states that the changelog is the agent's to maintain and the
+- [x] The skill states that the changelog is the agent's to maintain and the
       person's to edit — neither owns it exclusively
-- [ ] `scripts/workspace-template.test.ts` passes and pins the rule
+- [x] `scripts/workspace-template.test.ts` passes and pins the rule
 
 ## Technical Design
 
@@ -165,15 +168,109 @@ Verify through the product, not the repo:
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: Opus 5 (1M context).** Run 2026-08-07 on branch
+`phase-18-isparent-changelog-anchors`.
+
+### What changed
+
+- `assets/workspace/claude/skills/orchestrate/SKILL.md`
+  - `## Reflecting on a user edit` step **4** was "Update or comment, and lean to
+    commenting" and is now "Update, log, or ask, and lean to logging" — three
+    outcomes, only the third of which is a thread, and the ask names the form.
+  - Step **5** was "Acknowledge on the document's own surface", which opened one
+    whole-document thread per substantive edit. It is now "Write the entry, and
+    open no thread", with the rule, the reason, the entry contract, the
+    append-not-rewrite mechanics, the anchor check, the lock/defer path, and the
+    never-prune rule. The `corpus thread create --parent doc_a1b2c3` acknowledgment
+    is gone from the file entirely (asserted).
+  - The section's worked example now ends in two appends and a job log saying no
+    thread was opened, instead of an acknowledgment thread carrying a trace line.
+  - `## Stewardship` gained the charter bullet, and "every change is stated in the
+    reply" now says where the statement goes when there is no reply.
+- `assets/workspace/claude/skills/comment/SKILL.md` — `## Stewardship in service of
+  a thread` gained the same rule scoped to a subagent working a thread.
+- `scripts/workspace-template.test.ts` — orchestrate's section counter is now
+  fence-aware (the comment skill's already was, for the same reason: a `## Changelog`
+  line inside a heredoc is that document's content, not a section of the skill).
+  `sections.size` stays **16** / **13**, re-derived by a real CommonMark parser
+  (`mdast-util-from-markdown`: 16 and 13 top-level `depth: 2` headings, 13 and 12
+  code blocks, **zero** ending anywhere but on a fence line). Nine new assertions
+  for orchestrate, one for comment; the acknowledgment-thread test is deleted.
+
+### The E2E, and what it corrected
+
+Real workspace on **port 8791** (never 8765, never 5173), scaffolded by `corpus init`
+from the built CLI into `/tmp/agent020-e2e`, real server started and stopped, real
+CLI throughout.
+
+1. `corpus init` → the skill installed with the rule in it (`## Changelog` present
+   in the installed `.claude/skills/orchestrate/SKILL.md`; the comment skill's bullet
+   likewise).
+2. Created `doc_7fyuvgg7`, then an anchored thread on its **last line** — the worst
+   case for appending.
+3. Ran the exact sequence step 5 prescribes: `corpus doc show` → `corpus doc edit
+   --from agent` with the body reproduced plus a `## Changelog` section.
+   **This is where the first draft of the skill was wrong.** It claimed the edit
+   "names nothing remapped and nothing orphaned". The server reported
+   `edited doc_7fyuvgg7 — 1 anchor remapped`. Inspecting the JSON: the anchor's
+   `range` was **unchanged** (75–140) and `orphaned: false` — the remap is only the
+   selector's `suffix` window, which the arriving section rewrote. The skill text was
+   corrected to name **`orphaned`** as the signal and to disarm `remapped` by name,
+   with the first-entry case called out. Telling the agent to expect a clean report
+   would have had it redoing a correct append forever.
+4. A second anchor earlier in the body, then a **person** edit adding their own
+   sentence inside an entry, then a second agent append. Result: `edited doc_7fyuvgg7`
+   with **no anchor report at all**; both entries present oldest-first; the person's
+   parenthetical intact; both anchors at their original offsets. Later appends land
+   past the section and disturb nothing — as the corrected text now says.
+5. **No thread, ever.** `corpus doc list --type thread` shows three threads, all
+   `--from user`. The agent's three writes opened none.
+6. **The loop cannot feed itself, observed rather than assumed.** `corpus queue status`
+   read `pending 0 … processed 0` before the first agent write and identically after
+   all three. No guard was added.
+7. Commenting on a changelog entry: `corpus thread create --parent … --quote "the
+   thirty-year range was widened to 6.1%–6.9%"` → an ordinary anchored thread whose
+   `corpus thread context` prints heading path `Mortgage options › Changelog` and the
+   whole enclosing section. Nothing special was needed.
+8. **The forbidden move, exercised on purpose.** Rewriting the section instead of
+   appending returned
+   `edited doc_7fyuvgg7 — 1 orphaned (th_tmflhmsp) — warning: orphaned_anchor` and
+   destroyed the person's sentence. Both skills now state that consequence.
+9. `corpus doc check` → 14 documents, **1 warning, no errors** — the warning is
+   exactly the orphan deliberately created in step 8. `corpus db doctor` → clean,
+   14 documents from 14 files. Server stopped, port 8791 confirmed free.
+
+### What was **not** exercised
+
+- **No live `claude` session and no `doc.edited` event.** That event is emitted by
+  the UI's edit-session flush, not by a CLI write, so driving it needs a browser
+  session; the CLI has no verb that produces one. What is proved is the mechanics
+  the skill prescribes once the event arrives — the read, the append, anchor
+  behaviour, the absence of a thread and of an enqueue — not the dispatch into
+  step 5. Steps 2–4 of the issue's plan are covered in that sense; the *trigger* is
+  not.
+- **The clip is not implemented.** Nothing renders a fold yet; that is UI-089.
+  Only the skill's obligation not to prune is verified here.
+- **Tests run**: `npx vitest run scripts/workspace-template.test.ts` → **142 passed,
+  0 failed**. Prettier and ESLint clean on the test file (the template tree is
+  prettier-ignored by design). No repo-wide suite was run.
+
+### One thing for the orchestrator
+
+SPEC **§4**'s "Edit acknowledgment" rider (signed 2026-08-02) still reads
+"…acknowledges briefly on the document's own surface where it does not [ripple]".
+That is now satisfied by the changelog rather than by a thread, so it is not a
+contradiction — the §7 rider signed 2026-08-07 is later and explicit — but the
+sentence reads as though a thread were still meant. Worth a one-line amendment by
+whoever owns spec edits; I did not touch SPEC.md.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes (scoped: prettier + eslint on the changed test file)
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

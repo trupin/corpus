@@ -120,8 +120,30 @@ function valueToWire(value: unknown): string | null {
   return scalarToWire(value);
 }
 
+/**
+ * What `isParent`'s two values are called on a chip (UI-088).
+ *
+ * Every other chip shows the stored value verbatim, and for every other field
+ * that is the honest thing to do. `isParent` is the exception because its name
+ * says the opposite of what it selects: `isParent=true` keeps documents with
+ * **no** parent (CONTRACT-042), so a chip reading `isParent: true` would tell a
+ * user their column shows parent documents when it shows top-level ones. The
+ * key is kept — a chip still names the parameter it sends, so the row still
+ * maps onto the query string behind ⋯ → Edit query — and only the value is put
+ * into words.
+ *
+ * A value that is neither still renders verbatim: the server owns which values
+ * are legal, and inventing a phrase for a hand-edited `isParent: yes` would be
+ * this file answering a question that belongs to the round trip.
+ */
+const ISPARENT_CHIP_VALUES: Readonly<Record<string, string>> = {
+  true: "top-level only",
+  false: "children only",
+};
+
 /** A chip's text: `folder: inbox/`, `type: thread`, `tag: housing, finance`. */
 function chipLabel(key: string, wire: string): string {
+  if (key === "isParent") return `${key}: ${ISPARENT_CHIP_VALUES[wire] ?? wire}`;
   // The prototype writes folder chips with a trailing slash — it is a directory,
   // and the slash is what says so at a glance.
   const value = key === "folder" && !wire.endsWith("/") ? `${wire}/` : wire;

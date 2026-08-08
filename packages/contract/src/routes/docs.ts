@@ -39,7 +39,10 @@ export const listDocs = createRoute({
     "parameter and AND across parameters. The default result set excludes `status: archived` " +
     "(SPEC.md §11) unless `status` is passed explicitly. The thread-only filters — `parent`, " +
     "`agent`, `author` and `unread` — no-op for non-thread types rather than erroring (SPEC.md " +
-    "§9.2). Every row carries its Attention reasons; rows carry search snippets when `q` is set.",
+    "§9.2). `isParent` is not one of them: it selects roots — documents with no parent — for " +
+    "every type, and is the one filter that is **refused** in combination, since `parent=<id>` " +
+    "with `isParent=true` is a contradiction and answers `400`. Every row carries its Attention " +
+    "reasons; rows carry search snippets when `q` is set.",
   request: { query: DocsQuerySchema },
   responses: {
     200: jsonContent(DocListSchema, "Matching documents, newest-updated first by default."),

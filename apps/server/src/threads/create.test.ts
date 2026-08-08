@@ -1,6 +1,7 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parseDocument } from "../core/index.js";
 import { ANCHOR_TITLE_QUOTE_LENGTH, STANDALONE_TITLE_LENGTH, UNTITLED_THREAD } from "./title.js";
 import {
   createDoc,
@@ -60,9 +61,14 @@ describe("POST /api/threads — anchored creation", () => {
 
     const anchors = anchorsOf(parent.path);
     expect(Object.keys(anchors)).toEqual([created.anchorId]);
-    // Byte-identical to what was sent: the selection was captured from the real
-    // body and the resolver matches on those exact characters.
-    expect(anchors[created.anchorId ?? ""]).toEqual(SELECTOR);
+    // The quote is byte-identical to what was sent; the context is read off the
+    // parent's own bytes and is *not* what the request carried — the sent
+    // suffix stopped one character short of the file's (SERVER-071).
+    expect(anchors[created.anchorId ?? ""]).toEqual({
+      exact: QUOTE,
+      prefix: "The model we ",
+      suffix: " which may be stale.\n",
+    });
 
     expect(ws.log("%H")).toHaveLength(before + 1);
     expect(filesInHead()).toEqual([parent.path, threadPath(created.id)].sort());
@@ -95,14 +101,17 @@ describe("POST /api/threads — anchored creation", () => {
     expect(ws.read(threadPath(created.id))).toContain(`## user · ${turns[0]?.ts ?? ""}`);
   });
 
-  it("stores a selector verbatim, quotes and non-ASCII included", async () => {
+  // The quote is absent from this parent, so there are no bytes to read context
+  // from and the request's own strings are kept — including the non-ASCII and
+  // the quotation marks, untouched.
+  it("stores an unlocatable selector verbatim, quotes and non-ASCII included", async () => {
     const parent = await seedParent();
     const selector = { exact: 'the “naïve” 6.1% — "as-is"', prefix: "model we  ", suffix: "" };
     const created = await createThread(ws, { parent: parent.id, selector, body: "?" });
     expect(anchorsOf(parent.path)[created.anchorId ?? ""]).toEqual(selector);
   });
 
-  it("stores absent context as the empty string the contract documents", async () => {
+  it("fills in the context a request omitted, from the parent's bytes", async () => {
     const parent = await seedParent();
     const created = await createThread(ws, {
       parent: parent.id,
@@ -111,8 +120,8 @@ describe("POST /api/threads — anchored creation", () => {
     });
     expect(anchorsOf(parent.path)[created.anchorId ?? ""]).toEqual({
       exact: QUOTE,
-      prefix: "",
-      suffix: "",
+      prefix: "The model we ",
+      suffix: " which may be stale.\n",
     });
   });
 
@@ -438,8 +447,13 @@ describe("POST /api/threads — the dual-media body (CONTRACT-009)", () => {
 
     expect(response.status).toBe(201);
     expect(payload.anchorId).toMatch(/^anc_/);
-    // The same shape the JSON branch stores, from the same normalisation.
-    expect(anchorsOf(parent.path)[payload.anchorId]).toEqual(SELECTOR);
+    // The same shape the JSON branch stores, from the same normalisation — and
+    // the same context, read off the parent rather than taken from the part.
+    expect(anchorsOf(parent.path)[payload.anchorId]).toEqual({
+      exact: QUOTE,
+      prefix: "The model we ",
+      suffix: " which may be stale.\n",
+    });
     expect(threadFrontmatterOf(ws, payload.thread.id)).toMatchObject({
       parent: parent.id,
       anchor: payload.anchorId,
@@ -503,5 +517,195 @@ describe("POST /api/threads — the dual-media body (CONTRACT-009)", () => {
       expect(response.status).toBe(400);
     }
     expect(ws.read(parent.path)).toBe(before);
+  });
+});
+
+// SERVER-071. The context a request carries is a claim about bytes the caller
+// is not holding; the file is the only thing that can settle it. Every
+// assertion below therefore reads the *parent file* back and checks the stored
+// selector against those bytes — never against what the request contained.
+describe("POST /api/threads — the stored context comes from the file (SERVER-071)", () => {
+  /** The parent's markdown body, as parsed off disk by the same code the server writes with. */
+  const bodyOf = (path: string): string => parseDocument(ws.read(path)).body;
+
+  /**
+   * The selector as stored, asserted to be **present in the file verbatim**:
+   * `prefix + exact + suffix` occurs exactly once, and it occurs where the quote
+   * does. That is rung 1 of §6's ladder passing on the file's own bytes, which
+   * is what "resolves on the next read without any fuzzy rung" means.
+   */
+  const expectByteFaithful = (body: string, stored: Record<string, string>, at: number): void => {
+    const framed = `${stored["prefix"] ?? ""}${stored["exact"] ?? ""}${stored["suffix"] ?? ""}`;
+    expect(body.indexOf(framed)).toBe(at - (stored["prefix"] ?? "").length);
+    expect(body.indexOf(framed, body.indexOf(framed) + 1)).toBe(-1);
+    expect(body.slice(at, at + (stored["exact"] ?? "").length)).toBe(stored["exact"]);
+  };
+
+  const anchorOf = (path: string, anchorId: string | null): Record<string, string> =>
+    anchorsOf(path)[anchorId ?? ""] ?? {};
+
+  // A padded table's canonical spelling is not its bytes: the columns are
+  // aligned with runs of spaces no reader sees, so context quoted from what was
+  // *read* can never match the file.
+  const TABLE = [
+    "| Quarter | Spend  | Owner |",
+    "| ------- | ------ | ----- |",
+    "| Q1      | 12,400 | ops   |",
+    "| Q2      | 18,900 | ops   |",
+    "",
+  ].join("\n");
+
+  it("overrules the context a caller sent, taking the padded bytes instead", async () => {
+    const parent = await createDoc(ws, { type: "note", title: "Spend", body: TABLE });
+    const created = await createThread(ws, {
+      parent: parent.id,
+      selector: { exact: "18,900", prefix: "| Q2 | ", suffix: " | ops |" },
+      body: "why did this jump?",
+    });
+
+    const body = bodyOf(parent.path);
+    const stored = anchorOf(parent.path, created.anchorId);
+    expectByteFaithful(body, stored, body.indexOf("18,900"));
+    // What the caller sent was the *rendered* row; the file's is padded.
+    expect(stored["prefix"]).toBe(" | 12,400 | ops   |\n| Q2      | ");
+    expect(stored["suffix"]).toBe(" | ops   |\n");
+  });
+
+  it("fills context for an agent-style request that carries none at all", async () => {
+    const parent = await createDoc(ws, { type: "note", title: "Spend", body: TABLE });
+    const created = await createThread(ws, {
+      parent: parent.id,
+      selector: { exact: "12,400" },
+      body: "source?",
+    });
+
+    const body = bodyOf(parent.path);
+    const stored = anchorOf(parent.path, created.anchorId);
+    expectByteFaithful(body, stored, body.indexOf("12,400"));
+    expect(stored["prefix"]).not.toBe("");
+    expect(stored["suffix"]).not.toBe("");
+  });
+
+  // A hard-wrapped list item puts a newline and the continuation's indentation
+  // inside the context window — bytes a caller quoting the item as one line
+  // could not have produced.
+  it("keeps the newline and indentation of a hard-wrapped list item", async () => {
+    const body = [
+      "- Review the Q2 report by Friday and circulate the",
+      "  summary to the steering group before the offsite.",
+      "- Book the room.",
+      "",
+    ].join("\n");
+    const parent = await createDoc(ws, { type: "note", title: "Actions", body });
+    const created = await createThread(ws, {
+      parent: parent.id,
+      selector: { exact: "circulate the summary", suffix: " to the steering group" },
+      body: "which summary?",
+    });
+
+    // The one-line spelling is not in the file, so nothing resolves there…
+    const stored = anchorOf(parent.path, created.anchorId);
+    expect(stored).toEqual({
+      exact: "circulate the summary",
+      prefix: "",
+      suffix: " to the steering group",
+    });
+
+    // …whereas the file's own spelling, wrap included, is byte-faithful.
+    const wrapped = await createThread(ws, {
+      parent: parent.id,
+      selector: { exact: "circulate the\n  summary" },
+      body: "which summary?",
+    });
+    const parentBody = bodyOf(parent.path);
+    const storedWrapped = anchorOf(parent.path, wrapped.anchorId);
+    expectByteFaithful(parentBody, storedWrapped, parentBody.indexOf("circulate the\n  summary"));
+    expect(storedWrapped["prefix"]).toBe("iew the Q2 report by Friday and ");
+    expect(storedWrapped["suffix"]).toBe(" to the steering group before th");
+  });
+
+  it("resolves on the next read through the exact rungs alone", async () => {
+    const parent = await createDoc(ws, { type: "note", title: "Spend", body: TABLE });
+    const created = await createThread(ws, {
+      parent: parent.id,
+      // Context the agent invented: neither string is in the file.
+      selector: { exact: "18,900", prefix: "Q2 spend of ", suffix: " dollars" },
+      body: "?",
+    });
+
+    const response = await ws.request(`/api/docs/${parent.id}`, {
+      headers: { Authorization: `Bearer ${ws.server.config.token}` },
+    });
+    const doc = (await response.json()) as {
+      anchors: { anchorId: string; orphaned: boolean; range: { start: number; end: number } }[];
+    };
+    const at = bodyOf(parent.path).indexOf("18,900");
+    // `GET /api/docs/{id}` resolves with `resolveAnchorExact` — rungs 1–2 only —
+    // so a resolved range *is* the proof that no fuzzy rung was involved.
+    expect(doc.anchors).toContainEqual(
+      expect.objectContaining({
+        anchorId: created.anchorId,
+        orphaned: false,
+        range: { start: at, end: at + "18,900".length },
+      }),
+    );
+  });
+
+  const REPEATED = ["We ship the beta.", "", "Then we ship the beta.", ""].join("\n");
+
+  it("refuses a quote that names more than one passage, writing nothing", async () => {
+    const parent = await createDoc(ws, { type: "note", title: "Plan", body: REPEATED });
+    const before = ws.read(parent.path);
+    const commits = ws.log("%H").length;
+
+    const response = await ws.post("/api/threads", {
+      parent: parent.id,
+      selector: { exact: "ship the beta" },
+      body: "which one?",
+    });
+    const payload = (await response.json()) as {
+      code: string;
+      message: string;
+      issues: { path: string; message: string }[];
+    };
+
+    expect(response.status).toBe(400);
+    expect(payload.code).toBe("bad_request");
+    expect(payload.message).toContain("more than once");
+    expect(payload.issues[0]?.path).toBe("selector.exact");
+    // Refused before a byte moved: the parent is untouched and nothing committed.
+    expect(ws.read(parent.path)).toBe(before);
+    expect(ws.log("%H")).toHaveLength(commits);
+  });
+
+  it("accepts the same quote once the caller's context picks an occurrence", async () => {
+    const parent = await createDoc(ws, { type: "note", title: "Plan", body: REPEATED });
+    const created = await createThread(ws, {
+      parent: parent.id,
+      selector: { exact: "ship the beta", prefix: "Then we " },
+      body: "this one",
+    });
+
+    const body = bodyOf(parent.path);
+    const stored = anchorOf(parent.path, created.anchorId);
+    // The second occurrence — the one the caller framed — not the first.
+    expectByteFaithful(body, stored, body.lastIndexOf("ship the beta"));
+    expect(stored["prefix"]).toBe("We ship the beta.\n\nThen we ");
+    expect(stored["suffix"]).toBe(".\n");
+  });
+
+  it("refuses when the caller's own framing is what repeats", async () => {
+    const twice = "Then we ship the beta.\n\nThen we ship the beta.\n";
+    const parent = await createDoc(ws, { type: "note", title: "Plan", body: twice });
+
+    const response = await ws.post("/api/threads", {
+      parent: parent.id,
+      selector: { exact: "ship the beta", prefix: "Then we ", suffix: "." },
+      body: "which one?",
+    });
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { message: string }).message).toContain("more than once");
+    expect(anchorsOf(parent.path)).toEqual({});
   });
 });

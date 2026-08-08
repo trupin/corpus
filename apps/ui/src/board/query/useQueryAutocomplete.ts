@@ -141,7 +141,7 @@ export function useQueryAutocomplete({
    *
    * Unlike the `@` / `/` / `[[` menus, this one can be open without the user
    * having typed anything at all — every position in a query string is a
-   * completable token, so an empty field already lists all nineteen fields.
+   * completable token, so an empty field already lists every field there is.
    * Taking `↵` there would mean an empty query commits `q=` instead of clearing
    * the column, and a fully typed value would refuse to submit. So the menu
    * claims `↵` only when it has something to add: the user has moved the
