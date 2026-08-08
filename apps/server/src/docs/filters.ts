@@ -16,6 +16,10 @@
 // (values bind by name; only this module's own fragments become SQL text),
 // thread-only filters no-op for non-thread rows (`t.id IS NULL OR <condition>`),
 // and every fragment names only the aliases {@link FROM_SQL} binds.
+//
+// `isParent` is the one filter that reads a `threads` column *without* that
+// guard, on purpose; the reason is at its own site rather than here, because the
+// guard is what a reader would otherwise add back.
 
 import type { DocsQuery } from "@corpus/contract";
 import { STALE_TIERS } from "@corpus/contract";
@@ -179,9 +183,11 @@ export interface Compiled {
  * Written as the collection query's own type minus the three parameters ranked
  * retrieval does not carry (`sort`, `limit`, `offset` are ordering and paging,
  * not predicates), so a filter added to the contract's shared `docFilterShape`
- * reaches this builder as a type error rather than as silence. `pinned` stays
- * optional here because `GET /api/docs` declares it and `/api/search` does not
- * — the builder simply finds it absent.
+ * reaches this builder as a type error rather than as silence. `pinned` and
+ * `isParent` stay optional here because `GET /api/docs` declares them and
+ * `/api/search` does not — the builder simply finds them absent, which is what
+ * lets one builder serve an endpoint whose query type is the smaller of the two
+ * without ranked retrieval growing a filter §9.2 never signed for it.
  */
 export type FilterQuery = Omit<DocsQuery, "sort" | "limit" | "offset">;
 
@@ -301,6 +307,39 @@ export function compileFilters(query: FilterQuery, nowMs: number): Compiled {
   // simply never taken there.
   if (query.pinned !== undefined) {
     conditions.push(`d.pinned = ${binder.next("pinned", query.pinned ? 1 : 0)}`);
+  }
+
+  // `isParent` — "is this document a child of something?" (CONTRACT-042). The
+  // one structural filter, and deliberately **not** thread-only, which is the
+  // whole reason it is not written with the `t.id IS NULL OR …` guard the four
+  // filters above carry.
+  //
+  // The guard exists because `parent=<id>`, `agent=…`, `author=…` and `unread=…`
+  // ask questions only a thread row can answer, so a `documents`-only row must
+  // fall through rather than be judged. This question every row answers: a note
+  // has no parent, and that null is a fact about the note rather than a missing
+  // join. It is the same null the row itself reports — `query.ts` selects
+  // `t.parent_id AS parent` through this very LEFT JOIN — so the filter and the
+  // field can only ever agree, and a standalone note nothing hangs off matches
+  // `isParent=true` exactly like a top-level document that has ten threads.
+  // The filter asks what a document is *under*, never what is under it.
+  //
+  // `isParent=false` includes an orphaned thread whose parent document was
+  // deleted: `t.parent_id` still names one, and §9.2 already treats such a row
+  // as parented-but-unresolvable (`parentTitle` reads null while `parent` does
+  // not), so excluding it here would make the filter disagree with the field.
+  //
+  // `parent=<id>` alongside `isParent=true` never arrives: `DocsQuerySchema`
+  // refuses that pair with a 400 before the handler runs (CONTRACT-042), because
+  // `parent`'s thread-only guard passes every non-thread row unconditionally and
+  // the intersection would be every root non-thread document — a plausible
+  // answer to a question nobody asked. Nothing here re-checks it; the refusal is
+  // the contract's, so there is one rule rather than two that could drift.
+  //
+  // Neither branch binds a value: the boolean chooses between two of this
+  // module's own fragments, and nothing user-supplied becomes SQL text.
+  if (query.isParent !== undefined) {
+    conditions.push(query.isParent ? "t.parent_id IS NULL" : "t.parent_id IS NOT NULL");
   }
 
   if (query.needs !== undefined) {

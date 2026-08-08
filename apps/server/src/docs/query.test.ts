@@ -436,6 +436,293 @@ describe("thread-only filters", () => {
   });
 });
 
+// `isParent` (CONTRACT-042 / SERVER-073): "is this document a child of
+// something?". Its own workspace because the cases that matter are structural
+// — a root nothing hangs off, a root that has children, a child, an orphaned
+// child — and every one of them has to be present at once for the partition
+// claims below to say anything.
+//
+// One word (`cormorant`) runs through every title and body so `q` can be
+// composed with the filter without the FTS half quietly selecting a different
+// subset than the structural half.
+describe("isParent — what a document is under, never what is under it", () => {
+  let roots: Workspace;
+
+  const list = (params: Record<string, string> = {}): DocList =>
+    queryDocs(roots.db, DocsQuerySchema.parse({ limit: "200", ...params }), NOW);
+  const found = (params: Record<string, string> = {}): string[] => ids(list(params));
+
+  /** Every root in the fixture, of every type — the exact answer to `isParent=true`. */
+  const ROOTS = [
+    "doc_rootChildless",
+    "doc_rootParent",
+    "doc_rootView",
+    "th_rootQuiet",
+    "th_rootReply",
+  ];
+  /** Every child, of every type — the exact answer to `isParent=false`. */
+  const CHILDREN = ["th_childOrphan", "th_childQuiet", "th_childReply"];
+
+  beforeAll(() => {
+    roots = createWorkspace("is-parent");
+
+    // The case the rejected "has children" reading would have excluded, and the
+    // one this suite exists to pin: a note nothing hangs off is still a root.
+    roots.doc({
+      id: "doc_rootChildless",
+      title: "Cormorant field notes",
+      body: "A cormorant nests alone.",
+      updated: daysAgo(2),
+    });
+    roots.doc({
+      id: "doc_rootParent",
+      title: "Cormorant survey",
+      body: "The cormorant survey ran all week.",
+      updated: daysAgo(2),
+    });
+    // A non-note, non-thread root, so `isParent` is visibly not type-scoped.
+    roots.doc({
+      id: "doc_rootView",
+      type: "view",
+      title: "Cormorant board",
+      body: "One cormorant column.",
+      updated: daysAgo(2),
+    });
+    // Archived, so the default lifecycle rule still gets to run first.
+    roots.doc({
+      id: "doc_rootArchived",
+      status: "archived",
+      title: "Cormorant retired",
+      body: "A retired cormorant note.",
+      updated: daysAgo(2),
+    });
+
+    roots.thread({
+      id: "th_childReply",
+      parent: "doc_rootParent",
+      agent: "engaged",
+      title: "Re: cormorant counts",
+      updated: daysAgo(2),
+      turns: [
+        { author: "user", ts: daysAgo(3), body: "How many cormorant were counted?" },
+        { author: "agent", ts: daysAgo(2), body: "Eleven cormorant, all told." },
+      ],
+    });
+    roots.thread({
+      id: "th_childQuiet",
+      parent: "doc_rootParent",
+      title: "Cormorant nesting",
+      updated: daysAgo(2),
+      turns: [{ author: "user", ts: daysAgo(2), body: "Where does a cormorant nest?" }],
+    });
+    // Parented at a document that does not exist: `parentTitle` will read null,
+    // but the row is a child all the same (SPEC.md §9.2's orphaned thread).
+    roots.thread({
+      id: "th_childOrphan",
+      parent: "doc_vanished",
+      title: "Cormorant orphan",
+      updated: daysAgo(2),
+      turns: [{ author: "user", ts: daysAgo(2), body: "An orphaned cormorant note." }],
+    });
+
+    roots.thread({
+      id: "th_rootReply",
+      parent: null,
+      agent: "engaged",
+      title: "Cormorant standalone",
+      updated: daysAgo(2),
+      turns: [
+        { author: "user", ts: daysAgo(3), body: "A standalone cormorant question." },
+        { author: "agent", ts: daysAgo(2), body: "A standalone cormorant answer." },
+      ],
+    });
+    roots.thread({
+      id: "th_rootQuiet",
+      parent: null,
+      title: "Cormorant aside",
+      updated: daysAgo(2),
+      turns: [{ author: "user", ts: daysAgo(2), body: "An aside about a cormorant." }],
+    });
+
+    roots.reproject();
+  });
+
+  afterAll(() => {
+    roots.close();
+  });
+
+  it("selects roots of every type with `true`, and children with `false`", () => {
+    expect(found({ isParent: "true" })).toEqual(ROOTS);
+    expect(found({ isParent: "false" })).toEqual(CHILDREN);
+  });
+
+  it("counts a document nothing hangs off as a root", () => {
+    // The fixture's claim first: nothing hangs off it. `unreadThreads` is the
+    // corpus's own count of this document's threads, so the case is a measured
+    // fact rather than a naming convention.
+    const childless = list().items.find((item) => item.id === "doc_rootChildless");
+    expect(childless?.unreadThreads).toBe(0);
+    expect(found({ isParent: "true" })).toContain("doc_rootChildless");
+    expect(found({ isParent: "false" })).not.toContain("doc_rootChildless");
+    // …and the document that *does* have children is a root by the same rule,
+    // which is the half of the semantics the rejected reading would have flipped.
+    expect(found({ isParent: "true" })).toContain("doc_rootParent");
+  });
+
+  it("changes nothing when absent", () => {
+    const unfiltered = found();
+    expect(unfiltered).toEqual([...ROOTS, ...CHILDREN].sort());
+    // Not merely a superset: the two answers partition the unfiltered set, so
+    // the filter can neither drop a row nor invent one.
+    expect([...found({ isParent: "true" }), ...found({ isParent: "false" })].sort()).toEqual(
+      unfiltered,
+    );
+    expect(
+      found({ isParent: "true" }).filter((id) => found({ isParent: "false" }).includes(id)),
+    ).toEqual([]);
+  });
+
+  it("the `parent` field selects exactly what `isParent=` returns, in both directions", () => {
+    const rows = list().items;
+    const byField = (wanted: boolean): string[] =>
+      rows
+        .filter((item) => (item.parent === null) === wanted)
+        .map((item) => item.id)
+        .sort();
+    expect(byField(true)).toEqual(found({ isParent: "true" }));
+    expect(byField(false)).toEqual(found({ isParent: "false" }));
+  });
+
+  it("treats an orphaned thread as a child, not as a root", () => {
+    // `parent` names a document that is gone, so `parentTitle` is empty — but
+    // the thread is still *under* something, which is the question asked.
+    const orphan = list().items.find((item) => item.id === "th_childOrphan");
+    expect(orphan).toMatchObject({ parent: "doc_vanished", parentTitle: null });
+    expect(found({ isParent: "false" })).toContain("th_childOrphan");
+    expect(found({ isParent: "true" })).not.toContain("th_childOrphan");
+  });
+
+  describe("composition", () => {
+    it("intersects with `type`, on both sides", () => {
+      expect(found({ isParent: "true", type: "thread" })).toEqual(["th_rootQuiet", "th_rootReply"]);
+      expect(found({ isParent: "false", type: "thread" })).toEqual(CHILDREN);
+      expect(found({ isParent: "true", type: "note" })).toEqual([
+        "doc_rootChildless",
+        "doc_rootParent",
+      ]);
+      // No note is anybody's child, so this is genuinely empty rather than
+      // no-opped into the whole set the way a thread-only filter would be.
+      expect(found({ isParent: "false", type: "note" })).toEqual([]);
+      expect(found({ isParent: "true", type: "view" })).toEqual(["doc_rootView"]);
+    });
+
+    it("intersects with `q`, and keeps the snippets", () => {
+      // Every fixture row matches `cormorant`, so `q` alone selects the whole
+      // corpus and the structural half is doing all the narrowing.
+      expect(found({ q: "cormorant" })).toEqual([...ROOTS, ...CHILDREN].sort());
+      expect(found({ q: "cormorant", isParent: "true" })).toEqual(ROOTS);
+      expect(found({ q: "cormorant", isParent: "false" })).toEqual(CHILDREN);
+      // …and a term only children carry stays narrowed by the structural half.
+      expect(found({ q: "counted", isParent: "false" })).toEqual(["th_childReply"]);
+      expect(found({ q: "counted", isParent: "true" })).toEqual([]);
+      for (const row of list({ q: "cormorant", isParent: "true" }).items) {
+        expect(row.snippets.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("intersects with `sort=relevance`, which only `q` makes reachable", () => {
+      const ranked = list({ q: "cormorant", isParent: "true", sort: "relevance" });
+      expect(ranked.items.map((item) => item.id).sort()).toEqual(ROOTS);
+      expect(ranked.page.total).toBe(ROOTS.length);
+    });
+
+    it("intersects with `needs=`, which has a row on each side", () => {
+      // One unread agent reply under a document and one standing on its own, so
+      // the intersection is a narrowing in both directions rather than a
+      // coincidence of an Attention set that happened to be all roots.
+      expect(found({ needs: "unread-reply" })).toEqual(["th_childReply", "th_rootReply"]);
+      expect(found({ needs: "unread-reply", isParent: "true" })).toEqual(["th_rootReply"]);
+      expect(found({ needs: "unread-reply", isParent: "false" })).toEqual(["th_childReply"]);
+      expect(found({ needs: "me", isParent: "true" })).toEqual(["th_rootReply"]);
+    });
+
+    it("runs after the archived default, not instead of it", () => {
+      expect(found({ isParent: "true" })).not.toContain("doc_rootArchived");
+      expect(found({ isParent: "true", status: "archived" })).toEqual(["doc_rootArchived"]);
+      expect(found({ isParent: "true", includeArchived: "true" })).toEqual(
+        [...ROOTS, "doc_rootArchived"].sort(),
+      );
+      expect(found({ isParent: "false", includeArchived: "true" })).toEqual(CHILDREN);
+    });
+
+    it("intersects with `folder`, `tag` and `author` without losing either half", () => {
+      expect(found({ isParent: "false", author: "agent" })).toEqual(["th_childReply"]);
+      expect(found({ isParent: "true", author: "agent" })).toEqual([
+        // The thread-only filter still no-ops for non-threads, so the two rules
+        // stack rather than one overriding the other.
+        "doc_rootChildless",
+        "doc_rootParent",
+        "doc_rootView",
+        "th_rootReply",
+      ]);
+    });
+  });
+
+  describe("paging", () => {
+    it("counts the filtered set, not the corpus", () => {
+      expect(list({ isParent: "true", limit: "2" }).page).toEqual({
+        total: ROOTS.length,
+        limit: 2,
+        offset: 0,
+      });
+      expect(list({ isParent: "false", limit: "2" }).page.total).toBe(CHILDREN.length);
+      // The defect a windowed answer would hide: a `total` that still reported
+      // the whole corpus would say the page was one of many.
+      expect(list({ isParent: "true", limit: "2" }).page.total).toBeLessThan(list().page.total);
+    });
+
+    it("walks the filtered set and nothing else", () => {
+      const walked: string[] = [];
+      for (let offset = 0; offset < ROOTS.length; offset += 2) {
+        walked.push(
+          ...list({ isParent: "true", limit: "2", offset: String(offset) }).items.map(
+            (item) => item.id,
+          ),
+        );
+      }
+      expect(walked.sort()).toEqual(ROOTS);
+      expect(list({ isParent: "true", limit: "2", offset: "4" }).items).toHaveLength(1);
+      expect(list({ isParent: "true", limit: "2", offset: "6" }).items).toEqual([]);
+    });
+
+    it("counts the filtered set under `q` too", () => {
+      const page = list({ q: "cormorant", isParent: "false", limit: "1" });
+      expect(page.items).toHaveLength(1);
+      expect(page.page.total).toBe(CHILDREN.length);
+    });
+  });
+
+  // The builder pushes an unguarded `t.parent_id IS NULL` because the
+  // contradictory pair cannot reach it: the contract refuses `parent=<id>` with
+  // `isParent=true` outright (CONTRACT-042). That reliance is pinned here rather
+  // than assumed, because the day the refinement is relaxed this filter starts
+  // answering a question nobody asked.
+  describe("the contradiction the contract refuses", () => {
+    it("never reaches the query builder", () => {
+      const refused = DocsQuerySchema.safeParse({ parent: "doc_rootParent", isParent: "true" });
+      expect(refused.success).toBe(false);
+      expect(refused.error?.issues[0]?.path).toEqual(["isParent"]);
+    });
+
+    it("accepts the redundant pairing and answers that parent's children", () => {
+      expect(found({ parent: "doc_rootParent", isParent: "false" })).toEqual([
+        "th_childQuiet",
+        "th_childReply",
+      ]);
+    });
+  });
+});
+
 describe("staleness", () => {
   it("filters at or beyond a tier, never an evergreen or recently reviewed row", () => {
     const aging = ids(run({ stale: "aging", limit: "200" }));
