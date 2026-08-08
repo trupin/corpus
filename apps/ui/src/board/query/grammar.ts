@@ -68,6 +68,21 @@ export interface QueryField {
 type FieldDetail = Omit<QueryField, "name">;
 
 /**
+ * What `isParent` is described as, everywhere a description is shown — the
+ * completion menu's second column and the help panel's field list.
+ *
+ * Exported so `grammar.test.ts` can pin the exact wording. That is worth a test
+ * where every other field's summary is not, because this is the only field
+ * whose name says the opposite of what it does: `isParent=true` selects
+ * documents that *have no parent* (CONTRACT-042). A summary that drifted into
+ * "documents that are a parent" would be worse than no summary at all, since a
+ * user who reads it would build exactly the column they did not want and have
+ * no way to tell.
+ */
+export const ISPARENT_SUMMARY =
+  'Top-level only: true keeps documents with no parent. Never "has children".';
+
+/**
  * The prose half, keyed by the schema's own field names. Values are pulled from
  * the contract's constants rather than retyped, so a value list here cannot
  * disagree with the one the server validates against.
@@ -138,6 +153,29 @@ const FIELD_DETAILS: Readonly<Record<string, FieldDetail>> = {
     values: { kind: "docId" },
     multi: false,
   },
+  /**
+   * The one field whose *name* argues against its meaning, so the prose has to
+   * do the work the name does not (UI-088).
+   *
+   * `isParent=true` selects **roots** — documents with no parent — which is what
+   * lets a view show top-level documents without the threads hanging off them
+   * mixed in. It does **not** mean "has children": a standalone note that
+   * nothing hangs off still matches. CONTRACT-042 considered and rejected the
+   * literal reading (a parents-only view that hid every uncommented note would
+   * be nearly empty) and kept the name the user asked for, so this summary is
+   * the only thing standing between the name and the wrong conclusion. That is
+   * why {@link ISPARENT_SUMMARY} is exported and pinned by a test.
+   *
+   * `parent=<id>` alongside `isParent=true` is refused with a `400`. That is
+   * deliberately not restated here: the server owns the grammar and a column
+   * renders its refusal (`viewDoc.ts`), and a second copy of the rule in this
+   * file is a copy that can disagree.
+   */
+  isParent: {
+    summary: ISPARENT_SUMMARY,
+    values: { kind: "fixed", values: ["true", "false"] },
+    multi: false,
+  },
   references: {
     summary: "Documents whose body links to this one with [[id]].",
     values: { kind: "docId" },
@@ -202,6 +240,10 @@ const READING_ORDER: readonly string[] = [
   "agent",
   "author",
   "parent",
+  // Next to `parent`, whose question it is the other half of — and whose `400`
+  // when both are set (CONTRACT-042) is easier to reason about when the two are
+  // read one after the other.
+  "isParent",
   "references",
   "includeArchived",
   "pinned",
@@ -243,12 +285,16 @@ export interface QueryExample {
   readonly meaning: string;
 }
 
-/** Four queries that run as written; the first is the field's own placeholder. */
+/** Queries that run as written; the first is the field's own placeholder. */
 export const QUERY_EXAMPLES: readonly QueryExample[] = [
   { query: "type=thread&status=open", meaning: "Conversations still open." },
   { query: "needs=me&folder=finance", meaning: "Attention, inside one folder." },
   { query: "type=note,view&tag=finance", meaning: "Notes or views tagged finance." },
   { query: "due=week&sort=due", meaning: "Due within the week, soonest first." },
+  // Shown because the name misleads and an example does not: this is the shape
+  // of the request the user actually had — a list without the threads hanging
+  // off its documents (UI-088).
+  { query: "isParent=true&status=open", meaning: "Top-level only, still open." },
 ];
 
 /**

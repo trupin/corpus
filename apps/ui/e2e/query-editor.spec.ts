@@ -288,6 +288,94 @@ test.describe("the column query editor", () => {
     });
   });
 
+  /**
+   * UI-088. The user's ask was "show parents only in views", and the parameter
+   * that answers it is named `isParent` while selecting documents with **no**
+   * parent (CONTRACT-042). The query editor is where a person meets that name,
+   * so these two cover the whole of what they are told about it — and cover it
+   * in a real browser, because the completion menu and the chips row are the
+   * surfaces, not the strings behind them.
+   *
+   * The server's answer to the filter is SERVER-073's; nothing here asserts
+   * which rows come back. What is asserted is that the filter is reachable, is
+   * described as what it does, composes with what the view already had, and is
+   * stored verbatim.
+   */
+  test("reaches isParent from the keyboard, described as what it does", async ({ page }) => {
+    const corpus = await stubCorpus(page, CORPUS);
+    await seedVocabulary(page);
+    await page.goto("/");
+    await openQueryEditor(page);
+
+    // The field opens holding the view's existing query. Typing `&` onto the
+    // end is the composition: this filter is one more clause, not a mode.
+    await expect(field(page)).toHaveValue("type=thread&status=open");
+    await field(page).press("End");
+    await field(page).pressSequentially("&isP");
+
+    await expect(menu(page)).toBeVisible();
+    await expect(optionText(page)).toHaveText([/isParent/]);
+    // The one-liner beside it is the only explanation a user gets, and it must
+    // not read as "is a parent".
+    await expect(menu(page)).toContainText("Top-level only: true keeps documents with no parent");
+    await expect(menu(page)).not.toContainText("is a parent");
+
+    // ⇥ accepts and carries the `=`; the values are the contract's two.
+    await field(page).press("Tab");
+    await expect(field(page)).toHaveValue("type=thread&status=open&isParent=");
+    await expect(optionText(page)).toHaveText([/true/, /false/]);
+
+    // ↓ then ↵ — the same keys every completing menu in the product takes.
+    await field(page).press("ArrowDown");
+    await field(page).press("ArrowUp");
+    await field(page).press("Enter");
+    await expect(field(page)).toHaveValue("type=thread&status=open&isParent=true");
+    // A known field, so nothing is flagged as one the server would ignore.
+    await expect(page.locator(".col-query-notice")).toHaveCount(0);
+
+    await field(page).press("Enter");
+    await expect(field(page)).toBeHidden();
+
+    // One `PUT`, carrying every filter the view had plus the new one. Composed,
+    // not replaced — which is the acceptance criterion, on the wire.
+    await expect.poll(async () => (await corpus.of("PUT", `/api/docs/${VIEW_ID}`)).length).toBe(1);
+    expect((await corpus.of("PUT", `/api/docs/${VIEW_ID}`))[0]?.body).toEqual({
+      query: { type: "thread", status: "open", isParent: "true" },
+    });
+  });
+
+  test("renders a stored isParent as top-level only, and hands it back as it is stored", async ({
+    page,
+  }) => {
+    // A view document already carrying the filter — including as the YAML
+    // boolean an older hand-edited or agent-written file would hold.
+    await stubCorpus(page, [
+      { ...VIEW, query: { type: "thread", status: "open", isParent: true } },
+      ...CORPUS.slice(1),
+    ]);
+    await seedVocabulary(page);
+    await page.goto("/");
+
+    const chips = page.locator(".col .chips").first();
+    await expect(chips).toContainText("type: thread");
+    await expect(chips).toContainText("status: open");
+    // The whole point: the chip says what the column shows, not `isParent: true`.
+    await expect(chips).toContainText("isParent: top-level only");
+    await expect(chips).not.toContainText("isParent: true");
+
+    // ...and the query it hands back to the editor is still the query on disk.
+    await openQueryEditor(page);
+    await expect(field(page)).toHaveValue("type=thread&status=open&isParent=true");
+
+    // The syntax reference describes it too, and describes it the same way.
+    await page.getByRole("button", { name: /Query syntax for Conversations/ }).click();
+    const panel = page.getByRole("dialog", { name: "Query syntax" });
+    await expect(panel.locator("[data-query-field='isParent']")).toContainText(
+      'Top-level only: true keeps documents with no parent. Never "has children".',
+    );
+    await expect(panel.locator("[data-query-field='isParent']")).toContainText("true · false");
+  });
+
   test("names a field the server would silently ignore, without blocking the edit", async ({
     page,
   }) => {

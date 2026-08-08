@@ -1,6 +1,7 @@
 import { DOC_SORTS, DOC_STATUSES, DocsQuerySchema, NEEDS_FILTERS } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import {
+  ISPARENT_SUMMARY,
   QUERY_COMBINATORS,
   QUERY_EXAMPLES,
   QUERY_FIELD_NAMES,
@@ -69,6 +70,46 @@ describe("the query grammar", () => {
       expect(Object.keys(parsed).length).toBeGreaterThan(0);
       expect(unknownQueryFields(parsed)).toEqual([]);
     }
+  });
+});
+
+/**
+ * `isParent` is the only field whose name argues against its meaning, so it is
+ * the only one whose prose is pinned rather than merely required to exist
+ * (UI-088). `isParent=true` selects documents with **no** parent
+ * (CONTRACT-042); the summary is the whole of what a user is told about that,
+ * because the query editor shows them the parameter name and nothing else.
+ */
+describe("the isParent field, whose name contradicts what it selects", () => {
+  it("is offered, with true and false, next to the parent filter it inverts", () => {
+    expect(queryField("isParent")).toEqual({
+      name: "isParent",
+      summary: ISPARENT_SUMMARY,
+      values: { kind: "fixed", values: ["true", "false"] },
+      multi: false,
+    });
+
+    const names = QUERY_FIELDS.map((field) => field.name);
+    expect(names.indexOf("isParent")).toBe(names.indexOf("parent") + 1);
+  });
+
+  it("is described as what it does, in wording pinned character for character", () => {
+    expect(ISPARENT_SUMMARY).toBe(
+      'Top-level only: true keeps documents with no parent. Never "has children".',
+    );
+  });
+
+  /**
+   * The failure this guards is a rewrite that "corrects" the summary to match
+   * the name — the exact mistake CONTRACT-042 says was considered and rejected.
+   * Read as prose rather than as an identifier: `isParent` itself appears in
+   * the menu beside this text, and that is the parameter, not a claim.
+   */
+  it("never claims the document is a parent, and mentions children only to deny them", () => {
+    const prose = ISPARENT_SUMMARY.toLowerCase();
+    expect(prose).toContain("no parent");
+    expect(prose).not.toContain("is a parent");
+    expect(prose).toContain('never "has children"');
   });
 });
 
