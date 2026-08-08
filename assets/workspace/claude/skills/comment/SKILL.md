@@ -5,7 +5,7 @@ id: doc_skillcomment
 type: skill
 title: Comment
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-07T00:00:00Z
+updated: 2026-08-08T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -262,7 +262,7 @@ implicitly; when the person has their editor open on that document the write is 
 order:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 You're editing [[doc_a1b2c3]] right now, so I haven't touched it. The change is
 ready and will land as soon as the document is free.
 EOF
@@ -314,7 +314,7 @@ arrives — a wrong filing is harder to notice than an unfiled one.
 One command, always:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 6.4% is more representative than 6.1% for a 30-year fixed today. Updated the
 assumption and the projection note in [[doc_a1b2c3]].
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
@@ -323,6 +323,26 @@ EOF
 
 Rules:
 
+- **Say which model wrote the turn.** Every reply you post carries `--model <name>`, and the
+  board shows it beside the turn — it is the record that outlives the job's log, which is
+  reaped with its event, so *which model wrote this?* stays answerable from the conversation
+  itself. Name **what actually ran, never what was asked for**: a weight stated in a request is
+  a directive, honoured rather than weighed again, and the turn is the lasting evidence that it
+  was — a turn that echoed the request back instead of reporting the run would leave nobody
+  able to check. So the name is the model **you** are running as, as your own runtime reports
+  it; where that differs from what the dispatch asked for, the model that ran is the one that
+  goes on the turn and the difference goes in the job log.
+- **Where the work ran in stages, name the deciding stage.** A lighter model or a script may
+  gather the material while you judge it and write the words. The turn names the stage that
+  **decided** — the one that drew the conclusion or wrote the reply — which is you: one model,
+  never a list, and never the first stage's. The gathering stages belong in the job log, which
+  is where the per-stage account lives for as long as the event does.
+- **When you do not know what ran, leave the flag out entirely.** A turn with no model recorded
+  shows nothing, and nothing is the honest answer to an unknown — a plausible attribution
+  nobody can check is worth less than a blank. `--model ""` is a usage error (exit `2`), so an
+  absence has exactly one spelling and a guess has none. The flag is for your own turns alone:
+  with any `--from` other than `agent` it is refused at exit `2` before the body is read, so
+  never state a model on a person's behalf.
 - **Never post a reply by editing the thread file.** The thread's format, its turn timestamps
   and the events a turn triggers are the server's, and a hand-written turn is a corrupted
   conversation.
@@ -466,9 +486,10 @@ demands a submit for something with nothing to submit.
 
 **The grammar.** The form is a fenced block whose info string is `form`, written with
 backticks, and it comes last in the turn body you pass to
-`corpus thread reply <id> --from agent` — after the prose, with only a trace line after it when
-the turn also wrote. Written out, the ask is one turn: the sentence that commits to the work,
-then the fence. This one asks for a decision, a selection and a fact, with the fact optional:
+`corpus thread reply <id> --from agent --model <name>` — after the prose, with only a trace
+line after it when the turn also wrote. Written out, the ask is one turn: the sentence that
+commits to the work, then the fence. This one asks for a decision, a selection and a fact, with
+the fact optional:
 
 > I can finish filing this as soon as I know where it belongs and how you want it tagged — I'll
 > move it, tag it, and write the renewal quarter into the document as the answer to the open
@@ -675,7 +696,7 @@ Thirty-year fixed offers currently cluster between 6.1% and 6.6%; every
 projection in this document now uses 6.4%.
 EOF
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — rate assumption 6.1% to 6.4%"
-corpus thread reply th_4b8e2c --from agent <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 Not any more — 6.4% is the representative 30-year fixed rate today. Updated the
 assumption and the projection note in [[doc_a1b2c3]]; the anchored sentence is
 the one that changed.
@@ -684,7 +705,9 @@ EOF
 ```
 
 **2 — Standalone Ask that gets a title and a document.** `parentId` was `null` and the payload
-carried `"unresolved": ["researcher"]`.
+carried `"unresolved": ["researcher"]`. The work ran in two stages: a lighter model gathered
+what the corpus already held on the subject, and this session judged it and wrote the answer.
+So the turn names the **deciding** stage and the job log carries both.
 
 ```bash
 corpus thread show th_9f21c4
@@ -695,7 +718,8 @@ Sour and fast means under-extraction: grind finer before changing dose.
 Bitter and slow means the opposite.
 EOF
 corpus doc edit th_9f21c4 --title "Why does my espresso taste sour?" --from agent
-corpus thread reply th_9f21c4 --from agent <<'EOF'
+corpus job log evt_5a2b7c "gathered on claude-haiku-4-5; concluded and wrote the reply on claude-opus-4-1"
+corpus thread reply th_9f21c4 --from agent --model claude-opus-4-1 <<'EOF'
 Sour usually means under-extraction — the shot ran too fast. Grind one step
 finer and keep everything else fixed.
 
@@ -726,7 +750,7 @@ corpus doc show doc_3f9a01  # its path is data/docs/finance/home-policy-renewal.
 corpus doc move doc_5c8b2f --folder finance --from agent
 corpus doc edit doc_5c8b2f --add-tag insurance --add-tag review --from agent
 corpus job log evt_2e4f8b "filed [[doc_5c8b2f]] into finance/"
-corpus thread reply th_1a7d33 --from agent <<'EOF'
+corpus thread reply th_1a7d33 --from agent --model claude-sonnet-4-5 <<'EOF'
 Filed this as [[doc_5c8b2f]] — "Quarterly insurance review", now in `finance/`,
 tagged insurance and review. I added the structure and left one open question in
 it: I don't know which quarter the policy renews in.
@@ -743,7 +767,7 @@ corpus thread show th_6c0a18
 corpus doc move doc_2f7b91 --folder finance --from agent
 corpus doc edit doc_2f7b91 --add-tag insurance --add-tag review --from agent
 corpus job log evt_9b4c02 "form answered — filed [[doc_2f7b91]] into finance/, tagged insurance and review"
-corpus thread reply th_6c0a18 --from agent <<'EOF'
+corpus thread reply th_6c0a18 --from agent --model claude-sonnet-4-5 <<'EOF'
 Finance it is — [[doc_2f7b91]] now lives in `finance/` next to the mortgage
 notes, tagged insurance and review. You left the renewal quarter blank, so it
 stays the open question already written into the document. That closes the
