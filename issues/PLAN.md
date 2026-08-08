@@ -506,3 +506,12 @@ cheapest moment for that to happen.
 | UI-083 | Selecting rows and acting on the selection — **rewrite against SHARED-032** | todo | P2 | SHARED-032, CONTRACT-037 |
 | UI-095 | Clicking a comment does not take you to it, opened | todo | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
+| SHARED-033 | The UI claims an agent that is not working, and one that is not there (DRAFTED — sign-off) | todo | P1 | — |
+| UI-097 | A request nobody has picked up says "agent is working…" | todo | P1 | SHARED-033 |
+| CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | todo | P1 | SHARED-033 |
+| SERVER-078 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
+| UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-078 |
+| UI-099 | Commenting on a document selection leaves no visible anchor | todo | P0 | — |
+| UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
+| SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | — |
+| UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |
