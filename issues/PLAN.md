@@ -445,8 +445,8 @@ belongs to the same fix wave.
 | SERVER-074 | Write the deciding model onto the agent's turn | todo | P1 | CONTRACT-043 |
 | UI-090 | Show which model wrote an agent turn | todo | P1 | CONTRACT-043, SERVER-074 |
 | SERVER-075 | A person's reply with an unterminated fence swallows every later turn | done | P0 | — |
-| SERVER-076 | A turn body can still fabricate a turn heading on the reply path (SERVER-075 finding) | todo | P2 | SERVER-075 |
-| CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | todo | P1 | — |
+| SERVER-076 | A turn body can still fabricate a turn heading on the reply path (SERVER-075 finding) | done | P2 | SERVER-075 |
+| CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | done | P1 | — |
 | UI-091 | Pre-check the two refusals the composer still cannot see | todo | P2 | CONTRACT-044 |
 | INFRA-024 | A prose-only commit pays the full ten-minute gate — **superseded by INFRA-025** | closed | P1 | — |
 | INFRA-025 | Defer the slow suites to CI; run only fast tests locally | done | P1 | — |
@@ -461,7 +461,7 @@ belongs to the same fix wave.
 | CONTRACT-040 | An open form's count is not on the row, so "more than one" cannot be shown (UI-084 finding) | todo | P2 | CONTRACT-038 |
 | SERVER-070 | A malformed form still reaches disk through thread creation (SERVER-068 finding) | todo | P2 | SERVER-068, CONTRACT-038 |
 | UI-085 | The e2e stub answers unhandled routes with `{}` instead of failing (UI-078 finding) | todo | P2 | — |
-| UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | todo | P1 | UI-062 |
+| UI-068 | Selector capture quotes the canonical spelling, not the file's (SERVER-059 phase A) | done | P1 | UI-062 |
 | SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
 | CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | todo | P1 | — |
 | SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-071 |
