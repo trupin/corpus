@@ -767,12 +767,111 @@ describe("orchestrate skill body", () => {
       expect(body).toMatch(/Nothing is lost by leaving an unfamiliar row alone/);
     });
 
-    it("keeps the loop one literal bash block that names the reconciliation step", () => {
+    it("makes reconciliation a numbered step of the loop, not a comment in a script", () => {
+      // It used to be a `#` comment inside the loop's single bash block, which
+      // is precisely the form an agent reading that fence as a script drops
+      // (AGENT-019). It is a step of the procedure now.
       const loop = body.slice(body.indexOf("## The loop"), body.indexOf("## Claiming"));
-      const blocks = fencedBlocks(loop);
-      expect(blocks).toHaveLength(1);
-      expect(blocks[0]?.info).toBe("bash");
-      expect(blocks[0]?.content).toMatch(/reconcile that held list against your own work/);
+      expect(loop).toMatch(/^\d+\. \*\*Reconcile that held list against your own work\*\*/im);
+      expect(loop).toMatch(/\(Claiming and batching below\)/);
+    });
+  });
+
+  /**
+   * AGENT-019, reported from a live run on 2026-08-07: events were claimed and
+   * never dispatched, because the session ran `claim-all` and `idle` as one
+   * chained background command and never read its output. That chain was not a
+   * misreading of the loop block — every executable line in it was a
+   * `corpus queue` call and the one load-bearing step between them, dispatch,
+   * was a `#` comment. The literal executable reading of that fence *was* a
+   * working loop that skipped dispatch.
+   *
+   * So both halves are pinned here: the prohibition in words, with the cost it
+   * carries, and the structural property that makes the prohibition hard to
+   * disobey — the section contains no script anyone can copy, and no fence in
+   * the skill pairs the two commands.
+   */
+  describe("the loop is a procedure, not a script", () => {
+    const loop = body.slice(body.indexOf("## The loop"), body.indexOf("## Claiming"));
+
+    it("prohibits chaining claim-all with idle, and says what the chain does", () => {
+      expect(loop).toMatch(/\*\*never\s+chained\*\*/i);
+      expect(loop).toMatch(
+        /`corpus queue claim-all` and `corpus queue idle` are always separate commands/,
+      );
+      expect(loop).toMatch(/with dispatch between them/);
+      // The cost, not merely the rule: a chain claims and re-parks, and every
+      // event it claims is worked by nobody, invisibly.
+      expect(loop).toMatch(/nowhere to put dispatch/);
+      expect(loop).toMatch(/worked by nobody/);
+      expect(loop).toMatch(/no error anywhere/);
+    });
+
+    it("never writes the chain down, anywhere in the body", () => {
+      // An example beats a rule — including an example shown as the bad case.
+      expect(body).not.toMatch(/claim-all\s*(?:&&|\|\||[|;])\s*corpus queue idle/);
+      expect(body).not.toMatch(/queue idle\s*(?:&&|\|\||[|;])\s*corpus queue claim-all/);
+    });
+
+    it("runs idle alone and reads its return before anything else", () => {
+      expect(loop).toMatch(/\*\*Park, alone\.\*\*/);
+      expect(loop).toMatch(/`corpus queue idle` is the entire command/);
+      expect(loop).toMatch(/\*\*Read what `idle` returned, before anything else happens\.\*\*/);
+      // Why it is read: the return is the arrival signal, so the instruction
+      // cannot be demoted to bookkeeping and dropped under pressure.
+      expect(loop).toMatch(/That return \*\*is\*\* the\s+arrival notification/);
+      expect(loop).toMatch(/a return\s+nobody read is an event nobody works/);
+      expect(loop).toMatch(/not a log/);
+    });
+
+    it("states the loop as discrete steps, with dispatch among them", () => {
+      const steps = loop.split("\n").filter((line) => /^\d+\. \*\*/.test(line));
+      expect(steps.length).toBeGreaterThanOrEqual(8);
+      // Dispatch is a step of the procedure, and it says it is not a command.
+      expect(loop).toMatch(/\*\*Dispatch every claimed event to a subagent\*\*/);
+      expect(loop).toMatch(/\*\*This\s+step is work, not a command\*\*/);
+      // Claim, then dispatch, then park — in that order, as steps.
+      const order = [
+        "**Claim, then read what it printed.**",
+        "**Dispatch every claimed event to a subagent**",
+        "**Park, alone.**",
+      ].map((label) => loop.indexOf(label));
+      expect(order).not.toContain(-1);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+    });
+
+    it("leaves no fenced block anyone can copy as the loop", () => {
+      // The structural half: there is no script in this section, so there is no
+      // executable reading of it that skips dispatch.
+      expect(fencedBlocks(loop)).toEqual([]);
+      // And nowhere else in the skill does one fence carry both commands — an
+      // example pairing them would teach the bug the prose forbids.
+      for (const block of fencedBlocks(body)) {
+        const pairsThem =
+          block.content.includes("corpus queue claim-all") &&
+          block.content.includes("corpus queue idle");
+        expect(pairsThem, `fence opening at line ${block.openLine} pairs claim-all with idle`).toBe(
+          false,
+        );
+      }
+    });
+
+    it("keeps the empty-batch pass a two-command pass as well", () => {
+      const claiming = body.slice(body.indexOf("## Claiming"), body.indexOf("## Routing"));
+      expect(claiming).toMatch(/park\s+with a separate `corpus queue idle`/);
+      expect(claiming).toMatch(/still two commands rather than one/);
+    });
+
+    it("dispatches between the claim and the park in the worked example too", () => {
+      const example = body.slice(body.indexOf("## Worked example"));
+      expect(example).toMatch(/\*\*Then the step that no command performs\.\*\*/);
+      expect(example).toMatch(/Only once\s+it is out does the next command run/);
+      expect(example).toMatch(/`corpus queue idle`, alone,\s+never appended to the claim above/);
+      // And the settling fence no longer trails a park command an agent would
+      // lift as "the next thing to run" without reading anything.
+      const fences = fencedBlocks(example);
+      expect(fences.length).toBeGreaterThan(0);
+      for (const fence of fences) expect(fence.content).not.toContain("corpus queue idle");
     });
   });
 
