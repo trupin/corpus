@@ -98,6 +98,45 @@ describe("enqueue", () => {
     const read = await service.store.readEvent("pending", "evt_aaaaaaaaaaaa");
     expect(read?.ok === true && read.event.type).toBe("b");
   });
+
+  // SERVER-069's seam. What matters about it is the *ordering* it promises: the
+  // observer runs after the event is durable and mirrored, and before anything
+  // parked on the queue is woken — so a line written about a job cannot land
+  // after a line the agent it woke wrote on the same log.
+  describe("the enqueue observer", () => {
+    it("sees every event, after the mirror and before the wake", async () => {
+      const seen: StoredEvent[] = [];
+      const mirroredWhenSeen: number[] = [];
+      const service = makeService();
+      let woken = 0;
+      const idle = service.idle({ timeoutMs: 60_000 }).then(() => {
+        woken += 1;
+      });
+      service.observeEnqueued(async (event) => {
+        seen.push(event);
+        mirroredWhenSeen.push(mirror.upserts.length);
+        expect(woken).toBe(0);
+        await Promise.resolve();
+      });
+
+      const event = await service.enqueue({ type: "a", source: "cli", payload: { weight: "x" } });
+      await idle;
+
+      expect(seen.map((each) => each.id)).toEqual([event.id]);
+      expect(mirroredWhenSeen).toEqual([1]);
+    });
+
+    it("never fails the producer's enqueue when it throws", async () => {
+      const service = makeService();
+      service.observeEnqueued(() => Promise.reject(new Error("log volume full")));
+
+      const event = await service.enqueue({ type: "a", source: "cli", payload: {} });
+
+      // The event is on disk and the agent is woken for it; a lost log line may
+      // not become "your comment was not posted" about a comment that was.
+      expect(await service.store.listIds("pending")).toEqual([event.id]);
+    });
+  });
 });
 
 describe("idle", () => {

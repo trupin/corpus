@@ -10,6 +10,7 @@
 //
 // Nothing here decides *whether* to enqueue; that is `participation.ts`.
 
+import { requestedWeightPayload } from "@corpus/contract";
 import type { ParsedMentions, ResolvedTarget } from "./mentions.js";
 import { COMMENT_CREATED, EVENT_SOURCE, type ThreadsWorkspace } from "./workspace.js";
 
@@ -20,6 +21,18 @@ export interface CommentEventInput {
   /** The turn that asked for the agent; its `ts` is the turn's identity (§6). */
   readonly turnTs: string;
   readonly parsed: ParsedMentions;
+  /**
+   * The weight the request stated (SPEC.md §7, rider signed 2026-08-06), or
+   * `undefined` when it stated none — which means the orchestrator decides, and
+   * is the ordinary case.
+   *
+   * Not optional on this type, deliberately. Every composer that can reach the
+   * agent may state one (§11), so every producer here has to say what its
+   * request carried; a `?` would let a surface added later ship silently
+   * dropping the field, which is SHARED-012's lesson about attachments told
+   * once more.
+   */
+  readonly weight: string | undefined;
   /** Which surface produced it; defaults to the thread endpoints. */
   readonly source?: string | undefined;
 }
@@ -35,6 +48,18 @@ const targets = (values: readonly ResolvedTarget[]): Record<string, unknown>[] =
  * `mentions.ts`): when the agent is woken for another reason, "you wrote
  * `@nobody` and there is no such subagent" is exactly the "missing or archived"
  * case §8 asks the orchestrator to answer in its reply.
+ *
+ * The stated weight is **spread in** through `requestedWeightPayload` rather
+ * than written as a key here, and that is the whole of the server's part in it:
+ * the level arrives verbatim and leaves verbatim, and a request that stated none
+ * produces a payload with no such key at all. Absence is the instruction "the
+ * orchestrator decides" (§7), so it has exactly one spelling and the fragment is
+ * what makes that structural — a hand-written `weight: input.weight` would put
+ * an explicit `undefined` there and a JSON round trip would turn it into a
+ * second one. Nothing here reads the value: which model a level maps to is the
+ * skill's business (§7 keeps model names out of the spec, and a workspace edits
+ * its own guidance under §2.4), so a server that checked it against a list would
+ * reject a level its own workspace defines.
  */
 export const commentPayload = (input: CommentEventInput): Record<string, unknown> => ({
   threadId: input.threadId,
@@ -43,6 +68,7 @@ export const commentPayload = (input: CommentEventInput): Record<string, unknown
   mentions: targets(input.parsed.mentions),
   skills: targets(input.parsed.skills),
   unresolved: [...input.parsed.unresolved],
+  ...requestedWeightPayload(input.weight),
 });
 
 /**

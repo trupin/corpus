@@ -234,6 +234,11 @@ export async function captureDocument(
           parentId: docId,
           turnTs: prepared.turn.ts,
           parsed,
+          // Verbatim from the request, or absent when it stated none. A capture
+          // whose `requestsAgent: false` suppressed the event states a weight
+          // that simply governs no work — it is not an error, and there is no
+          // event for it to ride on (CONTRACT-039).
+          weight: request.weight,
           source: EVENT_SOURCE.capture,
         })
       : null;

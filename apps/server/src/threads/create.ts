@@ -94,13 +94,21 @@ export interface ThreadCreateInput {
   readonly requestsAgent: boolean | undefined;
   /** The model that wrote the first turn (SPEC.md §11); `undefined` when unstated. */
   readonly model: string | undefined;
+  /**
+   * The weight the request states its work should be done at (SPEC.md §7);
+   * `undefined` when it states none, which means the orchestrator decides.
+   * Carried to the queue event and interpreted nowhere — see `events.ts`.
+   */
+  readonly weight: string | undefined;
   readonly files: readonly File[];
 }
 
 /**
  * The request either media type carries. Both read `requestsAgent` the same way
  * — the JSON form as a boolean, the multipart form through `z.stringbool` — and
- * neither through a `??` that would turn "note only" into "omitted".
+ * neither through a `??` that would turn "note only" into "omitted". `weight`
+ * is read the same way in both for the same reason, and with no `??` either: a
+ * default there would be the fixed tier §7's rider exists to prevent.
  */
 export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
   if (!isMultipartThreadCreate(body)) {
@@ -111,6 +119,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
       text: body.body,
       requestsAgent: body.requestsAgent,
       model: body.model,
+      weight: body.weight,
       files: [],
     };
   }
@@ -121,6 +130,7 @@ export function threadRequestBody(body: CreateThreadBody): ThreadCreateInput {
     text: body.text,
     requestsAgent: body.requestsAgent,
     model: body.model,
+    weight: body.weight,
     files: body.files,
   };
 }
@@ -403,6 +413,7 @@ export async function createThread(
           parentId,
           turnTs: prepared.turn.ts,
           parsed,
+          weight: input.weight,
         })
       : null;
 

@@ -34,3 +34,5 @@ export {
   truncateLine,
 } from "./store.js";
 export type { AppendInput, AppendOutcome, LogSource, StoredLogLine } from "./store.js";
+export { STATED_WEIGHT_PREFIX, createStatedWeightRecorder, statedWeightLine } from "./weight.js";
+export type { StatedWeightRecorder, StatedWeightRecorderOptions } from "./weight.js";
