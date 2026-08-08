@@ -84,13 +84,25 @@ step "generated artifacts drift"   node --import tsx scripts/check-generated-art
 step "eslint"                      npm run --silent lint
 step "prettier check"              npm run --silent format:check
 step "typecheck"                   npm run --silent typecheck
-step "unit tests"                  npm test --silent
 
-if compgen -G "apps/ui/e2e/*.spec.ts" > /dev/null; then
-  step "playwright e2e" npm run --silent e2e
-else
-  echo "pre-push ▷ playwright e2e skipped (no specs in apps/ui/e2e/ yet)"
-fi
+# Slow suites are CI's, by explicit user decision (2026-08-07, INFRA-025). The
+# full unit suite (~10,500 tests) and the Playwright e2e suite both run in
+# `CI / validate` on every pushed head, and a PR cannot merge until that is
+# green — so nothing reaches `main` without them. What they were buying here was
+# earlier notice, at a cost of several minutes on every push.
+#
+# It is not only a speed trade. Read the exit-141 note above: git opens the
+# transport to the remote *before* running this hook, and a gate slow enough to
+# outlast the remote's idle timeout makes the push die with SIGPIPE **after**
+# printing that every check passed — nothing on the remote, no error from git.
+# The e2e suite is what pushed this gate over that line. A fast gate wins the
+# race; that is a correctness property, not a comfort.
+#
+# What stays here is what is cheap and what CI cannot easily un-break after the
+# fact: version singularity (a bad `v*` tag is expensive to unwind), the
+# generated-artifact drift check, and the static gates.
+echo "pre-push ▷ full unit suite and playwright e2e deferred to CI (INFRA-025)"
+echo "pre-push ▷   run them locally with 'npm test' and 'npm run e2e' when a change warrants it"
 
 if [ "$fail" -ne 0 ]; then
   echo "pre-push: blocked."

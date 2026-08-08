@@ -32,7 +32,24 @@ step "build"           npm run --silent build
 step "eslint"          npm run --silent lint
 step "prettier check"  npm run --silent format:check
 step "typecheck"       npm run --silent typecheck
-step "unit tests"      npm test --silent
+
+# Fast tests only, by explicit user decision (2026-08-07, INFRA-025): the local
+# gate runs the tests *related to what changed*; the complete suite is CI's job.
+# A full run here was ~10,500 tests on every commit, which meant a paragraph of
+# prose cost the same as a rewrite of the projection — and see the exit-141 note
+# in pre-push for why a slow gate is a correctness problem too, not only a slow
+# one.
+#
+# `--changed` resolves related tests through vitest's own module graph, so a
+# change to a source file pulls in the suites that import it, transitively. What
+# it cannot see is a dependency that is not an import: a fixture read at runtime,
+# a generated artifact, a rule two workspaces restate. Those are exactly what CI
+# is for, and CI runs the whole suite on every push and every PR head.
+#
+# It is deliberately NOT a subset chosen by hand. A hand-picked list is a second
+# inventory that drifts from the first, which this project has fixed three times
+# elsewhere; the module graph cannot drift because it is derived.
+step "related tests"   npx vitest run --changed --passWithNoTests
 
 if [ "$fail" -ne 0 ]; then
   echo "pre-commit: blocked. Nothing was committed."

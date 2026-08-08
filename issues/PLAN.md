@@ -447,6 +447,8 @@ belongs to the same fix wave.
 | SERVER-075 | A person's reply with an unterminated fence swallows every later turn | todo | P0 | — |
 | CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | todo | P1 | — |
 | UI-091 | Pre-check the two refusals the composer still cannot see | todo | P2 | CONTRACT-044 |
+| INFRA-024 | A prose-only commit pays the full ten-minute gate | todo | P1 | — |
+| INFRA-025 | Defer the slow suites to CI; run only fast tests locally | done | P1 | — |
 | AGENT-020 | Noting a change writes to the document's changelog, not a new thread | todo | P1 | SHARED-025 |
 | UI-089 | The changelog's older entries need a fold that reports its size | todo | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
