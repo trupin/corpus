@@ -79,6 +79,27 @@ step() {
 # rather than a re-run.
 step "version singularity"         npm run --silent version:check
 
+# eslint over the range this push actually adds. Same rule as pre-commit: a check
+# that can be handed a file list runs locally.
+#
+# `@{u}...HEAD` is that range. When there is no upstream — a branch being created
+# — the range cannot be computed, and an unknown range must NOT quietly mean
+# "nothing to lint": that is the silent-omission shape this repo has been bitten
+# by three times (INFRA-022's manifest set, `version-sources`' globs and its
+# unreadable `ls-tree`). It falls back to linting everything instead.
+if range_files="$(git diff --name-only --diff-filter=ACM '@{u}...HEAD' 2>/dev/null)"; then
+  range_ts="$(printf '%s\n' "$range_files" | /usr/bin/grep -E '\.(ts|tsx|mts|cts)$' | tr '\n' ' ')"
+  if [ -n "${range_ts// /}" ]; then
+    # shellcheck disable=SC2086
+    step "eslint (pushed range)" npx eslint $range_ts
+  else
+    echo "pre-push ▷ eslint skipped (no TypeScript in the pushed range)"
+  fi
+else
+  echo "pre-push ▷ no upstream — linting everything rather than assuming nothing changed"
+  step "eslint (full)"             npm run --silent lint
+fi
+
 # Everything else — build, the generated-artifact drift check, eslint, prettier,
 # typecheck, the unit suite and Playwright — is CI's (INFRA-025). The drift check
 # in particular needs a full build to regenerate what it compares, which is

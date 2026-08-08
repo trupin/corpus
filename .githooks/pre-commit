@@ -2,21 +2,29 @@
 # Pre-commit gate — deliberately tiny (INFRA-025, user decision 2026-08-07:
 # "we should be aiming for 10-15 second max").
 #
-# What this hook is for: catching what is cheap to catch and annoying to fix
-# later. That is formatting, and a dependency advisory.
+# The rule (user, 2026-08-07): **a check that can run on the diff runs here; a
+# check that needs the whole codebase is CI's.**
 #
-# What it is NOT for any more: build, type-aware eslint, `tsc --noEmit`, and the
-# unit suite. Each is compile-class work — even linting a single file makes
-# @typescript-eslint build the whole program, and the full sweep measured ~2.5
-# minutes at 3 GB resident. None of it fits in fifteen seconds, and none of it
-# needs to be here:
+# On the diff, and therefore here: prettier and eslint, both given an explicit
+# staged-file list, plus the dependency audit (which scans the lockfile, not the
+# tree, and costs one round-trip).
 #
-#   `CI / validate` runs build, lint, format, typecheck, the full unit suite and
-#   Playwright on every pushed head, and a PR cannot merge until it is green.
+# Needs the whole codebase, and therefore CI's:
+#   - `tsc --noEmit` — a project-wide program; there is no diff-scoped form
+#   - build, and the generated-artifact drift check that depends on it
+#   - the unit suite — measured too slow for this budget even when scoped to
+#     changed files, so it stays whole and stays in CI
+#   - Playwright
 #
-# So the cost of moving them is a red PR and a second push — never a bad merge.
-# Run them by hand when a change warrants it: `npm run lint`, `npm run
-# typecheck`, `npm test`, `npm run e2e`.
+# `CI / validate` runs all of those on every pushed head and a PR cannot merge
+# until it is green, so the cost of what is deferred is a red PR and a second
+# push — never a bad merge. Run any of them by hand when a change warrants it:
+# `npm run typecheck`, `npm test`, `npm run e2e`.
+#
+# Measured, because the first two attempts at this guessed and were wrong:
+# scoped eslint is ~2s for one file and ~3s across three workspaces. It was
+# `eslint .` that cost ~2.5 minutes at 3 GB — the whole-repo run, not the
+# type-aware machinery.
 #
 # Escape hatch (documented, use sparingly): git commit --no-verify
 set -uo pipefail
@@ -43,10 +51,20 @@ staged="$(git diff --cached --name-only --diff-filter=ACM)"
 # identical command without the flag and fails closed.
 step "npm audit"  node --import tsx scripts/check-audit.ts --tolerate-unreachable-registry
 
-# Prettier is the whole remaining gate, and it is scoped: it formats markdown as
-# well as code, so a prose-only commit still pays it — in milliseconds.
-# `--ignore-unknown` so a staged file prettier has no parser for is skipped
-# rather than failing the commit.
+# eslint, given the staged TypeScript explicitly. CI still lints the whole repo
+# on this same head, which is where a violation in a file this commit did not
+# touch belongs — it cannot have been introduced here.
+staged_ts="$(printf '%s\n' "$staged" | /usr/bin/grep -E '\.(ts|tsx|mts|cts)$' | tr '\n' ' ')"
+if [ -n "${staged_ts// /}" ]; then
+  # shellcheck disable=SC2086
+  step "eslint (staged)" npx eslint $staged_ts
+else
+  echo "pre-commit ▷ eslint skipped (no TypeScript staged)"
+fi
+
+# Prettier formats markdown as well as code, so a prose-only commit still pays
+# it — in milliseconds, scoped. `--ignore-unknown` skips a staged file prettier
+# has no parser for rather than failing the commit.
 if [ -n "$staged" ]; then
   # shellcheck disable=SC2086
   step "prettier (staged)" npx prettier --check --ignore-unknown $(printf '%s\n' "$staged" | tr '\n' ' ')

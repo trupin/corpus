@@ -50,11 +50,22 @@ eslint builds the whole TypeScript program even to lint one file, and a
 libs-only build is still five `tsc` runs. Neither fits in fifteen seconds. So
 the gate stops doing compile-class work at all.
 
-- **pre-commit**: `npm audit` (one registry round-trip) and `prettier --check`
-  on **staged files only**. Nothing else.
-- **pre-push**: `version:check` only.
-- Everything else — build, eslint, `tsc --noEmit`, the unit suite, the
-  generated-artifact drift check, Playwright — runs in `CI / validate`.
+**The rule, as the user put it**: a check that can run on the diff runs locally;
+a check that needs the whole codebase is CI's.
+
+- **pre-commit**: `npm audit`, `eslint` on staged TypeScript, `prettier` on
+  staged files.
+- **pre-push**: `version:check`, and `eslint` over the pushed range.
+- **CI only**: `tsc --noEmit` (project-wide, no diff-scoped form exists), build,
+  the generated-artifact drift check that depends on it, the unit suite, and
+  Playwright.
+
+**A measurement that reversed a decision**: the first two attempts assumed
+type-aware eslint could not be fast because it builds the whole program even for
+one file. Measured, it is ~2s for one file and ~3s across three workspaces — it
+was `eslint .` that cost ~2.5 minutes at 3 GB, the whole-repo run rather than the
+type-aware machinery. So eslint came back. The unit suite was measured too and
+stays in CI even scoped to changed files.
 
 ## Why version:check is the one survivor
 
@@ -66,9 +77,9 @@ re-run. Everything else CI catches costs a red PR and a second push.
 
 ## What this gives up, stated plainly
 
-A broken build, a type error, a lint violation and a failing test now all reach
-the remote before anything objects. The developer finds out from CI, minutes
-later, instead of from the commit.
+A broken build, a type error and a failing test now reach the remote before
+anything objects. The developer finds out from CI, minutes later, instead of
+from the commit. Lint and formatting still fail locally, on the diff.
 
 That is a real loss and it was chosen deliberately. It is bounded by an existing
 rule: **a PR merges only when `CI / validate` is green on its head commit**, and
