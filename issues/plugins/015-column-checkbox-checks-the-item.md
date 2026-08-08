@@ -18,7 +18,8 @@ opus
 
 ## Dependencies
 
-- Depends on: —
+- Depends on: SHARED-029 part 2 (the column showing completed items is a §12
+  change, and it is what makes unchecking reachable at all)
 - Blocks: —
 - Related: SERVER-077 (checking the last item from here must resolve its
   document the same way checking it in the body does)
@@ -57,12 +58,13 @@ including on the box, opens.
       filters `item.done`) — and the removal is driven by the same invalidation
       any other item write triggers, not by local optimism that could disagree
       with the server
-- [ ] **Unchecking is reachable too.** The column shows only open items, so once
-      an item is checked it is gone from this surface. Either the row stays
-      briefly in a checked state that can be undone, or the write surfaces an
-      undo — decide and record which, because "quickly check / uncheck" was the
-      request and a checkbox that can only ever go one way is half the feature.
-      Do not silently ship only the checking half.
+- [ ] **Completed items are reachable, so unchecking is too.** Per SHARED-029
+      part 2, the column shows open items by default and offers a control that
+      also shows completed ones. Unchecking from that view works exactly as
+      checking does. Shipping only the checking half is shipping half the issue.
+- [ ] The show-completed state is browser-local (like scroll position and open
+      readers), **not** written into the column's view document — the default is
+      "unchanged by looking at them", per the rider
 - [ ] The checkbox is operable from the keyboard, and reaching it does not cost
       the row's existing keyboard behaviour (`onItemKeyDown`)
 - [ ] A failed toggle surfaces through the existing `toggle.error` strip and

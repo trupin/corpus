@@ -53,18 +53,29 @@ Replacing §5's parenthetical on the `status` line:
 > word means the same thing whatever the document is.
 >
 > - **`open`** — the default: something may still be required of it.
-> - **`resolved`** — **no further action is required.** It stays exactly as
+> - **`resolved`** — **no further action is required**, and it stays exactly as
 >   visible as it was. Resolving is a statement about what is left to do, not a
 >   way to tidy the board, so a resolved document keeps its place in every list
->   and view already showing it — and that visibility is what makes it
->   reversible in practice, since reopening one happens where you find it rather
->   than after going looking for it.
-> - **`archived`** — **out of sight, and still true.** An archived document is
->   excluded by default from lists and views (§11) and remains fully indexed,
->   searchable and valid: archiving says where a document is kept, never what it
->   is worth. It is reversible, and **search is how it is reversed** — the
->   "include archived" chip brings archived documents back alongside everything
->   else, and unarchiving happens from there.
+>   and view already showing it — and that visibility is what makes it reversible
+>   in practice, since reopening one happens where you find it rather than after
+>   going looking for it. Because nothing further is required of it, a resolved
+>   document **stops going stale** (§5): the staleness ramp exists to ask whether
+>   something still needs attention, and this document has already answered.
+> - **`archived`** — **resolved, and out of sight.** Archiving is not a third,
+>   unrelated thing: it is `resolved` plus hidden, so archiving settles a document
+>   and puts it away in one act, and **there is no such state as an archived
+>   document with work outstanding**. It is excluded by default from lists and
+>   views (§11) and remains fully indexed, searchable and valid — archiving says
+>   where a document is kept, never what it is worth. It is reversible, and
+>   **search is how it is reversed**: the "include archived" chip brings archived
+>   documents back alongside everything else, and unarchiving happens from there,
+>   returning the document to `resolved` — the state archiving already implied —
+>   rather than to `open`.
+>
+> The three are therefore a **ladder, not two independent axes**, which is why one
+> field holds them: `open` is unsettled and visible, `resolved` is settled and
+> visible, `archived` is settled and hidden. Nothing is lost by archiving and
+> nothing has to be remembered to unarchive.
 >
 > **Deletion is the one that is not a status.** Deleting says a document is
 > garbage: it leaves the files, the projection and every index, is user-only with
@@ -74,7 +85,10 @@ Replacing §5's parenthetical on the `status` line:
 >
 > A type may **derive** which of `open` and `resolved` it is rather than having
 > one set — §12's `todo` reads its items — but the meaning of the word it lands
-> on never changes with the type.
+> on never changes with the type. Such a type unarchives to whatever its record
+> now says rather than to `resolved`: a todo list unarchived with items still
+> open reads `open`, which is the list telling the truth rather than the archive
+> being overruled.
 
 ## Drafted rider text — part 2 of 2
 
@@ -110,11 +124,19 @@ mismatch exists. Replacement:
         confirm and record it rather than assuming
       - §11 Attention — resolving removes a row from Attention. Consistent with
         "no further action required"; confirm
-      - §5 staleness ramp — does a resolved document still stale and still offer
-        "still current"? The rider does not say, and it should
-      - §9.1 / §14 — deletion leaving *every* index, including the semantic index
-        (§9.1), is a claim worth checking against what deletion actually does
-        today. If it does not, that is a bug this rider surfaces — file it
+      - §5 staleness ramp — the rider now says resolving stops it. Check §5's
+        own text and the Attention "stale-for-review" reason agree, and that
+        nothing else promises a resolved document will still be offered "still
+        current"
+      - §9.1 / §14 — **checked 2026-08-08 and it holds**: deletion purges the
+        semantic index (`apps/server/src/projection/semantic-integrity.ts:83`,
+        "Deleting a document deletes its chunks in the same statement sequence").
+        No issue needed
+      - **The unarchive path** — the rider changes where unarchiving lands
+        (`resolved`, not `open`). `apps/server/src/docs/update.ts` refuses
+        leaving `archived` via `PUT`, so the dedicated unarchive path is the one
+        to check; if it currently restores `open`, that is a bug this rider
+        creates work for — file it against server
 - [ ] SHARED-029's rider is re-based on this one before either is applied
 
 ## Technical Design
@@ -123,14 +145,17 @@ None — spec text. Implementation is UI-094 plus whatever the §9.1 sweep turns
 
 ### Edge Cases the text must survive
 
-- **A resolved document that is also stale.** Two independent axes; the rider
-  should not imply resolving silences the staleness ramp.
 - **A resolved *thread*** — §6 already collapses it by default. That is a
   rendering rule about conversations, not a visibility rule, and must not be
   read as an exception to "stays exactly as visible as it was".
-- **Archived and resolved at once** is not representable — `status` holds one
-  value. Archiving a resolved document loses the fact that it was resolved. The
-  rider does not address this; decide whether it needs to.
+- **Archiving an `open` document** settles it in the same act, per the ladder.
+  Confirm nothing in §5 or §11 describes archiving as leaving status untouched.
+- **Unarchiving lands on `resolved`.** Every surface offering Unarchive must say
+  so, or the user learns it by surprise — including the bulk path (SHARED-032).
+- **A resolved document that would otherwise be stale** no longer climbs the
+  ramp. Confirm this does not strand documents that were resolved years ago and
+  genuinely do want re-reading — the user accepted that trade deliberately
+  (2026-08-08), so record it as a decision rather than re-opening it.
 
 ## Testing Strategy
 

@@ -72,11 +72,13 @@ Consequences to design for, not work around:
 - [ ] `corpus upgrade --unstable` installs it through the same npm-global
       reinstall path the stable upgrade uses, with the same install-method
       detection and the same refusal-with-instructions when it cannot be detected
-- [ ] `--unstable` accepts an optional PR number (e.g. `--unstable 42`) to
-      install a specific PR's build rather than the newest across all PRs.
-      **Decide and record** whether bare `--unstable` means "newest artifact
-      across all open PRs" or requires the number — "latest PR" is ambiguous
-      when three PRs are open, and guessing wrong makes the command dangerous
+- [ ] Bare `corpus upgrade --unstable` installs **the newest artifact across all
+      open PRs** (user decision, 2026-08-08), and names the PR it chose before
+      installing — the choice is never silent, because the newest build is not
+      always the user's own
+- [ ] `corpus upgrade --unstable <PR#>` installs that PR's newest build instead,
+      and reports clearly when that PR has no usable artifact rather than
+      falling back to another PR's
 - [ ] Without a usable token the command **refuses with instructions** (how to
       set one, and that stable `corpus upgrade` needs none) — it never falls back
       to the stable release silently

@@ -46,7 +46,7 @@ over an auto-flipped stored field (2026-08-08): a stored value that something
 else keeps in sync is a value that can drift, and the stats panel next to it
 already proves the derivation is cheap and always available.
 
-## Drafted rider text
+## Drafted rider text — part 1 of 2
 
 To be appended to §12's **Doc type `todo`** bullet:
 
@@ -70,11 +70,26 @@ To be appended to §12's **Doc type `todo`** bullet:
 > reading the file, querying the projection and looking at the board all give one
 > answer.
 
+## Drafted rider text — part 2 of 2
+
+§12 currently defines the column as "aggregating **open** items across all `todo`
+documents". Checking an item there makes it vanish, so the column can be used to
+complete work but never to undo it. Replacing the **Column** bullet:
+
+> - **Column**: a "Todos" column type aggregating items across all `todo`
+>   documents, built exclusively on `@corpus/kit`. It shows **open items by
+>   default** — that is what a list of work to do means — and offers a control
+>   that **also shows completed ones**, because a checkbox that can only ever be
+>   ticked is half a checkbox: an item checked by mistake must be reachable to
+>   uncheck without going to find its document. Completed items are shown as
+>   completed and read as a record rather than as work, and the default is
+>   unchanged by looking at them.
+
 ## Acceptance Criteria
 
-- [ ] The rider is read aloud to the user **on its own**, not batched with
-      SHARED-030 (per the standing one-at-a-time rule that surfaced the §4/§7
-      contradiction in SHARED-028)
+- [ ] Both parts read aloud to the user, as two quoted blocks, **on their own** —
+      not batched with SHARED-030 or SHARED-031 (per the standing one-at-a-time
+      rule that surfaced the §4/§7 contradiction in SHARED-028)
 - [ ] User signs off, or amends the drafted text
 - [ ] The signed text is applied to SPEC.md §12 with the `_(Rider signed
       YYYY-MM-DD.)_` marker the section's other riders carry
