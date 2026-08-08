@@ -388,7 +388,7 @@ belongs to the same fix wave.
 | INFRA-020 | Two tests fail under gate load and pass in isolation (pattern, cycles lost) | todo | P2 | — |
 | SERVER-060 | A poll ticking mid-requeue reports half a batch as the whole of it (was INFRA-020's 3rd) | done | P2 | — |
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
-| SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | todo | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
+| SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | done | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
 | UI-075 | UI-069's per-thread jobs query fans out once per thread card (PR #24 review MAJOR) | done | P1 | UI-069 |
 | SHARED-015 | Agent sees the server's in-progress set and reconciles it — DRAFT, awaiting sign-off | blocked | P1 | — |
 | CONTRACT-033 | claim-all/idle carry the in-progress set (id, type, origin, held-since) | done | P1 | SHARED-015 |
@@ -445,7 +445,7 @@ belongs to the same fix wave.
 | CONTRACT-043 | A turn has nowhere to record the model that wrote it | done | P1 | SHARED-027 |
 | SERVER-074 | Write the deciding model onto the agent's turn | done | P1 | CONTRACT-043 |
 | UI-090 | Show which model wrote an agent turn | done | P1 | CONTRACT-043, SERVER-074 |
-| CLI-033 | Nothing can state a model, so every turn shows blank (SERVER-074 finding) | todo | P1 | SERVER-074 |
+| CLI-033 | Nothing can state a model, so every turn shows blank (SERVER-074 finding) | done | P1 | SERVER-074 |
 | AGENT-021 | The agent states the model that wrote the turn | done | P1 | CLI-033 |
 | PLUGINS-013 | An installed plugin skill teaches a reply without `--model` (AGENT-021 finding) | done | P1 | AGENT-021 |
 | SERVER-075 | A person's reply with an unterminated fence swallows every later turn | done | P0 | — |
@@ -469,5 +469,5 @@ belongs to the same fix wave.
 | SERVER-071 | `thread create` stores the context it was sent, so agent anchors are born context-free (SERVER-059 phase A) | done | P1 | — |
 | CONTRACT-041 | A thread has no way to be re-attached to a range a person chose (SERVER-059 phase B) | done | P1 | — |
 | SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-071 |
-| UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | todo | P1 | CONTRACT-041, SERVER-072 |
+| UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-072 |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
