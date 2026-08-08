@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CORE_DOC_TYPES, DocumentIdSchema, IsoDateTimeSchema } from "@corpus/contract";
@@ -19,8 +19,10 @@ import {
   INSTALL_FILTERS,
   INSTALL_RENAMES,
   PLUGINS_ROOT,
+  REPO_ROOT,
   TEMPLATE_ROOT,
   TemplateError,
+  WEIGHT_TABLE_HEADER,
   extractCorpusInvocations,
   installedPath,
   listTemplateFiles,
@@ -31,6 +33,7 @@ import {
   parseFrontmatter,
   readCliDoc,
   readContractDoc,
+  readWeightLevels,
 } from "./workspace-template.js";
 
 /** The template tree, exhaustively. Adding a file is a deliberate change to this list. */
@@ -744,13 +747,392 @@ describe("orchestrate skill body", () => {
     expect(body).toMatch(/\*\*A blocked subagent defers — through you\.\*\*/);
   });
 
-  it("scales the subagent model with task weight, naming Opus 5 in the mix", () => {
-    expect(body).toMatch(/\*\*Opus 5\*\*/);
-    expect(body).toMatch(/\*\*Haiku\*\*/);
-    expect(body).toMatch(/\*\*Sonnet\*\*/);
-    // The guidance is executable: a decision rule, not a decoration.
-    expect(body).toMatch(/Judge weight by three things/);
-    expect(body).toMatch(/take the stronger/);
+  /**
+   * AGENT-018, SPEC.md §7's rider signed 2026-08-06. Consequence was already in
+   * this skill — as one factor of three, averaged in — so what these pin is the
+   * **ordering**: the two-pass shape, the veto, and above all the *negative*
+   * case. A consequence test drawn wide enough to fire on ordinary work changes
+   * no dispatch at all, while still satisfying every positive assertion here.
+   */
+  describe("weighing a dispatch", () => {
+    it("names the three tiers and keeps the tie-break, scoped", () => {
+      expect(body).toMatch(/\*\*Opus 5\*\*/);
+      expect(body).toMatch(/\*\*Haiku\*\*/);
+      expect(body).toMatch(/\*\*Sonnet\*\*/);
+      // The tie-break survives rather than being deleted as redundant — scoped
+      // to what the orchestrator picks for itself, and second to the first pass.
+      expect(body).toMatch(/In doubt between two\s+tiers, take the stronger/);
+      expect(body).toMatch(/governs what \*\*you\*\* pick for yourself/);
+      expect(body).toMatch(/runs after the first pass rather than beside it/);
+      expect(body).toMatch(/never licence to move off a weight the request stated/);
+      // And the averaged-in rule it replaces is gone, not merely supplemented:
+      // leaving it would keep sending prescribed one-document edits to the
+      // lightest tier no matter what the new paragraphs say.
+      expect(body).not.toMatch(/Judge weight by three things/);
+    });
+
+    it("puts consequence before difficulty, as two passes rather than one list", () => {
+      expect(body).toMatch(
+        /judge that weight in two passes —\s+consequence first, difficulty second/,
+      );
+      expect(body).toMatch(
+        /\*\*what a bad result would do that revising the document afterwards\s+would not undo\*\*/,
+      );
+      // Order is the deliverable, so it is asserted as order.
+      const firstPass = body.indexOf("**First pass —");
+      const secondPass = body.indexOf("**Second pass —");
+      const table = body.indexOf("| Small and mechanical");
+      expect([firstPass, secondPass, table]).not.toContain(-1);
+      expect(firstPass).toBeLessThan(secondPass);
+      expect(secondPass).toBeLessThan(table);
+      // What is left in the second pass is difficulty alone.
+      expect(body).toMatch(/Judge that second-pass weight by two things/);
+    });
+
+    it("states the two conditions that make a failure unrecoverable", () => {
+      expect(body).toMatch(
+        /\*\*to be used outside the corpus\*\* — published, sent, handed to someone/,
+      );
+      expect(body).toMatch(/not quietly corrected, it is rejected/);
+      expect(body).toMatch(/\*\*Someone will decide something real on it\*\*/);
+      expect(body).toMatch(/about a person, about money, about a\s+commitment/);
+      expect(body).toMatch(/amending\s+the document afterwards does not unmake it/);
+    });
+
+    it("keeps the negative case load-bearing, with ordinary work named", () => {
+      expect(body).toMatch(/expect it to answer no/);
+      expect(body).toMatch(
+        /An ordinary reply, an inbox capture\s+retitled and filed, a reflection on a user's edit/,
+      );
+      expect(body).toMatch(/every one of those answers \*\*no\*\*/);
+      expect(body).toMatch(
+        /noticed, commented on and\s+revised, which is this system working as designed/,
+      );
+      expect(body).toMatch(/A first pass that fired on everything would change no dispatch at all/);
+      // The worked example is where the negative case is actually practised —
+      // an example that never runs the pass teaches that the pass is optional.
+      expect(body).toMatch(/The first pass ran and answered \*\*no\*\*/);
+    });
+
+    it("vetoes with the stronger tier however mechanical the work looks", () => {
+      expect(body).toMatch(/dispatch the strongest tier however mechanical the work\s+looks/);
+      expect(body).toMatch(/the second pass does not run/);
+      // The concrete instance: mechanically trivial work with a costly failure.
+      expect(body).toMatch(/a document that goes to the lender tomorrow, is not small work/);
+      expect(body).toMatch(/the edit is\s+trivial and the failure is not/);
+    });
+
+    it("carries the exception in the Haiku row and moves the veto out of the Opus row", () => {
+      const rows = body.split("\n").filter((line) => line.startsWith("| "));
+      const haiku = rows.find((row) => row.includes("**Haiku**")) ?? "";
+      const opus = rows.find((row) => row.includes("**Opus 5**")) ?? "";
+      expect(haiku).toMatch(/prescribes the change exactly \*\*and the first pass answered no\*\*/);
+      expect(haiku).toMatch(/is not in this row however exactly it was prescribed/);
+      // "expensive to unwind" used to sit in this row as one difficulty symptom
+      // beside cross-document restructuring. It is the first pass now, and the
+      // row defers to it rather than restating it as an item.
+      expect(opus).not.toMatch(/expensive to unwind/);
+      expect(opus).toMatch(/everything the first pass vetoed, whatever its difficulty/);
+    });
+
+    it("composes with a stated weight instead of overriding one", () => {
+      expect(body).toMatch(
+        /\*\*A stated weight is a directive; the two passes govern only what you pick when the request\s+stated nothing\.\*\*/,
+      );
+      expect(body).toMatch(/never\s+quietly substitute another \*\*in either direction\*\*/);
+      expect(body).toMatch(
+        /running stronger than asked spends\s+against an explicit instruction exactly as running weaker falls short of one/,
+      );
+      // The collision case is an ask, never a silent upgrade.
+      expect(body).toMatch(/\*\*ask first,\s+with a form\*\*/);
+      expect(body).toMatch(/\*\*Asking is\s+not substituting\.\*\*/);
+      expect(body).toMatch(/runs it at the stated weight, with no substitution anywhere/);
+    });
+
+    it("splits by what a stage outputs, never by a threshold", () => {
+      expect(body).toMatch(
+        /\*\*One request may be worked in stages, and the stages need not run at the same weight\.\*\*/,
+      );
+      expect(body).toMatch(/A stage whose output is \*\*material\*\* may run lighter/);
+      expect(body).toMatch(/A stage that \*\*decides\*\* may not/);
+      expect(body).toMatch(/they run at the \*\*governing weight\*\*/);
+      // Why the line is drawn at the output rather than at "split when useful":
+      // the loophole has a shape, and it is named.
+      expect(body).toMatch(/anything\s+can be described as preparation/);
+      expect(body).toMatch(/just summarising what the\s+collector found/);
+      // Permission, never obligation — and never a back door in either direction.
+      expect(body).toMatch(/\*\*Splitting is always permitted and never required\.\*\*/);
+      expect(body).toMatch(/There is no threshold above which you\s+split/);
+      expect(body).toMatch(/one piece of\s+work with one status and one reply\*\*/);
+      expect(body).toMatch(
+        /the deciding stage runs neither lighter nor stronger\s+than the request asked for/,
+      );
+    });
+
+    it("hands a stage the previous stage's product, for quality and not only for cost", () => {
+      expect(body).toMatch(
+        /\*\*The anchors rule above holds between the stages of one piece of work too\.\*\*/,
+      );
+      expect(body).toMatch(/receives what the previous stage \*\*produced\*\*/);
+      expect(body).toMatch(/not the\s+transcript, not the false starts/);
+      expect(body).toMatch(/Brief every stage as though it were the first/);
+      // The quality argument, stated as the reason: written as pure frugality it
+      // reads as a cost tradeoff to waive whenever quality is on the line —
+      // which is exactly the high-consequence case the rule exists for.
+      expect(body).toMatch(/\*\*quality\*\* rule\s+before it is a saving/);
+      expect(body).toMatch(/hold or improve the answer while costing less/);
+      // And the honest bound: briefed further, never starved.
+      expect(body).toMatch(/Where the two pull apart, quality\s+decides/);
+      expect(body).toMatch(/briefed further rather than left short/);
+    });
+
+    it("logs one dispatch line per stage, each naming its tier and provenance", () => {
+      expect(body).toMatch(/\*\*where that\s+tier came from\*\*/);
+      expect(body).toContain("judged, difficulty");
+      expect(body).toContain("judged, consequence");
+      expect(body).toContain("stated by the request");
+      expect(body).toMatch(/\*\*its\s+own dispatch line, in the order the stages ran\*\*/);
+      expect(body).toMatch(/still\s+one job, one status and one reply/);
+      // Difficulty and consequence stay distinguishable in the console: heavy
+      // in-corpus work nobody is waiting on went out strong for a different
+      // reason than a one-line edit that is about to leave the corpus.
+      expect(body).toMatch(/a large in-corpus restructure nobody is waiting on/);
+      expect(body).toMatch(/would leave those two indistinguishable/);
+    });
+
+    it("subsumes the reflection's ad-hoc tier rule into the general test", () => {
+      // It read "at the **Sonnet** tier by default and **Opus 5** when step 4 is
+      // going to write another document" — a second, competing rule beside the
+      // one in Delegation. It is an instance of the two passes now.
+      expect(body).toMatch(
+        /weighed by the two\s+passes in Delegation like any other work and by no rule of its own/,
+      );
+      expect(body).toMatch(/reflecting answers the\s+first pass \*\*no\*\*/);
+      expect(body).not.toMatch(/at the \*\*Sonnet\*\* tier\s+by default/);
+    });
+  });
+
+  /**
+   * AGENT-015, SPEC.md §7 and §11 (rider SHARED-022, signed 2026-08-06). The
+   * tier table stopped being prose only a model reads: a composer enumerates it
+   * to build its picker, so its shape is a de-facto interface. What is pinned
+   * here is therefore the *parse* — the exact set, in order — because that is
+   * the assertion that fails when someone rewords a header cell, and because a
+   * picker built on a table it cannot read offers levels the router does not
+   * implement (§2.4 makes that a real state the day a workspace edits its own
+   * guidance, not a hypothetical).
+   */
+  describe("the declared level set", () => {
+    /** A table in the declared shape, for the cases the real body cannot show. */
+    const table = (rows: readonly (readonly string[])[]): string =>
+      [
+        `| ${WEIGHT_TABLE_HEADER.join(" | ")} |`,
+        "| --- | --- | --- | --- |",
+        ...rows.map((cells) => `| ${cells.join(" | ")} |`),
+      ].join("\n");
+
+    it("enumerates exactly the three shipped levels, lightest first", () => {
+      // Order is part of the contract: it is the order a composer offers.
+      expect(readWeightLevels(body)).toEqual([
+        { name: "Small and mechanical", key: "light", model: "Haiku" },
+        { name: "Standard", key: "standard", model: "Sonnet" },
+        { name: "Heavy or judgment-laden", key: "heavy", model: "Opus 5" },
+      ]);
+    });
+
+    it("tells the agent that the table is read by a composer, and how", () => {
+      expect(body).toMatch(
+        /\*\*That table is the set a request may choose from, so it is read by more than you\.\*\*/,
+      );
+      expect(body).toMatch(/in the order they are written — lightest first/);
+      for (const cell of WEIGHT_TABLE_HEADER) expect(body, `header cell ${cell}`).toContain(cell);
+      expect(body).toMatch(/in that order and spelled that\s+way, whatever the column padding/);
+      // Each column's job, since three of the four have a reader outside this file.
+      expect(body).toMatch(/\*\*Key\*\* is the short token that travels with the request/);
+      expect(body).toMatch(/rewording a \*\*Weight\*\* leaves it untouched/);
+      expect(body).toMatch(/Neither reaches a composer/);
+    });
+
+    it("states the degradation as no control, never a fallback list", () => {
+      expect(body).toMatch(/Nothing outside this table declares a level/);
+      expect(body).toMatch(/finds \*\*no levels\*\*/);
+      expect(body).toMatch(/offers no control at all rather than a list of its own/);
+      expect(body).toMatch(/correct\s+outcome rather than a fault/);
+    });
+
+    it("finds nothing when a header cell is not spelled exactly", () => {
+      // The padding is prettier's and moves; the words are the interface.
+      expect(readWeightLevels(body.replace(/^\| Weight\b/m, "| weight"))).toEqual([]);
+      expect(
+        readWeightLevels(body.replace(/^\| Weight(\s+)\| Key\b/m, "| Weight$1| Tier")),
+      ).toEqual([]);
+      // And it does not half-match some other table in the same document.
+      expect(readWeightLevels("| Event type | Dispatch |\n| --- | --- |\n| a | b |\n")).toEqual([]);
+    });
+
+    it("finds nothing for a malformed declaration rather than part of one", () => {
+      const header = `| ${WEIGHT_TABLE_HEADER.join(" | ")} |`;
+      expect(readWeightLevels(`${header}\n| Small | light | **Haiku** | one read |`)).toEqual([]);
+      expect(readWeightLevels(table([["Small", "light", "**Haiku**"]]))).toEqual([]);
+      expect(readWeightLevels(table([["Small", "", "**Haiku**", "one read"]]))).toEqual([]);
+      expect(readWeightLevels(table([["", "light", "**Haiku**", "one read"]]))).toEqual([]);
+      expect(readWeightLevels(table([]))).toEqual([]);
+      expect(readWeightLevels("A workspace whose guidance predates all of this.\n")).toEqual([]);
+    });
+
+    it("follows a rename and a fourth level with no change to the reader", () => {
+      // The acceptance property, and the reason there is one list rather than
+      // two: editing the guidance moves the picker, with nothing recompiled.
+      const renamed = body.replace(/^\| Standard(\s+)\|/m, "| Everyday$1|");
+      expect(readWeightLevels(renamed).map((level) => level.name)).toEqual([
+        "Small and mechanical",
+        "Everyday",
+        "Heavy or judgment-laden",
+      ]);
+      // A key outlives the wording it sits beside, which is what makes a choice
+      // stored yesterday still resolve after a rename.
+      expect(readWeightLevels(renamed).map((level) => level.key)).toEqual(
+        readWeightLevels(body).map((level) => level.key),
+      );
+      const four = table([
+        ["Everyday", "standard", "**Sonnet**", "most work"],
+        ["Deep", "deep", "**Opus 5**", "the rest"],
+        ["Deeper", "deeper", "**Opus 5**", "and more"],
+        ["Deepest", "deepest", "**Opus 5**", "and more still"],
+      ]);
+      expect(readWeightLevels(four).map((level) => level.key)).toEqual([
+        "standard",
+        "deep",
+        "deeper",
+        "deepest",
+      ]);
+    });
+
+    it("declares the set in exactly one file of the shipped template", () => {
+      const declaring = templateFiles.filter(
+        (relPath) => readWeightLevels(readTemplateFile(relPath)).length > 0,
+      );
+      expect(declaring).toEqual(["claude/skills/orchestrate/SKILL.md"]);
+    });
+
+    it("keeps a second level list out of the UI, the kit and the contract", () => {
+      // Grep-shaped, and deliberately "two or more names in one file": a single
+      // mention is prose (the contract cites the longest shipped level name to
+      // justify a length bound), while a set of them is the enum this design
+      // exists to prevent. Tests are excluded — an opaque sample value in a
+      // CONTRACT-039 or SERVER-069 test is a string, not a vocabulary.
+      //
+      // `testing/` directories are excluded for the same reason and not a weaker
+      // one. They are this repo's test-support convention (`@corpus/kit/testing`
+      // is a published subpath consumed only by suites), and a fixture *must*
+      // spell a whole declaration: UI-082's suites drive five composers from a
+      // fixture skill document, and a fixture that could not name a set could
+      // not prove the picker follows the document. What the guard is for
+      // survives, because a fixture is never what a composer reads at runtime —
+      // and the shipped table is pinned against the shipped file separately, in
+      // `packages/kit/src/weight/weightLevels.test.ts`.
+      const names = readWeightLevels(body).map((level) => level.name);
+      const sources = (dir: string): string[] =>
+        readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) return entry.name === "testing" ? [] : sources(full);
+          if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) return [];
+          return [full];
+        });
+      const scanned = ["apps/ui/src", "packages/kit/src", "packages/contract/src"].flatMap((root) =>
+        sources(path.join(REPO_ROOT, root)),
+      );
+      expect(scanned.length, "nothing scanned — the guard would pass vacuously").toBeGreaterThan(0);
+      for (const file of scanned) {
+        const contents = readFileSync(file, "utf8");
+        const hits = names.filter((name) => contents.includes(name));
+        expect(
+          hits.length,
+          `${path.relative(REPO_ROOT, file)} carries a second level list: ${hits.join(", ")}`,
+        ).toBeLessThan(2);
+      }
+    });
+  });
+
+  /**
+   * AGENT-015's other half: what happens to a weight the request already chose.
+   * Each rule here has a failure mode that reads as care — upgrading "to be
+   * safe", quietly downgrading a level the workspace dropped, or disagreeing by
+   * dispatching something else and saying nothing — so each is pinned with the
+   * words that make the failure recognisable.
+   */
+  describe("a weight the request stated", () => {
+    it("honours it rather than weighing it again, from the payload's field", () => {
+      expect(body).toMatch(/`weight` field of the claimed event's\s+payload/);
+      expect(body).toMatch(/carrying one of the \*\*Key\*\* tokens above/);
+      expect(body).toMatch(/\*\*honoured, not weighed again\*\*/);
+      expect(body).toMatch(/dispatch at that weight rather than at the one you would have picked/);
+    });
+
+    it("forbids substitution in both directions, in both words", () => {
+      expect(body).toMatch(/never quietly weaker, never quietly\s+stronger/);
+      expect(body).toMatch(/\*\*in either direction\*\*/);
+    });
+
+    it("makes the choice travel with the work, not with the turn", () => {
+      expect(body).toMatch(
+        /\*\*The choice travels with the work, not with the turn that received it\.\*\*/,
+      );
+      expect(body).toMatch(/onward through every further delegation that work requires/);
+      expect(body).toMatch(/whose deciding stage runs at it/);
+      // Two directives compose rather than one cancelling the other.
+      expect(body).toMatch(/both are directives and they compose/);
+    });
+
+    it("keeps the unset case as the orchestrator's judgment, never a default", () => {
+      expect(body).toMatch(
+        /\*\*Stating no weight means you decide, exactly as you decide today\.\*\*/,
+      );
+      expect(body).toMatch(/never a fixed default/);
+      expect(body).toMatch(/there is no level you fall back\s+to/);
+      expect(body).toMatch(/the only spelling of it/);
+    });
+
+    it("does the work anyway when a stated weight cannot be met, and says so twice", () => {
+      expect(body).toMatch(
+        /\*\*When a stated weight cannot be honoured, the work is still done and the deviation is stated\s+twice\.\*\*/,
+      );
+      // All three causes, so a missing model and a level the table dropped are
+      // handled by one rule rather than improvised separately.
+      expect(body).toMatch(/the installed agent offers no such model, the setup refuses/);
+      expect(body).toMatch(/the key names a level this table no longer declares/);
+      expect(body).toMatch(/None of the three is a reason to\s+drop the work or to fail the event/);
+      // Twice, and the three facts each statement carries.
+      expect(body).toMatch(
+        /\*\*in the job's log while it runs\*\* and \*\*in the reply the request receives\*\*/,
+      );
+      expect(body).toMatch(/what was asked for, that it could not be met, and what ran\s+instead/);
+      // Why the reply is not optional: the log does not survive the event.
+      expect(body).toMatch(/The log is reaped with its event, so the reply is the durable half/);
+      expect(body).toMatch(/claiming work it did not do/);
+    });
+
+    it("expresses disagreement as speech, never as substitution", () => {
+      expect(body).toMatch(/\*\*Your own judgment survives as speech, never as substitution\.\*\*/);
+      expect(body).toMatch(/do it at the stated weight and say so in the reply/);
+      expect(body).toMatch(/ask before dispatching rather than explain afterwards/);
+      // The reason the silent version is worse than the disagreement.
+      expect(body).toMatch(
+        /nothing in the console and nothing on the turn would show that it happened/,
+      );
+    });
+
+    it("logs a fourth dispatch shape when a stated weight went unmet", () => {
+      expect(body).toMatch(/Four shapes, one grammar/);
+      expect(body).toContain(
+        "(Sonnet — stated by the request as heavy, not honoured: this workspace declares no such level, so the tier is judged, difficulty)",
+      );
+      expect(body).toMatch(/names the ask, that it went unmet, and what ran instead/);
+      // The line is checkable rather than self-reported: the server wrote the
+      // ask onto the same log before any dispatch line existed.
+      expect(body).toContain("`weight stated by the request: <key>`");
+      expect(body).toMatch(/a claim of honouring is verifiable/);
+    });
   });
 
   /**

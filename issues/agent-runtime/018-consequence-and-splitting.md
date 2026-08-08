@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -120,45 +120,45 @@ and cannot quietly run stronger.
 
 ## Acceptance Criteria
 
-- [ ] The weight guidance is a **two-pass** rule: consequence first — a test that
+- [x] The weight guidance is a **two-pass** rule: consequence first — a test that
       answers **no** for most work and **vetoes** when it answers yes — and
       difficulty second, for everything the first pass did not settle
-- [ ] The consequence test is stated as SPEC states it: what a bad result would
+- [x] The consequence test is stated as SPEC states it: what a bad result would
       do that **revising the document afterwards would not undo**, with the two
       conditions and the **negative** case (a wrong document that stays in the
       corpus is ordinary work)
-- [ ] Where the test fires, the work takes the stronger model **however
+- [x] Where the test fires, the work takes the stronger model **however
       mechanical it looks** — stated as an instruction, with a concrete instance
-- [ ] The **Haiku** row's "prescribes the change exactly" carries the exception;
+- [x] The **Haiku** row's "prescribes the change exactly" carries the exception;
       the **Opus** row's "expensive to unwind" moves out of the difficulty list
       and into the first pass
-- [ ] The tie-break survives, **scoped**: "in doubt between two tiers, take the
+- [x] The tie-break survives, **scoped**: "in doubt between two tiers, take the
       stronger" governs what the orchestrator picks for itself, and is second to
       the consequence test — not deleted as redundant
-- [ ] **Splitting** is written into `## Delegation`: when to consider stages,
+- [x] **Splitting** is written into `## Delegation`: when to consider stages,
       that it is always permitted and never required, and which stage carries the
       weight (material may run lighter; a stage that **decides** runs at the
       governing weight)
-- [ ] **A stage is handed the previous stage's product, never its transcript**,
+- [x] **A stage is handed the previous stage's product, never its transcript**,
       extending the existing "A dispatch carries anchors, not documents" rule —
       with the **quality** argument stated, not only the saving, and with the
       bound that a stage which would have to guess is briefed further rather than
       left short
-- [ ] **Neither rule is a route around SHARED-022**: a stated weight is honoured;
+- [x] **Neither rule is a route around SHARED-022**: a stated weight is honoured;
       the deciding stage runs neither lighter nor stronger than stated; where
       consequence outruns a stated weight the agent **asks with a form** rather
       than substituting
-- [ ] The **dispatch log line covers stages**: one line per stage, in order, each
+- [x] The **dispatch log line covers stages**: one line per stage, in order, each
       naming its weight and where that weight came from. One job, one status, one
       reply, whatever it took internally
-- [ ] `## Reflecting on a user edit`'s ad-hoc escalation ("Sonnet by default and
+- [x] `## Reflecting on a user edit`'s ad-hoc escalation ("Sonnet by default and
       **Opus 5** when step 4 is going to write another document") is either
       re-expressed as an instance of the general test or deleted as subsumed —
       not left as a second, competing rule
-- [ ] **No model names leave the skill.** SPEC's "model names live in the skill,
+- [x] **No model names leave the skill.** SPEC's "model names live in the skill,
       not here" is untouched; this issue adds none to SPEC and changes no schema,
       endpoint or UI
-- [ ] `scripts/workspace-template.test.ts` passes, section count included
+- [x] `scripts/workspace-template.test.ts` passes, section count included
 
 ## Technical Design
 
@@ -301,17 +301,185 @@ Verify through the installed product, not the source tree:
 
 ### Post-Implementation Verification
 
-_[Agent fills: workspace created from the built package, application restarted,
-exact commands, the actual dispatch lines observed from the job logs. State which
-model you ran on.]_
+**Implementing model: Opus 5 (1M context) — `claude-opus-5[1m]`.** The loop under
+test ran on a separate live `claude` session (`--model opus`), which chose its own
+subagent models; those choices are the evidence below.
+
+**Setup — through the installed product, not the source tree.**
+
+```
+npm run build && npm run package:build          # corpus@0.4.0 staged in dist-package/
+cd /tmp/a18 && npm pack /Users/…/corpus/dist-package && npm install ./corpus-0.4.0.tgz
+corpus init ws --port 9765                      # scratch port; 8765 and 5173 never bound
+corpus server start                             # pid 44106 on :9765
+```
+
+`grep` on the **installed** `/tmp/a18/ws/.claude/skills/orchestrate/SKILL.md`
+confirmed the new guidance shipped (`First pass —` L255, `Second pass —` L279,
+`Splitting is always permitted` L325, `The anchors rule above holds between the
+stages` L334, the three dispatch-line shapes L734–738).
+
+Seeded: `doc_iuqy7e2x` a **Northbank lender letter** whose body says it goes out
+tomorrow, `doc_vgos6uyq` an ordinary mortgage note, `doc_qslsjlll` an inbox
+capture, `doc_5uwyjmef` an overgrown in-corpus reference, `doc_lw6m64to` spend
+notes. Six requests were filed as real threads (`--requests-agent true`).
+
+**The loop.** One live session, `claude -p "Invoke the /orchestrate skill …"
+--output-format stream-json --verbose --allowedTools "Bash Task Read Write Edit
+Glob Grep TodoWrite" --model opus`, transcript captured to
+`/tmp/a18/transcript.jsonl` (ephemeral; every load-bearing line is reproduced
+verbatim below). It loaded the skill, `reap-stale`, `claim-all` (6 events,
+`inProgress` empty), read each thread **before** dispatching, and dispatched
+through the Task tool in the background, one subagent per event.
+
+**3 — The proving test.** Mechanically trivial, high-consequence: a one-line,
+exactly-prescribed edit to a document about to go out. Today's rule would have
+sent this to the lightest tier.
+
+```
+## evt_q7jjkgkjfab7
+   claimed comment.created on th_v42vmyeb (parent doc_iuqy7e2x)
+   dispatched to a comment-skill subagent (Opus 5 — judged, consequence: the edited
+     sentence is in [[doc_iuqy7e2x]], signed and going to Northbank tomorrow morning)
+   read [[doc_iuqy7e2x]] whole; staging the single-sentence rate correction …
+   edited [[doc_iuqy7e2x]] — one sentence only, 4 characters changed; anchor
+     anc_e6cc8530 remapped and still resolving; ran on claude-opus-5
+   completed — [[doc_iuqy7e2x]] now reads 6.4% as of 2026-07-28, rest of the letter
+     byte-identical, anchor anc_e6cc8530 still resolves; replied on th_v42vmyeb
+```
+
+The strongest tier, and the dispatch line names **consequence**. The
+corresponding Task call carries `model: "opus"`. `corpus doc show doc_iuqy7e2x`
+confirms exactly the prescribed sentence changed and the anchor still resolves.
+
+**4 — The negatives.** Both answered **no** on the first pass and stayed light:
+
+```
+## evt_jsdm57wuttle   (inbox capture retitle-and-file)
+   dispatched to a comment-skill subagent (Haiku — judged, difficulty:
+     retitle-and-file an inbox capture, [[doc_qslsjlll]])
+## evt_snb4vzvqedbj   (ordinary factual reply)
+   dispatched to a comment-skill subagent (Haiku — judged, difficulty:
+     one document, a factual read of [[doc_vgos6uyq]])
+   completed — replied on th_eyccf67f with the 6.4% assumption; nothing changed
+```
+
+The consequence test did not fire on ordinary work; the negative case is real.
+
+**5 — The mirror.** Heavy in-corpus work nobody is waiting on. Same tier as the
+proving test, **different stated reason** — which is exactly what the per-stage
+grammar exists to keep distinguishable:
+
+```
+## evt_knwhjgnpsesf
+   dispatched to a comment-skill subagent (Opus 5 — judged, difficulty: a split of
+     [[doc_5uwyjmef]] into several documents with refs, a trim to a hub, and moves
+     into finance/)
+   split [[doc_5uwyjmef]] into [[doc_aeylp3gg]], [[doc_7g3vpl46]], [[doc_fbctl3mz]]
+     — all home/; no anchors orphaned
+```
+
+**6 — The collision.** A stated *light* weight on high-consequence work. Not
+upgraded, not downgraded — **asked**, with a form, before any dispatch:
+
+```
+## evt_73h3dhhcxr52
+   asked before dispatching — the request states the smallest model, and the insertion
+     goes into [[doc_iuqy7e2x]], the signed Northbank letter going out tomorrow; I
+     would otherwise have run it at Opus 5 on consequence
+   posted a form on th_i6rb7yj6 asking which model should write it; the answer returns
+     as its own form.respond event
+```
+
+The turn it posted on `th_i6rb7yj6` carries the prose commitment plus a two-field
+` ```form ` fence ("Smallest and fastest, as I asked — proceed" / "Strongest
+model, since the letter is going out"). Answering *proceed anyway* as the person
+(`POST /api/threads/th_i6rb7yj6/turns/2026-08-08T21:51:00Z/form`,
+`x-corpus-author: user` — there is no CLI verb for answering a form, it is a
+composer action) enqueued `evt_wlfth6fgofva`, which the same running loop claimed
+and dispatched at the **stated** weight with no substitution anywhere:
+
+```
+## evt_wlfth6fgofva
+   claimed form.respond on th_i6rb7yj6 — answered 'Smallest and fastest, as I asked
+     — proceed'; placement field left blank, which is a complete answer
+   dispatched to a comment-skill subagent (Haiku — stated by the request, reaffirmed
+     after the consequence ask on evt_73h3dhhcxr52)
+```
+
+All three dispatch-line provenances observed in one run: `judged, consequence`,
+`judged, difficulty`, `stated by the request`.
+
+**8 — The abuse case.** The deciding stage never ran lighter than stated: the one
+job with a stated weight ran at exactly that weight, and the one job with a
+costly failure ran at the top tier. A run that put the deciding stage lighter
+than stated would have shown a `Haiku — stated by the request` line on
+`evt_q7jjkgkjfab7`, which it does not.
+
+**The Task calls corroborate the log lines**, independently of what the agent
+wrote about itself — the `model` argument on each of the six dispatches:
+
+```
+haiku  Answer rate question            (negative — ordinary reply)
+haiku  File insurance screenshot       (negative — inbox retitle-and-file)
+opus   Correct Northbank letter rate   (THE PROVING TEST — one prescribed line, going out)
+opus   Split household reference       (mirror — difficulty)
+haiku  Insert sentence in letter       (collision — the reaffirmed stated weight)
+opus   Reconcile finance figures       (cross-document sweep — difficulty)
+```
+
+**CLI-only invariant, measured from the transcript** rather than asserted: tool
+counts across the whole session were `{Skill: 7, Bash: 94, Agent: 6, Read: 1}` —
+**zero `Write`/`Edit`/`NotebookEdit` calls**, zero `corpus lock break`, zero
+direct HTTP to `127.0.0.1:9765`. `Write`/`Edit` were in the allowlist precisely
+so the invariant would be tested rather than enforced by the harness.
+
+**Not verified, and why.**
+
+- **Step 7, a live split with N dispatch lines, did not happen — and the reason
+  is the rule working, not the rule failing.** `evt_4s2i3jarpqiv` was the
+  designed-to-split request (gather every rate in `finance/`, then judge which
+  disagree and call the current truth). It was first **held for ordering** — "a
+  sweep of the finance folder has a touched set the payload does not name, so it
+  runs after the rest of the batch", the correct call, since three other events
+  were writing into `finance/` — and when it finally went out the loop chose
+  **one strong pass**:
+
+  ```
+  ## evt_4s2i3jarpqiv
+     claimed comment.created on th_y6ahrqeb (standalone)
+     held for ordering — a sweep of the finance folder has a touched set the payload
+       does not name, so it runs after the rest of the batch
+     dispatched to a comment-skill subagent (Opus 5 — judged, difficulty: a
+       cross-document sweep of the finance folder, reconciling figures that disagree
+       and calling which is current)
+  ```
+
+  That is the branch the skill explicitly licenses — "Splitting is always
+  permitted and never required… for entangled work one strong pass beats two
+  stages with a summary between them" — and gathering the figures here is not
+  separable from judging which one is current, so the choice is defensible rather
+  than an evasion. What this run therefore did **not** exercise: a job log
+  carrying several dispatch lines in stage order, and a second stage briefed on
+  the first's output with none of its transcript. Those remain asserted only by
+  `scripts/workspace-template.test.ts` over the skill text. Worth re-testing under
+  AGENT-015 with a request whose gathering half is genuinely mechanical (a script
+  and what it printed), which is the shape SPEC names and this scenario was not.
+- **A stated weight has no transport yet.** SHARED-022's picker and payload field
+  are AGENT-015/UI-082 work; the weight in the collision case was stated in the
+  request's prose, which is the only channel that exists today. The composition
+  rule is written to be indifferent to how the weight arrives.
+
+**9 — Teardown.** `corpus doc check` clean, `corpus db doctor` clean, server
+stopped, port 9765 released.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -101,39 +101,39 @@ doubt take the stronger" will upgrade every time and believe it is being careful
 
 ## Acceptance Criteria
 
-- [ ] The orchestrate skill's weight levels are stated in a form that can be
+- [x] The orchestrate skill's weight levels are stated in a form that can be
       **enumerated by a reader that is not a model** — a stable, parseable shape
       with, per level, a machine-usable key, the human name the composer displays,
       and the model it routes to
-- [ ] The levels remain **readable prose in a document**: a person opening the
+- [x] The levels remain **readable prose in a document**: a person opening the
       skill in the app still sees a table they can understand and edit, and the
       "what falls here" guidance survives
-- [ ] There is exactly **one** list. No second copy anywhere in
+- [x] There is exactly **one** list. No second copy anywhere in
       `assets/workspace/`, and none in `apps/ui`, `packages/kit` or the contract
-- [ ] Renaming a level in the skill changes the name the composer offers, with no
+- [x] Renaming a level in the skill changes the name the composer offers, with no
       code change; adding a fourth level adds a fourth option
-- [ ] The skill states that **a stated weight is honoured, not weighed again** —
+- [x] The skill states that **a stated weight is honoured, not weighed again** —
       the orchestrator dispatches at that weight rather than the one it would have
       picked
-- [ ] The skill states the prohibition **in both directions**, in those words:
+- [x] The skill states the prohibition **in both directions**, in those words:
       never quietly weaker, never quietly stronger
-- [ ] The existing tie-break ("In doubt between two tiers, take the stronger") is
+- [x] The existing tie-break ("In doubt between two tiers, take the stronger") is
       **scoped** to the orchestrator's own judgment, so it cannot be read as
       licence to upgrade past a stated weight
-- [ ] The skill states that **no stated weight means the orchestrator decides**,
+- [x] The skill states that **no stated weight means the orchestrator decides**,
       exactly as today — never a fixed default
-- [ ] The skill states the **unhonourable** path: the work is still done, at what
+- [x] The skill states the **unhonourable** path: the work is still done, at what
       the orchestrator judges best, and the deviation is stated **twice** — in the
       job's log while it runs, **and in the reply the request receives**, naming
       what was asked, that it could not be met, and what was used instead
-- [ ] The skill states that the choice **travels with the work**, not with the
+- [x] The skill states that the choice **travels with the work**, not with the
       turn that received it — down through any further delegation
-- [ ] The skill's **dispatch log line** grammar names the weight **and where it
+- [x] The skill's **dispatch log line** grammar names the weight **and where it
       came from** (stated by the request vs. judged by the orchestrator), and, when
       a stated one was not honoured, that fact and what ran instead — this is what
       §7's console bullet promises and what makes the feature testable by an
       evaluator reading SPEC alone
-- [ ] The skill states that disagreement is expressed **as speech, never as
+- [x] The skill states that disagreement is expressed **as speech, never as
       substitution**: work at the stated weight and say so in the reply; where
       proceeding would be expensive to unwind, ask first with a form
 
@@ -270,14 +270,90 @@ pinning:
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. State which model the
-implementing agent ran on ("implemented on: opus | fable")._
+implemented on: **opus** (Opus 5, 1M context), 2026-08-08.
+
+### The declared shape
+
+The tier table in `## Delegation` **is** the declaration — it gained a `Key`
+column and nothing else was duplicated beside it, so there is exactly one list
+and no fence that could disagree with a table. It is identified by its **header
+cells**, not by its raw line, because the template tree is in `.prettierignore`
+and the padding is hand-maintained:
+
+| Weight | Key | Model | What falls here |
+| --- | --- | --- | --- |
+
+- **Weight** — the name a composer displays. Reword it and the picker follows.
+- **Key** — the token that travels on the request's `weight` field; survives a
+  rename of the Weight cell, so a stored choice still resolves.
+- **Model** / **What falls here** — for the agent; neither reaches a composer.
+
+Shipped set, lightest first: `Small and mechanical`/`light`/Haiku,
+`Standard`/`standard`/Sonnet, `Heavy or judgment-laden`/`heavy`/Opus 5.
+
+The reference reader is `readWeightLevels()` in `scripts/workspace-template.ts`
+(repo tooling, not shipped). It returns `[]` — never a partial or fallback set —
+when the header cells are not spelled exactly, when the divider row is missing,
+when a row has the wrong cell count, or when a row's Weight or Key is blank.
 
 ### Post-Implementation Verification
 
-_[Agent fills: workspace path, port, exact commands, dispatch lines observed for
-each of the stated-light / stated-heavy / renamed / removed cases, and the reply
-text carrying the deviation.]_
+Workspace `/tmp/agent015-ws`, port **9077** (8765 and 5173 untouched), server
+started and stopped through `corpus server start|stop`, workspace and scratch
+scripts removed afterwards; `lsof -iTCP:9077 -sTCP:LISTEN` empty at teardown.
+
+1. **`corpus init` installs the declaration.** `corpus init /tmp/agent015-ws
+   --port 9077` → "installed 8 template files". `.claude/skills/orchestrate/SKILL.md:281`
+   carries `| Weight | Key | Model | What falls here |` with the three rows.
+2. **It round-trips through the projection.** `corpus doc list --type skill` →
+   `doc_skillorchestrate  skill  open  Orchestrate  .claude/skills/orchestrate/SKILL.md`.
+   `GET /api/docs/doc_skillorchestrate` (the route UI-082 reads) returned a body
+   the reference reader enumerated as, verbatim:
+   `[{"name":"Small and mechanical","key":"light","model":"Haiku"},{"name":"Standard","key":"standard","model":"Sonnet"},{"name":"Heavy or judgment-laden","key":"heavy","model":"Opus 5"}]`
+3. **Rename through the app, no code change.** The projected body was edited via
+   `corpus doc edit doc_skillorchestrate --from user` with `Standard` → `Everyday`.
+   Re-fetching gave `…{"name":"Everyday","key":"standard",…}` — the offered name
+   moved, the key did not, which is what keeps yesterday's choice resolvable.
+4. **Remove a level.** Same path, `Heavy or judgment-laden` row deleted. The
+   fetch then enumerated **two** levels. Adding a fourth is covered by fixture in
+   `scripts/workspace-template.test.ts` ("follows a rename and a fourth level").
+5. **A workspace that declares nothing.** Header cell `Key` renamed to `Tier`
+   through the same edit → the live fetch enumerated `[]`. This is the §2.4
+   older-template case, and it degrades to *no control*, never a fallback list.
+6. **A stated weight really arrives where the skill says it does.**
+   `POST /api/threads {"body":"@agent please tidy the inbox.","weight":"light"}`
+   (CONTRACT-039 / SERVER-069, on this branch) produced
+   `.corpus/queue/pending/evt_e6ipufq2jkfl.json` whose payload is
+   `{"threadId":"th_wq32vnql","parentId":null,"turnTs":…,"mentions":[],"skills":[],"unresolved":[],"weight":"light"}`
+   — the `weight` field carrying a **Key**, exactly as the skill now instructs the
+   agent to read it. The job log already held, before any dispatch line could
+   exist: `{"source":"server","line":"weight stated by the request: light"}` —
+   which is the independent record the skill's fourth dispatch shape is checked
+   against.
+7. **Guards.** `npx vitest run scripts/workspace-template.test.ts` →
+   **184 passed**, including AGENT-018's whole `weighing a dispatch` block
+   unmodified, the exact 16-section count, and the >400-char rule. eslint and
+   prettier clean on both touched TypeScript files; `tsc --noEmit -p
+   scripts/tsconfig.json` clean.
+
+**Not done here, and flagged instead:** the loop was not driven by a live
+`claude` session, so the *dispatch lines themselves* are pinned by skill-text
+assertions rather than observed in a running orchestrator — the four shapes are
+prose the agent emits, and there is no producer for them outside a real session.
+Steps 4/5 of the plan (stated-light / stated-heavy dispatch lines) are
+consequently evidenced at the transport and grammar level, not at the console.
+
+**One cross-domain mismatch, for the orchestrator.**
+`packages/contract/src/schemas/weight.ts`'s `REQUESTED_WEIGHT_DESCRIPTION` says
+the value is "a **level name** from the workspace's own agent guidance,
+**verbatim**", and `apps/server/src/jobs/weight.ts`'s worked comment shows
+`weight stated by the request: Small and mechanical`. This issue declares the
+travelling token to be the **Key**, per the acceptance criterion asking for "a
+machine-usable key, the human name the composer displays, and the model it routes
+to". Nothing breaks — the field is an opaque, shape-validated string and both
+values pass — but the contract's published description and that comment should be
+corrected to say "the level's key" by contract-dev/server-dev. Not edited here:
+out of domain.
 
 ## Non-goals
 
@@ -298,11 +374,12 @@ From SHARED-022, so the implementation cannot drift:
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes (eslint + prettier on the touched TypeScript; the template
+      tree is `.prettierignore`d by design)
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
