@@ -21,6 +21,9 @@ import type {
   LockList,
   MarkSeenResult,
   QueueStatus,
+  ReattachRefusalReason,
+  ReattachThreadRequest,
+  ReattachThreadResponse,
   RelatedDocs,
   ReleaseLockResult,
   SearchResults,
@@ -29,6 +32,7 @@ import type {
   UpdateDocRequest,
   UpdateDocResponse,
 } from "@corpus/contract";
+import { ReattachConflictErrorSchema } from "@corpus/contract";
 import {
   createCorpusClient as createContractClient,
   isApiError,
@@ -392,6 +396,21 @@ export interface CorpusClient {
   /** `POST /api/threads/{id}/reopen` — the inverse; an engaged thread re-triggers the agent again. */
   reopenThread(id: string): Promise<ThreadMutationResponse>;
   /**
+   * `POST /api/threads/{id}/reattach` — points an orphaned comment at the
+   * passage **a person chose** (SPEC.md §6; SERVER-059 phase B).
+   *
+   * The request carries a range and the bytes the caller believes are there,
+   * never a candidate index: a candidate index would oblige the server to
+   * regenerate the list the UI showed and count into it, and the moment the two
+   * lists differ the same index means a different passage. A range denotes its
+   * own meaning, so a stale list cannot silently attach a comment elsewhere.
+   *
+   * `409` on a refusal, narrowed by a reason this client leaves on
+   * {@link CorpusRequestError.payload} for {@link reattachRefusalReason} to
+   * read.
+   */
+  reattachThread(id: string, input: ReattachThreadRequest): Promise<ReattachThreadResponse>;
+  /**
    * `POST /api/threads/{id}/seen` — marks a thread read up to its last turn.
    *
    * Deliberately without the partial-read body: the kit's callers are surfaces
@@ -557,6 +576,18 @@ export class CorpusRequestError extends Error {
   readonly status: number;
   readonly code: string | undefined;
   readonly issues: readonly { readonly path: string; readonly message: string }[];
+  /**
+   * The error body exactly as the server sent it, parsed.
+   *
+   * `code`, `message` and `issues` are the parts of an `ApiError` every caller
+   * needs; a few responses **narrow** that envelope with a field of their own —
+   * `LockConflictError` adds `lock`, `ReattachConflictError` adds `reason` — and
+   * narrowings are deliberately not new `ERROR_CODES` members, so there is no
+   * `code` to switch on and no typed field to read them from. Keeping the
+   * payload lets the one caller that understands a given narrowing parse it with
+   * the contract's own schema, without this class growing a field per route.
+   */
+  readonly payload: unknown;
 
   constructor(operation: string, status: number, payload: unknown) {
     const api = isApiError(payload) ? payload : undefined;
@@ -567,7 +598,25 @@ export class CorpusRequestError extends Error {
     this.status = status;
     this.code = api?.code;
     this.issues = api !== undefined && api.code === "bad_request" ? api.issues : [];
+    this.payload = payload;
   }
+}
+
+/**
+ * Which state refused a `POST /api/threads/{id}/reattach`, or `null` when the
+ * failure was not one of the three (a lock, a `404`, an unreachable server).
+ *
+ * The three refusals want three different things from the person — re-read and
+ * choose again, choose somewhere else, or nothing at all — so a caller that had
+ * to match on the message's prose would get it wrong the first time the prose
+ * was improved (CONTRACT-041). Parsed with the contract's own schema rather than
+ * by reading a field, so a reason this build has never heard of reads as `null`
+ * instead of leaking into a `switch`.
+ */
+export function reattachRefusalReason(error: unknown): ReattachRefusalReason | null {
+  if (!(error instanceof CorpusRequestError) || error.status !== 409) return null;
+  const parsed = ReattachConflictErrorSchema.safeParse(error.payload);
+  return parsed.success ? parsed.data.reason : null;
 }
 
 interface FetchResult<T> {
@@ -966,6 +1015,16 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
       return unwrap(
         "POST /api/threads/{id}/reopen",
         await api.POST("/api/threads/{id}/reopen", { params: { path: { id } } }),
+      );
+    },
+
+    async reattachThread(id, input) {
+      return unwrap(
+        "POST /api/threads/{id}/reattach",
+        await api.POST("/api/threads/{id}/reattach", {
+          params: { path: { id } },
+          body: input,
+        }),
       );
     },
 

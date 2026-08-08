@@ -26,6 +26,7 @@ export { PACKAGE_NAME } from "./packageName.js";
 export {
   createCorpusClient,
   CorpusRequestError,
+  reattachRefusalReason,
   type AppendTurnInput,
   type AppendTurnUpload,
   type CaptureInput,
@@ -101,6 +102,7 @@ export {
   useSetThreadStatus,
   type ThreadStatusVariables,
 } from "./query/useThreadStatus.js";
+export { useReattachThread, type ReattachThreadVariables } from "./query/useReattachThread.js";
 export {
   hasSeenMark,
   resetSeenMarks,

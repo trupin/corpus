@@ -8,11 +8,17 @@ import { describe, expect, it } from "vitest";
 // away from the implementation it documents.
 import { WORKSPACE_DIRECTORIES } from "../apps/cli/src/commands/init/scaffold.js";
 import {
+  planPluginSkillInstall,
+  planTemplateInstall,
+  templateSkillNames,
+} from "../apps/cli/src/template/install.js";
+import {
   CLI_COMMANDS_PENDING_CLI_006,
   CONTRACT_DOC_PATH,
   INIT_GENERATED,
   INSTALL_FILTERS,
   INSTALL_RENAMES,
+  PLUGINS_ROOT,
   TEMPLATE_ROOT,
   TemplateError,
   extractCorpusInvocations,
@@ -77,6 +83,51 @@ const documentAt = (relPath: string) => {
   if (document === undefined) throw new Error(`no template document at ${relPath}`);
   return document;
 };
+
+/** A skill as it reaches a workspace's `.claude/skills/`, whatever tree it came from. */
+interface InstalledSkill {
+  /** The repo-relative source path — what a failure names. */
+  readonly label: string;
+  readonly body: string;
+}
+
+const templatePlan = planTemplateInstall(TEMPLATE_ROOT);
+
+/**
+ * Every skill document `corpus init` installs, from **both** trees: the
+ * template's own and every plugin's `skills/<name>/` (SPEC.md §10). The plan is
+ * the CLI's real installer rather than a glob re-written here, so a plugin that
+ * ships a skill is swept the day it lands, and a skill the installer *skips* —
+ * one whose name collides with a core skill — is not held to rules it never
+ * reaches a workspace to break.
+ *
+ * This is the file set the rules in "every installed skill" run over. There is
+ * deliberately no second inventory and no plugins-side copy of those assertions:
+ * a plugin skill is prose the agent executes in a user's workspace, so what the
+ * core skills teach binds it identically, from one list (PLUGINS-013).
+ */
+const installedSkills: readonly InstalledSkill[] = [
+  ...templatePlan
+    .filter((file) => file.to.startsWith(".claude/skills/") && file.to.endsWith(".md"))
+    .map((file) => ({
+      label: `assets/workspace/${file.from}`,
+      body: documentAt(file.from).body,
+    })),
+  ...planPluginSkillInstall(PLUGINS_ROOT, templateSkillNames(templatePlan))
+    .files.filter((file) => file.to.endsWith(".md"))
+    .map((file) => ({
+      label: `plugins/${file.from}`,
+      body: parseFrontmatter(file.from, readFileSync(path.join(PLUGINS_ROOT, file.from), "utf8"))
+        .body,
+    })),
+];
+
+/**
+ * Every worked turn-writing invocation in a skill body: `--from agent` on a
+ * `thread reply`/`thread create` is what marks one.
+ */
+const turnCommands = (body: string): string[] =>
+  body.match(/corpus thread (?:reply|create)\b[^\n]*--from agent[^\n]*/g) ?? [];
 
 interface FencedBlock {
   /** The fence's info string — `bash`, `prompt`, or `""` when it carries none. */
@@ -430,6 +481,117 @@ describe("skills", () => {
       expect(body).toMatch(/The comment skill states the convention/);
       // It binds the turns orchestrate posts itself, not only dispatched work.
       expect(body).toMatch(/binds\s+the turns you post yourself/);
+    });
+  });
+
+  /**
+   * AGENT-021, SPEC.md §11's rider signed 2026-08-07. CLI-033 made `--model`
+   * possible; this is what makes every agent turn actually carry one. The rule
+   * is pinned where it decays fastest — in the *examples*, since an example
+   * that posts a turn without stating a model teaches the opposite of the rule
+   * and beats the rule that contradicts it (AGENT-019's bug survived rewrites
+   * exactly that way).
+   */
+  describe("stating the model that wrote the turn", () => {
+    it.each(skills)("$name works at least one turn-writing example", ({ relPath }) => {
+      // The per-command `--model` check moved to the widened inventory below,
+      // which covers these two skills and every plugin's alike (PLUGINS-013).
+      // What stays here is the obligation that is *these* skills' alone: each
+      // has to show the command at all, or the rule holds over an empty set.
+      expect(
+        turnCommands(documentAt(relPath).body).length,
+        `${relPath}: no turn-writing example at all`,
+      ).toBeGreaterThan(0);
+    });
+
+    it("states the rule, the deciding stage, and the absence, in the comment skill", () => {
+      const body = documentAt("claude/skills/comment/SKILL.md").body;
+      expect(body).toMatch(/Every reply you post carries `--model <name>`/);
+      // What ran, never what was asked for — and why the distinction is
+      // load-bearing rather than pedantic: it is what makes "honoured, not
+      // weighed again" checkable at all.
+      expect(body).toMatch(/what actually ran, never what was asked for/i);
+      expect(body).toMatch(/a directive, honoured rather than weighed again/);
+      expect(body).toMatch(/the turn is the lasting evidence that it\s+was/);
+      // The deciding stage, singular, and never the first stage's.
+      expect(body).toMatch(/Where the work ran in stages, name the deciding stage/);
+      expect(body).toMatch(/one model,\s+never a list, and never the first stage's/);
+      expect(body).toMatch(/gathering stages belong in the job log/);
+      // An unknown states nothing. A guess is the failure this whole chain
+      // exists to avoid, so the instruction is an omission with one spelling.
+      expect(body).toMatch(/When you do not know what ran, leave the flag out entirely/);
+      expect(body).toMatch(/a plausible attribution\s+nobody can check is worth less than a blank/);
+      expect(body).toMatch(/`--model ""` is a usage error \(exit `2`\)/);
+      expect(body).not.toMatch(/best guess/i);
+      // A person's turn names no model, and the refusal precedes the body.
+      expect(body).toMatch(/refused at exit `2` before the body is read/);
+      expect(body).toMatch(/never state a model on a person's behalf/);
+    });
+
+    it("carries the same rule into dispatch, in the orchestrate skill", () => {
+      const body = documentAt("claude/skills/orchestrate/SKILL.md").body;
+      expect(body).toMatch(/\*\*Every turn it posts names the model that wrote it\*\*/);
+      expect(body).toMatch(/\*\*record of what ran, never a\s+request for what should run\*\*/);
+      expect(body).toMatch(/this turn is the evidence that you did/);
+      expect(body).toMatch(/the turn names the \*\*deciding\*\*\s+stage/);
+      expect(body).toMatch(/one model and never a list/);
+      expect(body).toMatch(/the flag is left out\s+and the turn shows nothing rather than a guess/);
+      // The dispatch is what puts the name in the subagent's hand, so it is
+      // listed among the things a prompt must carry.
+      expect(body).toMatch(/the model you are launching it at/);
+      // And the job log is where the split that the turn omits is written down.
+      expect(body).toMatch(/\*\*This log is the per-stage account\.\*\*/);
+      expect(body).toMatch(/the turn itself names only the\s+deciding stage/);
+    });
+  });
+
+  /**
+   * PLUGINS-013. The rules above are written for the template's two skills
+   * because that is where they were first broken; none of them is *about* the
+   * template. Once `corpus init` has run, a plugin's skill sits in the same
+   * `.claude/skills/` and is read by the same agent, so it inherits them — and
+   * the shipped `todos` skill had been teaching a reply with no `--model` since
+   * the day AGENT-021 made stating one the rule, because the sweep that closed
+   * it looked at one directory.
+   *
+   * So the *file set* is widened, and the assertions are not copied. Each core
+   * skill keeps its own extra obligation next door — that it shows a
+   * turn-writing example, a trace and a heredoc *at all* — which is a demand on
+   * a skill that teaches the loop, not on every skill that ships.
+   */
+  describe("every installed skill", () => {
+    it("reaches past the template, to a plugin skill that posts a turn", () => {
+      // Anti-vacuity, in both directions the widening can fail silently: the
+      // inventory has to be bigger than the template's own, and some plugin
+      // skill has to actually post a turn — without which `--model` below would
+      // pass by matching nothing at all.
+      expect(installedSkills.length).toBeGreaterThan(skills.length);
+      const fromPlugins = installedSkills.filter((skill) => skill.label.startsWith("plugins/"));
+      expect(fromPlugins.map((skill) => skill.label)).toContain(
+        "plugins/todos/skills/todos/SKILL.md",
+      );
+      expect(fromPlugins.some((skill) => turnCommands(skill.body).length > 0)).toBe(true);
+    });
+
+    it.each(installedSkills)("$label posts no example turn without a model", ({ label, body }) => {
+      for (const command of turnCommands(body)) {
+        expect(command, `${label}: turn written with no model`).toMatch(/ --model \S/);
+      }
+    });
+
+    it.each(installedSkills)("$label puts a trace last in its turn, or none", ({ label, body }) => {
+      const lines = body.split("\n");
+      for (const [index, line] of lines.entries()) {
+        if (!line.trimStart().startsWith("↳")) continue;
+        expect(lines[index + 1]?.trim(), `${label}: trace not last in its turn`).toBe("EOF");
+      }
+    });
+
+    it.each(installedSkills)("$label quotes every heredoc it hands text to", ({ label, body }) => {
+      for (const heredoc of body.match(/<<-?\s*\S+/g) ?? []) {
+        expect(heredoc, `${label}: unquoted heredoc`).toMatch(/^<<'EOF'$/);
+      }
+      expect(body, `${label}: command substitution in an argument`).not.toMatch(/-m "\$\(/);
     });
   });
 
@@ -1167,7 +1329,7 @@ describe("comment skill body", () => {
   });
 
   it("makes reply mechanics exact", () => {
-    expect(body).toMatch(/corpus thread reply th_\w+ --from agent <<'EOF'/);
+    expect(body).toMatch(/corpus thread reply th_\w+ --from agent --model \S+ <<'EOF'/);
     expect(body).toMatch(/Never post a reply by editing the thread file/i);
     expect(body).toMatch(/Always reply/i);
     expect(body).toMatch(/pending indicator/i);
