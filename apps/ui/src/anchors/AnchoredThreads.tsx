@@ -1,7 +1,8 @@
-import type { DocRow } from "@corpus/contract";
+import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 import type { RowNotice } from "@corpus/kit";
 import type { ReactElement } from "react";
 import { createPortal } from "react-dom";
+import { ReattachOffer } from "../reattach/ReattachOffer";
 import { summaryFromRow } from "../thread/CollapsedThread";
 import { ThreadPanel } from "../thread/ThreadPanel";
 import { anchoredSummary, type AnchoredThread } from "./anchorPlacement";
@@ -138,11 +139,27 @@ export function MarginColumn({
   );
 }
 
+/**
+ * What a detached thread needs in order to be offered a way back (UI-086).
+ *
+ * Absent — on a surface that has no document body to point into — the section
+ * still lists its orphans, because §6's promise that they stay listed and
+ * repliable does not depend on this.
+ */
+export interface ReattachContext {
+  /** The commented document, and the body the offered ranges index into. */
+  readonly docId: string;
+  readonly body: string;
+  /** Every anchor on the document: the orphan's own selector, and its neighbours' text. */
+  readonly anchors: readonly ResolvedAnchor[];
+}
+
 export interface DetachedThreadsProps {
   readonly wholeDocument: readonly DocRow[];
   readonly orphaned: readonly DocRow[];
   /** Anchored, resolved, but with nothing on this screen to sit beside. */
   readonly unplaced?: readonly DocRow[];
+  readonly reattach?: ReattachContext | undefined;
   readonly flashThread: string | null;
   readonly onOpenDoc: (docId: string, anchorId?: string | null) => void;
   readonly onNotify: (notice: RowNotice) => void;
@@ -175,26 +192,58 @@ export function DetachedThreads({
   wholeDocument,
   orphaned,
   unplaced = [],
+  reattach,
   flashThread,
   onOpenDoc,
   onNotify,
 }: DetachedThreadsProps): ReactElement | null {
   if (wholeDocument.length === 0 && orphaned.length === 0 && unplaced.length === 0) return null;
 
+  /**
+   * The orphan's own anchor entry, when there is one to repair.
+   *
+   * Only a detached anchor carrying a quote is offered a way back: an anchor
+   * that resolves is not what this is for, and a comment on the whole document
+   * has no passage to search for — giving one an anchor changes the scope of
+   * somebody's comment rather than repairing it, which the route refuses
+   * (`not-anchored`) and which this therefore never asks for.
+   */
+  const repairable = (threadId: string): ResolvedAnchor | null => {
+    const anchor = reattach?.anchors.find((entry) => entry.threadId === threadId);
+    if (anchor === undefined || !anchor.orphaned || anchor.selector.exact === "") return null;
+    return anchor;
+  };
+
   const section = (label: string, rows: readonly DocRow[], kind: string): ReactElement | null =>
     rows.length === 0 ? null : (
       <div className="thread-slots" data-thread-section={kind}>
         <div className="slots-label">{label}</div>
-        {rows.map((row) => (
-          <ThreadPanel
-            key={row.id}
-            summary={summaryFromRow(row)}
-            host="slot"
-            flashing={flashThread === row.id}
-            onOpenDoc={onOpenDoc}
-            onNotify={onNotify}
-          />
-        ))}
+        {rows.map((row) => {
+          const panel = (
+            <ThreadPanel
+              key={row.id}
+              summary={summaryFromRow(row)}
+              host="slot"
+              flashing={flashThread === row.id}
+              onOpenDoc={onOpenDoc}
+              onNotify={onNotify}
+            />
+          );
+          const anchor = kind === "detached" ? repairable(row.id) : null;
+          if (anchor === null || reattach === undefined) return panel;
+          return (
+            <div key={row.id} className="detached-thread">
+              {panel}
+              <ReattachOffer
+                anchor={anchor}
+                parentId={reattach.docId}
+                body={reattach.body}
+                anchors={reattach.anchors}
+                onNotify={onNotify}
+              />
+            </div>
+          );
+        })}
       </div>
     );
 

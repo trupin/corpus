@@ -530,6 +530,17 @@ export function DocView({
               wholeDocument={anchors.wholeDocument}
               orphaned={anchors.orphaned}
               unplaced={anchors.unplaced}
+              /*
+               * A detached comment is offered a way back only where the body it
+               * would attach to is on screen and in the coordinate space the
+               * server answers in — which is here, in the anchor layer's own
+               * host, and nowhere else (UI-086).
+               */
+              reattach={{
+                docId: doc.frontmatter.id,
+                body: doc.body,
+                anchors: anchors.effectiveAnchors,
+              }}
               flashThread={flashThread}
               onOpenDoc={onNavigate}
               onNotify={onNotify}

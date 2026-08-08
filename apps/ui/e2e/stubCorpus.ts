@@ -171,7 +171,7 @@ interface StoredDoc {
 interface StoredAnchor {
   readonly anchorId: string;
   readonly threadId: string;
-  readonly selector: { readonly exact: string; readonly prefix?: string; readonly suffix?: string };
+  selector: { readonly exact: string; readonly prefix?: string; readonly suffix?: string };
   threadStatus: string;
 }
 
@@ -833,6 +833,88 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
           lastAuthor: turns.at(-1)?.author ?? "user",
           lastTs: turns.at(-1)?.ts ?? SEEDED_AT,
         },
+        warnings: [],
+      });
+    }
+
+    /*
+     * `POST /api/threads/{id}/reattach` (SPEC.md §6; SERVER-072) — the one path
+     * on which a selector is rewritten with no diff behind it, because the
+     * evidence is a person's choice rather than an edit.
+     *
+     * Modelled rather than stubbed flat, and every part of the modelling is what
+     * a spec needs to assert: the caller's `expectedText` is a **guard** that is
+     * never stored, the selector is recomputed off the body over the chosen
+     * range (`CONTEXT_WINDOW` either side, as `computeContext` does), and the
+     * refusals carry the machine-readable `reason` the UI branches on. A stub
+     * that answered `200` unconditionally would let a spec pass while the
+     * product misattached.
+     */
+    const reattach = /^\/api\/threads\/([^/]+)\/reattach$/.exec(url.pathname);
+    if (reattach !== null && method === "POST") {
+      const id = decodeURIComponent(reattach[1] ?? "");
+      const thread = store.get(id);
+      if (thread === undefined || thread.type !== "thread") {
+        return json(route, { code: "not_found", message: id }, 404);
+      }
+      const parent = thread.parent === null ? undefined : store.get(thread.parent);
+      const anchor = parent?.anchors.find((entry) => entry.threadId === id);
+      if (parent === undefined || anchor === undefined) {
+        return json(
+          route,
+          { code: "conflict", message: "nothing to repair", reason: "not-anchored" },
+          409,
+        );
+      }
+      const asked = (raw === null ? {} : JSON.parse(raw)) as {
+        range?: { start?: number; end?: number };
+        expectedText?: string;
+      };
+      const start = asked.range?.start ?? 0;
+      const end = asked.range?.end ?? 0;
+      if (parent.body.slice(start, end) !== asked.expectedText) {
+        return json(
+          route,
+          { code: "conflict", message: "the range changed", reason: "range-changed" },
+          409,
+        );
+      }
+      for (const other of parent.anchors) {
+        if (other.anchorId === anchor.anchorId) continue;
+        const range = resolveAnchorExact(parent.body, other.selector);
+        if (range !== null && range.start < end && start < range.end) {
+          return json(
+            route,
+            {
+              code: "conflict",
+              message: `overlaps ${other.threadId}`,
+              reason: "range-overlaps",
+            },
+            409,
+          );
+        }
+      }
+      anchor.selector = {
+        exact: parent.body.slice(start, end),
+        prefix: parent.body.slice(Math.max(0, start - 32), start),
+        suffix: parent.body.slice(end, Math.min(parent.body.length, end + 32)),
+      };
+      const turns = parseThreadTurns(thread.body);
+      return json(route, {
+        thread: {
+          id,
+          title: thread.title,
+          status: thread.status,
+          parent: thread.parent,
+          anchor: anchor.anchorId,
+          agent: thread.agent,
+          created: SEEDED_AT,
+          updated: thread.updated,
+          turnCount: turns.length,
+          lastAuthor: turns.at(-1)?.author ?? "user",
+          lastTs: turns.at(-1)?.ts ?? SEEDED_AT,
+        },
+        anchor: resolveAnchor(parent, anchor),
         warnings: [],
       });
     }
