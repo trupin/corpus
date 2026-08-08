@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-06T00:00:00Z
+updated: 2026-08-07T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -64,21 +64,40 @@ everything after depends on them.
 
 ## The loop
 
-Run it exactly like this, in order, indefinitely:
+**This is a procedure, not a script**, and the difference is the difference between the loop
+working and the loop silently doing nothing. Its load-bearing step — dispatch — is not a
+command: it is you launching subagents, and no shell line performs it. So the steps below
+are never pasted into a single command line, and two of them in particular are **never
+chained**: `corpus queue claim-all` and `corpus queue idle` are always separate commands
+with dispatch between them. Chained into one command, they claim the pending batch and
+immediately re-park on it — that command has nowhere to put dispatch, so every event it
+claims moves to `in-progress/` and is worked by nobody, with no error anywhere and nothing
+in the console to show for it. Run these steps in order, indefinitely:
 
-```bash
-export CORPUS_FROM=agent    # once per session, before anything else
-corpus queue reap-stale     # returns events a dead session stranded in-progress
-corpus queue claim-all      # the pending batch, plus what the server still holds in-progress
-# reconcile that held list against your own work first (Claiming and batching below),
-# then dispatch every claimed event to a subagent (Routing and Delegation below), and park:
-corpus queue idle           # returns on a new event or on its ~8-minute rearm
-# on every return, settle each event whose subagent has reported —
-corpus queue complete evt_7c1d9a
-corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"
-corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock"
-# — then repeat from claim-all
-```
+1. **Attribute, once per session, before anything else.** `export CORPUS_FROM=agent`.
+2. **Reap.** `corpus queue reap-stale` returns events a dead session stranded in-progress.
+   Run it every pass: after a clean park it reaps nothing and stays silent, and after an
+   unclean stop it is what returns stranded work to `pending/`.
+3. **Claim, then read what it printed.** `corpus queue claim-all` prints the pending batch
+   and what the server still holds in-progress, as one payload. Nothing else happens until
+   you have read it.
+4. **Reconcile that held list against your own work** (Claiming and batching below). It is
+   the loop's own check on itself, and it only checks anything if you act on it here.
+5. **Dispatch every claimed event to a subagent** (Routing and Delegation below). **This
+   step is work, not a command** — one background subagent per event, the whole batch out
+   before you go on. It is the step a chained command line has nowhere to put, which is why
+   that chain is forbidden rather than discouraged.
+6. **Park, alone.** `corpus queue idle` is the entire command — never appended to the claim
+   above it, never combined with the settling below it, never launched a second time while
+   an earlier one is still parked. It returns on a new event or on its ~8-minute rearm.
+7. **Read what `idle` returned, before anything else happens.** That return **is** the
+   arrival notification — it names what is pending and what is still held — so a return
+   nobody read is an event nobody works. It is not a log to catch up on later.
+8. **Settle every event whose subagent has reported** — one of
+   `corpus queue complete evt_7c1d9a`,
+   `corpus queue fail evt_2e4f8b --reason "the parent document doc_f4e9d2 was deleted"`, or
+   `corpus queue defer evt_9c3b1d --blocked-on doc_a1b2c3 --reason "waiting for the user's edit lock"`
+   — and then repeat from step 2.
 
 The order is claim → dispatch → park. You return to `corpus queue idle` **as soon as the
 batch is dispatched** — you do not wait for the batch to finish, because a session waiting
@@ -88,12 +107,10 @@ then claim again.
 
 `corpus queue idle` exits `0` in every normal case. When its ~8-minute window expires with
 nothing pending it prints `{"idle":true,"reason":"timeout"}` — that is a normal outcome,
-not an error: re-run the loop from `claim-all`. While the queue is halted it parks the full
+not an error: run the steps again from the top. While the queue is halted it parks the full
 window and prints `{"idle":true,"reason":"halted"}` — same response, keep looping. Its only
 flag is `--wait <seconds>` (default `480`); there is no other knob and no other exit to
-handle. Run `corpus queue reap-stale` at every loop start: after a clean park it reaps
-nothing and stays silent, and after an unclean stop it is what returns stranded work to
-`pending/`.
+handle.
 
 ## Claiming and batching
 
@@ -114,8 +131,11 @@ already computed. That is the whole rule: once the batch is dispatched, claiming
 when parking returns is the normal loop, and events claimed then are simply dispatched
 behind whatever overlapping work is still running. An **empty `events` array** is not an
 error: it means the queue is halted or another consumer claimed first. Reconcile
-`inProgress` anyway — it is reported on every claim, empty batch included — and then go
-straight to `corpus queue idle`.
+`inProgress` anyway — it is reported on every claim, empty batch included — and then park
+with a separate `corpus queue idle`. An empty batch is the one pass of the loop with
+nothing to dispatch, and it is still two commands rather than one: the pass that claims an
+empty batch and the pass that claims work are the same procedure, and a shortcut taken on
+the empty one is the shortcut that loses the next real event.
 
 **`inProgress` is a different list from the one you just claimed, and never work to do
 again.** It is `in-progress/` as it stood *before* this call's moves, so the events of this
@@ -693,13 +713,15 @@ corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — on
 
 `inProgress` came back empty, so there is nothing to reconcile and nothing printed on
 stderr — the ordinary shape of a loop that has been settling its events. Two ranked lines,
-no bodies: that is the whole cost of finding out where the rate assumption lives. Launch the subagent in the background — its prompt carries `evt_7c1d9a`,
-`th_4b8e2c`, `doc_a1b2c3`, those two retrieved lines as the anchors to start from, the
-comment skill, and the binding rules from Delegation — and go straight back to parking:
+no bodies: that is the whole cost of finding out where the rate assumption lives.
 
-```bash
-corpus queue idle
-```
+**Then the step that no command performs.** Launch the subagent in the background — its
+prompt carries `evt_7c1d9a`, `th_4b8e2c`, `doc_a1b2c3`, those two retrieved lines as the
+anchors to start from, the comment skill, and the binding rules from Delegation. Only once
+it is out does the next command run, and it runs by itself: `corpus queue idle`, alone,
+never appended to the claim above. Everything the claim printed has been read and acted on
+by the time parking starts, which is the whole of what separates a dispatched batch from a
+batch claimed into silence.
 
 Inside the subagent, the comment skill briefs itself on the one thread that matters —
 `corpus thread context th_4b8e2c`, one bounded pack carrying the anchored passage with its
@@ -727,15 +749,16 @@ EOF
 ```
 
 The subagent reports what it did and exits. When `idle` returns — here on its rearm, with
-no new event — the report is waiting: verify the reply and the edit landed, record the
-outcome, and park again:
+no new event — read that return first: it says nothing is pending and nothing is held, and
+the subagent's report is waiting alongside it. Verify the reply and the edit landed, then
+record the outcome:
 
 ```bash
 corpus job log evt_7c1d9a "completed — replied on th_4b8e2c"
 corpus queue complete evt_7c1d9a
-corpus queue idle
 ```
 
-`idle` parks. The moment the operator replies in `th_4b8e2c` — or any new event lands —
-it returns, and the loop runs again from `corpus queue claim-all`, dispatching new work
-even while earlier subagents are still running.
+Then park again — `corpus queue idle`, on its own line and on its own. The moment the
+operator replies in `th_4b8e2c`, or any new event lands, it returns; you read that return,
+run `corpus queue claim-all`, dispatch what it gives you, and park again — new work going
+out even while earlier subagents are still running.

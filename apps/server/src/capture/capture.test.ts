@@ -230,6 +230,38 @@ describe("POST /api/capture", () => {
     ).toBe(400);
   });
 
+  /**
+   * SERVER-075's third door. The captured text becomes the filing thread's first
+   * turn as well as the document's body, so an open fence here swallows the
+   * filing request itself and every reply after it — the refusal covers both
+   * files because they carry the same words.
+   */
+  it("refuses a capture whose text leaves a code fence open, writing neither file", async () => {
+    const before = ws.log("%H").length;
+    const inbox = inboxFiles();
+
+    const response = await postForm(ws, "/api/capture", [
+      ["text", "Note this:\n\n```sh\nnpm run build\n"],
+    ]);
+    const payload = (await response.json()) as { message: string; issues: { path: string }[] };
+
+    expect(response.status).toBe(400);
+    expect(payload.message).toContain("line 3");
+    expect(payload.issues[0]).toEqual({
+      path: "text",
+      message: "unterminated ``` code fence opened on line 3",
+    });
+    expect(ws.log("%H")).toHaveLength(before);
+    expect(inboxFiles()).toEqual(inbox);
+    expect(pendingEvents(ws)).toEqual([]);
+  });
+
+  it("still captures text that quotes a fence correctly", async () => {
+    const result = await capture([["text", "Snippet:\n\n```sh\nnpm run build\n```\n"]]);
+    expect(result.status).toBe(201);
+    expect(turnsOf(ws, result.threadId)).toHaveLength(1);
+  });
+
   it("records the agent as the author when it captures", async () => {
     const result = await capture([["text", "noticed while working"]], "agent");
     expect(turnsOf(ws, result.threadId)[0]?.author).toBe("agent");

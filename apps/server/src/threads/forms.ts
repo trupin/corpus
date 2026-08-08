@@ -64,10 +64,10 @@ import {
   normalizeInstant,
   parseTurns,
   readForm,
-  unterminatedFence,
 } from "../core/index.js";
 import type { DocumentMutex } from "../docs/index.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
+import { ANSWER_SUBJECT, assertClosedFences } from "./fences.js";
 import { NO_MENTIONS } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
@@ -137,14 +137,11 @@ const PROBE_HEADING = "## user · 2000-01-01T00:00:00Z\n";
  * exists only so `parseTurns` sees the same shape the append will produce.
  */
 export function assertAppendableAnswer(body: string, form: Form, answer: FormAnswerRequest): void {
-  const fence = unterminatedFence(body);
-  if (fence !== null) {
-    throw badRequest(
-      "this answer leaves a code fence open, which would swallow every later turn in the thread; " +
-        "close the fence or remove it",
-      [{ path: "body", message: "unterminated code fence in the answer" }],
-    );
-  }
+  // The fence half is `fences.ts`'s, shared with the reply, create and capture
+  // doors (SERVER-075). It used to be spelled out here, which is why for a long
+  // while the *answer* route was the only one that asked — and why the message
+  // now names the line the fence opened on, which the local copy discarded.
+  assertClosedFences(body, ANSWER_SUBJECT);
   if (parseTurns(`${PROBE_HEADING}${body}`).length !== 1) {
     throw badRequest(
       "this answer contains a line that reads as a turn heading (`## user · <timestamp>`), which " +

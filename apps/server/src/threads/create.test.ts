@@ -248,6 +248,47 @@ describe("POST /api/threads — refusals", () => {
     expect(((await response.json()) as { issues: unknown[] }).issues.length).toBeGreaterThan(0);
     expect(ws.log("%H")).toHaveLength(before);
   });
+
+  /**
+   * SERVER-075's second door. A first turn that leaves a fence open is the worst
+   * version of the defect — every reply that follows is invisible from the
+   * start — and this route reaching disk without the guard the reply path has is
+   * how SERVER-070 happened for forms.
+   */
+  it("refuses a first turn that leaves a code fence open, naming the line", async () => {
+    const before = ws.log("%H").length;
+    const response = await ws.post("/api/threads", { body: "Look:\n\n```js\nconst x = 1;\n" });
+    const payload = (await response.json()) as { message: string; issues: { path: string }[] };
+
+    expect(response.status).toBe(400);
+    expect(payload.message).toContain("line 3");
+    expect(payload.issues[0]).toEqual({
+      path: "body",
+      message: "unterminated ``` code fence opened on line 3",
+    });
+    expect(ws.log("%H")).toHaveLength(before);
+    expect(pendingEvents(ws)).toEqual([]);
+  });
+
+  it("refuses it for the agent too, and leaves the parent untouched", async () => {
+    const parent = await seedParent();
+    const before = ws.read(parent.path);
+    const response = await ws.post(
+      "/api/threads",
+      { parent: parent.id, selector: SELECTOR, body: "```\nunclosed\n" },
+      { "x-corpus-author": "agent" },
+    );
+
+    expect(response.status).toBe(400);
+    expect(ws.read(parent.path)).toBe(before);
+  });
+
+  it("still creates a thread whose first turn quotes a fence correctly", async () => {
+    const created = await createThread(ws, {
+      body: "How to write one:\n\n````markdown\n```js\nconst x = 1;\n```\n````\n",
+    });
+    expect(turnsOf(ws, created.id)).toHaveLength(1);
+  });
 });
 
 describe("POST /api/threads — atomicity", () => {

@@ -60,6 +60,7 @@ import {
   type MutationResult,
 } from "../docs/index.js";
 import { enqueueComment } from "./events.js";
+import { TURN_SUBJECT, assertClosedFences } from "./fences.js";
 import { parseMentions } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toWireThread } from "./read.js";
@@ -207,6 +208,12 @@ export async function createThread(
   // Before the lanes and before a byte is written, exactly as turn append and
   // capture do it: a refused upload leaves no directory and takes no lock.
   assertWithinLimits(input.files, workspace.attachmentLimits ?? DEFAULT_ATTACHMENT_LIMITS);
+  // This route is the *second* door onto a thread's turns, and a first turn that
+  // leaves a fence open is the worst version of SERVER-075's defect: the whole
+  // conversation that follows is invisible from its first reply onward. The
+  // reply path being guarded and this one not is how SERVER-070 happened
+  // (malformed forms), so the guards are placed together by design.
+  assertClosedFences(input.text, TURN_SUBJECT);
 
   // An unknown parent is a 404 before anything is written, and it is answered
   // from the read rather than from the projection alone so a row whose file

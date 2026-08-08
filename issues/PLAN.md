@@ -431,8 +431,8 @@ belongs to the same fix wave.
 | INFRA-021 | Audit gate: narrow expiring exception for GHSA-5p4m-2wfm-xmqj (expires 2026-10-01) | done | P1 | — |
 | INFRA-022 | `npm version --workspaces` leaves every workspace manifest uncommitted (v0.4.0 cut) | done | P1 | INFRA-008 |
 | INFRA-023 | New nanoid advisory blocks every commit; scoped override clears it | done | P1 | INFRA-010 |
-| AGENT-019 | Loop block renders dispatch as a comment; chaining `claim-all && idle` drops it | todo | P0 | — |
-| UI-087 | Child threads render twice in a thread reader — per turn and again below the body | todo | P1 | — |
+| AGENT-019 | Loop block renders dispatch as a comment; chaining `claim-all && idle` drops it | done | P0 | — |
+| UI-087 | Child threads render twice in a thread reader — per turn and again below the body | done | P1 | — |
 | SHARED-024 | `isParent`: a view can show top-level documents only (SIGNED, applied) | done | P1 | — |
 | CONTRACT-042 | No filter can express "top-level only", so views cannot exclude children | todo | P1 | SHARED-024 |
 | SERVER-073 | Answer `isParent` in the collection query | todo | P1 | CONTRACT-042 |
@@ -444,7 +444,8 @@ belongs to the same fix wave.
 | CONTRACT-043 | A turn has nowhere to record the model that wrote it | todo | P1 | SHARED-027 |
 | SERVER-074 | Write the deciding model onto the agent's turn | todo | P1 | CONTRACT-043 |
 | UI-090 | Show which model wrote an agent turn | todo | P1 | CONTRACT-043, SERVER-074 |
-| SERVER-075 | A person's reply with an unterminated fence swallows every later turn | todo | P0 | — |
+| SERVER-075 | A person's reply with an unterminated fence swallows every later turn | done | P0 | — |
+| SERVER-076 | A turn body can still fabricate a turn heading on the reply path (SERVER-075 finding) | todo | P2 | SERVER-075 |
 | CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | todo | P1 | — |
 | UI-091 | Pre-check the two refusals the composer still cannot see | todo | P2 | CONTRACT-044 |
 | INFRA-024 | A prose-only commit pays the full ten-minute gate — **superseded by INFRA-025** | closed | P1 | — |

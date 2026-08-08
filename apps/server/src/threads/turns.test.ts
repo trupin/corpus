@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { turnRequestBody, whileUnreferenced } from "./turns.js";
@@ -127,6 +127,97 @@ describe("POST /api/threads/{id}/turns", () => {
         })
       ).status,
     ).toBe(404);
+  });
+});
+
+/**
+ * SERVER-075. The reviewer's fixture, driven through the real route: four turns
+ * written, one visible, because the second left a fence open. What is asserted
+ * is the *observable* loss — `turnsOf` parses the file with the same code every
+ * reader uses — not that a particular function was called.
+ */
+describe("a turn that would swallow the turns after it (SPEC.md §6)", () => {
+  const UNCLOSED = "Here is the snippet:\n\n```js\nconst x = 1;\n";
+
+  it("refuses the reply, names the line the fence opened on, and writes nothing", async () => {
+    const created = await createThread(ws, { body: "first" });
+    const before = ws.read(threadPath(created.id));
+    const head = ws.log("%H")[0];
+
+    const response = await ws.post(`/api/threads/${created.id}/turns`, { body: UNCLOSED });
+    const payload = (await response.json()) as { code: string; message: string; issues: unknown[] };
+
+    expect(response.status).toBe(400);
+    expect(payload.code).toBe("bad_request");
+    expect(payload.message).toContain("line 3");
+    expect(payload.message).toContain("```");
+    expect(payload.issues).toEqual([
+      { path: "body", message: "unterminated ``` code fence opened on line 3" },
+    ]);
+    // Refused before the write: the file, the commit and the turn count are all
+    // exactly as they were, so the author's words are still theirs to fix.
+    expect(ws.read(threadPath(created.id))).toBe(before);
+    expect(ws.log("%H")[0]).toBe(head);
+    expect(turnsOf(ws, created.id)).toHaveLength(1);
+  });
+
+  it("refuses it for the agent too — the damage does not depend on who wrote it", async () => {
+    const created = await createThread(ws, { body: "first" });
+    const refused = await appendTurn(ws, created.id, { body: UNCLOSED }, "agent");
+
+    expect(refused.status).toBe(400);
+    expect(turnsOf(ws, created.id)).toHaveLength(1);
+  });
+
+  it("keeps all four turns visible once the fence is closed", async () => {
+    const created = await createThread(ws, { body: "first" });
+    expect((await appendTurn(ws, created.id, { body: `${UNCLOSED}\`\`\`\n` })).status).toBe(201);
+    expect((await appendTurn(ws, created.id, { body: "third" }, "agent")).status).toBe(201);
+    expect((await appendTurn(ws, created.id, { body: "fourth" })).status).toBe(201);
+
+    expect(turnsOf(ws, created.id).map((turn) => turn.author)).toEqual([
+      "user",
+      "user",
+      "agent",
+      "user",
+    ]);
+  });
+
+  it("accepts a turn that merely quotes a fence, however wide (SPEC.md §11's snippet)", async () => {
+    const created = await createThread(ws, { body: "first" });
+    const quoting = "How to write one:\n\n````markdown\n```js\nconst x = 1;\n```\n````\n";
+
+    expect((await appendTurn(ws, created.id, { body: quoting })).status).toBe(201);
+    expect(turnsOf(ws, created.id)).toHaveLength(2);
+  });
+
+  /**
+   * SERVER-066's decision, unchanged: a fault already on disk blocks nothing.
+   * The guard asks about *this* turn's text only, so the person replying to a
+   * thread somebody else broke is still able to speak — their turn lands, and
+   * `corpus doc check` is what reports the pre-existing fence.
+   */
+  it("still accepts a reply to a thread that already carries an open fence", async () => {
+    const created = await createThread(ws, { body: "first" });
+    const path = threadPath(created.id);
+    ws.write(path, `${ws.read(path)}\n\`\`\`js\nconst x = 1;\n`);
+    ws.reproject();
+
+    const appended = await appendTurn(ws, created.id, { body: "a perfectly ordinary reply" });
+
+    expect(appended.status).toBe(201);
+    expect(ws.read(path)).toContain("a perfectly ordinary reply");
+  });
+
+  it("refuses a multipart turn before a single attachment byte is stored", async () => {
+    const created = await createThread(ws, { body: "first" });
+    const response = await postForm(ws, `/api/threads/${created.id}/turns`, [
+      ["text", UNCLOSED],
+      ["files", new File(["bytes"], "shot.png", { type: "image/png" })],
+    ]);
+
+    expect(response.status).toBe(400);
+    expect(existsSync(join(ws.root, ".corpus", "attachments", created.id))).toBe(false);
   });
 });
 
