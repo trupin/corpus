@@ -306,6 +306,70 @@ describe("corpus thread create", () => {
     });
   });
 
+  /**
+   * CLI-033. `thread create` is the second of the CLI's two doors onto a written
+   * turn (`thread reply` is the other, and the sweep found no third): the first
+   * turn of a thread the agent opens is an agent turn like any other, and until
+   * this flag existed it too rendered blank.
+   */
+  describe("--model, the first turn's stated model (SPEC.md §11)", () => {
+    it("sends a stated model alongside the first turn", async () => {
+      const stub = await startStubServer(jsonResponder(201, WHOLE_DOC));
+      const harness = stubContext(stub, {
+        actor: "agent",
+        flags: { parent: "doc_a1b2c3", message: "I split this into two notes.", model: "opus-4-1" },
+      });
+
+      await runThreadCreate(harness.context);
+
+      expect(bodyOf(stub.requests[0]?.body)).toEqual({
+        body: "I split this into two notes.",
+        parent: "doc_a1b2c3",
+        model: "opus-4-1",
+      });
+    });
+
+    it("sends no model field at all when the flag is absent", async () => {
+      const stub = await startStubServer(jsonResponder(201, STANDALONE));
+      const harness = stubContext(stub, { actor: "agent", flags: { message: "a note" } });
+
+      await runThreadCreate(harness.context);
+
+      const sent = bodyOf(stub.requests[0]?.body);
+      expect(sent).toEqual({ body: "a note" });
+      expect(Object.keys(sent)).not.toContain("model");
+    });
+
+    it("refuses a blank model, and one on a person's turn, before sending anything", async () => {
+      const stub = await startStubServer(jsonResponder(201, STANDALONE));
+
+      const blank = stubContext(stub, { actor: "agent", flags: { message: "x", model: "" } });
+      const blankError: unknown = await runThreadCreate(blank.context).catch(
+        (cause: unknown) => cause,
+      );
+      expect(exitCodeFor(blankError)).toBe(ExitCode.usageError);
+
+      const asUser = stubContext(stub, { flags: { message: "x", model: "opus-4-1" } });
+      const actorError: unknown = await runThreadCreate(asUser.context).catch(
+        (cause: unknown) => cause,
+      );
+      expect(exitCodeFor(actorError)).toBe(ExitCode.usageError);
+      expect(String(actorError)).toContain("only an agent turn names the model that wrote it");
+
+      expect(stub.requests).toHaveLength(0);
+    });
+
+    it("declares the same flag `thread reply` declares, and says what it is for", () => {
+      const flag = createCommand.flags.find((candidate) => candidate.name === "model");
+      expect(flag?.type).toBe("string");
+      expect(flag?.description).toContain("**report of what ran**");
+      expect(flag?.description).toContain("Only an agent turn names a model");
+      const help = createCommand.description ?? "";
+      expect(help).toContain("only an agent's turn may carry one");
+      expect(help).toContain("no model at all");
+    });
+  });
+
   it("documents the three creation shapes and that resolution is the server's", () => {
     const text = `${createCommand.summary} ${createCommand.description ?? ""}`;
     expect(text).toContain("standalone");

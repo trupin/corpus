@@ -1,8 +1,10 @@
 import { UsageError } from "../../errors.js";
 import {
   bodyFlags,
+  MODEL_FLAG,
   parseTriStateBoolean,
   requireBody,
+  resolveTurnModel,
   warningSuffix,
   type InputDependencies,
 } from "../../input.js";
@@ -73,6 +75,10 @@ export async function runThreadCreate(
     "requests-agent",
     context.flags.string("requests-agent"),
   );
+  // Resolved before the body is read: a `--model` this actor may not state is a
+  // usage error whatever the first turn says, and a heredoc consumed on the way
+  // to a refusal is a heredoc the caller has to type again.
+  const model = resolveTurnModel(context);
 
   // Two flag combinations carry no request at all, so they are usage errors
   // rather than a round trip: context with nothing to disambiguate has nowhere
@@ -115,6 +121,10 @@ export async function runThreadCreate(
             }),
         ...(title === undefined ? {} : { title }),
         ...(requestsAgent === undefined ? {} : { requestsAgent }),
+        // Same rule, and it matters most here: an unstated model must be an
+        // absent field, never a blank one, so a first turn nobody recorded a
+        // model for shows nothing rather than a guess (SPEC.md §11).
+        ...(model === undefined ? {} : { model }),
       },
     }),
   );
@@ -169,7 +179,11 @@ export const createCommand: WorkspaceCommandSpec = {
     "party's edit lock refuses an _anchored_ create with a `423`, since anchoring rewrites it " +
     "(SPEC.md §7); a whole-document or standalone thread takes no lock. Prints the new thread's " +
     "id, where it landed, and any enqueued event; `--json` emits the server's " +
-    "`{thread, anchorId, eventId, warnings}` response unchanged.",
+    "`{thread, anchorId, eventId, warnings}` response unchanged.\n\n" +
+    "**`--model` states what wrote the first turn**, and only an agent's turn may carry one " +
+    "(SPEC.md §11) — the same flag `corpus thread reply` takes, since both write a turn. It " +
+    "records what ran; it asks for nothing to run. Omit it and the turn carries no model at all, " +
+    "which reads as nothing rather than as a guess.",
   args: [],
   flags: [
     {
@@ -224,6 +238,7 @@ export const createCommand: WorkspaceCommandSpec = {
         "suppresses the wake even when the body mentions it.",
     },
     ...bodyFlags("The first turn's body"),
+    MODEL_FLAG,
   ],
   examples: [
     {
@@ -234,9 +249,10 @@ export const createCommand: WorkspaceCommandSpec = {
     },
     {
       command:
-        "corpus thread create --parent doc_a1b2c3 --from agent <<'EOF'\nI split this into two notes; the second needs a title.\nEOF",
+        "corpus thread create --parent doc_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'\nI split this into two notes; the second needs a title.\nEOF",
       description:
-        "A whole-document thread from the agent, body as a heredoc, committed with `agent` as the git author.",
+        "A whole-document thread from the agent, body as a heredoc, committed with `agent` as the " +
+        "git author and recording the model that wrote the first turn (SPEC.md §11).",
     },
     {
       command:

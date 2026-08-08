@@ -4,7 +4,7 @@ import { isAbsolute, resolve } from "node:path";
 import { ACTORS, CommitShaSchema, DEFAULT_ACTOR, type Actor, type Warning } from "@corpus/contract";
 import { UsageError } from "./errors.js";
 import type { ParsedFlags } from "./parse-args.js";
-import type { CommandContext } from "./registry/types.js";
+import type { CommandContext, WorkspaceCommandContext } from "./registry/types.js";
 import type { FlagSpec } from "./registry/types.js";
 
 /**
@@ -96,6 +96,93 @@ export function bodyFlags(what: string): readonly FlagSpec[] {
       description: `Read ${what.toLowerCase()} from this file. Wins over stdin; the file is only read.`,
     },
   ];
+}
+
+/**
+ * `--model` — the model that **wrote** the turn, on the two verbs that write one
+ * (`thread create`, `thread reply`). Shared here rather than declared twice for
+ * the same reason `bodyFlags` is: two spellings of one idea drift.
+ *
+ * It is the CLI's whole part in SPEC.md §11's "an agent turn says which model
+ * wrote it". The mechanism below it is complete — the contract carries the
+ * field, the server records it in the thread's `turnModels` frontmatter and
+ * projects it, the board renders it — and until this flag existed nothing
+ * supplied a value, so every turn rendered blank (CLI-033, found by SERVER-074).
+ *
+ * Three properties, each of which is the reason for a line of code below:
+ *
+ *   - **It is a report, not an instruction.** It states what ran; it never asks
+ *     for anything to run. It is deliberately not §7's *weight* (CONTRACT-039):
+ *     a weight is stated before the work and must be "honoured, not weighed
+ *     again", a claim only checkable while the two stay separate fields.
+ *   - **The caller states it; the CLI never guesses.** A process cannot know
+ *     which model is driving it, and a plausible default is exactly what §11's
+ *     "nothing rather than a guess" forbids. So there is no default, no
+ *     environment fallback and no inference — omitted means *no field at all*.
+ *   - **It is a display string, not a validated set.** §7 keeps model names in
+ *     the orchestrator skill, and CONTRACT-043 kept an enum off the wire so a
+ *     workspace can change its tiers without touching the contract. Validating
+ *     against a list here would freeze exactly what that took pains to leave
+ *     editable, so nothing below inspects the value's content.
+ */
+export const MODEL_FLAG: FlagSpec = {
+  name: "model",
+  type: "string",
+  valueName: "name",
+  description:
+    "The model that **wrote** this turn (SPEC.md §11), recorded with it so _which model wrote " +
+    "this?_ stays answerable from the conversation itself, long after the job's log has been " +
+    "reaped with its event (SPEC.md §7). It is a **report of what ran**, never a request for " +
+    "what should run: it selects nothing, and it is not a weight (which is stated before the " +
+    "work and honoured rather than weighed again — the two are separate on purpose). Where one " +
+    "request ran in stages at different weights, name the model of the **deciding** stage, the " +
+    "one that drew the conclusion or wrote the words. Any display string is accepted: the model " +
+    "names live in the orchestrator skill, so nothing here validates against a list of them. " +
+    "**Only an agent turn names a model** — with `--from user` (the default) this flag is a " +
+    "usage error (exit 2) and nothing is sent, because a person's turn names no model. " +
+    "**Omitted, no model is recorded at all** — not an empty one: a turn with no record shows " +
+    "nothing rather than a guess, so state it only when you know what ran.",
+};
+
+/**
+ * `--model` resolved into the request field, or into its absence.
+ *
+ * Absence has exactly **one** spelling, which is why a blank is refused rather
+ * than sent: `--model ""` would otherwise become an attribution to a model with
+ * no name, and §11 wants nothing at all in that case. The server refuses a blank
+ * too — this refusal is the same answer, one round trip earlier, with nothing
+ * written.
+ *
+ * The actor guard is the same shape `doc delete` and `lock break` use: the
+ * server's `400` ("only an agent turn names the model that wrote it") stays the
+ * backstop, and this exists so the caller who forgot `--from agent` is told what
+ * to do instead of being handed a status code. Refused before the flag's value
+ * is even looked at, because the mistake is having stated one at all.
+ */
+export function resolveTurnModel(
+  context: Pick<WorkspaceCommandContext, "flags" | "actor">,
+): string | undefined {
+  const model = context.flags.string("model");
+  if (model === undefined) return undefined;
+
+  if (context.actor !== "agent") {
+    throw new UsageError(`only an agent turn names the model that wrote it.`, {
+      hint:
+        `A turn authored by \`${context.actor}\` names no model (SPEC.md §11). Pass \`--from ` +
+        `agent\` when the agent wrote this turn, or drop --model. Nothing was sent to the server.`,
+    });
+  }
+
+  if (model.trim() === "") {
+    throw new UsageError("--model was given without a model name.", {
+      hint:
+        "Name the model that wrote the turn — `--model claude-opus-4-1` — or leave the flag out " +
+        "entirely: a turn with no model recorded shows nothing, which is what an unknown should " +
+        "show. A blank is not that, and nothing was sent to the server.",
+    });
+  }
+
+  return model;
 }
 
 export interface InputDependencies {

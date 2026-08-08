@@ -3,6 +3,7 @@ import { closeSync, constants, openSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Actor } from "@corpus/contract";
 import { describe, expect, it } from "vitest";
 import { ExitCode, exitCodeFor, isCliError, UsageError } from "./errors.js";
 import {
@@ -13,6 +14,7 @@ import {
   requireFlag,
   resolveActor,
   resolveBody,
+  resolveTurnModel,
   splitTags,
   stdinCarriesABody,
   warningSuffix,
@@ -162,6 +164,60 @@ describe("resolveBody", () => {
     expect(error).toBeInstanceOf(UsageError);
     expect(exitCodeFor(error)).toBe(ExitCode.usageError);
     expect(String(error)).toContain("cannot read --file");
+  });
+});
+
+describe("resolveTurnModel", () => {
+  const resolve = (model: string | undefined, actor: Actor = "agent"): string | undefined =>
+    resolveTurnModel({ flags: flagsOf(model === undefined ? {} : { model }), actor });
+
+  it("is undefined when the flag is absent, so the request carries no field at all", () => {
+    // The distinction the whole feature rests on (SPEC.md §11): a turn nobody
+    // recorded a model for must show nothing rather than a guess, and `undefined`
+    // is what lets the caller *omit* the key instead of sending an empty one.
+    expect(resolve(undefined)).toBeUndefined();
+  });
+
+  it("passes a stated model through verbatim, validating nothing about the name", () => {
+    // A display string, not an enum (SPEC.md §7, CONTRACT-043): the names live in
+    // the orchestrator skill, so a workspace may state one this CLI has never
+    // heard of, spaced and cased however it writes it.
+    expect(resolve("claude-opus-4-1")).toBe("claude-opus-4-1");
+    expect(resolve("Some Model 9 (preview)")).toBe("Some Model 9 (preview)");
+    expect(resolve("  claude-opus-4-1  ")).toBe("  claude-opus-4-1  ");
+  });
+
+  it("refuses a blank, so absence has exactly one spelling", () => {
+    for (const blank of ["", "   ", "\t"]) {
+      let thrown: unknown;
+      try {
+        resolve(blank);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(UsageError);
+      expect(exitCodeFor(thrown)).toBe(ExitCode.usageError);
+      expect(String(thrown)).toContain("--model was given without a model name");
+    }
+  });
+
+  it("refuses a model on anyone but the agent, and explains rather than just failing", () => {
+    // The server's `400` stays the backstop; this is the same answer one round
+    // trip earlier, with the reason attached (SPEC.md §11).
+    let thrown: unknown;
+    try {
+      resolve("claude-opus-4-1", "user");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UsageError);
+    expect(exitCodeFor(thrown)).toBe(ExitCode.usageError);
+    expect(String(thrown)).toContain("only an agent turn names the model that wrote it");
+    expect(isCliError(thrown) ? thrown.hint : "").toContain("--from agent");
+  });
+
+  it("reports the wrong actor before the blank, because stating one at all was the mistake", () => {
+    expect(() => resolve("", "user")).toThrow(/only an agent turn names the model/);
   });
 });
 

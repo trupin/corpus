@@ -205,4 +205,108 @@ describe("corpus thread reply", () => {
       expect(help()).toContain("accepted");
     });
   });
+
+  /**
+   * CLI-033. The contract carried `model`, the server recorded it and the board
+   * rendered it — and nothing ever supplied a value, so every turn showed blank.
+   * This is the door the value enters through (Architecture Decision 2).
+   */
+  describe("--model, the turn's stated model (SPEC.md §11)", () => {
+    it("sends a stated model with the turn", async () => {
+      const stub = await startStubServer(jsonResponder(201, APPENDED));
+      const harness = stubContext(stub, {
+        args: ARGS,
+        actor: "agent",
+        flags: { message: "filed it", model: "claude-opus-4-1" },
+      });
+
+      await runThreadReply(harness.context);
+
+      expect(bodyOf(stub.requests[0]?.body)).toEqual({
+        body: "filed it",
+        model: "claude-opus-4-1",
+      });
+      expect(stub.requests[0]?.headers["x-corpus-author"]).toBe("agent");
+    });
+
+    it("sends no model field at all when the flag is absent", async () => {
+      const stub = await startStubServer(jsonResponder(201, APPENDED));
+      const harness = stubContext(stub, {
+        args: ARGS,
+        actor: "agent",
+        flags: { message: "filed it" },
+      });
+
+      await runThreadReply(harness.context);
+
+      const sent = bodyOf(stub.requests[0]?.body);
+      // Not `model: null`, not `model: ""` — the key is simply not there, which
+      // is the one spelling of "nothing was recorded" (SPEC.md §11).
+      expect(sent).toEqual({ body: "filed it" });
+      expect(Object.keys(sent)).not.toContain("model");
+    });
+
+    it("refuses a blank model as a usage error and sends nothing", async () => {
+      const stub = await startStubServer(jsonResponder(201, APPENDED));
+      const harness = stubContext(stub, {
+        args: ARGS,
+        actor: "agent",
+        flags: { message: "filed it", model: "" },
+      });
+
+      const error: unknown = await runThreadReply(harness.context).catch((cause: unknown) => cause);
+
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+      expect(stub.requests).toHaveLength(0);
+    });
+
+    it("refuses a model on a person's turn before anything is sent", async () => {
+      const stub = await startStubServer(jsonResponder(201, APPENDED));
+      // The default actor is `user`, so this is the caller who forgot `--from
+      // agent` — told what to do instead of being handed the server's `400`.
+      const harness = stubContext(stub, {
+        args: ARGS,
+        flags: { message: "one more thought", model: "claude-opus-4-1" },
+      });
+
+      const error: unknown = await runThreadReply(harness.context).catch((cause: unknown) => cause);
+
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+      expect(String(error)).toContain("only an agent turn names the model that wrote it");
+      expect(stub.requests).toHaveLength(0);
+    });
+
+    it("refuses before reading the body, so a heredoc is not consumed for nothing", async () => {
+      const stub = await startStubServer(jsonResponder(201, APPENDED));
+      const harness = stubContext(stub, { args: ARGS, flags: { model: "claude-opus-4-1" } });
+      const stdin = pipe("a long reply nobody wants to type twice\n");
+
+      const error: unknown = await runThreadReply(harness.context, {
+        stdin,
+        stdinIsBodySource: true,
+      }).catch((cause: unknown) => cause);
+
+      expect(exitCodeFor(error)).toBe(ExitCode.usageError);
+      expect(stub.requests).toHaveLength(0);
+    });
+
+    it("declares the flag and says what it is for, and what it is not", () => {
+      const flag = replyCommand.flags.find((candidate) => candidate.name === "model");
+      expect(flag?.type).toBe("string");
+      const text = flag?.description ?? "";
+      // A report of what ran, never a request for what should run — and never
+      // §7's weight, which is the other thing entirely (CONTRACT-039).
+      expect(text).toContain("**report of what ran**");
+      expect(text).toContain("never a request for what should run");
+      expect(text).toContain("not a weight");
+      // Agent-only, stated rather than discovered by a reply that just failed.
+      expect(text).toContain("Only an agent turn names a model");
+      expect(text).toContain("usage error (exit 2)");
+      // Absent stays absent.
+      expect(text).toContain("no model is recorded at all");
+      expect(text).toContain("nothing rather than a guess");
+      // No enum, ever.
+      expect(text).toContain("nothing here validates against a list");
+    });
+  });
 });
