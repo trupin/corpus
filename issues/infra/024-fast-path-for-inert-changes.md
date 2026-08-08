@@ -6,7 +6,7 @@ infra
 
 ## Status
 
-todo
+closed — **superseded by INFRA-025** (2026-08-07)
 
 ## Priority
 
@@ -24,6 +24,23 @@ opus
 ## Spec References
 
 - —
+
+## Why this is closed rather than done
+
+INFRA-025 went further in a simpler direction. Rather than detecting which
+changes are inert and skipping work for them, it removed the expensive work from
+the hooks entirely: a check that can run on the diff runs locally, and a check
+that needs the whole codebase is CI's.
+
+Measured after that change, a prose-only commit is **~1-2 seconds** — the outcome
+this issue was filed to buy. An allowlist of inert paths would now save a
+fraction of a second, at the cost of a classification table that must be kept
+correct forever, and whose failure mode is a gate that silently checks less than
+it appears to. That trade is no longer worth making.
+
+Kept rather than deleted for the analysis below, which stays true and is the
+reason nobody should implement the naive version later: **"only markdown
+changed" is not a safe predicate in this repo.**
 
 ## Summary
 
