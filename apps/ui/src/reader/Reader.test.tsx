@@ -96,7 +96,9 @@ function fullWire({ resolvedThread = false, ...overrides }: FullWireOptions = {}
         // A thread always has at least one turn — it is created with its first
         // one — and the seen mark is keyed on the last turn, so a turnless
         // fixture would be testing a state the server cannot produce.
-        turns: [{ author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" }],
+        turns: [
+          { author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?", model: null },
+        ],
       }),
     ],
     rows: {
@@ -534,8 +536,18 @@ describe("Reader", () => {
           id: "th_rate",
           parent: "doc_m",
           turns: [
-            { author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" },
-            { author: "agent", ts: "2026-07-01T10:07:00.000Z", body: "6.4% is closer." },
+            {
+              author: "user",
+              ts: "2026-07-01T10:05:00.000Z",
+              body: "is 6.1% right?",
+              model: null,
+            },
+            {
+              author: "agent",
+              ts: "2026-07-01T10:07:00.000Z",
+              body: "6.4% is closer.",
+              model: null,
+            },
           ],
         }),
       ],

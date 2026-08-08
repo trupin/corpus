@@ -14,6 +14,7 @@ const pending = (ts: string, body = "Mine."): PendingTurn => ({
   author: "user",
   ts,
   body,
+  model: null,
   pending: true,
   clientId: `c-${ts}`,
 });
@@ -21,7 +22,9 @@ const pending = (ts: string, body = "Mine."): PendingTurn => ({
 describe("isPendingTurn", () => {
   it("tells a provisional turn from a confirmed one", () => {
     expect(isPendingTurn(pending("2026-07-27T10:00:00Z"))).toBe(true);
-    expect(isPendingTurn({ author: "user", ts: "2026-07-27T10:00:00Z", body: "x" })).toBe(false);
+    expect(
+      isPendingTurn({ author: "user", ts: "2026-07-27T10:00:00Z", body: "x", model: null }),
+    ).toBe(false);
   });
 });
 

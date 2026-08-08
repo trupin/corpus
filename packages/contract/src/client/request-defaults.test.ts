@@ -116,7 +116,9 @@ function createTestClient() {
           parent: request.parent ?? null,
           anchor: request.selector ? "anc_k4f7" : null,
           agent: "none" as const,
-          turns: [{ author: "user" as const, ts: "2026-07-19T10:05:00Z", body: firstTurn }],
+          turns: [
+            { author: "user" as const, ts: "2026-07-19T10:05:00Z", body: firstTurn, model: null },
+          ],
         },
         anchorId: request.selector ? "anc_k4f7" : null,
         eventId: null,

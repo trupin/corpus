@@ -22,8 +22,15 @@ const turns = [
     author: "user",
     ts: "2026-07-19T10:05:00Z",
     body: "@agent is 6.1% still the right assumption?",
+    // A person's turn names no model (SPEC.md §11).
+    model: null,
   },
-  { author: "agent", ts: "2026-07-19T10:07:12Z", body: "Checked current averages; 6.4%." },
+  {
+    author: "agent",
+    ts: "2026-07-19T10:07:12Z",
+    body: "Checked current averages; 6.4%.",
+    model: "claude-opus-4-1",
+  },
 ];
 
 const thread = {
@@ -222,7 +229,7 @@ describe("AppendTurnRequest and AppendTurnResponse", () => {
         lastAuthor: "user",
         lastTs: "2026-07-19T10:09:00Z",
       },
-      turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks" },
+      turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks", model: null },
       eventId: null,
       warnings: [],
     };
@@ -414,7 +421,7 @@ describe("§14 warnings travel on every thread mutation", () => {
           lastAuthor: "user",
           lastTs: "2026-07-19T10:09:00Z",
         },
-        turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks" },
+        turn: { author: "user", ts: "2026-07-19T10:09:00Z", body: "thanks", model: null },
         eventId: null,
       },
     },

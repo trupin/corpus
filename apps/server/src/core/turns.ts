@@ -28,6 +28,18 @@ const MILLISECONDS_PER_SECOND = 1000;
 /** A turn plus the span of the source body it occupies, heading included. */
 type TurnBlock = Turn & { readonly start: number; readonly end: number };
 
+/**
+ * The model that wrote a turn is **not in the body** (CONTRACT-043): it lives in
+ * the thread document's frontmatter, keyed by turn timestamp, so that nothing a
+ * turn's own text can say is able to claim it. This module only ever sees a
+ * body, so every turn it produces names no model — which is §11's answer for a
+ * turn nobody recorded one for: `null`, never a guess.
+ *
+ * Joining the frontmatter map to these turns is the read path's job, above this
+ * function and below the route (SERVER-074).
+ */
+const NO_MODEL = null;
+
 export type ThreadBody = {
   /** Content before the first turn heading, verbatim. */
   readonly preamble: string;
@@ -52,6 +64,7 @@ const scanTurnBlocks = (body: string): TurnBlock[] => {
       author: heading.author,
       ts: heading.ts,
       body: trimTurnText(body.slice(heading.textStart, end)),
+      model: NO_MODEL,
       start: heading.start,
       end,
     };
@@ -64,7 +77,7 @@ export const parseThreadBody = (body: string): ThreadBody => {
   const first = blocks[0];
   return {
     preamble: first === undefined ? body : body.slice(0, first.start),
-    turns: blocks.map(({ author, ts, body: text }) => ({ author, ts, body: text })),
+    turns: blocks.map(({ author, ts, body: text, model }) => ({ author, ts, body: text, model })),
   };
 };
 
@@ -110,7 +123,7 @@ export const nextTurnTs = (body: string, requestedTs?: string): string => {
  */
 export const appendTurn = (body: string, input: AppendTurnInput): { body: string; turn: Turn } => {
   const ts = nextTurnTs(body, input.ts);
-  const turn: Turn = { author: input.author, ts, body: input.text.trim() };
+  const turn: Turn = { author: input.author, ts, body: input.text.trim(), model: NO_MODEL };
   const head = body.replace(/[ \t\r\n]*$/, "");
   return { body: head === "" ? renderTurn(turn) : `${head}\n\n${renderTurn(turn)}`, turn };
 };
@@ -127,7 +140,7 @@ export const deleteTurn = (body: string, ts: string): { body: string; deleted: T
   if (block === undefined) return { body, deleted: null };
   return {
     body: body.slice(0, block.start) + body.slice(block.end),
-    deleted: { author: block.author, ts: block.ts, body: block.body },
+    deleted: { author: block.author, ts: block.ts, body: block.body, model: block.model },
   };
 };
 

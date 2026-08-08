@@ -664,7 +664,7 @@ describe("answering a form", () => {
         lastAuthor: "user" as const,
         lastTs: "2026-07-19T10:09:00Z",
       },
-      turn: { author: "user" as const, ts: "2026-07-19T10:09:00Z", body: "6.4%" },
+      turn: { author: "user" as const, ts: "2026-07-19T10:09:00Z", body: "6.4%", model: null },
       eventId: "evt_7c1d",
       warnings: [],
     };
@@ -687,7 +687,7 @@ describe("answering a form", () => {
         lastAuthor: "user" as const,
         lastTs: "2026-07-19T10:09:00Z",
       },
-      turn: { author: "user" as const, ts: "2026-07-19T10:09:00Z", body: "6.4%" },
+      turn: { author: "user" as const, ts: "2026-07-19T10:09:00Z", body: "6.4%", model: null },
       eventId: null,
       warnings: [],
     });

@@ -57,9 +57,9 @@ describe("GET /api/threads/{id}", () => {
       anchor: created.anchorId,
       agent: "none",
       turns: [
-        { author: "user", ts: stamps[0], body: "is this right?" },
-        { author: "agent", ts: stamps[1], body: "checked; 6.4% is closer" },
-        { author: "user", ts: stamps[2], body: "thanks" },
+        { author: "user", ts: stamps[0], body: "is this right?", model: null },
+        { author: "agent", ts: stamps[1], body: "checked; 6.4% is closer", model: null },
+        { author: "user", ts: stamps[2], body: "thanks", model: null },
       ],
     });
   });
@@ -136,8 +136,8 @@ describe("GET /api/threads/{id} — hand-written files", () => {
       anchor: null,
       agent: "none",
       turns: [
-        { author: "user", ts: "2026-07-19T10:05:00Z", body: "first" },
-        { author: "agent", ts: "2026-07-19T10:07:00Z", body: "second" },
+        { author: "user", ts: "2026-07-19T10:05:00Z", body: "first", model: null },
+        { author: "agent", ts: "2026-07-19T10:07:00Z", body: "second", model: null },
       ],
     });
   });

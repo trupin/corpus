@@ -25,11 +25,17 @@ afterEach(() => {
 });
 
 const TURNS = [
-  { author: "user" as const, ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" },
+  {
+    author: "user" as const,
+    ts: "2026-07-01T10:05:00.000Z",
+    body: "is 6.1% right?",
+    model: null,
+  },
   {
     author: "agent" as const,
     ts: "2026-07-01T10:07:00.000Z",
     body: "6.4% is closer.\n↳ edited the model doc — 3 lines",
+    model: null,
   },
 ];
 
@@ -38,6 +44,7 @@ const NOTE = {
   author: "user" as const,
   ts: "2026-07-01T10:12:00.000Z",
   body: "filing this away — no need to look at it",
+  model: null,
 };
 
 const PARENT = docFixture({
@@ -655,7 +662,9 @@ describe("child threads", () => {
         threadFixture({
           id: "th_child",
           parent: "th_a",
-          turns: [{ author: "user", ts: "2026-07-01T10:09:00.000Z", body: "where from?" }],
+          turns: [
+            { author: "user", ts: "2026-07-01T10:09:00.000Z", body: "where from?", model: null },
+          ],
         }),
       ],
       rows: {
@@ -717,13 +726,14 @@ describe("two forms offering the same option", () => {
         ...options.map((option) => `  - ${option}`),
         "```",
       ].join("\n"),
+      model: null,
     };
   }
 
   function twoForms(): ReaderTransport {
     return wire({
       turns: [
-        { author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?" },
+        { author: "user", ts: "2026-07-01T10:05:00.000Z", body: "is 6.1% right?", model: null },
         formTurn(FIRST_TS, "File the first quote?", ["Yes", "No"]),
         formTurn(SECOND_TS, "File the second quote?", ["Yes", "Later"]),
       ],

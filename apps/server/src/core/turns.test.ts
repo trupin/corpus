@@ -30,9 +30,15 @@ describe("parseThreadBody", () => {
         author: "user",
         ts: "2026-07-19T10:05:00Z",
         body: "@agent is 6.1% still the right assumption?",
+        model: null,
       },
-      { author: "agent", ts: "2026-07-19T10:06:00Z", body: "Checking current averages." },
-      { author: "user", ts: "2026-07-19T10:07:12Z", body: "Thanks." },
+      {
+        author: "agent",
+        ts: "2026-07-19T10:06:00Z",
+        body: "Checking current averages.",
+        model: null,
+      },
+      { author: "user", ts: "2026-07-19T10:07:12Z", body: "Thanks.", model: null },
     ]);
   });
 
@@ -148,7 +154,12 @@ describe("appendTurn", () => {
       text: "Updated.",
       ts: "2026-07-19T10:09:00Z",
     });
-    expect(turn).toEqual({ author: "agent", ts: "2026-07-19T10:09:00Z", body: "Updated." });
+    expect(turn).toEqual({
+      author: "agent",
+      ts: "2026-07-19T10:09:00Z",
+      body: "Updated.",
+      model: null,
+    });
     expect(body.endsWith("## agent · 2026-07-19T10:09:00Z\nUpdated.\n")).toBe(true);
     expect(parseTurns(body)).toHaveLength(4);
   });
@@ -220,14 +231,16 @@ describe("deleteTurn", () => {
       author: "agent",
       ts: "2026-07-19T10:06:00Z",
       body: "Checking current averages.",
+      model: null,
     });
     expect(parseTurns(body)).toEqual([
       {
         author: "user",
         ts: "2026-07-19T10:05:00Z",
         body: "@agent is 6.1% still the right assumption?",
+        model: null,
       },
-      { author: "user", ts: "2026-07-19T10:07:12Z", body: "Thanks." },
+      { author: "user", ts: "2026-07-19T10:07:12Z", body: "Thanks.", model: null },
     ]);
     expect(body).toContain("A preamble paragraph the composer wrote.");
   });

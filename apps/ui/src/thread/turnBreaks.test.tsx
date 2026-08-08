@@ -58,7 +58,8 @@ function Host({ turn }: { readonly turn: ThreadTurn }): ReactElement {
 }
 
 function renderTurn(author: "user" | "agent", body: string): HTMLElement {
-  return render(<Host turn={{ author, ts: "2026-08-03T10:00:00.000Z", body }} />).container;
+  return render(<Host turn={{ author, ts: "2026-08-03T10:00:00.000Z", body, model: null }} />)
+    .container;
 }
 
 describe("a newline in a turn", () => {

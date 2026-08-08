@@ -5,8 +5,8 @@ import { threadRowFixture } from "../testing/readerFixture";
 import { placeChildThreads, turnAnchorText } from "./childThreads";
 
 const TURNS: readonly ThreadTurn[] = [
-  { author: "user", ts: "1", body: "is 6.1% right?" },
-  { author: "agent", ts: "2", body: "6.4% is closer.\n\nSee the table." },
+  { author: "user", ts: "1", body: "is 6.1% right?", model: null },
+  { author: "agent", ts: "2", body: "6.4% is closer.\n\nSee the table.", model: null },
 ];
 
 describe("turnAnchorText", () => {
@@ -20,19 +20,25 @@ describe("turnAnchorText", () => {
         author: "user",
         ts: "3",
         body: "look at this\n\n![shot.png](attachments/th_a/t/shot.png)",
+        model: null,
       }),
     ).toBe("look at this");
   });
 
   it("falls back to the whole body for an attachment-only turn", () => {
     expect(
-      turnAnchorText({ author: "user", ts: "4", body: "![a.png](attachments/th_a/t/a.png)" }),
+      turnAnchorText({
+        author: "user",
+        ts: "4",
+        body: "![a.png](attachments/th_a/t/a.png)",
+        model: null,
+      }),
     ).toBe("");
   });
 
   it("caps the quote rather than anchoring a whole paragraph", () => {
     const long = "x".repeat(400);
-    expect(turnAnchorText({ author: "user", ts: "5", body: long })).toHaveLength(160);
+    expect(turnAnchorText({ author: "user", ts: "5", body: long, model: null })).toHaveLength(160);
   });
 });
 
@@ -84,8 +90,8 @@ describe("placeChildThreads", () => {
  */
 describe("placeChildThreads, with the thread's own resolved anchors", () => {
   const REPEATED: readonly ThreadTurn[] = [
-    { author: "user", ts: "1", body: "the rate is stale" },
-    { author: "agent", ts: "2", body: "agreed, the rate is stale" },
+    { author: "user", ts: "1", body: "the rate is stale", model: null },
+    { author: "agent", ts: "2", body: "agreed, the rate is stale", model: null },
   ];
   const BODY = "## user · 1\n\nthe rate is stale\n\n## agent · 2\n\nagreed, the rate is stale\n";
   const SECOND = BODY.indexOf("the rate is stale", BODY.indexOf("the rate is stale") + 1);
