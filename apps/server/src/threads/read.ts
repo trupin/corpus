@@ -25,6 +25,8 @@ import {
   isDocumentId,
   normalizeInstant,
   parseTurns,
+  turnModelsOf,
+  withTurnModels,
 } from "../core/index.js";
 import { loadDocument, type LoadedDocument } from "../docs/index.js";
 import { notFound } from "../errors.js";
@@ -90,7 +92,12 @@ export function loadThread(workspace: ThreadReader, id: string): LoadedThread {
 /** The same shaping, for a {@link LoadedDocument} the caller already has in hand. */
 export function readThread(workspace: ThreadReader, loaded: LoadedDocument): LoadedThread {
   const data = loaded.parsed.data;
-  const turns = parseTurns(loaded.parsed.body);
+  // The body says which turns there are; the frontmatter says which model wrote
+  // each (SPEC.md §6, CONTRACT-043). Joined here, once, so every reader that
+  // goes through the server — the thread route, the context pack, the summary —
+  // reads a turn with its model on it and nobody re-derives the join. A turn the
+  // map says nothing about keeps the parser's `null`: §11's nothing, not a guess.
+  const turns = withTurnModels(parseTurns(loaded.parsed.body), turnModelsOf(data));
   const tags: unknown = data["tags"];
 
   // A thread with neither stamp and no turns is not something the server can

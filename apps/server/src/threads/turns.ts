@@ -58,10 +58,12 @@ import {
   serializeDocument,
   setBody,
   setFrontmatterFields,
+  turnModelsPatch,
 } from "../core/index.js";
 import {
   runMutation,
   validateBeforeWrite,
+  validationError,
   type DocumentMutex,
   type MutationResult,
 } from "../docs/index.js";
@@ -80,7 +82,38 @@ export interface TurnInput {
   readonly text: string | undefined;
   /** The §8 tri-state, exactly as it arrived; `undefined` means *omitted*. */
   readonly requestsAgent: boolean | undefined;
+  /**
+   * The model that wrote this turn (SPEC.md §11), or `undefined` when the writer
+   * did not say. Recorded verbatim and interpreted in no way — see
+   * {@link assertModelNamesAnAgentTurn}.
+   */
+  readonly model: string | undefined;
   readonly files: readonly File[];
+}
+
+/**
+ * A model may be stated only about a turn the **agent** wrote (SPEC.md §11,
+ * CONTRACT-043).
+ *
+ * "A turn a person wrote names no model" is not a rendering convention: a server
+ * that accepted one would be publishing an attribution nobody made, on the one
+ * field of a turn that describes the past rather than asking for something. It
+ * is refused rather than dropped, because silently discarding it would tell the
+ * caller its report landed.
+ *
+ * Placed on the verb rather than the handler so it holds on **every** door onto
+ * a turn — both media types of `POST /api/threads` and of
+ * `POST /api/threads/{id}/turns` — the placement `assertAppendableTurnText` takes
+ * for the same reason.
+ */
+export function assertModelNamesAnAgentTurn(actor: Actor, model: string | undefined): void {
+  if (model === undefined || actor === "agent") return;
+  validationError("only an agent turn names the model that wrote it", [
+    {
+      path: "model",
+      message: `a turn authored by \`${actor}\` names no model (SPEC.md §11)`,
+    },
+  ]);
 }
 
 export interface TurnAppend {
@@ -100,11 +133,16 @@ export interface TurnAppend {
  */
 export function turnRequestBody(body: AppendTurnBody): TurnInput {
   if (!isMultipartTurn(body)) {
-    return { text: body.body, requestsAgent: body.requestsAgent, files: [] };
+    return { text: body.body, requestsAgent: body.requestsAgent, model: body.model, files: [] };
   }
   // A body with neither `text` nor `files` is refused by the schema's own
   // refine, so both may legitimately be absent here — one of them, never both.
-  return { text: body.text, requestsAgent: body.requestsAgent, files: body.files };
+  return {
+    text: body.text,
+    requestsAgent: body.requestsAgent,
+    model: body.model,
+    files: body.files,
+  };
 }
 
 /** The bytes an append will write, and what §14 noticed about them. */
@@ -144,13 +182,28 @@ export function buildTurnAppend(
     readonly agent: ThreadAgent;
     /** The thread's `status` after this turn, per §8's reopen. */
     readonly status: ThreadStatus;
+    /**
+     * The model that wrote this turn (SPEC.md §11), recorded in the thread's
+     * frontmatter beside its `anchors` map. Omitted by every caller that has
+     * nothing to report — a person's turn, and a form answer, which the contract
+     * gives no way to state one on.
+     */
+    readonly model?: string | undefined;
   },
 ): PreparedTurn {
-  const appended = appendTurn(thread.loaded.parsed.body, {
+  const written = appendTurn(thread.loaded.parsed.body, {
     author: input.author,
     text: input.text,
     ts: input.ts,
   });
+  // `core/turns.ts` only ever sees a body, so every turn it produces names no
+  // model; the model is what this write is *recording*, so the wire turn carries
+  // it from here rather than from a re-read of the file this write has not made
+  // yet. `null` when nothing was stated — §11's nothing, never a default.
+  const appended = {
+    body: written.body,
+    turn: { ...written.turn, model: input.model ?? null },
+  };
   // `updated` is the turn's own stamp rather than the wall clock: they differ
   // exactly when the stamp was bumped for uniqueness, and the useful answer is
   // "when the last turn is dated", which is what every list sorts on.
@@ -164,6 +217,19 @@ export function buildTurnAppend(
       // unarchive it — this is not the equal-value no-op `setFrontmatterFields`
       // already gives us, it is a lossy write that must never be attempted.
       ...(input.status === thread.status ? {} : { status: input.status }),
+      // The model record, in the same bytes and the same commit as the turn it
+      // describes (SPEC.md §6): the turn and its attribution cannot land apart.
+      // `keep` is the thread's timestamps before this append — every turn but
+      // this one — and the new turn's own entry is decided solely by what the
+      // writer stated, so a stale entry sitting on a stamp this append is
+      // *reusing* (a last turn deleted out of band, where the cascade never ran)
+      // cannot hand this turn a dead turn's model. A thread nobody recorded a
+      // model for never grows the key, so this write stays what it always was.
+      ...turnModelsPatch(
+        thread.loaded.parsed.data,
+        thread.turns.map((turn) => turn.ts),
+        { ts: appended.turn.ts, model: input.model },
+      ),
     }),
   );
   return { appended, text, warnings: validateBeforeWrite(workspace, thread.loaded.path, text) };
@@ -246,6 +312,9 @@ export async function appendThreadTurn(
   // either shape still accepts replies (`fences.ts` states the SERVER-066
   // boundary in full).
   assertAppendableTurnText(input.text, TURN_SUBJECT);
+  // Likewise for an attribution nobody made (SPEC.md §11): a person's turn names
+  // no model, on any path.
+  assertModelNamesAnAgentTurn(actor, input.model);
   // Likewise for a malformed form the *agent* wrote: this is the endpoint it
   // asks through (§6), so this is where it finds out — not the person, later,
   // when they try to answer. It vets neither another actor's turn nor the first
@@ -284,6 +353,7 @@ export async function appendThreadTurn(
         ts,
         agent: decision.agent,
         status: decision.status,
+        model: input.model,
       }),
     );
 

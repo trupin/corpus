@@ -2,6 +2,7 @@ import type { DocRow, ResolvedAnchor } from "@corpus/contract";
 import { CorpusRequestError, useCreateThread, type RowNotice } from "@corpus/kit";
 import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { expandClipAround } from "../editor/changelogClip";
 import { useIsEditing } from "../editor/editingRegistry";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
@@ -514,6 +515,16 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    * The card scrolls itself (UI-008 does that on `flashing`); this is the other
    * half of "jumps to its anchor" — the highlighted words themselves, which in
    * a long document are what the person is actually looking for.
+   *
+   * **And open the clip, when the anchor is inside one** (UI-089). SPEC.md §11:
+   * "an anchor into a clipped entry still resolves — revealing that conversation
+   * expands the clip rather than quietly failing to reach it." Resolving is
+   * already true, because an anchor is matched against the document rather than
+   * against the laid-out box, and the highlight is decorated whether or not it
+   * is on screen — so without this the jump would land on a box zero pixels
+   * tall, which is precisely the quiet failure the clause names. The expansion
+   * dispatches a ProseMirror transaction, which repaints synchronously, so the
+   * scroll below finds the entry already laid out.
    */
   useEffect(() => {
     if (flashThread === null) return;
@@ -521,6 +532,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       `.anchor-hl[data-thread="${escapeSelectorValue(flashThread)}"]`,
     );
     if (highlight === null || highlight === undefined) return;
+    expandClipAround(highlight);
     if (typeof highlight.scrollIntoView === "function") {
       highlight.scrollIntoView({ behavior: "smooth", block: "center" });
     }

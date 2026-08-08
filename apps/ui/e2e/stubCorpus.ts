@@ -54,6 +54,19 @@ export interface StubRow {
    * says about it too.
    */
   readonly body?: string;
+  /**
+   * Which model wrote which turn, keyed by the turn's timestamp (SPEC.md §6,
+   * CONTRACT-043).
+   *
+   * A separate seed from `body` because the record is a separate place on disk:
+   * §6 keeps it in the thread document's **frontmatter**, so the turn's own text
+   * carries none of it and a body alone names no model. Seeding it here is what
+   * lets a spec meet the mixed conversation §11 is written about — a turn with a
+   * model, an agent turn without, and a person's turn — rather than only the
+   * all-null thread a body-only stub can produce. A timestamp with no entry
+   * reports `null`, exactly as the server reports a turn nobody recorded one for.
+   */
+  readonly turnModels?: Readonly<Record<string, string>>;
   readonly status?: string;
   readonly pinned?: boolean;
   readonly order?: number | null;
@@ -119,6 +132,8 @@ interface StoredDoc {
   title: string;
   path: string;
   body: string;
+  /** The frontmatter record of which model wrote which turn, keyed by `ts`. */
+  turnModels: Record<string, string>;
   status: string;
   pinned: boolean;
   order: number | null;
@@ -187,6 +202,7 @@ function seeded(row: StubRow): StoredDoc {
     title: row.title ?? "Untitled",
     path: row.path ?? `data/docs/inbox/${row.id}.md`,
     body: row.body ?? "",
+    turnModels: { ...(row.turnModels ?? {}) },
     status: row.status ?? "open",
     pinned: row.pinned ?? false,
     order: row.order ?? null,
@@ -334,9 +350,23 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     });
   };
 
-  /** The turns of a thread document, as its own body spells them out. */
+  /**
+   * The turns of a thread document — its body for the text, its frontmatter for
+   * the model (SPEC.md §6).
+   *
+   * The two halves come from two places on purpose, because they do on disk:
+   * `parseThreadTurns` is the body-only parser the server's own is mirrored from
+   * and names no model, and the `turnModels` map keyed by turn timestamp is what
+   * supplies one. A timestamp with no entry stays `null` — the honest answer
+   * §11 requires for a turn nobody recorded a model for.
+   */
   const turnsOf = (doc: StoredDoc): readonly StubTurn[] =>
-    doc.type === "thread" ? parseThreadTurns(doc.body) : [];
+    doc.type === "thread"
+      ? parseThreadTurns(doc.body).map((turn) => ({
+          ...turn,
+          model: doc.turnModels[turn.ts] ?? null,
+        }))
+      : [];
 
   /** A thread's anchored text, from the entry its parent holds for it. */
   const parentAnchorQuote = (doc: StoredDoc): string | null => {
@@ -826,7 +856,10 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
         // The anchor entry lives on the **parent**, and the thread names it.
         anchor: parent?.anchors.find((anchor) => anchor.threadId === id)?.anchorId ?? null,
         agent: doc.agent,
-        turns: parseThreadTurns(doc.body),
+        // `turnsOf`, not the bare body parser: this is the read every thread
+        // surface goes through, and it is where a turn learns which model wrote
+        // it (SPEC.md §11).
+        turns: turnsOf(doc),
       });
     }
 

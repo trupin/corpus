@@ -11,6 +11,7 @@ import {
 } from "./parseFormBlock";
 import { splitTurnAttachments } from "./attachmentRefs";
 import { TurnAttachments } from "./TurnAttachments";
+import { turnModelLabel } from "./turnModel";
 import { turnStamp } from "./turnStamp";
 
 /**
@@ -164,11 +165,47 @@ export function Turn({
    */
   const hardBreaks = turn.author === "user";
 
+  /**
+   * Which model wrote this (SPEC.md §11, rider signed 2026-08-07), or `null`.
+   *
+   * **Why the header and not the footer.** The header is the turn's provenance
+   * line, and the model is provenance: "who wrote this" is answered by the
+   * author *and* the model together, so splitting them puts half the answer at
+   * the top of the turn and half at the bottom. Three things settled it against
+   * the alternative of hanging it off the trace line:
+   *
+   * - §11's own phrasing is that the model is "shown with the turn", and the
+   *   issue's criterion is that it reads "beside the author and timestamp" —
+   *   which is this row and no other;
+   * - scanning a conversation for *which* turns a given model wrote is the
+   *   motivating question, and a footer makes that scan alternate between two
+   *   y-offsets per turn while a long turn pushes the answer off screen
+   *   entirely;
+   * - the footer is already taken by the trace, which says what the agent
+   *   **did**, a different question that deserves not to be crowded either.
+   *
+   * The density the issue warns about is paid for instead of ignored: the chip
+   * is the **quietest** thing in the row — neutral, borrowing none of the three
+   * colour axes `packages/kit/src/row/badges.tsx` keeps disjoint, and smaller
+   * than the author it qualifies — and it sits in the left cluster, so the two
+   * hover-revealed controls keep the right edge to themselves. The row holds
+   * **two** things at rest today, because those controls ship at `opacity: 0`;
+   * this makes three, of which only the author is bold.
+   */
+  const model = turnModelLabel(turn);
+
   return (
     <div className={pending ? "turn pending" : "turn"} data-turn-ts={turn.ts}>
       <div className="turn-who">
         <span className={turn.author === "agent" ? "who agent" : "who"}>{turn.author}</span>
         <span>{pending ? "sending…" : turnStamp(turn.ts)}</span>
+        {/* Nothing at all when no model is recorded — never a placeholder.
+            See `turnModel.ts` for the three ways that happens. */}
+        {model === null ? null : (
+          <span className="turn-model" data-turn-model={model} title={`Written by ${model}`}>
+            {model}
+          </span>
+        )}
         {onComment === undefined ? null : (
           <button
             type="button"

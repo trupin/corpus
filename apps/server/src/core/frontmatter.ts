@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import type { ParsedDocument } from "./document.js";
 import { normalizeCalendarDate, normalizeInstant } from "./time.js";
+import { FileTurnModelsSchema } from "./turn-model.js";
 
 /**
  * The **file-level** frontmatter shape (SPEC.md §5, §6) — deliberately not the
@@ -87,6 +88,14 @@ export const FileFrontmatterSchema = z.looseObject({
  * Thread documents add the §6 fields. `agent` defaults to `none` rather than
  * failing: a hand-written thread that never asked for the agent is a legitimate
  * document, and §8 makes `none` exactly that state.
+ *
+ * `turnModels` (SPEC.md §6, CONTRACT-043) defaults to the empty map for the same
+ * reason every optional field here does: a thread nobody recorded a model for
+ * simply has no key, which is §11's "nothing rather than a guess" spelled in
+ * frontmatter. Its shape is `core/turn-model.ts`'s file-level form — the
+ * contract's canonical map behind the one normalisation a file needs — so a
+ * hand-written offset instant is accepted and an entry naming no instant at all
+ * is reported as the §14 finding it is, rather than silently missing every turn.
  */
 export const FileThreadFrontmatterSchema = FileFrontmatterSchema.extend({
   id: ThreadIdSchema,
@@ -94,6 +103,7 @@ export const FileThreadFrontmatterSchema = FileFrontmatterSchema.extend({
   parent: DocumentIdSchema.nullable().default(null),
   anchor: AnchorIdSchema.nullable().default(null),
   agent: ThreadAgentSchema.default("none"),
+  turnModels: FileTurnModelsSchema.default({}),
 });
 
 export type FileFrontmatter = z.infer<typeof FileFrontmatterSchema>;

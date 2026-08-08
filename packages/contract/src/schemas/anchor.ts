@@ -47,5 +47,29 @@ export const TextQuoteSelectorRequestSchema = z.object({
   suffix: z.string().optional().describe(`${SUFFIX_DESCRIPTION} ${REQUEST_CONTEXT_NOTE}`),
 });
 
+/**
+ * A half-open span of the *body* a selector resolves into — `[start, end)`,
+ * measured in the units `String.prototype.slice` uses (UTF-16 code units), over
+ * the markdown body **without** the frontmatter block, which is exactly what
+ * `Doc.body` carries.
+ *
+ * One definition, used in both directions: it is what `ResolvedAnchor.range`
+ * reports on a read, and what `POST /api/threads/{id}/reattach` accepts on a
+ * write. That symmetry is the point — a client that has a range from a read can
+ * send it straight back without translating coordinate spaces, and there is no
+ * second spelling of "where in the body" to drift.
+ *
+ * Deliberately **unregistered** as a component: `ResolvedAnchor` uses it
+ * `.nullable()`, and zod-to-openapi propagates a registered name onto derived
+ * schemas, which would rewrite the shared component (the same hazard
+ * `ExtraFrontmatterSchema` is unregistered for). Inlining it in both places is
+ * deterministic and costs nothing.
+ */
+export const BodyRangeSchema = z.object({
+  start: z.number().int().min(0).describe("Offset of the first character, inclusive."),
+  end: z.number().int().min(0).describe("Offset one past the last character, exclusive."),
+});
+
 export type TextQuoteSelector = z.infer<typeof TextQuoteSelectorSchema>;
 export type TextQuoteSelectorRequest = z.infer<typeof TextQuoteSelectorRequestSchema>;
+export type BodyRange = z.infer<typeof BodyRangeSchema>;

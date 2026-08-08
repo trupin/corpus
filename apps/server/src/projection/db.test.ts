@@ -73,8 +73,10 @@ const SPEC_COLUMNS: Record<string, readonly string[]> = {
   // SERVER-029 and SERVER-032: §6's form grammar is a regex plus a YAML parse
   // and an answer is paired with its form by the options that parse yields, so
   // `needs=form` cannot ask either question in SQL and reads columns the
-  // projector filled instead.
-  turns: ["thread_id", "idx", "author", "ts", "body_md", "has_form", "form_answered"],
+  // projector filled instead. `model` is past it too (SERVER-074): the record
+  // lives in the thread's frontmatter keyed by turn timestamp (§6), and joining
+  // it onto the turn is work the board should not repeat per read.
+  turns: ["thread_id", "idx", "author", "ts", "body_md", "has_form", "form_answered", "model"],
   events: ["id", "type", "status", "created", "payload_json", "blocked_on"],
   seen: ["thread_id", "last_seen_ts"],
   jobs: ["event_id", "status", "started", "updated", "last_line"],

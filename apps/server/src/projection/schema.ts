@@ -83,8 +83,16 @@
  *
  * Both are derived from the file like everything else here, so the rebuild this
  * bump triggers is the whole migration.
+ *
+ * 12 → 13 (SERVER-074): `turns.model` — which model wrote an agent turn (§6,
+ * §11, CONTRACT-043). A new column, so a v12 database does not have it and no
+ * value in one could be carried over; it is read straight off the thread file's
+ * `turnModels` frontmatter map, so the rebuild this bump triggers is the whole
+ * migration. **No backfill and no guessing**: a turn written before the record
+ * existed has no entry, and the rebuild writes `NULL` for it — the same nothing
+ * §11 asks a reader to show, never an attribution reconstructed after the fact.
  */
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 /** `meta` keys this module owns. */
 export const META_SCHEMA_VERSION = "schema_version";
@@ -198,6 +206,15 @@ export const REPOPULATED_TABLES = [
  * stay a syntactic match for `docs/needs.ts`'s conjuncts — SQLite only uses a
  * partial index whose condition the query provably implies.
  *
+ * **`turns.model` is a join the board should not have to reparse a file for**
+ * (SERVER-074). The record lives in the thread document's frontmatter keyed by
+ * turn timestamp (§6, CONTRACT-043) — locality the file gives up on purpose —
+ * and joining a map at the top of a file onto the turn it names is exactly the
+ * work a projection exists to have done already. Nullable, and `NULL` is the
+ * only honest value for a turn nobody recorded one for: §11 wants nothing shown
+ * there, never a placeholder. Derived like every other column here, from the one
+ * reader (`core/turn-model.ts`) the write path and the wire also go through.
+ *
  * **The semantic index is three tables, not one** (SERVER-042, §9.1's "Semantic
  * index" block), and the split is what makes the spec's observable promise —
  * "saving a small change to a large document recomputes only the edited
@@ -281,6 +298,7 @@ CREATE TABLE turns (
   body_md TEXT NOT NULL,
   has_form INTEGER NOT NULL,
   form_answered INTEGER,
+  model TEXT,
   PRIMARY KEY (thread_id, ts)
 );
 

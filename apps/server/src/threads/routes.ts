@@ -23,6 +23,7 @@ import { threadContextPack } from "./context.js";
 import { createThread, threadRequestBody } from "./create.js";
 import { answerThreadForm } from "./forms.js";
 import { loadThread, toWireThread } from "./read.js";
+import { reattachThread } from "./reattach.js";
 import { markThreadSeen } from "./seen.js";
 import { setThreadStatus } from "./status.js";
 import { appendThreadTurn, turnRequestBody } from "./turns.js";
@@ -140,6 +141,20 @@ export function mountThreadRoutes(
     const { thread, result } = await setThreadStatus(workspace, mutex, actor, id, "open");
     if (result !== null) reportWarnings(workspace, id, result);
     return c.json({ thread, warnings: result === null ? [] : serializeWarnings(result) }, 200);
+  });
+
+  app.openapi(contractRoutes.reattachThread, async (c) => {
+    const { id } = c.req.valid("param");
+    const actor = actorOf(c.req.valid("header"));
+    const { thread, anchor, result } = await reattachThread(
+      workspace,
+      mutex,
+      actor,
+      id,
+      c.req.valid("json"),
+    );
+    reportWarnings(workspace, id, result);
+    return c.json({ thread, anchor, warnings: serializeWarnings(result) }, 200);
   });
 
   app.openapi(contractRoutes.markThreadSeen, async (c) => {

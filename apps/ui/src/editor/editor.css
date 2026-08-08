@@ -309,3 +309,68 @@ button.save-chip {
 .doc-body .doc-image .md-img {
   vertical-align: text-bottom;
 }
+
+/*
+ * ── The changelog's clip (UI-089) ────────────────────────────────────
+ *
+ * SPEC.md §11: a document's changelog "past a threshold of entries **clips**,
+ * exactly as a long fenced block does" — the newest entries stay visible, the
+ * rest sit behind a control that says how many are hidden. `changelogClip.ts`
+ * decides which entries; this decides what "clipped" looks like.
+ *
+ * **Clipped, not hidden**, and the difference is the spec's: "clipped entries
+ * stay selectable, commentable and searchable like any other body text". So
+ * this is `max-height: 0` over `overflow: hidden` — the fence's own mechanism —
+ * and never `display: none` or `visibility: hidden`, either of which would take
+ * the entry out of the rendered document and with it the selection, the
+ * commenting and the anchor highlight drawn on it. The entry is still there;
+ * the box it is drawn in is nothing tall.
+ *
+ * The list marker goes with it: a zero-height `li` still paints its bullet
+ * outside its own box, which would leave a column of orphan bullets under the
+ * heading saying nothing.
+ */
+.doc-body [data-changelog-clipped] {
+  max-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  list-style: none;
+}
+
+/*
+ * The control, in the fence's visual language (`markdown.css`'s `.fence-more`)
+ * because it is the same behaviour: a full-width bar rather than a corner
+ * button, so the cut edge itself is the target.
+ */
+.doc-body .changelog-more {
+  display: block;
+  width: 100%;
+  margin: 6px 0 10px;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  text-align: center;
+  cursor: pointer;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-body .changelog-more:hover {
+  color: var(--accent-ink);
+}
+
+.doc-body .changelog-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.doc-body .changelog-more.expanded {
+  border-bottom: none;
+}

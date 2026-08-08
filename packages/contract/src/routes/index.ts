@@ -36,6 +36,7 @@ import {
 import { searchCorpus } from "./search.js";
 import { createSkill, rollbackSkill } from "./skills.js";
 import { createThread } from "./thread-create.js";
+import { reattachThread } from "./thread-reattach.js";
 import {
   deleteTurn,
   getThread,
@@ -68,6 +69,7 @@ export * from "./responses.js";
 export * from "./search.js";
 export * from "./skills.js";
 export * from "./thread-create.js";
+export * from "./thread-reattach.js";
 export * from "./threads.js";
 export * from "./tree.js";
 export * from "./turn-append.js";
@@ -132,6 +134,7 @@ export const contractRoutes = {
   resolveThread,
   reopenThread,
   markThreadSeen,
+  reattachThread,
 
   getQueueStatus,
   idleQueue,

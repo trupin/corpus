@@ -1844,6 +1844,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{id}/reattach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-attach a thread to a range a person chose (user-only)
+         * @description Attaches an anchored thread to a range of its parent document's current body, chosen by a **person**. The repair for a comment whose selector never byte-matched, which reconciliation cannot fix: a save only ever carries an anchor forward or orphans it, and an anchor that was never resolvable stays detached for the life of the document (SPEC.md §6).
+         *
+         *     **The request names a range, never a candidate.** A candidate index would oblige the server to regenerate the same list the UI showed and count into it, so the moment the two lists differ the same index means a different passage — the exact silent misattachment this route exists to prevent. `range` is in `ResolvedAnchor.range`'s coordinate space, so a range read from `GET /api/docs/{id}` can be sent straight back.
+         *
+         *     **Nothing the caller sends is stored.** The server reads the range's bytes out of the parent and computes the whole selector — `exact` and its `prefix`/`suffix` context — from the document itself, the same rule `POST /api/threads` follows (SERVER-071), so a repaired anchor is in exactly the shape a save would have left it in and the two cannot drift. `expectedText` is a **guard, not a selector**: the server refuses when the parent's live bytes at that range are not what the caller was looking at, because the document may have been saved between the person seeing the range and choosing it.
+         *
+         *     **User-only**: a request carrying `x-corpus-author: agent` is rejected with `403`. The evidence this route runs on is a person's memory of what they commented on; SERVER-059 showed it does not exist at read time, so a machine calling this would be guessing, and §6 puts a visible orphan above a silent misattachment. The agent also has no need for it — every edit that carries real evidence already reconciles on the save path.
+         *
+         *     **One action, one commit** (SPEC.md §4): the repair rewrites one `anchors` entry in the parent's frontmatter and lands as a single auto-commit authored by the acting party. Nothing else about the thread changes — not its status, not its turns, not its body. `423` when the parent is held by the other party's edit lock, since the parent is what is written (§7).
+         *
+         *     **`409`, with a machine-readable `reason`.** `range-changed` — the parent no longer holds `expectedText` at that range, or the range runs past the end of the body; the caller has to re-read and choose again. `range-overlaps` — the range overlaps text another thread's anchor already resolves over; §6 requires that two threads on disjoint text never end up claiming overlapping text, so this is refused rather than merged or silently dropped. The thread's **own** current anchor is not an overlap with itself. `not-anchored` — the thread is standalone or a whole-document comment; giving one an anchor changes the scope of somebody's comment rather than repairing it, and is not this route.
+         *
+         *     **A thread that already resolves may be re-attached too**, which moves it. A misattached anchor is as wrong as a detached one, and refusing would leave delete-and-recreate — losing the conversation — as the only correction. The guard and the overlap check make the move as safe as the repair.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path: {
+                    /** @description Identifier of a thread document. */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            /** @description The range the person chose, and the bytes they saw there. Mandatory: a re-attach with no range is not a decision. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReattachThreadRequest"];
+                };
+            };
+            responses: {
+                /** @description The repaired anchor — `orphaned: false`, and a `range` equal to the one the request named — with the thread summary and any warnings raised while writing the parent. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReattachThreadResponse"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+                /** @description No such resource. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotFoundError"];
+                    };
+                };
+                /** @description The document's state refuses the repair; `reason` says which state — the range changed under the caller, it overlaps another thread's text, or the thread has no anchor to repair. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReattachConflictError"];
+                    };
+                };
+                /** @description The document is held by the other party's edit lock; `lock` identifies the holder (SPEC.md §7). */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LockedError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queue/status": {
         parameters: {
             query?: never;
@@ -3800,7 +3916,7 @@ export interface paths {
          *
          *     The key vocabulary is **closed** — these ten shapes and no others. Constants and helpers that build them are published as `QUERY_KEY_VOCABULARY` and friends from `@corpus/contract` and `@corpus/contract/client`, so the emitter and the client bridge share one source rather than two copies that drift:
          *
-         *     - `["docs"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.
+         *     - `["docs"]` — emitted by every document or thread mutation (create, update, move, archive, unarchive, delete, thread create, turn append, resolve/reopen, re-attach, mark-seen) and every out-of-band file change the watcher projects. Refetch: `GET /api/docs` — every board column, the search overlay, Attention, and every autocomplete.
          *     - `["docs", "<docId|threadId>"]` — emitted by a mutation of that one document, and a thread mutation for both the thread and its parent. Refetch: `GET /api/docs/{id}` — the open reader for that document.
          *     - `["tree"]` — emitted by anything that changes the folder hierarchy: create, move, delete, archive of a skill. Refetch: `GET /api/tree` — the folder-column picker.
          *     - `["threads", "<threadId>"]` — emitted by thread creation, turn append, turn deletion, resolve/reopen, and mark-seen for that thread. Refetch: `GET /api/threads/{id}` — the open thread view and its unread badge.
@@ -4190,9 +4306,11 @@ export interface components {
              * @enum {string}
              */
             threadStatus: "open" | "resolved";
-            /** @description Character range in the current body, or null when the selector no longer resolves. */
+            /** @description Character range in the current body, or null when the selector no longer resolves. The same coordinate space `POST /api/threads/{id}/reattach` accepts, so a range read here can be sent straight back. */
             range: {
+                /** @description Offset of the first character, inclusive. */
                 start: number;
+                /** @description Offset one past the last character, exclusive. */
                 end: number;
             } | null;
             /** @description True when the selector did not resolve; the thread is still fully functional but detached. */
@@ -4894,6 +5012,33 @@ export interface components {
              * @example 2026-07-19T10:05:00Z
              */
             lastSeenTs?: string;
+        };
+        ReattachThreadResponse: {
+            thread: components["schemas"]["ThreadSummary"];
+            anchor: components["schemas"]["ResolvedAnchor"];
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        ReattachConflictError: {
+            /** @enum {string} */
+            code: "conflict";
+            message: string;
+            /**
+             * @description Which state refused the request: the status code says a state did, this says which. `range-changed`: the parent's body no longer holds `expectedText` at that range — it was edited between the person seeing the range and choosing it (a range running past the end of the body is the same fact, reported the same way). Re-read the document and choose again. `range-overlaps`: the range overlaps text another thread's anchor already resolves over, and SPEC.md §6 forbids two threads on disjoint text ending up claiming overlapping text; choose a range that does not. `not-anchored`: the thread has no anchor to repair — it is standalone or a whole-document comment — and giving one an anchor is a change of scope rather than a repair, which this route does not perform.
+             * @enum {string}
+             */
+            reason: "range-changed" | "range-overlaps" | "not-anchored";
+        };
+        ReattachThreadRequest: {
+            /** @description The range of the parent document's **current** body the thread should attach to, in the same coordinate space `ResolvedAnchor.range` reports — offsets into `Doc.body` (the markdown without the frontmatter block), measured in UTF-16 code units, `[start, end)`. Must be non-empty: an anchor quotes text. */
+            range: {
+                /** @description Offset of the first character, inclusive. */
+                start: number;
+                /** @description Offset one past the last character, exclusive. */
+                end: number;
+            };
+            /** @description The bytes the caller believes the range currently holds — a **guard, not the stored selector**. The server compares it against the parent's live body and refuses with `409` (`range-changed`) if they differ, because a document edited between the person seeing the range and choosing it would otherwise re-attach the thread to whatever slid into those offsets. Its length must equal `end - start`, which is checked at validation time. Never written: the selector is read off the document's own bytes (SERVER-071). */
+            expectedText: string;
         };
         QueueStatus: {
             /** @description True while the `.corpus/HALT` sentinel exists; claims return empty. */
