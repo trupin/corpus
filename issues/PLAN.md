@@ -472,3 +472,35 @@ belongs to the same fix wave.
 | SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-071 |
 | UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-072 |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
+
+## Phase 14 — Dogfood wave 4: status semantics, no edit mode, bulk staging (2026-08-08)
+
+Seven live reports, filed in a worktree while Phase 23 implementation ran. Four
+riders lead, and **nothing below them starts before its rider is signed** —
+SHARED-031 in particular re-bases SHARED-029, so the two are read in that order.
+
+The wave's throughline is that three surfaces disagree with the contract they
+sit on. `DOC_STATUSES` is type-independent, yet the row menu gates Resolve on
+threads; §11 abolishes edit mode, yet frontmatter kept one; §12 makes a todo's
+items the record, yet nothing reads them into its status. SHARED-031 settles the
+vocabulary all three were guessing at.
+
+SHARED-032 revises the bulk-selection rider signed 2026-08-05 **before** UI-083
+implements it — the design changed while it was still only text, which is the
+cheapest moment for that to happen.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-031 | `status` is one vocabulary, not per-type (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-029 | A todo list says `open` after its last item is checked (DRAFTED — sign-off) | todo | P1 | SHARED-031 |
+| SHARED-030 | Frontmatter hides behind an edit mode the reader abolished (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-032 | Bulk actions are a mode, staged per row, the one edit/save left (DRAFTED — sign-off) | todo | P1 | SHARED-030 |
+| UI-093 | Frontmatter controls are always live and save on change | todo | P1 | SHARED-030 |
+| PLUGINS-014 | A plugin doc type can derive its own status | todo | P1 | SHARED-029 |
+| SERVER-077 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-029, PLUGINS-014 |
+| UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-014, SERVER-077, UI-093 |
+| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | todo | P1 | — |
+| UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
+| INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
+| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | INFRA-026 |
+| UI-083 | Selecting rows and acting on the selection — **rewrite against SHARED-032** | todo | P2 | SHARED-032, CONTRACT-037 |
