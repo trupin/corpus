@@ -45,8 +45,15 @@ const isRealTimeOfDay = (hour: string, minute: string, second: string): boolean 
   Number(minute) < MINUTES_PER_HOUR &&
   Number(second) < SECONDS_PER_MINUTE;
 
-/** The canonical written form: UTC, second precision. */
-export const CANONICAL_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+/**
+ * The canonical written form: UTC, second precision.
+ *
+ * Defined in `@corpus/contract` beside the turn-heading grammar that carries it
+ * (CONTRACT-044) — a heading stamped any other way is not a heading, so the two
+ * must not be able to disagree — and re-exported here because this is the module
+ * the rest of the server asks about instants.
+ */
+export { CANONICAL_INSTANT } from "@corpus/contract";
 
 /** The current instant in canonical form. */
 export const nowIso = (): string => formatInstant(Date.now());

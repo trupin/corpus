@@ -1,5 +1,5 @@
 import type { TextQuoteSelector } from "@corpus/contract";
-import { unterminatedFence } from "./code.js";
+import { unterminatedFence } from "@corpus/contract";
 import type { ParsedDocument } from "./document.js";
 import { DocumentParseError, bodyStartLine, duplicateKeysAt, parseDocument } from "./document.js";
 import type { FileFrontmatter } from "./frontmatter.js";

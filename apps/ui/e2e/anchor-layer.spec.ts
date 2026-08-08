@@ -402,3 +402,93 @@ test.describe("a comment whose selection began inside inline markup", () => {
     expect(offsets.cardTop).toBe(offsets.anchorTop);
   });
 });
+
+/**
+ * UI-068, in the browser: what a **new** comment quotes.
+ *
+ * UI-062's half of this was placement — an anchor that already existed, drawn
+ * against a file the editor prints differently. This is capture, and it fails
+ * one step earlier and one step worse. The quote used to be sliced out of the
+ * editor's *printing*, so on the file below — the reported one, a padded table
+ * under the blank line every editor leaves after the frontmatter fence — the
+ * selector carried `prefix: "rm |\n| Mesbah   | infra    |\n\n**"`, cells that
+ * exist nowhere on disk. §6's ladder matches literally, so rung 1 had nothing to
+ * find, and a quote that itself straddled the padding had nothing to find at
+ * *any* rung: the conversation was orphaned before anyone read it.
+ *
+ * The stub resolves anchors by the server's own rungs (`serverParity.ts`), so
+ * both halves are observable here: what went on the wire, and whether the thread
+ * came back attached to the words.
+ */
+test.describe("a comment captured on a file the editor prints differently", () => {
+  /** The file as it sits on disk: single-spaced cells, and a leading blank line. */
+  const FILE =
+    "\n# Standup\n\n| who | area |\n| --- | ---- |\n| Fernando | platform |\n" +
+    "| Mesbah | infra |\n\n**Moushmi Verma** wrote it up on Monday.\n";
+
+  const STANDUP: StubRow = { id: "doc_note", title: "Standup", body: FILE };
+
+  /** What the printer would write for that file — padded, and one byte shorter. */
+  const PADDED = "| Mesbah   | infra    |";
+
+  async function commentOnTheParagraph(page: Page): Promise<void> {
+    // A direct child: the table's own cells are paragraphs too.
+    const paragraph = page.locator(".reader .doc-body[contenteditable] > p").first();
+    await expect(paragraph).toHaveText("Moushmi Verma wrote it up on Monday.");
+    await paragraph.selectText();
+    await paragraph.click({ button: "right" });
+    await page.getByRole("menu").locator('[data-act="comment"]').click();
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await composer.getByLabel("Comment").fill("Who is Mesbah?");
+    await composer.locator("[data-comment-send]").click();
+  }
+
+  test("puts a quote and a context the file literally contains on the wire", async ({ page }) => {
+    const corpus = await stubCorpus(page, [VIEW, STANDUP]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator(".reader .ProseMirror").waitFor();
+
+    await commentOnTheParagraph(page);
+
+    await expect.poll(async () => (await corpus.of("POST", "/api/threads")).length).toBe(1);
+    const posted = (await corpus.of("POST", "/api/threads"))[0]?.body as {
+      readonly selector: {
+        readonly exact: string;
+        readonly prefix: string;
+        readonly suffix: string;
+      };
+    };
+    const { exact, prefix, suffix } = posted.selector;
+    // The quote is markdown, asterisks and all — that rule is unchanged. The
+    // opening `**` is outside it because a selection starts at a *position*, and
+    // the first position in the paragraph is inside the bold run.
+    expect(exact).toBe("Moushmi Verma** wrote it up on Monday.");
+    // And the whole selector is a slice of the file, which is what rung 1 needs.
+    expect(FILE).toContain(prefix + exact + suffix);
+    // The failure: the printer's padded row, quoted as though it were on disk.
+    expect(prefix).not.toContain(PADDED);
+    expect(prefix).toContain("| Mesbah | infra |");
+  });
+
+  test("leaves the thread anchored to the words, not orphaned at birth", async ({ page }) => {
+    await stubCorpus(page, [VIEW, STANDUP]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_note"]').click();
+    await page.locator(".reader .ProseMirror").waitFor();
+
+    await commentOnTheParagraph(page);
+
+    // The stub stores the anchor and resolves it on the next read, by §6's
+    // rungs — so a highlight here is the server's answer, not the optimistic
+    // decoration, which the refetch clears.
+    const highlight = page.locator(".reader .doc-body .anchor-hl");
+    // Two spans, because the `**` the quote crosses has no position to be
+    // inside of — the same shape UI-062's fixture draws.
+    await expect(highlight).toHaveCount(2);
+    expect((await highlight.allInnerTexts()).join("")).toBe("Moushmi Verma wrote it up on Monday.");
+    await expect(page.locator('[data-thread-section="detached"]')).toHaveCount(0);
+  });
+});

@@ -1,13 +1,6 @@
-import type { Turn } from "@corpus/contract";
-import { ACTORS } from "@corpus/contract";
-import { fencedCodeRanges, overlapsRange, splitLines } from "./code.js";
-import {
-  CANONICAL_INSTANT,
-  formatInstant,
-  instantToEpochMs,
-  normalizeInstant,
-  nowIso,
-} from "./time.js";
+import type { Turn, TurnAuthor } from "@corpus/contract";
+import { TURN_SEPARATOR, turnHeadings } from "@corpus/contract";
+import { formatInstant, instantToEpochMs, normalizeInstant, nowIso } from "./time.js";
 
 /**
  * The thread turn format (SPEC.md §6). A thread body is a sequence of turns,
@@ -17,18 +10,20 @@ import {
  * something callers are trusted to get right.
  *
  * Anything before the first heading is a preamble, preserved verbatim.
+ *
+ * **Which half is here.** Recognising a delimiter is the contract's
+ * ({@link turnHeadings}, CONTRACT-044): a write path refuses a body that would
+ * fabricate one and the composer wants to say so first, so that rule has readers
+ * outside this application. Everything below it — slicing the body into turns,
+ * and above all *writing* them, where §6's timestamp-is-identity invariant is
+ * enforced — stays with the sole writer. There is one notion of a heading, not a
+ * parser and a guard that agree today.
  */
 
-/** U+00B7 MIDDLE DOT — the separator §6 fixes, named so it cannot be mistyped for a period. */
-export const TURN_SEPARATOR = "·";
-
-const TURN_HEADING = new RegExp(
-  `^## (${ACTORS.join("|")}) ${TURN_SEPARATOR} (${CANONICAL_INSTANT.source.slice(1, -1)})[ \\t]*$`,
-);
+export { TURN_SEPARATOR };
+export type { TurnAuthor };
 
 const MILLISECONDS_PER_SECOND = 1000;
-
-export type TurnAuthor = Turn["author"];
 
 /** A turn plus the span of the source body it occupies, heading included. */
 type TurnBlock = Turn & { readonly start: number; readonly end: number };
@@ -46,22 +41,11 @@ export type ThreadBody = {
 const trimTurnText = (raw: string): string =>
   raw.replace(/^\r?\n/, "").replace(/[ \t]*(\r?\n)+$/, "");
 
-const asAuthor = (value: string | undefined): TurnAuthor | null =>
-  ACTORS.find((actor) => actor === value) ?? null;
-
 const scanTurnBlocks = (body: string): TurnBlock[] => {
-  // Headings inside fenced code are content, not delimiters: a turn quoting the
-  // turn format in a code block must stay a single turn.
-  const fenced = fencedCodeRanges(body);
-  const headings: { textStart: number; start: number; author: TurnAuthor; ts: string }[] = [];
-  for (const line of splitLines(body)) {
-    const match = TURN_HEADING.exec(line.text);
-    const author = asAuthor(match?.[1]);
-    const ts = match?.[2];
-    if (author === null || ts === undefined) continue;
-    if (overlapsRange(fenced, line.start, line.contentEnd)) continue;
-    headings.push({ start: line.start, textStart: line.end, author, ts });
-  }
+  // Which lines are delimiters — headings inside fenced code among them, since a
+  // turn quoting the turn format in a code block must stay a single turn — is
+  // the contract's answer. What this adds is the span each one owns.
+  const headings = turnHeadings(body);
   return headings.map((heading, index) => {
     const end = headings[index + 1]?.start ?? body.length;
     return {

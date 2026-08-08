@@ -62,12 +62,11 @@ import {
   isFormAnswered,
   nextTurnTs,
   normalizeInstant,
-  parseTurns,
   readForm,
 } from "../core/index.js";
 import type { DocumentMutex } from "../docs/index.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
-import { ANSWER_SUBJECT, assertClosedFences } from "./fences.js";
+import { ANSWER_SUBJECT, assertAppendableTurnText } from "./fences.js";
 import { NO_MENTIONS } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
 import { loadThread, toThreadSummary, type LoadedThread } from "./read.js";
@@ -99,12 +98,6 @@ export function formAnswerBody(form: Form, answer: FormAnswerRequest): string {
 }
 
 /**
- * A synthetic turn heading, used only to ask what the append will really do with
- * these bytes. The stamp is irrelevant — nothing is written with it.
- */
-const PROBE_HEADING = "## user · 2000-01-01T00:00:00Z\n";
-
-/**
  * Refuse an answer whose own text would not survive being appended as **one**
  * turn, or would not read back as the answer it records (SPEC.md §6, §11, §14;
  * SERVER-066; PR #28 finding 2).
@@ -112,7 +105,7 @@ const PROBE_HEADING = "## user · 2000-01-01T00:00:00Z\n";
  * A `write` answer and the note are the two places a person's arbitrary text
  * reaches this file, and it can hijack **three** delimiters, not two. Two belong
  * to the thread: §6's `## <author> · <ts>` heading, which *is* the turn
- * delimiter, and a fenced block, inside which `core/code.ts` masks headings —
+ * delimiter, and a fenced block, inside which the code scanner masks headings —
  * so an unterminated fence silently swallows every turn written after it. Either
  * one destroys turns rather than merely rendering oddly, which is why this is a
  * refusal and not a warning: the alternative postures are worse in both
@@ -133,22 +126,15 @@ const PROBE_HEADING = "## user · 2000-01-01T00:00:00Z\n";
  * The first two questions are asked of the *rendered* body rather than of the
  * request, because that is the string that lands on disk — the prose format is
  * the contract's and may grow, and a check written against the request would
- * stop covering it the moment it does. The probe heading is thrown away; it
- * exists only so `parseTurns` sees the same shape the append will produce.
+ * stop covering it the moment it does.
  */
 export function assertAppendableAnswer(body: string, form: Form, answer: FormAnswerRequest): void {
-  // The fence half is `fences.ts`'s, shared with the reply, create and capture
-  // doors (SERVER-075). It used to be spelled out here, which is why for a long
-  // while the *answer* route was the only one that asked — and why the message
-  // now names the line the fence opened on, which the local copy discarded.
-  assertClosedFences(body, ANSWER_SUBJECT);
-  if (parseTurns(`${PROBE_HEADING}${body}`).length !== 1) {
-    throw badRequest(
-      "this answer contains a line that reads as a turn heading (`## user · <timestamp>`), which " +
-        "would split it into several turns; rewrite that line",
-      [{ path: "body", message: "the answer would fabricate a turn heading" }],
-    );
-  }
+  // Both of the thread's delimiters are `fences.ts`'s now, shared with the reply,
+  // create and capture doors (SERVER-075, SERVER-076). They used to be spelled
+  // out here, which is why for a long while this route was the only one that
+  // asked either question — and why both messages now name the offending line,
+  // which the local copies discarded.
+  assertAppendableTurnText(body, ANSWER_SUBJECT);
   const unreadable = unreadableAnswer(form, formAnswerRecord(form, answer));
   if (unreadable !== undefined) {
     throw badRequest(unreadable, [

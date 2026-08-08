@@ -459,12 +459,15 @@ describe("a comment whose selection straddles inline markup", () => {
     const start = live.markdown.indexOf(from);
     const end = live.markdown.indexOf(to) + to.length;
     const pm = mdRangeToPm(live.trace, { start, end });
-    const selection = selectorFromSelection(live, {
-      from: pm[0]?.from ?? 0,
-      to: pm.at(-1)?.to ?? 0,
-    });
-    if (selection === null) throw new Error("the selection quoted nothing");
-    const range = resolve(body, selection.selector);
+    const captured = selectorFromSelection(
+      live,
+      { from: pm[0]?.from ?? 0, to: pm.at(-1)?.to ?? 0 },
+      // The file, not the printing — what the app quotes and what the server
+      // resolves against (UI-068).
+      body,
+    );
+    if (!captured.ok) throw new Error(`the selection quoted nothing: ${captured.reason}`);
+    const range = resolve(body, captured.selection.selector);
     const [placed] = placeAnchors({
       rowsSettled: true,
       anchors: [anchor({ range, orphaned: range === null })],
@@ -482,11 +485,12 @@ describe("a comment whose selection straddles inline markup", () => {
     const live = traceOfBody(BOLD);
     const start = live.markdown.indexOf("Moushmi");
     const pm = mdRangeToPm(live.trace, { start, end: live.markdown.indexOf("Mesbah") + 6 });
-    const selection = selectorFromSelection(live, {
-      from: pm[0]?.from ?? 0,
-      to: pm.at(-1)?.to ?? 0,
-    });
-    expect(selection?.selector.exact).toBe(
+    const captured = selectorFromSelection(
+      live,
+      { from: pm[0]?.from ?? 0, to: pm.at(-1)?.to ?? 0 },
+      BOLD,
+    );
+    expect(captured.ok ? captured.selection.selector.exact : null).toBe(
       "Moushmi Verma** on repositioning Fernando under Mesbah",
     );
   });

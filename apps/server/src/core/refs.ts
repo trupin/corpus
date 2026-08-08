@@ -1,5 +1,4 @@
-import { DocumentIdSchema } from "@corpus/contract";
-import { codeRanges, overlapsRange } from "./code.js";
+import { DocumentIdSchema, codeRanges, overlapsRange } from "@corpus/contract";
 
 /**
  * Inline references (SPEC.md §5) are id-based: `[[doc_a1b2c3]]`, or

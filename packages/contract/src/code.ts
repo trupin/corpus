@@ -8,6 +8,24 @@
  * Keeping that one rule here means the two scanners can never disagree about
  * what "inside code" means.
  *
+ * **Why this lives in the contract** (CONTRACT-044). It began in
+ * `apps/server/src/core/`, which is where the on-disk formats are parsed — but a
+ * fence rule is a *format* rule, and the format has more than one reader. The
+ * server refuses a write that leaves a fence open (`threads/fences.ts`) and
+ * reports one that is already on disk (`core/check.ts`); the composer wants to
+ * say so *before* the round trip, in the field at fault, which is what §11 asks
+ * of a form. `apps/ui` may not import `apps/server` — sibling applications, not
+ * a dependency edge — so with the scanner over there the only way to pre-check
+ * was a second copy, and a second fence scanner is a copy that drifts. It sits
+ * beside the other format rules the contract already owns for the same reason:
+ * §6's form fence grammar (`findFormFence`, `schemas/form.ts`) and the answer
+ * prose format.
+ * The server imports it back and its `core` surface still names it, so nothing
+ * on that side has to know where the implementation went.
+ *
+ * This module is deliberately I/O-free and dependency-free: strings in, offsets
+ * out, no zod, no Hono, nothing that would make it awkward in a browser bundle.
+ *
  * Offsets are UTF-16 code-unit offsets — the same units `String.prototype.slice`
  * uses — and every range is half-open `[start, end)`.
  */
@@ -315,7 +333,12 @@ export const fencedCodeRanges = (text: string): TextRange[] => {
  * — in a thread — its `## author · timestamp` turn headings stop being seen.
  *
  * This deliberately does not judge whether that is a problem. It reports the
- * grammar; `core/check.ts` decides what a corpus makes of it.
+ * grammar; its callers decide what a corpus makes of it, and they do not agree:
+ * `apps/server`'s `core/check.ts` reports a fence already on disk **without
+ * blocking** the save (SERVER-066 — refusing somebody's write for a fault they
+ * did not introduce punishes the wrong person), while `threads/fences.ts`
+ * refuses the write that *introduces* one (SERVER-075). Both postures are
+ * deliberate and both read this same answer.
  */
 export const unterminatedFence = (text: string): OpenFence | null => scanFences(text).open;
 

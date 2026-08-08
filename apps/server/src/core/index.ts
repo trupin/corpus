@@ -10,9 +10,27 @@
  * the filesystem, git and the database.
  */
 
+// The code-region scanner — which bytes of a body are code, and whether a fence
+// was left open — moved to `@corpus/contract` (CONTRACT-044). A fence rule is a
+// format rule, and the format has readers outside this application: the composer
+// pre-checks the same refusal the write path makes, and `apps/ui` cannot import
+// `apps/server`. `core` keeps naming it because `core` is this server's
+// document-model surface, so no caller on this side has to know where the
+// implementation went.
+export {
+  codeRanges,
+  fencedCodeRanges,
+  inlineCodeRanges,
+  overlapsRange,
+  splitLines,
+  unterminatedFence,
+  type Line,
+  type OpenFence,
+  type TextRange,
+} from "@corpus/contract";
+
 export * from "./anchor-entries.js";
 export * from "./check.js";
-export * from "./code.js";
 export * from "./document.js";
 export * from "./form.js";
 export * from "./frontmatter.js";
