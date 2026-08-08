@@ -1,33 +1,41 @@
 /**
- * The server's own rules, restated for the browser stub — and pinned to the
- * server by `scripts/stub-server-parity.test.ts`.
+ * The server's own rules, for the browser stub — imported where the repo has a
+ * package that owns them, ported and pinned by
+ * `scripts/stub-server-parity.test.ts` where it does not.
  *
  * `stubCorpus.ts` answers `/api` from inside the page, so every rule the real
- * server applies *to data it hands back* has to exist twice. Two of them are not
- * cosmetic, because a spec that asserts against a wrong copy is asserting the
- * copy:
+ * server applies *to data it hands back* has to exist there too. Two of them are
+ * not cosmetic, because a spec that asserts against a wrong copy is asserting
+ * the copy:
  *
  * - **Anchor resolution** (SPEC.md §6). The stub used to implement rung 2 alone
  *   — a unique `exact` — so a framed selector for a *duplicated* phrase, the
  *   exact case §6's prefix/suffix framing exists to serve, resolved against the
  *   real server and came back `orphaned` from the stub (UI-051's finding,
- *   UI-056).
+ *   UI-056). Still a port: the original is
+ *   `apps/server/src/anchors/resolve.ts`, `apps/ui` may not import
+ *   `apps/server` — sibling applications, not a dependency edge (CLAUDE.md →
+ *   Repository Structure) — and there is no package both already depend on that
+ *   anchor resolution belongs in.
  * - **The thread turn format** (SPEC.md §6). A thread file is a sequence of
  *   `## <author> · <ts>` H2 headings; the turns `GET /api/threads/{id}` reports
  *   are slices of that file, which is what lets an anchor's offsets fall inside
- *   a turn at all.
+ *   a turn at all. **No longer a port.** CONTRACT-044 moved the heading grammar
+ *   and the code scanner that masks it into `@corpus/contract`, so
+ *   {@link parseThreadTurns} asks {@link turnHeadings} which lines are
+ *   delimiters — the identical function `apps/server`'s own parser asks
+ *   (`core/turns.ts`) — and the fence scanner, the line splitter and the heading
+ *   regex that used to be transcribed here are gone with it. What is left local
+ *   is the slicing and the blank-line trimming that turn a heading list into
+ *   turns, which is still the server's and is still what `TURN_PARITY_BODIES`
+ *   pins (UI-091).
  *
- * **Why a port and not an import.** The originals are
- * `apps/server/src/anchors/resolve.ts` and `apps/server/src/core/turns.ts`.
- * `apps/ui` may not import `apps/server` — they are sibling applications, not a
- * dependency edge (CLAUDE.md → Repository Structure), and the import would drag
- * server-only dependencies into the UI workspace's type program. There is no
- * package both already depend on that anchor resolution belongs in, so the
- * honest options were a port pinned by fixture or a new shared package; this is
- * the first, and the second is worth filing. The pin is not a comment asking to
- * be believed: `scripts/stub-server-parity.test.ts` runs {@link
- * ANCHOR_PARITY_CASES} and {@link TURN_PARITY_BODIES} through **both**
- * implementations and fails if either side moves.
+ * **What the pin is for.** It is not a comment asking to be believed:
+ * `scripts/stub-server-parity.test.ts` runs {@link ANCHOR_PARITY_CASES} and
+ * {@link TURN_PARITY_BODIES} through **both** implementations and fails if
+ * either side moves. Every rule it covers that becomes shared code shrinks what
+ * it has to guard; a rule that is imported needs no fixture at all, which is why
+ * neither the fence scanner nor the heading grammar has one.
  *
  * **Exact-only, on purpose.** Reads resolve with rungs 1–2 and orphan otherwise;
  * the fuzzy third rung belongs to reconciliation alone, and SERVER-055's attempt
@@ -36,10 +44,12 @@
  * resolve verbatim **orphans** here, exactly as it does on the server — a
  * visible orphan beats a silent misattachment.
  *
- * This module is deliberately dependency-free: it is compiled into the repo
- * tooling's type program by the parity test, and it has no business needing DOM
- * types, Playwright, or anything else.
+ * Beyond `@corpus/contract` this module stays dependency-free: it is compiled
+ * into the repo tooling's type program by the parity test, and it has no
+ * business needing DOM types, Playwright, or anything else.
  */
+
+import { TURN_SEPARATOR, turnHeadings, type Turn } from "@corpus/contract";
 
 /** A §6 text-quote selector, in the shape a request or a frontmatter entry has. */
 export interface StubSelector {
@@ -104,91 +114,20 @@ export function resolveAnchorExact(body: string, selector: StubSelector): StubRa
   return null;
 }
 
-/** One turn of a thread, as `GET /api/threads/{id}` reports it. */
-export interface StubTurn {
-  readonly author: "user" | "agent";
-  readonly ts: string;
-  readonly body: string;
-}
-
-/** U+00B7 MIDDLE DOT — the separator §6 fixes, named so it cannot be mistyped. */
-export const TURN_SEPARATOR = "·";
-
-/** The instant form a turn heading carries: seconds precision, `Z`, no millis. */
-const CANONICAL_INSTANT = String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z`;
-
-const TURN_HEADING = new RegExp(
-  `^## (user|agent) ${TURN_SEPARATOR} (${CANONICAL_INSTANT})[ \\t]*$`,
-);
-
-/** Up to three leading spaces still opens a fence; four makes it indented code. */
-const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-
-interface Line {
-  readonly text: string;
-  readonly start: number;
-  readonly contentEnd: number;
-  readonly end: number;
-}
-
-/** Split into lines, tolerating LF and CRLF, reporting each line's offsets. */
-function splitLines(text: string): Line[] {
-  const lines: Line[] = [];
-  let start = 0;
-  while (start <= text.length) {
-    const newline = text.indexOf("\n", start);
-    if (newline === -1) {
-      lines.push({ text: text.slice(start), start, contentEnd: text.length, end: text.length });
-      break;
-    }
-    const withoutCr = text[newline - 1] === "\r" ? newline - 1 : newline;
-    lines.push({
-      text: text.slice(start, withoutCr),
-      start,
-      contentEnd: newline,
-      end: newline + 1,
-    });
-    start = newline + 1;
-  }
-  return lines;
-}
-
-/** Ranges covered by fenced code blocks, fence lines included. */
-function fencedCodeRanges(text: string): StubRange[] {
-  const ranges: StubRange[] = [];
-  let open: { marker: string; start: number } | null = null;
-  for (const line of splitLines(text)) {
-    const match = FENCE_LINE.exec(line.text);
-    const marker = match?.[1] ?? "";
-    const info = match?.[2] ?? "";
-    if (open === null) {
-      if (match === null) continue;
-      // An info string may not contain a backtick when the fence is backticks.
-      if (marker.startsWith("`") && info.includes("`")) continue;
-      open = { marker, start: line.start };
-      continue;
-    }
-    const closes =
-      match !== null &&
-      info.trim() === "" &&
-      marker[0] === open.marker[0] &&
-      marker.length >= open.marker.length;
-    if (closes) {
-      ranges.push({ start: open.start, end: line.contentEnd });
-      open = null;
-    }
-  }
-  if (open !== null) ranges.push({ start: open.start, end: text.length });
-  return ranges;
-}
-
-/** True when any part of `[start, end)` falls inside one of `ranges`. */
-const overlapsRange = (ranges: readonly StubRange[], start: number, end: number): boolean =>
-  ranges.some((range) => start < range.end && end > range.start);
+/**
+ * One turn of a thread, as `GET /api/threads/{id}` reports it — the contract's
+ * own `Turn`, not a transcription of it. Restating the shape here is how the
+ * stub drifts from the server it stands in for: `model` (CONTRACT-043) arrived
+ * on `Turn` and would have been silently missing from every stubbed response.
+ */
+export type StubTurn = Turn;
 
 /**
  * Strip the blank line a heading is conventionally followed by, and any trailing
  * blank lines, so a turn's text is what its author actually wrote.
+ *
+ * The one line of `core/turns.ts` still transcribed here, and the reason
+ * {@link TURN_PARITY_BODIES} still has fixtures.
  */
 const trimTurnText = (raw: string): string =>
   raw.replace(/^\r?\n/, "").replace(/[ \t]*(\r?\n)+$/, "");
@@ -196,27 +135,24 @@ const trimTurnText = (raw: string): string =>
 /**
  * The turns of a thread file, in document order (SPEC.md §6).
  *
- * A heading inside fenced code is content, not a delimiter: a turn quoting the
- * turn format in a code block stays one turn. Anything before the first heading
- * is a preamble and belongs to no turn — a body with no heading at all therefore
- * has **no turns**, which is what the server reports for it and what the stub
- * must report too.
+ * Which lines delimit a turn is {@link turnHeadings}' answer, not a regex
+ * written here — the same call `apps/server`'s `scanTurnBlocks` makes, so a
+ * heading inside fenced code is content in both places rather than in whichever
+ * one remembered to mask it. What is left here is the slicing: anything before
+ * the first heading is a preamble and belongs to no turn, so a body with no
+ * heading at all has **no turns**, which is what the server reports for it and
+ * what the stub must report too.
  */
 export function parseThreadTurns(body: string): readonly StubTurn[] {
-  const fenced = fencedCodeRanges(body);
-  const headings: { textStart: number; start: number; author: "user" | "agent"; ts: string }[] = [];
-  for (const line of splitLines(body)) {
-    const match = TURN_HEADING.exec(line.text);
-    const author = match?.[1];
-    const ts = match?.[2];
-    if (ts === undefined || (author !== "user" && author !== "agent")) continue;
-    if (overlapsRange(fenced, line.start, line.contentEnd)) continue;
-    headings.push({ start: line.start, textStart: line.end, author, ts });
-  }
+  const headings = turnHeadings(body);
   return headings.map((heading, index) => ({
     author: heading.author,
     ts: heading.ts,
     body: trimTurnText(body.slice(heading.textStart, headings[index + 1]?.start ?? body.length)),
+    // Which model wrote a turn is not in the body — it is recorded in the thread
+    // document's frontmatter (CONTRACT-043) — so a parser given a body alone
+    // names none, exactly as `apps/server`'s does.
+    model: null,
   }));
 }
 
@@ -388,6 +324,14 @@ export const ANCHOR_PARITY_CASES: readonly AnchorParityCase[] = [
  * heading form, the trimming, a preamble, an empty turn, a body with no headings
  * at all, and a heading quoted inside fenced code (which is content, not a
  * delimiter).
+ *
+ * They kept their fixtures through UI-091 and are worth keeping: what they now
+ * pin is the **slicing**, not the grammar. Both sides ask
+ * {@link turnHeadings} which lines are delimiters, so the heading form and the
+ * fence masking can no longer disagree by construction — but `trimTurnText` and
+ * the span each heading owns are still transcribed from `core/turns.ts`, and
+ * `"an empty turn, and one with trailing blank lines"` is the case that fails
+ * the moment one of them drifts.
  */
 export const TURN_PARITY_BODIES: readonly { readonly name: string; readonly body: string }[] = [
   {
