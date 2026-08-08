@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -73,21 +73,21 @@ one. Say that in the code, or someone will read SERVER-066 and revert this.
 
 ## Acceptance Criteria
 
-- [ ] Reproduced first, with the swallowing observed before the fix, logged with
+- [x] Reproduced first, with the swallowing observed before the fix, logged with
       the actual turn count
-- [ ] A turn whose body leaves a fence open is refused on the **reply** path, for
+- [x] A turn whose body leaves a fence open is refused on the **reply** path, for
       **every** actor — this is not the agent-only asymmetry the form rules draw,
       because the damage does not depend on who wrote it
-- [ ] The refusal **names the line the fence opened on**. `unterminatedFence`
+- [x] The refusal **names the line the fence opened on**. `unterminatedFence`
       already returns it (`core/code.ts:231-244`); it is currently discarded
-- [ ] The person's wording is **never lost** — the refusal is something to fix in
+- [x] The person's wording is **never lost** — the refusal is something to fix in
       the composer, not a message arriving after the text is gone
-- [ ] A turn that merely *quotes* a fence correctly (opened wider, closed on its
+- [x] A turn that merely *quotes* a fence correctly (opened wider, closed on its
       own line) is untouched — §6's snippet rule depends on it
-- [ ] **Pre-existing unterminated fences still do not block anything.**
+- [x] **Pre-existing unterminated fences still do not block anything.**
       SERVER-066's non-blocking decision is unchanged; only the write that
       introduces one is refused
-- [ ] `corpus doc check` still reports the condition for files that already have
+- [x] `corpus doc check` still reports the condition for files that already have
       it, unchanged
 
 ## Technical Design
@@ -116,15 +116,128 @@ asserted as accepted, and a pre-existing bad file asserted as still saveable.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: Opus 5 (1M context)** — server-dev agent, 2026-08-08.
+
+Real server (`tsx apps/server/src/main.ts`) on **port 8791** against a real
+`corpus init` workspace at `/tmp/s075-ws`. Ports 8765 and 5173 untouched.
+
+### Pre-fix reproduction (SDLC step 1) — three doors, all open
+
+**Door 1 — `POST /api/threads/{id}/turns` (the reply path).** Four turns posted,
+the second leaving a fence open. Every POST answered **201**:
+
+```
+turn2(unterminated fence) http=201
+turn3(agent)  http=201
+turn4(user)   http=201
+GET /api/threads/th_j2zokpwl → TURNS PARSED BY THE SERVER: 2
+ - user  2026-08-08T02:14:01Z "First turn, plain."
+ - user  2026-08-08T02:14:02Z "Here is the snippet:\n\n```js\nconst x = 1;\n\n## agent · 2026-08-08T02:14:"
+```
+
+**Four turns on disk, two visible.** Turns 3 and 4 are swallowed into turn 2's
+body — the file (`cat data/threads/th_j2zokpwl.md`) holds all four `## author ·`
+headings; the reader sees two.
+
+**Door 2 — `POST /api/threads` (thread creation), the issue's own fixture.**
+Unterminated fence in the *first* turn, three replies after it:
+
+```
+create http=201 → th_e7s6jofr
+turn2 http=201 / turn3 http=201 / turn4 http=201
+turns on disk: 4, turns parsed: 1
+```
+
+**Door 3 — `POST /api/capture`.** The captured text becomes the filing thread's
+first turn:
+
+```
+capture http=201 → th_r3xvyxm4
+turn2 http=201 / turn3 http=201
+turns on disk: 3, turns parsed: 1
+```
+
+So the issue's suspicion was right: thread creation and capture were the second
+and third doors, exactly the SERVER-070 shape.
+
+### Post-fix, same server restarted with the change
+
+```
+1. reply, user, unterminated fence            → 400
+   {"code":"bad_request",
+    "message":"this turn leaves a code fence open: the ``` on line 3 is never
+      closed, so everything after it reads as code and every later turn in the
+      thread would become invisible. Close it with a line holding nothing but ```.",
+    "issues":[{"path":"body","message":"unterminated ``` code fence opened on line 3"}]}
+2. reply, AGENT, same shape                   → 400 ("… the ``` on line 1 …")
+3. reply quoting a fence wider (````markdown) → 201, then agent 201, then user 201
+   GET → TURNS PARSED: 4 -> user, user, agent, user
+4. POST /api/threads, fence open in turn 1    → 400, same message, line 3
+5. POST /api/threads, fence closed            → 201
+6. POST /api/capture, fence open              → 400, issues[0].path = "text"
+7. POST /api/capture, fence closed            → 201
+```
+
+Nothing was written by any refusal: `ls data/docs/inbox/` shows only the
+pre-fix capture (`note-this.md`), the doc from step 9 and the *accepted* post-fix
+capture (`snippet.md`) — the refused capture left no file, no commit, no event.
+
+### The two things that must NOT have changed (SERVER-066)
+
+```
+8. reply to th_j2zokpwl — the thread broken BEFORE the fix → 201
+   server log: {"level":"error","msg":"document saved with validation errors",
+     "path":"data/threads/th_j2zokpwl.md",
+     "errors":["unterminated-fence: … opened at line 19 …"]}
+9. PUT /api/docs/doc_mr2uetbe with an open fence in the body → 200
+   server log: same non-blocking `unterminated-fence` error, file saved
+```
+
+`corpus doc check` on the same workspace still reports every pre-existing case,
+unchanged — 5 errors across the threads and documents the pre-fix run created:
+
+```
+error unterminated-fence data/threads/th_j2zokpwl.md: … so those turns are lost
+error unterminated-fence data/threads/th_r3xvyxm4.md: …
+error unterminated-fence data/threads/th_e7s6jofr.md: …
+error unterminated-fence data/docs/inbox/note-this.md: …
+error unterminated-fence data/docs/inbox/fence-doc.md: …
+corpus: 5 errors in 20 documents.
+```
+
+### Wording is never lost
+
+The refusal is thrown **before the document lane and before any byte is
+written** (no attachment directory is created either — asserted in
+`turns.test.ts`), so the request fails with the composer still holding the text.
+`apps/ui/src/thread/ThreadComposer.tsx:120` already restores it on error
+("the composer goes back to exactly what it held"), so the end-to-end promise
+holds with no UI change.
+
+### Checks
+
+- `VITEST_MAX_THREADS=4 npx vitest run apps/server` — **170 files, 3491 tests, all passing**
+- `tsc --noEmit` in `apps/server` — clean
+- `eslint apps/server/src` — clean, no suppressions
+- `prettier --check apps/server/src` — clean
+
+### Notes / not done
+
+- The heading-hijack half of `assertAppendableAnswer` (a turn body containing a
+  literal `## user · <ts>` line) is **not** extended to the reply path. Out of
+  scope, and it differs in kind: a fabricated heading is visible when it
+  happens, where a swallowed turn is silent. Worth its own issue if wanted.
+- No contract change was needed: `400` is already declared on all three routes.
+  A UI pre-check (CONTRACT-044) would need the scanner in `@corpus/contract`;
+  that stays a coordination question, not something done here.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

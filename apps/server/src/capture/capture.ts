@@ -55,7 +55,9 @@ import {
 } from "../docs/index.js";
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import {
+  CAPTURE_SUBJECT,
   EVENT_SOURCE,
+  assertClosedFences,
   decideParticipation,
   deriveThreadTitle,
   enqueueComment,
@@ -103,6 +105,13 @@ export async function captureDocument(
   request: CaptureRequest,
 ): Promise<CaptureOutcome> {
   assertWithinLimits(request.files, workspace.attachmentLimits ?? DEFAULT_ATTACHMENT_LIMITS);
+  // The captured text becomes the filing thread's first turn as well as the
+  // document's body, so a fence left open here swallows the filing request
+  // itself and every reply the agent or the person writes afterwards
+  // (SERVER-075). Refusing the capture covers both files at once: they carry the
+  // same words, and there is no version of this where the document is worth
+  // writing and the conversation about it is not.
+  assertClosedFences(request.text, CAPTURE_SUBJECT);
 
   // One lane: both ids are minted against the projection and the document's
   // filename is deduped against the filesystem, so a concurrent capture of the

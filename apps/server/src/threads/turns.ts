@@ -68,6 +68,7 @@ import {
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import { internalError } from "../errors.js";
 import { enqueueComment } from "./events.js";
+import { TURN_SUBJECT, assertClosedFences } from "./fences.js";
 import { assertWritableForm } from "./forms.js";
 import { parseMentions } from "./mentions.js";
 import { decideParticipation } from "./participation.js";
@@ -237,6 +238,12 @@ export async function appendThreadTurn(
   // Before the lane, so an over-cap upload never queues behind another turn and
   // never reaches the filesystem.
   assertWithinLimits(input.files, workspace.attachmentLimits ?? DEFAULT_ATTACHMENT_LIMITS);
+  // Likewise for a turn that would swallow the turns after it (SERVER-075).
+  // Unlike the form guard below this one is for **every** actor, because §6's
+  // masking does not care who left the fence open — and it asks only about
+  // *this* turn's text, so a thread already carrying an open fence still accepts
+  // replies (`fences.ts` states the SERVER-066 boundary in full).
+  assertClosedFences(input.text, TURN_SUBJECT);
   // Likewise for a malformed form the *agent* wrote: this is the endpoint it
   // asks through (§6), so this is where it finds out — not the person, later,
   // when they try to answer. It vets neither another actor's turn nor the first

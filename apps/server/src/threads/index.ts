@@ -19,6 +19,8 @@ export { threadContextPack } from "./context.js";
 export type { ContextDeps } from "./context.js";
 export { commentPayload, enqueueComment } from "./events.js";
 export type { CommentEventInput } from "./events.js";
+export { ANSWER_SUBJECT, CAPTURE_SUBJECT, TURN_SUBJECT, assertClosedFences } from "./fences.js";
+export type { FenceSubject } from "./fences.js";
 export {
   FORM_ANSWER_LABEL,
   answerThreadForm,

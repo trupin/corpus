@@ -794,6 +794,24 @@ describe("a malformed form is refused at `POST /api/threads/{id}/turns`", () => 
     const response = await post("```form\nprompt: [unclosed\n```\n", "user");
     expect(response.status).toBe(201);
   });
+
+  /**
+   * SERVER-075's guard runs before this one and is not agent-only, so a form
+   * fence that was never closed is reported as the *fence* it is — the fault
+   * that destroys turns — rather than as YAML that happened not to parse. Both
+   * actors get it, which is the point: the agent's own broken fence would have
+   * swallowed the person's answer.
+   */
+  it("reports an unterminated form fence as the open fence, for both actors", async () => {
+    for (const author of ["agent", "user"]) {
+      const response = await post("Here:\n\n```form\nprompt: Pick one\n", author);
+      const payload = (await response.json()) as { message: string };
+
+      expect(response.status).toBe(400);
+      expect(payload.message).toContain("code fence open");
+      expect(payload.message).toContain("line 3");
+    }
+  });
 });
 
 describe("the `form.respond` event (SPEC.md §7)", () => {
