@@ -176,6 +176,16 @@ export interface AnchorLayer {
   readonly anchored: readonly AnchoredThread[];
   readonly wholeDocument: readonly DocRow[];
   readonly orphaned: readonly DocRow[];
+  /**
+   * The document's anchors as this layer currently believes them — the server's
+   * list with a just-completed save's orphan verdict folded in.
+   *
+   * Published because a detached thread's *row* says it is detached and its
+   * *anchor* says what it was about: the preserved selector a re-attach offer
+   * searches for, and the live ranges of its neighbours, which SPEC.md §6
+   * forbids it overlapping (UI-086).
+   */
+  readonly effectiveAnchors: readonly ResolvedAnchor[];
   /** Anchored and resolved, but with nothing on this screen to sit beside. */
   readonly unplaced: readonly DocRow[];
   /** True when the cards belong in the margin rather than in chips at the anchor. */
@@ -701,6 +711,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     anchored,
     wholeDocument: detached.wholeDocument,
     orphaned: detached.orphaned,
+    effectiveAnchors: effective,
     unplaced,
     marginMode,
     slotHost: useCallback(

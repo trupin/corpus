@@ -184,7 +184,23 @@ helper, say) is not enumerated — only the `commands/` directory is.
 (`orchestrate`, `comment` — core always wins). The dev flow is the same
 mechanism: run `corpus init` from the repo. The orchestrate skill routes
 `<name>.<action>` events to the skill named `<name>` by convention — you wire
-nothing.
+nothing. That convention is a **constraint on the skill's directory name**: the
+event is handed to `.claude/skills/<name>/`, so a skill directory named anything
+other than your plugin's directory is unreachable by event type, and the
+orchestrate skill fails such an event with `no installed skill named <name>`.
+`plugins/todos/skills/todos/` is the shape to copy; `plugins/_fixture`'s
+`skills/fixture-notes/` is reachable by name only, and says so in its own body.
+
+Once installed, your skill sits in the same `.claude/skills/` as the core two
+and is read by the same agent, so **it is held to the same authoring rules** —
+an example that contradicts one of them beats the rule it contradicts, because
+the example is what gets copied. `scripts/workspace-template.test.ts` sweeps
+every skill `corpus init` installs, yours included, from the installer's own
+plan: today it requires that a worked `corpus thread reply|create … --from
+agent` states `--model`, that a trace line is a turn's last line or absent, and
+that every multi-line argument goes through a quoted heredoc. Defer to the
+comment skill for anything it already states — a second statement of a rule is a
+second thing to keep true.
 
 ## Packaging
 

@@ -1,4 +1,11 @@
-import { bodyFlags, requireBody, warningSuffix, type InputDependencies } from "../../input.js";
+import {
+  bodyFlags,
+  MODEL_FLAG,
+  requireBody,
+  resolveTurnModel,
+  warningSuffix,
+  type InputDependencies,
+} from "../../input.js";
 import type { WorkspaceCommandContext, WorkspaceCommandSpec } from "../../registry/types.js";
 
 /**
@@ -41,12 +48,23 @@ export async function runThreadReply(
   dependencies: InputDependencies = {},
 ): Promise<void> {
   const id = context.args.get("id");
+  // Before the body is read: a `--model` this actor may not state is a usage
+  // error whatever the body turns out to be, and a heredoc consumed on the way
+  // to a refusal is a heredoc the caller has to type again.
+  const model = resolveTurnModel(context);
   // The contract's `body` is `min(1)`: an empty reply is a usage error here
   // rather than a request the server was always going to reject.
   const body = await requireBody(context, "reply body", dependencies);
 
   const response = await context.client.request((api) =>
-    api.POST("/api/threads/{id}/turns", { params: { path: { id } }, body: { body } }),
+    api.POST("/api/threads/{id}/turns", {
+      params: { path: { id } },
+      // Spread rather than `model` unconditionally, so an unstated model is an
+      // **absent field** rather than a null or an empty string: SPEC.md §11
+      // wants a turn nobody recorded a model for to show nothing at all, and
+      // absence having one spelling is what makes that checkable.
+      body: { body, ...(model === undefined ? {} : { model }) },
+    }),
   );
 
   context.out.emit(response);
@@ -81,14 +99,20 @@ export const replyCommand: WorkspaceCommandSpec = {
     "them. Both apply to every actor: neither failure depends on who typed it. Quoting either " +
     "shape is ordinary content and is accepted — a fence opened wider and closed on its own " +
     "line, and a turn heading inside a fence, an inline code span or a block quote, all go " +
-    "through untouched.",
+    "through untouched.\n\n" +
+    "**`--model` states what wrote the turn**, and only an agent's turn may carry one (SPEC.md " +
+    "§11). It is a record of what ran, not a request for anything to run, and it is recorded " +
+    "verbatim; omit it and the turn carries no model at all, which reads as nothing rather than " +
+    "as a guess.",
   args: [{ name: "id", required: true, description: "The thread's id." }],
-  flags: [...bodyFlags("The turn body")],
+  flags: [...bodyFlags("The turn body"), MODEL_FLAG],
   examples: [
     {
       command:
-        "corpus thread reply th_a1b2c3 --from agent <<'EOF'\nI filed the note under finance/.\nEOF",
-      description: "The agent's form: a heredoc reply, authored by the agent (SPEC.md §7).",
+        "corpus thread reply th_a1b2c3 --from agent --model claude-opus-4-1 <<'EOF'\nI filed the note under finance/.\nEOF",
+      description:
+        "The agent's form: a heredoc reply, authored by the agent, stating the model that wrote " +
+        "it (SPEC.md §7, §11).",
     },
     {
       command: 'corpus thread reply th_a1b2c3 -m "one more thought"',

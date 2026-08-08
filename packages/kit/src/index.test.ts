@@ -20,6 +20,7 @@ const RUNTIME_SURFACE = [
   // data path
   "createCorpusClient",
   "CorpusRequestError",
+  "reattachRefusalReason",
   "CorpusProvider",
   "mountedCorpusProviders",
   "createCorpusQueryClient",
@@ -63,6 +64,7 @@ const RUNTIME_SURFACE = [
   "useDeleteDoc",
   "useMarkThreadSeen",
   "useSetThreadStatus",
+  "useReattachThread",
   "useBreakLock",
   "useAcquireLock",
   "useReleaseLock",

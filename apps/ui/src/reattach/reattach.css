@@ -1,0 +1,159 @@
+/*
+ * The re-attach offer under a detached thread (UI-086).
+ *
+ * It sits deliberately quiet when closed — a detached comment is not damaged,
+ * it has only lost its place — and becomes a considered surface once opened,
+ * because what it is asking for is a decision nothing else in the app can make.
+ */
+
+/* A detached thread and its offer are one item in the list; the panel keeps its
+   own vertical rhythm, so only the trailing space is closed up here. */
+.detached-thread {
+  margin-bottom: 10px;
+}
+
+.detached-thread > .thread-slot {
+  margin-bottom: 0;
+}
+
+.reattach {
+  margin: 6px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.reattach.open {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.reattach-note {
+  margin: 0 0 6px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.reattach-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.reattach-lead {
+  margin: 0 0 10px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.reattach-limit {
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--sepia);
+  background: var(--sepia-wash);
+  color: var(--sepia-ink);
+  line-height: 1.5;
+}
+
+.reattach-empty {
+  margin: 0 0 10px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.reattach-candidates {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reattach-candidate {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+  padding: 8px;
+}
+
+.reattach-context {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+  max-height: 12em;
+  overflow-y: auto;
+}
+
+.reattach-around {
+  color: var(--ink-3);
+}
+
+.reattach-ellipsis {
+  color: var(--ink-3);
+  opacity: 0.7;
+}
+
+/* The passage itself: marked so it can be read out of its surroundings, never
+   coloured as a recommendation — every candidate is marked identically. */
+.reattach-passage {
+  background: var(--accent-wash);
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.reattach-taken {
+  margin: 0;
+  font-size: 11px;
+  color: var(--signal);
+}
+
+.reattach-open,
+.reattach-attach,
+.reattach-decline {
+  font-family: var(--sans);
+  font-size: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.reattach-open:hover,
+.reattach-attach:hover,
+.reattach-decline:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.reattach-attach[disabled] {
+  cursor: default;
+  opacity: 0.6;
+  border-color: var(--line);
+  color: var(--ink-3);
+}
+
+/* Declining is a peer of attaching, not a dismissal tucked in a corner: the
+   detached state is a legitimate outcome, so it reads as one. */
+.reattach-decline {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.reattach-meta {
+  font-size: 10px;
+  color: var(--ink-3);
+}

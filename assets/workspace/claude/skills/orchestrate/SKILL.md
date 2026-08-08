@@ -5,7 +5,7 @@ id: doc_skillorchestrate
 type: skill
 title: Orchestrate
 created: 2026-07-26T00:00:00Z
-updated: 2026-08-07T00:00:00Z
+updated: 2026-08-08T00:00:00Z
 tags: [core]
 status: open
 anchors: {}
@@ -230,7 +230,8 @@ Dispatch through Claude Code's subagent mechanism — the Task (Agent) tool — 
 the background**, one subagent per event. A subagent inherits nothing, so its prompt
 carries everything: the event id and type, the payload's ids (thread, parent, the
 documents named), which skill to apply (the routing row, or the `@<subagent>` persona the
-payload directs to), the anchors it should start from, and the binding rules below. Its
+payload directs to), the model you are launching it at, the anchors it should start from, and
+the binding rules below. Its
 report comes back as the task's final message. You park on `corpus queue idle` — never on a
 subagent — and reports are waiting whenever parking returns: on a new event, or on the
 ~8-minute rearm. On every return, settle what has reported, then claim.
@@ -278,6 +279,18 @@ than assuming them:
   exactly as it would watch you. Same discipline: name the object and the change.
 - A reply whose work changed documents closes with the `↳ ` trace line; the comment skill
   states the grammar.
+- **Every turn it posts names the model that wrote it** — `--model <name>` on
+  `corpus thread reply` and on `corpus thread create`, naming what actually ran. That is why
+  the dispatch states the model you launched it at: the subagent has the name in hand and
+  states the one it is running as, and where the two differ the one that ran goes on the turn
+  and the difference goes in this event's job log. It is a **record of what ran, never a
+  request for what should run** — a weight the request stated is a directive you honour rather
+  than weigh again, and this turn is the evidence that you did, which it cannot be if it merely
+  repeats what was asked for. Where the work ran in stages, the turn names the **deciding**
+  stage — the one that drew the conclusion or wrote the words — one model and never a list;
+  the gathering stages stay in the job log. Where nothing knows what ran, the flag is left out
+  and the turn shows nothing rather than a guess. The comment skill states the grammar, and it
+  governs every turn you post yourself exactly as it governs a subagent's.
 - Anything a reply hands over for reuse elsewhere — a prepared prompt, a command line, a
   config snippet — sits alone in a fenced block whose info string labels it (`prompt`,
   `command`), one deliverable per fence, prose outside it: the board renders that fence as a
@@ -403,7 +416,7 @@ nothing. Log rather than update whenever the diff came back cut. **Ask** only wh
 act without a decision from the person: a rewrite that takes a decision, a ripple that could
 go two ways with nothing in the corpus to pick between them. That is one thread on the
 document the decision is about —
-`corpus thread create --parent doc_7e3a91 --from agent --quote "<the passage that is now wrong>"`
+`corpus thread create --parent doc_7e3a91 --from agent --model <name> --quote "<the passage that is now wrong>"`
 when you can quote the span exactly, because that is what makes it findable, and the same
 command without `--quote` when the passage is not one span or when the anchoring write is
 refused by the user's lock — and it asks with a **form**: a fenced block whose info string is
@@ -590,7 +603,7 @@ document), the write is refused with the holder named, reported as a server erro
 `5`), and never retried blind. Defer instead — in exactly this order:
 
 ```bash
-corpus thread reply th_4b8e2c --from agent <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 You're editing [[doc_a1b2c3]] right now, so I haven't touched it. The change is
 ready and will land on its own once the document is free.
 EOF
@@ -633,7 +646,10 @@ argument (or piped stdin). Log at these moments, and only these:
 - **claimed** — `corpus job log evt_7c1d9a "claimed comment.created on th_4b8e2c"`
 - **dispatched** — which skill's subagent took it, on which model tier, and why that
   tier: `corpus job log evt_7c1d9a "dispatched to a comment-skill subagent (Sonnet — one
-  document, prescribed change)"`
+  document, prescribed change)"`. **This log is the per-stage account.** Where the work runs
+  in stages at different models, every stage is named here; the turn itself names only the
+  deciding stage, so the log is the only place the whole split is written down — and it lasts
+  only as long as the event does, which is why the turn carries the one name that matters.
 - **acted** — each notable action, named concretely. These lines come from **inside the
   subagent**, appended to the same event id it was dispatched for — never to a job of its
   own.
@@ -667,8 +683,8 @@ drawer and the row agree.
 
 For `comment.created` and `form.respond`, a person is watching a pending indicator.
 **Reply before you fail** — and before you defer: post a short
-`corpus thread reply <id> --from agent` saying what went wrong or what the work is waiting
-on, then settle the event. A pending indicator that silently becomes a failed job reads as
+`corpus thread reply <id> --from agent --model <name>` saying what went wrong or what the work
+is waiting on, then settle the event. A pending indicator that silently becomes a failed job reads as
 the agent hanging; a one-line reply resolves it honestly.
 
 The invariant, restated: every claimed event ends settled — in `processed/`, in `failed/`,
@@ -826,7 +842,7 @@ Thirty-year fixed offers currently cluster between 6.1% and 6.6%; every
 projection in this document now uses 6.4%.
 EOF
 corpus job log evt_7c1d9a "edited [[doc_a1b2c3]] — updated the rate assumption to 6.4%"
-corpus thread reply th_4b8e2c --from agent <<'EOF'
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
 Updated the rate assumption in [[doc_a1b2c3]] to 6.4% and reworded the
 projection note to match. Changed: [[doc_a1b2c3]] (edited).
 ↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%
