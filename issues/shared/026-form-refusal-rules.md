@@ -39,4 +39,4 @@ signed and applied; the behaviour is not yet shipped except where noted.
 - [x] Drafted and presented to the user for sign-off
 - [x] Signed by the user
 - [x] Applied to SPEC.md
-- [ ] Committed with `[ISSUE-ID]` prefix
+- [ ] Committed with `[SHARED-026]` prefix

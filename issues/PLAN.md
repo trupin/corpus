@@ -441,6 +441,12 @@ belongs to the same fix wave.
 | SHARED-025 | A changelog in the document instead of a thread per change (SIGNED, applied) | done | P1 | — |
 | SHARED-026 | A write is refused when it would not read back (SIGNED, applied) | done | P1 | — |
 | SHARED-027 | An agent turn says which model wrote it (SIGNED, applied) | done | P1 | — |
+| CONTRACT-043 | A turn has nowhere to record the model that wrote it | todo | P1 | SHARED-027 |
+| SERVER-074 | Write the deciding model onto the agent's turn | todo | P1 | CONTRACT-043 |
+| UI-090 | Show which model wrote an agent turn | todo | P1 | CONTRACT-043, SERVER-074 |
+| SERVER-075 | A person's reply with an unterminated fence swallows every later turn | todo | P0 | — |
+| CONTRACT-044 | The UI cannot pre-check a fence, because the scanner lives in the server | todo | P1 | — |
+| UI-091 | Pre-check the two refusals the composer still cannot see | todo | P2 | CONTRACT-044 |
 | AGENT-020 | Noting a change writes to the document's changelog, not a new thread | todo | P1 | SHARED-025 |
 | UI-089 | The changelog's older entries need a fold that reports its size | todo | P2 | SHARED-025, AGENT-020 |
 | AGENT-016 | Closing fence must sit on its own line — an unclosed fence swallows later turns | done | P0 | — |
