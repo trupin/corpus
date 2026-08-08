@@ -78,7 +78,8 @@ interface Token {
 
 /**
  * Every mention-shaped token outside code. Code is opaque by the same rule the
- * `[[ref]]` scanner and the turn-heading scanner use (`core/code.ts`), so a turn
+ * `[[ref]]` scanner and the turn-heading scanner use (the contract's `code.ts`),
+ * so a turn
  * documenting the mention syntax in a fenced block or an inline span does not
  * summon anyone.
  */

@@ -57,7 +57,7 @@ import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
 import {
   CAPTURE_SUBJECT,
   EVENT_SOURCE,
-  assertClosedFences,
+  assertAppendableTurnText,
   decideParticipation,
   deriveThreadTitle,
   enqueueComment,
@@ -108,10 +108,13 @@ export async function captureDocument(
   // The captured text becomes the filing thread's first turn as well as the
   // document's body, so a fence left open here swallows the filing request
   // itself and every reply the agent or the person writes afterwards
-  // (SERVER-075). Refusing the capture covers both files at once: they carry the
-  // same words, and there is no version of this where the document is worth
-  // writing and the conversation about it is not.
-  assertClosedFences(request.text, CAPTURE_SUBJECT);
+  // (SERVER-075), and a `## user · <ts>` line splits that request in two before
+  // anyone has read it (SERVER-076). Refusing the capture covers both files at
+  // once: they carry the same words, and there is no version of this where the
+  // document is worth writing and the conversation about it is not. In the
+  // document the same line would be nothing but a heading, which is why the
+  // refusal is worded about the turn and not about the markdown.
+  assertAppendableTurnText(request.text, CAPTURE_SUBJECT);
 
   // One lane: both ids are minted against the projection and the document's
   // filename is deduped against the filesystem, so a concurrent capture of the
