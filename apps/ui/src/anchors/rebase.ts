@@ -82,3 +82,60 @@ export function rebaseRange(from: string, to: string, range: MdRange): MdRange |
   const rebased = mdRangeOfPlain(target.runs, plain.start, plain.end);
   return rebased === null ? null : { start: rebased.start, end: rebased.end };
 }
+
+/**
+ * The same crossing in the other direction — **capture** rather than placement
+ * (UI-068).
+ *
+ * A comment quotes the document, and SPEC.md §6's ladder matches that quote
+ * against the file **literally**. But the only address a selection has is a
+ * ProseMirror position, and the only map from those to markdown offsets is the
+ * serializer's emission trace (`offsetMap.ts`), which indexes the *canonical
+ * printing*. Nothing ever printed the file, so there is no trace into it: a
+ * faithful quote is a **translation** of an offset, not a different slice of the
+ * same one. That is why the trace stays — it is what makes a selection across
+ * `**bold**`, across blocks and inside a `[[ref]]` exact — and why the crossing
+ * happens after it rather than instead of it.
+ *
+ * What it costs to skip is worse here than anywhere else the two spellings meet.
+ * A highlight drawn from a canonical offset against a file's numbers is a
+ * misplacement the next save repairs; a **quote** in the canonical spelling that
+ * the file does not contain is an anchor orphaned *at creation* — the comment is
+ * detached before anyone has read it, and no later edit repairs it, because
+ * every rung of the ladder is looking for bytes that were never there.
+ * SERVER-071 closes the other half (`prefix`/`suffix` are recomputed from the
+ * parent's own bytes on the way in) but locates the anchor by the caller's
+ * `exact`, and a quote occurring *zero* times still creates its thread. So the
+ * faithful `exact` has to be sent, and this is what makes it faithful.
+ *
+ * Two rungs, in this order:
+ *
+ * 1. **Rebase the range** — {@link rebaseRange} with the arguments swapped.
+ *    Positional, so it names the passage the user pointed at even when the same
+ *    words occur elsewhere. Its known widening (an escape that makes a run
+ *    atomic in one spelling and not the other) applies here too: a quote can come
+ *    back as the whole paragraph rather than the word. Wide and true beats narrow
+ *    and invented.
+ * 2. **The quote's single literal occurrence** — when the rebase declines, the
+ *    canonical quote may still be in the file verbatim, and if it is there
+ *    exactly once there is nowhere else it could have come from. This is what
+ *    keeps a `[[ref]]` commentable on a file the printer respells: a reference
+ *    token is in *neither* projection (`sourceTrace.ts` drops it, since it
+ *    renders as a title), so a selection of nothing but a ref has no plain range
+ *    to travel through. Second and not first, because uniqueness is a weaker
+ *    claim than position: two spellings of one document can put the canonical
+ *    quote somewhere the user was not looking.
+ *
+ * And when neither holds, `null` — which the comment path must **say**, not
+ * paper over. A quote the file does not contain is the failure this exists to
+ * prevent.
+ */
+export function fileRangeOf(canonical: string, file: string, range: MdRange): MdRange | null {
+  const rebased = rebaseRange(canonical, file, range);
+  if (rebased !== null) return rebased;
+  const quote = canonical.slice(range.start, range.end);
+  if (quote === "") return null;
+  const at = file.indexOf(quote);
+  if (at === -1 || file.indexOf(quote, at + 1) !== -1) return null;
+  return { start: at, end: at + quote.length };
+}

@@ -1,5 +1,5 @@
 import type { DocRow, ResolvedAnchor } from "@corpus/contract";
-import { useCreateThread, type RowNotice } from "@corpus/kit";
+import { CorpusRequestError, useCreateThread, type RowNotice } from "@corpus/kit";
 import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useIsEditing } from "../editor/editingRegistry";
@@ -22,8 +22,12 @@ import {
   type AnchoredThread,
 } from "./anchorPlacement";
 import { escapeSelectorValue } from "./cssEscape";
-import { selectorFromSelection, type AnchorSelection } from "./selectorFromSelection";
-import { traceOfBody, traceOfDoc } from "./traceCache";
+import {
+  selectorFromSelection,
+  type AnchorSelection,
+  type SelectionRefusal,
+} from "./selectorFromSelection";
+import { traceOfBody, traceOfDoc, type DocumentTrace } from "./traceCache";
 
 /**
  * Everything that has to agree for an anchor to be visible: the server's
@@ -45,6 +49,59 @@ import { traceOfBody, traceOfDoc } from "./traceCache";
 
 /** Above this width a column reader is wide enough for margin cards. */
 export const MARGIN_MIN_WIDTH = 1100;
+
+/** What a selection that cannot become an anchor is told (UI-068). */
+export const REFUSAL_NOTICE: Record<SelectionRefusal, string> = {
+  "no-quote": "That selection has no text to quote — select some words to comment on.",
+  "not-in-file":
+    "Couldn't quote that selection from the document as it is saved — select a whole phrase and try again.",
+};
+
+/**
+ * What a comment the server refused says.
+ *
+ * `POST /api/threads` answers `400` when the quote names more than one passage
+ * (SERVER-071): an underspecified request rather than a broken one, and §6
+ * would rather refuse at creation than guess which passage a conversation is
+ * about. But the sentence it refuses with is written for an API caller — it asks
+ * for `prefix`/`suffix` copied out of the file — and that is not an act
+ * available to someone holding a mouse. This layer *always* sends them, read off
+ * the file's own bytes, so reaching that refusal means even the framed quote
+ * repeats, and the only thing that helps is selecting more.
+ *
+ * The other `400` on `selector.exact` is a blank quote, which cannot arrive from
+ * here: `isCommentable` refuses a whitespace-only selection before a draft is
+ * ever opened.
+ */
+export function commentFailureNotice(error: Error): string {
+  const ambiguous =
+    error instanceof CorpusRequestError &&
+    error.issues.some((issue) => issue.path === "selector.exact");
+  return ambiguous
+    ? "That passage appears more than once, and the words around it are identical too — " +
+        "select a longer stretch that includes something unique."
+    : `Comment failed — ${error.message}`;
+}
+
+/**
+ * The bytes the selector will be resolved against — the whole point of UI-068.
+ *
+ * It is the **file**, `body` exactly as the server holds it, whenever the editor
+ * is showing the file's own document. The test for that is not string equality
+ * with `body`: a file the printer spells differently is still the same document,
+ * and that difference is precisely the case this exists for. It is equality of
+ * the two *printings* — `traceOfBody(body)` and `traceOfDoc(doc)` run the one
+ * serializer, so equal output means the editor holds nothing the file does not
+ * already say.
+ *
+ * When they differ, the editor holds unsaved edits, and a comment submitted then
+ * waits for the save (see `submitComment`'s `editing` gate). What that save
+ * writes is the editor's own printing, so that — not the stale file — is the
+ * document the selector is going to meet.
+ */
+function quotableSource(body: string, file: DocumentTrace, live: DocumentTrace): string {
+  return file.markdown === live.markdown ? body : live.markdown;
+}
 
 /** How long the layer waits after a document change before re-checking the anchors. */
 export const REAPPLY_DEBOUNCE_MS = 120;
@@ -190,7 +247,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       }
     },
     onError: (error) => {
-      onNotify({ tone: "error", message: `Comment failed — ${error.message}` });
+      onNotify({ tone: "error", message: commentFailureNotice(error) });
     },
   });
   const editing = useIsEditing(docId);
@@ -479,14 +536,16 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
     (from: number, to: number) => {
       if (editor === null || locked) return;
       const live = traceOfDoc(editor.state.doc);
-      const anchor = selectorFromSelection(live, { from, to });
-      if (anchor === null) {
-        onNotify({
-          tone: "error",
-          message: "That selection has no text to quote — select some words to comment on.",
-        });
+      const captured = selectorFromSelection(
+        live,
+        { from, to },
+        quotableSource(body, source, live),
+      );
+      if (!captured.ok) {
+        onNotify({ tone: "error", message: REFUSAL_NOTICE[captured.reason] });
         return;
       }
+      const anchor = captured.selection;
       // The fallbacks hold when the position is momentarily out of the DOM:
       // the popover still opens, at the top of the viewport, rather than not
       // opening at all.
@@ -501,7 +560,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       }
       setDraft({ selection: anchor, range: { from, to }, top, left });
     },
-    [editor, locked, onNotify],
+    [body, editor, locked, onNotify, source],
   );
 
   /**

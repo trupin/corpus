@@ -10,7 +10,7 @@ import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { beginEditing, endEditing, resetEditingRegistry } from "../editor/editingRegistry.js";
 import { parseMarkdown } from "../editor/markdown/parse.js";
-import { STALE_SELECTION_NOTICE } from "../editor/selection.js";
+import { STALE_SELECTION_NOTICE, type TextQuoteSelector } from "../editor/selection.js";
 import { corpusSchema } from "../editor/markdown/schema.js";
 import {
   readerTransport,
@@ -18,7 +18,8 @@ import {
   type ReaderTransport,
 } from "../testing/readerFixture.js";
 import { anchorState } from "./anchorDecorations.js";
-import { resetTraceCache } from "./traceCache.js";
+import { mdRangeToPm } from "./offsetMap.js";
+import { resetTraceCache, traceOfBody } from "./traceCache.js";
 import { REAPPLY_DEBOUNCE_MS, useAnchorLayer, type AnchorLayer } from "./useAnchorLayer.js";
 
 /**
@@ -181,15 +182,17 @@ function mount(
   anchors: readonly ResolvedAnchor[] = [],
   threads: readonly DocRow[] = [],
   wire: ReaderTransport = readerTransport({}),
+  /** The file on disk. Not always what the editor prints for it — see UI-068. */
+  body: string = BODY,
 ): Mounted {
   const notices: RowNotice[] = [];
   let current: AnchorLayer | null = null;
   let serve: ((next: ServedDocument) => void) | null = null;
-  const fake = fakeEditor(BODY);
+  const fake = fakeEditor(body);
   render(
     <Host
       wire={wire}
-      served={{ body: BODY, anchors }}
+      served={{ body, anchors }}
       threads={threads}
       onLayer={(layer) => {
         current = layer;
@@ -320,6 +323,81 @@ describe("commenting on a selection", () => {
       expect(app.notices.some((notice) => notice.message.startsWith("Comment failed"))).toBe(true);
     });
     expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
+  });
+
+  /**
+   * SERVER-071 made a quote naming more than one passage a `400`, and the
+   * sentence it refuses with asks the caller to send `prefix`/`suffix` copied
+   * out of the file. This layer already does that — so reaching the refusal
+   * means even the framed quote repeats, and repeating the server's instruction
+   * to someone holding a mouse is an error message that cannot be acted on.
+   */
+  it("says something a reader can act on when the server calls the quote ambiguous", async () => {
+    const app = mount([], [], readerTransport({ failing: { "POST /api/threads": 400 } }));
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("A note.", false);
+    });
+    await waitFor(() => {
+      expect(app.notices).toHaveLength(1);
+    });
+    expect(app.notices[0]?.message).toContain("appears more than once");
+    expect(app.notices[0]?.message).toContain("select a longer stretch");
+    expect(app.notices[0]?.message).not.toContain("prefix");
+  });
+});
+
+/**
+ * UI-068, through the whole layer: the quote the wire carries is bytes of the
+ * **file**, on a file the editor prints differently from how it is stored.
+ *
+ * The fixture is the reported one — a padded table, under the blank line every
+ * editor leaves after the frontmatter fence. Both constructs are before the
+ * selection, so both used to shift the quote's context onto text that is not in
+ * the document, and §6's rung 1 had nothing to match.
+ */
+describe("commenting on a file the editor would print differently", () => {
+  const FILE =
+    "\n# Standup\n\n| who | area |\n| --- | ---- |\n| Fernando | platform |\n" +
+    "| Mesbah | infra |\n\n**Moushmi Verma** wrote it up on Monday.\n";
+  const QUOTE = "Moushmi Verma** wrote it up";
+
+  /** The ProseMirror range showing `QUOTE`, where a user's drag would leave it. */
+  function selection(): { from: number; to: number } {
+    const live = traceOfBody(FILE);
+    const start = live.markdown.indexOf(QUOTE);
+    const pm = mdRangeToPm(live.trace, { start, end: start + QUOTE.length });
+    return { from: pm[0]?.from ?? 0, to: pm.at(-1)?.to ?? 0 };
+  }
+
+  it("sends a selector the file literally contains", async () => {
+    const app = mount([], [], readerTransport({}), FILE);
+    const { from, to } = selection();
+    selectQuote(app.layer(), from, to);
+    act(() => {
+      app.layer().submitComment("Who is Mesbah?", false);
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const { selector } = app.wire.of("POST", "/api/threads")[0]?.body as {
+      selector: TextQuoteSelector;
+    };
+    expect(selector.exact).toBe(QUOTE);
+    // Rung 1 of §6's ladder — the rung SERVER-071 leaves to the caller, because
+    // it locates the anchor by the `exact` the caller sent.
+    expect(FILE).toContain(selector.prefix + selector.exact + selector.suffix);
+    // And what used to be sent instead: the printer's aligned cells, which are
+    // in no file anywhere.
+    expect(traceOfBody(FILE).markdown).toContain("| Mesbah   | infra    |");
+    expect(selector.prefix).not.toContain("Mesbah   ");
+  });
+
+  it("shows the composer the file's own quote", () => {
+    const app = mount([], [], readerTransport({}), FILE);
+    const { from, to } = selection();
+    selectQuote(app.layer(), from, to);
+    expect(app.layer().draft?.selection.selector.exact).toBe(QUOTE);
   });
 });
 

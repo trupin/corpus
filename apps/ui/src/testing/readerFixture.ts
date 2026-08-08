@@ -196,14 +196,10 @@ export function readerTransport(options: ReaderTransportOptions = {}): ReaderTra
     // wait for before they unmount.
     if (options.holdWrites !== undefined && request.method !== "GET") await options.holdWrites;
 
-    const failure = options.failing?.[`${request.method} ${url.pathname}`];
+    const route = `${request.method} ${url.pathname}`;
+    const failure = options.failing?.[route];
     if (failure !== undefined) {
-      return json(
-        failure === 413
-          ? { code: "payload_too_large", message: "the upload is over the per-file limit" }
-          : { code: "conflict", message: "the server refused" },
-        failure,
-      );
+      return json(refusal(route, failure), failure);
     }
 
     if (url.pathname.startsWith("/attachments/")) {
@@ -459,6 +455,32 @@ function threadSummary(id: string, resolved: boolean): unknown {
     lastAuthor: "user",
     lastTs: "2026-07-01T09:05:00.000Z",
   };
+}
+
+/**
+ * The `ApiError` a refused status answers with — the server's own body, not an
+ * invented one, because what the board renders is `error.message` and, for a
+ * `400`, the `issues` it branches on.
+ *
+ * Route-specific where the route's own `400` is: `POST /api/threads` refuses an
+ * ambiguous quote (SERVER-071) — a quote naming more than one passage is an
+ * underspecified request, and §6 would rather refuse at creation than guess
+ * which passage a conversation is about. Its sentence is written for an API
+ * caller, which is exactly why the board has to translate it (UI-068). Every
+ * other route keeps the shapeless refusal the failure paths were written
+ * against.
+ */
+function refusal(route: string, status: number): unknown {
+  if (status === 413) {
+    return { code: "payload_too_large", message: "the upload is over the per-file limit" };
+  }
+  if (status === 400 && route === "POST /api/threads") {
+    const message =
+      "the quoted text occurs more than once in the parent document; send `prefix`/`suffix` " +
+      "copied from the file around the occurrence you mean";
+    return { code: "bad_request", message, issues: [{ path: "selector.exact", message }] };
+  }
+  return { code: "conflict", message: "the server refused" };
 }
 
 function json(payload: unknown, status = 200): Response {
