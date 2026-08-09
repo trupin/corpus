@@ -26,7 +26,7 @@ fable
 
 - SPEC.md §11 — "Selecting rows, and acting on the selection", the rider signed
   2026-08-05 (SHARED-017), which this rider substantially revises
-- SPEC.md §11 line 465 — as amended by SHARED-030
+- SPEC.md §11 line 467 — as amended by SHARED-030
 
 ## Summary
 
