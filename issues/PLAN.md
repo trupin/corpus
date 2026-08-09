@@ -407,6 +407,7 @@ belongs to the same fix wave.
 | UI-083 | Selecting rows and acting on the selection — held: rewrite against SHARED-032 (Phase 14) | blocked | P2 | SHARED-032, SERVER-077 |
 | SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
 | SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | done | P1 | — |
+| CONTRACT-047 | An archive can rewrite a document it never named, and say nothing (PR #38 review) | todo | P2 | SERVER-078 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |

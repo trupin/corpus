@@ -1,10 +1,14 @@
-import { chmodSync } from "node:fs";
+import { chmodSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { DocListSchema, DocMutationResponseSchema } from "@corpus/contract";
+import { ACTOR_HEADER, DocListSchema, DocMutationResponseSchema } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "../core/index.js";
+import { createAutoCommitter, createGit } from "../git/index.js";
+import { silentLogger } from "../logger.js";
 import { createThread } from "../threads/thread-fixture.js";
-import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { setArchived } from "./archive.js";
+import { AUTH, createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
+import { allowAllWrites, createDocumentMutex, type DocsWorkspace } from "./write.js";
 
 let ws: WriteWorkspace;
 
@@ -73,6 +77,29 @@ const idAt = (path: string): string =>
 const pathOf = (id: string): string =>
   (ws.db.prepare("SELECT path FROM documents WHERE id = ?").get(id) as { path: string } | undefined)
     ?.path ?? "";
+
+const statusOf = (id: string): string =>
+  (ws.db.prepare("SELECT status FROM documents WHERE id = ?").get(id) as { status: string }).status;
+
+/** The verb's own workspace, for the cases that need the mutex or the guard. */
+const docsWorkspace = (): DocsWorkspace => ({
+  workspaceRoot: ws.root,
+  projection: ws.db,
+  git: createAutoCommitter({ git: createGit(ws.root), now: () => ws.clock }),
+  selfWrites: ws.server.selfWrites,
+  bus: ws.server.bus,
+  logger: silentLogger,
+  now: () => ws.clock,
+  assertWritable: allowAllWrites,
+});
+
+const acquireLock = async (id: string, actor: "user" | "agent"): Promise<void> => {
+  const response = await ws.server.app.request(`/api/locks/${id}`, {
+    method: "POST",
+    headers: { ...AUTH, [ACTOR_HEADER]: actor },
+  });
+  expect(response.status).toBe(201);
+};
 
 const list = async (query: string): Promise<string[]> => {
   const response = await ws.request(`/api/docs${query}`);
@@ -395,6 +422,31 @@ describe("what a carried document cannot be stamped with", () => {
     expect(pathOf(outer)).toBe(".claude/skills-archived/demo/SKILL.md");
   });
 
+  it("stamps a carried skill whose declared id the contract cannot accept", async () => {
+    ws = createWriteWorkspace("archive-nested-unusable-id");
+    ws.write(".claude/skills/demo/SKILL.md", SKILL);
+    // A *string* id, and therefore one the old rule left alone — but not one
+    // `^(doc|th)_[A-Za-z0-9]+$` accepts, so the projection ignores it and the
+    // row carries a path-derived id the move would re-mint (PR #38, finding 1).
+    ws.write(
+      ".claude/skills/demo/nested/SKILL.md",
+      ["---", "id: my-nested-skill", "name: nested", "---", "", "Body.", ""].join("\n"),
+    );
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the skills");
+    ws.reproject();
+    const nested = idAt(".claude/skills/demo/nested/SKILL.md");
+
+    expect(
+      (await ws.post(`/api/docs/${idAt(".claude/skills/demo/SKILL.md")}/archive`, {})).status,
+    ).toBe(200);
+
+    expect(idAt(".claude/skills-archived/demo/nested/SKILL.md")).toBe(nested);
+    expect(parseDocument(ws.read(".claude/skills-archived/demo/nested/SKILL.md")).data["id"]).toBe(
+      nested,
+    );
+  });
+
   it("refuses when a directory it must move is a file at the destination", async () => {
     const { outer, nested } = withNestedSkill("archive-dir-over-file");
     await ws.post(`/api/docs/${nested}/unarchive`, {});
@@ -409,5 +461,235 @@ describe("what a carried document cannot be stamped with", () => {
     expect(body.issues[0]?.message).toContain(".claude/skills-archived/demo/nested");
     expect(ws.exists(".claude/skills/demo/nested/SKILL.md")).toBe(true);
     expect(ws.head()).toBe(head);
+  });
+});
+
+// PR #38's review, finding 1: the two halves of SERVER-078's fix disagreed. The
+// carried half stamped the row's id unconditionally; the requested half stamped
+// only when the frontmatter carried no *string* `id` — so a `SKILL.md` declaring
+// `id: my-skill`, which the contract's `^(doc|th)_[A-Za-z0-9]+$` rejects and the
+// projection therefore replaces with a path-derived one, was written back
+// unstamped and re-minted by the very move the stamp exists to survive. Worse,
+// the id the caller sent no longer resolved afterwards, so the response was a
+// `404` for a document whose folder had just moved and been committed.
+describe("the requested document is stamped by the same rule as the carried ones", () => {
+  const DECLARED = [
+    "---",
+    "id: my-skill",
+    "name: demo",
+    "description: A skill that declares an id the contract cannot accept.",
+    "---",
+    "",
+    "# Demo skill",
+    "",
+  ].join("\n");
+
+  const withUnusableId = (name: string): string => {
+    ws = createWriteWorkspace(name);
+    ws.write(".claude/skills/demo/SKILL.md", DECLARED);
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the skill");
+    ws.reproject();
+    return idAt(".claude/skills/demo/SKILL.md");
+  };
+
+  it("keeps the id of a skill whose frontmatter declares an unusable one", async () => {
+    const skillId = withUnusableId("archive-unusable-id");
+
+    const response = await ws.post(`/api/docs/${skillId}/archive`, {});
+
+    // Answered about the document the caller named, not a `404` for a document
+    // the act itself re-minted out of existence.
+    expect(response.status).toBe(200);
+    expect(DocMutationResponseSchema.parse(await response.json()).doc.frontmatter.id).toBe(skillId);
+    expect(pathOf(skillId)).toBe(".claude/skills-archived/demo/SKILL.md");
+    expect(parseDocument(ws.read(".claude/skills-archived/demo/SKILL.md")).data["id"]).toBe(
+      skillId,
+    );
+    expect((await ws.request(`/api/docs/${skillId}`)).status).toBe(200);
+  });
+
+  it("survives the unarchive round trip under the same id", async () => {
+    const skillId = withUnusableId("archive-unusable-id-round-trip");
+    await ws.post(`/api/docs/${skillId}/archive`, {});
+    ws.advance(60_000);
+
+    expect((await ws.post(`/api/docs/${skillId}/unarchive`, {})).status).toBe(200);
+
+    expect(pathOf(skillId)).toBe(".claude/skills/demo/SKILL.md");
+    expect(idAt(".claude/skills/demo/SKILL.md")).toBe(skillId);
+  });
+
+  it("writes no id into a document that already declares the row's own", async () => {
+    ws = createWriteWorkspace("archive-note-untouched");
+    ws.reproject();
+    const created = await createDoc(ws, { type: "note", title: "Ordinary" });
+    const before = parseDocument(ws.read(created.path));
+
+    await ws.post(`/api/docs/${created.id}/archive`, {});
+
+    // The rule is "the row's id", which an ordinary document already carries —
+    // so the diff of an ordinary archive is still `status` and `updated`.
+    const after = parseDocument(ws.read(created.path));
+    expect(after.data["id"]).toBe(before.data["id"]);
+    expect(after.data["title"]).toBe(before.data["title"]);
+    expect(after.data["status"]).toBe("archived");
+  });
+});
+
+// Finding 2: relaxing the merge made a §7-contradictory state reachable — a
+// skill whose file sits in the *enabled* root while its row reads `archived`.
+// §7 makes location the enablement, so the row must follow the file.
+describe("a skill's frontmatter never contradicts the root it lands in", () => {
+  it("reconciles a nested skill swept back to the enabled root by the outer unarchive", async () => {
+    const { outer, nested } = withNestedSkill("archive-nested-status");
+
+    // Archived on its own: this is what writes `status: archived` into the
+    // nested skill's file.
+    expect((await ws.post(`/api/docs/${nested}/archive`, {})).status).toBe(200);
+    expect(
+      parseDocument(ws.read(".claude/skills-archived/demo/nested/SKILL.md")).data["status"],
+    ).toBe("archived");
+
+    // The outer skill's archive merges the two folders …
+    ws.advance(60_000);
+    expect((await ws.post(`/api/docs/${outer}/archive`, {})).status).toBe(200);
+    // … and leaves the archived root's frontmatter alone: the root decides
+    // status there, so the key is never consulted and never rewritten.
+    expect(
+      parseDocument(ws.read(".claude/skills-archived/demo/nested/SKILL.md")).data["status"],
+    ).toBe("archived");
+
+    // … and the unarchive brings both back, enabling the nested skill in Claude
+    // Code again. The row has to say so.
+    const stamped = parseDocument(ws.read(".claude/skills-archived/demo/nested/SKILL.md")).data[
+      "updated"
+    ];
+    ws.advance(60_000);
+    expect((await ws.post(`/api/docs/${outer}/unarchive`, {})).status).toBe(200);
+
+    expect(pathOf(nested)).toBe(".claude/skills/demo/nested/SKILL.md");
+    expect(parseDocument(ws.read(".claude/skills/demo/nested/SKILL.md")).data["status"]).toBe(
+      "open",
+    );
+    expect(statusOf(nested)).toBe("open");
+    expect(await list("?type=skill")).toContain(nested);
+    expect(await list("?type=skill&status=archived")).not.toContain(nested);
+    // The system's keys and nothing else: `updated` is still the instant this
+    // document's *own* archive stamped, because §5's staleness clock is not a
+    // neighbour's to reset.
+    expect(parseDocument(ws.read(".claude/skills/demo/nested/SKILL.md")).data["updated"]).toBe(
+      stamped,
+    );
+  });
+
+  it("leaves an unrelated status on a carried document alone", async () => {
+    ws = createWriteWorkspace("archive-carried-open-status");
+    ws.write(".claude/skills/demo/SKILL.md", SKILL);
+    ws.write(
+      ".claude/skills/demo/nested/SKILL.md",
+      ["---", "name: nested", "status: open", "---", "", "Body.", ""].join("\n"),
+    );
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the skills");
+    ws.reproject();
+
+    await ws.post(`/api/docs/${idAt(".claude/skills/demo/SKILL.md")}/archive`, {});
+
+    // `open` under the archived root is not a contradiction — the root decides
+    // there — so nothing is reconciled and the author's key survives.
+    expect(
+      parseDocument(ws.read(".claude/skills-archived/demo/nested/SKILL.md")).data["status"],
+    ).toBe("open");
+  });
+});
+
+// Finding 3: the carried stamp writes another document's file, so this verb owes
+// that document what every other cross-document write here already gives it —
+// its write lane for the act's whole length, and its lease consulted.
+describe("a folder move holds the lanes and the leases of what it carries", () => {
+  it("refuses when the other party holds a lease on a carried skill", async () => {
+    const { outer, nested } = withNestedSkill("archive-carried-lock");
+    await acquireLock(nested, "agent");
+    const head = ws.head();
+
+    const response = await ws.post(`/api/docs/${outer}/archive`, {}, { [ACTOR_HEADER]: "user" });
+
+    expect(response.status).toBe(423);
+    const body = (await response.json()) as { message: string; lock: { docId: string } };
+    // Everything that names a document names the locked one, or a person clears
+    // the lease on the skill they archived and nothing changes.
+    expect(body.message).toContain(nested);
+    expect(body.message).toContain("the lock to clear is");
+    expect(body.lock.docId).toBe(nested);
+    expect(ws.exists(".claude/skills/demo/nested/SKILL.md")).toBe(true);
+    expect(ws.exists(".claude/skills-archived/demo")).toBe(false);
+    expect(ws.head()).toBe(head);
+  });
+
+  it("waits for a carried skill's write lane before it touches the folder", async () => {
+    const { outer } = withNestedSkill("archive-carried-lane");
+    const nested = idAt(".claude/skills/demo/nested/SKILL.md");
+    const mutex = createDocumentMutex();
+    let release = (): void => undefined;
+    const holding = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Held by hand rather than raced: an interleaving a test decides is the only
+    // kind it can assert on (SERVER-034).
+    void mutex.run(nested, () => holding);
+
+    const archiving = setArchived(docsWorkspace(), mutex, "user", outer, true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // `applyOperations` is synchronous and runs in the first turn after the
+    // guard, so without the carried lane the folder would already have moved.
+    expect(ws.exists(".claude/skills-archived/demo")).toBe(false);
+    expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
+
+    release();
+    await archiving;
+    expect(ws.exists(".claude/skills-archived/demo/SKILL.md")).toBe(true);
+    expect(idAt(".claude/skills-archived/demo/nested/SKILL.md")).toBe(nested);
+  });
+});
+
+// Finding 5: `existsSync` answers about a symlink's *target*, so a symlink at
+// the destination was either replaced (dangling) or merged *through* (pointing
+// at a directory), writing files somewhere neither end of the move names.
+describe("a destination that is not a real directory is never merged through", () => {
+  it("refuses a symlink standing where the destination folder would be", async () => {
+    const { outer } = withNestedSkill("archive-symlink-destination");
+    mkdirSync(join(ws.root, ".claude", "elsewhere"), { recursive: true });
+    mkdirSync(join(ws.root, ".claude", "skills-archived"), { recursive: true });
+    symlinkSync(
+      join(ws.root, ".claude", "elsewhere"),
+      join(ws.root, ".claude/skills-archived/demo"),
+    );
+    const head = ws.head();
+
+    const response = await ws.post(`/api/docs/${outer}/archive`, {});
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { issues: { message: string }[] };
+    // The destination itself is what is in the way, so that is what is named —
+    // no path under it, and no trailing slash where a filename would go.
+    expect(body.issues[0]?.message).toBe(
+      ".claude/skills-archived/demo already exists; move or remove it first",
+    );
+    expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
+    expect(ws.exists(".claude/elsewhere/SKILL.md")).toBe(false);
+    expect(ws.head()).toBe(head);
+  });
+
+  it("refuses a dangling symlink at the destination rather than replacing it", async () => {
+    const { outer } = withNestedSkill("archive-dangling-symlink");
+    mkdirSync(join(ws.root, ".claude", "skills-archived"), { recursive: true });
+    symlinkSync(join(ws.root, ".claude", "nowhere"), join(ws.root, ".claude/skills-archived/demo"));
+
+    const response = await ws.post(`/api/docs/${outer}/archive`, {});
+
+    expect(response.status).toBe(400);
+    expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
   });
 });

@@ -721,6 +721,31 @@ describe("per-document outcomes", () => {
     expect(ws.head()).toBe(head);
     expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
   });
+
+  it("refuses a skill whose folder move would rewrite a locked nested skill", async () => {
+    // The act writes a carried skill's file — it stamps the id the move would
+    // otherwise re-mint — so a lease on that skill refuses this document's share
+    // of the act, exactly as a cascade parent's does (PR #38, finding 3).
+    const { outer, nested } = seedSkills();
+    await acquireLock(nested, "agent");
+    const head = ws.head();
+
+    const { result } = await bulk(
+      { ids: [outer], action: { action: "archive" } },
+      { [ACTOR_HEADER]: "user" },
+    );
+
+    expect(result.changed).toEqual([]);
+    expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([[outer, "locked"]]);
+    // The row is filed under the requested id, and every id *in* it is the
+    // locked one — the same correction SERVER-077's review made for a cascade
+    // parent, now shared by both.
+    expect(result.refused[0]?.message).toContain(`the lock to clear is ${nested}'s`);
+    expect(result.refused[0]?.lock?.docId).toBe(nested);
+    expect(result.commit).toBeNull();
+    expect(ws.head()).toBe(head);
+    expect(ws.exists(".claude/skills/demo/nested/SKILL.md")).toBe(true);
+  });
 });
 
 describe("the projection and the bus see one act", () => {
