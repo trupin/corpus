@@ -1,4 +1,4 @@
-# [SERVER-078] The server does not record that an agent is there
+# [SERVER-086] The server does not record that an agent is there
 
 ## Domain
 
@@ -139,4 +139,4 @@ _[Agent fills: model run on, commands, observed output.]_
 ## Completion Checklist (orchestrator)
 
 - [ ] `/evaluate` passes
-- [ ] Committed with `[SERVER-078]` prefix
+- [ ] Committed with `[SERVER-086]` prefix

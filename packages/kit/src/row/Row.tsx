@@ -83,7 +83,16 @@ export interface RowProps {
 /** What a plugin's registered list item must accept. */
 export type ListItemComponent = ComponentType<RowProps>;
 
-/** The prototype's `.needs-you` text, derived from the row's own reasons. */
+/**
+ * The prototype's `.needs-you` text, derived from the row's own reasons.
+ *
+ * It stays the bare kind — `form` — and does **not** carry
+ * `unansweredForms`. The pill is "short text only — the reason line carries the
+ * sentence" ({@link NeedsYouBadge}), the mockup's own form pill reads `form`
+ * with no number, and §11's "says how many" is one statement: putting the count
+ * in two places on the same row is two things to keep in step for no second
+ * reader.
+ */
 function needsYouText(attention: readonly string[]): string | null {
   if (attention.includes("form")) return "form";
   if (attention.includes("due")) return "due";
@@ -111,7 +120,8 @@ export function Row(props: RowProps): ReactElement {
   const excerpt = rowExcerpt(row);
   const context = rowContext(row);
   const age = ageLabel(row, now ?? new Date());
-  const chips = showReasons === false ? [] : reasonChips(row.attention, row.stale);
+  const chips =
+    showReasons === false ? [] : reasonChips(row.attention, row.stale, row.unansweredForms);
   const needsYou = needsYouText(row.attention);
   const unread = unreadBadgeProps(row, unreadCount);
   const anchorQuote = isThreadRow(row) ? row.anchorQuote : null;

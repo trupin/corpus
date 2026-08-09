@@ -22,7 +22,7 @@ fable
   type. This rider must be re-based on it before either is applied: with
   SHARED-031 signed, a completed todo list is not a special rule but the general
   one (`resolved` = no further action required) *computed* instead of set.
-- Blocks: PLUGINS-016, SERVER-077, UI-092
+- Blocks: PLUGINS-016, SERVER-085, UI-092
 
 ## Spec References
 
@@ -97,13 +97,13 @@ complete work but never to undo it. Replacing the **Column** bullet:
       always-editable rule) and §14 (`doc check`) for contradictions before
       applying — specifically that `doc check` must not report a todo document
       whose stored status is stale as invalid
-- [ ] PLAN.md rows for PLUGINS-016 / SERVER-077 / UI-092 reference the signed
+- [ ] PLAN.md rows for PLUGINS-016 / SERVER-085 / UI-092 reference the signed
       date
 
 ## Technical Design
 
 None — this issue produces spec text. Implementation is PLUGINS-016 (the
-derivation and where it lives), SERVER-077 (projection and write-back) and
+derivation and where it lives), SERVER-085 (projection and write-back) and
 UI-092 (the control renders locked).
 
 ### Edge Cases the text must survive

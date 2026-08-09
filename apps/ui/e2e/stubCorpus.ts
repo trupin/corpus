@@ -362,6 +362,25 @@ function openForms(turns: readonly StubTurn[]): readonly StubTurn[] {
 }
 
 /**
+ * `DocRow.unansweredForms` (CONTRACT-040) — how many forms this thread still
+ * holds unanswered, under the same open-thread guard the reason uses.
+ *
+ * The server derives the count and the `form` reason from **one** SQL
+ * expression, so the published invariant holds in both directions:
+ * `unansweredForms > 0` **iff** `attention` contains `form`. The stub keeps that
+ * property structurally rather than by coincidence — {@link attentionOf} reads
+ * its `form` reason off this function's result instead of testing the same set a
+ * second time — because a stub whose count and reason could drift is exactly the
+ * stub that would let a spec pass against a row the server never sends.
+ *
+ * `0` on a non-thread row and on a resolved thread, never null and never absent.
+ */
+function unansweredFormsOf(doc: StoredDoc): number {
+  if (doc.type !== "thread" || doc.status !== "open") return 0;
+  return openForms(parseThreadTurns(doc.body)).length;
+}
+
+/**
  * The row's attention reasons (SPEC.md §11), derived rather than seeded.
  *
  * Two of the five, which are the two UI-084's asymmetry is about: an unanswered
@@ -374,7 +393,7 @@ function attentionOf(doc: StoredDoc): readonly string[] {
   const turns = parseThreadTurns(doc.body);
   const reasons: string[] = [];
   if (doc.unread && turns.at(-1)?.author === "agent") reasons.push("unread-reply");
-  if (openForms(turns).length > 0) reasons.push("form");
+  if (unansweredFormsOf(doc) > 0) reasons.push("form");
   return reasons;
 }
 
@@ -475,6 +494,7 @@ export async function stubCorpus(
       unread: doc.type === "thread" ? doc.unread : null,
       awaitingAgent: doc.type === "thread" ? false : null,
       unreadThreads: 0,
+      unansweredForms: unansweredFormsOf(doc),
       attention: attentionOf(doc),
       snippets: [],
       parentTitle: doc.parent === null ? null : (store.get(doc.parent)?.title ?? null),

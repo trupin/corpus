@@ -19,7 +19,7 @@ opus
 ## Dependencies
 
 - Depends on: SHARED-033 part 2 (rider must be signed first)
-- Blocks: SERVER-078, UI-098
+- Blocks: SERVER-086, UI-098
 
 ## Spec References
 

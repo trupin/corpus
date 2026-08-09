@@ -18,7 +18,7 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-033 part 2 (rider must be signed first), CONTRACT-045, SERVER-078
+- Depends on: SHARED-033 part 2 (rider must be signed first), CONTRACT-045, SERVER-086
 - Blocks: —
 
 ## Spec References
@@ -31,7 +31,7 @@ opus
 With no agent running anywhere, the console strip reads `agent: idle · queue 3`.
 `idle` reads as "the agent is connected and has nothing to do"; the truth is
 "nobody is listening and three requests are waiting". This issue adds the
-`disconnected` state, fed by the contact SERVER-078 records and CONTRACT-045
+`disconnected` state, fed by the contact SERVER-086 records and CONTRACT-045
 puts on the wire.
 
 ## Reproduction (confirmed by inspection)

@@ -19,7 +19,7 @@ fable
 ## Dependencies
 
 - Depends on: —
-- Blocks: UI-097, CONTRACT-045, SERVER-078, UI-098
+- Blocks: UI-097, CONTRACT-045, SERVER-086, UI-098
 
 ## Spec References
 
@@ -112,7 +112,7 @@ working/idle/halted dot":
 ## Technical Design
 
 None — spec text. Implementation is UI-097 (pending vs working), then
-CONTRACT-045 → SERVER-078 → UI-098 (disconnected).
+CONTRACT-045 → SERVER-086 → UI-098 (disconnected).
 
 ### Edge Cases the text must survive
 
