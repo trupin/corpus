@@ -18,7 +18,10 @@ fable
 
 ## Dependencies
 
-- Depends on: —
+- Depends on: **SHARED-035** — styled text (in-body Pandoc attribute markers,
+  `<u>`, `==highlight==`, the style document). What that rider admits into
+  Corpus markdown is what this toolbar may offer; the two are signed together,
+  SHARED-035 first.
 - Blocks: UI-101
 
 ## Spec References
@@ -53,18 +56,27 @@ them on screen would promise formatting the file cannot hold. From the reference
 screenshot, sorted against what `apps/ui/src/editor/markdown/schema.ts` actually
 supports:
 
-**Expressible** — bold, italic, strikethrough, inline code, heading level, link,
-image, bulleted list, numbered list, checklist (`TaskList`), blockquote, code
-block, table, horizontal rule, clear formatting, undo/redo.
+**Superseded on 2026-08-08 by SHARED-035**, which extends what Corpus markdown
+can hold. The bound below reflects that rider; the principle — the toolbar
+offers only what round-trips through the file — is unchanged.
 
-**Not expressible in clean markdown** — font family, font size, text colour,
-highlight colour, text alignment, line spacing, paragraph indent, page zoom,
-**underline** (markdown has none, and StarterKit ships no `Underline` for exactly
-that reason).
+**Expressible (CommonMark/GFM)** — bold, italic, strikethrough, inline code,
+heading level, link, image, bulleted list, numbered list, checklist
+(`TaskList`), blockquote, code block, table, horizontal rule, clear formatting,
+undo/redo.
 
-A toolbar that offered the second group would either write HTML into the document
-— ending "clean markdown" and breaking the agent's ability to read and rewrite
-files as prose — or silently do nothing. Both are worse than not offering them.
+**Expressible (SHARED-035's Corpus markdown)** — underline (`<u>`), highlight
+(`==…==`), text colour (named roles via attribute spans), block alignment and
+indent (fenced divs).
+
+**Document-level, not toolbar toggles** — font family, font size, line spacing:
+these live in the style document (SHARED-035 part 3). The toolbar may carry a
+**style picker** naming the document's style, but never per-range font/size
+controls.
+
+**Still absent, deliberately** — per-range font family/size, arbitrary hex
+colour in the body, page zoom, print, spellcheck, paint-format: app-level or
+presentation-soup, with no Corpus form.
 
 ## Drafted rider text
 
@@ -82,16 +94,20 @@ To be added to §11's document-view paragraph:
 > selection is (§6) — and the two never disagree, because both act on one
 > document through one editor.
 >
-> **It offers what markdown can hold, and nothing else.** The editor serializes
-> to clean markdown, so the toolbar's contents are bounded by what round-trips
-> through it: emphasis, headings, lists including task lists, quotes, code, links,
-> images, tables, rules. Font family, font size, colour, highlight, alignment,
-> line spacing and paragraph indent are **deliberately absent** — a control that
-> wrote formatting the file cannot carry would either put HTML in a markdown
-> document, ending the guarantee that every document is prose the agent can read
-> and rewrite, or do nothing at all while appearing to work. This is a bound on
-> the toolbar, not a limitation to be worked around later: the file format is the
-> product.
+> **It offers what Corpus markdown can hold, and nothing else.** The editor
+> serializes to Corpus markdown (§5 as extended by the styled-text rider), so
+> the toolbar's contents are bounded by what round-trips through the file:
+> emphasis, headings, lists including task lists, quotes, code, links, images,
+> tables, rules — and the styled-text forms, underline, highlight, named-role
+> colour, block alignment and indent. Per-range font family and size, and any
+> colour that is not a named role, are **deliberately absent**: a control that
+> wrote formatting the file cannot carry would either put arbitrary HTML in a
+> markdown document, ending the guarantee that every document is prose the agent
+> can read and rewrite, or do nothing at all while appearing to work. Font,
+> size and spacing belong to the document's **style** (§5's style map), and the
+> toolbar may name that style and offer to change it — for the whole document,
+> which is what those properties are. This is a bound on the toolbar, not a
+> limitation to be worked around later: the file format is the product.
 >
 > **Column readers keep the floating toolbar alone.** A persistent bar costs
 > vertical space that a column cannot spare, and the column reader is the
@@ -100,9 +116,8 @@ To be added to §11's document-view paragraph:
 
 ## Open questions for the sign-off conversation
 
-1. **Underline.** It is on the reference toolbar and has no markdown form. Absent
-   entirely (drafted), or mapped to something else? Mapping it to emphasis would
-   be a lie about what the file holds.
+1. ~~**Underline.**~~ **Resolved 2026-08-08 by SHARED-035**: underline is in,
+   spelled `<u>` in the body.
 2. **Column readers** — the drafted text excludes them. Confirm, since the
    request said "full screen" but the frustration (formatting hidden behind a
    selection) applies in both.

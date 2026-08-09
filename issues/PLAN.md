@@ -513,5 +513,9 @@ cheapest moment for that to happen.
 | UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-078 |
 | UI-099 | Commenting on a document selection leaves no visible anchor | todo | P0 | — |
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
-| SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | SHARED-035 |
+| CONTRACT-046 | The only body edit is a whole-body replacement | todo | P1 | — |
+| SERVER-079 | Apply an anchored string patch through the ordinary write path | todo | P1 | CONTRACT-046 |
+| CLI-035 | `corpus doc patch` — edit a line without shipping the document | todo | P1 | CONTRACT-046, SERVER-079 |
 | UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |
