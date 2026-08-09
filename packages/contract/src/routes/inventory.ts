@@ -100,6 +100,26 @@
  * opinion. The derivation stays recorded here because it is why the route
  * exists, not because the route is undocumented.
  *
+ * `POST /api/docs/bulk` (CONTRACT-037) is derived from SPEC.md §4 rather than
+ * from §9.2, and the derivation is the whole issue. §4's "One action, one
+ * commit" (rider signed 2026-08-05) says an action a person takes on several
+ * documents at once "lands as a **single** auto-commit" containing "exactly the
+ * documents the action **changed**" — a *capability*, not a UI preference.
+ * Checked against the code rather than assumed: every document mutation route
+ * declared above takes one `{id}`, and the auto-committer's fold decision keys
+ * on the same document and actor, so twenty archives of twenty different
+ * documents are twenty commits by construction. §4 therefore presupposes a way
+ * to ask for several document mutations as one act, and none existed; SHARED-017
+ * made that check its own final acceptance criterion and filed this issue first
+ * for exactly that reason. It sits immediately after `POST /api/docs` because it
+ * is the collection's other mutation, and before the parameterised routes
+ * because a static segment must be registered ahead of the parameter it shares a
+ * position with. §9.2 does not yet list it: like `GET /api/upgrade/check` and
+ * `POST /api/upgrade` above, its bullet is drafted in CONTRACT-037's issue file
+ * under "Held for sign-off" and awaits the user's sign-off, and the derivation
+ * is recorded here so the gap is a pending amendment rather than an undocumented
+ * route.
+ *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so
  * adding an endpoint to SPEC.md without declaring it here fails a test, and
@@ -118,6 +138,7 @@ export const ENDPOINT_INVENTORY = [
 
   "GET /api/docs",
   "POST /api/docs",
+  "POST /api/docs/bulk",
   "GET /api/docs/{id}",
   "GET /api/docs/{id}/related",
   "GET /api/docs/{id}/diff",

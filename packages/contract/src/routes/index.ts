@@ -1,4 +1,5 @@
 import { getAttachment } from "./attachments.js";
+import { applyBulkAction } from "./bulk.js";
 import { capture } from "./capture.js";
 import { checkDocuments } from "./check.js";
 import { doctorDb, rebuildDb } from "./db.js";
@@ -50,6 +51,7 @@ import { getTree } from "./tree.js";
 import { checkUpgrade, startUpgrade } from "./upgrade.js";
 
 export * from "./attachments.js";
+export * from "./bulk.js";
 export * from "./capture.js";
 export * from "./check.js";
 export * from "./db.js";
@@ -99,6 +101,15 @@ export * from "./upgrade.js";
  * adjacent is how the pair is found. `searchCorpus` follows the document group,
  * where §9.2 lists it.
  *
+ * `applyBulkAction` is registered **before** the parameterised document routes
+ * for the ordering reason above: `/api/docs/bulk` is a static segment where
+ * `/api/docs/{id}` carries a parameter. Nothing competes today — no
+ * `POST /api/docs/{id}` exists, and `bulk` matches neither id prefix — but the
+ * failure mode is silent misrouting, so it takes the safe position rather than
+ * relying on a coincidence of methods, and `index.test.ts` holds the order. It
+ * sits beside `createDoc` for readability too: those two are the collection's
+ * mutations, where everything below them addresses one document.
+ *
  * `getThreadContext` sits directly after `getThread` for the same reason — §9.2
  * lists the context pack in the bullet immediately below the thread read — and
  * likewise not for routing: it is a `GET` one segment deeper than
@@ -110,6 +121,7 @@ export const contractRoutes = {
 
   listDocs,
   createDoc,
+  applyBulkAction,
   getDoc,
   relatedDocs,
   getDocDiff,

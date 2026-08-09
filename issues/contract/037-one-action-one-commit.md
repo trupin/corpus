@@ -6,7 +6,7 @@ contract
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -85,28 +85,28 @@ success for work that did not happen.
 
 ## Acceptance Criteria
 
-- [ ] One route accepts **several document ids and one act**, and answers for all
+- [x] One route accepts **several document ids and one act**, and answers for all
       of them — the board makes one request per action, never one per document
-- [ ] Its response distinguishes **three** outcomes per document: **changed**,
+- [x] Its response distinguishes **three** outcomes per document: **changed**,
       **already in that state** (a no-op, explicitly not a failure), and **did not
       change**, the last carrying a **reason** and, for a lock, the **holder**
-- [ ] The response names documents **individually** in each part — a count alone
+- [x] The response names documents **individually** in each part — a count alone
       is not a result, because the part worth re-reading is the part that did not
       happen
-- [ ] The acting party is carried exactly as every other mutation carries it, and
+- [x] The acting party is carried exactly as every other mutation carries it, and
       becomes the git author
-- [ ] **Deletion keeps §9's user-only rule**: an agent actor is refused for a bulk
+- [x] **Deletion keeps §9's user-only rule**: an agent actor is refused for a bulk
       delete exactly as it is for a single one, and the refusal is the request's,
       not a per-document outcome
-- [ ] The **lock** contract is referenced, not restated or relaxed: a document
+- [x] The **lock** contract is referenced, not restated or relaxed: a document
       locked by the other party is refused (§7) and appears by name with its
       holder; the other documents go through
-- [ ] Nothing in the single-document routes changes — they keep their paths,
+- [x] Nothing in the single-document routes changes — they keep their paths,
       their schemas and their status codes, and stay the path for the reader's ⋯
       menu and the per-row quick actions
-- [ ] `openapi.json` and the typed client regenerate cleanly and are committed;
+- [x] `openapi.json` and the typed client regenerate cleanly and are committed;
       the §14 drift check passes
-- [ ] The contract states, in the route's own description, that the act is **one
+- [x] The contract states, in the route's own description, that the act is **one
       commit** — so a server implementation that loops the single-document path
       is visibly wrong rather than merely slower
 
@@ -252,20 +252,218 @@ express it and cannot express the wrong thing.
    seventeen files) belongs to the server issue and to UI-083; this issue's E2E is
    that the contract regenerates and the client compiles against it.
 
+## Decisions taken (answering "Decisions this issue must make")
+
+1. **Ids only** — the recommendation, taken. The request carries
+   `ids: DocumentId[]` (min 1) and no filter. §11's whole-result-set selection is
+   resolved to ids by the caller, and §11's "the result reports the documents
+   actually changed — saying so when that differs from the number shown" is the
+   caller comparing its own count against the response, which is where that
+   comparison belongs: only the caller knows what number it showed. The array is
+   deliberately **uncapped** — a column's query legitimately matches thousands,
+   and a limit the spec does not state would refuse a selection §11 allows the
+   board to offer. Recorded at the point of definition in `schemas/bulk.ts`.
+2. **One route with an act discriminator.** The value of this surface is
+   concentrated in two rules identical for every act — one commit containing
+   exactly what changed, and §11's three parts. Per-act routes restate both eight
+   times, which is eight opportunities to drift, and would leave a server free to
+   implement one of them by looping the single-document path with no declaration
+   contradicting it. **Threads ride the same route** rather than getting a second
+   batch path under `/api/threads`: a thread is a document (§6), `status` is a
+   core document field (§5), `GET /api/docs?type=thread` is already the thread
+   list, and the route addresses documents by id and answers in ids — so nothing
+   thread-shaped is needed in either direction. Two batch paths would mean two
+   commit rules. Both reasons are in the route description and the schema
+   docblock.
+3. **§9.2 needs a line, and it is drafted below and held.** The route is derived
+   from §4's signed text (which presupposes the capability) rather than from
+   §9.2's list, so `routes/inventory.ts` carries the derivation the way the
+   pending `POST /api/upgrade` pair does. SPEC.md was **not** edited.
+
+## Held for sign-off — proposed SPEC.md §9.2 addition
+
+**Not applied.** This package never edits SPEC.md; the orchestrator applies it
+after the user signs it off. Insert as a new bullet in §9.2 immediately after the
+`POST /api/docs` / `PUT /api/docs/:id` / move-and-archive bullet (SPEC.md:384),
+before `GET /api/threads/:id`:
+
+> - `POST /api/docs/bulk` — applies **one** action to **several** documents as a
+>   single act, which is what makes §4's "One action, one commit" something a
+>   client can ask for: the board makes one request per action, never one per
+>   document. The body carries the ids — never a filter, since a whole-result-set
+>   selection (§11) is resolved to ids by the caller — and the act: archive,
+>   unarchive, resolve, reopen, move, tag (a delta of added and removed tags,
+>   never a replacement, §11), mark still current, or delete. It **applies to what
+>   it can and reports what it could not** (§11): the result names individually
+>   what **changed**, what was **already in that state** (a no-op, not a failure),
+>   and what **did not change and why** — a document locked by the other party
+>   refused with its holder named (§7), one failing validation refused with its
+>   reason (§14), an unknown id reported as such. Partial application is a `200`;
+>   there is no `423` and no `404`, because a lock and an unknown id are
+>   per-document outcomes here rather than verdicts on the request. It lands as
+>   the **single** auto-commit §4 requires, authored by the acting party and
+>   containing exactly the documents it changed, and reports that commit — or
+>   `null` when nothing changed and there was therefore nothing to commit. **Delete
+>   keeps its user-only rule**: a bulk delete carrying an agent actor is rejected
+>   for the whole request, and the result totals the threads left as orphaned
+>   records. The single-document routes above are unchanged and remain the path
+>   for the reader's ⋯ menu and the per-row quick actions.
+
 ## E2E Verification Log
 
 ### Post-Implementation Verification
 
-_[Agent fills: application restarted, exact commands, observed output,
-confirmation the feature works. State which model you ran on.]_
+**Model: Opus 5 (1M context)** (`claude-opus-5[1m]`), running as `contract-dev`
+in the main working tree on `phase-24-resolve-forms-bulk`. No worktree, no git
+command run by this agent.
+
+**1. Regeneration — the artifacts are derived, never hand-edited.**
+
+```
+$ npm run generate -w packages/contract
+> tsx scripts/generate.ts
+generated ./openapi.json
+generated ./src/client/schema.generated.ts
+```
+
+Run three times over the course of the issue (after the schemas landed, after the
+`Lock`-corruption fix below, and after the final wording), each time as the sole
+source of both artifacts.
+
+**2. Generation is idempotent, and the committed artifacts equal a fresh build.**
+
+```
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run \
+    packages/contract/src/generation/artifacts.test.ts apps/server/src/app.test.ts
+✓ packages/contract/src/generation/artifacts.test.ts (7 tests) 512ms
+✓ apps/server/src/app.test.ts (48 tests) 1023ms
+Test Files 2 passed (2) · Tests 55 passed (55)
+```
+
+`artifacts.test.ts` is the real drift check for an uncommitted change: it builds
+the document twice (byte-identical) and compares **the files on disk** against a
+fresh build — `has openapi.json committed in sync with the route definitions` and
+the same for `schema.generated.ts`. Both pass.
+
+`apps/server/src/app.test.ts` is included because it sweeps
+`ALL_CONTRACT_ROUTES` against a bare server; the new route 404s there like every
+other unmounted route, so adding it breaks nothing on the server side. No server
+handler exists yet — that is the follow-on SERVER issue.
+
+**3. The repo drift check, and why it reports "stale" until the commit lands.**
+
+```
+$ node --import tsx scripts/check-generated-artifacts.ts ; echo $?
+✗ API contract is stale: packages/contract/openapi.json, packages/contract/src/client/schema.generated.ts
+  Fix: npm run generate -w packages/contract && git add ...
+ packages/contract/openapi.json                   | 488 ++++++++++++++++++++---
+ packages/contract/src/client/schema.generated.ts | 203 ++++++++--
+ 2 files changed, 612 insertions(+), 79 deletions(-)
+✓ CLI reference is up to date (docs/cli.md).
+1
+```
+
+Read the script before reading the verdict: `diffAgainstHead` runs
+`git diff --stat HEAD` over the artifacts, so **any** regenerated-but-uncommitted
+artifact reads as "stale". The diff it prints is exactly this issue's
+regeneration (the new path, the three new components, the client types) and
+nothing else. It goes green the moment the orchestrator commits the two files;
+the check that the artifacts are *correct* rather than merely *committed* is
+step 2, which passes.
+
+**4. The typed client exposes the operation, and the shape is typed rather than
+opaque** — `packages/contract/src/client/index.test.ts`, four new cases against a
+mounted stub app (real `fetch` through `app.fetch`, no mocks):
+
+```
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run packages/contract/src/client/index.test.ts
+✓ packages/contract/src/client/index.test.ts (67 tests) 35ms
+```
+
+The generated call is `client.api.POST("/api/docs/bulk", {body: {ids, action}})`.
+Observed: the act narrows on `action` (a `move` carries `folder`, an `archive`
+carries nothing); the response comes back as `{action, changed[], alreadyInState[],
+refused[], orphanedThreadIds[], commit, warnings[]}` with `refused[0].lock.holder`
+typed as `"user" | "agent"`; an agent bulk delete is the typed `403`
+(`error.code === "forbidden"`, `isApiError(error)` true). Two of the four cases
+are **compile-time** assertions checked by `tsc --noEmit`: `TagIsADelta` is `true`
+only if `add` is a key of the tag act and `tags` is not, and `MoveNeedsAFolder`
+only if the move act requires `folder`.
+
+Verbatim from the generated client (`src/client/schema.generated.ts`), which is
+what UI-083 consumes:
+
+```ts
+BulkActionRefusal: {
+    id: string;
+    reason: "locked" | "not-found" | "not-applicable" | "invalid" | "write-failed";
+    message: string;
+    lock: components["schemas"]["Lock"] | null;
+};
+```
+
+**5. A real bug this found, fixed, and pinned.** The first draft wrote
+`lock: LockSchema.nullable()`. `Lock` is a *registered* component and
+zod-to-openapi carries a registered name onto anything derived from it, so that
+one call rewrote the shared component to `type: ["object", "null"]` **for every
+route that references it** — measured in the regenerated `openapi.json`, not
+assumed:
+
+```
+$ node -e "const d=require('./openapi.json'); console.log(JSON.stringify(d.components.schemas.Lock.type))"
+["object","null"]
+```
+
+`openapi.test.ts`'s existing "keeps every named component a plain, non-nullable,
+undefaulted object" invariant is the guard that catches this class. The fix is
+`z.union([LockSchema, z.null()])`, which publishes
+`anyOf: [{$ref: Lock}, {type: "null"}]` and leaves the component plain — verified
+by probe before adopting it, and after the change:
+
+```
+$ node -e "... console.log('Lock.type=', JSON.stringify(s.Lock.type));
+           console.log('non-object components:', Object.entries(s).filter(([,v])=>v.type!=='object').map(([n])=>n))"
+Lock.type= "object"
+non-object components: []
+```
+
+The same rule cost the act union its component name: a `z.discriminatedUnion`
+renders as a `oneOf` with no `type: "object"`, so `BulkAction` is **not**
+registered and inlines into `BulkActionRequest.action` — the rule
+`ContextPackSchema` already follows, for the same invariant. Both decisions are
+docblocked at the point of definition and pinned from both sides in
+`openapi.test.ts`.
+
+**6. Checks.**
+
+```
+$ npm run build                                   → exit 0
+$ npm run typecheck                               → exit 0   (tsc --noEmit × 5 workspaces)
+$ npm run lint                                    → exit 0   (eslint .)
+$ npm run format:check                            → exit 0   (prettier --check .)
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run packages/contract
+  Test Files 59 passed (59) · Tests 2261 passed (2261)   → exit 0
+```
+
+New tests: 35 cases in `schemas/bulk.test.ts`, 18 blocks in `openapi.test.ts`'s
+`one action, one commit (CONTRACT-037)` describe, 7 blocks in
+`routes/index.test.ts` (mounted, real requests through a stub handler registered
+against the route definition), 5 in `client/index.test.ts`. Updated pins:
+the request-body count 17 → 18, the mandatory/omittable partition, the user-only
+`403` list, and the §14 warning-carrier list.
+
+**Not verified here, by design.** The behavioural run — twenty documents, three
+locked, one commit, seventeen files in `git show --name-only` — belongs to the
+server issue and to UI-083; there is no handler to exercise yet. No server was
+started and no port was bound.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 
