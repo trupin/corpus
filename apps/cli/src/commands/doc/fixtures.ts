@@ -98,6 +98,8 @@ export const DOC_ROW: DocRow = {
   unread: null,
   awaitingAgent: null,
   unreadThreads: 0,
+  // `0`, not null, on a non-thread row: the count is a count (CONTRACT-040).
+  unansweredForms: 0,
   attention: [],
   snippets: [],
 };
