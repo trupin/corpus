@@ -59,6 +59,28 @@ export interface EnqueueInput {
   readonly id?: string;
 }
 
+/**
+ * Notified once for every event {@link QueueService.enqueue} makes pending,
+ * after the file is on disk and mirrored and before anything is woken.
+ *
+ * The sibling of {@link QueueWriteObserver}, one level up: that one lets the
+ * watcher recognize the queue's own bytes, this one lets a surface *outside* the
+ * queue react to a new event without the queue importing it. Its one production
+ * caller is `jobs/weight.ts`, which writes the weight the request stated onto the
+ * new job's log (SPEC.md §7's console bullet) — the queue therefore stays
+ * ignorant of what a weight is, which is the point: the level is opaque to this
+ * server everywhere.
+ *
+ * Late-bound through {@link QueueService.observeEnqueued} because the job
+ * service is built after the queue (it reads the queue to resolve an id), and
+ * awaited rather than fired off because a line about a job must be in the file
+ * before the agent that will append to it is woken.
+ *
+ * **It may not fail an enqueue.** An observer that throws is the queue's
+ * problem to survive, never the producer's: the event is already durable.
+ */
+export type QueueEnqueueObserver = (event: StoredEvent) => Promise<void>;
+
 export interface IdleRequest {
   readonly timeoutMs: number;
   readonly signal?: AbortSignal | undefined;
@@ -141,6 +163,8 @@ export class QueueService {
   private readonly logger: Logger;
   /** Late-bound: see {@link attachMirror}. */
   private mirror: QueueMirror;
+  /** Late-bound: see {@link observeEnqueued}. */
+  private enqueueObserver: QueueEnqueueObserver | undefined;
   private readonly invalidate: QueueInvalidate;
   private readonly now: () => number;
   private readonly staleAfterMs: number;
@@ -184,6 +208,15 @@ export class QueueService {
   attachMirror(mirror: QueueMirror): QueueScanResult {
     this.mirror = mirror;
     return this.rebuildMirror();
+  }
+
+  /**
+   * Binds the one {@link QueueEnqueueObserver}, which `createServer` does as
+   * soon as the job service exists. A queue built without one — a test, or a
+   * server with no projection and so no console — simply notifies nobody.
+   */
+  observeEnqueued(observer: QueueEnqueueObserver): void {
+    this.enqueueObserver = observer;
   }
 
   /**
@@ -252,9 +285,33 @@ export class QueueService {
     };
     await this.store.writeEvent("pending", event);
     this.mirror.upsertEvent(event);
+    // After the mirror, so an observer that writes a console row for this event
+    // finds its `events` row already there; before the invalidate, so the frame
+    // that follows already announces whatever the observer wrote (`JOBS_KEY` is
+    // in `QUEUE_QUERY_KEYS`, and an append broadcasts nothing of its own); and
+    // before the wake, so a line about the job precedes anything the woken agent
+    // appends to the same log.
+    await this.notifyEnqueued(event);
     this.invalidate(QUEUE_QUERY_KEYS);
     this.waiters.notify();
     return event;
+  }
+
+  /**
+   * Runs the enqueue observer, if one is bound, and swallows its failure.
+   *
+   * The event is on disk and mirrored by the time this runs, so a throwing
+   * observer must not un-make it: failing the producer's request here would
+   * report "your comment was not posted" about a comment that was posted and an
+   * agent that has been woken for it.
+   */
+  private async notifyEnqueued(event: StoredEvent): Promise<void> {
+    if (this.enqueueObserver === undefined) return;
+    try {
+      await this.enqueueObserver(event);
+    } catch (error) {
+      this.logger.error("enqueue observer failed", { id: event.id, error: String(error) });
+    }
   }
 
   /**

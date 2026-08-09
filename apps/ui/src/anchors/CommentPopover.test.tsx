@@ -1,13 +1,16 @@
 /** @vitest-environment jsdom */
+import { createCorpusTestHarness, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeLayers } from "../reader/useEscapeStack.js";
+import { readerTransport } from "../testing/readerFixture.js";
 import { ASK_AGENT_LABEL, NOTE_ONLY_LABEL } from "../thread/ThreadComposer.js";
 import { CommentPopover, quotePreview } from "./CommentPopover.js";
 
 afterEach(() => {
   cleanup();
   resetEscapeLayers();
+  resetWeightChoices();
 });
 
 function open(overrides: Partial<Parameters<typeof CommentPopover>[0]> = {}): {
@@ -16,16 +19,27 @@ function open(overrides: Partial<Parameters<typeof CommentPopover>[0]> = {}): {
 } {
   const onSubmit = vi.fn();
   const onClose = vi.fn();
+  /*
+   * A provider, because the composer reads the workspace's declared weight
+   * levels from the ordinary document queries (SPEC.md §11's rider, UI-082).
+   * This transport declares none, so no control is drawn and every assertion
+   * below describes the composer exactly as it did before that feature — which
+   * is also what a workspace on an older template sees (§2.4).
+   */
+  const harness = createCorpusTestHarness({ fetch: readerTransport({}).fetch });
   render(
-    <CommentPopover
-      quote="assume a 30-year fixed at 6.1%"
-      top={120}
-      left={80}
-      pending={false}
-      onSubmit={onSubmit}
-      onClose={onClose}
-      {...overrides}
-    />,
+    <harness.Wrapper>
+      <CommentPopover
+        quote="assume a 30-year fixed at 6.1%"
+        top={120}
+        left={80}
+        pending={false}
+        weightScope="doc:doc_a"
+        onSubmit={onSubmit}
+        onClose={onClose}
+        {...overrides}
+      />
+    </harness.Wrapper>,
   );
   return { onSubmit, onClose };
 }
@@ -50,7 +64,7 @@ describe("the comment composer", () => {
     const { onSubmit } = open();
     type("Where does this number come from?");
     fireEvent.click(screen.getByRole("button", { name: /Comment/u }));
-    expect(onSubmit).toHaveBeenCalledWith("Where does this number come from?", true);
+    expect(onSubmit).toHaveBeenCalledWith("Where does this number come from?", true, {});
   });
 
   it("sends an explicit false for note only", () => {
@@ -59,7 +73,7 @@ describe("the comment composer", () => {
     fireEvent.click(screen.getByRole("button", { name: ASK_AGENT_LABEL }));
     expect(screen.getByRole("button", { name: NOTE_ONLY_LABEL })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Comment/u }));
-    expect(onSubmit).toHaveBeenCalledWith("Just a note.", false);
+    expect(onSubmit).toHaveBeenCalledWith("Just a note.", false, {});
   });
 
   it("cannot submit nothing", () => {
@@ -94,7 +108,7 @@ describe("the comment composer", () => {
     expect(onSubmit).not.toHaveBeenCalled();
 
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
-    expect(onSubmit).toHaveBeenCalledWith("A comment.", true);
+    expect(onSubmit).toHaveBeenCalledWith("A comment.", true, {});
   });
 
   it("never submits on an IME composition commit", () => {

@@ -1,9 +1,13 @@
 import {
   AutocompleteMenu,
   COMPOSER_PRIMARY_KEY,
+  composerReachesAgent,
   handleComposerKeyDown,
+  threadWeightScope,
   useAppendTurn,
   useAutocomplete,
+  useComposerWeight,
+  WeightPicker,
   type RowNotice,
 } from "@corpus/kit";
 import {
@@ -67,6 +71,15 @@ export function ThreadComposer({
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>(undefined);
   const intake = useAttachmentIntake();
   const append = useAppendTurn(threadId);
+  /*
+   * The weight, scoped to **this conversation** (SPEC.md §11's rider): two
+   * columns showing the same thread show the same standing choice, exactly as
+   * their collapse state agrees. Liveness follows the toggle beside it and
+   * nothing else — flipping to `○ note only` dims the control and keeps the
+   * choice, and the choice never touches the toggle in return.
+   */
+  const weight = useComposerWeight(threadWeightScope(threadId));
+  const live = composerReachesAgent({ requestsAgent: asking });
 
   const applyCompletionResult = useCallback((result: { text: string; caret: number }) => {
     setText(result.text);
@@ -105,6 +118,10 @@ export function ThreadComposer({
       {
         body,
         requestsAgent: asking,
+        // Sent whatever the toggle says: liveness is a presentation rule, so a
+        // note-only turn still states what it was asked at. Nothing enqueues, so
+        // nothing reads it — and the composer said so before sending.
+        ...weight.request,
         ...(attachments.length === 0
           ? {}
           : { files: attachments.map((attachment) => attachment.file) }),
@@ -129,7 +146,7 @@ export function ThreadComposer({
         },
       },
     );
-  }, [append, asking, hasContent, intake, onNotify, text]);
+  }, [append, asking, hasContent, intake, onNotify, text, weight.request]);
 
   return (
     <div
@@ -160,6 +177,8 @@ export function ThreadComposer({
           handleComposerKeyDown(event, { claim: autocomplete.handleKeyDown, onPrimary: send });
         }}
       />
+
+      <WeightPicker weight={weight} live={live} surface={threadId} />
 
       <div className="composer-foot">
         <button

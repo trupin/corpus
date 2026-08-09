@@ -31,6 +31,16 @@ export type ComposeMode = "ask" | "capture";
 export interface ComposeInput {
   readonly text: string;
   readonly files: readonly File[];
+  /**
+   * The weight the request states (SPEC.md §11's rider) — `{}` when nothing is
+   * chosen, which is the ordinary case.
+   *
+   * Spread onto the body rather than passed as a `string | undefined`, so
+   * "stated nothing" has exactly one spelling on the way out: the key is absent.
+   * §11 names both submits, so Capture carries it exactly as Ask does — "a
+   * request is a request wherever it starts".
+   */
+  readonly weight: { readonly weight?: string };
 }
 
 export interface ComposeApi {
@@ -68,6 +78,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
             selector: null,
             body: text,
             requestsAgent: true,
+            ...input.weight,
             ...(files.length === 0 ? {} : { files }),
           });
           for (const warning of result.warnings) {
@@ -80,6 +91,7 @@ export function useCompose(notify: (notice: RowNotice) => void): ComposeApi {
         const result = await capture.mutateAsync({
           text,
           requestsAgent: true,
+          ...input.weight,
           ...(files.length === 0 ? {} : { files }),
         });
         for (const warning of result.warnings) {

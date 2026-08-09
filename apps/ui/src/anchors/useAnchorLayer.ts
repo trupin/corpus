@@ -129,6 +129,18 @@ export interface AnchorLayerOptions {
   readonly onNotify: (notice: RowNotice) => void;
 }
 
+/**
+ * A comment on its way out — held whole, so one that waits for an edit session
+ * to flush is posted exactly as it was written (SPEC.md §11's rider adds the
+ * weight to what "as it was written" covers).
+ */
+interface CommentPost {
+  readonly body: string;
+  readonly requestsAgent: boolean;
+  /** Spread onto the request; `{}` when the composer stated no weight. */
+  readonly weight: { readonly weight?: string };
+}
+
 export interface CommentDraft {
   readonly selection: AnchorSelection;
   /** The ProseMirror range the optimistic highlight paints, captured on open. */
@@ -194,7 +206,11 @@ export interface AnchorLayer {
   readonly slotHost: (threadId: string) => HTMLElement | null;
   readonly draft: CommentDraft | null;
   readonly submitting: boolean;
-  readonly submitComment: (body: string, requestsAgent: boolean) => void;
+  readonly submitComment: (
+    body: string,
+    requestsAgent: boolean,
+    weight: { readonly weight?: string },
+  ) => void;
   readonly cancelComment: () => void;
 }
 
@@ -639,10 +655,10 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
    * editing registry answers exactly that question — it clears only when no
    * buffer is pending and no `PUT` is in flight (sprint-011 TEST-107).
    */
-  const queued = useRef<{ body: string; requestsAgent: boolean } | null>(null);
+  const queued = useRef<CommentPost | null>(null);
 
   const post = useCallback(
-    (input: { body: string; requestsAgent: boolean }, anchor: AnchorSelection, key: string) => {
+    (input: CommentPost, anchor: AnchorSelection, key: string) => {
       // The temp highlight goes: on success the server's own anchor arrives with
       // the refetched document and takes its place, and on a refusal there is
       // nothing to take its place at all. Per-call on purpose — a highlight in a
@@ -658,6 +674,10 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
           selector: anchor.selector,
           body: input.body,
           requestsAgent: input.requestsAgent,
+          // Absent unless the composer stated one; a comment that waited out an
+          // edit session carries the weight it was written with, not the one
+          // standing when the buffer finally flushed.
+          ...input.weight,
         },
         { onSuccess: forget, onError: forget },
       );
@@ -668,7 +688,7 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
   const pendingAnchor = useRef<{ anchor: AnchorSelection; key: string } | null>(null);
 
   const submitComment = useCallback(
-    (text: string, requestsAgent: boolean) => {
+    (text: string, requestsAgent: boolean, weight: { readonly weight?: string }) => {
       if (draft === null) return;
       const anchor = draft.selection;
       const key = `pending:${String(Date.now())}`;
@@ -677,11 +697,11 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
       setOptimistic({ key, quote: anchor.selector.exact, segments: [draft.range] });
       setDraft(null);
       if (editing) {
-        queued.current = { body: text, requestsAgent };
+        queued.current = { body: text, requestsAgent, weight };
         pendingAnchor.current = { anchor, key };
         return;
       }
-      post({ body: text, requestsAgent }, anchor, key);
+      post({ body: text, requestsAgent, weight }, anchor, key);
     },
     [draft, editing, post],
   );

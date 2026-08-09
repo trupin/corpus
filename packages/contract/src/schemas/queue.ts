@@ -95,7 +95,14 @@ export const QueueEventSchema = z
           "stays open rather than becoming a union keyed on `type` (SPEC.md §7). The core payloads " +
           "are declared beside their features: `form.respond` carries " +
           "`{threadId, formTs, answers, note}`, where `answers` holds one entry per field of the " +
-          "answered form (SPEC.md §6, §7).",
+          "answered form (SPEC.md §6, §7).\n\n" +
+          "**One key crosses every type: `weight`.** When the request that enqueued the event " +
+          "stated the weight its work should be done at (SPEC.md §7, §11), that level name rides " +
+          "here verbatim, and the dispatch honours it rather than weighing the work again. It is " +
+          "**absent** when the request stated nothing, which means the orchestrator decides — never " +
+          "a default level, and never `null`. It is deliberately not part of any one payload " +
+          "shape: a weight is a property of *a request that asked for work*, so a plugin's own " +
+          "event type carries it the same way with no contract change.",
       ),
   })
   .openapi("QueueEvent");

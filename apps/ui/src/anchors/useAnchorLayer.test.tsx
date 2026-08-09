@@ -264,7 +264,7 @@ describe("commenting on a selection", () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("Where is this from?", false);
+      app.layer().submitComment("Where is this from?", false, {});
     });
     await waitFor(() => {
       expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
@@ -281,11 +281,39 @@ describe("commenting on a selection", () => {
     });
   });
 
+  /**
+   * SPEC.md §11's rider: the composer states the weight, and the layer is what
+   * puts it on the request. Absence stays absence — an untouched picker sends
+   * `{}` and the body must not grow a `weight` key from it (UI-082).
+   */
+  it("carries a stated weight onto the comment's request, and nothing when none", async () => {
+    const app = mount();
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("Heavy, please.", true, { weight: "heavy" });
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    expect((app.wire.of("POST", "/api/threads")[0]?.body as { weight?: string }).weight).toBe(
+      "heavy",
+    );
+
+    selectQuote(app.layer(), RATE_FROM, RATE_TO);
+    act(() => {
+      app.layer().submitComment("No weight.", true, {});
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(2);
+    });
+    expect("weight" in (app.wire.of("POST", "/api/threads")[1]?.body as object)).toBe(false);
+  });
+
   it("asks the agent when the toggle says so", async () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("Check this.", true);
+      app.layer().submitComment("Check this.", true, {});
     });
     await waitFor(() => {
       expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
@@ -299,7 +327,7 @@ describe("commenting on a selection", () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("A note.", false);
+      app.layer().submitComment("A note.", false, {});
     });
     // Optimistic: the decoration is there while the request is in flight.
     const pending = anchorState(app.editorState())?.anchors ?? [];
@@ -316,7 +344,7 @@ describe("commenting on a selection", () => {
     const app = mount([], [], readerTransport({ failing: { "POST /api/threads": 409 } }));
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("A note.", false);
+      app.layer().submitComment("A note.", false, {});
     });
     expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(1);
     await waitFor(() => {
@@ -336,7 +364,7 @@ describe("commenting on a selection", () => {
     const app = mount([], [], readerTransport({ failing: { "POST /api/threads": 400 } }));
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("A note.", false);
+      app.layer().submitComment("A note.", false, {});
     });
     await waitFor(() => {
       expect(app.notices).toHaveLength(1);
@@ -375,7 +403,7 @@ describe("commenting on a file the editor would print differently", () => {
     const { from, to } = selection();
     selectQuote(app.layer(), from, to);
     act(() => {
-      app.layer().submitComment("Who is Mesbah?", false);
+      app.layer().submitComment("Who is Mesbah?", false, {});
     });
     await waitFor(() => {
       expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
@@ -529,7 +557,7 @@ describe("a comment whose reader closed before it settled", () => {
   async function submitAndHold(app: Mounted): Promise<void> {
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("A note.", false);
+      app.layer().submitComment("A note.", false, {});
     });
     await waitFor(() => {
       expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
@@ -620,7 +648,7 @@ describe("a comment whose reader closed before it settled", () => {
     const app = mount();
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("A note.", false);
+      app.layer().submitComment("A note.", false, {});
     });
     await waitFor(() => {
       expect(anchorState(app.editorState())?.anchors ?? []).toHaveLength(0);
@@ -640,7 +668,7 @@ describe("a comment whose reader closed before it settled", () => {
     );
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("A note.", false);
+      app.layer().submitComment("A note.", false, {});
     });
     await waitFor(() => {
       expect(app.notices).toHaveLength(1);
@@ -668,7 +696,7 @@ describe("a comment submitted mid-save", () => {
     });
     selectQuote(app.layer(), RATE_FROM, RATE_TO);
     act(() => {
-      app.layer().submitComment("Held.", false);
+      app.layer().submitComment("Held.", false, {});
     });
 
     // Nothing on the wire: the server does not have the body this quote came

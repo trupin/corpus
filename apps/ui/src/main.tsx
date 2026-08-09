@@ -7,6 +7,7 @@ import "@corpus/kit/tokens.css";
 import "@corpus/kit/row.css";
 import "@corpus/kit/markdown.css";
 import "@corpus/kit/autocomplete.css";
+import "@corpus/kit/weight.css";
 import "./app/global.css";
 
 const container = document.getElementById("root");

@@ -88,6 +88,17 @@ export interface TurnInput {
    * {@link assertModelNamesAnAgentTurn}.
    */
   readonly model: string | undefined;
+  /**
+   * The weight the request states its work should be done at (SPEC.md §7);
+   * `undefined` when it states none, which means the orchestrator decides.
+   *
+   * Unlike {@link model} it is **request-time instruction and is never written
+   * into the turn**: `model` records what did write a turn, this records what a
+   * request asked the work to be done at, and §7's guarantee that a stated
+   * weight is "honoured, not weighed again" is only checkable while the two stay
+   * separate values. It rides to the queue event and no further.
+   */
+  readonly weight: string | undefined;
   readonly files: readonly File[];
 }
 
@@ -129,11 +140,19 @@ export interface TurnAppend {
  * exercisable without building a `Request`, and so both forms provably read
  * `requestsAgent` the same way — the JSON form as a boolean, the multipart form
  * through `z.stringbool`, and neither through a `??` that would turn "note only"
- * into "omitted".
+ * into "omitted". `weight` crosses both forms as the plain string it already is,
+ * and with no `??` for the same reason: absence is an instruction, not a gap to
+ * fill.
  */
 export function turnRequestBody(body: AppendTurnBody): TurnInput {
   if (!isMultipartTurn(body)) {
-    return { text: body.body, requestsAgent: body.requestsAgent, model: body.model, files: [] };
+    return {
+      text: body.body,
+      requestsAgent: body.requestsAgent,
+      model: body.model,
+      weight: body.weight,
+      files: [],
+    };
   }
   // A body with neither `text` nor `files` is refused by the schema's own
   // refine, so both may legitimately be absent here — one of them, never both.
@@ -141,6 +160,7 @@ export function turnRequestBody(body: AppendTurnBody): TurnInput {
     text: body.text,
     requestsAgent: body.requestsAgent,
     model: body.model,
+    weight: body.weight,
     files: body.files,
   };
 }
@@ -377,6 +397,7 @@ export async function appendThreadTurn(
           parentId: thread.parent,
           turnTs: prepared.appended.turn.ts,
           parsed,
+          weight: input.weight,
         })
       : null;
 

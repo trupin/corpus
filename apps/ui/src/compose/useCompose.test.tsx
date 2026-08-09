@@ -31,9 +31,9 @@ describe("useCompose", () => {
       const { result } = mount(wire, notices);
 
       await act(async () => {
-        expect(await result.current.submit("ask", { text: "  What is due?  ", files: [] })).toBe(
-          true,
-        );
+        expect(
+          await result.current.submit("ask", { text: "  What is due?  ", files: [], weight: {} }),
+        ).toBe(true);
       });
 
       const [call] = wire.to("/api/threads");
@@ -53,7 +53,11 @@ describe("useCompose", () => {
       const { result } = mount(wire, notices);
 
       await act(async () => {
-        await result.current.submit("ask", { text: "look", files: [file("a.png"), file("b.png")] });
+        await result.current.submit("ask", {
+          text: "look",
+          files: [file("a.png"), file("b.png")],
+          weight: {},
+        });
       });
 
       const [call] = wire.to("/api/threads");
@@ -66,7 +70,7 @@ describe("useCompose", () => {
       const wire = composeTransport();
       const { result } = mount(wire, []);
       await act(async () => {
-        await result.current.submit("ask", { text: "   ", files: [file("shot.png")] });
+        await result.current.submit("ask", { text: "   ", files: [file("shot.png")], weight: {} });
       });
       const [call] = wire.to("/api/threads");
       expect(call?.form).toEqual({ requestsAgent: "true" });
@@ -78,7 +82,7 @@ describe("useCompose", () => {
       const notices: RowNotice[] = [];
       const { result } = mount(wire, notices);
       await act(async () => {
-        await result.current.submit("ask", { text: "hello", files: [] });
+        await result.current.submit("ask", { text: "hello", files: [], weight: {} });
       });
       expect(notices).toEqual([{ tone: "info", message: askMessage(false) }]);
       expect(askMessage(false)).not.toContain("queued the agent");
@@ -92,7 +96,9 @@ describe("useCompose", () => {
       const { result } = mount(wire, notices);
 
       await act(async () => {
-        expect(await result.current.submit("capture", { text: "a thought", files: [] })).toBe(true);
+        expect(
+          await result.current.submit("capture", { text: "a thought", files: [], weight: {} }),
+        ).toBe(true);
       });
 
       expect(wire.to("/api/capture")).toHaveLength(1);
@@ -110,7 +116,11 @@ describe("useCompose", () => {
       const wire = composeTransport();
       const { result } = mount(wire, []);
       await act(async () => {
-        await result.current.submit("capture", { text: "with a shot", files: [file("s.png")] });
+        await result.current.submit("capture", {
+          text: "with a shot",
+          files: [file("s.png")],
+          weight: {},
+        });
       });
       expect(wire.to("/api/capture")[0]?.files).toEqual(["s.png"]);
     });
@@ -123,7 +133,7 @@ describe("useCompose", () => {
     const notices: RowNotice[] = [];
     const { result } = mount(wire, notices);
     await act(async () => {
-      await result.current.submit("ask", { text: "hi", files: [] });
+      await result.current.submit("ask", { text: "hi", files: [], weight: {} });
     });
     expect(notices[0]).toEqual({
       tone: "error",
@@ -138,7 +148,9 @@ describe("useCompose", () => {
     const { result } = mount(wire, notices);
 
     await act(async () => {
-      expect(await result.current.submit("capture", { text: "too big", files: [] })).toBe(false);
+      expect(
+        await result.current.submit("capture", { text: "too big", files: [], weight: {} }),
+      ).toBe(false);
     });
     expect(notices).toHaveLength(1);
     expect(notices[0]?.tone).toBe("error");
@@ -150,7 +162,7 @@ describe("useCompose", () => {
     const { result } = mount(wire, []);
     expect(result.current.isPending).toBe(false);
     await act(async () => {
-      await result.current.submit("ask", { text: "hi", files: [] });
+      await result.current.submit("ask", { text: "hi", files: [], weight: {} });
     });
     await waitFor(() => {
       expect(result.current.isPending).toBe(false);

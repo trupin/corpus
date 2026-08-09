@@ -3,8 +3,12 @@ import {
   COMPOSER_NEWLINE_HINT,
   COMPOSER_PRIMARY_KEY,
   COMPOSER_SECONDARY_KEY,
+  composerReachesAgent,
+  GLOBAL_COMPOSE_WEIGHT_SCOPE,
   handleComposerKeyDown,
   useAutocomplete,
+  useComposerWeight,
+  WeightPicker,
   type RowNotice,
 } from "@corpus/kit";
 import {
@@ -74,6 +78,15 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
   const picker = useRef<HTMLInputElement>(null);
   const intake = useAttachmentIntake();
   const compose = useCompose(onNotify);
+  /*
+   * One weight for the whole overlay, shared by both submits (SPEC.md §11's
+   * rider). The global composer's Ask is not a conversation, so "the same
+   * conversation" has no referent here; `GLOBAL_COMPOSE_WEIGHT_SCOPE` documents
+   * the reading taken and the one rejected. Both submits send `requestsAgent:
+   * true`, so the control is always live on this surface.
+   */
+  const weight = useComposerWeight(GLOBAL_COMPOSE_WEIGHT_SCOPE);
+  const live = composerReachesAgent({ requestsAgent: true });
 
   useEffect(() => {
     textarea.current?.focus();
@@ -122,6 +135,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         const ok = await compose.submit(mode, {
           text: body,
           files: attachments.map((attachment) => attachment.file),
+          weight: weight.request,
         });
         if (ok) {
           intake.release(attachments);
@@ -136,7 +150,7 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         textarea.current?.focus();
       })();
     },
-    [canAsk, canCapture, compose, intake, onClose, text],
+    [canAsk, canCapture, compose, intake, onClose, text, weight.request],
   );
 
   /**
@@ -198,6 +212,8 @@ export function ComposeOverlay({ onClose, onNotify }: ComposeOverlayProps): Reac
         />
 
         <PendingAttachments pending={intake.pending} onRemove={intake.remove} />
+
+        <WeightPicker weight={weight} live={live} surface="compose" />
 
         <div className="compose-actions">
           <button

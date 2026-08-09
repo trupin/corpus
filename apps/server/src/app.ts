@@ -45,7 +45,7 @@ import {
   type InvalidationBus,
 } from "./events/index.js";
 import { createAutoCommitter, createGit, type AutoCommitter } from "./git/index.js";
-import { createJobService, mountJobRoutes } from "./jobs/index.js";
+import { createJobService, createStatedWeightRecorder, mountJobRoutes } from "./jobs/index.js";
 import {
   createLockGuard,
   createLockService,
@@ -479,16 +479,21 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     mountThreadRoutes(app, threadsWorkspace, mutex, { semantic });
     mountCaptureRoutes(app, threadsWorkspace, mutex);
 
-    mountJobRoutes(
-      app,
-      createJobService({
-        corpusDir: config.corpusDir,
-        projection: deps.projection,
-        queue,
-        logger,
-        now,
-      }),
-    );
+    const jobs = createJobService({
+      corpusDir: config.corpusDir,
+      projection: deps.projection,
+      queue,
+      logger,
+      now,
+    });
+    mountJobRoutes(app, jobs);
+    // §7's console bullet, the server's half (SERVER-069): every event a request
+    // stated a weight on gets that weight written onto its job log, verbatim and
+    // before any dispatch line exists, so "honoured, not weighed again" is
+    // checkable against something the orchestrator did not write. Bound here
+    // rather than passed to `createQueueService` because the job service reads
+    // the queue and so cannot exist before it.
+    queue.observeEnqueued(createStatedWeightRecorder({ jobs, logger }));
 
     // Mounted here, with the rest of the projection-backed surface: `doctor`
     // reads the database and `rebuild` replaces it, so neither means anything on

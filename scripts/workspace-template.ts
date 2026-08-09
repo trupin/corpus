@@ -216,6 +216,138 @@ export function readContractDoc(docPath: string = CONTRACT_DOC_PATH): ContractDo
   return parseContractDoc(readFileSync(docPath, "utf8"));
 }
 
+// --- Declared weight levels --------------------------------------------------
+//
+// AGENT-015, SPEC.md §7 and §11 (rider SHARED-022, signed 2026-08-06). A request
+// may state the weight its work is done at, "choosing among the levels the skill
+// itself defines" — so the orchestrate skill's tier table is not only prose a
+// model reads, it is the **declaration** a composer enumerates to build its
+// picker. One artefact, two readings — and both readings have to agree about
+// what is prose and what is a fenced example, which is why this one carries a
+// fence scanner of its own (see `fencedLines`).
+//
+// This reader is the repo's check on that declaration, not the product's parser
+// — UI-082 owns that one, in `packages/kit`, over the same projected document —
+// and both target the shape below and nothing looser. Guessing at prose is the
+// failure this design exists to prevent: a reader that half-matches a reworded
+// table would offer levels the router does not implement, which is exactly what
+// §2.4 makes possible the day a workspace edits its own guidance.
+
+/** One row of the orchestrate skill's declared level table. */
+export interface WeightLevel {
+  /** The **Weight** cell — the name a composer displays and a person picks by. */
+  readonly name: string;
+  /** The **Key** cell — the token that travels on a request's `weight` field. */
+  readonly key: string;
+  /** The **Model** cell, emphasis stripped. For the agent; no composer reads it. */
+  readonly model: string;
+}
+
+/**
+ * The header cells that identify the declaration, in order and spelled exactly.
+ * Matching *cells* rather than the raw line is deliberate: the table is
+ * prettier-formatted, so its padding is not stable and its text is.
+ */
+export const WEIGHT_TABLE_HEADER: readonly string[] = ["Weight", "Key", "Model", "What falls here"];
+
+/** A markdown table row's trimmed cells, or `null` when the line is not one. */
+const tableCells = (line: string): string[] | null => {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|") || trimmed.length < 2) return null;
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .map((cell) => cell.trim());
+};
+
+const isDividerRow = (cells: readonly string[]): boolean =>
+  cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+
+/** A fence opener or closer: up to three leading spaces, then three or more backticks or tildes. */
+const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/**
+ * Which lines sit inside a fenced code block.
+ *
+ * Deliberately a local scanner rather than the contract's `fencedCodeRanges`,
+ * which is what the shipped parser in `packages/kit` uses. `scripts/` is repo
+ * tooling and imports nothing out of a workspace's `dist/`, so this check on the
+ * template can never be blocked on a build — the same direction the kit module's
+ * docblock states when it declines to import *this* reader. The two therefore
+ * agree by test rather than by construction: the shipped table is read by both
+ * and pinned in `packages/kit/src/weight/weightLevels.test.ts`.
+ *
+ * An unterminated fence swallows the rest of the document, which is the honest
+ * reading: a skill that opens a fence and never closes it declares nothing.
+ */
+const fencedLines = (lines: readonly string[]): ReadonlySet<number> => {
+  const inside = new Set<number>();
+  let open: string | null = null;
+  for (const [index, line] of lines.entries()) {
+    const match = FENCE_LINE.exec(line);
+    if (open === null) {
+      if (match === null) continue;
+      const marker = match[1] ?? "";
+      // A backtick fence's info string may not itself contain a backtick.
+      if (marker.startsWith("`") && (match[2] ?? "").includes("`")) continue;
+      open = marker;
+      inside.add(index);
+      continue;
+    }
+    inside.add(index);
+    const marker = match?.[1] ?? "";
+    const closes =
+      match !== null &&
+      marker[0] === open[0] &&
+      marker.length >= open.length &&
+      (match[2] ?? "").trim() === "";
+    if (closes) open = null;
+  }
+  return inside;
+};
+
+/**
+ * Enumerate the weight levels a skill body declares, in document order —
+ * lightest first, which is the order a composer offers them in.
+ *
+ * Returns an **empty list** for anything that is not exactly the declared shape:
+ * no header row spelled with {@link WEIGHT_TABLE_HEADER}, no divider under it, a
+ * row with the wrong number of cells, or a row whose name or key is blank. That
+ * is the whole degradation contract — a workspace whose skill declares nothing
+ * parseable yields no levels, and its composer offers no control at all rather
+ * than a fallback list, which would be the second source this design forbids.
+ *
+ * **A fenced example is not the declaration.** A skill that documents the format
+ * with a worked example above its real table — which is what this repo's own
+ * sources do when they explain the shape — must not have the example read as the
+ * declaration, so lines inside a code fence are skipped entirely.
+ */
+export function readWeightLevels(markdown: string): WeightLevel[] {
+  const lines = markdown.split("\n");
+  const fenced = fencedLines(lines);
+  for (const [index, line] of lines.entries()) {
+    if (fenced.has(index)) continue;
+    const header = tableCells(line);
+    if (header === null) continue;
+    if (header.length !== WEIGHT_TABLE_HEADER.length) continue;
+    if (!header.every((cell, position) => cell === WEIGHT_TABLE_HEADER[position])) continue;
+    const divider = tableCells(lines[index + 1] ?? "");
+    if (divider === null || !isDividerRow(divider)) continue;
+
+    const levels: WeightLevel[] = [];
+    for (const row of lines.slice(index + 2)) {
+      const cells = tableCells(row);
+      if (cells === null) break;
+      if (cells.length !== WEIGHT_TABLE_HEADER.length) return [];
+      const [name = "", key = "", model = ""] = cells;
+      if (name === "" || key === "") return [];
+      levels.push({ name, key, model: model.replaceAll("*", "").trim() });
+    }
+    return levels;
+  }
+  return [];
+}
+
 // --- CLI command references --------------------------------------------------
 //
 // Skill bodies are executable documentation: every `corpus …` invocation in the

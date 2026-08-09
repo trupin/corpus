@@ -166,6 +166,31 @@ const RUNTIME_SURFACE = [
   "COMPOSER_PRIMARY_KEY",
   "COMPOSER_SECONDARY_KEY",
   "handleComposerKeyDown",
+  // the weight a composer may state (SPEC.md §11's rider, signed 2026-08-06).
+  // Published here so a plugin's composer offers the same levels a first-party
+  // one does, with one import and no copy — the plugin row of §11's enumeration.
+  "WeightPicker",
+  "WEIGHT_PICKER_LABEL",
+  "WEIGHT_LIVE_TITLE",
+  "WEIGHT_INERT_TITLE",
+  "WEIGHT_UNKNOWN_TITLE",
+  "WEIGHT_TABLE_HEADER",
+  "useComposerWeight",
+  "useWeightLevels",
+  "parseWeightLevels",
+  "findOrchestrateSkill",
+  "ORCHESTRATE_SKILL_NAME",
+  "composerReachesAgent",
+  "chooseWeight",
+  "weightChoice",
+  "subscribeWeightChoices",
+  // `resetWeightChoices` is deliberately absent: it is test support, and it lives
+  // on `@corpus/kit/testing`. SPEC.md §11 describes no "forget my weights"
+  // action, so publishing one to plugin authors would invent one (UI-082's PR #35 review).
+  "threadWeightScope",
+  "childThreadWeightScope",
+  "docWeightScope",
+  "GLOBAL_COMPOSE_WEIGHT_SCOPE",
   "useConnectionState",
   "backoffDelay",
   "DEFAULT_BASE_DELAY_MS",

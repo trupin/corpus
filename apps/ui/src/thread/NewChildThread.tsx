@@ -1,7 +1,11 @@
 import {
+  childThreadWeightScope,
   COMPOSER_PRIMARY_KEY,
+  composerReachesAgent,
   handleComposerKeyDown,
+  useComposerWeight,
   useCreateThread,
+  WeightPicker,
   type RowNotice,
 } from "@corpus/kit";
 import { useState, type ReactElement } from "react";
@@ -44,6 +48,17 @@ export function NewChildThread({
 }: NewChildThreadProps): ReactElement {
   const [text, setText] = useState("");
   const create = useCreateThread();
+  /*
+   * A scope of this box's own, **not** the parent thread's (UI-082's PR #35 review). The control
+   * is offered here because §11 enumerates this surface, and it is never live,
+   * because this box sends `requestsAgent: false` unconditionally — so a choice
+   * made on it provably governs nothing. Under the parent thread's scope that
+   * dead control would nevertheless seed the reply box, which does reach the
+   * agent; `childThreadWeightScope` says why that is the "acts on you unseen"
+   * case in §11's clothing. Presentation only, as before: the choice is kept.
+   */
+  const weight = useComposerWeight(childThreadWeightScope(parentThreadId));
+  const live = composerReachesAgent({ requestsAgent: false });
 
   const send = (): void => {
     const body = text.trim();
@@ -57,6 +72,7 @@ export function NewChildThread({
         // until the person says otherwise, and the child card's composer is
         // where they say it.
         requestsAgent: false,
+        ...weight.request,
       },
       {
         onSuccess: () => {
@@ -84,6 +100,7 @@ export function NewChildThread({
           handleComposerKeyDown(event, { onPrimary: send, onEscape: onCancel });
         }}
       />
+      <WeightPicker weight={weight} live={live} surface={`child:${parentThreadId}`} />
       <div className="composer-foot">
         <span className="composer-hint">creates a child thread</span>
         <button

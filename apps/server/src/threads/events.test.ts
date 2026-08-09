@@ -21,6 +21,7 @@ describe("commentPayload", () => {
         parentId: "doc_a1b2c3",
         turnTs: "2026-07-19T10:05:00Z",
         parsed: PARSED,
+        weight: undefined,
       }),
     ).toEqual({
       threadId: "th_x9y8z7w6",
@@ -38,8 +39,38 @@ describe("commentPayload", () => {
       parentId: null,
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
+      weight: undefined,
     });
     expect(payload).toMatchObject({ parentId: null, mentions: [], skills: [], unresolved: [] });
+  });
+
+  // SERVER-069 / SHARED-022: the payload is where a stated weight is handed to
+  // whatever does the work (§7, §11).
+  it("carries a stated weight verbatim, under the key the dispatch reads", () => {
+    const payload = commentPayload({
+      threadId: "th_x9y8z7w6",
+      parentId: null,
+      turnTs: "2026-07-19T10:05:00Z",
+      parsed: NO_MENTIONS,
+      weight: "Heavy or judgment-laden",
+    });
+
+    expect(payload["weight"]).toBe("Heavy or judgment-laden");
+  });
+
+  it("writes no `weight` key at all when the request stated none", () => {
+    const payload = commentPayload({
+      threadId: "th_x9y8z7w6",
+      parentId: null,
+      turnTs: "2026-07-19T10:05:00Z",
+      parsed: NO_MENTIONS,
+      weight: undefined,
+    });
+
+    // Not `toBeUndefined()`: a `weight: undefined` key would satisfy that and
+    // survive the JSON round trip onto disk as a second spelling of "no choice",
+    // which §7 has exactly one of — absence means the orchestrator decides.
+    expect(Object.keys(payload)).not.toContain("weight");
   });
 });
 
@@ -58,6 +89,7 @@ describe("enqueueComment", () => {
       parentId: "doc_a1b2c3",
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
+      weight: undefined,
     });
 
     expect(id).toBe("evt_a1b2c3d4e5f6");
@@ -79,6 +111,7 @@ describe("enqueueComment", () => {
       parentId: "doc_a1b2c3",
       turnTs: "2026-07-19T10:05:00Z",
       parsed: NO_MENTIONS,
+      weight: undefined,
       source: "capture",
     });
 

@@ -69,3 +69,4 @@ export * from "./tree.js";
 export * from "./turn-model.js";
 export * from "./upgrade.js";
 export * from "./warning.js";
+export * from "./weight.js";

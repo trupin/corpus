@@ -21,6 +21,14 @@ export {
   type RecordingEventSourceFactory,
 } from "./fakeEventSource.js";
 export { docRowFixture } from "./docRow.js";
+/**
+ * A composer's standing weight choice is module-level and survives unmount by
+ * design (SPEC.md §11's rider), so one suite's click is the next suite's
+ * starting state without an `afterEach` that clears it. It is exported *here*
+ * and not from the package root because §11 describes no "forget my weights"
+ * action, and a test-only helper on the plugin contract invites one.
+ */
+export { resetWeightChoices } from "../weight/weightChoice.js";
 export {
   createCorpusTestHarness,
   type CorpusTestHarness,

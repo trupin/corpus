@@ -92,6 +92,16 @@ export interface AppendTurnInput {
   readonly body: string;
   /** Enqueue signal for the agent (SPEC.md §8); omitted lets the server decide. */
   readonly requestsAgent?: boolean;
+  /**
+   * The weight this request states its work should be done at (SPEC.md §7, §11)
+   * — one of the **Key** tokens the workspace's own orchestrate skill declares.
+   *
+   * **Omit it to state no weight**, which means the orchestrator decides,
+   * exactly as every request did before this field existed. There is no default
+   * and no second spelling of absence: `null` is not a value here and `""` is a
+   * `400` (`packages/contract/src/schemas/weight.ts`).
+   */
+  readonly weight?: string;
 }
 
 /**
@@ -103,6 +113,8 @@ export interface AppendTurnInput {
 export interface AppendTurnUpload {
   readonly text?: string | undefined;
   readonly requestsAgent?: boolean | undefined;
+  /** As {@link AppendTurnInput.weight}: omit for "the orchestrator decides". */
+  readonly weight?: string | undefined;
   readonly files: readonly File[];
 }
 
@@ -129,6 +141,8 @@ export interface CreateThreadUpload {
   /** Optional: a first turn may be attachment-only, but not empty. */
   readonly text?: string | undefined;
   readonly requestsAgent?: boolean | undefined;
+  /** As {@link AppendTurnInput.weight}: omit for "the orchestrator decides". */
+  readonly weight?: string | undefined;
   readonly files: readonly File[];
 }
 
@@ -142,6 +156,8 @@ export interface CreateThreadUpload {
 export interface CaptureInput {
   readonly text: string;
   readonly requestsAgent?: boolean | undefined;
+  /** As {@link AppendTurnInput.weight}: omit for "the orchestrator decides". */
+  readonly weight?: string | undefined;
   readonly files?: readonly File[] | undefined;
 }
 
@@ -824,6 +840,10 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           body: {
             body: input.body,
             ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
+            // Spread rather than assigned: `weight: undefined` would serialise
+            // to nothing here but is a second spelling of absence one refactor
+            // away from becoming a `null` the server has to interpret.
+            ...(input.weight === undefined ? {} : { weight: input.weight }),
           },
         }),
       );
@@ -838,6 +858,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           threadId,
           ...(input.text === undefined ? {} : { text: input.text }),
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
+          ...(input.weight === undefined ? {} : { weight: input.weight }),
           files: input.files,
         }),
       );
@@ -986,6 +1007,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...(input.title === undefined ? {} : { title: input.title }),
           ...(input.text === undefined ? {} : { text: input.text }),
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
+          ...(input.weight === undefined ? {} : { weight: input.weight }),
           files: input.files,
         }),
       );
@@ -999,6 +1021,7 @@ export function createCorpusClient(config: CorpusClientConfig): CorpusClient {
           ...(config.fetch ? { fetch: config.fetch } : {}),
           text: input.text,
           ...(input.requestsAgent === undefined ? {} : { requestsAgent: input.requestsAgent }),
+          ...(input.weight === undefined ? {} : { weight: input.weight }),
           files: input.files ?? [],
         }),
       );

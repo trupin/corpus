@@ -1,4 +1,10 @@
-import { COMPOSER_PRIMARY_KEY, handleComposerKeyDown } from "@corpus/kit";
+import {
+  COMPOSER_PRIMARY_KEY,
+  composerReachesAgent,
+  handleComposerKeyDown,
+  useComposerWeight,
+  WeightPicker,
+} from "@corpus/kit";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { EscapeLayerPriority, useEscapeLayer } from "../reader/useEscapeStack";
@@ -36,7 +42,23 @@ export interface CommentPopoverProps {
   readonly top: number;
   readonly left: number;
   readonly pending: boolean;
-  readonly onSubmit: (body: string, requestsAgent: boolean) => void;
+  /**
+   * Which conversation this comment's weight belongs to (SPEC.md §11's rider) —
+   * `docWeightScope(docId)` for a comment on a document, `threadWeightScope(id)`
+   * for one on a turn. The host owns it because the host knows what is being
+   * commented on; this popover is one component in two placements.
+   */
+  readonly weightScope: string;
+  /**
+   * The third argument is the stated weight, spread onto the request: `{}` when
+   * nothing was chosen. Passed as an object rather than a `string | undefined`
+   * so absence has one spelling all the way to the wire.
+   */
+  readonly onSubmit: (
+    body: string,
+    requestsAgent: boolean,
+    weight: { readonly weight?: string },
+  ) => void;
   readonly onClose: () => void;
 }
 
@@ -51,12 +73,21 @@ export function CommentPopover({
   top,
   left,
   pending,
+  weightScope,
   onSubmit,
   onClose,
 }: CommentPopoverProps): ReactElement {
   const [text, setText] = useState("");
   const [asking, setAsking] = useState(true);
   const input = useRef<HTMLTextAreaElement>(null);
+  /*
+   * Read from cache, never fetched here. The level set is one shared query the
+   * board warms at app level, so the control is drawn in this popover's **first**
+   * paint: a popover that grew a row after opening would move things under the
+   * pointer, which is the bug UI-073 and UI-074 exist about.
+   */
+  const weight = useComposerWeight(weightScope);
+  const live = composerReachesAgent({ requestsAgent: asking });
 
   useEscapeLayer({ active: true, priority: EscapeLayerPriority.Popover, onEscape: onClose });
 
@@ -68,7 +99,7 @@ export function CommentPopover({
 
   const send = (): void => {
     if (!canSend) return;
-    onSubmit(text.trim(), asking);
+    onSubmit(text.trim(), asking, weight.request);
   };
 
   return createPortal(
@@ -103,6 +134,7 @@ export function CommentPopover({
           handleComposerKeyDown(event, { onPrimary: send, onEscape: onClose });
         }}
       />
+      <WeightPicker weight={weight} live={live} surface="comment" />
       <div className="composer-foot">
         <button
           type="button"

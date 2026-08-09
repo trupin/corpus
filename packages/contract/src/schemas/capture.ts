@@ -3,6 +3,7 @@ import { AttachmentFilesSchema } from "./attachment.js";
 import { DocIdSchema, EventIdSchema, ThreadIdSchema } from "./id.js";
 import { requestsAgentFormField } from "./thread.js";
 import { warningsField } from "./warning.js";
+import { requestedWeightField } from "./weight.js";
 
 /**
  * Capture is the composer's "this should live on as a document" action (SPEC.md
@@ -24,6 +25,7 @@ export const CaptureRequestSchema = z
       "the server requests the agent — filing is the whole point of a capture — unless the text " +
         "carries its own mention or skill invocation, which routes it instead.",
     ),
+    weight: requestedWeightField,
     files: AttachmentFilesSchema,
   })
   .openapi("CaptureRequest");
