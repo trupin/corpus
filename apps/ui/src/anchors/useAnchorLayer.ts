@@ -4,6 +4,7 @@ import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { expandClipAround } from "../editor/changelogClip";
 import { useIsEditing } from "../editor/editingRegistry";
+import { editorBody } from "../editor/editorBody";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
@@ -91,14 +92,26 @@ export function commentFailureNotice(error: Error): string {
  * is showing the file's own document. The test for that is not string equality
  * with `body`: a file the printer spells differently is still the same document,
  * and that difference is precisely the case this exists for. It is equality of
- * the two *printings* — `traceOfBody(body)` and `traceOfDoc(doc)` run the one
- * serializer, so equal output means the editor holds nothing the file does not
- * already say.
+ * the two *printings* — `file` is the trace of what the editor was handed
+ * (`traceOfBody(editorBody(body))`, the `source` memo below) and `live` is
+ * `traceOfDoc(doc)`, so equal output means the editor holds nothing the file
+ * does not already say.
  *
- * When they differ, the editor holds unsaved edits, and a comment submitted then
- * waits for the save (see `submitComment`'s `editing` gate). What that save
- * writes is the editor's own printing, so that — not the stale file — is the
- * document the selector is going to meet.
+ * **`file` must be the trace of `editorBody(body)` and not of `body`** — that is
+ * the second half of UI-099, and it is a correctness condition on the caller
+ * rather than a nicety. Where `canonicalizeMarkdown` is not idempotent the two
+ * differ, and tracing `body` made this read a *structural* disagreement between
+ * the two printings as "the editor has unsaved edits": it then handed back the
+ * printer's spelling, a quote containing bytes that are in no file, and §6's
+ * ladder had nothing to match at any rung — the comment orphaned at creation,
+ * which is the failure UI-068 exists to prevent. Pinned by
+ * `useAnchorLayer.test.tsx`'s "a file whose two printings disagree about
+ * structure", which refuses that selection instead.
+ *
+ * When they differ for the ordinary reason, the editor holds unsaved edits, and
+ * a comment submitted then waits for the save (see `submitComment`'s `editing`
+ * gate). What that save writes is the editor's own printing, so that — not the
+ * stale file — is the document the selector is going to meet.
  */
 function quotableSource(body: string, file: DocumentTrace, live: DocumentTrace): string {
   return file.markdown === live.markdown ? body : live.markdown;
@@ -312,7 +325,40 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   /* ── Placement ─────────────────────────────────────────────────────── */
 
-  const source = useMemo(() => traceOfBody(body), [body]);
+  /**
+   * The trace of **the text the editor was actually handed** — not of the file.
+   *
+   * `DocEditor` does not parse `body`; it parses `canonicalizeMarkdown(body)`
+   * (its `canonical` memo), and that is the document every position in this
+   * layer is a position into. Tracing `body` instead quietly assumed
+   * `canonicalizeMarkdown` was idempotent — that printing a file once and
+   * printing it twice give the same text.
+   *
+   * For almost every document they do, which is why this held for so long. They
+   * do not when re-parsing the printed form lands the text somewhere else: a
+   * further paragraph of an outer list item, after a nested sublist, loses its
+   * blank line on the first printing, and on the second is read as a
+   * continuation of the **nested** item and indented to match. One printing says
+   * two spaces, the next says four.
+   *
+   * The layer then held offsets into a text the editor was not showing, so
+   * `applyAnchors` declined every time and **no highlight was ever drawn on that
+   * document** (UI-099) — while `quotableSource` below, reading the same
+   * disagreement as "the editor has unsaved edits", quoted the printer's
+   * spelling instead of the file's, which is the very thing UI-068 exists to
+   * prevent. Both follow from the same wrong premise, and both go with it.
+   *
+   * Tracing what the editor was handed makes the agreement structural rather
+   * than lucky: this is `serialize(parse(editorBody(body)))` and the editor
+   * prints `serialize(parse(editorBody(body)))`, the same expression, whether or
+   * not the serializer is idempotent.
+   *
+   * {@link editorBody} is that expression, named once and imported by both call
+   * sites — because "these two modules canonicalise the same way" is exactly the
+   * kind of agreement that held by convention here and quietly stopped holding.
+   * `DocEditor.test.tsx` asserts a real mounted editor's document prints it.
+   */
+  const source = useMemo(() => traceOfBody(editorBody(body)), [body]);
 
   const anchorsNow = useRef(anchors);
   anchorsNow.current = anchors;

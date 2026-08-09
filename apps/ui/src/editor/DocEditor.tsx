@@ -14,7 +14,8 @@ import { useIsEditing } from "./editingRegistry.js";
 import { DOC_REF_NAME } from "./markdown/refNode.js";
 import { looksLikeMarkdown, parseMarkdown } from "./markdown/parse.js";
 import { corpusExtensions, NODE as NODE_NAMES } from "./markdown/schema.js";
-import { canonicalizeMarkdown, serializeDoc } from "./markdown/serialize.js";
+import { serializeDoc } from "./markdown/serialize.js";
+import { editorBody } from "./editorBody.js";
 import type { PmNode } from "./markdown/schema.js";
 import { createRefSuggestion, type RefSuggestionState } from "./refSuggestion.js";
 import { SoftWrap } from "./softWrap.js";
@@ -132,8 +133,12 @@ export function DocEditor({
    * only means something once both have been through the same normalisation.
    * Without it, a document written with `*` bullets would look permanently
    * "changed" and autosave would fire on open.
+   *
+   * Through {@link editorBody} rather than inline, because the anchor layer has
+   * to trace **this** text to make sense of the server's offsets, and the two
+   * must stay one expression rather than two that happen to match (UI-099).
    */
-  const canonical = useMemo(() => canonicalizeMarkdown(body), [body]);
+  const canonical = useMemo(() => editorBody(body), [body]);
 
   const openRef = useRef<OpenRefCallback>(onOpenRef);
   openRef.current = onOpenRef;

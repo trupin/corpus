@@ -1,3 +1,4 @@
+import type { SelectionRange } from "../editor/selection";
 import type { MdRange } from "./offsetMap";
 import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
 
@@ -40,6 +41,47 @@ import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
  * quote's occurrences (PR #20): a visible gap beats a confident lie about which
  * sentence a comment is on.
  *
+ * **That equality is asked of the passage, not of the file** (UI-099) — and this
+ * is a narrowing of what gets *asked*, not a loosening of the rule above.
+ *
+ * The rule was enforced as one global test: `source.plain !== target.plain` and
+ * every anchor in the document was refused. But the argument it rests on is
+ * *per character* — "a plain offset names the same character in both" — and a
+ * character's identity is settled by the text around it, not by the far end of
+ * the file. So a single construct the printer respells anywhere took every
+ * highlight in the document with it, including anchors thousands of characters
+ * away in text the two spellings agree about to the byte. That is the reported
+ * defect: a `note` whose two spellings first part company at plain offset 23,792
+ * drew nothing at all for a comment anchored at offset ~1,400, because the
+ * document as a whole failed one equality.
+ *
+ * {@link agreeingPlainRange} asks the same question of the range in hand: is it
+ * inside the two projections' common **prefix**, or inside their common
+ * **suffix** (where a constant shift is the whole of the arithmetic)? Both are
+ * character-for-character identity over the region the range occupies — exactly
+ * the premise the global test was standing in for, and demonstrated rather than
+ * assumed. A range that **straddles** a divergence is still refused, because
+ * there the premise genuinely fails.
+ *
+ * **So this does license ranges the whole-document test refused — that is the
+ * fix, not a side effect of it.** What it does not do is weaken the premise: the
+ * licence is still character-for-character identity over the region the range
+ * occupies, now demonstrated per range instead of assumed for the whole file.
+ * And nothing that used to be licensed changes: when the two projections are
+ * equal the common prefix is the whole string, every range takes the first
+ * branch, and the arithmetic is the identity — exactly what the global test did.
+ *
+ * **The relief is bounded, and the bound is worth stating** (PR #39 review).
+ * The prefix stops at the *first* divergence and the suffix reaches back only to
+ * the *last*, so on a document the printer respells in **two** places every
+ * range between them is still refused: the middle is in neither region. One
+ * respelt construct stops being contagious; a second one re-quarantines
+ * everything between the two. That is conservative and correct — across such a
+ * middle the two projections genuinely disagree about which character is which
+ * — but it means a long hand-written note that contains the construct more than
+ * once can still draw nothing over its whole middle. `rebase.test.ts` pins it,
+ * so it reads as a known limit rather than as a fresh bug.
+ *
  * **The result is not always the true range — it can be wider, and at a
  * `[[ref]]` edge it can be narrower.** Plain-text equality licenses the
  * *offsets*; it says nothing about granularity.
@@ -71,16 +113,77 @@ import { mdRangeOfPlain, plainRangeOfMd, sourceTraceOf } from "./sourceTrace";
  * Neither direction is a *misplacement*: the range never lands on words the
  * anchor does not overlap. `rebase.test.ts` pins the widening and its stopping
  * point; the ref edge is not yet pinned and belongs with UI-060's parity work.
+ *
+ * @param from the spelling `range` is addressed in
+ * @param to the spelling to re-address it in
+ * @returns the range in `to`, or `null` where the two cannot be shown to name
+ *   the same characters over it
  */
 export function rebaseRange(from: string, to: string, range: MdRange): MdRange | null {
   if (from === to) return range;
   const source = sourceTraceOf(from);
   const target = sourceTraceOf(to);
-  if (source.plain !== target.plain) return null;
   const plain = plainRangeOfMd(source.runs, range.start, range.end);
   if (plain === null) return null;
-  const rebased = mdRangeOfPlain(target.runs, plain.start, plain.end);
+  const agreed = agreeingPlainRange(source.plain, target.plain, plain);
+  if (agreed === null) return null;
+  const rebased = mdRangeOfPlain(target.runs, agreed.start, agreed.end);
   return rebased === null ? null : { start: rebased.start, end: rebased.end };
+}
+
+/** How many leading characters two strings share. */
+function commonPrefixLength(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < limit && left.charCodeAt(index) === right.charCodeAt(index)) index += 1;
+  return index;
+}
+
+/**
+ * How many trailing characters two strings share, never reaching back past
+ * `floor` — so the prefix and the suffix cannot claim the same characters twice
+ * and `source.length - suffix` is always at or after the prefix.
+ */
+function commonSuffixLength(left: string, right: string, floor: number): number {
+  const limit = Math.min(left.length, right.length) - floor;
+  let count = 0;
+  while (
+    count < limit &&
+    left.charCodeAt(left.length - 1 - count) === right.charCodeAt(right.length - 1 - count)
+  ) {
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * The same plain range, addressed in `target` — but only where the two
+ * projections demonstrably name the same characters over it.
+ *
+ * Two regions qualify, and they are the two where the arithmetic is exact:
+ *
+ * - the **common prefix**, where the offsets are unchanged;
+ * - the **common suffix**, where every offset moves by the one length delta.
+ *
+ * Anything overlapping the divergence between them returns `null` — which, on a
+ * document that diverges twice, is the whole span between the two. See the
+ * module docblock for why this is the rule the global equality test was
+ * approximating rather than a relaxation of it, and for what that bound costs.
+ */
+function agreeingPlainRange(
+  source: string,
+  target: string,
+  range: SelectionRange,
+): SelectionRange | null {
+  const prefix = commonPrefixLength(source, target);
+  if (range.end <= prefix) return range;
+  const suffix = commonSuffixLength(source, target, prefix);
+  const tail = source.length - suffix;
+  if (range.start >= tail) {
+    const shift = target.length - source.length;
+    return { start: range.start + shift, end: range.end + shift };
+  }
+  return null;
 }
 
 /**

@@ -6,9 +6,19 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05). CONTRACT-032 and CLI-028 are
-blocked on it: both would otherwise ship behaviour ahead of the spec text, which
-is the exact failure PR #20 was pulled up on twice.
+**done — signed 2026-08-05 and applied.** The amendment below is in SPEC.md §9.2
+verbatim today, carrying its own `_(Rider signed 2026-08-05.)_` marker.
+
+**This file said "awaiting sign-off" until 2026-08-09**, and the plan row said
+`blocked`, four days after the text had landed. CONTRACT-032 and CLI-028 were
+recorded as blocked on it for the whole of that time and were not — CLI-028 in
+particular is a notice that says "hunk boundary" when the cut may be a line
+boundary, i.e. a user-visible message contradicting the spec, held behind a gate
+that had already opened. Caught while surveying the user on riders to sign.
+
+The lesson is bookkeeping-shaped: applying a rider to SPEC.md and closing its
+issue are two acts, and doing only the first leaves a chain of issues parked
+against a decision that has been made.
 
 ## Priority
 

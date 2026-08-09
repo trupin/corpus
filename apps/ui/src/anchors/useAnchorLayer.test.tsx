@@ -10,6 +10,7 @@ import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { beginEditing, endEditing, resetEditingRegistry } from "../editor/editingRegistry.js";
 import { parseMarkdown } from "../editor/markdown/parse.js";
+import { canonicalizeMarkdown } from "../editor/markdown/serialize.js";
 import { STALE_SELECTION_NOTICE, type TextQuoteSelector } from "../editor/selection.js";
 import { corpusSchema } from "../editor/markdown/schema.js";
 import {
@@ -20,7 +21,12 @@ import {
 import { anchorState } from "./anchorDecorations.js";
 import { mdRangeToPm } from "./offsetMap.js";
 import { resetTraceCache, traceOfBody } from "./traceCache.js";
-import { REAPPLY_DEBOUNCE_MS, useAnchorLayer, type AnchorLayer } from "./useAnchorLayer.js";
+import {
+  REAPPLY_DEBOUNCE_MS,
+  REFUSAL_NOTICE,
+  useAnchorLayer,
+  type AnchorLayer,
+} from "./useAnchorLayer.js";
 
 /**
  * The layer's decisions, driven through a real `EditorState` — the anchor
@@ -49,10 +55,21 @@ interface FakeEditor {
   adopt: (markdown: string) => void;
 }
 
+/**
+ * What `DocEditor` actually parses: its `canonical` memo, never the raw body
+ * (`content: parseMarkdown(canonical)`).
+ *
+ * The distinction is not pedantry — it is UI-099. Modelling the editor as
+ * holding `parse(body)` quietly assumed `canonicalizeMarkdown` was idempotent,
+ * so a document where it is not looked fine here and drew no highlight at all
+ * in a browser. Every `fromJSON` below goes through this for that reason.
+ */
+function editorDocument(markdown: string): PmModelNode {
+  return PmModelNode.fromJSON(corpusSchema(), parseMarkdown(canonicalizeMarkdown(markdown)));
+}
+
 function fakeEditor(markdown: string): FakeEditor {
-  let state = EditorState.create({
-    doc: PmModelNode.fromJSON(corpusSchema(), parseMarkdown(markdown)),
-  });
+  let state = EditorState.create({ doc: editorDocument(markdown) });
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
   const emit = (event: string, payload: unknown): void => {
     for (const listener of listeners.get(event) ?? []) listener(payload);
@@ -92,11 +109,11 @@ function fakeEditor(markdown: string): FakeEditor {
     editor,
     state: () => state,
     replace: (next: string) => {
-      const replacement = PmModelNode.fromJSON(corpusSchema(), parseMarkdown(next));
+      const replacement = editorDocument(next);
       dispatch(state.tr.replaceWith(0, state.doc.content.size, replacement.content));
     },
     adopt: (next: string) => {
-      const replacement = PmModelNode.fromJSON(corpusSchema(), parseMarkdown(next));
+      const replacement = editorDocument(next);
       dispatch(
         state.tr
           .replaceWith(0, state.doc.content.size, replacement.content)
@@ -426,6 +443,90 @@ describe("commenting on a file the editor would print differently", () => {
     const { from, to } = selection();
     selectQuote(app.layer(), from, to);
     expect(app.layer().draft?.selection.selector.exact).toBe(QUOTE);
+  });
+});
+
+/**
+ * UI-068 again, on the document class UI-099 found — **the second bug that fix
+ * closed, and the one nothing else in the suite can see.**
+ *
+ * The pair above uses a padded GFM table, for which `canonicalizeMarkdown` *is*
+ * idempotent: the editor's document and `traceOfBody(body)` print the same text,
+ * so `quotableSource` picks the file either way and the tests pass whichever
+ * text the layer traces. This body is the other kind. Printing it once drops the
+ * blank line before the outer item's trailing paragraph; printing *that* re-reads
+ * the paragraph as a continuation of the **nested** item and indents it 2 → 4
+ * spaces. So the editor's own document (`parse(canonical)`) prints text that
+ * `traceOfBody(body)` never produces.
+ *
+ * Tracing the raw body therefore read that structural disagreement as "the
+ * editor holds unsaved edits" and quoted the **printer's** spelling — which is
+ * UI-068's failure exactly: a seam-spanning selection put
+ * `exact: "bullet two.\n    A trailing paragraph"` on the wire, four spaces the
+ * file does not contain, so `body.includes(exact)` is false and every rung of
+ * §6's ladder is hunting bytes that were never on disk. The comment is orphaned
+ * *at creation*, and no later edit repairs it.
+ *
+ * Both assertions matter and neither alone is enough: the refusal is what the
+ * fix produces where a broken quote used to be, and the capture beside it is
+ * what says the refusal is narrow rather than a document-wide surrender.
+ */
+describe("commenting on a file whose two printings disagree about structure", () => {
+  const FILE =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "  - Nested bullet two.\n" +
+    "\n" +
+    "  A trailing paragraph of the outer item.\n" +
+    "- Second outer bullet.\n";
+
+  /** The ProseMirror range showing `quote` in the document the editor holds. */
+  function selection(quote: string): { from: number; to: number } {
+    // `parse(canonicalizeMarkdown(body))` is what `DocEditor` builds and what
+    // `editorDocument` above builds; this is its printing.
+    const live = traceOfBody(canonicalizeMarkdown(FILE));
+    const start = live.markdown.indexOf(quote);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const pm = mdRangeToPm(live.trace, { start, end: start + quote.length });
+    return { from: pm[0]?.from ?? 0, to: pm.at(-1)?.to ?? 0 };
+  }
+
+  it("refuses a selection across the respelt seam instead of quoting the printer", () => {
+    // Spans the boundary the two printings disagree about: the end of the last
+    // nested bullet through the start of the outer item's trailing paragraph.
+    const SEAM = "bullet two.\n    A trailing paragraph";
+    expect(canonicalizeMarkdown(canonicalizeMarkdown(FILE))).toContain(SEAM);
+    expect(FILE).not.toContain(SEAM);
+
+    const app = mount([], [], readerTransport({}), FILE);
+    const { from, to } = selection(SEAM);
+    selectQuote(app.layer(), from, to);
+
+    expect(app.layer().draft).toBeNull();
+    expect(app.notices).toHaveLength(1);
+    expect(app.notices[0]?.message).toBe(REFUSAL_NOTICE["not-in-file"]);
+  });
+
+  it("still quotes the file itself for a selection clear of the seam", async () => {
+    const QUOTE = "Outer bullet leads in.";
+    const app = mount([], [], readerTransport({}), FILE);
+    const { from, to } = selection(QUOTE);
+    selectQuote(app.layer(), from, to);
+    expect(app.notices).toHaveLength(0);
+    expect(app.layer().draft?.selection.selector.exact).toBe(QUOTE);
+
+    act(() => {
+      app.layer().submitComment("Is this still true?", false, {});
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const { selector } = app.wire.of("POST", "/api/threads")[0]?.body as {
+      selector: TextQuoteSelector;
+    };
+    expect(selector.exact).toBe(QUOTE);
+    // §6's rung 1, against the bytes the server actually holds.
+    expect(FILE).toContain(selector.prefix + selector.exact + selector.suffix);
   });
 });
 
@@ -773,6 +874,52 @@ describe("the reconciliation report", () => {
 });
 
 describe("the highlights themselves", () => {
+  /**
+   * **The reported document** (UI-099): a file with one construct the printer
+   * respells — a further paragraph of an outer list item, after a nested
+   * sublist, whose preceding blank line the serializer drops.
+   *
+   * The comment is on the **first bullet**, lines above that construct, and its
+   * anchor came back from the server live and non-orphaned. It still drew
+   * nothing, because the range had to travel through a whole-document
+   * projection equality that this one newline failed. The document the reporter
+   * hit was 31KB and the divergence was 22,000 characters past the anchor.
+   */
+  it("draws an anchor in a file whose printer respells one construct elsewhere", async () => {
+    const body =
+      "- Outer bullet leads in.\n" +
+      "  - Nested bullet one.\n" +
+      "  - Nested bullet two.\n" +
+      "\n" +
+      "  A trailing paragraph of the outer item.\n" +
+      "- Second outer bullet.\n";
+    const quote = "Outer bullet leads in.";
+    const start = body.indexOf(quote);
+    const app = mount(
+      [
+        anchorFixture({
+          selector: { exact: quote, prefix: "- ", suffix: "\n" },
+          range: { start, end: start + quote.length },
+        }),
+      ],
+      [threadRowFixture({ id: "th_1", parent: "doc_m" })],
+      readerTransport({}),
+      body,
+    );
+
+    await waitFor(() => {
+      expect(anchorState(app.editorState())?.anchors).toHaveLength(1);
+    });
+    const segments = anchorState(app.editorState())?.anchors[0]?.segments ?? [];
+    expect(segments).not.toHaveLength(0);
+    // And on the words it is about: the first bullet, not the respelt construct.
+    const state = app.editorState();
+    const drawn = segments
+      .map((segment) => state.doc.textBetween(segment.from, segment.to, "\n", ""))
+      .join("");
+    expect(drawn).toContain("Outer bullet leads in.");
+  });
+
   it("are applied from the server's ranges once the editor holds that body", async () => {
     const app = mount([anchorFixture()], [threadRowFixture({ id: "th_1", parent: "doc_m" })]);
     await waitFor(() => {

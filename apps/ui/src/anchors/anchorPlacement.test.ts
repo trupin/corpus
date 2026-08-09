@@ -311,6 +311,37 @@ describe("the placement rule, one anchor at a time", () => {
   it("places nothing for a range past the end of the body", () => {
     expect(segmentsOf(anchor({ range: { start: 900, end: 910 } }), BODY, source())).toEqual([]);
   });
+
+  /**
+   * **The reported document** (UI-099). A second paragraph of an outer list item,
+   * after a nested sublist: the printer drops the blank line before it, so the
+   * two spellings render one newline differently. Every comment on the document
+   * used to be refused for it — including this one, on the very first bullet,
+   * whole lines before the construct that disagrees.
+   */
+  it("draws an anchor that sits before the document's one respelt construct", () => {
+    const raw =
+      "- Outer bullet leads in.\n" +
+      "  - Nested bullet one.\n" +
+      "  - Nested bullet two.\n" +
+      "\n" +
+      "  A trailing paragraph of the outer item.\n" +
+      "- Second outer bullet.\n";
+    const traced = source(raw);
+    expect(traced.markdown).not.toBe(raw);
+
+    const start = raw.indexOf("Outer bullet leads in.");
+    const segments = segmentsOf(
+      anchor({
+        selector: { exact: "Outer bullet leads in.", prefix: "- ", suffix: "\n" },
+        range: { start, end: start + "Outer bullet leads in.".length },
+      }),
+      raw,
+      traced,
+    );
+    expect(segments).not.toEqual([]);
+    expect(quoted(traced, segments).join("")).toContain("Outer bullet leads in.");
+  });
 });
 
 describe("threads that hang off no text", () => {

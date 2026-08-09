@@ -7,7 +7,11 @@ import { useState, type ReactElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { docRowFixture } from "@corpus/kit/testing";
 import { docFixture } from "../testing/readerFixture";
+import { traceOfBody } from "../anchors/traceCache.js";
 import { DocEditor, editorHandlesType } from "./DocEditor.js";
+import { editorBody } from "./editorBody.js";
+import { serializeDoc } from "./markdown/serialize.js";
+import type { PmNode } from "./markdown/schema.js";
 import {
   EDIT_SESSION_SETTLE_MS,
   resetEditSessionFlush,
@@ -1006,5 +1010,68 @@ describe("ending the document's edit session", () => {
     });
 
     expect(flushCalls(transport)).toHaveLength(0);
+  });
+});
+
+/**
+ * The premise the anchor layer stands on, asserted against a real editor
+ * (UI-099, PR #39 review).
+ *
+ * `useAnchorLayer` maps the server's anchor offsets through
+ * `traceOfBody(editorBody(body))`, and that is only the document on screen if
+ * this component parses `editorBody(body)`. The two live in different modules
+ * and used to be two independently written expressions — the editor parsed
+ * `canonicalizeMarkdown(body)`, the layer traced `body` — which is a difference
+ * only where `canonicalizeMarkdown` is not idempotent. Rare, and therefore
+ * invisible until a user hit it: on such a document the layer held offsets into
+ * text the editor was not showing and drew no highlight at all, while the
+ * comment path read the same disagreement as unsaved edits and quoted the
+ * printer's spelling instead of the file's (UI-068's failure, twice regressed).
+ *
+ * `editorBody` makes it one named expression; this makes it a checked one. A
+ * `DocEditor` that parsed anything else would have to change this test to pass.
+ */
+describe("the text the editor parses", () => {
+  /**
+   * The construct where `canonicalizeMarkdown` is not a fixed point (UI-103): a
+   * further paragraph of an outer list item after a nested sublist. Printing
+   * drops its preceding blank line; printing *that* re-reads the paragraph as a
+   * continuation of the nested item and indents it 2 → 4 spaces.
+   */
+  const RESTRUCTURED =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "  - Nested bullet two.\n" +
+    "\n" +
+    "  A trailing paragraph of the outer item.\n" +
+    "- Second outer bullet.\n";
+
+  it("prints what the anchor layer traces, on a body where that is not the body", async () => {
+    // The premise that makes the assertion below load-bearing rather than a
+    // tautology: on this body the two candidate traces genuinely differ, so a
+    // layer tracing the raw body would be holding another document's offsets.
+    expect(traceOfBody(RESTRUCTURED).markdown).not.toBe(
+      traceOfBody(editorBody(RESTRUCTURED)).markdown,
+    );
+
+    const transport = wire();
+    let editor: Editor | null = null;
+    render(
+      <Host
+        transport={transport}
+        body={RESTRUCTURED}
+        onEditor={(instance) => {
+          editor = instance;
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(editor).not.toBeNull();
+    });
+
+    const live: Editor = editor as unknown as Editor;
+    expect(serializeDoc(live.getJSON() as unknown as PmNode)).toBe(
+      traceOfBody(editorBody(RESTRUCTURED)).markdown,
+    );
   });
 });

@@ -149,3 +149,138 @@ describe("rebasing a range between two spellings", () => {
     expect(rebaseRange(body, canonicalOf(body), { start: 5, end: 5 })).toBeNull();
   });
 });
+
+/**
+ * **One divergence is not contagious** (UI-099) — and "one" is load-bearing:
+ * the describe below it pins what a *second* one still costs.
+ *
+ * The reported document was a 31KB `note` whose two spellings first parted
+ * company at plain offset 23,792 — and every comment in it, including one
+ * anchored at ~1,400, drew no highlight at all, because the whole file failed one
+ * equality test. The shape that did it is below, reduced to six lines: a second
+ * paragraph of an outer list item, after a nested sublist. The printer drops the
+ * blank line, so the paragraph re-parses as a lazy continuation of the last
+ * nested bullet and the rendered text gains a newline the file does not have.
+ *
+ * What is asserted here is the boundary in both directions: the passages on
+ * either side of the divergence travel, and one that straddles it does not.
+ */
+describe("a document whose two spellings diverge in one place", () => {
+  /** Outer item, nested sublist, then a further paragraph of the outer item. */
+  const BODY =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "  - Nested bullet two.\n" +
+    "\n" +
+    "  A trailing paragraph of the outer item.\n" +
+    "- Second outer bullet.\n";
+
+  it("is a body the printer really does respell, and only there", () => {
+    const canonical = canonicalOf(BODY);
+    expect(canonical).not.toBe(BODY);
+    // The whole of the difference: the blank line before the trailing paragraph.
+    expect(BODY).toContain("Nested bullet two.\n\n  A trailing");
+    expect(canonical).toContain("Nested bullet two.\n  A trailing");
+  });
+
+  it("places a passage before the divergence", () => {
+    expect(travel(BODY, "Outer bullet leads in")).toBe("Outer bullet leads in");
+    expect(travel(BODY, "Nested bullet one")).toBe("Nested bullet one");
+  });
+
+  it("places a passage after the divergence, shifted by the one length delta", () => {
+    expect(travel(BODY, "Second outer bullet")).toBe("Second outer bullet");
+  });
+
+  /**
+   * The passage the printer's respelling swallowed is placed too, and takes the
+   * module's known widening: merging the paragraph into the bullet above it
+   * makes one run whose markdown and text differ (the continuation indent), and
+   * a partial hit inside an atomic run quotes the whole run. Wide, on the right
+   * sentence, and containing the words — the documented trade, not a
+   * misplacement, and still far better than the nothing it drew before.
+   */
+  it("widens a passage inside the run the respelling merged", () => {
+    const quoted = travel(BODY, "trailing paragraph of the outer item");
+    expect(quoted).toContain("trailing paragraph of the outer item");
+    expect(quoted).toBe("Nested bullet two.\n  A trailing paragraph of the outer item.");
+    // And no further: the widening stops at the run it overlapped.
+    expect(quoted).not.toContain("Second outer bullet");
+  });
+
+  /**
+   * The premise really does fail across the seam — the file says the two blocks
+   * are separate and the canonical spelling says they are one — so this refuses,
+   * exactly as whole-document inequality used to. A visible gap beats a
+   * confident lie about which sentence a comment is on.
+   */
+  it("still refuses a passage that straddles the divergence", () => {
+    expect(travel(BODY, "Nested bullet two.\n\n  A trailing paragraph")).toBeNull();
+  });
+
+  /**
+   * The other half of the guarantee. Passages the whole-document test refused
+   * are licensed here — that is the fix — but nothing it *allowed* changes: when
+   * the projections agree everywhere the common prefix is the entire string and
+   * every range takes the same branch it always did.
+   */
+  it("is unchanged for a document whose spellings agree throughout", () => {
+    const body = "\n# Standup\n\nThe rate is 6.1% today.\n";
+    expect(travel(body, "6.1%")).toBe("6.1%");
+  });
+});
+
+/**
+ * **The limit, pinned so it reads as a known bound rather than a fresh bug**
+ * (PR #39 review, MINOR 7).
+ *
+ * "A divergence stops being contagious" is true of *one* divergence and no more.
+ * The prefix stops at the **first** place the two projections part company and
+ * the suffix reaches back only to the **last**, so a document the printer
+ * respells twice still refuses every range between them — the middle is in
+ * neither region, and across it the two spellings genuinely disagree about which
+ * character is which. Conservative and correct, and worth a test: a 31KB
+ * hand-written note plausibly contains the offending construct more than once,
+ * and such a document still draws nothing over its whole middle.
+ */
+describe("a document whose two spellings diverge twice", () => {
+  const BODY =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "\n" +
+    "  A trailing paragraph of the first item.\n" +
+    "- Second outer bullet.\n" +
+    "\n" +
+    "A paragraph in the middle that both spellings agree about.\n" +
+    "\n" +
+    "- Another outer bullet.\n" +
+    "  - Another nested bullet.\n" +
+    "\n" +
+    "  A trailing paragraph of the second item.\n" +
+    "- Final outer bullet.\n";
+
+  it("really does respell two separate places", () => {
+    const canonical = canonicalOf(BODY);
+    expect(BODY).toContain("Nested bullet one.\n\n  A trailing");
+    expect(canonical).toContain("Nested bullet one.\n  A trailing");
+    expect(BODY).toContain("Another nested bullet.\n\n  A trailing");
+    expect(canonical).toContain("Another nested bullet.\n  A trailing");
+  });
+
+  it("places a passage before the first divergence and after the last", () => {
+    expect(travel(BODY, "Outer bullet leads in")).toBe("Outer bullet leads in");
+    expect(travel(BODY, "Final outer bullet")).toBe("Final outer bullet");
+  });
+
+  /**
+   * The bound itself. This paragraph is spelled identically in both — it is only
+   * *between* two constructs that are not — and it is refused all the same.
+   */
+  it("refuses a passage between the two divergences, though its own text agrees", () => {
+    expect(BODY).toContain("A paragraph in the middle that both spellings agree about.");
+    expect(canonicalOf(BODY)).toContain(
+      "A paragraph in the middle that both spellings agree about.",
+    );
+    expect(travel(BODY, "paragraph in the middle")).toBeNull();
+  });
+});

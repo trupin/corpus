@@ -6,8 +6,15 @@ shared (orchestrator-owned)
 
 ## Status
 
-**awaiting user sign-off** (drafted 2026-08-05). CONTRACT-033, SERVER-061,
-CLI-029 and AGENT-013 are blocked on it.
+**done — signed and applied.** The §7 bullet drafted below ("The agent can see
+what the server still thinks it is doing") is in SPEC.md verbatim, and its whole
+chain shipped: CONTRACT-033, SERVER-061, CLI-029 and AGENT-013 are all `done`.
+
+**This file said "awaiting user sign-off" until 2026-08-09**, and the plan row
+said `blocked`, with four implemented issues hanging off it. Corrected while
+surveying the user on riders to sign — the same staleness as SHARED-013, 014 and
+020, all four found in one pass. Applying a rider and closing its issue are two
+acts; doing only the first leaves decisions that have been made looking open.
 
 ## Priority
 
