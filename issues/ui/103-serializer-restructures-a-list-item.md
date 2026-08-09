@@ -74,6 +74,43 @@ actually shows), so nothing depends on this being fixed to render correctly.
 That is exactly why it needs its own issue rather than a note: the symptom that
 would have led someone here is gone.
 
+## What UI-099's PR (#39) changed about this bug — read before triaging a report
+
+Two things, and neither of them fixes what is written above.
+
+**1. This is a live P0 data-corruption bug whose only remaining symptom is now
+gone.** Before #39, a document containing the construct announced itself: it drew
+no comment highlights at all, which is what led to the investigation that found
+this. After #39 it renders and anchors correctly and looks entirely healthy,
+while still being silently restructured on disk the first time anyone types in
+it. Nothing in the product now points at this defect. It will not be rediscovered
+by use — only by someone reading a git diff and wondering why their paragraph
+moved. Do not read the absence of reports as evidence that it is rare or benign.
+
+**2. Seam-spanning selections on an affected document now produce a visible
+refusal.** A selection that crosses the boundary the two printings disagree about
+— e.g. from the last nested bullet into the outer item's trailing paragraph — is
+refused with *"Couldn't quote that selection from the document as it is saved —
+select a whole phrase and try again."* (`REFUSAL_NOTICE["not-in-file"]`), and no
+comment is created.
+
+That is **better than what it did before**, which was to create a comment quoting
+text that is in no file — `exact: "bullet two.\n    A trailing paragraph"`, four
+spaces the file does not contain — so the thread was born orphaned and no later
+edit could reattach it (UI-068's failure mode). A loud refusal beats a silently
+broken comment.
+
+But it is **new, and unexplained to the user**: the message says the selection
+cannot be quoted from the document "as it is saved", which is true and gives no
+hint that the cause is the serializer disagreeing with itself about one blank
+line, nor that selecting slightly differently will work. It is a user-visible
+consequence of this bug that will outlive #39 and disappear when this issue is
+fixed — because once `canonicalizeMarkdown` is idempotent for the construct the
+two printings agree and there is no seam to straddle. Treat a report of that
+message on a list-with-sublist document as a report of *this* issue, not as a
+selection bug. Pinned by `useAnchorLayer.test.tsx` → "commenting on a file whose
+two printings disagree about structure".
+
 ## Acceptance Criteria
 
 - [ ] `canonicalizeMarkdown` is **idempotent** for this construct — printing

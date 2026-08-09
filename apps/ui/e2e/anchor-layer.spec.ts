@@ -553,8 +553,24 @@ test.describe("commenting on a selection, on a file the printer restructures", (
     await expect(highlight).toHaveCount(1);
     await expect(highlight).toHaveText("Outer bullet leads in.");
 
-    // And the conversation is drawn at it, not listed below the body as one the
-    // view could not place.
+    /*
+     * And the conversation is drawn at it, not listed below the body as one the
+     * view could not place.
+     *
+     * **These three carry the test; do not trim them as redundant** (PR #39
+     * review, MINOR 6). §15 M4's "highlight" half is satisfiable with no
+     * server-derived placement at all: `useAnchorLayer` paints an *optimistic*
+     * `.anchor-hl` from the range the composer was opened on, and it survives
+     * until the server's own anchor replaces it. Reverting `rebaseRange`'s
+     * per-passage equality — the fix that lets the server's range be placed at
+     * all — leaves the highlight assertion above **green** and fails here, on
+     * the chip. So the highlight says the comment was captured; the chip and the
+     * empty `unplaced` section are what say the anchor came back and was placed.
+     *
+     * (Reverting the *other* fix, the layer's trace, does take the highlight
+     * down — the optimistic decoration goes through the same `applyAnchors` gate
+     * and that gate declines when the trace and the editor's document disagree.)
+     */
     await expect(page.locator(".reader .anchor-slot [data-thread-panel]")).toHaveCount(1);
     await expect(page.locator(".reader .anchor-pip")).toHaveText("1");
     await expect(page.locator('[data-thread-section="unplaced"]')).toHaveCount(0);

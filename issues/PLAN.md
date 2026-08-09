@@ -276,9 +276,9 @@ never auto-merged. The audience for that report is the agent.
 | CONTRACT-031 | Explicit edit-session flush route (SERVER-052 disproved the lock-release premise) | done | P1 | CONTRACT-028, SERVER-052 |
 | SERVER-057 | Mount the edit-session flush route (the plan had no issue for the handler) | done | P1 | CONTRACT-031, SERVER-052 |
 | SERVER-058 | Diff truncation keeps the frontmatter and drops the change (401 of 16000) | done | P1 | SERVER-052 |
-| SHARED-013 | Diff truncation is line-aligned, not hunk-aligned — DRAFT, awaiting sign-off | blocked | P2 | SERVER-058 |
-| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | blocked | P2 | SHARED-013 |
-| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | blocked | P2 | SHARED-013 |
+| SHARED-013 | Diff truncation is line-aligned, not hunk-aligned (SIGNED 2026-08-05, applied to §9.2) | done | P2 | SERVER-058 |
+| CONTRACT-032 | Diff-truncation contract forces a 401-char answer (SERVER-058 waiver) | todo | P2 | SHARED-013 |
+| CLI-028 | Truncation notice says "hunk boundary" when the cut may be a line boundary | todo | P2 | SHARED-013 |
 | UI-044 | Reader close flushes the edit session | done | P1 | SERVER-057 |
 | AGENT-011 | Orchestrate: reflect-on-edit (retrieval-first ripple check, triviality guidance) | done | P1 | CLI-026 |
 
@@ -390,12 +390,12 @@ belongs to the same fix wave.
 | SERVER-055 | Read path implements two of SPEC §6's three anchor rungs; fuzzy rung unwired | reverted | P1 | — |
 | SERVER-059 | Orphan repair, not fuzzy resolution — **umbrella**, route chosen 2026-08-07 | done | P1 | UI-068, SERVER-071, CONTRACT-041, SERVER-072, UI-086 |
 | UI-075 | UI-069's per-thread jobs query fans out once per thread card (PR #24 review MAJOR) | done | P1 | UI-069 |
-| SHARED-015 | Agent sees the server's in-progress set and reconciles it — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-015 | Agent sees the server's in-progress set and reconciles it (SIGNED, applied to §7) | done | P1 | — |
 | CONTRACT-033 | claim-all/idle carry the in-progress set (id, type, origin, held-since) | done | P1 | SHARED-015 |
 | SERVER-061 | Populate the in-progress set from `in-progress/`; settle nothing | done | P1 | CONTRACT-033 |
 | CLI-029 | Surface the in-progress set in `corpus queue claim-all`, `--json` included | done | P1 | CONTRACT-033 |
 | AGENT-013 | Loop rule: reconcile the in-progress set; never settle what you cannot account for | done | P1 | CLI-029 |
-| SHARED-014 | Snippets in every composer — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-014 | Snippets in every composer (SIGNED 2026-08-05, applied) | done | P1 | — |
 | SHARED-016 | Mentions, invocations and bare doc ids render as handles (SIGNED, applied) | done | P2 | — |
 | UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
 | CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
@@ -419,7 +419,7 @@ belongs to the same fix wave.
 | SERVER-069 | Carry the chosen weight into the dispatch, and name it in the job log (SHARED-022) | done | P2 | CONTRACT-039 |
 | SHARED-018 | Collapse anything, anywhere — on demand and by rule (SIGNED, applied) | done | P1 | — |
 | SHARED-019 | Agent resolves settled subthreads (SIGNED, applied) | done | P1 | — |
-| SHARED-020 | Collect subthread answers; agent revises its latest turn — DRAFT, awaiting sign-off | blocked | P1 | — |
+| SHARED-020 | Collect subthread answers; agent revises its latest turn (SIGNED 2026-08-05, applied) | done | P1 | — |
 | UI-078 | Resolve confirmation promises replying reopens the thread; it does not | done | P1 | — |
 | SHARED-021 | Richer forms: choose-any, write fields, and the attention asymmetry (SIGNED, applied) | done | P1 | — |
 | SHARED-022 | Choosing the model for a request — weight levels, honoured as a directive (SIGNED, applied) | done | P2 | — |

@@ -151,7 +151,8 @@ describe("rebasing a range between two spellings", () => {
 });
 
 /**
- * **A divergence is not contagious** (UI-099).
+ * **One divergence is not contagious** (UI-099) — and "one" is load-bearing:
+ * the describe below it pins what a *second* one still costs.
  *
  * The reported document was a 31KB `note` whose two spellings first parted
  * company at plain offset 23,792 — and every comment in it, including one
@@ -218,13 +219,68 @@ describe("a document whose two spellings diverge in one place", () => {
   });
 
   /**
-   * The guarantee that makes the narrowing safe: nothing is licensed here that a
-   * whole-document equality would have refused *about that passage*. When the
-   * projections agree everywhere, the common prefix is the entire string and
+   * The other half of the guarantee. Passages the whole-document test refused
+   * are licensed here — that is the fix — but nothing it *allowed* changes: when
+   * the projections agree everywhere the common prefix is the entire string and
    * every range takes the same branch it always did.
    */
   it("is unchanged for a document whose spellings agree throughout", () => {
     const body = "\n# Standup\n\nThe rate is 6.1% today.\n";
     expect(travel(body, "6.1%")).toBe("6.1%");
+  });
+});
+
+/**
+ * **The limit, pinned so it reads as a known bound rather than a fresh bug**
+ * (PR #39 review, MINOR 7).
+ *
+ * "A divergence stops being contagious" is true of *one* divergence and no more.
+ * The prefix stops at the **first** place the two projections part company and
+ * the suffix reaches back only to the **last**, so a document the printer
+ * respells twice still refuses every range between them — the middle is in
+ * neither region, and across it the two spellings genuinely disagree about which
+ * character is which. Conservative and correct, and worth a test: a 31KB
+ * hand-written note plausibly contains the offending construct more than once,
+ * and such a document still draws nothing over its whole middle.
+ */
+describe("a document whose two spellings diverge twice", () => {
+  const BODY =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "\n" +
+    "  A trailing paragraph of the first item.\n" +
+    "- Second outer bullet.\n" +
+    "\n" +
+    "A paragraph in the middle that both spellings agree about.\n" +
+    "\n" +
+    "- Another outer bullet.\n" +
+    "  - Another nested bullet.\n" +
+    "\n" +
+    "  A trailing paragraph of the second item.\n" +
+    "- Final outer bullet.\n";
+
+  it("really does respell two separate places", () => {
+    const canonical = canonicalOf(BODY);
+    expect(BODY).toContain("Nested bullet one.\n\n  A trailing");
+    expect(canonical).toContain("Nested bullet one.\n  A trailing");
+    expect(BODY).toContain("Another nested bullet.\n\n  A trailing");
+    expect(canonical).toContain("Another nested bullet.\n  A trailing");
+  });
+
+  it("places a passage before the first divergence and after the last", () => {
+    expect(travel(BODY, "Outer bullet leads in")).toBe("Outer bullet leads in");
+    expect(travel(BODY, "Final outer bullet")).toBe("Final outer bullet");
+  });
+
+  /**
+   * The bound itself. This paragraph is spelled identically in both — it is only
+   * *between* two constructs that are not — and it is refused all the same.
+   */
+  it("refuses a passage between the two divergences, though its own text agrees", () => {
+    expect(BODY).toContain("A paragraph in the middle that both spellings agree about.");
+    expect(canonicalOf(BODY)).toContain(
+      "A paragraph in the middle that both spellings agree about.",
+    );
+    expect(travel(BODY, "paragraph in the middle")).toBeNull();
   });
 });

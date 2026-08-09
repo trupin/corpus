@@ -21,7 +21,12 @@ import {
 import { anchorState } from "./anchorDecorations.js";
 import { mdRangeToPm } from "./offsetMap.js";
 import { resetTraceCache, traceOfBody } from "./traceCache.js";
-import { REAPPLY_DEBOUNCE_MS, useAnchorLayer, type AnchorLayer } from "./useAnchorLayer.js";
+import {
+  REAPPLY_DEBOUNCE_MS,
+  REFUSAL_NOTICE,
+  useAnchorLayer,
+  type AnchorLayer,
+} from "./useAnchorLayer.js";
 
 /**
  * The layer's decisions, driven through a real `EditorState` — the anchor
@@ -438,6 +443,90 @@ describe("commenting on a file the editor would print differently", () => {
     const { from, to } = selection();
     selectQuote(app.layer(), from, to);
     expect(app.layer().draft?.selection.selector.exact).toBe(QUOTE);
+  });
+});
+
+/**
+ * UI-068 again, on the document class UI-099 found — **the second bug that fix
+ * closed, and the one nothing else in the suite can see.**
+ *
+ * The pair above uses a padded GFM table, for which `canonicalizeMarkdown` *is*
+ * idempotent: the editor's document and `traceOfBody(body)` print the same text,
+ * so `quotableSource` picks the file either way and the tests pass whichever
+ * text the layer traces. This body is the other kind. Printing it once drops the
+ * blank line before the outer item's trailing paragraph; printing *that* re-reads
+ * the paragraph as a continuation of the **nested** item and indents it 2 → 4
+ * spaces. So the editor's own document (`parse(canonical)`) prints text that
+ * `traceOfBody(body)` never produces.
+ *
+ * Tracing the raw body therefore read that structural disagreement as "the
+ * editor holds unsaved edits" and quoted the **printer's** spelling — which is
+ * UI-068's failure exactly: a seam-spanning selection put
+ * `exact: "bullet two.\n    A trailing paragraph"` on the wire, four spaces the
+ * file does not contain, so `body.includes(exact)` is false and every rung of
+ * §6's ladder is hunting bytes that were never on disk. The comment is orphaned
+ * *at creation*, and no later edit repairs it.
+ *
+ * Both assertions matter and neither alone is enough: the refusal is what the
+ * fix produces where a broken quote used to be, and the capture beside it is
+ * what says the refusal is narrow rather than a document-wide surrender.
+ */
+describe("commenting on a file whose two printings disagree about structure", () => {
+  const FILE =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "  - Nested bullet two.\n" +
+    "\n" +
+    "  A trailing paragraph of the outer item.\n" +
+    "- Second outer bullet.\n";
+
+  /** The ProseMirror range showing `quote` in the document the editor holds. */
+  function selection(quote: string): { from: number; to: number } {
+    // `parse(canonicalizeMarkdown(body))` is what `DocEditor` builds and what
+    // `editorDocument` above builds; this is its printing.
+    const live = traceOfBody(canonicalizeMarkdown(FILE));
+    const start = live.markdown.indexOf(quote);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const pm = mdRangeToPm(live.trace, { start, end: start + quote.length });
+    return { from: pm[0]?.from ?? 0, to: pm.at(-1)?.to ?? 0 };
+  }
+
+  it("refuses a selection across the respelt seam instead of quoting the printer", () => {
+    // Spans the boundary the two printings disagree about: the end of the last
+    // nested bullet through the start of the outer item's trailing paragraph.
+    const SEAM = "bullet two.\n    A trailing paragraph";
+    expect(canonicalizeMarkdown(canonicalizeMarkdown(FILE))).toContain(SEAM);
+    expect(FILE).not.toContain(SEAM);
+
+    const app = mount([], [], readerTransport({}), FILE);
+    const { from, to } = selection(SEAM);
+    selectQuote(app.layer(), from, to);
+
+    expect(app.layer().draft).toBeNull();
+    expect(app.notices).toHaveLength(1);
+    expect(app.notices[0]?.message).toBe(REFUSAL_NOTICE["not-in-file"]);
+  });
+
+  it("still quotes the file itself for a selection clear of the seam", async () => {
+    const QUOTE = "Outer bullet leads in.";
+    const app = mount([], [], readerTransport({}), FILE);
+    const { from, to } = selection(QUOTE);
+    selectQuote(app.layer(), from, to);
+    expect(app.notices).toHaveLength(0);
+    expect(app.layer().draft?.selection.selector.exact).toBe(QUOTE);
+
+    act(() => {
+      app.layer().submitComment("Is this still true?", false, {});
+    });
+    await waitFor(() => {
+      expect(app.wire.of("POST", "/api/threads")).toHaveLength(1);
+    });
+    const { selector } = app.wire.of("POST", "/api/threads")[0]?.body as {
+      selector: TextQuoteSelector;
+    };
+    expect(selector.exact).toBe(QUOTE);
+    // §6's rung 1, against the bytes the server actually holds.
+    expect(FILE).toContain(selector.prefix + selector.exact + selector.suffix);
   });
 });
 

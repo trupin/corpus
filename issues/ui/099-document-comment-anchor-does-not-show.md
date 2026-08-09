@@ -106,7 +106,13 @@ Record the answer before writing code.
 - [x] The regressions this area already fixed stay fixed: UI-062's placement tests
       pass, and UI-068's guarantee is **restored** on these documents rather than
       weakened — `quotableSource` was reading the same wrong premise and quoting
-      the printer's spelling (see the E2E log)
+      the printer's spelling. **Pinned by a test, not by the log**
+      (`useAnchorLayer.test.tsx` → "commenting on a file whose two printings
+      disagree about structure"): a seam-spanning selection is refused
+      `not-in-file` instead of putting four spaces the file lacks on the wire,
+      and a selection clear of the seam still sends a quote the file literally
+      contains. Reverting the trace fix fails it. See "the second fix needed its
+      own test" below
 - [x] Works in both the column reader and focus mode — column verified directly;
       focus mode via the existing margin-alignment spec
 - [x] A whole-document (unanchored) comment is unaffected — `detachedThreads`
@@ -293,9 +299,25 @@ Fixed by asking that equality **of the passage rather than of the file**: a rang
 inside the two projections' common prefix (offsets unchanged) or common suffix
 (one constant shift) is licensed by character-for-character identity over exactly
 the region it occupies — the premise the global test was standing in for. A range
-that **straddles** the divergence is still refused. Nothing is licensed that
-whole-document equality would have allowed: when the projections agree the common
+that **straddles** the divergence is still refused.
+
+**Stated the right way round** (PR #39 review, MINOR 2): this *does* license
+ranges the whole-document equality refused — that is the fix, not a side effect
+of it. What is unchanged is the premise (still character-for-character identity
+over the region the range occupies, now demonstrated per range instead of assumed
+for the file) and what was already allowed: when the projections agree the common
 prefix is the whole string and every range takes the branch it always did.
+
+**And the relief is bounded** (PR #39 review, MINOR 7). "A divergence stops being
+contagious" is true of *one* divergence. The prefix stops at the **first** place
+the two projections part company and the suffix reaches back only to the
+**last**, so on a document the printer respells in two places every range between
+them is still refused — including passages both spellings agree about to the
+byte, because the middle is in neither region. That is conservative and correct,
+and it means a 31KB hand-written note containing the offending construct more
+than once still draws nothing across its whole middle. Pinned by `rebase.test.ts`
+→ "a document whose two spellings diverge twice", so the next report of it reads
+as a known limit rather than a new bug.
 
 **2. The anchor layer traced a text the editor was not showing.** `DocEditor`
 does not parse `body`; it parses `canonicalizeMarkdown(body)`. `useAnchorLayer`
@@ -313,15 +335,56 @@ UI099 declined placements=1 at=73 liveLen=138 wantedLen=136
 ```
 
 Note `placements=1`: cause 1 was already fixed at that point and the placement
-existed — it was simply never applied. Fixed by tracing
-`canonicalizeMarkdown(body)`, so the layer computes `serialize(parse(canonical))`
-and the editor prints `serialize(parse(canonical))` — the same expression,
-agreeing structurally rather than by luck.
+existed — it was simply never applied. Fixed by tracing what the editor was
+handed, so the layer computes `serialize(parse(editorBody(body)))` and the editor
+prints `serialize(parse(editorBody(body)))` — the same expression, agreeing
+structurally rather than by luck.
+
+**`editorBody` is that expression, named once** (`apps/ui/src/editor/editorBody.ts`,
+added in PR #39 review, MINOR 5). The two call sites used to canonicalise
+independently — `DocEditor` wrote `canonicalizeMarkdown(body)` inline, the layer
+wrote `traceOfBody(body)` — and "these two agree" was a convention that quietly
+stopped holding, which is this bug's whole failure mode. Both now import the one
+function, and `DocEditor.test.tsx` → "the text the editor parses" asserts a
+**real mounted editor's own document** prints exactly what the layer traces, on
+the construct where the two used to part company. A `DocEditor` that parsed
+anything else would have to change that test to go green. It is a named and
+checked agreement rather than one made impossible by construction; see the note
+at the end of this log for why publishing the string from `DocEditor` instead was
+rejected.
+
+### The second fix needed its own test
 
 That second premise also fed `quotableSource`, which read the disagreement as
 "the editor has unsaved edits" and quoted the **printer's** spelling instead of
 the file's — the exact failure UI-068 exists to prevent. Fixing the premise
 restores UI-068's guarantee on these documents rather than weakening it.
+
+**That is a second, distinct bug fix, and the original PR pinned it with prose
+rather than with a test** (PR #39 review, MAJOR 1). Reverting the trace fix alone
+and running the whole 334-test `src/anchors` suite failed exactly *one* test —
+the new highlight one — while every UI-068 test passed, because both of them
+(`useAnchorLayer.test.tsx`'s table fixture and `anchor-layer.spec.ts`'s) use
+documents for which `canonicalizeMarkdown` **is** idempotent and so cannot see
+this class of document at all. A future change that kept the canonicalised trace
+for placement but fed something else to `quotableSource` would have reintroduced
+a twice-regressed shipped defect with a green suite.
+
+The test added for it — `useAnchorLayer.test.tsx` → "commenting on a file whose
+two printings disagree about structure" — drives the layer on the six-line
+fixture and asserts both halves:
+
+- a selection spanning the respelt seam is **refused** with the `not-in-file`
+  notice and opens no composer. Pre-fix it put
+  `exact: "bullet two.\n    A trailing paragraph"` on the wire — four spaces the
+  file does not contain, so `BODY.includes(exact)` is `false`, §6's ladder has
+  nothing to match at any rung, and the comment is orphaned at creation;
+- a selection clear of the seam still captures the **file's** own bytes, and
+  `prefix + exact + suffix` is literally in `BODY`. Without this second half the
+  refusal could be satisfied by a layer that refuses everything.
+
+Reverting `useAnchorLayer.ts`'s `source` memo to `traceOfBody(body)` now fails
+that test as well as the highlight one.
 
 ### Post-fix verification
 
@@ -357,10 +420,36 @@ segments before and **1** after. That is the reported comment, and it now draws.
 - Playwright: the new §15 M4 check in `anchor-layer.spec.ts` — "select text →
   comment (note only) → highlight + chip appear **without reload**". Confirmed to
   be a real regression test rather than a passing bystander: reverting **either**
-  fix alone makes it fail (without fix 2 it fails on the highlight assertion;
-  without fix 1 it fails on the `unplaced` assertion). 49 anchoring-related e2e
-  specs pass (`anchor-layer`, `anchors`, `reattach`, `editor`, `turn-comment`,
-  `soft-wrap`).
+  fix alone makes it fail. 49 anchoring-related e2e specs pass (`anchor-layer`,
+  `anchors`, `reattach`, `editor`, `turn-comment`, `soft-wrap`).
+
+  **Which assertion catches which revert — corrected** (PR #39 review, MINOR 6;
+  the original account had it backwards). Verified by reverting each fix in turn:
+
+  | reverted | fails on | note |
+  | --- | --- | --- |
+  | fix 2 (the layer's trace) | the highlight — `.anchor-hl` count `0`, `anchor-layer.spec.ts:553` | as originally claimed |
+  | fix 1 (`rebaseRange`'s per-passage equality) | the **chip** — `.anchor-slot [data-thread-panel]` count `0`, `:569` | **not** `unplaced`, as originally claimed; and the highlight assertion at `:553` **passes** |
+
+  Both rows re-verified in this pass by reverting each fix in the working tree
+  and running the spec in Playwright (the chip was at `:558` before the comment
+  added below moved it down).
+
+  Worth recording plainly, because it changes what the check is worth: §15 M4's
+  "highlight" half is satisfiable **with no server-derived placement at all**.
+  `useAnchorLayer` paints an optimistic `.anchor-hl` from the range the composer
+  was opened on (`setOptimistic` in `submitComment`), and it stands until the
+  server's own anchor replaces it — so with the *rebase* fix reverted the
+  highlight assertion is green and only the chip fails. The chip and the empty
+  `unplaced` section are what carry the milestone; nobody should trim them as
+  redundant with the highlight. A comment saying so now sits beside them in the
+  spec.
+
+  Why the trace fix is the one that takes the highlight down with it: the
+  optimistic decoration is dispatched through the **same** `applyAnchors` gate as
+  the server's, and that gate declines whenever the layer's trace disagrees with
+  the editor's document. Revert the trace and nothing is drawn at all, optimistic
+  or not.
 - `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check` —
   all clean.
 
@@ -383,7 +472,75 @@ the underlying infidelity remains, and it is worse than a missing highlight —
 opening such a document and typing one character will autosave the restructured
 form, silently moving the paragraph in the user's file. That belongs in
 `editor/markdown/serialize.ts`, changes what is written to disk, and wants its
-own issue rather than a P0 side-effect. Flagged to the orchestrator.
+own issue rather than a P0 side-effect. Flagged to the orchestrator. **Filed as
+UI-103**, which also records what this PR changed about that bug's symptoms.
+
+### PR #39 review pass — appended, not a re-run of the above
+
+**Model run on:** Opus 5 (1M context).
+
+The reviewer verified both fixes' behaviour independently and they stand
+(including a 1,728-body fuzz of `rebaseRange` with uniquified tokens: 9,642
+licensed rebases, **zero** misplacements). The verdict was about what is *pinned*
+and what the docblocks *claim*. What changed:
+
+| finding | change |
+| --- | --- |
+| MAJOR 1 — the UI-068 restoration was pinned by prose | new test "commenting on a file whose two printings disagree about structure" (`useAnchorLayer.test.tsx`); acceptance criterion above rewritten to cite it |
+| MINOR 2 — `rebase.ts` stated its safety claim backwards | corrected in `rebase.ts`, in this issue, and in `rebase.test.ts`'s "unchanged for a document whose spellings agree throughout" docblock, which had the same inversion |
+| MINOR 3 — the 97-line block was orphaned above `commonPrefixLength` | `rebaseRange` moved back up under it and given its own `@param`/`@returns` block; the three helpers now follow it |
+| MINOR 4 — `quotableSource`'s docblock described the replaced premise | rewritten; it now states the correctness condition on its caller and names the test that pins it |
+| MINOR 5 — the two canonicalisations agreed by convention | `editorBody` (below) |
+| MINOR 6 — the e2e failure account was wrong | corrected above, plus a comment in the spec so the chip assertions are not trimmed |
+| MINOR 7 — "a divergence is not contagious" oversold it | the bound stated in `rebase.ts` and above, and pinned by "a document whose two spellings diverge twice" |
+| UI-103 | two paragraphs added there — the new visible refusal, and that its only remaining symptom is gone |
+
+**Finding 5, and how far it got.** The reviewer asked whether `DocEditor`
+publishing what it parsed would make the agreement structural without a redesign.
+It would not, and the halfway version is worse than the convention it replaces:
+
+- publishing the string through a callback makes the layer's `source` **lag by a
+  commit** whenever the server's body changes, because the callback fires in an
+  effect and `useAnchorLayer` re-renders with the new `body` first. In that
+  window `placeAnchors` maps new-body offsets through the old trace, and
+  `applyAnchors`' guard compares the live document against that same old trace
+  and *passes* — so a tick of highlights over the wrong words, which is the one
+  failure this whole layer exists to prevent. Trading a rare wrong text for a
+  routine one-frame wrong text is not a repair;
+- doing it synchronously means hoisting the canonicalisation into `DocView` and
+  changing `DocEditor`'s `body` prop to mean "already canonical". That removes
+  this drift class by creating a worse one — a caller passing the raw body would
+  double-canonicalise, which on a UI-103 document is exactly the non-idempotent
+  step, silently — and it is a prop-contract change across four call sites. Real
+  restructuring, and pointed the wrong way.
+
+So: **named once and checked**, rather than impossible by construction.
+`apps/ui/src/editor/editorBody.ts` holds the single expression; `DocEditor` and
+`useAnchorLayer` both call it; and `DocEditor.test.tsx` → "the text the editor
+parses" asserts a real mounted editor's document prints exactly
+`traceOfBody(editorBody(body)).markdown` on the UI-103 construct, with a
+first-line assertion that tracing the raw body would have given a different
+answer so the check cannot degrade into a tautology. Verified it bites: making
+`DocEditor` parse anything else fails it.
+
+**Verification of this pass.**
+
+- Reverting `useAnchorLayer.ts`'s `source` memo to `traceOfBody(body)` now fails
+  **two** tests in `src/anchors` (the new capture test and the highlight test);
+  before this pass it failed one. Confirmed by running the suite with the revert
+  applied and then restoring it.
+- Making `DocEditor` parse something other than `editorBody(body)` fails
+  "the text the editor parses". Confirmed the same way.
+- Both e2e rows in the table above re-verified by reverting each fix in the
+  working tree and running the spec: trace fix reverted → `:553`, `.anchor-hl`
+  count `0`; rebase fix reverted → `:569`, chip count `0` with `:553` green. The
+  original account of the second one was wrong and is corrected above.
+- `apps/ui/src` + `packages/kit/src` — **192 files, 3,270 tests pass** (3,264
+  before this pass, plus the six added here). `anchor-layer.spec.ts` — 12/12 in
+  Playwright, on `CORPUS_UI_PORT=5373`; 5173 was held by an unrelated ssh tunnel
+  and was never bound, and 8765 was never touched.
+- `npm run build`, `npm run typecheck`, `npm run lint`, `npx prettier --check` —
+  all clean.
 
 ## Completion Checklist (domain agent)
 
