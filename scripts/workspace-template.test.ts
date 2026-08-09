@@ -970,6 +970,37 @@ describe("orchestrate skill body", () => {
       expect(readWeightLevels("| Event type | Dispatch |\n| --- | --- |\n| a | b |\n")).toEqual([]);
     });
 
+    /**
+     * A fenced example documents the format; it does not declare it (UI-082's PR #35 review).
+     * The reader takes the first header **outside a fence**, so a skill that
+     * shows the shape before showing its own table — which is what this repo's
+     * own sources do when they explain it — still declares its own table.
+     */
+    it.each([
+      ["a plain fence", "```", ""],
+      ["an info string", "```", "text"],
+      ["a tilde fence", "~~~", ""],
+      ["a longer fence", "````", ""],
+    ])("skips an example fenced by %s and reads the real table below", (_case, marker, info) => {
+      const example = table([["Example", "example", "**A model**", "Not a declaration."]]);
+      const declared = table([
+        ["Small", "light", "**Haiku**", "one read"],
+        ["Everyday", "standard", "**Sonnet**", "most work"],
+      ]);
+      const markdown = `Like this:\n\n${marker}${info}\n${example}\n${marker}\n\n${declared}\n`;
+      expect(readWeightLevels(markdown).map((level) => level.key)).toEqual(["light", "standard"]);
+    });
+
+    it("declares nothing when a fence is opened and never closed", () => {
+      const example = table([["Example", "example", "**A model**", "Not a declaration."]]);
+      expect(readWeightLevels(`Like this:\n\n\`\`\`\n${example}\n`)).toEqual([]);
+    });
+
+    it("reads a table a fence sits below", () => {
+      const declared = table([["Small", "light", "**Haiku**", "one read"]]);
+      expect(readWeightLevels(`${declared}\n\n\`\`\`\n| a |\n\`\`\`\n`)).toHaveLength(1);
+    });
+
     it("finds nothing for a malformed declaration rather than part of one", () => {
       const header = `| ${WEIGHT_TABLE_HEADER.join(" | ")} |`;
       expect(readWeightLevels(`${header}\n| Small | light | **Haiku** | one read |`)).toEqual([]);
@@ -1015,37 +1046,80 @@ describe("orchestrate skill body", () => {
       expect(declaring).toEqual(["claude/skills/orchestrate/SKILL.md"]);
     });
 
-    it("keeps a second level list out of the UI, the kit and the contract", () => {
-      // Grep-shaped, and deliberately "two or more names in one file": a single
-      // mention is prose (the contract cites the longest shipped level name to
-      // justify a length bound), while a set of them is the enum this design
-      // exists to prevent. Tests are excluded — an opaque sample value in a
-      // CONTRACT-039 or SERVER-069 test is a string, not a vocabulary.
+    it("keeps a second level list out of the shipped tree", () => {
+      // Grep-shaped, and deliberately "two or more of the set in one file": a
+      // single mention is prose (the contract cites the longest shipped level
+      // name to justify a length bound), while a set of them is the enum this
+      // design exists to prevent. Tests are excluded — an opaque sample value in
+      // a CONTRACT-039 or SERVER-069 test is a string, not a vocabulary.
       //
-      // `testing/` directories are excluded for the same reason and not a weaker
-      // one. They are this repo's test-support convention (`@corpus/kit/testing`
-      // is a published subpath consumed only by suites), and a fixture *must*
-      // spell a whole declaration: UI-082's suites drive five composers from a
-      // fixture skill document, and a fixture that could not name a set could
-      // not prove the picker follows the document. What the guard is for
-      // survives, because a fixture is never what a composer reads at runtime —
-      // and the shipped table is pinned against the shipped file separately, in
-      // `packages/kit/src/weight/weightLevels.test.ts`.
-      const names = readWeightLevels(body).map((level) => level.name);
+      // Three things this looks for, each closing a hole the previous shape
+      // left (UI-082's PR #35 review):
+      //
+      //   - **Labels and keys.** The label is what the guard used to match, and
+      //     the key is what actually travels on a request, so a hardcoded
+      //     `["light", "standard", "heavy"]` was the one form of the enum that
+      //     passed. Keys are matched only as `"…"`/`'…'` **string literals**,
+      //     because they are ordinary English words and a prose "light" is not a
+      //     vocabulary. Backticks are deliberately not a delimiter here: a
+      //     markdown code span is how every docblock in this repo names a key,
+      //     and `weight.ts` legitimately names all three while justifying a
+      //     length bound.
+      //   - **The server and the plugins.** AGENT-015's criterion is about the
+      //     product, not about the two workspaces the guard happened to name;
+      //     `apps/server/src` routes the weight and `plugins/` is shipped v1
+      //     code with composers of its own.
+      //   - **No exemption for a published directory.** `@corpus/kit/testing`
+      //     is a subpath plugin authors can import, so what sits in it ships
+      //     whatever its name says; the assertion below pins that it is scanned.
+      //     Only `apps/ui/src/testing` is exempt, and only because a fixture
+      //     *must* spell a whole declaration — UI-082's suites drive five
+      //     composers from a fixture skill document, and a fixture that could
+      //     not name a set could not prove the picker follows the document. That
+      //     tree is private to `@corpus/ui`, which publishes nothing.
+      const levels = readWeightLevels(body);
+      const labels = levels.map((level) => level.name);
+      const keys = levels.map((level) => level.key);
+      const quoted = keys.map(
+        (key) => new RegExp(`(["'])${key.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)}\\1`),
+      );
+
+      const EXEMPT = [path.join(REPO_ROOT, "apps", "ui", "src", "testing")];
       const sources = (dir: string): string[] =>
         readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
           const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) return entry.name === "testing" ? [] : sources(full);
+          if (entry.isDirectory()) {
+            if (entry.name === "node_modules" || entry.name === "dist") return [];
+            return EXEMPT.includes(full) ? [] : sources(full);
+          }
           if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) return [];
           return [full];
         });
-      const scanned = ["apps/ui/src", "packages/kit/src", "packages/contract/src"].flatMap((root) =>
-        sources(path.join(REPO_ROOT, root)),
-      );
+      const scanned = [
+        "apps/ui/src",
+        "apps/server/src",
+        "packages/kit/src",
+        "packages/contract/src",
+        "plugins",
+      ].flatMap((root) => sources(path.join(REPO_ROOT, root)));
+
+      // The key matcher, proven on the exact form it exists to catch, so a
+      // regex that silently stopped matching would not read as a clean guard.
+      const enumSource = `const WEIGHTS = [${keys.map((key) => `"${key}"`).join(", ")}] as const;`;
+      expect(quoted.filter((pattern) => pattern.test(enumSource))).toHaveLength(keys.length);
+      expect(quoted.some((pattern) => pattern.test("a light touch, the standard way"))).toBe(false);
+
       expect(scanned.length, "nothing scanned — the guard would pass vacuously").toBeGreaterThan(0);
+      expect(scanned, "`@corpus/kit/testing` is published — it may not be exempt").toContain(
+        path.join(REPO_ROOT, "packages", "kit", "src", "testing", "index.ts"),
+      );
+
       for (const file of scanned) {
         const contents = readFileSync(file, "utf8");
-        const hits = names.filter((name) => contents.includes(name));
+        const hits = [
+          ...labels.filter((label) => contents.includes(label)),
+          ...quoted.filter((pattern) => pattern.test(contents)).map((pattern) => pattern.source),
+        ];
         expect(
           hits.length,
           `${path.relative(REPO_ROOT, file)} carries a second level list: ${hits.join(", ")}`,

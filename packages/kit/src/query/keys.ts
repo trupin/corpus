@@ -169,6 +169,23 @@ export function searchKey(params: Readonly<Record<string, unknown>> = {}): Query
   return [...DOCS_KEY, "search", canonicalFilter(params)];
 }
 
+/**
+ * One **invocable** skill, addressed by the name it is invoked under:
+ * `["docs", "skill", <name>]`.
+ *
+ * A document, but not one addressable by {@link docKey}: the caller knows the
+ * skill's *name* and not its id, and resolving one to the other is itself the
+ * query. It sits under the `["docs"]` prefix for {@link relatedKey}'s reason —
+ * the server names that prefix on every document mutation and every
+ * watcher-projected change, so an edit, an install or a rename of a skill
+ * refreshes this entry with no new key vocabulary. `"skill"` cannot collide with
+ * `docKey(<id>)`: a document id carries a `<prefix>_<suffix>` shape, so no
+ * document is ever addressed as `["docs", "skill"]`.
+ */
+export function skillByNameKey(name: string): QueryKey {
+  return [...DOCS_KEY, "skill", name];
+}
+
 /** The console's job-list key: `["jobs", { …canonical params }]`. */
 export function jobsListKey(params: Readonly<Record<string, unknown>> = {}): QueryKey {
   return [...JOBS_KEY, canonicalFilter(params)];

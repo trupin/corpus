@@ -21,10 +21,10 @@ export {
   useWeightLevels,
 } from "./useWeightLevels.js";
 export {
+  childThreadWeightScope,
   chooseWeight,
   docWeightScope,
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
-  resetWeightChoices,
   subscribeWeightChoices,
   threadWeightScope,
   useComposerWeight,

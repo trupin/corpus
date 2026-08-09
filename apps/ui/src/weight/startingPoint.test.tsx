@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
-import { resetWeightChoices } from "@corpus/kit";
-import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { createCorpusTestHarness, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -141,7 +140,14 @@ describe("the starting point is per conversation", () => {
     view.unmount();
   });
 
-  it("is shared by a comment made inside that conversation", async () => {
+  /**
+   * The comment-on-a-turn box is the one composer whose control can never act:
+   * it sends `requestsAgent: false` unconditionally. So it keeps a scope of its
+   * own, in **both** directions — a dead control never seeds the live reply box,
+   * and the reply box's choice is not reflected on a control that cannot honour
+   * it (UI-082's PR #35 review; it shared the parent thread's scope until then).
+   */
+  it("is not shared with the comment-on-a-turn box, whose control can never act", async () => {
     render(
       <Host transport={wire()}>
         <>
@@ -157,11 +163,20 @@ describe("the starting point is per conversation", () => {
       </Host>,
     );
     await drawn(2);
-    const [replyBox] = pickers();
+    const [replyBox, childBox] = pickers();
+
+    fireEvent.click(
+      childBox?.querySelector<HTMLElement>("[data-weight-key='heavy']") as HTMLElement,
+    );
+    expect(pressed(childBox as HTMLElement)).toEqual(["heavy"]);
+    // The composer that reaches the agent is untouched by the one that cannot.
+    expect(pressed(replyBox as HTMLElement)).toEqual([]);
+
     fireEvent.click(
       replyBox?.querySelector<HTMLElement>("[data-weight-key='standard']") as HTMLElement,
     );
-    for (const picker of pickers()) expect(pressed(picker)).toEqual(["standard"]);
+    expect(pressed(replyBox as HTMLElement)).toEqual(["standard"]);
+    expect(pressed(childBox as HTMLElement)).toEqual(["heavy"]);
   });
 
   it("is not shared with a comment on a document, which is a different scope", async () => {

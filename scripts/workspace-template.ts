@@ -222,8 +222,9 @@ export function readContractDoc(docPath: string = CONTRACT_DOC_PATH): ContractDo
 // may state the weight its work is done at, "choosing among the levels the skill
 // itself defines" — so the orchestrate skill's tier table is not only prose a
 // model reads, it is the **declaration** a composer enumerates to build its
-// picker. One artefact, two readings: the same relationship `fencedCodeRanges`
-// and `unterminatedFence` have to one scan.
+// picker. One artefact, two readings — and both readings have to agree about
+// what is prose and what is a fenced example, which is why this one carries a
+// fence scanner of its own (see `fencedLines`).
 //
 // This reader is the repo's check on that declaration, not the product's parser
 // — UI-082 owns that one, in `packages/kit`, over the same projected document —
@@ -262,6 +263,49 @@ const tableCells = (line: string): string[] | null => {
 const isDividerRow = (cells: readonly string[]): boolean =>
   cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 
+/** A fence opener or closer: up to three leading spaces, then three or more backticks or tildes. */
+const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/**
+ * Which lines sit inside a fenced code block.
+ *
+ * Deliberately a local scanner rather than the contract's `fencedCodeRanges`,
+ * which is what the shipped parser in `packages/kit` uses. `scripts/` is repo
+ * tooling and imports nothing out of a workspace's `dist/`, so this check on the
+ * template can never be blocked on a build — the same direction the kit module's
+ * docblock states when it declines to import *this* reader. The two therefore
+ * agree by test rather than by construction: the shipped table is read by both
+ * and pinned in `packages/kit/src/weight/weightLevels.test.ts`.
+ *
+ * An unterminated fence swallows the rest of the document, which is the honest
+ * reading: a skill that opens a fence and never closes it declares nothing.
+ */
+const fencedLines = (lines: readonly string[]): ReadonlySet<number> => {
+  const inside = new Set<number>();
+  let open: string | null = null;
+  for (const [index, line] of lines.entries()) {
+    const match = FENCE_LINE.exec(line);
+    if (open === null) {
+      if (match === null) continue;
+      const marker = match[1] ?? "";
+      // A backtick fence's info string may not itself contain a backtick.
+      if (marker.startsWith("`") && (match[2] ?? "").includes("`")) continue;
+      open = marker;
+      inside.add(index);
+      continue;
+    }
+    inside.add(index);
+    const marker = match?.[1] ?? "";
+    const closes =
+      match !== null &&
+      marker[0] === open[0] &&
+      marker.length >= open.length &&
+      (match[2] ?? "").trim() === "";
+    if (closes) open = null;
+  }
+  return inside;
+};
+
 /**
  * Enumerate the weight levels a skill body declares, in document order —
  * lightest first, which is the order a composer offers them in.
@@ -272,10 +316,17 @@ const isDividerRow = (cells: readonly string[]): boolean =>
  * is the whole degradation contract — a workspace whose skill declares nothing
  * parseable yields no levels, and its composer offers no control at all rather
  * than a fallback list, which would be the second source this design forbids.
+ *
+ * **A fenced example is not the declaration.** A skill that documents the format
+ * with a worked example above its real table — which is what this repo's own
+ * sources do when they explain the shape — must not have the example read as the
+ * declaration, so lines inside a code fence are skipped entirely.
  */
 export function readWeightLevels(markdown: string): WeightLevel[] {
   const lines = markdown.split("\n");
+  const fenced = fencedLines(lines);
   for (const [index, line] of lines.entries()) {
+    if (fenced.has(index)) continue;
     const header = tableCells(line);
     if (header === null) continue;
     if (header.length !== WEIGHT_TABLE_HEADER.length) continue;

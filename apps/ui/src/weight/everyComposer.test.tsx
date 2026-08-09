@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
-import { resetWeightChoices } from "@corpus/kit";
-import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { createCorpusTestHarness, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

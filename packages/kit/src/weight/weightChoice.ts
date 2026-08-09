@@ -89,6 +89,13 @@ export function subscribeWeightChoices(listener: () => void): () => void {
  * without this one test's click is the next test's starting state. Nothing in
  * the app calls it — a reload is how a person clears these, and §11 describes no
  * "forget my weights" action.
+ *
+ * **Reachable only through `@corpus/kit/testing`** (UI-082's PR #35 review), never through the
+ * package root. It was on the plugin surface until a review pointed out what
+ * that publishes: an action §11 does not describe, offered to plugin authors as
+ * though it were one, and callable from a plugin to wipe every composer's
+ * standing choice out from under the person who made them. The test-support
+ * subpath is where a helper whose own docblock says "for the suites" belongs.
  */
 export function resetWeightChoices(): void {
   if (choices.size === 0) return;
@@ -97,13 +104,37 @@ export function resetWeightChoices(): void {
 }
 
 /**
- * The scope of a reply box, and of a comment made **inside** a conversation.
+ * The scope of a thread's **reply box** — the composer that continues it.
  *
- * "The same conversation" is the thread, so both columns showing it and the
- * child-thread composer sitting in one of its turns share a starting point.
+ * "The same conversation" is the thread, so two columns showing it share one
+ * starting point. The comment-on-a-turn box sitting inside one of its turns does
+ * **not**: see {@link childThreadWeightScope} for why a control that can never
+ * act must not seed one that can.
  */
 export function threadWeightScope(threadId: string): string {
   return `thread:${threadId}`;
+}
+
+/**
+ * The scope of the **comment-on-a-turn** box, which is its own and not the
+ * parent thread's (UI-082's PR #35 review).
+ *
+ * That box always sends `requestsAgent: false` — a comment on a turn is a note
+ * until the child card's own composer says otherwise — so its control is
+ * permanently inert: whatever is chosen there provably governs nothing. Under
+ * {@link threadWeightScope} that dead control would still *write*, and the value
+ * would surface as the standing starting point of the parent thread's reply box,
+ * which does reach the agent. §11 allows remembering a choice because the
+ * surface that stores one renders it; a choice made where it could not act,
+ * seeding a request where it can, is the "acts on you unseen" case wearing the
+ * rule's clothes.
+ *
+ * So the box keeps a scope of its own. Two child boxes on the same parent thread
+ * still share it — they are the same surface on the same conversation — and
+ * neither touches the reply box.
+ */
+export function childThreadWeightScope(parentThreadId: string): string {
+  return `child:${parentThreadId}`;
 }
 
 /**

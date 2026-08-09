@@ -34,6 +34,16 @@
  * `.prettierignore`, so the column padding is hand-maintained and unstable while
  * the words are the interface.
  *
+ * **A fenced example is not the declaration.** The reader skips anything inside
+ * a code fence, using the contract's own {@link fencedCodeRanges} — the repo's
+ * one fence scanner, shared rather than re-derived so "is this inside code" has
+ * a single grammar. The block above this sentence is exactly the case: this
+ * module's *documentation* of the format is a fenced table with the header
+ * spelled right, and a reader that took the first header in document order would
+ * read a workspace's worked example as its declaration the day a skill document
+ * grew one. Nothing in the shipped skill fences its table today, and that is a
+ * property of the current text rather than a guarantee.
+ *
  * Every row beneath the divider is one level, **in document order, lightest
  * first**, which is the order a composer offers them in.
  *
@@ -69,6 +79,8 @@
  * shipped code); the two target the same shape, and this module's tests pin it
  * against the real template body.
  */
+
+import { fencedCodeRanges, overlapsRange } from "@corpus/contract";
 
 /** One level a workspace's guidance declares. */
 export interface WeightLevel {
@@ -121,8 +133,21 @@ const NO_LEVELS: readonly WeightLevel[] = [];
  */
 export function parseWeightLevels(markdown: string): readonly WeightLevel[] {
   const lines = markdown.split("\n");
+  // Offsets, so a line can be asked whether it sits in a code fence. An
+  // unterminated fence runs to the end of the text, which `fencedCodeRanges`
+  // already models — a document that opens a fence and never closes it declares
+  // nothing, rather than declaring whatever follows the fence.
+  const fenced = fencedCodeRanges(markdown);
+  const starts: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
 
   for (const [index, line] of lines.entries()) {
+    const start = starts[index] ?? 0;
+    if (overlapsRange(fenced, start, start + line.length + 1)) continue;
     const header = tableCells(line);
     if (header === null) continue;
     if (header.length !== WEIGHT_TABLE_HEADER.length) continue;

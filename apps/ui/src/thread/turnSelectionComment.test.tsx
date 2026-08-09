@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import type { Doc } from "@corpus/contract";
-import { resetSeenMarks, resetWeightChoices } from "@corpus/kit";
-import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { resetSeenMarks } from "@corpus/kit";
+import { createCorpusTestHarness, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";

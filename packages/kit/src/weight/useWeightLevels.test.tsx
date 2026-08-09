@@ -3,7 +3,7 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCorpusTestHarness } from "../testing/harness.js";
 import { docRowFixture } from "../testing/docRow.js";
-import { findOrchestrateSkill, useWeightLevels } from "./useWeightLevels.js";
+import { findOrchestrateSkill, SKILL_SCAN_PAGE, useWeightLevels } from "./useWeightLevels.js";
 
 /**
  * Where the levels come from: the workspace's own orchestrate skill, read as an
@@ -48,10 +48,16 @@ function wire(options: WireOptions = {}): { fetch: typeof globalThis.fetch; path
       );
 
     if (url.pathname === "/api/docs") {
-      const items = skills.map((skill) =>
-        docRowFixture({ id: skill.id, type: "skill", path: skill.path, title: skill.id }),
-      );
-      return json({ items, page: { total: items.length, limit: 50, offset: 0 } });
+      // A real page: the server honours `limit`/`offset` and reports the total
+      // over the whole match, which is what the scan's termination reads.
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const items = skills
+        .slice(offset, offset + limit)
+        .map((skill) =>
+          docRowFixture({ id: skill.id, type: "skill", path: skill.path, title: skill.id }),
+        );
+      return json({ items, page: { total: skills.length, limit, offset } });
     }
     const id = url.pathname.slice("/api/docs/".length);
     return json({
@@ -71,6 +77,12 @@ function mount(options: WireOptions = {}) {
   const view = renderHook(() => useWeightLevels(), { wrapper: harness.Wrapper });
   return { ...view, paths: transport.paths };
 }
+
+/** One page of the scan, as the client spells it. */
+const page = (offset: number): string =>
+  `/api/docs?type=skill&limit=${SKILL_SCAN_PAGE}&offset=${offset}&sort=created`;
+
+const FIRST_PAGE = page(0);
 
 describe("reading the declared levels", () => {
   it("finds the orchestrate skill among the workspace's skills, by its name", () => {
@@ -100,7 +112,7 @@ describe("reading the declared levels", () => {
     await waitFor(() => {
       expect(view.result.current).toHaveLength(2);
     });
-    expect(view.paths).toContain("/api/docs?type=skill");
+    expect(view.paths).toContain(FIRST_PAGE);
     expect(view.paths).toContain("/api/docs/doc_orch");
     expect(view.paths.some((path) => path.includes("weight"))).toBe(false);
   });
@@ -113,7 +125,7 @@ describe("reading the declared levels", () => {
   it("answers nothing when the workspace has no orchestrate skill", async () => {
     const view = mount({ skills: [{ id: "doc_c", path: ".claude/skills/comment/SKILL.md" }] });
     await waitFor(() => {
-      expect(view.paths).toContain("/api/docs?type=skill");
+      expect(view.paths).toContain(FIRST_PAGE);
     });
     expect(view.result.current).toEqual([]);
   });
@@ -122,6 +134,92 @@ describe("reading the declared levels", () => {
     const view = mount({ bodies: { doc_orch: "## Delegation\n\nNo table here.\n" } });
     await waitFor(() => {
       expect(view.paths).toContain("/api/docs/doc_orch");
+    });
+    expect(view.result.current).toEqual([]);
+  });
+});
+
+/**
+ * The listing is paged and sorted, and the declaration must not depend on which
+ * page the skill landed on (UI-082's PR #35 review).
+ *
+ * The failure this pins used to be silent *and* indistinguishable from the
+ * designed one: a workspace past the page size answered "declares nothing" —
+ * exactly what a §2.4 workspace answers — while its table sat in the skill in
+ * plain sight. So the scan is exhaustive, and these tests are the only place
+ * that says so.
+ */
+describe("a skill list longer than one page", () => {
+  const filler = (count: number, from = 0) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `doc_f${index + from}`,
+      path: `.claude/skills/filler-${index + from}/SKILL.md`,
+    }));
+
+  it("finds the declaration when the skill sits beyond the first page", async () => {
+    const skills = [
+      ...filler(SKILL_SCAN_PAGE),
+      { id: "doc_orch", path: ".claude/skills/orchestrate/SKILL.md" },
+    ];
+    const view = mount({ skills, bodies: { doc_orch: DECLARATION } });
+    await waitFor(() => {
+      expect(view.result.current).toHaveLength(2);
+    });
+    // Two pages asked for, and the second one is where the skill was.
+    expect(view.paths).toContain(FIRST_PAGE);
+    expect(view.paths).toContain(page(SKILL_SCAN_PAGE));
+  });
+
+  it("finds it on page three, and asks for no page past it", async () => {
+    const skills = [
+      ...filler(SKILL_SCAN_PAGE * 2),
+      { id: "doc_orch", path: ".claude/skills/orchestrate/SKILL.md" },
+      ...filler(SKILL_SCAN_PAGE, SKILL_SCAN_PAGE * 2),
+    ];
+    const view = mount({ skills, bodies: { doc_orch: DECLARATION } });
+    await waitFor(() => {
+      expect(view.result.current).toHaveLength(2);
+    });
+    const pages = view.paths.filter((path) => path.startsWith("/api/docs?"));
+    expect(pages).toHaveLength(3);
+    expect(pages.at(-1)).toContain(`offset=${SKILL_SCAN_PAGE * 2}`);
+  });
+
+  it("stops at the reported total when no page holds it, rather than paging forever", async () => {
+    const view = mount({ skills: filler(SKILL_SCAN_PAGE * 2) });
+    await waitFor(() => {
+      expect(view.paths.filter((path) => path.startsWith("/api/docs?"))).toHaveLength(2);
+    });
+    expect(view.result.current).toEqual([]);
+    // No document read at all: there was no skill to read.
+    expect(view.paths.some((path) => path.startsWith("/api/docs/"))).toBe(false);
+  });
+
+  it("stops on an empty page even when the total says otherwise", async () => {
+    // A row deleted mid-scan can leave `total` ahead of what the pages hold; the
+    // scan must terminate on the evidence in front of it, not on the count.
+    const paths: string[] = [];
+    const fetch = (input: RequestInfo | URL): Promise<Response> => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      paths.push(`${url.pathname}${url.search}`);
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const items =
+        offset === 0
+          ? [docRowFixture({ id: "doc_c", type: "skill", path: ".claude/skills/comment/SKILL.md" })]
+          : [];
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ items, page: { total: 9999, limit: SKILL_SCAN_PAGE, offset } }),
+          {
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    };
+    const harness = createCorpusTestHarness({ fetch });
+    const view = renderHook(() => useWeightLevels(), { wrapper: harness.Wrapper });
+    await waitFor(() => {
+      expect(paths.filter((path) => path.startsWith("/api/docs?"))).toHaveLength(2);
     });
     expect(view.result.current).toEqual([]);
   });

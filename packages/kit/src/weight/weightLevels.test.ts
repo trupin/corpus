@@ -162,6 +162,53 @@ describe("anything that is not the declared shape", () => {
     expect(parseWeightLevels(other)).toEqual([]);
   });
 
+  /**
+   * A fenced example is documentation of the format, not a declaration of it
+   * (UI-082's PR #35 review). The failure this prevents is a workspace — or a future revision of
+   * the shipped skill — that explains the table before showing its own, and gets
+   * the explanation offered in its composers.
+   */
+  describe("a fenced example above the real table", () => {
+    const example = [
+      "| Weight | Key | Model | What falls here |",
+      "| --- | --- | --- | --- |",
+      "| Example | example | **A model** | Not a declaration. |",
+    ];
+    const fenced = (marker: string, info = "", closed = true): string =>
+      [
+        "Declare the levels like this:",
+        "",
+        `${marker}${info}`,
+        ...example,
+        ...(closed ? [marker] : []),
+        "",
+        DECLARED,
+      ].join("\n");
+
+    it.each([
+      ["a plain fence", "```", ""],
+      ["an info string", "```", "text"],
+      ["a tilde fence", "~~~", ""],
+      ["a longer fence", "````", ""],
+    ])("skips the example and reads the real table past %s", (_case, marker, info) => {
+      expect(parseWeightLevels(fenced(marker, info)).map((level) => level.key)).toEqual([
+        "light",
+        "standard",
+        "heavy",
+      ]);
+    });
+
+    it("declares nothing when the fence is never closed", () => {
+      // The rest of the document is inside the fence, real table included — the
+      // honest reading, and the same one the repo's own reader takes.
+      expect(parseWeightLevels(fenced("```", "", false))).toEqual([]);
+    });
+
+    it("still reads a table the fence sits below", () => {
+      expect(parseWeightLevels(`${DECLARED}\n\n\`\`\`\n| a |\n\`\`\`\n`)).toHaveLength(3);
+    });
+  });
+
   it("keeps looking past a header with no divider under it", () => {
     const decoy = [
       "| Weight | Key | Model | What falls here |",

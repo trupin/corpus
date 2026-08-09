@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { docRowFixture } from "../testing/docRow.js";
 import { createCorpusTestHarness } from "../testing/harness.js";
 import {
+  childThreadWeightScope,
   chooseWeight,
   docWeightScope,
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
@@ -70,6 +71,24 @@ describe("the scopes", () => {
     expect(threadWeightScope("th_a")).not.toBe(threadWeightScope("th_b"));
     expect(threadWeightScope("x")).not.toBe(docWeightScope("x"));
     expect(GLOBAL_COMPOSE_WEIGHT_SCOPE).not.toBe(threadWeightScope("compose:global"));
+  });
+
+  /**
+   * The comment-on-a-turn box always sends `requestsAgent: false`, so its
+   * control provably governs nothing. Sharing the parent thread's scope would
+   * let that dead control seed the reply box, which does reach the agent —
+   * §11's "never as a setting that acts on you unseen" in the letter only
+   * (UI-082's PR #35 review).
+   */
+  it("keeps the comment-on-a-turn box off the parent thread's starting point", () => {
+    expect(childThreadWeightScope("th_a")).not.toBe(threadWeightScope("th_a"));
+    // Two boxes on the same parent are one surface on one conversation.
+    expect(childThreadWeightScope("th_a")).toBe(childThreadWeightScope("th_a"));
+    expect(childThreadWeightScope("th_a")).not.toBe(childThreadWeightScope("th_b"));
+
+    chooseWeight(childThreadWeightScope("th_a"), "heavy");
+    expect(weightChoice(threadWeightScope("th_a"))).toBeUndefined();
+    expect(weightChoice(childThreadWeightScope("th_a"))).toBe("heavy");
   });
 });
 

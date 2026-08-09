@@ -1,4 +1,4 @@
-import type { Doc, DocRow } from "@corpus/contract";
+import { MAX_PAGE_LIMIT, type Doc, type DocRow } from "@corpus/contract";
 import { docRowFixture } from "@corpus/kit/testing";
 
 /**
@@ -19,8 +19,17 @@ import { docRowFixture } from "@corpus/kit/testing";
 
 export const ORCHESTRATE_SKILL_ID = "doc_orchestrate";
 
-/** The query the kit issues to find the skill: `GET /api/docs?type=skill`. */
-export const SKILL_QUERY_SEARCH = "?type=skill";
+/**
+ * The query the kit issues to find the skill.
+ *
+ * It is a **page of an exhaustive scan**, not a plain `?type=skill`: the kit
+ * walks the whole `type: skill` listing rather than trusting page one, because a
+ * workspace past the default page size would otherwise answer "declares nothing"
+ * — indistinguishable from a §2.4 workspace that really does (UI-082's PR #35 review,
+ * `packages/kit/src/weight/useWeightLevels.ts`). These suites hold a handful of
+ * skills, so the scan is one page and this one search string is the whole of it.
+ */
+export const SKILL_QUERY_SEARCH = `?type=skill&limit=${MAX_PAGE_LIMIT}&offset=0&sort=created`;
 
 function table(rows: readonly (readonly [string, string])[]): string {
   return [

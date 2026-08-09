@@ -184,8 +184,11 @@ const RUNTIME_SURFACE = [
   "chooseWeight",
   "weightChoice",
   "subscribeWeightChoices",
-  "resetWeightChoices",
+  // `resetWeightChoices` is deliberately absent: it is test support, and it lives
+  // on `@corpus/kit/testing`. SPEC.md §11 describes no "forget my weights"
+  // action, so publishing one to plugin authors would invent one (UI-082's PR #35 review).
   "threadWeightScope",
+  "childThreadWeightScope",
   "docWeightScope",
   "GLOBAL_COMPOSE_WEIGHT_SCOPE",
   "useConnectionState",

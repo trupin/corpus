@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
-import { resetWeightChoices } from "@corpus/kit";
-import { createCorpusTestHarness } from "@corpus/kit/testing";
+import { createCorpusTestHarness, resetWeightChoices } from "@corpus/kit/testing";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeLayers } from "../reader/useEscapeStack.js";

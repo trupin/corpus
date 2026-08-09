@@ -1,8 +1,8 @@
 import {
+  childThreadWeightScope,
   COMPOSER_PRIMARY_KEY,
   composerReachesAgent,
   handleComposerKeyDown,
-  threadWeightScope,
   useComposerWeight,
   useCreateThread,
   WeightPicker,
@@ -49,14 +49,15 @@ export function NewChildThread({
   const [text, setText] = useState("");
   const create = useCreateThread();
   /*
-   * The conversation this comment is made **in** is the parent thread, so this
-   * box and that thread's reply box share one standing choice (SPEC.md §11's
-   * rider). It is offered here rather than withheld because §11 enumerates this
-   * surface; it is never live, because this box sends `requestsAgent: false`
-   * unconditionally — a comment on a turn is a note until the child card's own
-   * composer says otherwise. Presentation only: the choice is kept and travels.
+   * A scope of this box's own, **not** the parent thread's (UI-082's PR #35 review). The control
+   * is offered here because §11 enumerates this surface, and it is never live,
+   * because this box sends `requestsAgent: false` unconditionally — so a choice
+   * made on it provably governs nothing. Under the parent thread's scope that
+   * dead control would nevertheless seed the reply box, which does reach the
+   * agent; `childThreadWeightScope` says why that is the "acts on you unseen"
+   * case in §11's clothing. Presentation only, as before: the choice is kept.
    */
-  const weight = useComposerWeight(threadWeightScope(parentThreadId));
+  const weight = useComposerWeight(childThreadWeightScope(parentThreadId));
   const live = composerReachesAgent({ requestsAgent: false });
 
   const send = (): void => {

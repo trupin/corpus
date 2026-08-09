@@ -306,6 +306,7 @@ export {
 // enum in this package would be wrong per workspace rather than merely
 // inelegant.
 export {
+  childThreadWeightScope,
   chooseWeight,
   composerReachesAgent,
   docWeightScope,
@@ -313,7 +314,6 @@ export {
   GLOBAL_COMPOSE_WEIGHT_SCOPE,
   ORCHESTRATE_SKILL_NAME,
   parseWeightLevels,
-  resetWeightChoices,
   subscribeWeightChoices,
   threadWeightScope,
   useComposerWeight,

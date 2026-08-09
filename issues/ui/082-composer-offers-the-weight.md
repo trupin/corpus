@@ -489,6 +489,133 @@ listening on `127.0.0.1:8765`. The user's live corpus server holds that port on
 this machine, so both fail here and only here; they pass in CI, and neither
 touches anything this issue changed. Diagnosed, not chased.
 
+### PR #35 review round (2026-08-08, ui-dev on **opus**)
+
+Four findings from the pr-reviewer's pass, plus three gaps in the
+`workspace-template.test.ts` level-list guard. All fixed on the branch.
+
+**Finding 1 (MAJOR) — the declaration was located inside one sorted page.**
+
+_Reproduction, real workspace, real server._ `corpus init /tmp/corpus-w091
+--port 8792`, then 264 `type: skill` documents in `.claude/skills/` (the four
+`corpus init` installs plus 260 filler skills, projected by the watcher). Ports
+8765 and 5173 never bound.
+
+```
+GET /api/docs?type=skill                 → page.total 264, items 50,
+                                           orchestrate on page one? false
+```
+
+That is the pre-fix lookup: `useDocs({ type: "skill" })` with no `limit` and no
+`sort`, so the server applied `limit=50` and `sort=-updated`. The orchestrate
+skill was **not** in the answer, `findOrchestrateSkill` returned `undefined`,
+and every composer offered no control at all — indistinguishable from a §2.4
+workspace that declares nothing, with the table sitting in the skill in plain
+sight.
+
+_What the lookup does now, and what bounds it._ `useWeightLevels` no longer
+calls `useDocs`. It runs its own query, `["docs", "skill", "orchestrate"]`,
+whose `queryFn` (`scanForOrchestrateSkill`) walks the **whole** `type: skill`
+listing page by page until it finds the skill or has seen every row:
+
+```
+?type=skill&limit=200&offset=0&sort=created
+?type=skill&limit=200&offset=200&sort=created   (only if the first missed)
+…
+```
+
+- `limit` is the contract's `MAX_PAGE_LIMIT` (200) — the fewest requests the
+  grammar allows, not a raised cliff.
+- `sort=created` because `created` is the one sort key a document does not
+  rewrite (`title` moves on a rename, `-updated` on every edit) and the server
+  tiebreaks it `d.id ASC`, so the scan walks a total order that does not
+  reshuffle between pages.
+- **Nothing bounds it but the workspace's own skill count.** Termination has two
+  independent guards: an empty page, and rows-seen reaching the reported
+  `page.total`. In an ordinary workspace it is one request — the same one
+  request the old code issued.
+- The alternatives were checked and rejected: the query grammar has no `path`
+  filter, `folder` addresses `data/docs/` only, and the document id is not
+  derivable from the skill's name, so no single-request precise lookup exists.
+  A bigger `limit` only moves the cliff, so it was not taken.
+
+_Proof in a real browser._ The 264-skill workspace was re-timed so the
+orchestrate skill sorts onto **scan page two** (`offset=200` holds it,
+`offset=0` does not — confirmed against the running server). Headless Chromium
+against the real server's own served UI at `http://127.0.0.1:8792/` (real token
+injection, no Vite, no stubs), global composer opened with `c`:
+
+```json
+{
+  "labels": ["Small and mechanical", "Standard", "Heavy or judgment-laden"],
+  "keys": ["light", "standard", "heavy"],
+  "preselected": 0,
+  "skillScanRequests": [
+    "?type=skill&limit=200&offset=0&sort=created",
+    "?type=skill&limit=200&offset=200&sort=created"
+  ],
+  "readOrchestrate": ["/api/docs/doc_skillorchestrate"],
+  "pageErrors": []
+}
+```
+
+Exactly two scan requests, stopping at the page that held it, then one document
+read. Server stopped, workspace deleted, 8792 and 5391 verified free.
+
+_The docblock's incorrect claim is corrected._ It said the two queries were
+"ordinary TanStack queries under the keys every other surface uses". They are
+not: the autocomplete's directory query is keyed `{ type: "skill", limit:
+DIRECTORY_LIMIT }`, so this is a **second** list query, and saying otherwise is
+why nobody noticed the two paths disagreed about paging. Both still sit under
+the `["docs"]` prefix, so SSE invalidation reaches them.
+
+_Test added._ `useWeightLevels.test.tsx` now drives a paging transport: the
+skill beyond page one, the skill on page three (and no page asked for past it),
+no page holding it at all, and an empty page arriving while `total` still claims
+more.
+
+**Finding 2 (MINOR) — the parse is now fence-aware.** `parseWeightLevels` skips
+any line inside a code fence, using the contract's own `fencedCodeRanges` — the
+repo's one fence scanner, so "is this inside code" has a single grammar in
+shipped code. `readWeightLevels` in `scripts/workspace-template.ts` does the
+same with a local scanner: `scripts/` is repo tooling and imports nothing out of
+a workspace's `dist/`, so a template check is never blocked on a build. Both
+sides gained cases for a plain fence, an info string, a tilde fence, a longer
+fence, an unterminated fence (declares nothing — the honest reading), and a
+fence *below* the real table.
+
+**Finding 3 (MINOR) — the child composer has a scope of its own.**
+`childThreadWeightScope(parentThreadId)` (`child:<id>`), documented at the
+definition with why: the box always sends `requestsAgent: false`, so its control
+provably governs nothing, and under `threadWeightScope` that dead control seeded
+the parent thread's reply box, which does reach the agent. The
+`startingPoint.test.tsx` case that asserted the old sharing now asserts the
+separation in both directions.
+
+**Finding 4 (MINOR) — `resetWeightChoices` is off the plugin surface.** It is
+exported from `@corpus/kit/testing` only; `index.test.ts`'s pinned runtime
+surface records its deliberate absence, and the four `apps/ui` suites plus the
+kit's own now import it from the testing subpath.
+
+**The level-list guard, three gaps closed.** It now scans `apps/server/src` and
+`plugins/` as well; `packages/kit/src/testing` is no longer exempt (it is a
+published subpath, and the test asserts by name that it is scanned) with only
+the private `apps/ui/src/testing` exempted; and it matches **keys** as `"…"`/
+`'…'` string literals as well as labels, so a hardcoded `["light", "standard",
+"heavy"]` no longer passes. Backticks are deliberately not a delimiter — a
+markdown code span is how every docblock names a key, and `weight.ts`
+legitimately names all three while justifying a length bound. The key matcher is
+proven inside the test on the exact form it exists to catch.
+
+**Checks.** `npm run build`; `npm run typecheck` (clean); `npm run lint`
+(clean); `npx prettier --check` over `packages/kit/src`, `apps/ui/src`,
+`scripts` (clean); unit suites `packages/kit/src` + `apps/ui/src` +
+`scripts/workspace-template.test.ts` + `plugins` — **214 files, 3876 tests, all
+passing**; full Playwright run — **350 passed, 2 failed**, the same two known
+environmental failures above (`smoke.spec.ts:241`, `console.spec.ts:62`), which
+need nothing listening on 8765 and fail only on this machine. Diagnosed, not
+chased.
+
 ## Non-goals
 
 From SHARED-022:
