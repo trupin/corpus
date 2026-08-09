@@ -894,7 +894,7 @@ export interface paths {
         put?: never;
         /**
          * Restore an archived document
-         * @description The inverse flip, back to `status: open`. **The document id never changes.** Refused with `423` when the other party holds the document's edit lock.
+         * @description The inverse flip, back to `status: open`. **The document id never changes.** Unarchiving a `type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying every file under it — including a **nested skill** the request never named, whose id is stamped into it so the move does not change its identity, and whose `status` is reconciled to the enabled root it now sits in (SERVER-078). Refused with `423` when the other party holds the edit lock on the named document **or on any document the folder move carries**, since the act writes those files too; the refusal names which document's lock is held.
          */
         post: {
             parameters: {
@@ -4475,14 +4475,14 @@ export interface components {
              */
             id: string;
             /**
-             * @description Which class of refusal this is. `locked`: the other party holds the document's edit lock, so it is refused exactly as a single edit to it would be (SPEC.md §7) — `lock` names the holder, and this is the reason a retry after clearing the lock fixes. `not-found`: no document has that id; the other documents are not the caller's mistake, so it is an entry here rather than a `404` for the whole request. `not-applicable`: the act does not apply to this document (resolving something that is not a thread) — §11 offers an action only when it applies to every selected item, so this means the corpus changed between selecting and acting. `invalid`: the write would leave the document failing §14 validation, refused with its reason. `write-failed`: the file could not be written; nothing about this document reached the commit.
+             * @description Which class of refusal this is. `locked`: an edit lock stands in the way, so it is refused exactly as a single edit would be (SPEC.md §7) — **the lock is not always on this document**: an act that writes another file in the same commit is refused by *that* document's lock (§6's anchor cascade reaching a deleted thread's parent, §7's skill folder move carrying a nested skill). `lock` names the holder **and the document it is held on**, which is the one to clear; this is the reason a retry after clearing it fixes. `not-found`: no document has that id; the other documents are not the caller's mistake, so it is an entry here rather than a `404` for the whole request. `not-applicable`: the act does not apply to this document (resolving something that is not a thread) — §11 offers an action only when it applies to every selected item, so this means the corpus changed between selecting and acting. `invalid`: the write would leave the document failing §14 validation, refused with its reason. `write-failed`: the file could not be written; nothing about this document reached the commit.
              * @example locked
              * @enum {string}
              */
             reason: "locked" | "not-found" | "not-applicable" | "invalid" | "write-failed";
             /** @description Human-readable specifics for this document — the holder and when the lease expires, the validator's own finding, the write error. Rendered verbatim beside the document's title; never parsed. Always present: §11 requires every entry in this part to carry its reason, and a class alone does not tell a person what to do next. */
             message: string;
-            /** @description The lock that refused this document, non-null **exactly when** `reason` is `locked` (SPEC.md §7 — a refusal identifies the holder). Null on every other reason. */
+            /** @description The lock that refused this document, non-null **exactly when** `reason` is `locked` (SPEC.md §7 — a refusal identifies the holder). Read its `docId`: the lock is not always held on the refused document. An act that writes another file in the same commit is refused by that file's lock, so `docId` is the document to clear and the refused id is merely the one the caller asked about. Null on every other reason. */
             lock: components["schemas"]["Lock"] | null;
         };
         Lock: {

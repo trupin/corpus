@@ -62,6 +62,13 @@ about, which the same principle argues against for the same reason.
       the act, not a fourth part of it
 - [ ] The single-document archive route reports it too, not only the bulk route —
       the behaviour lives in the single-document path
+- [ ] **The report covers the folder move itself, not only the frontmatter
+      writes.** Raised by the pr-reviewer on PR #38, and it is the larger half:
+      moving a skill folder *enables or disables a nested skill* under §7 — a
+      consequence far bigger than a frontmatter key, and unreported since long
+      before the writes existed. An issue closed having reported two bytes while
+      the §7 enablement change beside them stays silent has fixed the smaller
+      third of one problem
 - [ ] Silent when nothing was reconciled. A warning on every skill archive is
       noise, and noise is how a real one gets ignored
 

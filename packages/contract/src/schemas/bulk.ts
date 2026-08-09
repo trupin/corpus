@@ -252,9 +252,12 @@ export const BULK_REFUSAL_REASONS = [
 
 export const BulkRefusalReasonSchema = z.enum(BULK_REFUSAL_REASONS).openapi({
   description:
-    "Which class of refusal this is. `locked`: the other party holds the document's edit lock, " +
-    "so it is refused exactly as a single edit to it would be (SPEC.md §7) — `lock` names the " +
-    "holder, and this is the reason a retry after clearing the lock fixes. `not-found`: no " +
+    "Which class of refusal this is. `locked`: an edit lock stands in the way, so it is refused " +
+    "exactly as a single edit would be (SPEC.md §7) — **the lock is not always on this " +
+    "document**: an act that writes another file in the same commit is refused by *that* " +
+    "document's lock (§6's anchor cascade reaching a deleted thread's parent, §7's skill folder " +
+    "move carrying a nested skill). `lock` names the holder **and the document it is held on**, " +
+    "which is the one to clear; this is the reason a retry after clearing it fixes. `not-found`: no " +
     "document has that id; the other documents are not the caller's mistake, so it is an entry " +
     "here rather than a `404` for the whole request. `not-applicable`: the act does not apply to " +
     "this document (resolving something that is not a thread) — §11 offers an action only when " +
@@ -305,7 +308,10 @@ export const BulkActionRefusalSchema = z
       .union([LockSchema, z.null()])
       .describe(
         "The lock that refused this document, non-null **exactly when** `reason` is `locked` " +
-          "(SPEC.md §7 — a refusal identifies the holder). Null on every other reason.",
+          "(SPEC.md §7 — a refusal identifies the holder). Read its `docId`: the lock is not " +
+          "always held on the refused document. An act that writes another file in the same " +
+          "commit is refused by that file's lock, so `docId` is the document to clear and the " +
+          "refused id is merely the one the caller asked about. Null on every other reason.",
       ),
   })
   .refine(({ reason, lock }) => (reason === "locked") === (lock !== null), {
