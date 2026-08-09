@@ -19,7 +19,7 @@ opus
 ## Dependencies
 
 - Depends on: SHARED-031 (signed)
-- Related: PLUGINS-014 / UI-092 — a derived-status type must be excluded
+- Related: PLUGINS-016 / UI-092 — a derived-status type must be excluded
 
 ## Spec References
 
@@ -58,7 +58,7 @@ hold.
       query silently filters it out; if one does, that is a separate finding to
       file, not something to fix by hiding the action
 - [ ] It is **not** offered on a document whose type derives its status
-      (PLUGINS-014) — there is nothing there for anyone to set
+      (PLUGINS-016) — there is nothing there for anyone to set
 - [ ] It is not offered on an archived document (the write path refuses leaving
       `archived` via `PUT`; offering it would promise a refusal)
 - [ ] Threads keep their existing behaviour exactly, including whatever
@@ -81,9 +81,9 @@ state, Attention, SSE invalidation keys) before assuming the two are
 interchangeable. The menu picks the right mutation for the subject; it does not
 unify them.
 
-The derived-status exclusion needs PLUGINS-014's declaration. If UI-094 lands
+The derived-status exclusion needs PLUGINS-016's declaration. If UI-094 lands
 first, gate on the doc type being `todo` as a **named temporary** with a comment
-pointing at PLUGINS-014 — do not invent a second mechanism that then has to be
+pointing at PLUGINS-016 — do not invent a second mechanism that then has to be
 removed.
 
 ### Edge Cases
@@ -125,7 +125,7 @@ subject dispatches, not just that the item renders.
 5. Right-click a thread row — confirm unchanged behaviour end to end
 6. Right-click an archived document — confirm no Resolve
 7. Right-click a todo document — confirm no Resolve (or the temporary gate, with
-   its comment, if PLUGINS-014 has not landed)
+   its comment, if PLUGINS-016 has not landed)
 
 ## E2E Verification Log
 

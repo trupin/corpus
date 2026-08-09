@@ -18,13 +18,13 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-029 (signed), SHARED-030 (signed), PLUGINS-014, SERVER-077,
+- Depends on: SHARED-036 (signed), SHARED-030 (signed), PLUGINS-016, SERVER-077,
   UI-093
 - Blocks: —
 
 ## Spec References
 
-- SPEC.md §12 — as amended by SHARED-029: "the status control shows the derived
+- SPEC.md §12 — as amended by SHARED-036: "the status control shows the derived
   value and says it comes from the items"
 - SPEC.md §11 — as amended by SHARED-030: a derived field "is editable by
   nobody — that is not an edit mode, it is a field that was never the person's
@@ -37,7 +37,7 @@ control must not be live — its value comes from the items, and offering a
 dropdown would offer a change the write path would immediately undo. This issue
 renders that case: the value, plus a plain statement of where it comes from.
 
-The scope is narrow deliberately. It is the visible half of SHARED-029, and it
+The scope is narrow deliberately. It is the visible half of SHARED-036, and it
 is worth its own issue because it is the one place where "always editable" and
 "derived" meet, and getting it wrong reads as either a bug or a lie.
 
@@ -67,7 +67,7 @@ is worth its own issue because it is the one place where "always editable" and
 
 ### Files to Create/Modify
 
-- `apps/ui/src/reader/FrontmatterForm.tsx` — read the declaration PLUGINS-014
+- `apps/ui/src/reader/FrontmatterForm.tsx` — read the declaration PLUGINS-016
   adds and branch the status control on it
 - `apps/ui/src/reader/FrontmatterForm.test.tsx`
 - wherever the row-level status chip is rendered — it must read the same source,
@@ -109,7 +109,7 @@ non-interactive cases.
 1. Start the app; open a todo document with every item checked
 2. Expected: status reads `resolved`, derived, not editable
 3. Actual (today): status reads `open` in an editable dropdown behind an `edit`
-   chip — the screenshot that opened SHARED-029
+   chip — the screenshot that opened SHARED-036
 
 ### Verification Steps
 

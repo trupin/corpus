@@ -18,19 +18,19 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-029 (signed), PLUGINS-014
+- Depends on: SHARED-036 (signed), PLUGINS-016
 - Blocks: UI-092
 
 ## Spec References
 
-- SPEC.md §12 — as amended by SHARED-029, including "the file never disagrees
+- SPEC.md §12 — as amended by SHARED-036, including "the file never disagrees
   with what is shown"
 - SPEC.md §9.1 — `documents` projection row carries `status`
 - SPEC.md §14 — validation and `db doctor`
 
 ## Summary
 
-PLUGINS-014 makes a derived status computable. This issue makes it the answer
+PLUGINS-016 makes a derived status computable. This issue makes it the answer
 everywhere the system reports a status: the projection row, `GET
 /api/docs?status=`, every saved view and column built on a status filter, and
 the document's own frontmatter on disk.

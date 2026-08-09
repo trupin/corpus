@@ -1,4 +1,4 @@
-# [PLUGINS-014] A plugin doc type can derive its own status
+# [PLUGINS-016] A plugin doc type can derive its own status
 
 ## Domain
 
@@ -18,18 +18,18 @@ fable
 
 ## Dependencies
 
-- Depends on: SHARED-029 (rider must be signed first)
+- Depends on: SHARED-036 (rider must be signed first)
 - Blocks: SERVER-077, UI-092
 
 ## Spec References
 
-- SPEC.md §12 — the `todo` doc type, as amended by SHARED-029
+- SPEC.md §12 — the `todo` doc type, as amended by SHARED-036
 - SPEC.md §10 — plugin extension points
 - SPEC.md §5 line 157 — `status` meaning per type
 
 ## Summary
 
-SHARED-029 makes a todo document's status a reading of its items. Nothing in the
+SHARED-036 makes a todo document's status a reading of its items. Nothing in the
 plugin system can express that today: `PluginDocType`
 (`packages/kit/src/plugin/types.ts:139`) offers `ListItem`, `DocPanel` and
 `validate` — all client-side — and `types.yaml`, the server- and CLI-readable
@@ -77,7 +77,7 @@ rather than picking to keep moving.
 - [ ] For `todo`: at least one item and no open items derives `resolved`;
       anything else derives `open`; an empty list derives `open`
 - [ ] A document whose stored status is `archived` derives nothing — `archived`
-      stands, per SHARED-029
+      stands, per SHARED-036
 - [ ] A document whose items cannot be read (the legacy `extra.items` state
       `LegacyItemsNotice` reports) derives **nothing** and falls back to the
       stored value — the same rule the DocPanel already applies to its counts
@@ -145,4 +145,4 @@ observed output.]_
 
 - [ ] `/audit` run (cross-domain: kit + plugins + server contract)
 - [ ] `/evaluate` passes
-- [ ] Committed with `[PLUGINS-014]` prefix
+- [ ] Committed with `[PLUGINS-016]` prefix

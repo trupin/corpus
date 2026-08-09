@@ -67,7 +67,7 @@ due)." with:
 
 ## Acceptance Criteria
 
-- [ ] Read aloud to the user **on its own**, separately from SHARED-029
+- [ ] Read aloud to the user **on its own**, separately from SHARED-036
 - [ ] User signs off, or amends
 - [ ] Applied to SPEC.md §11 with the `_(Rider signed YYYY-MM-DD.)_` marker
 - [ ] Contradiction sweep recorded here, specifically against:

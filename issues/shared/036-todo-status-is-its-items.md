@@ -1,4 +1,4 @@
-# [SHARED-029] A todo list says `open` after its last item is checked
+# [SHARED-036] A todo list says `open` after its last item is checked
 
 ## Domain
 
@@ -22,7 +22,7 @@ fable
   type. This rider must be re-based on it before either is applied: with
   SHARED-031 signed, a completed todo list is not a special rule but the general
   one (`resolved` = no further action required) *computed* instead of set.
-- Blocks: PLUGINS-014, SERVER-077, UI-092
+- Blocks: PLUGINS-016, SERVER-077, UI-092
 
 ## Spec References
 
@@ -97,12 +97,12 @@ complete work but never to undo it. Replacing the **Column** bullet:
       always-editable rule) and §14 (`doc check`) for contradictions before
       applying — specifically that `doc check` must not report a todo document
       whose stored status is stale as invalid
-- [ ] PLAN.md rows for PLUGINS-014 / SERVER-077 / UI-092 reference the signed
+- [ ] PLAN.md rows for PLUGINS-016 / SERVER-077 / UI-092 reference the signed
       date
 
 ## Technical Design
 
-None — this issue produces spec text. Implementation is PLUGINS-014 (the
+None — this issue produces spec text. Implementation is PLUGINS-016 (the
 derivation and where it lives), SERVER-077 (projection and write-back) and
 UI-092 (the control renders locked).
 
@@ -118,7 +118,7 @@ UI-092 (the control renders locked).
   **no stats**, because a number over a broken list is a quiet claim about a
   broken state. Status must follow the same rule: derive nothing, fall back to
   the stored value. The rider text does not currently say this — **add it or
-  decide it belongs in PLUGINS-014**.
+  decide it belongs in PLUGINS-016**.
 - **A todo document with items that are not the plugin's** — task-list lines
   inside a fenced code block, or in a quoted block. Whatever `readItems` already
   does is the answer; the rider must not imply a second parse.
@@ -142,4 +142,4 @@ _N/A — spec rider._
 - [ ] Signed by user
 - [ ] Applied to SPEC.md with signature marker
 - [ ] Contradiction sweep across §5, §11, §14 done and recorded here
-- [ ] Committed with `[SHARED-029]` prefix
+- [ ] Committed with `[SHARED-036]` prefix

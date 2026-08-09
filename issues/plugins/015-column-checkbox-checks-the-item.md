@@ -18,7 +18,7 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-029 part 2 (the column showing completed items is a §12
+- Depends on: SHARED-036 part 2 (the column showing completed items is a §12
   change, and it is what makes unchecking reachable at all)
 - Blocks: —
 - Related: SERVER-077 (checking the last item from here must resolve its
@@ -58,7 +58,7 @@ including on the box, opens.
       filters `item.done`) — and the removal is driven by the same invalidation
       any other item write triggers, not by local optimism that could disagree
       with the server
-- [ ] **Completed items are reachable, so unchecking is too.** Per SHARED-029
+- [ ] **Completed items are reachable, so unchecking is too.** Per SHARED-036
       part 2, the column shows open items by default and offers a control that
       also shows completed ones. Unchecking from that view works exactly as
       checking does. Shipping only the checking half is shipping half the issue.

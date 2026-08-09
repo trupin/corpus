@@ -19,7 +19,7 @@ fable
 ## Dependencies
 
 - Depends on: —
-- Blocks: UI-094, SHARED-029 (which becomes an instance of this rule)
+- Blocks: UI-094, SHARED-036 (which becomes an instance of this rule)
 
 ## Spec References
 
@@ -113,7 +113,7 @@ mismatch exists. Replacement:
 
 - [ ] Both parts read aloud to the user **together but as two quoted blocks** —
       they are one decision expressed in two places, and part 2 is meaningless
-      without part 1. Still separate from SHARED-029 / SHARED-030.
+      without part 1. Still separate from SHARED-036 / SHARED-030.
 - [ ] User signs off, or amends
 - [ ] Applied to SPEC.md §5 and §11 with `_(Rider signed YYYY-MM-DD.)_` markers;
       the 2026-08-05 rider's own signature line is preserved and annotated as
@@ -137,7 +137,7 @@ mismatch exists. Replacement:
         leaving `archived` via `PUT`, so the dedicated unarchive path is the one
         to check; if it currently restores `open`, that is a bug this rider
         creates work for — file it against server
-- [ ] SHARED-029's rider is re-based on this one before either is applied
+- [ ] SHARED-036's rider is re-based on this one before either is applied
 
 ## Technical Design
 
@@ -175,5 +175,5 @@ _N/A — spec rider._
 - [ ] Signed by user
 - [ ] Applied to SPEC.md §5 and §11 with signature markers
 - [ ] Contradiction sweep across §6, §9, §9.1, §11, §14 recorded here
-- [ ] SHARED-029 re-based on this rider
+- [ ] SHARED-036 re-based on this rider
 - [ ] Committed with `[SHARED-031]` prefix
