@@ -18,7 +18,7 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-031 (signed)
+- Depends on: SHARED-031 (rider must be signed first)
 - Related: PLUGINS-016 / UI-092 — a derived-status type must be excluded
 
 ## Spec References

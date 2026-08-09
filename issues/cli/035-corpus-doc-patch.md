@@ -18,13 +18,14 @@ opus
 
 ## Dependencies
 
-- Depends on: CONTRACT-046, SERVER-079
+- Depends on: SHARED-037 (rider must be signed first), CONTRACT-046, SERVER-079
 - Blocks: — (an agent-runtime follow-up teaching the skill to prefer patch over
   edit should be filed once this ships)
 
 ## Spec References
 
-- SPEC.md §9.2 — the patch operation
+- SPEC.md §9.2 — the patch operation, as added by SHARED-037 (rider pending
+  sign-off)
 - SPEC.md §2.3 — the declarative command registry, generated `docs/cli.md`
 - The orchestrate skill — the agent's edit loop this verb exists to shorten
 

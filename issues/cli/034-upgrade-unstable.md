@@ -18,16 +18,17 @@ opus
 
 ## Dependencies
 
-- Depends on: INFRA-026 (the artifact naming scheme this command parses)
+- Depends on: SHARED-038 (rider must be signed first), INFRA-026 (the artifact
+  naming scheme this command parses)
 - Blocks: —
-- Related: SHARED-033 (the §2.4 rider, if the sign-off decides one is needed)
+- Related: INFRA-026 records what the Package workflow does for fork PRs
 
 ## Spec References
 
-- SPEC.md §2.4 line 84 — "Upgrading": `corpus upgrade --check`, `corpus upgrade`,
-  the Releases API, checksum verification, the reinstall path, the conditional
-  restart
-- SPEC.md §9.2 line 401 — `POST /api/upgrade`
+- SPEC.md §2.4 line 84 — "Upgrading", as amended by SHARED-038 (rider pending
+  sign-off): the stable path's guarantees, and the unstable path's stated
+  deviations from them
+- SPEC.md §9.2 line 403 — `POST /api/upgrade`
 
 ## Summary
 

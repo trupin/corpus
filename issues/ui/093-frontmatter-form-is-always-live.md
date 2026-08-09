@@ -23,7 +23,7 @@ opus
 
 ## Spec References
 
-- SPEC.md §11 line 465 — as amended by SHARED-030
+- SPEC.md §11 line 467 — as amended by SHARED-030
 - SPEC.md §4 — autosave, idle-squashed commits
 - SPEC.md §7 — locks freeze every control
 

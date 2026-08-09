@@ -18,13 +18,13 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-033 part 2 (signed), CONTRACT-045
+- Depends on: SHARED-033 part 2 (rider must be signed first), CONTRACT-045
 - Blocks: UI-098
 
 ## Spec References
 
 - SPEC.md §7 — the queue, and the long-poll idle endpoint
-- SPEC.md §11 line 467 — the agent pill, as amended by SHARED-033
+- SPEC.md §11 line 469 — the agent pill, as amended by SHARED-033
 - SPEC.md §9.2 — queue status
 
 ## Summary

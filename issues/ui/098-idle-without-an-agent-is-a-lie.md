@@ -18,12 +18,12 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-033 part 2 (signed), CONTRACT-045, SERVER-078
+- Depends on: SHARED-033 part 2 (rider must be signed first), CONTRACT-045, SERVER-078
 - Blocks: —
 
 ## Spec References
 
-- SPEC.md §11 line 467 — the console strip's agent pill, as amended by SHARED-033
+- SPEC.md §11 line 469 — the console strip's agent pill, as amended by SHARED-033
 - SPEC.md §11 — "All agent/system status lives in the console strip"
 
 ## Summary

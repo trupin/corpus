@@ -18,7 +18,7 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-036 (signed), SHARED-030 (signed), PLUGINS-016, SERVER-077,
+- Depends on: SHARED-036 (rider must be signed first), SHARED-030 (rider must be signed first), PLUGINS-016, SERVER-077,
   UI-093
 - Blocks: —
 

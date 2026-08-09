@@ -18,7 +18,7 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-033 part 1 (signed)
+- Depends on: SHARED-033 part 1 (rider must be signed first)
 - Blocks: —
 
 ## Spec References

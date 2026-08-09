@@ -18,12 +18,13 @@ opus
 
 ## Dependencies
 
-- Depends on: CONTRACT-046
+- Depends on: SHARED-037 (rider must be signed first), CONTRACT-046
 - Blocks: CLI-035
 
 ## Spec References
 
-- SPEC.md §9.2 — the patch operation, as defined by CONTRACT-046
+- SPEC.md §9.2 — the patch operation, as added by SHARED-037 (rider pending
+  sign-off; §9.2 currently documents whole-body `PUT` only)
 - SPEC.md §6 — anchors reconciled on every write
 - SPEC.md §4 — git auto-commit, author attribution, squashing
 - SPEC.md §14 — every server mutation validates before writing

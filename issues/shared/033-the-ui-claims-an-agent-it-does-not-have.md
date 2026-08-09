@@ -25,7 +25,7 @@ fable
 
 - SPEC.md §8 line 340 — "The UI shows an **honest**, time-aware pending indicator
   while an agent response is outstanding … **No fake progress**"
-- SPEC.md §11 line 467 — "a one-line strip (agent-status pill with
+- SPEC.md §11 line 469 — "a one-line strip (agent-status pill with
   **working/idle/halted** dot · queue depth · …)"
 - SPEC.md §7 — the queue's long-poll idle endpoint
 
@@ -81,7 +81,7 @@ Amending §8's pending-indicator sentence (line 340):
 
 ## Drafted rider text — part 2 of 2
 
-Amending §11's console strip (line 467), replacing "agent-status pill with
+Amending §11's console strip (line 469), replacing "agent-status pill with
 working/idle/halted dot":
 
 > agent-status pill with a **working / idle / disconnected / halted** dot. The

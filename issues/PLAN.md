@@ -404,7 +404,7 @@ belongs to the same fix wave.
 | SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | done | P1 | SHARED-019 |
 | SHARED-017 | Multi-select + bulk actions (SIGNED, applied) | done | P2 | — |
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
-| UI-083 | Selecting rows and acting on the selection (SHARED-017) | todo | P2 | SHARED-017, CONTRACT-037 |
+| UI-083 | Selecting rows and acting on the selection — held: rewrite against SHARED-032 (Phase 14) | blocked | P2 | SHARED-032, CONTRACT-037 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | todo | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |
@@ -475,7 +475,8 @@ belongs to the same fix wave.
 
 ## Phase 14 — Dogfood wave 4: status semantics, no edit mode, bulk staging (2026-08-08)
 
-Seven live reports, filed in a worktree while Phase 23 implementation ran. Four
+Seven live reports, filed in a worktree while the weight-travels phase (PRs
+#30–35) ran concurrently. Four
 riders lead, and **nothing below them starts before its rider is signed** —
 SHARED-031 in particular re-bases SHARED-036, so the two are read in that order.
 
@@ -499,11 +500,11 @@ cheapest moment for that to happen.
 | PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
 | SERVER-077 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-036, PLUGINS-016 |
 | UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-077, UI-093 |
-| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | todo | P1 | — |
+| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | todo | P1 | SHARED-036 |
 | UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
+| SHARED-038 | `--unstable` reaches §2.4 before it reaches the code (DRAFTED — sign-off) | todo | P1 | — |
 | INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
-| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | INFRA-026 |
-| UI-083 | Selecting rows and acting on the selection — **rewrite against SHARED-032** | todo | P2 | SHARED-032, CONTRACT-037 |
+| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
 | UI-095 | Clicking a comment does not take you to it, opened | todo | P1 | — |
 | UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
 | SHARED-033 | The UI claims an agent that is not working, and one that is not there (DRAFTED — sign-off) | todo | P1 | — |
@@ -515,7 +516,8 @@ cheapest moment for that to happen.
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc (DRAFTED — sign-off) | todo | P1 | — |
 | SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | SHARED-035 |
-| CONTRACT-046 | The only body edit is a whole-body replacement | todo | P1 | — |
-| SERVER-079 | Apply an anchored string patch through the ordinary write path | todo | P1 | CONTRACT-046 |
-| CLI-035 | `corpus doc patch` — edit a line without shipping the document | todo | P1 | CONTRACT-046, SERVER-079 |
+| SHARED-037 | The patch operation reaches §9.2 before it reaches the code (DRAFTED — sign-off) | todo | P1 | — |
+| CONTRACT-046 | The only body edit is a whole-body replacement | todo | P1 | SHARED-037 |
+| SERVER-079 | Apply an anchored string patch through the ordinary write path | todo | P1 | SHARED-037, CONTRACT-046 |
+| CLI-035 | `corpus doc patch` — edit a line without shipping the document | todo | P1 | SHARED-037, CONTRACT-046, SERVER-079 |
 | UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |

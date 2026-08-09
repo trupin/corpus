@@ -18,12 +18,12 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-033 part 2 (signed)
+- Depends on: SHARED-033 part 2 (rider must be signed first)
 - Blocks: SERVER-078, UI-098
 
 ## Spec References
 
-- SPEC.md §11 line 467 — the console strip's agent pill, as amended by SHARED-033
+- SPEC.md §11 line 469 — the console strip's agent pill, as amended by SHARED-033
 - SPEC.md §7 — the queue's long-poll idle endpoint
 - SPEC.md §9.2 — the queue status resource
 

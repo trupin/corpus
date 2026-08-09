@@ -18,7 +18,7 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-034 (signed, **including the agreed control set**)
+- Depends on: SHARED-034 (rider must be signed first, **including the agreed control set**)
 - Blocks: —
 - Related: UI-100 (the same header, reported in the same session)
 
@@ -36,11 +36,12 @@ Focus mode gains an always-present formatting toolbar above the document, acting
 on the selection or the cursor's block. The selection toolbar is unchanged — it
 keeps **Comment**, which is not formatting.
 
-**The control set is decided in SHARED-034's sign-off and recorded there.** Do not
-infer it from the Google Docs reference screenshot: that toolbar carries font
-family, size, colour, highlight, alignment, line spacing and indent, none of
-which survive a round-trip to clean markdown, and SHARED-034 rules them out
-explicitly. Build the agreed list and nothing beyond it.
+**The control set is decided in SHARED-034's sign-off and recorded there.** Do
+not infer it from the Google Docs reference screenshot: SHARED-034's bound (as
+extended by SHARED-035) admits underline, highlight, named-role colour, block
+alignment and indent — but rules out per-range font family and size, arbitrary
+hex colour, and every app-level control (zoom, print, spellcheck). Build the
+agreed list and nothing beyond it.
 
 ## Acceptance Criteria
 

@@ -23,7 +23,7 @@ fable
 
 ## Spec References
 
-- SPEC.md §11 line 465 — "Document view — always editable, Google-Docs-like",
+- SPEC.md §11 line 467 — "Document view — always editable, Google-Docs-like",
   "There is no edit mode", "**Autosave, no save button**", and the clause this
   rider amends: "Frontmatter editable as a small form (title, tags, status, due)"
 - SPEC.md §4 — autosave and commit granularity (idle squashing)

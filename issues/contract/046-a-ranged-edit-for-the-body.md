@@ -18,13 +18,13 @@ opus
 
 ## Dependencies
 
-- Depends on: —
+- Depends on: SHARED-037 (rider must be signed first)
 - Blocks: SERVER-079, CLI-035
 
 ## Spec References
 
-- SPEC.md §9.2 — `PUT /api/docs/:id` (body replacement), the write-path
-  contract
+- SPEC.md §9.2 — as amended by SHARED-037 (rider pending sign-off); today it
+  documents `PUT /api/docs/:id` whole-body replacement only
 - SPEC.md §6 — anchors reconciled on every write
 - SPEC.md §4 — autosave squashing, author attribution
 
