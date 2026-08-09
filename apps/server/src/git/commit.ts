@@ -20,6 +20,12 @@
 //   previous auto-commit. Every condition under which that would rewrite
 //   something the server did not itself just create is checked first, and the
 //   fallback — a fresh commit — is always safe.
+// - **One action, one commit** (§4's other half). A mutation that names several
+//   documents — a bulk archive, tag or move — passes them as `docIds`, and that
+//   is the whole signal: such a commit neither folds into a preceding editing
+//   session nor opens one for a later save to fold into. Nothing about it is
+//   inferred from document plus actor, which by construction could only ever
+//   produce one commit per document.
 // - **No attempt ever leaves the index dirty.** The index is a shared file: a
 //   change staged and then not committed is swept up by the *next* commit made
 //   by anything at all, the operator's own included. Every outcome that is not
@@ -71,8 +77,33 @@ export type AnchorChange = {
 };
 
 export interface CommitRequest {
-  /** The document the commit is about; becomes the `Corpus-Doc` trailer and half the squash key. */
+  /**
+   * The document the commit is about; becomes the `Corpus-Doc` trailer and half
+   * the squash key. When {@link CommitRequest.docIds} is given it is the
+   * *representative* of the set rather than the whole subject — see there.
+   */
   readonly docId: string;
+  /**
+   * **Every document one act changed** (SPEC.md §4's "One action, one commit").
+   * Present exactly when this commit is an *act over a named set* — a bulk
+   * archive, tag, move — and absent for every ordinary save.
+   *
+   * Its presence is how the committer is **told** that these writes are one act
+   * rather than being left to infer it from document plus actor, and it decides
+   * §4's squashing in both directions:
+   *
+   * - the commit **never folds into** whatever editing session preceded it
+   *   ({@link amendTarget} refuses immediately), and
+   * - it **opens no session**, so no later save folds into it.
+   *
+   * That is a derivation rather than a coincidence: §4's squashing is defined
+   * over repeated saves of *one* document, and an act over a set is not a save
+   * of a document. It holds for a set of one, too — the caller said "an act",
+   * not "a save" — which is why the signal is the field's presence and not its
+   * length. Each id becomes its own `Corpus-Doc` trailer, so `git log` names
+   * every document the act changed even where `--name-only` shows paths.
+   */
+  readonly docIds?: readonly string[] | undefined;
   readonly actor: Actor;
   readonly subject: string;
   /** Workspace-relative paths (files or directories) this mutation touched. */
@@ -161,13 +192,15 @@ const trailerValue = (body: string, name: string): string | null => {
 };
 
 const buildTrailers = (
-  docId: string,
+  docIds: readonly string[],
   actor: Actor,
   remapped: ReadonlySet<string>,
   orphaned: ReadonlySet<string>,
   extra: readonly string[] = [],
 ): string => {
-  const lines = [`${TRAILER_DOC}: ${docId}`, `${TRAILER_ACTOR}: ${actor}`];
+  // One `Corpus-Doc` line per document: git trailers repeat, and a bulk act's
+  // subject cannot name a thousand documents on one line.
+  const lines = [...docIds.map((id) => `${TRAILER_DOC}: ${id}`), `${TRAILER_ACTOR}: ${actor}`];
   // Omitted entirely when nothing moved: a trailer reading `remapped=0
   // orphaned=0` on every commit would train the reader to ignore it.
   if (remapped.size > 0 || orphaned.size > 0) {
@@ -270,6 +303,9 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
     request: CommitRequest,
     head: string,
   ): Promise<{ authorDate: string } | null> => {
+    // An act over a named set is not a save of a document, so §4's squashing
+    // does not reach it in either direction (see `CommitRequest.docIds`).
+    if (request.docIds !== undefined) return null;
     if (request.squash === false || request.paths.length === 0) return null;
     const record = session;
     if (record === null) return null;
@@ -449,7 +485,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       candidate !== null && !allowEmpty && (await amendWouldEmptyHead(paths)) ? null : candidate;
     const anchors = mergeAnchors(target === null ? null : session, request.anchors);
     const message = buildTrailers(
-      request.docId,
+      request.docIds ?? [request.docId],
       request.actor,
       anchors.remapped,
       anchors.orphaned,
@@ -493,14 +529,19 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
       await unstage(paths, head);
       return { kind: "skipped", reason: "commit produced no HEAD" };
     }
-    session = {
-      docId: request.docId,
-      actor: request.actor,
-      sha,
-      at: now(),
-      remapped: anchors.remapped,
-      orphaned: anchors.orphaned,
-    };
+    // An act opens no session: §4 requires that no later save fold into it, and
+    // the only mechanism a later save has for folding is this record.
+    session =
+      request.docIds !== undefined
+        ? null
+        : {
+            docId: request.docId,
+            actor: request.actor,
+            sha,
+            at: now(),
+            remapped: anchors.remapped,
+            orphaned: anchors.orphaned,
+          };
     return target === null ? { kind: "committed", sha } : { kind: "amended", sha };
   };
 

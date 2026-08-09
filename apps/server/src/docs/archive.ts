@@ -41,6 +41,18 @@ export const SKILLS_ARCHIVED_ROOT = rootPath("skills-archived");
 
 export type ArchiveOutcome = { readonly doc: Doc; readonly result: MutationResult };
 
+/** What {@link planSetArchived} decided: the write, and what to validate first. */
+export type ArchivePlan = {
+  readonly operations: readonly FileOperation[];
+  readonly stage: readonly string[];
+  readonly project: readonly string[];
+  readonly unproject: readonly string[];
+  /** Where the document's file ends up — under the archived root, for a skill. */
+  readonly path: string;
+  /** The bytes to validate and write, or `null` when only the folder moved. */
+  readonly text: string | null;
+};
+
 /** Every `SKILL.md` under `dir`, workspace-relative — a folder may nest skills. */
 export function skillDocumentsUnder(workspaceRoot: string, dir: string): string[] {
   const found: string[] = [];
@@ -88,6 +100,80 @@ function planFolderMove(loaded: LoadedDocument, archived: boolean): FolderMove |
   };
 }
 
+/**
+ * Everything archiving one document does to the filesystem, decided but not yet
+ * done — `null` when the document is already on the requested side, which is a
+ * no-op and never an error (§7).
+ *
+ * Extracted so the bulk act (SPEC.md §4, SERVER-077) archives through the *same*
+ * decision as `POST /api/docs/{id}/archive`, skill folder move included. A bulk
+ * path that flipped `status` on its own would report success while leaving a
+ * skill enabled — §7's whole point being that what disables a skill is where its
+ * folder lives.
+ *
+ * Validation is deliberately left to the caller: it needs `path` and `text`,
+ * which are exactly what this returns, and the two callers report a §14 refusal
+ * differently (a `400` for one document, a `refused` entry for one of many).
+ */
+export function planSetArchived(
+  workspace: DocsWorkspace,
+  loaded: LoadedDocument,
+  archived: boolean,
+): ArchivePlan | null {
+  const id = loaded.row.id;
+  const move = loaded.row.type === "skill" ? planFolderMove(loaded, archived) : null;
+
+  if (move !== null && existsInWorkspace(workspace.workspaceRoot, move.to)) {
+    // Merging two skill folders would silently overwrite files; refusing
+    // leaves both exactly as they are (sprint-005 Open Conflict 4: 400, since
+    // this route declares no 409).
+    validationError("the archive destination already exists", [
+      { path: "id", message: `${move.to} already exists; move or remove it first` },
+    ]);
+  }
+
+  const patch: Record<string, unknown> = { status: archived ? "archived" : "open" };
+  // A hand-written `SKILL.md` carries no `id`, so the projection derives one
+  // from its path (§7) — which the folder move would change, silently turning
+  // the document into a different document. Stamping the current id into the
+  // file is what makes identity survive the move, and it is a write, so it is
+  // this path's business and never the projection's.
+  if (typeof loaded.parsed.data["id"] !== "string") patch["id"] = id;
+
+  const nextParsed = setFrontmatterFields(loaded.parsed, patch);
+  const stamped =
+    nextParsed === loaded.parsed
+      ? nextParsed
+      : setFrontmatterFields(nextParsed, { updated: formatInstant(workspace.now()) });
+  const text = serializeDocument(stamped);
+  const contentChanged = text !== loaded.text;
+
+  // Already in the requested state — archiving twice is a no-op, never an
+  // error and never a deletion (§7).
+  if (!contentChanged && move === null) return null;
+
+  const path = move?.skillPath ?? loaded.path;
+  const movedDocuments =
+    move === null ? [] : skillDocumentsUnder(workspace.workspaceRoot, move.from);
+  const operations: FileOperation[] = [];
+  if (move !== null) {
+    operations.push({ kind: "renameDir", from: move.from, to: move.to, documents: movedDocuments });
+  }
+  if (contentChanged) operations.push({ kind: "write", path, content: text });
+
+  return {
+    operations,
+    stage: move === null ? [loaded.path] : [move.from, move.to],
+    project:
+      move === null
+        ? [loaded.path]
+        : [...movedDocuments.map((entry) => rebase(entry, move.from, move.to)), path],
+    unproject: move === null ? [] : movedDocuments,
+    path,
+    text: contentChanged ? text : null,
+  };
+}
+
 export async function setArchived(
   workspace: DocsWorkspace,
   mutex: DocumentMutex,
@@ -103,67 +189,22 @@ export async function setArchived(
     await (workspace.assertWritable ?? (() => undefined))(id, actor);
 
     const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
-    const move = loaded.row.type === "skill" ? planFolderMove(loaded, archived) : null;
-
-    if (move !== null && existsInWorkspace(workspace.workspaceRoot, move.to)) {
-      // Merging two skill folders would silently overwrite files; refusing
-      // leaves both exactly as they are (sprint-005 Open Conflict 4: 400, since
-      // this route declares no 409).
-      validationError("the archive destination already exists", [
-        { path: "id", message: `${move.to} already exists; move or remove it first` },
-      ]);
-    }
-
-    const patch: Record<string, unknown> = { status: archived ? "archived" : "open" };
-    // A hand-written `SKILL.md` carries no `id`, so the projection derives one
-    // from its path (§7) — which the folder move would change, silently turning
-    // the document into a different document. Stamping the current id into the
-    // file is what makes identity survive the move, and it is a write, so it is
-    // this path's business and never the projection's.
-    if (typeof loaded.parsed.data["id"] !== "string") patch["id"] = id;
-
-    const nextParsed = setFrontmatterFields(loaded.parsed, patch);
-    const stamped =
-      nextParsed === loaded.parsed
-        ? nextParsed
-        : setFrontmatterFields(nextParsed, { updated: formatInstant(workspace.now()) });
-    const text = serializeDocument(stamped);
-    const contentChanged = text !== loaded.text;
-
-    if (!contentChanged && move === null) {
-      // Already in the requested state — archiving twice is a no-op, never an
-      // error and never a deletion (§7).
+    const plan = planSetArchived(workspace, loaded, archived);
+    if (plan === null) {
       return { doc: toWireDoc(workspace.projection, loaded), result: emptyResult() };
     }
 
-    const path = move?.skillPath ?? loaded.path;
-    const warnings = contentChanged ? validateBeforeWrite(workspace, path, text) : [];
-
-    const movedDocuments =
-      move === null ? [] : skillDocumentsUnder(workspace.workspaceRoot, move.from);
-    const operations: FileOperation[] = [];
-    if (move !== null) {
-      operations.push({
-        kind: "renameDir",
-        from: move.from,
-        to: move.to,
-        documents: movedDocuments,
-      });
-    }
-    if (contentChanged) operations.push({ kind: "write", path, content: text });
+    const warnings = plan.text === null ? [] : validateBeforeWrite(workspace, plan.path, plan.text);
 
     const result = await runMutation(workspace, {
       docId: id,
       actor,
       warnings,
       plan: {
-        operations,
-        stage: move === null ? [loaded.path] : [move.from, move.to],
-        project:
-          move === null
-            ? [loaded.path]
-            : [...movedDocuments.map((entry) => rebase(entry, move.from, move.to)), path],
-        unproject: move === null ? [] : movedDocuments,
+        operations: plan.operations,
+        stage: plan.stage,
+        project: plan.project,
+        unproject: plan.unproject,
         commit: {
           subject: `doc ${verb}: ${loaded.row.title} (${id}) by ${actor}`,
         },

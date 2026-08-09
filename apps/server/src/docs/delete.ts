@@ -20,7 +20,7 @@
 //     above — the cascade is one level of *anchor* bookkeeping, not a recursive
 //     delete.
 
-import type { Actor, DeleteDocResult } from "@corpus/contract";
+import type { Actor, DeleteDocResult, QueryKey } from "@corpus/contract";
 import { removeThreadAttachments } from "../attachments/index.js";
 import { serializeDocument, setFrontmatterFields, withoutAnchorEntry } from "../core/index.js";
 import { DOCS_KEY, docKey, threadKey } from "../events/index.js";
@@ -67,18 +67,31 @@ export function anchoredThreadParent(
   return { parentId, anchorId };
 }
 
+/** Everything one deletion removes, decided but not yet done. */
+export type DeletePlan = {
+  readonly operations: readonly FileOperation[];
+  readonly stage: readonly string[];
+  readonly project: readonly string[];
+  readonly unproject: readonly string[];
+  readonly keys: readonly QueryKey[];
+  readonly isThread: boolean;
+  /** Threads left as orphaned records (SPEC.md §9.2), in id order. */
+  readonly orphanedThreadIds: readonly string[];
+  /** The anchor entry the cascade takes out of the parent, when there is one. */
+  readonly removedAnchor: string | null;
+};
+
 /**
- * The deletion itself, with the caller already holding the lanes and having run
- * the lock guard. Split out so turn deletion — whose last-turn cascade *is* a
- * thread deletion (§6) — reaches the same code without re-entering a mutex it
- * already holds, which would deadlock.
+ * The deletion, and its §6 anchor cascade, as file operations.
+ *
+ * Extracted so a bulk `delete` (SPEC.md §4, SERVER-077) cascades through the
+ * *same* decision as `DELETE /api/docs/{id}` rather than a second reading of §6.
+ * It reads the parent from disk each time it is called, which is what lets two
+ * threads of one parent be deleted in one act: the second call sees the file the
+ * first one wrote.
  */
-export async function deleteDocumentLocked(
-  workspace: DocsWorkspace,
-  actor: Actor,
-  id: string,
-): Promise<DeleteOutcome> {
-  const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
+export function planDelete(workspace: DocsWorkspace, loaded: LoadedDocument): DeletePlan {
+  const id = loaded.row.id;
   const threads = workspace.projection
     .prepare("SELECT id FROM threads WHERE parent_id = ? ORDER BY id")
     .all(id) as { id: string }[];
@@ -112,20 +125,47 @@ export async function deleteDocumentLocked(
     }
   }
 
+  return {
+    operations,
+    stage,
+    project,
+    unproject: [loaded.path],
+    // The orphaned threads' rows are untouched, but every list that showed them
+    // alongside their parent has to redraw.
+    keys,
+    isThread,
+    orphanedThreadIds,
+    removedAnchor,
+  };
+}
+
+/**
+ * The deletion itself, with the caller already holding the lanes and having run
+ * the lock guard. Split out so turn deletion — whose last-turn cascade *is* a
+ * thread deletion (§6) — reaches the same code without re-entering a mutex it
+ * already holds, which would deadlock.
+ */
+export async function deleteDocumentLocked(
+  workspace: DocsWorkspace,
+  actor: Actor,
+  id: string,
+): Promise<DeleteOutcome> {
+  const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
+  const plan = planDelete(workspace, loaded);
+  const { isThread, orphanedThreadIds, removedAnchor } = plan;
+
   const mutation = await runMutation(workspace, {
     docId: id,
     actor,
     plan: {
-      operations,
-      stage,
-      project,
-      unproject: [loaded.path],
+      operations: plan.operations,
+      stage: plan.stage,
+      project: plan.project,
+      unproject: plan.unproject,
       commit: {
         subject: `${isThread ? "thread" : "doc"} delete: ${loaded.row.title} (${id}) by ${actor}`,
       },
-      // The orphaned threads' rows are untouched, but every list that showed
-      // them alongside their parent has to redraw.
-      keys,
+      keys: plan.keys,
       // A parented thread's deletion takes a count off its parent's folder; a
       // standalone thread was counted nowhere and takes nothing with it.
       // Deleting a document un-counts every thread that hung from it, and
@@ -142,7 +182,11 @@ export async function deleteDocumentLocked(
   if (isThread) removeThreadAttachments(workspace.attachmentsRoot, id);
 
   return {
-    result: { deletedId: id, orphanedThreadIds, warnings: [...mutation.warnings] },
+    result: {
+      deletedId: id,
+      orphanedThreadIds: [...orphanedThreadIds],
+      warnings: [...mutation.warnings],
+    },
     mutation,
     removedAnchor,
   };

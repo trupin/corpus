@@ -15,6 +15,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { contractRoutes, type Warning } from "@corpus/contract";
 import { actorOf } from "./actor.js";
 import { setArchived } from "./archive.js";
+import { applyBulkAction } from "./bulk.js";
 import { createDocument } from "./create.js";
 import { deleteDocument } from "./delete.js";
 import { moveDocument } from "./move.js";
@@ -83,6 +84,29 @@ export function mountDocWriteRoutes(
     const { doc, result } = await createDocument(workspace, mutex, actor, c.req.valid("json"));
     reportWarnings(workspace, doc.frontmatter.id, result);
     return c.json({ doc, warnings: serializeWarnings(result) }, 201);
+  });
+
+  // SPEC.md §4's "One action, one commit" (SERVER-077). Registered here beside
+  // the collection's other mutation, and — like every route on this app —
+  // matched by the contract's own registration order, in which `/api/docs/bulk`
+  // precedes the parameterised document routes.
+  app.openapi(contractRoutes.applyBulkAction, async (c) => {
+    const actor = actorOf(c.req.valid("header"));
+    const result = await applyBulkAction(workspace, mutex, actor, c.req.valid("json"));
+    // §14's log half, scoped to the **act**: its warnings belong to one commit
+    // over a set, so repeating each of them once per changed document would say
+    // the same thing seventeen times. Which file a validation warning came from
+    // is already in `validateBeforeWrite`'s own path-scoped line.
+    for (const warning of result.warnings) {
+      workspace.logger.info("mutation completed with a warning", {
+        action: result.action,
+        docIds: result.changed,
+        code: warning.code,
+        detail: warning.detail,
+        note: "the file mutation stands; a §14 warning never fails a write",
+      });
+    }
+    return c.json(result, 200);
   });
 
   app.openapi(contractRoutes.updateDoc, async (c) => {
