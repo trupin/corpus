@@ -149,3 +149,82 @@ describe("rebasing a range between two spellings", () => {
     expect(rebaseRange(body, canonicalOf(body), { start: 5, end: 5 })).toBeNull();
   });
 });
+
+/**
+ * **A divergence is not contagious** (UI-099).
+ *
+ * The reported document was a 31KB `note` whose two spellings first parted
+ * company at plain offset 23,792 — and every comment in it, including one
+ * anchored at ~1,400, drew no highlight at all, because the whole file failed one
+ * equality test. The shape that did it is below, reduced to six lines: a second
+ * paragraph of an outer list item, after a nested sublist. The printer drops the
+ * blank line, so the paragraph re-parses as a lazy continuation of the last
+ * nested bullet and the rendered text gains a newline the file does not have.
+ *
+ * What is asserted here is the boundary in both directions: the passages on
+ * either side of the divergence travel, and one that straddles it does not.
+ */
+describe("a document whose two spellings diverge in one place", () => {
+  /** Outer item, nested sublist, then a further paragraph of the outer item. */
+  const BODY =
+    "- Outer bullet leads in.\n" +
+    "  - Nested bullet one.\n" +
+    "  - Nested bullet two.\n" +
+    "\n" +
+    "  A trailing paragraph of the outer item.\n" +
+    "- Second outer bullet.\n";
+
+  it("is a body the printer really does respell, and only there", () => {
+    const canonical = canonicalOf(BODY);
+    expect(canonical).not.toBe(BODY);
+    // The whole of the difference: the blank line before the trailing paragraph.
+    expect(BODY).toContain("Nested bullet two.\n\n  A trailing");
+    expect(canonical).toContain("Nested bullet two.\n  A trailing");
+  });
+
+  it("places a passage before the divergence", () => {
+    expect(travel(BODY, "Outer bullet leads in")).toBe("Outer bullet leads in");
+    expect(travel(BODY, "Nested bullet one")).toBe("Nested bullet one");
+  });
+
+  it("places a passage after the divergence, shifted by the one length delta", () => {
+    expect(travel(BODY, "Second outer bullet")).toBe("Second outer bullet");
+  });
+
+  /**
+   * The passage the printer's respelling swallowed is placed too, and takes the
+   * module's known widening: merging the paragraph into the bullet above it
+   * makes one run whose markdown and text differ (the continuation indent), and
+   * a partial hit inside an atomic run quotes the whole run. Wide, on the right
+   * sentence, and containing the words — the documented trade, not a
+   * misplacement, and still far better than the nothing it drew before.
+   */
+  it("widens a passage inside the run the respelling merged", () => {
+    const quoted = travel(BODY, "trailing paragraph of the outer item");
+    expect(quoted).toContain("trailing paragraph of the outer item");
+    expect(quoted).toBe("Nested bullet two.\n  A trailing paragraph of the outer item.");
+    // And no further: the widening stops at the run it overlapped.
+    expect(quoted).not.toContain("Second outer bullet");
+  });
+
+  /**
+   * The premise really does fail across the seam — the file says the two blocks
+   * are separate and the canonical spelling says they are one — so this refuses,
+   * exactly as whole-document inequality used to. A visible gap beats a
+   * confident lie about which sentence a comment is on.
+   */
+  it("still refuses a passage that straddles the divergence", () => {
+    expect(travel(BODY, "Nested bullet two.\n\n  A trailing paragraph")).toBeNull();
+  });
+
+  /**
+   * The guarantee that makes the narrowing safe: nothing is licensed here that a
+   * whole-document equality would have refused *about that passage*. When the
+   * projections agree everywhere, the common prefix is the entire string and
+   * every range takes the same branch it always did.
+   */
+  it("is unchanged for a document whose spellings agree throughout", () => {
+    const body = "\n# Standup\n\nThe rate is 6.1% today.\n";
+    expect(travel(body, "6.1%")).toBe("6.1%");
+  });
+});

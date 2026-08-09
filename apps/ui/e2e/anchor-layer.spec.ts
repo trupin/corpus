@@ -492,3 +492,71 @@ test.describe("a comment captured on a file the editor prints differently", () =
     await expect(page.locator('[data-thread-section="detached"]')).toHaveCount(0);
   });
 });
+
+/**
+ * **§15 M4's milestone check, asserted rather than assumed** (UI-099): "select
+ * text → comment ('note only') → **highlight + chip appear without reload**".
+ *
+ * The suite had every half of this except the one that shipped broken. UI-068's
+ * pair above proves what a *new* comment puts on the wire and that it comes back
+ * attached — on a file whose respelling is confined to a table. Neither asserts
+ * the **chip**, and neither uses a body where the two printings of the document
+ * disagree about *structure*, which is the case the reporter hit.
+ *
+ * The body below is that case, reduced: a further paragraph of an outer list
+ * item, after a nested sublist. Printing it once drops the blank line before that
+ * paragraph; printing it again reads it as a continuation of the **nested** item
+ * and indents it to match. Two consequences, and this test would have caught
+ * both — the placement refused the whole document over that one newline, and the
+ * layer traced a text the editor was not showing, so `applyAnchors` declined
+ * forever. The comment is on the **first bullet**, well above the construct that
+ * disagrees, which is what makes "no highlight anywhere" the observable failure.
+ */
+test.describe("commenting on a selection, on a file the printer restructures", () => {
+  const NESTED: StubRow = {
+    id: "doc_nested",
+    title: "Nested notes",
+    body:
+      "- Outer bullet leads in.\n" +
+      "  - Nested bullet one.\n" +
+      "  - Nested bullet two.\n" +
+      "\n" +
+      "  A trailing paragraph of the outer item.\n" +
+      "- Second outer bullet.\n",
+  };
+
+  test("shows the highlight and the chip at the anchor, without a reload", async ({ page }) => {
+    await stubCorpus(page, [VIEW, NESTED]);
+    await page.goto("/");
+    await page.locator(".board").waitFor();
+    await page.locator('.row[data-row-doc="doc_nested"]').click();
+    await page.locator(".reader .ProseMirror").waitFor();
+
+    // The outer item's own paragraph — before the construct the printer moves.
+    const bullet = page
+      .locator(".reader .doc-body[contenteditable] li p", { hasText: "Outer bullet leads in" })
+      .first();
+    await expect(bullet).toHaveText("Outer bullet leads in.");
+    await bullet.selectText();
+    await bullet.click({ button: "right" });
+    await page.getByRole("menu").locator('[data-act="comment"]').click();
+
+    const composer = page.getByRole("dialog", { name: "New comment" });
+    await composer.getByLabel("Comment").fill("Is this still true?");
+    // "note only": §15 M4 names the note case, and an explicit `false` is what
+    // keeps a note from being enqueued as a job.
+    await composer.getByRole("button", { name: /note only|ask agent/i }).click();
+    await composer.locator("[data-comment-send]").click();
+
+    // No `page.reload()` anywhere below: "without reload" is the assertion.
+    const highlight = page.locator(".reader .doc-body .anchor-hl");
+    await expect(highlight).toHaveCount(1);
+    await expect(highlight).toHaveText("Outer bullet leads in.");
+
+    // And the conversation is drawn at it, not listed below the body as one the
+    // view could not place.
+    await expect(page.locator(".reader .anchor-slot [data-thread-panel]")).toHaveCount(1);
+    await expect(page.locator(".reader .anchor-pip")).toHaveText("1");
+    await expect(page.locator('[data-thread-section="unplaced"]')).toHaveCount(0);
+  });
+});

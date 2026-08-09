@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -86,23 +86,31 @@ Record the answer before writing code.
 
 ## Acceptance Criteria
 
-- [ ] Reproduction recorded, naming which stage fails
-- [ ] Selecting text in a document and commenting produces a **visible highlight
-      on the quoted passage, without a reload** (§15 M4)
-- [ ] The chip / margin card appears at the anchor, per the adaptive placement
-      rule — margin in focus and wide layouts, chip at the anchor in narrow
-      columns
-- [ ] Clicking the highlight opens its thread (§11)
-- [ ] The anchor survives a reload, and survives editing elsewhere in the body
-      (reconciliation per §6)
-- [ ] A selection that genuinely cannot be quoted still fails **loudly**, with the
-      existing message — this issue must not fix the silence by suppressing a real
-      refusal
-- [ ] The regressions this area already fixed stay fixed: the anchor lands at the
-      selection and not at the top (UI-062), and the selector quotes the file's
-      spelling rather than the canonical one (UI-068)
-- [ ] Works in both the column reader and focus mode
-- [ ] A whole-document (unanchored) comment is unaffected
+- [x] Reproduction recorded, naming which stage fails — stage 4, and it is two
+      stacked causes; see the E2E log
+- [x] Selecting text in a document and commenting produces a **visible highlight
+      on the quoted passage, without a reload** (§15 M4) — real browser + new
+      Playwright check
+- [x] The chip / margin card appears at the anchor, per the adaptive placement
+      rule — chip asserted in the new check and in the browser run; the margin
+      half is `anchor-layer.spec.ts`'s focus-mode alignment test, still passing
+- [x] Clicking the highlight opens its thread (§11) — `anchor-layer.spec.ts`,
+      unchanged and passing
+- [x] The anchor survives a reload (`anchor-layer.spec.ts`). Editing elsewhere in
+      the body is covered by the existing layer tests for deferred application
+      and by `soft-wrap.spec.ts`; **not separately re-verified by hand on the new
+      fixture**
+- [x] A selection that genuinely cannot be quoted still fails **loudly** — the
+      refusal is narrowed, not removed: a range straddling the divergence is still
+      refused (`rebase.test.ts`), and `REFUSAL_NOTICE` is untouched
+- [x] The regressions this area already fixed stay fixed: UI-062's placement tests
+      pass, and UI-068's guarantee is **restored** on these documents rather than
+      weakened — `quotableSource` was reading the same wrong premise and quoting
+      the printer's spelling (see the E2E log)
+- [x] Works in both the column reader and focus mode — column verified directly;
+      focus mode via the existing margin-alignment spec
+- [x] A whole-document (unanchored) comment is unaffected — `detachedThreads`
+      untouched; the 334-test anchors suite and 3,264-test ui/kit suites pass
 
 ## Technical Design
 
@@ -177,17 +185,214 @@ silently.
 
 ## E2E Verification Log
 
-_[Agent fills: model run on, which stage the reproduction implicated, commands,
-observed output.]_
+**Model run on:** Opus 5 (1M context).
+
+### Pre-fix reproduction — which stage fails
+
+Run against **two** real servers and a real browser (Playwright driving Chromium
+against a server-served build, never the e2e stub):
+
+- a scratch workspace at `/tmp/ui099ws`, server on port **8791** (`corpus init
+  --port 8791`, `corpus server start`), serving the freshly built HEAD UI;
+- the reporter's own live workspace on **8765** (`/Users/theophanerupin/cos`),
+  **read-only `GET`s only** — nothing was written to it and no process of ours
+  ever bound 8765.
+
+**The reporter's own failing comment was located on the live server** and the
+issue's five-point ladder answered against it. The thread is `th_bgpkduhf`,
+created `2026-08-08T22:42:28Z`, body `This is a test` — the reporter's own test
+comment, matching the report date. Its quote is `removing\n  Abigail's name`: a
+selection dragged **across a source line break with a two-space continuation
+indent**, i.e. soft-wrapped markdown.
+
+| # | Ladder question | Answer |
+| - | --- | --- |
+| 1 | Is the thread created at all? | **Yes** — `th_bgpkduhf` exists on disk at `data/threads/th_bgpkduhf.md` |
+| 2 | Does the parent's frontmatter gain an `anchors` entry? | **Yes** — parent `doc_dfsp3g5c` carries exactly 1 entry, `anc_77801935` |
+| 3 | Is the thread born orphaned (selector vs. saved body)? | **No** — `orphaned: false`, and it resolved to a real range `{start: 1493, end: 1518}` (25 chars, exactly the length of the 25-character quote) |
+| 4 | Anchor resolved but the decoration not drawn? | **This is the stage that fails** — see below |
+| 5 | Is `anchorsHost` false (plugin `View` / `editorHandlesType`)? | **No** — the parent is `type: note`, which the editor handles and no plugin claims |
+
+**So the server did its whole job correctly.** The selector resolved, the anchor
+is live and non-orphaned, and it carries a real character range into the body.
+Everything from `POST /api/threads` through anchor reconciliation is right. The
+failure is downstream of the server, in the anchor layer's **placement** —
+stage 4 — which is squarely this domain. Nothing here is a server defect, so
+there is nothing to escalate across the domain boundary.
+
+The one property of the failing document that separates it from every fixture
+that works: **its body is 31,406 characters** of real, hand- and agent-written
+markdown, whose spelling on disk differs from what the serializer prints.
+
+### What does *not* reproduce it — recorded so it is not re-tried
+
+Against a real HEAD server and a real browser, the document comment flow
+**works** across ~70 scenarios. These are all negative results; none of them is
+the defect:
+
+- document shape (20 cases): plain, ATX/setext headings, `*` bullets, padded GFM
+  tables, indented code, soft-wrapped prose, links, inline bold, CRLF, trailing
+  spaces, `1)` lists, `_em_`, blockquotes, raw HTML, nested lists, closing-hash
+  headings, `***` rules;
+- block context of the selection (13 cases): list item, blockquote, heading,
+  code fence, task list, nested/ordered items, prose after a fence, changelog
+  entries (including a clipped 12-entry changelog);
+- inline content (15 cases): `[[ref]]` in and beside the selection, images,
+  tables, footnotes, HTML comments, emoji/unicode, escaped `\*`, autolinks,
+  reference links, `corpus-form` fences, hard and backslash breaks;
+- interaction (10 cases): whole-paragraph and partial mid-sentence selections, a
+  second comment on the same document, **survives a reload**, commenting
+  immediately after typing (the `editing` gate), selections spanning two
+  paragraphs, column widths 900/1400/1700, and focus mode;
+- real agent-written markdown used verbatim as the body: `docs/RELEASING.md`,
+  `README.md`, `CLAUDE.md`, two issue files;
+- **the exact live selector shape**: a list item wrapped with a two-space
+  continuation indent, selected across the wrap, puts
+  `exact: "removing\n  Abigail's name"` on the wire and draws its highlight.
+
+Both the current HEAD bundle and the **older bundle the reporter's server is
+actually serving** (`index-C7ny62wk.js`, fetched from 8765 and re-served on a
+scratch port 5291 against the HEAD server) pass that last fixture. So the
+reported failure is not explained by the reporter running an older build, and it
+is not explained by the shape of the selection.
+
+**Conclusion for the fix:** the defect is stage 4 — a correctly resolved,
+non-orphaned anchor that the layer cannot turn into segments — and the variable
+that the reproducing document has and every passing fixture lacks is the size
+and real-world spelling of a 31KB body. `segmentsOf` returning `[]` puts the
+thread in `unplaced` and lists it below the body instead of drawing it, which is
+exactly "no highlight on the quoted passage".
+
+### The defect, exactly — two causes stacked
+
+Stage 4 turned out to be **two** independent failures, either of which alone
+hides every highlight on the document. Both are in `apps/ui`; neither is a
+server defect.
+
+The reproducing construct, reduced from the reporter's 31KB file to six lines —
+a further paragraph of an outer list item, after a nested sublist:
+
+```markdown
+- Outer bullet leads in.
+  - Nested bullet one.
+  - Nested bullet two.
+
+  A trailing paragraph of the outer item.
+- Second outer bullet.
+```
+
+**1. `rebaseRange` refused the whole document over one newline.** The serializer
+drops the blank line before that paragraph, so the two spellings' rendered text
+differs by a single `\n`. `rebaseRange` gated on `source.plain !== target.plain`
+— a **whole-document** equality — and refused every anchor in the file. In the
+reporter's document the divergence is at plain offset 23,792 and the anchor is at
+~1,400: a comment was refused because of a construct 22,000 characters away, in
+text the two spellings agree about to the byte.
+
+Fixed by asking that equality **of the passage rather than of the file**: a range
+inside the two projections' common prefix (offsets unchanged) or common suffix
+(one constant shift) is licensed by character-for-character identity over exactly
+the region it occupies — the premise the global test was standing in for. A range
+that **straddles** the divergence is still refused. Nothing is licensed that
+whole-document equality would have allowed: when the projections agree the common
+prefix is the whole string and every range takes the branch it always did.
+
+**2. The anchor layer traced a text the editor was not showing.** `DocEditor`
+does not parse `body`; it parses `canonicalizeMarkdown(body)`. `useAnchorLayer`
+traced `body`, which assumed `canonicalizeMarkdown` is idempotent. For this
+construct it is not: printing once drops the blank line, and printing the result
+again reads the paragraph as a continuation of the **nested** item and indents it
+to match — two spaces becomes four. So `wanted` was 136 characters while the live
+editor printed 138, `applyAnchors` declined on every tick, and no decoration was
+ever dispatched. Instrumented in the browser:
+
+```
+UI099 declined placements=1 at=73 liveLen=138 wantedLen=136
+  live  ="ed bullet one.\n  - Nested bullet two.\n    A trailing paragraph of the outer item"
+  wanted="ed bullet one.\n  - Nested bullet two.\n  A trailing paragraph of the outer item.\n"
+```
+
+Note `placements=1`: cause 1 was already fixed at that point and the placement
+existed — it was simply never applied. Fixed by tracing
+`canonicalizeMarkdown(body)`, so the layer computes `serialize(parse(canonical))`
+and the editor prints `serialize(parse(canonical))` — the same expression,
+agreeing structurally rather than by luck.
+
+That second premise also fed `quotableSource`, which read the disagreement as
+"the editor has unsaved edits" and quoted the **printer's** spelling instead of
+the file's — the exact failure UI-068 exists to prevent. Fixing the premise
+restores UI-068's guarantee on these documents rather than weakening it.
+
+### Post-fix verification
+
+**Real browser, real server, no stub, no reload.** Scratch workspace on 8791,
+Playwright driving Chromium against the server-served build. Same fixture, same
+script, only the code changed:
+
+| | server anchor | `.anchor-hl` | chip | pip | below-body list |
+| - | --- | --- | --- | --- | --- |
+| **before** | `orphaned:false, range 2..24` | **0** | 0 | 0 | "THREADS WITHOUT A PLACE IN THIS VIEW" |
+| **after** | `orphaned:false, range 2..24` | **1**, reading `Outer bullet leads in.` | 1 | 1 | empty |
+
+The post-fix DOM, from the same run:
+
+```html
+<span data-thread="th_3kovz3nr" data-anchor="anc_bd79b75e" class="anchor-hl">Outer bullet leads in.</span>
+<span class="anchor-pip ProseMirror-widget" data-pip-thread="th_3kovz3nr">1</span>
+… <div class="anchor-slot ProseMirror-widget" data-anchor-slot="th_3kovz3nr">
+```
+
+**Against the reporter's actual document.** `doc_dfsp3g5c` / `anc_77801935`, read
+from the live workspace on 8765 over `GET` only: `segmentsOf` returned **0**
+segments before and **1** after. That is the reported comment, and it now draws.
+
+**Tests.**
+
+- `apps/ui/src/anchors/` — 334 pass, including three new regression tests: the
+  rebase boundary in both directions plus the straddle refusal
+  (`rebase.test.ts`), the placement of an anchor sitting before the respelt
+  construct (`anchorPlacement.test.ts`), and the layer drawing it end to end
+  (`useAnchorLayer.test.tsx`).
+- `apps/ui/src` + `packages/kit/src` — **3,264 pass**, no regressions.
+- Playwright: the new §15 M4 check in `anchor-layer.spec.ts` — "select text →
+  comment (note only) → highlight + chip appear **without reload**". Confirmed to
+  be a real regression test rather than a passing bystander: reverting **either**
+  fix alone makes it fail (without fix 2 it fails on the highlight assertion;
+  without fix 1 it fails on the `unplaced` assertion). 49 anchoring-related e2e
+  specs pass (`anchor-layer`, `anchors`, `reattach`, `editor`, `turn-comment`,
+  `soft-wrap`).
+- `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check` —
+  all clean.
+
+**The test harness was unfaithful, and that is why this was invisible to unit
+tests.** `useAnchorLayer.test.tsx`'s `fakeEditor` built its document from
+`parseMarkdown(body)` — the raw body — while the real `DocEditor` builds from
+`parseMarkdown(canonical)`. Modelling the editor as holding `parse(body)` baked
+in the very assumption that fails here, so cause 2 could not be reproduced in
+jsdom at all until the harness was corrected. It now routes every document
+through one `editorDocument()` helper that canonicalises first, matching
+`DocEditor`. This is the same class of defect as UI-102 (the e2e stub's untyped
+rows), in the unit harness rather than the e2e one.
+
+### Left for a follow-up — not fixed here
+
+The serializer's round trip is **not structure-preserving** for this construct:
+`canonicalizeMarkdown` drops the blank line, and re-parsing moves the paragraph
+from the outer list item into the nested one. Anchoring is now immune to it, but
+the underlying infidelity remains, and it is worse than a missing highlight —
+opening such a document and typing one character will autosave the restructured
+form, silently moving the paragraph in the user's file. That belongs in
+`editor/markdown/serialize.ts`, changes what is written to disk, and wants its
+own issue rather than a P0 side-effect. Flagged to the orchestrator.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Pre-fix reproduction logged, naming the failing stage
-- [ ] Tests written and passing, including the M4 Playwright check
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] UI-062 and UI-068's fixes confirmed still in force
-- [ ] Acceptance criteria verified
+- [x] Pre-fix reproduction logged, naming the failing stage
+- [x] Tests written and passing, including the M4 Playwright check
+- [x] `/lint` passes (eslint, prettier, tsc --noEmit all clean)
+- [x] E2E verification log filled in with concrete evidence
+- [x] UI-062 and UI-068's fixes confirmed still in force
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

@@ -517,7 +517,8 @@ cheapest moment for that to happen.
 | CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | todo | P1 | SHARED-033 |
 | SERVER-086 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
 | UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-086 |
-| UI-099 | Commenting on a document selection leaves no visible anchor | todo | P0 | — |
+| UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
+| UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | todo | P0 | — |
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc (DRAFTED — sign-off) | todo | P1 | — |
 | SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | SHARED-035 |

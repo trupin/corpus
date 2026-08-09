@@ -10,6 +10,7 @@ import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { beginEditing, endEditing, resetEditingRegistry } from "../editor/editingRegistry.js";
 import { parseMarkdown } from "../editor/markdown/parse.js";
+import { canonicalizeMarkdown } from "../editor/markdown/serialize.js";
 import { STALE_SELECTION_NOTICE, type TextQuoteSelector } from "../editor/selection.js";
 import { corpusSchema } from "../editor/markdown/schema.js";
 import {
@@ -49,10 +50,21 @@ interface FakeEditor {
   adopt: (markdown: string) => void;
 }
 
+/**
+ * What `DocEditor` actually parses: its `canonical` memo, never the raw body
+ * (`content: parseMarkdown(canonical)`).
+ *
+ * The distinction is not pedantry — it is UI-099. Modelling the editor as
+ * holding `parse(body)` quietly assumed `canonicalizeMarkdown` was idempotent,
+ * so a document where it is not looked fine here and drew no highlight at all
+ * in a browser. Every `fromJSON` below goes through this for that reason.
+ */
+function editorDocument(markdown: string): PmModelNode {
+  return PmModelNode.fromJSON(corpusSchema(), parseMarkdown(canonicalizeMarkdown(markdown)));
+}
+
 function fakeEditor(markdown: string): FakeEditor {
-  let state = EditorState.create({
-    doc: PmModelNode.fromJSON(corpusSchema(), parseMarkdown(markdown)),
-  });
+  let state = EditorState.create({ doc: editorDocument(markdown) });
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
   const emit = (event: string, payload: unknown): void => {
     for (const listener of listeners.get(event) ?? []) listener(payload);
@@ -92,11 +104,11 @@ function fakeEditor(markdown: string): FakeEditor {
     editor,
     state: () => state,
     replace: (next: string) => {
-      const replacement = PmModelNode.fromJSON(corpusSchema(), parseMarkdown(next));
+      const replacement = editorDocument(next);
       dispatch(state.tr.replaceWith(0, state.doc.content.size, replacement.content));
     },
     adopt: (next: string) => {
-      const replacement = PmModelNode.fromJSON(corpusSchema(), parseMarkdown(next));
+      const replacement = editorDocument(next);
       dispatch(
         state.tr
           .replaceWith(0, state.doc.content.size, replacement.content)
@@ -773,6 +785,52 @@ describe("the reconciliation report", () => {
 });
 
 describe("the highlights themselves", () => {
+  /**
+   * **The reported document** (UI-099): a file with one construct the printer
+   * respells — a further paragraph of an outer list item, after a nested
+   * sublist, whose preceding blank line the serializer drops.
+   *
+   * The comment is on the **first bullet**, lines above that construct, and its
+   * anchor came back from the server live and non-orphaned. It still drew
+   * nothing, because the range had to travel through a whole-document
+   * projection equality that this one newline failed. The document the reporter
+   * hit was 31KB and the divergence was 22,000 characters past the anchor.
+   */
+  it("draws an anchor in a file whose printer respells one construct elsewhere", async () => {
+    const body =
+      "- Outer bullet leads in.\n" +
+      "  - Nested bullet one.\n" +
+      "  - Nested bullet two.\n" +
+      "\n" +
+      "  A trailing paragraph of the outer item.\n" +
+      "- Second outer bullet.\n";
+    const quote = "Outer bullet leads in.";
+    const start = body.indexOf(quote);
+    const app = mount(
+      [
+        anchorFixture({
+          selector: { exact: quote, prefix: "- ", suffix: "\n" },
+          range: { start, end: start + quote.length },
+        }),
+      ],
+      [threadRowFixture({ id: "th_1", parent: "doc_m" })],
+      readerTransport({}),
+      body,
+    );
+
+    await waitFor(() => {
+      expect(anchorState(app.editorState())?.anchors).toHaveLength(1);
+    });
+    const segments = anchorState(app.editorState())?.anchors[0]?.segments ?? [];
+    expect(segments).not.toHaveLength(0);
+    // And on the words it is about: the first bullet, not the respelt construct.
+    const state = app.editorState();
+    const drawn = segments
+      .map((segment) => state.doc.textBetween(segment.from, segment.to, "\n", ""))
+      .join("");
+    expect(drawn).toContain("Outer bullet leads in.");
+  });
+
   it("are applied from the server's ranges once the editor holds that body", async () => {
     const app = mount([anchorFixture()], [threadRowFixture({ id: "th_1", parent: "doc_m" })]);
     await waitFor(() => {

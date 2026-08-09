@@ -4,6 +4,7 @@ import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { expandClipAround } from "../editor/changelogClip";
 import { useIsEditing } from "../editor/editingRegistry";
+import { canonicalizeMarkdown } from "../editor/markdown/serialize";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
@@ -312,7 +313,35 @@ export function useAnchorLayer(options: AnchorLayerOptions): AnchorLayer {
 
   /* ── Placement ─────────────────────────────────────────────────────── */
 
-  const source = useMemo(() => traceOfBody(body), [body]);
+  /**
+   * The trace of **the text the editor was actually handed** — not of the file.
+   *
+   * `DocEditor` does not parse `body`; it parses `canonicalizeMarkdown(body)`
+   * (its `canonical` memo), and that is the document every position in this
+   * layer is a position into. Tracing `body` instead quietly assumed
+   * `canonicalizeMarkdown` was idempotent — that printing a file once and
+   * printing it twice give the same text.
+   *
+   * For almost every document they do, which is why this held for so long. They
+   * do not when re-parsing the printed form lands the text somewhere else: a
+   * further paragraph of an outer list item, after a nested sublist, loses its
+   * blank line on the first printing, and on the second is read as a
+   * continuation of the **nested** item and indented to match. One printing says
+   * two spaces, the next says four.
+   *
+   * The layer then held offsets into a text the editor was not showing, so
+   * `applyAnchors` declined every time and **no highlight was ever drawn on that
+   * document** (UI-099) — while `quotableSource` below, reading the same
+   * disagreement as "the editor has unsaved edits", quoted the printer's
+   * spelling instead of the file's, which is the very thing UI-068 exists to
+   * prevent. Both follow from the same wrong premise, and both go with it.
+   *
+   * Tracing the canonicalised body makes the agreement structural rather than
+   * lucky: this is `serialize(parse(canonical))` and the editor prints
+   * `serialize(parse(canonical))`, the same expression, whether or not the
+   * serializer is idempotent.
+   */
+  const source = useMemo(() => traceOfBody(canonicalizeMarkdown(body)), [body]);
 
   const anchorsNow = useRef(anchors);
   anchorsNow.current = anchors;
