@@ -58,6 +58,46 @@ indistinguishable from a delete plus a create.
 Unarchiving does not undo it either: the id is synthesized from the path again,
 so the round trip yields a third value unless the path is byte-identical.
 
+## Two consequences the id change is not the whole of
+
+Both found by the pr-reviewer on PR #37 and driven against the real route. They
+matter because whoever takes this issue will otherwise fix the id and think the
+symptom list is empty.
+
+**1. A refused document whose files are in the commit, told it does not exist.**
+Archiving both skills in one act — `ids: [outer, nested]` — archives the outer
+one, which moves the nested one's file, which changes the nested one's id, so
+the lookup by the id the caller sent fails:
+
+```
+changed  ["doc_skillfb157be1"]
+refused  [{id: "doc_skill78aafb0e", reason: "not-found",
+           message: "no document with id doc_skill78aafb0e"}]
+commit   … .claude/skills/demo/nested/SKILL.md
+         … .claude/skills-archived/demo/nested/SKILL.md
+```
+
+The document was moved — and thereby disabled (§7) — while being told it does
+not exist. That inverts §4's own sentence: `git log` records an effect the user
+was told did not happen. The message is not merely unhelpful, it is false.
+
+**2. An order-dependent wedge that needs manual filesystem recovery.** The same
+call with the ids the other way round archives the **nested** skill alone, which
+creates `.claude/skills-archived/demo/`, which then permanently blocks the outer
+skill's archive:
+
+```
+changed  ["doc_skill78aafb0e"]
+refused  [{id: "doc_skillfb157be1", reason: "write-failed",
+           message: "the archive destination already exists: .claude/skills-archived/demo …"}]
+```
+
+One gesture on a skills column with select-all, and which of these two outcomes
+you get depends on the order the board happened to send the ids in. Recovering
+means moving a directory by hand. Behaviourally this equals two sequential
+single-document calls, which is why it is filed here rather than against the
+bulk route — but it is the sharpest reason this issue is P1.
+
 ## Acceptance Criteria
 
 - [ ] A nested skill's id survives its parent skill being archived, and survives

@@ -21,8 +21,12 @@
 // direction.** Only a write that landed puts an id in `changed`, and only those
 // writes are staged, so **every document `changed` names has a file in that
 // commit** and `git show --name-only` lists it, while a document that was
-// refused or was already in the target state wrote nothing and appears nowhere
-// in it — `git log` never records an effect the caller was told did not happen.
+// refused or was already in the target state wrote nothing **of its own**. Its
+// files may still be in the commit, carried there by another document's act:
+// archiving a skill that nests a second *requested* skill moves the nested
+// one's file while refusing it by id, so the commit does record something the
+// caller was told did not happen. That is SERVER-078's territory, not a
+// property of this route — the id it refused by is the one the move changed.
 // When nothing changed there is no commit object at all, not an empty one.
 //
 // It is **not** set equality, and the reason is structural rather than a defect

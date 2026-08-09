@@ -56,7 +56,9 @@ export const applyBulkAction = createRoute({
     "happen. **Every document `changed` names has a file in that commit**, and `git show " +
     "--name-only` lists it: only a write that landed puts an id in `changed`, and only those " +
     "writes are staged, so a document that was refused or was already in the target state wrote " +
-    "nothing and appears nowhere in it. That containment is the invariant, and it holds in one " +
+    "nothing **of its own**. Its files may still be in the commit, carried there by another " +
+    "document's act — archiving a skill that nests a second requested skill moves the nested " +
+    "one's file while refusing it by id. That containment is the invariant, and it holds in one " +
     "direction only — **the commit may also carry files for documents the act did not name**, " +
     "because the result's three parts partition the **requested** ids and nothing else. Two " +
     "things do that today, both required by the spec rather than incidental, and both shared " +

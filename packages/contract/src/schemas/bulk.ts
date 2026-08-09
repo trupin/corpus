@@ -334,9 +334,10 @@ export const BulkActionRefusalSchema = z
  * changed", and §11 requires the history to agree with the report; concretely,
  * every id in `changed` has a file in `git show --name-only <commit>`, because
  * only a write that landed puts an id there and only those writes are staged. A
- * document that was already in the target state contributes nothing to the
- * commit, and one that was refused leaves nothing in it. That direction is the
- * testable invariant, and it is the only one a report can be wrong in.
+ * document that was already in the target state, or that was refused, writes
+ * nothing **of its own** — though its files may still be in the commit, carried
+ * there by another document's act (see the second cause below). That direction
+ * is the testable invariant, and it is the only one a report can be wrong in.
  *
  * **The converse is false**, and stating it as an equality was worth correcting
  * rather than weakening quietly: a commit may legitimately carry files for

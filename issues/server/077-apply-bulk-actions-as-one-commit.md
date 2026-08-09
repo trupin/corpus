@@ -56,8 +56,13 @@ issue exists to prevent, and it will look like it works.
       did not happen
 - [x] **Every document `changed` names has a file in that commit**, and
       `git show --name-only` lists it; a document that was refused or was already
-      in the target state appears nowhere in it. Assert it against real git
-      output, not against the server's own bookkeeping.
+      in the target state wrote nothing **of its own** — though its files may
+      still be carried there by another document's act (SERVER-078). Assert it
+      against real git output, not against the server's own bookkeeping.
+      _Corrected twice on review, both times on the record: first from set
+      equality to one-directional containment, then to drop "appears nowhere in
+      it", which the nested-skill case falsifies whenever both skills are
+      requested._
       _Corrected on review (PR #37, finding 2), not silently reworded._ This
       criterion originally read "`changed` and `git show --name-only <commit>`
       are the **same set**", which is false as written: the invariant is
