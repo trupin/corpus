@@ -83,11 +83,13 @@ interface SchemaNode {
   readonly $ref?: string;
   readonly type?: string;
   readonly enum?: string[];
+  readonly pattern?: string;
   readonly default?: unknown;
   readonly minimum?: number;
   readonly required?: string[];
   readonly properties?: Record<string, SchemaNode>;
   readonly items?: SchemaNode;
+  readonly minItems?: number;
   readonly maxItems?: number;
   readonly maxLength?: number;
   readonly discriminator?: { propertyName: string; mapping?: Record<string, string> };
@@ -1327,6 +1329,252 @@ describe("the edit-session flush (CONTRACT-031)", () => {
  * reads only the generated document — so these invariants pin the published
  * prose, not just the shapes.
  */
+/**
+ * CONTRACT-037 — the contract half of SPEC.md §4's "One action, one commit"
+ * (rider signed 2026-08-05) and §11's bulk actions on a selection. Each property
+ * below is one a careless later edit would break silently, and the failure would
+ * only surface as a history that disagrees with what the user was told.
+ */
+describe("one action, one commit (CONTRACT-037)", () => {
+  const BULK_PATH = "/api/docs/bulk";
+  const bulk = () => operation(BULK_PATH, "post");
+  const requestSchema = () => componentSchemas?.["BulkActionRequest"];
+  const resultSchema = () => componentSchemas?.["BulkActionResult"];
+  const actionSchema = () => requestSchema()?.properties?.["action"];
+
+  it("adds exactly one endpoint to the inventory", () => {
+    expect(ENDPOINT_INVENTORY).toContain("POST /api/docs/bulk");
+    expect(ENDPOINT_INVENTORY.filter((entry) => entry.includes("bulk"))).toHaveLength(1);
+  });
+
+  /**
+   * The single-document routes are unchanged — they stay the path for the
+   * reader's ⋯ menu and the per-row quick actions (§11). Pinned here because
+   * "add a batch route" is exactly the change that tempts someone to fold the
+   * singles into it.
+   */
+  it.each([
+    ["/api/docs/{id}", "put"],
+    ["/api/docs/{id}", "delete"],
+    ["/api/docs/{id}/move", "post"],
+    ["/api/docs/{id}/archive", "post"],
+    ["/api/docs/{id}/unarchive", "post"],
+  ])("leaves the single-document route %s %s in place", (path, method) => {
+    expect(ENDPOINT_INVENTORY).toContain(endpointSignature(method, path));
+    expect(operation(path, method).responses?.["200"]).toBeDefined();
+  });
+
+  /**
+   * The commit rule is what the route exists for, and the contract cannot
+   * enforce it — so the description is where the server implementation reads it,
+   * and these assertions are what keep it there. Both directions of §4's
+   * no-folding rule are pinned, because they are different mechanisms and
+   * dropping either erases the action from the history *as an act*.
+   */
+  it("states the one-commit rule, in both its directions, on the route itself", () => {
+    const description = bulk().description ?? "";
+    expect(description).toContain("single auto-commit");
+    expect(description).toContain("one commit, not twenty");
+    expect(description).toContain("never folds into a preceding editing session");
+    expect(description).toContain("no later save folds into it");
+    // A server that loops the single-document write path is visibly wrong.
+    expect(description).toContain("loops the single-document write path");
+  });
+
+  /**
+   * The invariant is directional, and the direction is the whole point: the only
+   * way the report can be wrong is by naming a document the commit does not
+   * carry. The converse — that the commit carries nothing else — is false, and
+   * the contract published it as an equality until PR #37's review found the
+   * second counter-example. Both are pinned here, so restoring the tidier claim
+   * fails a test rather than a reader.
+   */
+  it("states the commit containment in the one direction that holds", () => {
+    const description = bulk().description ?? "";
+    expect(description).toContain("git show --name-only");
+    expect(description).toContain("has a file in that commit");
+    expect(description).toContain("in one direction only");
+    expect(description).not.toContain("are the same set");
+    expect(resultSchema()?.properties?.["changed"]?.description).toContain(
+      "has a file in `commit`",
+    );
+  });
+
+  /** Both exceptions, because they follow from one rule and neither is obvious at a call site. */
+  it("names both ways the commit carries a file the act did not name", () => {
+    const description = bulk().description ?? "";
+    expect(description).toContain("partition the **requested** ids");
+    expect(description).toContain("anchor cascade");
+    expect(description).toContain("nested skill");
+    const changed = resultSchema()?.properties?.["changed"]?.description ?? "";
+    expect(changed).toContain("did not name");
+  });
+
+  it("takes at least one id, and refuses an empty act", () => {
+    expect(requestSchema()?.properties?.["ids"]?.minItems).toBe(1);
+    expect(requestSchema()?.required).toEqual(["ids", "action"]);
+    expect(requestSchema()?.additionalProperties).toBe(false);
+    expect(bulk().requestBody?.required).toBe(true);
+  });
+
+  /**
+   * Ids, never a filter: a mutation aimed at a set nobody enumerated is a far
+   * larger promise, and §11 already forbids bulk delete on a whole-result-set
+   * selection for that reason.
+   */
+  it("names documents by id and accepts no filter", () => {
+    const ids = requestSchema()?.properties?.["ids"];
+    expect(ids?.type).toBe("array");
+    expect(ids?.items?.pattern).toBe("^(doc|th)_[A-Za-z0-9]+$");
+    expect(Object.keys(requestSchema()?.properties ?? {})).toEqual(["ids", "action"]);
+  });
+
+  it("offers the eight acts as one discriminated union, inline rather than named", () => {
+    const branches = actionSchema()?.oneOf ?? [];
+    expect(branches).toHaveLength(8);
+    expect(branches.flatMap((branch) => branch.properties?.["action"]?.enum ?? [])).toEqual([
+      "archive",
+      "unarchive",
+      "resolve",
+      "reopen",
+      "move",
+      "tag",
+      "review",
+      "delete",
+    ]);
+    // Not a registered component: a `oneOf` has no `type: "object"`, and the
+    // named-component invariant above is the guard against a derived schema
+    // rewriting a shared one.
+    expect(componentSchemas?.["BulkAction"]).toBeUndefined();
+  });
+
+  it("keeps every act's own parameters strict", () => {
+    for (const branch of actionSchema()?.oneOf ?? []) {
+      expect(branch.additionalProperties).toBe(false);
+    }
+  });
+
+  /**
+   * §11: tagging "adds or removes the named tags and never replaces a document's
+   * tag set". The published shape has to make the replacement *inexpressible* —
+   * a `tags` key here would flatten twenty different tag sets into one, and no
+   * response could report that.
+   */
+  it("publishes tagging as a delta with no way to spell a replacement", () => {
+    const branches = actionSchema()?.oneOf ?? [];
+    const tag = branches.find((branch) => branch.properties?.["action"]?.enum?.[0] === "tag");
+    expect(Object.keys(tag?.properties ?? {})).toEqual(["action", "add", "remove"]);
+    for (const branch of branches) {
+      for (const forbidden of ["tags", "set", "replace"]) {
+        expect(branch.properties?.[forbidden], forbidden).toBeUndefined();
+      }
+    }
+  });
+
+  it("states §11's three parts as three separate, always-present lists", () => {
+    expect(Object.keys(resultSchema()?.properties ?? {})).toEqual([
+      "action",
+      "changed",
+      "alreadyInState",
+      "refused",
+      "orphanedThreadIds",
+      "commit",
+      "warnings",
+    ]);
+    expect(resultSchema()?.required).toEqual([
+      "action",
+      "changed",
+      "alreadyInState",
+      "refused",
+      "orphanedThreadIds",
+      "commit",
+      "warnings",
+    ]);
+  });
+
+  it("says an already-archived document is a no-op and not a failure", () => {
+    expect(resultSchema()?.properties?.["alreadyInState"]?.description).toContain("not a failure");
+  });
+
+  /** A count alone is not a result: the part worth re-reading is the part that did not happen. */
+  it("names documents individually in every part", () => {
+    for (const part of ["changed", "alreadyInState"]) {
+      expect(resultSchema()?.properties?.[part]?.items?.pattern, part).toBe(
+        "^(doc|th)_[A-Za-z0-9]+$",
+      );
+    }
+    expect(resultSchema()?.properties?.["refused"]?.items?.$ref).toBe(
+      "#/components/schemas/BulkActionRefusal",
+    );
+  });
+
+  it("requires a reason and a message on every refusal, and carries the lock's holder", () => {
+    const refusal = componentSchemas?.["BulkActionRefusal"];
+    expect(refusal?.required).toEqual(["id", "reason", "message", "lock"]);
+    expect(refusal?.properties?.["reason"]?.enum).toEqual([
+      "locked",
+      "not-found",
+      "not-applicable",
+      "invalid",
+      "write-failed",
+    ]);
+    expect(refusal?.properties?.["message"]?.type).toBe("string");
+  });
+
+  /**
+   * `z.union([LockSchema, z.null()])` rather than `LockSchema.nullable()`:
+   * zod-to-openapi carries a registered name onto a derived schema, and the
+   * `.nullable()` form rewrote the shared `Lock` component to
+   * `type: ["object", "null"]` for every route referencing it — measured during
+   * CONTRACT-037, caught by the named-component invariant above. Pinned from
+   * both sides so the cheaper-looking spelling cannot come back.
+   */
+  it("makes the refusal's lock nullable without making `Lock` nullable", () => {
+    const lock = componentSchemas?.["BulkActionRefusal"]?.properties?.["lock"];
+    expect(lock?.anyOf?.map((branch) => branch.$ref ?? branch.type)).toEqual([
+      "#/components/schemas/Lock",
+      "null",
+    ]);
+    expect(componentSchemas?.["Lock"]?.type).toBe("object");
+  });
+
+  /**
+   * One sha for the whole act. A server that produced N commits would have
+   * nothing honest to put here — which is the point of the field being singular,
+   * and of it being nullable rather than absent when nothing changed.
+   */
+  it("reports one commit, nullable and never a list", () => {
+    const commit = resultSchema()?.properties?.["commit"];
+    expect(commit?.type).toEqual(["string", "null"]);
+    expect(commit?.items).toBeUndefined();
+    expect(commit?.description).toContain("never a list");
+  });
+
+  it("totals the threads a bulk delete orphaned", () => {
+    const orphaned = resultSchema()?.properties?.["orphanedThreadIds"];
+    expect(orphaned?.items?.pattern).toBe("^th_[A-Za-z0-9]+$");
+    expect(orphaned?.description).toContain("orphaned records");
+  });
+
+  /**
+   * Partial failure is the normal case, not the error path: a lock and an
+   * unknown id are per-document outcomes here, so neither becomes a verdict on
+   * the request. Declaring `423` or `404` would invite exactly the
+   * all-or-nothing server §11 forbids.
+   */
+  it("declares no 423 and no 404, and says why", () => {
+    const responses = bulk().responses ?? {};
+    expect(Object.keys(responses).sort()).toEqual(["200", "400", "401", "403"]);
+    expect(bulk().description).toContain("There is no `423` on this route and no `404`");
+  });
+
+  it("carries the acting party like every other mutation", () => {
+    const header = bulk().parameters?.find((entry) => entry.in === "header");
+    expect(header?.name).toBe(ACTOR_HEADER);
+    expect(header?.schema?.enum).toEqual([...ACTORS]);
+  });
+});
+
 describe("the extra-frontmatter surface (CONTRACT-011)", () => {
   const VIEW_AND_EXTRA_KEYS = ["pinned", "order", "query", "column", "extra"];
 
@@ -1572,6 +1820,9 @@ describe("author attribution", () => {
     ["/api/docs/{id}", "delete"],
     ["/api/threads/{id}/turns/{ts}", "delete"],
     ["/api/locks/{docId}/break", "post"],
+    // CONTRACT-037: the bulk route declares `403` for one of its eight acts —
+    // `delete` keeps §9.2's user-only rule, and the refusal is the request's.
+    ["/api/docs/bulk", "post"],
   ])("declares 403 on the user-only route %s %s and says why", (path, method) => {
     const op = operation(path, method);
     expect(op.responses?.["403"]).toBeDefined();
@@ -2357,6 +2608,10 @@ describe("§14 warnings reach every mutation response", () => {
     // document's** frontmatter and auto-commits it, so a rejected hook is
     // exactly as reachable here as it is on a create.
     "ReattachThreadResponse",
+    // CONTRACT-037: a bulk act is one auto-commit over many files (SPEC.md §4),
+    // so a hook that rejects it leaves every one of them on disk and
+    // uncommitted — the widest reach any single `commit_failed` has.
+    "BulkActionResult",
   ];
 
   /**
@@ -3011,7 +3266,7 @@ describe("request bodies declare whether they are mandatory", () => {
   it("finds every request body in the surface", () => {
     // Pinned so a new body cannot slip in unexamined; the rule below is what
     // then classifies each one.
-    expect(bodies).toHaveLength(17);
+    expect(bodies).toHaveLength(18);
   });
 
   it("declares `required` explicitly on every one of them", () => {
@@ -3062,6 +3317,7 @@ describe("request bodies declare whether they are mandatory", () => {
       "POST /api/capture": true,
       "POST /api/check": true,
       "POST /api/docs": true,
+      "POST /api/docs/bulk": true,
       "POST /api/docs/{id}/move": true,
       "POST /api/jobs/{id}/log": true,
       "POST /api/threads": true,

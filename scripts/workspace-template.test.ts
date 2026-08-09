@@ -1763,7 +1763,95 @@ describe("comment skill body", () => {
     expect(body).toMatch(/There is no CLI verb that sets it/i);
     expect(body).toMatch(/\*\*every later user turn\s+re-triggers you\*\*/i);
     expect(body).toMatch(/note only/i);
-    expect(body).toMatch(/Do not resolve on the person's behalf/i);
+  });
+
+  /**
+   * AGENT-014, SPEC.md §7's rider signed 2026-08-05. This skill used to forbid
+   * precisely what the spec now permits — and forbid it on a hazard that no
+   * longer exists, since SERVER-062 made a person's reply reopen a resolved
+   * thread. Two things are pinned, not one: the reversal, and its limits. The
+   * permission's four exclusions are what keep it from becoming "the agent
+   * retires its own unanswered questions", and a limit that lives only in SPEC
+   * drifts the first time this file is edited. The prohibition is pinned as an
+   * absence for the same reason it was wrong to begin with: its reasoning read
+   * as sound, so a later editor who finds it plausible would restore it.
+   */
+  describe("closing a settled thread", () => {
+    it("carries the prohibition in no form, nor the hazard that motivated it", () => {
+      expect(body).not.toMatch(/Do not resolve on the person's behalf/i);
+      expect(body).not.toMatch(/only when they asked for the matter to be closed/i);
+      // SERVER-062 made this false. It is the sentence that made the ban look
+      // right, so it may not survive the ban.
+      expect(body).not.toMatch(/resolved unilaterally/i);
+      expect(body).not.toMatch(/stops\s+waking you/i);
+    });
+
+    it("states the trigger as four conditions holding at once", () => {
+      expect(body).toMatch(/\*\*Close what you asked for and got\.\*\*/);
+      expect(body).toMatch(/all four of these\s+hold at once/);
+      expect(body).toMatch(/you asked the person for feedback or information/);
+      expect(body).toMatch(/they \*\*provided it\*\* — a turn of their own in the thread/);
+      expect(body).toMatch(/you have \*\*used\*\* it/);
+      expect(body).toMatch(/nothing in the thread is still waiting on anyone/);
+      // Authorship is deliberately not among them: keying the permission to it
+      // would forbid the commonest real shape and permit almost nothing else.
+      expect(body).toMatch(/Who opened the thread is irrelevant/);
+      expect(body).toMatch(/they ask,\s+you need one clarification, they clarify, you finish/);
+    });
+
+    it("names all four exclusions, each as a rule rather than a call", () => {
+      expect(body).toMatch(/\*\*Four threads you never close\*\*, each a rule rather than a call/);
+      expect(body).toMatch(/\*\*A thread the person never replied to\.\*\*/);
+      expect(body).toMatch(/no amount of elapsed time turns silence into an answer/);
+      expect(body).toMatch(/\*\*A thread holding an unanswered form\.\*\*/);
+      // Not qualified by how many of the thread's forms did come back.
+      expect(body).toMatch(/however many of\s+its other forms came back/);
+      expect(body).toMatch(/\*\*An unfinished piece of your own work\.\*\*/);
+      expect(body).toMatch(/marking your own homework done/);
+      expect(body).toMatch(/\*\*A question the person put to you that you have not yet answered/);
+      // The one case that is neither permitted nor forbidden keeps its old
+      // instruction rather than falling through the gap between the two lists.
+      expect(body).toMatch(/\*\*suggest resolving\*\* and leave the control with them/);
+    });
+
+    it("rides the resolve on a reply turn that says so in words", () => {
+      expect(body).toMatch(/\*\*The resolve rides on the reply that reports the work\.\*\*/);
+      expect(body).toMatch(/never a resolve with no readable turn attached/);
+      // The rule is that there is a turn — not which command runs first, which
+      // the author's own reply not reopening its thread makes immaterial.
+      expect(body).toMatch(/Which of the two commands runs first changes nothing/);
+      expect(body).toMatch(/that there \*\*is\*\* a turn changes everything/);
+      // Why a silent resolve is not merely terse: with SHARED-018's collapse it
+      // is a conversation that folds away unread.
+      expect(body).toMatch(/the board collapses\s+a resolved thread holding nothing unseen/);
+      expect(body).toMatch(/state the closing in the prose, in words/);
+      // Practised, not only stated: one reply, one resolve, same act.
+      expect(body).toContain("corpus thread resolve th_4b8e2c --from agent");
+      expect(body).toContain("so I'm closing this thread");
+      // The state change goes on the trace line rather than inventing a second
+      // convention for reporting it.
+      expect(body).toMatch(
+        /↳ updated the rate assumption in \[\[doc_a1b2c3\]\] to 6\.4%; resolved/,
+      );
+    });
+
+    it("states the reopen rule in both directions", () => {
+      expect(body).toMatch(/\*\*Resolved is a closed door, not a locked one\.\*\*/);
+      expect(body).toMatch(/sets it back to `open` in the same write that appends it/);
+      expect(body).toMatch(/that reply reaches you again with no\s+`@agent` needed/);
+      expect(body).toMatch(/A turn\s+\*\*you\*\* write reopens nothing/);
+      // Stated as what resolving costs, because an agent that believes closing
+      // is final closes nothing.
+      expect(body).toMatch(/one reply restores the conversation/);
+    });
+
+    it("cascades nowhere and treats a second resolve as a no-op", () => {
+      expect(body).toMatch(/\*\*Resolving cascades nowhere\.\*\*/);
+      expect(body).toMatch(/closing\s+a subthread leaves its parent open/);
+      expect(body).toMatch(/closing a parent leaves its children open/);
+      expect(body).toMatch(/prints\s+"already resolved" and changes nothing/);
+      expect(body).toMatch(/not an error/);
+    });
   });
 
   it("defers on a user lock without naming a queue verb", () => {

@@ -259,6 +259,42 @@ function createStubApp() {
       201,
     );
   });
+  // §4's "One action, one commit" (CONTRACT-037). The handler echoes what it
+  // parsed — the act it saw and the ids it was given, deduplicated — because the
+  // discriminated act and the three-part result are exactly the halves a single
+  // canned reply would not exercise: the first id stands in for what changed,
+  // the rest for what was already in that state, and a `th_` id for a refusal
+  // that names its holder.
+  app.openapi(contractRoutes.applyBulkAction, (c) => {
+    const { ids, action } = c.req.valid("json");
+    if (action.action === "delete" && c.req.valid("header")[ACTOR_HEADER] === "agent") {
+      return c.json(
+        { code: "forbidden" as const, message: "the agent archives, never deletes" },
+        403,
+      );
+    }
+    const unique = [...new Set(ids)];
+    const locked = unique.filter((id) => id.startsWith("th_"));
+    const [first, ...rest] = unique.filter((id) => !locked.includes(id));
+    return c.json(
+      {
+        action: action.action,
+        changed: first === undefined ? [] : [first],
+        alreadyInState: rest,
+        refused: locked.map((id) => ({
+          id,
+          reason: "locked" as const,
+          message: `${action.action} refused: held by the agent`,
+          lock: { ...lock, docId: id, holder: "agent" as const },
+        })),
+        orphanedThreadIds: action.action === "delete" ? ["th_x9y8"] : [],
+        // One sha for the whole act, and none at all when nothing changed.
+        commit: first === undefined ? null : DEFAULT_HEAD_SHA,
+        warnings: [],
+      },
+      200,
+    );
+  });
   app.openapi(contractRoutes.getDoc, (c) => c.json(doc, 200));
   app.openapi(contractRoutes.updateDoc, (c) =>
     c.json({ doc, anchors: { remapped: [], orphaned: [] }, warnings: [] }, 200),
@@ -721,6 +757,7 @@ describe("contract route registry", () => {
    * so the order is held by a test rather than by a comment.
    */
   it.each([
+    ["/api/docs/bulk", "/api/docs/{id}"],
     ["/api/locks/reap", "/api/locks/{docId}"],
     ["/api/queue/reap-stale", "/api/queue/{id}/complete"],
     ["/api/queue/claim-all", "/api/queue/{id}/complete"],
@@ -862,6 +899,117 @@ describe("routes mounted on a Hono app", () => {
     const read = await app.request("/api/docs/doc_a1b2c3");
     expect(read.status).toBe(200);
     expect(((await read.json()) as { body: string }).body).toBe("Body.");
+  });
+
+  /**
+   * CONTRACT-037. `/api/docs/bulk` is a static segment where `/api/docs/{id}`
+   * carries a parameter, and the act is a discriminated union — so both are
+   * exercised by real requests: the response proves which handler answered, and
+   * which branch of the union the validator actually saw.
+   */
+  const bulk = (body: unknown, actor?: string) =>
+    createStubApp().request("/api/docs/bulk", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(actor === undefined ? {} : { [ACTOR_HEADER]: actor }),
+      },
+      body: JSON.stringify(body),
+    });
+
+  it("routes /api/docs/bulk to the bulk act, not to a document named `bulk`", async () => {
+    const response = await bulk({ ids: ["doc_a1b2c3", "th_x9y8"], action: { action: "archive" } });
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as {
+      action: string;
+      changed: string[];
+      refused: { id: string; reason: string; lock: { holder: string } | null }[];
+      commit: string | null;
+    };
+    expect(result.action).toBe("archive");
+    expect(result.changed).toEqual(["doc_a1b2c3"]);
+    expect(result.refused[0]).toMatchObject({ id: "th_x9y8", reason: "locked" });
+    expect(result.refused[0]?.lock?.holder).toBe("agent");
+    // One act, one commit — a single sha for the whole request.
+    expect(result.commit).toBe(DEFAULT_HEAD_SHA);
+  });
+
+  it("carries each act's own parameters through to the handler", async () => {
+    const moved = await bulk({
+      ids: ["doc_a1b2c3"],
+      action: { action: "move", folder: "finance" },
+    });
+    expect(((await moved.json()) as { action: string }).action).toBe("move");
+
+    const tagged = await bulk({
+      ids: ["doc_a1b2c3"],
+      action: { action: "tag", add: ["q3"], remove: ["inbox"] },
+    });
+    expect(((await tagged.json()) as { action: string }).action).toBe("tag");
+  });
+
+  /**
+   * §4: the commit contains exactly what changed, and a commit containing
+   * nothing is not one. An act every document refuses is still a `200` — §11
+   * reduces the selection to all of them and the user retries — so the empty
+   * `changed` list and the null commit have to be expressible together.
+   */
+  it("answers 200 with no commit when the act changed nothing", async () => {
+    const response = await bulk({ ids: ["th_x9y8"], action: { action: "archive" } });
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as {
+      changed: string[];
+      refused: { id: string }[];
+      commit: string | null;
+    };
+    expect(result.changed).toEqual([]);
+    expect(result.refused.map((entry) => entry.id)).toEqual(["th_x9y8"]);
+    expect(result.commit).toBeNull();
+  });
+
+  /** Duplicates collapse: the act runs once per document and the result names it once. */
+  it("collapses a repeated id rather than acting on it twice", async () => {
+    const response = await bulk({
+      ids: ["doc_a1b2c3", "doc_a1b2c3"],
+      action: { action: "archive" },
+    });
+    const result = (await response.json()) as { changed: string[]; alreadyInState: string[] };
+    expect(result.changed).toEqual(["doc_a1b2c3"]);
+    expect(result.alreadyInState).toEqual([]);
+  });
+
+  it.each([
+    { ids: [], action: { action: "archive" } },
+    { ids: ["doc_a1b2c3"], action: { action: "publish" } },
+    { ids: ["doc_a1b2c3"], action: { action: "tag" } },
+    { ids: ["doc_a1b2c3"], action: { action: "tag", tags: ["q3"] } },
+    { ids: ["doc_a1b2c3"], action: { action: "move" } },
+    { ids: ["not-an-id"], action: { action: "archive" } },
+    { ids: ["doc_a1b2c3"], action: { action: "archive" }, author: "user" },
+  ])("rejects the unusable bulk body %j before any handler runs", async (body) => {
+    expect((await bulk(body)).status).toBe(400);
+  });
+
+  /**
+   * §9.2's user-only rule, unchanged in bulk: the refusal is the *request's*,
+   * not a per-document outcome, so it is a status rather than a `refused` entry.
+   */
+  it("refuses a bulk delete from the agent, and allows every other act", async () => {
+    const deletion = await bulk({ ids: ["doc_a1b2c3"], action: { action: "delete" } }, "agent");
+    expect(deletion.status).toBe(403);
+    await expect(deletion.json()).resolves.toMatchObject({ code: "forbidden" });
+
+    const archive = await bulk({ ids: ["doc_a1b2c3"], action: { action: "archive" } }, "agent");
+    expect(archive.status).toBe(200);
+  });
+
+  it("lets the user delete in bulk, and totals the threads it orphaned", async () => {
+    const response = await bulk({ ids: ["doc_a1b2c3"], action: { action: "delete" } }, "user");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      action: "delete",
+      orphanedThreadIds: ["th_x9y8"],
+    });
   });
 
   it("applies the retrieval caps and rejects a limit past the maximum", async () => {

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_RECENT_JOBS,
   extractFormSource,
   formAnswerRecord,
   formatFormAnswerBody,
@@ -186,6 +187,41 @@ export interface StubRequest {
   readonly body: unknown;
 }
 
+/**
+ * A queue event the server is still working on, as `GET /api/jobs` reports it
+ * (SPEC.md §7, §8).
+ *
+ * Seeded rather than derived, because a job is *the agent's* state and nothing
+ * in a stubbed page produces one: the answer route reports an `eventId`, but the
+ * work behind it happens in a process this suite does not run. Without a seed
+ * `/api/jobs` was flatly `{jobs: []}`, so §8's pending indicator — the row that
+ * says the agent still owes this thread a reply — could never appear in any
+ * spec, and "neither signal suppresses the other" was an argument rather than an
+ * assertion (UI-084).
+ *
+ * Only the fields a spec chooses; the rest are filled the way the projection
+ * fills them (`originTitle` read from the store at response time, never stored).
+ */
+export interface StubJob {
+  readonly eventId: string;
+  /** `comment.created`, `form.respond`, `doc.edited`, or a plugin's own. */
+  readonly type: string;
+  /** One of `QUEUE_EVENT_STATUSES`; the queue's three non-terminal ones are what §8 reads. */
+  readonly status: string;
+  /** When the event was enqueued — what the pending indicator counts from. */
+  readonly started: string;
+  readonly updated?: string;
+  readonly lastLine?: string | null;
+  /** The document or thread the event originated from. */
+  readonly originId?: string | null;
+  readonly blockedOn?: string | null;
+}
+
+/** Everything a spec seeds that is not a document. */
+export interface StubOptions {
+  readonly jobs?: readonly StubJob[];
+}
+
 export interface StubCorpus {
   /** Every `/api` request the page made, in order. */
   readonly requests: () => Promise<readonly StubRequest[]>;
@@ -193,6 +229,21 @@ export interface StubCorpus {
   /** The stored document, or `undefined` once it has been deleted. */
   readonly doc: (id: string) => Promise<StoredDoc | undefined>;
   readonly ids: () => Promise<readonly string[]>;
+  /**
+   * Answers a form **behind the page's back** — the second tab, the other
+   * column, the second browser (UI-084's own edge case list).
+   *
+   * The corpus changes and the page is told nothing, which is precisely the
+   * state an `invalidate` frame is the only cure for: no mutation of this page's
+   * ran, so no `invalidateQueries` of its own is coming. Writes through the same
+   * formatter and the same commit the route uses, so what lands in the thread is
+   * what a real answer lands.
+   */
+  readonly answerForm: (
+    threadId: string,
+    ts: string,
+    answer: FormAnswerRequest,
+  ) => Promise<StubTurn>;
 }
 
 function seeded(row: StubRow): StoredDoc {
@@ -337,8 +388,13 @@ function stampUpdated(doc: StoredDoc): void {
  * Installs the stub. Call before `page.goto` — the board queries on first
  * render, and a route added afterwards would miss the first request.
  */
-export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<StubCorpus> {
+export async function stubCorpus(
+  page: Page,
+  rows: readonly StubRow[],
+  options: StubOptions = {},
+): Promise<StubCorpus> {
   const store = new Map<string, StoredDoc>(rows.map((row) => [row.id, seeded(row)]));
+  const jobs = options.jobs ?? [];
   const requests: StubRequest[] = [];
   let created = 0;
 
@@ -430,6 +486,48 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     };
   };
 
+  /**
+   * One seeded job as the wire reports it. `originTitle` and `blockedOnTitle`
+   * are read from the store here rather than seeded, because the contract says
+   * they are denormalised copies resolved at response time — a renamed document
+   * shows its new title on the next read.
+   */
+  const asJob = (job: StubJob): unknown => ({
+    eventId: job.eventId,
+    type: job.type,
+    status: job.status,
+    started: job.started,
+    updated: job.updated ?? job.started,
+    lastLine: job.lastLine ?? null,
+    originId: job.originId ?? null,
+    originTitle: job.originId === undefined ? null : (store.get(job.originId ?? "")?.title ?? null),
+    blockedOn: job.blockedOn ?? null,
+    blockedOnTitle:
+      job.blockedOn === undefined ? null : (store.get(job.blockedOn ?? "")?.title ?? null),
+  });
+
+  /**
+   * The answer turn write itself, shared by the route and by the out-of-band
+   * {@link StubCorpus.answerForm} — so a form answered in another tab lands as
+   * the same bytes, stamped by the same clock, as one answered in this page.
+   *
+   * The body it is handed is the exact string the refusal ladder judged; this
+   * never re-renders it.
+   */
+  const commitAnswerTurn = (doc: StoredDoc, answerBody: string): StubTurn => {
+    stampUpdated(doc);
+    // Seconds precision, `Z`: the turn-heading grammar rejects milliseconds,
+    // and a heading the parser rejects is a turn that silently disappears.
+    const turn: StubTurn = {
+      author: "user",
+      ts: canonicalInstant(doc.updated),
+      body: answerBody,
+      model: null,
+    };
+    doc.body = `${doc.body.trimEnd()}\n\n${renderTurn(turn)}`;
+    return turn;
+  };
+
   const asDoc = (doc: StoredDoc): unknown => ({
     body: doc.body,
     path: doc.path,
@@ -511,7 +609,40 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
     });
 
     if (url.pathname === "/api/locks") return json(route, { locks: [] });
-    if (url.pathname === "/api/jobs") return json(route, { jobs: [] });
+    /*
+     * `GET /api/jobs` — the queue's own rows, filtered the way the server
+     * filters them: `status` is the comma-separated set `useOutstandingJobs`
+     * sends, `originId` the exact predicate a thread card escalates to, and
+     * `recent` the cap that makes an answer possibly short. Answering the whole
+     * seed regardless of the query would make the shared-vs-exact distinction
+     * `outstandingAgentRequest.ts` is built around untestable here.
+     *
+     * **`recent` bounds the console list only, and is ignored once `originId`
+     * is given** (SPEC.md §9.2, rider signed 2026-08-05) — which is exactly what
+     * `listJobRows` does: both filters are a `WHERE`, the `LIMIT ?` is appended
+     * only on the unfiltered path (`apps/server/src/jobs/project.ts`). A
+     * windowed predicate fails silently and in one direction — a job pushed out
+     * of the window is indistinguishable from no job — and §8's pending
+     * indicator *is* that predicate. A stub that capped the filtered answer too
+     * would let a spec assert a "working…" row the real server would place
+     * somewhere else, on the one point the rider exists to protect.
+     *
+     * Seeded order is taken as the server's order (most recently active first,
+     * `ORDER_JOBS`); these specs hand it a list, not timestamps to sort.
+     */
+    if (url.pathname === "/api/jobs") {
+      const wanted = url.searchParams.get("status");
+      const origin = url.searchParams.get("originId");
+      const matching = jobs
+        .filter((job) => wanted === null || wanted.split(",").includes(job.status))
+        .filter((job) => origin === null || (job.originId ?? null) === origin);
+      const recent = Number(url.searchParams.get("recent") ?? DEFAULT_RECENT_JOBS);
+      const answer =
+        origin === null
+          ? matching.slice(0, Number.isFinite(recent) && recent > 0 ? recent : DEFAULT_RECENT_JOBS)
+          : matching;
+      return json(route, { jobs: answer.map(asJob) });
+    }
     if (url.pathname === "/api/tree") return json(route, { folders: [] });
     if (url.pathname === "/api/queue/status") {
       return json(route, {
@@ -753,18 +884,9 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
         );
       }
 
-      stampUpdated(doc);
-      // Seconds precision, `Z`: the turn-heading grammar rejects milliseconds,
-      // and a heading the parser rejects is a turn that silently disappears.
       // The body is the very string the three refusals above were asked about,
       // so what lands in the thread is what was judged — not a re-render of it.
-      const turn: StubTurn = {
-        author: "user",
-        ts: canonicalInstant(doc.updated),
-        body: answerBody,
-        model: null,
-      };
-      doc.body = `${doc.body.trimEnd()}\n\n${renderTurn(turn)}`;
+      const turn = commitAnswerTurn(doc, answerBody);
       return json(
         route,
         {
@@ -1084,5 +1206,23 @@ export async function stubCorpus(page: Page, rows: readonly StubRow[]): Promise<
       ),
     doc: (id) => Promise.resolve(store.get(id)),
     ids: () => Promise.resolve([...store.keys()]),
+    answerForm: (threadId, ts, answer) => {
+      const doc = store.get(threadId);
+      if (doc === undefined || doc.type !== "thread") {
+        throw new Error(`answerForm: no thread ${threadId}`);
+      }
+      const at = canonicalInstant(ts);
+      const target = parseThreadTurns(doc.body).find((turn) => canonicalInstant(turn.ts) === at);
+      const form = target === undefined ? undefined : formIn(target);
+      if (form === undefined) throw new Error(`answerForm: no form in turn ${ts} of ${threadId}`);
+      // The same verdict the route reaches, from the same contract function: an
+      // out-of-band answer that the form does not fit is a broken test, not a
+      // state the corpus can be in.
+      const invalid = validateFormAnswer(form, answer);
+      if (invalid !== undefined) throw new Error(`answerForm: ${invalid.message}`);
+      return Promise.resolve(
+        commitAnswerTurn(doc, formatFormAnswerBody(formAnswerRecord(form, answer))),
+      );
+    },
   };
 }

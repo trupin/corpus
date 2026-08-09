@@ -111,17 +111,21 @@ that hid one of them would be lying about the other.
       your answer"
 - [x] **Opening the thread and closing it again leaves the row in place** — the
       test that distinguishes this feature from every other Attention reason
-- [ ] Answering clears the row **live** over SSE; resolving the thread also clears
+- [x] Answering clears the row **live** over SSE; resolving the thread also clears
       it
 - [ ] A thread holding **more than one** unanswered form says how many are still
       open
 - [x] A control case in the same test: a thread whose only signal is an unread
       agent reply **does** clear on open — otherwise the assertion above proves
       nothing
-- [ ] A thread with an unanswered form **and** an outstanding agent reply shows
+- [x] A thread with an unanswered form **and** an outstanding agent reply shows
       **both** signals at once; neither suppresses the other
 
-#### The three left unticked, and exactly why
+#### The three left unticked after the first pass, and exactly why
+
+Two of the three are **closed by the finishing pass below** (2026-08-08); their
+original reasoning is kept verbatim rather than rewritten, since it is the record
+of what was and was not evidence at the time.
 
 - **"Answering clears the row live over SSE."** The *behaviour* is verified —
   `forms.spec.ts` answers the form and the Attention row is gone on the way back
@@ -130,7 +134,9 @@ that hid one of them would be lying about the other.
   events at all (`stubCorpus.ts` says so in its own docblock), so what drives the
   refetch in that test is the mutation's own query invalidation, not SSE. The two
   paths land on the same `DOCS_KEY`, but I can point at one and not the other, so
-  this stays unticked.
+  this stays unticked. — **Closed 2026-08-08**: both halves of the transport are
+  now pinned (the server's frame captured off `/events`, the browser's clearing
+  driven by nothing else), and the suite carries a spec with a negative control.
 - **"A thread holding more than one unanswered form says how many are still
   open."** Not implemented. `DocRow.attention` is a list of reason *codes* and
   carries no number, and a row carries no turns, so counting in the UI would mean
@@ -146,7 +152,9 @@ that hid one of them would be lying about the other.
   `GET /api/jobs` with a flat `{jobs: []}`, so `useOutstandingAgentJob` can never
   find one there. §8 was not touched — the indicator is rendered by `ThreadCard`
   off the queue and knows nothing about forms, so nothing can suppress it — but
-  "not touched" is an argument, not evidence, so this stays unticked.
+  "not touched" is an argument, not evidence, so this stays unticked. — **Closed
+  2026-08-08**: `stubCorpus` seeds jobs now, so the indicator is assertable in the
+  suite, and it was also observed beside an open form on the real server.
 
 
 ## Orchestrator decision 2026-08-07 — the answer prose is a contract artefact
@@ -513,6 +521,170 @@ answer a naive clear would have sent is refused:
 POST …/form {"answers": []}                             → 201
 POST …/form {"answers":[{"question":…,"option":""}]}    → 400 json.answers.0.option: must not be blank
 ```
+
+### Finishing pass, 2026-08-08 — the three criteria left unticked
+
+Run on **opus** (`claude-opus-5[1m]`). Nothing in `apps/ui/src` or `packages/kit`
+changed: both criteria closed here were **already-shipped behaviour with no
+evidence behind it**, so what this pass added is the evidence and the two seams
+the e2e suite was missing (a real event stream, and seeded queue jobs). Files
+touched: `apps/ui/e2e/eventStream.ts` (new), `apps/ui/e2e/stubCorpus.ts`,
+`apps/ui/e2e/forms.spec.ts`.
+
+#### 1. "Answering clears the row live over SSE" — **closed**
+
+The gap was the transport: the browser stub pushes no frames, so the clearing
+observed in `forms.spec.ts` was driven by the answering page's *own* query
+invalidation. Both halves are now pinned separately.
+
+**The server's half, off the wire.** A scratch workspace on **8899** (`corpus
+init /tmp/ui084b-ws --port 8899`; the user's server held 8765 throughout and was
+never touched), a note, a thread, and an **agent** turn carrying the three-field
+form. With `curl -sN "http://127.0.0.1:8899/events?token=…"` held open, the form
+was answered over HTTP, and the stream carried, verbatim:
+
+```
+event: invalidate
+data: {"keys":[["docs"],["docs","th_o47k5u76"],["threads","th_o47k5u76"],["docs","doc_xwupb7va"]]}
+```
+
+— `commitTurnAppend`'s key set, the parent's row included.
+
+**The browser's half, on the real app.** Vite on **5273**
+(`CORPUS_SERVER_ORIGIN=http://127.0.0.1:8899`, `VITE_CORPUS_TOKEN` from the
+workspace config), a real Chromium on the real board. The row read
+`["agent replied","awaiting your answer"]`. A second form was then answered
+**from the shell** — `POST …/turns/{ts}/form` → `201`, no click, no reload, no
+second tab — and with the page untouched:
+
+```
+after the answer, with no interaction: the form reason is gone
+docs reads: 5 → 10
+```
+
+The only thing that reached that browser was the frame above.
+
+**And a regression test that cannot pass by accident.** `apps/ui/e2e/eventStream.ts`
+serves a genuine `text/event-stream` on an ephemeral loopback port (never 8765,
+never 5173 — it binds port 0) and `page.addInitScript` points the page's own
+`EventSource` at it, because `vite.config.ts` proxies `/events` to whatever holds
+8765 and a stubbed spec has no server of its own there. The new spec, *"clears
+live over SSE when the answer arrives from somewhere else"*, answers the form
+through `corpus.answerForm(…)` — the stub's store, behind the page's back, via
+the same contract formatter and the same commit the route uses — asserts the row
+is **still there** and that `/api/docs` was **not** re-read, then pushes the
+frame and asserts both flip. **Negative control run**: with the `events.push(…)`
+line removed the spec fails on `toHaveCount(0)` — the row never clears on its
+own, so the frame is what clears it.
+
+#### 2. "More than one unanswered form says how many are still open" — **still not implemented**
+
+Unchanged and still blocked, not deferred by preference. `DocRow.attention` is a
+list of reason codes and carries no number; a row carries no turns; so the count
+cannot be derived in the UI without one `GET /api/threads/{id}` per row per
+render. **`issues/contract/040-open-form-count-on-the-row.md` is still `todo`**
+(checked this pass), and its first acceptance criterion is the field this needs.
+Approximating it is what this issue's own Technical Design forbids, so it stays
+unticked.
+
+#### 3. "Both signals at once, §8's indicator included" — **closed**
+
+The gap was that `stubCorpus` answered `GET /api/jobs` with a flat `{jobs: []}`,
+so `useOutstandingAgentJob` could never find one and the pending row could not
+appear in any spec. The stub now takes a `jobs` seed (`StubJob`) and filters it
+the way the server does — the comma-separated `status` set, the exact `originId`,
+the `recent` cap — so the shared-vs-escalated distinction
+`outstandingAgentRequest.ts` is built around stays real. The default is still
+`[]`, so no existing spec changes.
+
+New spec, *"asks its question while the agent is still working, and neither hides
+the other"*: the row carries `[data-reason="form"]` **and** a `.working-dot`
+labelled with the job's last line; the card carries the open form's `.form-submit`
+**and** `.working`, whose `data-working-since` is the requesting turn's instant.
+Answering then removes the question and **leaves `.working` exactly where it
+was** — an answer is not a reply, and the queue event is still outstanding.
+
+**On the real server, same shape.** A thread carrying an unanswered form plus a
+user turn with `requestsAgent: true`:
+
+```
+GET /api/jobs?status=pending,in-progress,deferred → [['comment.created','pending','th_o47k5u76',…]]
+GET /api/docs?needs=me → [('th_o47k5u76', ['form'], awaitingAgent=true)]
+```
+
+and in the real browser: row reasons `["awaiting your answer"]` with the working
+dot beside them, and on the card one open `.form-submit` together with
+`agent is working…` counting from `2026-08-09T04:32:18Z` — the turn that asked.
+§8 was not modified.
+
+#### Checks
+
+`npm run build` clean. `VITEST_MAX_THREADS=4 vitest run apps/ui packages/kit` →
+**3246 passed**. `CORPUS_UI_PORT=5273 playwright test` (full suite) → **352
+passed, 2 failed**; `forms.spec.ts` alone → **13/13**. `npx eslint` and
+`npx prettier --check` clean on every touched file; `tsc --noEmit -p apps/ui`
+clean.
+
+**The two failures are the known environmental pair, diagnosed not chased**:
+`console.spec.ts:62` and `smoke.spec.ts:241` both assert the console strip reads
+`server unreachable`, which requires **nothing** listening on 8765 — and the
+user's own `corpus` server (pid 1715) was serving there for the whole session
+(`curl …:8765/api/health → 200`). Neither touches forms, jobs or SSE.
+
+Scratch teardown: server stopped (pid 45267), Vite on 5273 killed, `/tmp/ui084b-ws`
+removed, 5273 and 8899 confirmed free, 8765 left alone.
+
+### PR #37 review follow-up — the jobs stub's `recent`
+
+Run on **opus** (`claude-opus-5[1m]`), 2026-08-08. Reviewer finding [MINOR]: the
+stub applied `recent` unconditionally, where SPEC.md §9.2 (rider signed
+2026-08-05) says it is **ignored once `originId` is given**.
+
+**Read from the server, not from the rider's summary.**
+`apps/server/src/jobs/project.ts`'s `listJobRows` builds both filters as a
+`WHERE` and appends `LIMIT ?` **only when `filter.originId === undefined`** —
+`const limit = filter.originId === undefined ? " LIMIT ?" : ""`. So the cap
+applies after the `WHERE` on the console path (status-only filtering stays
+windowed, per `project.test.ts` *"filters by status alone without dropping the
+console's window"*) and not at all on the origin path. The stub now does exactly
+that: filter, then window **only** when no `originId` was asked for, with
+`DEFAULT_RECENT_JOBS` as the default rather than a hard-coded `50`.
+
+**Made observable**, because a fidelity nothing tests drifts again. New spec,
+`forms.spec.ts` › *"counts the wait from the buried ask a windowed answer would
+miss"*: `MAX_RECENT_JOBS` (200) unrelated unfinished jobs saturate the shared
+`useOutstandingJobs` query — which is what makes `useOutstandingAgentJob`
+escalate to `?originId=` at all, and none of them is this thread's — then
+`DEFAULT_RECENT_JOBS` (50) later asks on `th_form` at 11:10–11:59, and behind
+those the oldest at 10:06. `pickOutstandingJob` takes the oldest, and
+`agentWaitSince` bounds it by the newest turn not newer than it, so the card must
+count from the user's **10:05** turn.
+
+Both directions run, on the real Vite dev server in a real Chromium
+(`CORPUS_UI_PORT=5399`, never 5173/8765):
+
+```
+faithful stub    → data-working-since="2026-07-19T10:05:00Z"   (14/14 forms.spec.ts)
+recent applied unconditionally (temporarily restored to prove the spec bites):
+  Expected: "2026-07-19T10:05:00Z"
+  Received: "2026-07-19T10:07:00Z"   ← 14 × resolved, the agent's form turn
+```
+
+The windowed answer stops one row short of the buried job and the wait starts
+twenty-five minutes late — the silent, one-directional failure the rider names.
+The spec also asserts the escalation actually happened
+(`GET /api/jobs?…originId=th_form…` present in the recorded requests), so it
+cannot pass by scanning the shared list instead.
+
+**Checks.** `npm run build` clean. `CORPUS_UI_PORT=5399 playwright test
+e2e/forms.spec.ts e2e/console.spec.ts` → **27 passed, 1 failed**; that one is
+`console.spec.ts:62`, the known environmental case, re-diagnosed rather than
+chased: it requires **nothing** on 8765 and `curl 127.0.0.1:8765/api/health`
+answered **200** (the user's live server). `forms.spec.ts` alone → **14/14**.
+`npx eslint` and `npx prettier --check` clean on both touched files;
+`tsc --noEmit -p apps/ui` clean (its `include` covers `e2e`). Playwright's own
+Vite on 5399 exited with the run; 5399 free, no stray vite/chromium/vitest
+processes, `test-results/` from the deliberate failure removed.
 
 ## Completion Checklist (domain agent)
 

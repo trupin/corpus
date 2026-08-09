@@ -94,6 +94,42 @@ function createServer() {
     );
   });
 
+  // CONTRACT-037. The handler echoes the act it parsed and splits the ids across
+  // §11's three parts, so the typed call proves both directions: the
+  // discriminated act reaches the wire, and the three-part result comes back
+  // narrowed rather than as an opaque blob.
+  app.openapi(contractRoutes.applyBulkAction, (c) => {
+    const { ids, action } = c.req.valid("json");
+    const actor = c.req.valid("header")[ACTOR_HEADER];
+    if (action.action === "delete" && actor === "agent") {
+      return c.json({ code: "forbidden" as const, message: "the agent archives" }, 403);
+    }
+    const refused = ids.filter((id) => id.startsWith("th_"));
+    const changed = ids.filter((id) => !refused.includes(id));
+    return c.json(
+      {
+        action: action.action,
+        changed,
+        alreadyInState: [],
+        refused: refused.map((id) => ({
+          id,
+          reason: "locked" as const,
+          message: `${action.action === "move" ? action.folder : action.action} · actor=${actor}`,
+          lock: {
+            docId: id,
+            holder: "agent" as const,
+            acquired: frontmatter.created,
+            ttl: 300,
+          },
+        })),
+        orphanedThreadIds: [],
+        commit: changed.length === 0 ? null : "9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456",
+        warnings: [],
+      },
+      200,
+    );
+  });
+
   app.openapi(contractRoutes.listDocs, (c) => {
     const { limit, offset, q, isParent } = c.req.valid("query");
     return c.json(
@@ -561,6 +597,80 @@ describe("the typed collection query", () => {
  * absences: a hit has no body to read, and the search query has no `sort`,
  * `offset` or `pinned` to pass.
  */
+/**
+ * CONTRACT-037 — the call UI-083 makes. What matters here is that the *types*
+ * carry the shape, not just the JSON: the act narrows on `action`, so a `move`
+ * without a folder is a compile error rather than a `400` at runtime, and the
+ * three parts come back as three named lists rather than a count the board would
+ * have to infer from.
+ */
+describe("the typed bulk act", () => {
+  it("sends one act for several documents and gets §11's three parts back", async () => {
+    const { data, error } = await createTestClient().api.POST("/api/docs/bulk", {
+      body: { ids: ["doc_a1b2c3", "th_x9y8"], action: { action: "archive" } },
+    });
+    expect(error).toBeUndefined();
+    expect(data?.action).toBe("archive");
+    expect(data?.changed).toEqual(["doc_a1b2c3"]);
+    expect(data?.alreadyInState).toEqual([]);
+    expect(data?.refused[0]?.id).toBe("th_x9y8");
+    // The holder is typed, so the board can name it without a cast.
+    expect(data?.refused[0]?.lock?.holder).toBe("agent");
+    // One act, one commit.
+    expect(data?.commit).toBe("9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456");
+  });
+
+  it("carries each act's own parameters, typed", async () => {
+    const { data } = await createTestClient("agent").api.POST("/api/docs/bulk", {
+      body: { ids: ["th_x9y8"], action: { action: "move", folder: "finance" } },
+    });
+    expect(data?.refused[0]?.message).toBe("finance · actor=agent");
+    // Nothing changed, so there is no commit at all.
+    expect(data?.changed).toEqual([]);
+    expect(data?.commit).toBeNull();
+  });
+
+  /**
+   * Compile-time assertions, checked by `tsc --noEmit` rather than by a run:
+   * the tag act carries a delta and no replacement, and a `move` without a
+   * folder is not a call anyone can write.
+   */
+  type BulkAct = NonNullable<
+    paths["/api/docs/bulk"]["post"]["requestBody"]
+  >["content"]["application/json"]["action"];
+  type TagAct = Extract<BulkAct, { action: "tag" }>;
+  type MoveAct = Extract<BulkAct, { action: "move" }>;
+  type TagIsADelta = "add" extends keyof TagAct
+    ? "tags" extends keyof TagAct
+      ? never
+      : true
+    : never;
+  type MoveNeedsAFolder = MoveAct extends { folder: string } ? true : never;
+
+  it("types tagging as a delta with no way to spell a replacement", () => {
+    const delta: TagIsADelta = true;
+    const folder: MoveNeedsAFolder = true;
+    expect([delta, folder]).toEqual([true, true]);
+  });
+
+  it("expresses a tag delta over the wire", async () => {
+    const { data } = await createTestClient().api.POST("/api/docs/bulk", {
+      body: { ids: ["doc_a1b2c3"], action: { action: "tag", add: ["q3"], remove: ["inbox"] } },
+    });
+    expect(data?.action).toBe("tag");
+  });
+
+  it("refuses a bulk delete from the agent as a typed 403", async () => {
+    const { data, error, response } = await createTestClient("agent").api.POST("/api/docs/bulk", {
+      body: { ids: ["doc_a1b2c3"], action: { action: "delete" } },
+    });
+    expect(data).toBeUndefined();
+    expect(response.status).toBe(403);
+    expect(error?.code).toBe("forbidden");
+    expect(isApiError(error)).toBe(true);
+  });
+});
+
 describe("the typed retrieval calls", () => {
   it("searches with the query and the shared filters, and gets frugal hits back", async () => {
     const { data, error } = await createTestClient().api.GET("/api/search", {

@@ -189,6 +189,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply one action to several documents as a single act
+         * @description Applies **one** action to **several** documents and answers for all of them — the board makes one request per action, never one per document. **The act lands as a single auto-commit** (SPEC.md §4, "One action, one commit"), authored by the acting party like any other mutation: archiving twenty documents is one commit, not twenty, so reverting the action is one `git revert` and `git log` never records an effect the user was told did not happen. **Every document `changed` names has a file in that commit**, and `git show --name-only` lists it: only a write that landed puts an id in `changed`, and only those writes are staged, so a document that was refused or was already in the target state wrote nothing **of its own**. Its files may still be in the commit, carried there by another document's act — archiving a skill that nests a second requested skill moves the nested one's file while refusing it by id. That containment is the invariant, and it holds in one direction only — **the commit may also carry files for documents the act did not name**, because the result's three parts partition the **requested** ids and nothing else. Two things do that today, both required by the spec rather than incidental, and both shared with the single-document routes: §6's anchor cascade rewrites the `anchors` map of a deleted thread's parent in the same commit, and that parent survives the act and need not even have been requested; and archiving or unarchiving a skill moves its whole folder, carrying every file under it — including the `SKILL.md` of a nested skill, which the move disables (§7: what disables a skill is where its folder lives) without the act ever naming it. The commit message names the action and the documents in `changed`. It is its own entry in the history: it never folds into a preceding editing session's squashed commit, and no later save folds into it (§4's squashing is about repeated saves of *one* document, never about one act across many). An implementation that loops the single-document write path is therefore wrong rather than merely slower — it produces N commits and has nothing honest to put in `commit`.
+         *
+         *     **Partial application is the normal case, and it is a `200`.** §11: a bulk action "applies to what it can and reports what it could not" and "never refuses the whole set because of one document". The result states three parts — what `changed`, what was `alreadyInState` (a document already archived is a no-op, **not** a failure), and, listed apart from both, what was `refused` and why, each named individually. A document locked by the other party is refused with its holder named (SPEC.md §7) exactly as a single edit to it would be; one that fails validation is refused with its reason (§14); an unknown id is refused as `not-found`; the rest go through. There is no `423` on this route and no `404`: a lock and an unknown id are per-document outcomes here, not verdicts on the request. Every requested id appears exactly once across the three parts, so the caller can compare the total against the count it showed.
+         *
+         *     **`delete` is user-only** (SPEC.md §7, §9.2): a bulk delete carrying `x-corpus-author: agent` is rejected with `403` for the **whole request** — the refusal is the request's, not a per-document outcome — exactly as `DELETE /api/docs/{id}` rejects it. The agent archives, never deletes. Every other act is available to both parties.
+         *
+         *     **An empty `ids` list is a `400`**, and every document already being in the target state is a legal, successful act that changes nothing and therefore makes **no commit at all**: `200`, empty `changed`, null `commit`. The single-document routes are unchanged and remain the path for the reader's ⋯ menu and per-row quick actions (§11) — this route is for a selection, and the difference between them is the commit.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Acting party, and therefore the git author of the auto-commit. Defaults to "user" when absent. */
+                    "x-corpus-author"?: "user" | "agent";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The documents and the one act to apply to them. Both fields are mandatory, so the body is too. */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BulkActionRequest"];
+                };
+            };
+            responses: {
+                /** @description What changed, what was already in that state, what did not change and why — plus the single commit the act landed as, and any §14 warnings. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BulkActionResult"];
+                    };
+                };
+                /** @description The request failed schema validation; `issues` names the offending fields. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationError"];
+                    };
+                };
+                /** @description Missing or invalid workspace bearer token. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UnauthorizedError"];
+                    };
+                };
+                /** @description The acting party in `x-corpus-author` may not make this call. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ForbiddenError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/{id}": {
         parameters: {
             query?: never;
@@ -4366,6 +4446,104 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        BulkActionResult: {
+            /**
+             * @description Which act was applied, echoed from the request so a rendered report never has to be paired back to the call that produced it. The eight are SPEC.md §11's selection actions except "Ask the agent about these", which changes no document and goes through `POST /api/threads`.
+             * @example archive
+             * @enum {string}
+             */
+            action: "archive" | "unarchive" | "resolve" | "reopen" | "move" | "tag" | "review" | "delete";
+            /** @description Documents the act changed — §11's first part. Every one of them has a file in `commit` (§4); the containment runs this way only, since a commit may also carry files for documents the act did not name (§6's anchor cascade reaching a surviving parent, a skill folder move carrying a nested skill). Empty is a legal outcome: every document was already in the target state, or every one was refused. */
+            changed: string[];
+            /** @description Documents that were **already in that state** — §11's second part, explicitly a no-op and **not a failure**: "a document already archived is a no-op, not a failure". They contribute nothing to the commit, and a board must not colour them as errors. The `review` act populates it only when the instant it would write is the one already there: instants are second-precision, so repeating `review` on the same document inside one second genuinely moves no bytes. Reporting it as changed would put an id in `changed` that `git show --name-only` does not list, and that containment is the stronger, testable invariant (SERVER-077). */
+            alreadyInState: string[];
+            /** @description Documents that **did not change, and why** — §11's third part, listed apart from both others because it is the part worth re-reading. After the act, §11 reduces the selection to exactly these, so retrying after clearing a lock is one gesture. */
+            refused: components["schemas"]["BulkActionRefusal"][];
+            /** @description Threads left as **orphaned records** by a `delete`, totalled across every document actually deleted (SPEC.md §9.2 — they keep their `parent` id and stay readable; their anchors no longer resolve). Drop their caches. Empty for every other act. §11's confirm needs this count *before* the act, which is a `GET /api/docs?type=thread&parent=<ids>` the caller makes itself — this field is what the act actually did. */
+            orphanedThreadIds: string[];
+            /** @description The **single** auto-commit this act landed as (SPEC.md §4), authored by the acting party. One sha, never a list: a server that looped the single-document write path would have no honest value to put here. Null in three cases, none of them an error — `changed` is empty, so there was nothing to commit and a commit containing nothing is not one; the workspace is not a git repository (`commit_skipped` in `warnings`); or the workspace's hooks rejected the commit, leaving the writes on disk and uncommitted (`commit_failed` in `warnings`, §14). */
+            commit: string | null;
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
+            warnings: components["schemas"]["Warning"][];
+        };
+        BulkActionRefusal: {
+            /**
+             * @description Identifier of any document; threads are documents too.
+             * @example doc_a1b2c3
+             */
+            id: string;
+            /**
+             * @description Which class of refusal this is. `locked`: the other party holds the document's edit lock, so it is refused exactly as a single edit to it would be (SPEC.md §7) — `lock` names the holder, and this is the reason a retry after clearing the lock fixes. `not-found`: no document has that id; the other documents are not the caller's mistake, so it is an entry here rather than a `404` for the whole request. `not-applicable`: the act does not apply to this document (resolving something that is not a thread) — §11 offers an action only when it applies to every selected item, so this means the corpus changed between selecting and acting. `invalid`: the write would leave the document failing §14 validation, refused with its reason. `write-failed`: the file could not be written; nothing about this document reached the commit.
+             * @example locked
+             * @enum {string}
+             */
+            reason: "locked" | "not-found" | "not-applicable" | "invalid" | "write-failed";
+            /** @description Human-readable specifics for this document — the holder and when the lease expires, the validator's own finding, the write error. Rendered verbatim beside the document's title; never parsed. Always present: §11 requires every entry in this part to carry its reason, and a class alone does not tell a person what to do next. */
+            message: string;
+            /** @description The lock that refused this document, non-null **exactly when** `reason` is `locked` (SPEC.md §7 — a refusal identifies the holder). Null on every other reason. */
+            lock: components["schemas"]["Lock"] | null;
+        };
+        Lock: {
+            /**
+             * @description Identifier of any document; threads are documents too.
+             * @example doc_a1b2c3
+             */
+            docId: string;
+            /**
+             * @description The acting party for a request. Becomes the git author of the auto-commit the server makes for the mutation (SPEC.md §4, §7).
+             * @example user
+             * @enum {string}
+             */
+            holder: "user" | "agent";
+            /**
+             * Format: date-time
+             * @example 2026-07-19T10:05:00Z
+             */
+            acquired: string;
+            /** @description Seconds from `acquired` after which `lock reap` may clear it. */
+            ttl: number;
+        };
+        ForbiddenError: {
+            /** @enum {string} */
+            code: "forbidden";
+            message: string;
+        };
+        BulkActionRequest: {
+            /** @description The documents to act on, named individually. **At least one**: an act on nothing is a caller bug, and a `200` carrying three empty lists would let a broken board look healthy. An id repeated within one request is collapsed — the act runs once per document and the result names each id once. Thread ids belong here too (threads are documents, SPEC.md §6), which is what lets `resolve`/`reopen` ride this route. **Ids, never a filter**: §11's whole-result-set selection is resolved to ids by the caller, because a mutation aimed at a set nobody enumerated is a far larger promise than this route makes. Deliberately uncapped — a column's query legitimately matches thousands, and a limit the spec does not state would refuse a selection §11 allows the board to offer. */
+            ids: string[];
+            /** @description The act to apply, and its parameters — discriminated on `action`. SPEC.md §11 offers an action only when it applies to **every** selected item, so exactly one act per request is the whole vocabulary a selection needs. */
+            action: {
+                /** @enum {string} */
+                action: "archive";
+            } | {
+                /** @enum {string} */
+                action: "unarchive";
+            } | {
+                /** @enum {string} */
+                action: "resolve";
+            } | {
+                /** @enum {string} */
+                action: "reopen";
+            } | {
+                /** @enum {string} */
+                action: "move";
+                /** @description Destination folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`) — the same spelling `POST /api/docs/{id}/move` takes. Each document keeps its id, so every `[[ref]]`, anchor entry and thread `parent` survives the move. */
+                folder: string;
+            } | {
+                /** @enum {string} */
+                action: "tag";
+                /** @description Tags to add where absent. Adding a tag a document already carries is a no-op for that document, not a failure. */
+                add?: string[];
+                /** @description Tags to remove where present. Removing a tag a document does not carry is a no-op for that document, not a failure. */
+                remove?: string[];
+            } | {
+                /** @enum {string} */
+                action: "review";
+            } | {
+                /** @enum {string} */
+                action: "delete";
+            };
+        };
         NotFoundError: {
             /** @enum {string} */
             code: "not_found";
@@ -4449,26 +4627,6 @@ export interface components {
             message: string;
             lock: components["schemas"]["Lock"];
         };
-        Lock: {
-            /**
-             * @description Identifier of any document; threads are documents too.
-             * @example doc_a1b2c3
-             */
-            docId: string;
-            /**
-             * @description The acting party for a request. Becomes the git author of the auto-commit the server makes for the mutation (SPEC.md §4, §7).
-             * @example user
-             * @enum {string}
-             */
-            holder: "user" | "agent";
-            /**
-             * Format: date-time
-             * @example 2026-07-19T10:05:00Z
-             */
-            acquired: string;
-            /** @description Seconds from `acquired` after which `lock reap` may clear it. */
-            ttl: number;
-        };
         UpdateDocRequest: {
             title?: string;
             body?: string;
@@ -4512,11 +4670,6 @@ export interface components {
             orphanedThreadIds: string[];
             /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed. Empty when nothing went wrong. */
             warnings: components["schemas"]["Warning"][];
-        };
-        ForbiddenError: {
-            /** @enum {string} */
-            code: "forbidden";
-            message: string;
         };
         MoveDocRequest: {
             /** @description Folder under `data/docs/`, accepted either as a bare name (`finance`) or as the full prefix (`data/docs/finance`). Defaults to `inbox` — creation is inbox-first (SPEC.md §11), and the agent files inbox arrivals per its skill. */

@@ -53,7 +53,7 @@ import {
 } from "../core/index.js";
 import { resolveAnchorExact } from "../anchors/index.js";
 import type { EditSessionTracker } from "../edit/index.js";
-import { badRequest } from "../errors.js";
+import { HttpError, badRequest } from "../errors.js";
 import type { InvalidationBus } from "../events/index.js";
 import { TREE_KEY, dedupeKeys } from "../events/index.js";
 import type { AnchorChange, AutoCommitter, CommitOutcome } from "../git/index.js";
@@ -334,6 +334,35 @@ export interface DocsWorkspace {
 /** A 400 always carries `issues` — `ApiErrorSchema`'s `bad_request` variant requires it. */
 export function validationError(message: string, issues: readonly ValidationIssue[]): never {
   throw badRequest(message, issues.length > 0 ? [...issues] : [{ path: "", message }]);
+}
+
+/**
+ * The refusal raised when the **destination path** is already taken — a move
+ * onto an existing filename, a skill archived into a folder that already exists.
+ * Byte-for-byte the `400` {@link validationError} raises; the type is the only
+ * thing added.
+ *
+ * It exists because the two planners that raise it (`planMove`,
+ * `planSetArchived`) are shared between a single-document route and the bulk act
+ * (SERVER-077), and the two need different things from the same condition. On
+ * its own route it is a `400` and nothing more. Inside a bulk act the *class* of
+ * refusal is decided by which step failed, and everything `planFor` raises would
+ * otherwise be reported as `not-applicable` — whose published meaning is "the
+ * act does not apply to this document … the corpus changed between selecting and
+ * acting", i.e. *refresh the board*, when the remedy for a filename collision is
+ * to rename something (SERVER-077 review, finding 4). Nothing about the error
+ * message could tell them apart, so the type carries it: this was refused by the
+ * path, not by the act.
+ */
+export class DestinationOccupiedError extends HttpError {}
+
+/** {@link validationError}, for a destination that is already taken. */
+export function destinationOccupied(message: string, issues: readonly ValidationIssue[]): never {
+  throw new DestinationOccupiedError(400, {
+    code: "bad_request",
+    message,
+    issues: issues.length > 0 ? [...issues] : [{ path: "", message }],
+  });
 }
 
 /**
@@ -687,7 +716,7 @@ export function warningDetail(output: string): string {
     .slice(0, WARNING_DETAIL_LENGTH);
 }
 
-function warningsFor(outcome: CommitOutcome | null): Warning[] {
+export function commitWarnings(outcome: CommitOutcome | null): Warning[] {
   if (outcome === null) return [];
   if (outcome.kind === "failed") {
     return [
@@ -753,13 +782,19 @@ export const SEEN_LANE = "\u0000seen";
 /**
  * Hold several lanes at once, for a mutation that writes more than one
  * document — a thread whose deletion also rewrites its parent's `anchors` map
- * (SPEC.md §6).
+ * (SPEC.md §6), or a bulk act over a whole selection (§4, SERVER-077).
  *
- * **Acquisition order is the deadlock discipline**, and it is the caller's to
- * respect: every composite thread mutation passes `[threadId, parentId]`, in
- * that order, and nothing anywhere takes the two the other way round.
- * Duplicates are collapsed, so a (corrupt) thread naming itself as its own
- * parent waits on itself exactly zero times.
+ * **Acquisition order is the deadlock discipline, and it is enforced here
+ * rather than asked of the caller**: the keys are sorted, so every multi-lane
+ * acquisition in the process takes its lanes in one global order and a cycle is
+ * impossible. It used to be the caller's to respect — "every composite thread
+ * mutation passes `[threadId, parentId]`, in that order" — which held only
+ * while every such caller wrote two lanes it could name. A bulk act names an
+ * arbitrary set, and `[parent, thread]` sorted against a deletion's
+ * `[thread, parent]` is exactly the cycle the convention forbade, so the
+ * convention became a sort (SERVER-077). Duplicates are collapsed, so a
+ * (corrupt) thread naming itself as its own parent waits on itself exactly zero
+ * times.
  */
 export function runInLanes<T>(
   mutex: DocumentMutex,
@@ -768,7 +803,7 @@ export function runInLanes<T>(
 ): Promise<T> {
   const lanes = [
     ...new Set(keys.filter((key): key is string => key !== null && key !== undefined)),
-  ];
+  ].sort();
   const enter = (index: number): Promise<T> => {
     const key = lanes[index];
     return key === undefined ? task() : mutex.run(key, () => enter(index + 1));
@@ -776,45 +811,40 @@ export function runInLanes<T>(
   return enter(0);
 }
 
-export async function runMutation(
+/**
+ * Put a plan's file operations on disk, all-or-nothing, having first checked
+ * that none of them escapes the workspace.
+ *
+ * Split out of {@link runMutation} for the bulk act (SPEC.md §4's "One action,
+ * one commit", SERVER-077), which applies **one group per document** so that a
+ * document whose write fails is refused individually — "nothing about this
+ * document reached the commit" — while the rest of the act still lands. The
+ * group is the unit of atomicity either way, which is why the rollback lives
+ * here and not in the caller.
+ */
+export function applyOperations(
   workspace: DocsWorkspace,
-  request: {
-    readonly docId: string;
-    readonly actor: Actor;
-    readonly plan: MutationPlan;
-    /**
-     * What {@link validateBeforeWrite} already noticed about the bytes this plan
-     * writes. Carried in rather than recomputed here: the pipeline has no
-     * document text of its own, and validation happens before the write by
-     * design.
-     */
-    readonly warnings?: readonly Warning[];
-  },
-): Promise<MutationResult> {
-  const { plan } = request;
-  const validationWarnings = request.warnings ?? [];
-  if (plan.operations.length === 0) {
-    return { changed: false, warnings: validationWarnings, commit: null };
-  }
-
+  docId: string,
+  operations: readonly FileOperation[],
+): void {
   // Containment is checked for every path of every verb in one place, before
   // any of them is acted on: a plan that would escape the workspace leaves it
   // byte-for-byte untouched.
-  for (const operation of plan.operations) {
+  for (const operation of operations) {
     for (const path of operationPaths(operation)) {
       assertContained(workspace.workspaceRoot, path);
     }
   }
 
-  // A plan that touches more than one path is all-or-nothing. Anchored thread
+  // A group that touches more than one path is all-or-nothing. Anchored thread
   // creation writes the parent's frontmatter *and* the new thread file
   // (SPEC.md §6, SERVER-006); a failure between the two would leave an anchor
   // pointing at a conversation that does not exist — the one state §6 says must
-  // never be observable. A single-operation plan needs nothing: every write
+  // never be observable. A single-operation group needs nothing: every write
   // here is a rename over the target, so it either landed whole or not at all.
   const undo: Undo[] = [];
   try {
-    for (const operation of plan.operations) {
+    for (const operation of operations) {
       registerSelfWrites(workspace, operation);
       undo.push(applyOperation(workspace, operation));
     }
@@ -826,19 +856,51 @@ export async function runMutation(
         // The mutation already failed; a failed rollback is worse news, not a
         // different outcome. Report it and keep unwinding the rest.
         workspace.logger.error("could not roll back a partial mutation", {
-          docId: request.docId,
+          docId,
           error: String(rollbackError),
         });
       }
     }
     throw error;
   }
+}
 
+/** Everything a plan says about a write that has already landed on disk. */
+export type MutationTail = Omit<MutationPlan, "operations">;
+
+/**
+ * The half of the pipeline that runs **after** the bytes are on disk: commit,
+ * acknowledge, re-project, announce.
+ *
+ * Its own module note explains why that order is load-bearing. It is a separate
+ * function so the bulk act can reach it with one merged tail after N per-document
+ * write groups (SERVER-077) — the whole point of that act being that it produces
+ * *one* commit, *one* re-projection pass and *one* invalidation frame however
+ * many documents it changed.
+ */
+export async function finishMutation(
+  workspace: DocsWorkspace,
+  request: {
+    /**
+     * The document this commit is keyed on. For an act over a set it is the
+     * representative — the first document the act changed — and it is never
+     * load-bearing there: `docIds` carries the subject on the wire and in the
+     * trailers, and the edit-session tracker seals by staged **path**.
+     */
+    readonly docId: string;
+    /** Every document one act changed; see `CommitRequest.docIds`. */
+    readonly docIds?: readonly string[] | undefined;
+    readonly actor: Actor;
+    readonly plan: MutationTail;
+  },
+): Promise<CommitOutcome | null> {
+  const { plan } = request;
   const commit =
     plan.commit === null
       ? null
       : await workspace.git.commit({
           docId: request.docId,
+          ...(request.docIds === undefined ? {} : { docIds: request.docIds }),
           actor: request.actor,
           subject: plan.commit.subject,
           paths: plan.stage,
@@ -878,5 +940,37 @@ export async function runMutation(
     treeBefore !== null && folderTreeSignature(workspace.projection) !== treeBefore;
   workspace.bus.invalidate(dedupeKeys(treeChanged ? [...plan.keys, TREE_KEY] : plan.keys));
 
-  return { changed: true, warnings: [...validationWarnings, ...warningsFor(commit)], commit };
+  return commit;
+}
+
+export async function runMutation(
+  workspace: DocsWorkspace,
+  request: {
+    readonly docId: string;
+    readonly actor: Actor;
+    readonly plan: MutationPlan;
+    /**
+     * What {@link validateBeforeWrite} already noticed about the bytes this plan
+     * writes. Carried in rather than recomputed here: the pipeline has no
+     * document text of its own, and validation happens before the write by
+     * design.
+     */
+    readonly warnings?: readonly Warning[];
+  },
+): Promise<MutationResult> {
+  const { plan } = request;
+  const validationWarnings = request.warnings ?? [];
+  if (plan.operations.length === 0) {
+    return { changed: false, warnings: validationWarnings, commit: null };
+  }
+
+  applyOperations(workspace, request.docId, plan.operations);
+
+  const commit = await finishMutation(workspace, {
+    docId: request.docId,
+    actor: request.actor,
+    plan,
+  });
+
+  return { changed: true, warnings: [...validationWarnings, ...commitWarnings(commit)], commit };
 }

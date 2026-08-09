@@ -819,3 +819,88 @@ describe("createAutoCommitter", () => {
     }
   });
 });
+
+// SPEC.md §4's "One action, one commit" (SERVER-077). The committer is *told*
+// an act spans a set — `docIds` — rather than inferring it from document plus
+// actor, which by construction can only ever fold saves of one document.
+describe("an act over a named set", () => {
+  const A = "data/docs/inbox/a.md";
+  const B = "data/docs/inbox/b.md";
+
+  it("names every document it changed, one trailer each", async () => {
+    const r = makeRepo("act-trailers");
+    r.touch(A, "one");
+    r.touch(B, "two");
+
+    const outcome = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      docIds: ["doc_aaaa1111", "doc_bbbb2222"],
+      actor: "user",
+      subject: "bulk archive: 2 documents by user",
+      paths: [A, B],
+    });
+
+    expect(outcome.kind).toBe("committed");
+    expect(r.git("log", "-1", "--format=%b")).toBe(
+      "Corpus-Doc: doc_aaaa1111\nCorpus-Doc: doc_bbbb2222\nCorpus-Actor: user\n\n",
+    );
+  });
+
+  it("does not fold into the editing session that preceded it", async () => {
+    const r = makeRepo("act-no-fold-in");
+    r.touch(A, "first edit");
+    const session = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [A],
+    });
+    expect(session.kind).toBe("committed");
+
+    // Same author, same document, no clock movement — everything an ordinary
+    // save needs to be folded in.
+    r.clock += 100;
+    r.touch(A, "archived");
+    const act = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      docIds: ["doc_aaaa1111"],
+      actor: "user",
+      subject: "bulk archive: 1 document by user",
+      paths: [A],
+    });
+
+    expect(act.kind).toBe("committed");
+    expect(r.log("%s").slice(0, 2)).toEqual([
+      "bulk archive: 1 document by user",
+      "doc edit: Note (doc_aaaa1111) by user",
+    ]);
+  });
+
+  it("takes no later save into itself", async () => {
+    const r = makeRepo("act-no-fold-onto");
+    r.touch(A, "archived");
+    const act = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      docIds: ["doc_aaaa1111"],
+      actor: "user",
+      subject: "bulk archive: 1 document by user",
+      paths: [A],
+    });
+    expect(act.kind).toBe("committed");
+    const actSha = act.kind === "committed" ? act.sha : "";
+
+    r.clock += 100;
+    r.touch(A, "typed right after");
+    const save = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: Note (doc_aaaa1111) by user",
+      paths: [A],
+    });
+
+    expect(save.kind).toBe("committed");
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(actSha);
+    // The act still records the act, byte for byte.
+    expect(r.git("show", `${actSha}:${A}`)).toBe("archived");
+  });
+});

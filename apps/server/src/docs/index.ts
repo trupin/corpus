@@ -8,16 +8,26 @@
  */
 
 export { actorOf } from "./actor.js";
-export { SKILLS_ARCHIVED_ROOT, SKILLS_ROOT, setArchived, skillDocumentsUnder } from "./archive.js";
+export {
+  SKILLS_ARCHIVED_ROOT,
+  SKILLS_ROOT,
+  planSetArchived,
+  setArchived,
+  skillDocumentsUnder,
+} from "./archive.js";
+export type { ArchivePlan } from "./archive.js";
+export { applyBulkAction, commitSubject } from "./bulk.js";
 export { MAX_SLUG_ATTEMPTS, allocatePath, createDocument } from "./create.js";
 export {
   AGENT_DELETE_MESSAGE,
   anchoredThreadParent,
   deleteDocument,
   deleteDocumentLocked,
+  planDelete,
 } from "./delete.js";
-export type { DeleteOutcome } from "./delete.js";
-export { moveDocument } from "./move.js";
+export type { DeleteOutcome, DeletePlan } from "./delete.js";
+export { assertMovable, moveDocument, planMove } from "./move.js";
+export type { MovePlan } from "./move.js";
 export {
   anchorClaimantIds,
   findDocumentRow,
@@ -40,9 +50,12 @@ export {
   WARNING_DETAIL_LENGTH,
   WARNING_DETAIL_LINES,
   allowAllWrites,
+  applyOperations,
   checkSave,
   checkSeams,
+  commitWarnings,
   createDocumentMutex,
+  finishMutation,
   isSkillFrontmatterException,
   runInLanes,
   runMutation,
@@ -57,6 +70,7 @@ export type {
   FileOperation,
   MutationPlan,
   MutationResult,
+  MutationTail,
   SaveCheck,
   WriteGuard,
 } from "./write.js";

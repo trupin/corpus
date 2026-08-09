@@ -1,4 +1,6 @@
+import { DEFAULT_RECENT_JOBS, MAX_RECENT_JOBS } from "@corpus/contract";
 import { expect, test } from "./coverage";
+import { stubEventStream } from "./eventStream";
 import { stubCorpus } from "./stubCorpus";
 
 /**
@@ -216,6 +218,65 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(row(page, "th_form")).toHaveCount(0);
   });
 
+  /**
+   * The **transport**, on its own.
+   *
+   * The test above shows the row clearing when *this page* answers — and that
+   * page's own mutation invalidates `["docs"]`, so it proves the board repaints
+   * and says nothing about SSE. §11's live updates are the other case: the
+   * answer arrives from a second tab, another column, or a script, and the only
+   * thing that reaches this browser is an `invalidate` frame. So here the corpus
+   * is changed **behind the page's back** and nothing else happens until the
+   * frame is pushed — a real `EventSource`, a real `text/event-stream` held open
+   * over the loopback, the contract's own parser, the kit's bridge.
+   *
+   * The keys pushed are the ones `commitTurnAppend` emits for an answer turn
+   * (`apps/server/src/threads/turns.ts`), not a convenient subset.
+   */
+  test("clears live over SSE when the answer arrives from somewhere else", async ({ page }) => {
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, FORM_THREAD]);
+    const events = await stubEventStream(page);
+    const docsReads = async (): Promise<number> =>
+      (await corpus.of("GET")).filter((call) => call.path === "/api/docs").length;
+
+    try {
+      await page.goto("/");
+      await expect(row(page, "th_form").locator('[data-reason="form"]')).toHaveText(
+        "awaiting your answer",
+      );
+      // Never assumed: if the page never opened the stream, every assertion
+      // below would be about a frame nobody received.
+      await events.waitForConnection();
+
+      await corpus.answerForm("th_form", FORM_TS, {
+        answers: [
+          { question: "Which quote should I file?", option: "Lemonade — $1,840/yr" },
+          { question: "Which riders do you want?", options: ["Water backup"] },
+        ],
+      });
+
+      /*
+       * The corpus no longer awaits an answer and the board does not know: the
+       * cache is `staleTime: Infinity` and never polls, so nothing on this page
+       * will ever ask again on its own. Pinned by the request count rather than
+       * by the row alone — a row that is still there because it has not been
+       * looked at is the state this asserts.
+       */
+      const before = await docsReads();
+      await expect(row(page, "th_form")).toBeVisible();
+      expect(await docsReads()).toBe(before);
+
+      events.push([["docs"], ["docs", "th_form"], ["threads", "th_form"]]);
+
+      await expect(row(page, "th_form")).toHaveCount(0);
+      expect(await docsReads()).toBeGreaterThan(before);
+      // …and it was the frame that did it: no reload, no click, no reconnect.
+      expect(events.connections()).toBeGreaterThan(0);
+    } finally {
+      await events.close();
+    }
+  });
+
   test("survives a reload as the record it is", async ({ page }) => {
     await stubCorpus(page, [
       ATTENTION_VIEW,
@@ -282,6 +343,127 @@ test.describe("the Attention row a form leaves behind", () => {
     await column(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_form").locator('[data-reason="unread-reply"]')).toHaveCount(0);
     await expect(row(page, "th_form").locator('[data-reason="form"]')).toBeVisible();
+  });
+
+  /**
+   * The other half of "both signals at once" (UI-084): not two Attention
+   * reasons, but the person's question and **§8's pending indicator** — two
+   * different systems, two different sources, on the screen together.
+   *
+   * A thread can owe an answer to the person and a reply from the agent at the
+   * same time, and when it does it has to say both. The queue is the only source
+   * for the second (`outstandingAgentRequest.ts`), so the stub seeds a job:
+   * before this, `GET /api/jobs` was flatly empty and the indicator could not
+   * appear in any spec, which made "nothing suppresses it" an argument rather
+   * than an assertion.
+   */
+  test("asks its question while the agent is still working, and neither hides the other", async ({
+    page,
+  }) => {
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, FORM_THREAD], {
+      jobs: [
+        {
+          eventId: "evt_working",
+          type: "comment.created",
+          status: "in-progress",
+          started: "2026-07-19T10:07:30Z",
+          lastLine: "comparing the two quotes",
+          originId: "th_form",
+        },
+      ],
+    });
+    await page.goto("/");
+
+    // On the row: the person owes an answer, and the agent owes a reply.
+    await expect(row(page, "th_form").locator('[data-reason="form"]')).toHaveText(
+      "awaiting your answer",
+    );
+    await expect(row(page, "th_form").locator(".working-dot")).toHaveAttribute(
+      "aria-label",
+      "comparing the two quotes",
+    );
+
+    // In the card: the form still asks, and §8's row still counts — measured
+    // from the requesting turn, which is what survives a reload.
+    await row(page, "th_form").click();
+    const card = column(page).locator(".thread-card");
+    const working = card.locator(".working");
+    await expect(card.locator(".form-comment")).toBeVisible();
+    await expect(card.locator(".form-submit")).toBeVisible();
+    await expect(working).toBeVisible();
+    await expect(working).toContainText("working");
+    await expect(working).toHaveAttribute("data-working-since", FORM_TS);
+
+    // Answering takes the question away and leaves the wait exactly where it
+    // was: the queue event is still outstanding, and an answer is not a reply.
+    await card.locator('input[type="radio"]').first().click();
+    await card.locator('input[type="checkbox"]').first().click();
+    await card.locator(".form-submit").click();
+    await expect(column(page).locator(".form-comment.form-answered")).toBeVisible();
+    await expect(column(page).locator(".form-submit")).toHaveCount(0);
+    await expect(working).toBeVisible();
+    expect((await corpus.of("POST")).some((call) => call.path.endsWith("/form"))).toBe(true);
+  });
+
+  /**
+   * The same indicator, asked the hard way: **the answer to `?originId=` is
+   * complete**, so the wait is counted from the ask that has been outstanding
+   * longest even when the queue has buried it (SPEC.md §9.2 — `recent` bounds
+   * the console list and is *ignored* once `originId` is given, rider signed
+   * 2026-08-05; `listJobRows` appends its `LIMIT` only on the unfiltered path).
+   *
+   * The seed is the shape that distinguishes the two readings. `MAX_RECENT_JOBS`
+   * unrelated events saturate the shared outstanding query, which is what makes
+   * `useOutstandingAgentJob` escalate to the exact question at all — and none of
+   * them is this thread's, so until that question is answered the card says
+   * nothing. This thread's own jobs sit behind them: `DEFAULT_RECENT_JOBS` asks
+   * from 10:30 onwards, and behind *those* the oldest, enqueued at 10:06 by the
+   * user's 10:05 turn.
+   *
+   * That last one is the assertion. A windowed answer would stop one row short
+   * of it and the row would count from the agent's 10:07 form turn instead — a
+   * wait that started twenty-five minutes late, and the exact silent
+   * one-directional failure the rider names. `10:05` on the wire is the buried
+   * job having been found.
+   */
+  test("counts the wait from the buried ask a windowed answer would miss", async ({ page }) => {
+    /** Enough unrelated unfinished work to saturate the shared query. */
+    const elsewhere = Array.from({ length: MAX_RECENT_JOBS }, (_, index) => ({
+      eventId: `evt_elsewhere${String(index)}`,
+      type: "doc.edited",
+      status: "pending",
+      started: "2026-07-19T12:00:00Z",
+      originId: "doc_elsewhere",
+    }));
+    /** This thread's later asks — a full console window of them, newest first. */
+    const laterAsks = Array.from({ length: DEFAULT_RECENT_JOBS }, (_, index) => ({
+      eventId: `evt_later${String(index)}`,
+      type: "comment.created",
+      status: "in-progress",
+      started: `2026-07-19T11:${String(59 - index).padStart(2, "0")}:00Z`,
+      originId: "th_form",
+    }));
+    const buried = {
+      eventId: "evt_buried",
+      type: "comment.created",
+      status: "deferred",
+      started: "2026-07-19T10:06:00Z",
+      originId: "th_form",
+    };
+
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, FORM_THREAD], {
+      jobs: [...elsewhere, ...laterAsks, buried],
+    });
+    await page.goto("/");
+
+    await row(page, "th_form").click();
+    const working = column(page).locator(".thread-card .working");
+    await expect(working).toBeVisible();
+    await expect(working).toHaveAttribute("data-working-since", "2026-07-19T10:05:00Z");
+
+    // …and it got there by asking the exact question, not by scanning a list.
+    const asked = await corpus.of("GET", "/api/jobs");
+    expect(asked.some((call) => call.search.includes("originId=th_form"))).toBe(true);
   });
 
   test("clears when the thread is resolved instead of answered", async ({ page }) => {

@@ -400,15 +400,17 @@ belongs to the same fix wave.
 | UI-076 | Escalation reads a stale snapshot on a second truncation episode (PR #24 re-review) | done | P2 | UI-075 |
 | CLI-030 | Exit 7 promised "nothing changed" on paths that changed things (PR #24 re-review) | done | P1 | CLI-025 |
 | UI-077 | Collapse anything, anywhere: by rule + on demand, every placement | done | P1 | SHARED-018 |
-| AGENT-014 | Agent resolves a settled subthread in the same turn as its reply | todo | P1 | SHARED-019 |
+| AGENT-014 | Agent resolves a settled subthread in the same turn as its reply | done | P1 | SHARED-019 |
 | SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | done | P1 | SHARED-019 |
 | SHARED-017 | Multi-select + bulk actions (SIGNED, applied) | done | P2 | — |
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
-| UI-083 | Selecting rows and acting on the selection — held: rewrite against SHARED-032 (Phase 14) | blocked | P2 | SHARED-032, CONTRACT-037 |
-| CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | todo | P2 | SHARED-017 |
+| UI-083 | Selecting rows and acting on the selection — held: rewrite against SHARED-032 (Phase 14) | blocked | P2 | SHARED-032, SERVER-077 |
+| SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
+| SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | todo | P1 | — |
+| CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |
-| UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) — **partial, 11/14** | todo | P1 | CONTRACT-038 |
+| UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) — **partial, 13/14; last blocked on CONTRACT-040** | todo | P1 | CONTRACT-038, CONTRACT-040 |
 | AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | done | P1 | SERVER-068 |
 | AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | done | P1 | SHARED-023 |
 | CONTRACT-039 | A chosen weight has no way to reach the work it governs (SHARED-022) | done | P2 | SHARED-022 |
