@@ -476,9 +476,9 @@ belongs to the same fix wave.
 ## Phase 14 — Dogfood wave 4: status semantics, no edit mode, bulk staging (2026-08-08)
 
 Seven live reports, filed in a worktree while the weight-travels phase (PRs
-#30–35) ran concurrently. Four
-riders lead, and **nothing below them starts before its rider is signed** —
-SHARED-031 in particular re-bases SHARED-036, so the two are read in that order.
+#30–35) ran concurrently. Nine riders lead, and **nothing below them starts
+before its rider is signed** — SHARED-031 in particular re-bases SHARED-036, so
+the two are read in that order.
 
 The wave's throughline is that three surfaces disagree with the contract they
 sit on. `DOC_STATUSES` is type-independent, yet the row menu gates Resolve on
