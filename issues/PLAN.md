@@ -404,7 +404,7 @@ belongs to the same fix wave.
 | SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | done | P1 | SHARED-019 |
 | SHARED-017 | Multi-select + bulk actions (SIGNED, applied) | done | P2 | — |
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
-| UI-083 | Selecting rows and acting on the selection (SHARED-017) | todo | P2 | SHARED-017, SERVER-077 |
+| UI-083 | Selecting rows and acting on the selection — held: rewrite against SHARED-032 (Phase 14) | blocked | P2 | SHARED-032, SERVER-077 |
 | SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
 | SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | todo | P1 | — |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
@@ -474,3 +474,52 @@ belongs to the same fix wave.
 | SERVER-072 | Write the corrected selector when a person re-attaches a thread (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-071 |
 | UI-086 | An orphaned comment offers candidate sites, and the person picks (SERVER-059 phase B) | done | P1 | CONTRACT-041, SERVER-072 |
 | PLUGINS-012 | Todos item composer takes attachments (2nd kit-consumer test) | todo | P2 | UI-070 |
+
+## Phase 14 — Dogfood wave 4: status semantics, no edit mode, bulk staging (2026-08-08)
+
+Seven live reports, filed in a worktree while the weight-travels phase (PRs
+#30–35) ran concurrently. Nine riders lead, and **nothing below them starts
+before its rider is signed** — SHARED-031 in particular re-bases SHARED-036, so
+the two are read in that order.
+
+The wave's throughline is that three surfaces disagree with the contract they
+sit on. `DOC_STATUSES` is type-independent, yet the row menu gates Resolve on
+threads; §11 abolishes edit mode, yet frontmatter kept one; §12 makes a todo's
+items the record, yet nothing reads them into its status. SHARED-031 settles the
+vocabulary all three were guessing at.
+
+SHARED-032 revises the bulk-selection rider signed 2026-08-05 **before** UI-083
+implements it — the design changed while it was still only text, which is the
+cheapest moment for that to happen.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-031 | `status` is one vocabulary, not per-type (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-036 | A todo list says `open` after its last item is checked (DRAFTED — sign-off) | todo | P1 | SHARED-031 |
+| SHARED-030 | Frontmatter hides behind an edit mode the reader abolished (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-032 | Bulk actions are a mode, staged per row, the one edit/save left (DRAFTED — sign-off) | todo | P1 | SHARED-030 |
+| UI-093 | Frontmatter controls are always live and save on change | todo | P1 | SHARED-030 |
+| PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
+| SERVER-077 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-036, PLUGINS-016 |
+| UI-092 | A derived status shows its value and its source, uneditable | todo | P2 | PLUGINS-016, SERVER-077, UI-093 |
+| PLUGINS-015 | The Todos column's checkbox opens the item instead of checking it | todo | P1 | SHARED-036 |
+| UI-094 | Right-clicking a document offers no Resolve, though every document has one | todo | P2 | SHARED-031 |
+| SHARED-038 | `--unstable` reaches §2.4 before it reaches the code (DRAFTED — sign-off) | todo | P1 | — |
+| INFRA-026 | A PR's package cannot be told from any other PR's | todo | P1 | — |
+| CLI-034 | `corpus upgrade --unstable` installs the latest PR build | todo | P2 | SHARED-038, INFRA-026 |
+| UI-095 | Clicking a comment does not take you to it, opened | todo | P1 | — |
+| UI-096 | The collapse control is a 13px glyph crowded against resolve | todo | P2 | — |
+| SHARED-033 | The UI claims an agent that is not working, and one that is not there (DRAFTED — sign-off) | todo | P1 | — |
+| UI-097 | A request nobody has picked up says "agent is working…" | todo | P1 | SHARED-033 |
+| CONTRACT-045 | `QueueStatus` cannot say whether an agent is there | todo | P1 | SHARED-033 |
+| SERVER-078 | The server does not record that an agent is there | todo | P1 | CONTRACT-045 |
+| UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-078 |
+| UI-099 | Commenting on a document selection leaves no visible anchor | todo | P0 | — |
+| UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
+| SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc (DRAFTED — sign-off) | todo | P1 | — |
+| SHARED-034 | Full-screen editing has no persistent formatting toolbar (DRAFTED — sign-off) | todo | P1 | SHARED-035 |
+| SHARED-037 | The patch operation reaches §9.2 before it reaches the code (DRAFTED — sign-off) | todo | P1 | — |
+| CONTRACT-046 | The only body edit is a whole-body replacement | todo | P1 | SHARED-037 |
+| SERVER-079 | Apply an anchored string patch through the ordinary write path | todo | P1 | SHARED-037, CONTRACT-046 |
+| CLI-035 | `corpus doc patch` — edit a line without shipping the document | todo | P1 | SHARED-037, CONTRACT-046, SERVER-079 |
+| UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |

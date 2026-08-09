@@ -6,7 +6,11 @@ ui
 
 ## Status
 
-todo
+blocked — **held 2026-08-08: do not implement from this file.** The user
+revised the interaction model before implementation (SHARED-032: bulk actions
+become a mode with per-row staged actions and a Save). This issue is rewritten
+against that rider once it is signed; the design below describes the superseded
+2026-08-05 model.
 
 ## Priority
 
@@ -18,8 +22,10 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-017 (signed 2026-08-05; amendments applied to SPEC.md),
-  CONTRACT-037
+- Depends on: SHARED-032 (rider must be signed first, then this issue is
+  rewritten), CONTRACT-037 (re-checked during the rewrite — a per-row staged
+  set may need a different request shape); originally SHARED-017 (signed
+  2026-08-05; superseded by SHARED-032)
 - Blocks: —
 
 ## Spec References
