@@ -3,10 +3,17 @@
 //
 // Everything load-bearing here is asserted against **real git output**, never
 // against the server's own bookkeeping: the whole point of the route is that
-// `changed` and `git show --name-only <commit>` are the same set, and a test
-// that compared the response to itself would pass over a loop of the
-// single-document write path — the one failure mode this route exists to
-// prevent, and the one that looks like it works.
+// every document `changed` names has a file in that one commit, and a test that
+// compared the response to itself would pass over a loop of the single-document
+// write path — the one failure mode this route exists to prevent, and the one
+// that looks like it works.
+//
+// That invariant is **containment, not set equality**, and the two suites below
+// pin the difference: the commit legitimately carries files for documents the
+// act never named — §6's cascade parent, and the nested `SKILL.md` a §7 folder
+// move disables — because the result's three parts partition the *requested*
+// ids and those documents are not among them. The equality assertions here are
+// therefore made only where no such file can exist.
 
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
@@ -66,6 +73,36 @@ const acquireLock = async (id: string, actor: "user" | "agent"): Promise<void> =
   expect(response.status).toBe(201);
 };
 
+const idAt = (path: string): string =>
+  (ws.db.prepare("SELECT id FROM documents WHERE path = ?").get(path) as { id: string }).id;
+
+const statusAt = (path: string): string =>
+  (ws.db.prepare("SELECT status FROM documents WHERE path = ?").get(path) as { status: string })
+    .status;
+
+const skillSource = (name: string): string =>
+  ["---", `name: ${name}`, `description: The ${name} skill.`, "---", "", `# ${name}`, ""].join(
+    "\n",
+  );
+
+/**
+ * A real skill folder — `SKILL.md`, a sibling, **and a nested skill**, which
+ * `skillDocumentsUnder` documents as a supported shape and which is what makes a
+ * §7 folder move carry a document the act never named.
+ */
+function seedSkills(): { outer: string; nested: string } {
+  ws.write(".claude/skills/demo/SKILL.md", skillSource("demo"));
+  ws.write(".claude/skills/demo/reference.md", "# Reference\n\nDetails.\n");
+  ws.write(".claude/skills/demo/nested/SKILL.md", skillSource("nested"));
+  ws.git("add", "-A", "--", ".claude");
+  ws.git("commit", "-m", "seed the skills");
+  ws.reproject();
+  return {
+    outer: idAt(".claude/skills/demo/SKILL.md"),
+    nested: idAt(".claude/skills/demo/nested/SKILL.md"),
+  };
+}
+
 const seed = async (count: number, prefix = "Note"): Promise<{ id: string; path: string }[]> => {
   const docs: { id: string; path: string }[] = [];
   for (let index = 0; index < count; index += 1) {
@@ -101,8 +138,10 @@ describe("one act, one commit", () => {
     expect(ws.log("%H")).toHaveLength(commitsBefore + 1);
     expect(result.commit).toBe(ws.head());
 
-    // The assertion the route exists for: the report and the history are the
-    // same set, read from git rather than from the server.
+    // The assertion the route exists for, read from git rather than from the
+    // server: every document `changed` names has its file here. Asserted as an
+    // equality because this particular act can produce nothing else — plain
+    // notes, no §6 cascade, no §7 folder move.
     expect(filesIn(result.commit ?? "")).toEqual(result.changed.map(pathOf).sort());
 
     // And the three refused documents left nothing in it — `git log` never
@@ -350,9 +389,95 @@ describe("the eight acts", () => {
     );
     expect(ws.exists(`data/threads/${anchored.id}.md`)).toBe(false);
     expect(ws.exists(parentPath)).toBe(false);
-    // The standalone thread survives as an orphaned record, and is reported.
-    expect(result.orphanedThreadIds).toContain(standalone.id);
+    // The standalone thread survives as an orphaned record, and is reported —
+    // and it is the *only* one. `planDelete` answers from the projection, which
+    // does not move until `finishMutation` runs after the whole loop, so the
+    // parent's plan still sees the row of the thread this same act deleted one
+    // iteration earlier. Reporting it here would name it as deleted and as a
+    // surviving orphan whose caches to drop, and §11's confirm counts exactly
+    // this number.
+    expect(result.orphanedThreadIds).toEqual([standalone.id]);
+    expect(result.orphanedThreadIds).not.toContain(anchored.id);
+    expect(result.changed).toContain(anchored.id);
     expect(ws.exists(`data/threads/${standalone.id}.md`)).toBe(true);
+  });
+
+  it("still reports a thread whose own deletion was refused as a surviving orphan", async () => {
+    // The other half of the filter: only a thread this act actually deleted
+    // stops being an orphan. One that was refused did survive.
+    const [parent] = await seed(1);
+    const thread = await createThread(ws, { parent: parent?.id ?? null, body: "kept" });
+    await acquireLock(thread.id, "agent");
+
+    const { result } = await bulk({
+      ids: [thread.id, parent?.id ?? ""],
+      action: { action: "delete" },
+    });
+
+    expect(result.changed).toEqual([parent?.id]);
+    expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([
+      [thread.id, "locked"],
+    ]);
+    expect(result.orphanedThreadIds).toEqual([thread.id]);
+    expect(ws.exists(`data/threads/${thread.id}.md`)).toBe(true);
+  });
+
+  it("archives a skill by moving its folder, not by flipping `status`", async () => {
+    const { outer } = seedSkills();
+
+    const archived = await bulk({ ids: [outer], action: { action: "archive" } });
+
+    expect(archived.result.changed).toEqual([outer]);
+    // SPEC.md §7: what *disables* a skill is where its folder lives. A bulk
+    // branch that wrote `status: archived` and nothing else would satisfy every
+    // other assertion in this suite and leave the skill enabled — which is the
+    // whole reason `planSetArchived` is extracted rather than reimplemented.
+    expect(ws.exists(".claude/skills-archived/demo/SKILL.md")).toBe(true);
+    expect(ws.exists(".claude/skills-archived/demo/reference.md")).toBe(true);
+    expect(ws.exists(".claude/skills/demo")).toBe(false);
+    expect(pathOf(outer)).toBe(".claude/skills-archived/demo/SKILL.md");
+    // The id survives the move because the act stamps it into the file — a
+    // synthesized id is a function of the path (§7).
+    expect(ws.read(".claude/skills-archived/demo/SKILL.md")).toContain(`id: ${outer}`);
+    expect(filesIn(archived.result.commit ?? "")).toContain(
+      ".claude/skills-archived/demo/SKILL.md",
+    );
+
+    const restored = await bulk({ ids: [outer], action: { action: "unarchive" } });
+
+    expect(restored.result.changed).toEqual([outer]);
+    expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
+    expect(ws.exists(".claude/skills-archived/demo")).toBe(false);
+    expect(pathOf(outer)).toBe(".claude/skills/demo/SKILL.md");
+  });
+
+  it("carries a nested skill the act never named, and names it in none of the three parts", async () => {
+    // The second of the two documented exceptions to "every file in the commit
+    // names a `changed` document" (the first being §6's cascade parent).
+    // `skillDocumentsUnder` supports a skill folder that nests another skill, and
+    // archiving the outer one relocates — and therefore disables — the inner one.
+    const { outer, nested } = seedSkills();
+
+    const { result } = await bulk({ ids: [outer], action: { action: "archive" } });
+
+    // The act moved it, in this commit, and the move disabled it: the
+    // `skills-archived` root is what `status: archived` means for a skill.
+    const files = filesIn(result.commit ?? "");
+    expect(files).toContain(".claude/skills/demo/nested/SKILL.md");
+    expect(files).toContain(".claude/skills-archived/demo/nested/SKILL.md");
+    expect(ws.exists(".claude/skills/demo/nested/SKILL.md")).toBe(false);
+    expect(statusAt(".claude/skills-archived/demo/nested/SKILL.md")).toBe("archived");
+
+    // And the three parts name it nowhere, under either id it has held — they
+    // partition the **requested** ids, and it was never among them.
+    const named = [
+      ...result.changed,
+      ...result.alreadyInState,
+      ...result.refused.map((entry) => entry.id),
+    ];
+    expect(named).toEqual([outer]);
+    expect(named).not.toContain(nested);
+    expect(named).not.toContain(idAt(".claude/skills-archived/demo/nested/SKILL.md"));
   });
 
   it("cascades two threads of one parent into one rewrite of that parent", async () => {
@@ -480,26 +605,86 @@ describe("per-document outcomes", () => {
     }
   });
 
-  it("refuses a deletion whose parent is locked by the other party", async () => {
+  it("refuses a deletion whose parent is locked, and says the parent is the locked one", async () => {
     const [parent] = await seed(1);
+    const parentId = parent?.id ?? "";
     const anchored = await createThread(ws, {
-      parent: parent?.id ?? null,
+      parent: parentId,
       selector: { exact: "Note 0", prefix: "", suffix: "" },
       body: "about the title",
     });
     // The lock that can refuse the cascade is the one on the file being
     // rewritten — the parent's (sprint-006 Adjudication 1).
-    await acquireLock(parent?.id ?? "", "agent");
+    await acquireLock(parentId, "agent");
     const head = ws.head();
 
     const { status, result } = await bulk({ ids: [anchored.id], action: { action: "delete" } });
 
     expect(status).toBe(200);
     expect(result.changed).toEqual([]);
-    expect(result.refused[0]?.reason).toBe("locked");
     expect(result.commit).toBeNull();
     expect(ws.head()).toBe(head);
     expect(ws.exists(`data/threads/${anchored.id}.md`)).toBe(true);
+
+    // The row is filed under the thread's id — the three parts partition the
+    // requested ids, and the parent was not requested — but everything in it
+    // that names a document names the **parent**, which is the document that is
+    // locked and the lock a person has to clear. Clearing the thread's own lock
+    // would change nothing.
+    const refusal = result.refused[0];
+    expect(refusal?.id).toBe(anchored.id);
+    expect(refusal?.reason).toBe("locked");
+    expect(refusal?.lock?.docId).toBe(parentId);
+    expect(refusal?.lock?.holder).toBe("agent");
+    expect(refusal?.message).toContain(parentId);
+    expect(refusal?.message).toContain("the lock to clear is");
+  });
+
+  it("reports a filename collision as a write that could not happen", async () => {
+    const first = await createDoc(ws, { type: "note", title: "Budget", folder: "inbox" });
+    const second = await createDoc(ws, { type: "note", title: "Budget", folder: "plans" });
+
+    const { result } = await bulk({
+      ids: [first.id, second.id],
+      action: { action: "move", folder: "finance" },
+    });
+
+    expect(result.changed).toEqual([first.id]);
+    // Not `not-applicable`: that reason's published meaning is "the corpus
+    // changed between selecting and acting", i.e. refresh the board — when the
+    // board is perfectly current and the remedy is to rename a document.
+    expect(result.refused.map((entry) => [entry.id, entry.reason, entry.lock])).toEqual([
+      [second.id, "write-failed", null],
+    ]);
+    // And the message says which name is taken, which is what §11's third part
+    // means by carrying the specifics.
+    expect(result.refused[0]?.message).toContain("data/docs/finance/budget.md");
+    // "Nothing about this document reached the commit."
+    expect(filesIn(result.commit ?? "")).toEqual(
+      [first.path, "data/docs/finance/budget.md"].sort(),
+    );
+    expect(ws.exists(second.path)).toBe(true);
+  });
+
+  it("reports a skill archived into an occupied folder the same way", async () => {
+    const { outer } = seedSkills();
+    // A folder already sitting on the archived side, so the move would merge two
+    // skill folders and silently overwrite files.
+    ws.write(".claude/skills-archived/demo/SKILL.md", skillSource("impostor"));
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the collision");
+    const head = ws.head();
+
+    const { result } = await bulk({ ids: [outer], action: { action: "archive" } });
+
+    expect(result.changed).toEqual([]);
+    expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([
+      [outer, "write-failed"],
+    ]);
+    expect(result.refused[0]?.message).toContain(".claude/skills-archived/demo");
+    expect(result.commit).toBeNull();
+    expect(ws.head()).toBe(head);
+    expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
   });
 });
 

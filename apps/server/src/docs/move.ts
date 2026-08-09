@@ -12,6 +12,7 @@ import { parseDocumentPath, type ParsedDocumentPath } from "../core/index.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { loadDocument, toWireDoc, type LoadedDocument } from "./read.js";
 import {
+  destinationOccupied,
   resolveFolder,
   runMutation,
   validationError,
@@ -79,9 +80,12 @@ export function planMove(
 
   // No 409 is declared on this route (sprint-005 Open Conflict 4), and the
   // rejection is honest as a request-level one: the caller named a
-  // destination that cannot be used, and `issues` says which.
+  // destination that cannot be used, and `issues` says which. Raised through
+  // {@link destinationOccupied} rather than {@link validationError} so a bulk
+  // act can report it as what it is — a write that could not happen — instead of
+  // telling the user to refresh a board that is perfectly current.
   if (existsSync(resolve(workspace.workspaceRoot, nextPath))) {
-    validationError("the destination is already occupied", [
+    destinationOccupied("the destination is already occupied", [
       { path: "folder", message: `${nextPath} already exists` },
     ]);
   }

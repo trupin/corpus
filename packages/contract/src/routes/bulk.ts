@@ -26,10 +26,14 @@ import {
  * commit, or someone's next keystroke folding into a bulk archive, both make
  * `git revert <that commit>` stop meaning "undo the action".
  *
- * **The three-part result and the commit's file list are one computation.** They
- * are not two answers that might disagree: §11 puts it as "the history agrees
- * with it (§4)", and concretely `changed` and `git show --name-only` name the
- * same documents.
+ * **The three-part result and the commit's file list are one computation**, and
+ * the agreement between them runs one way. They are not two answers that might
+ * disagree: §11 puts it as "the history agrees with it (§4)", and concretely
+ * every document `changed` names has a file in `git show --name-only <commit>`.
+ * Not the converse — a commit may legitimately carry files for documents the act
+ * never named. The description below states both ways that happens today and why
+ * each follows from the same rule; `../schemas/bulk.ts` argues it at the point of
+ * definition.
  *
  * **Routing.** `/api/docs/bulk` is a static segment where `/api/docs/{id}`
  * carries a parameter. Nothing competes today — no `POST /api/docs/{id}` exists,
@@ -49,9 +53,20 @@ export const applyBulkAction = createRoute({
     'auto-commit** (SPEC.md §4, "One action, one commit"), authored by the acting party like ' +
     "any other mutation: archiving twenty documents is one commit, not twenty, so reverting the " +
     "action is one `git revert` and `git log` never records an effect the user was told did not " +
-    "happen. That commit contains **exactly** the documents the act changed — `changed` and " +
-    "`git show --name-only` are the same set — and its message names the action and those " +
-    "documents. It is its own entry in the history: it never folds into a preceding editing " +
+    "happen. **Every document `changed` names has a file in that commit**, and `git show " +
+    "--name-only` lists it: only a write that landed puts an id in `changed`, and only those " +
+    "writes are staged, so a document that was refused or was already in the target state wrote " +
+    "nothing and appears nowhere in it. That containment is the invariant, and it holds in one " +
+    "direction only — **the commit may also carry files for documents the act did not name**, " +
+    "because the result's three parts partition the **requested** ids and nothing else. Two " +
+    "things do that today, both required by the spec rather than incidental, and both shared " +
+    "with the single-document routes: §6's anchor cascade rewrites the `anchors` map of a " +
+    "deleted thread's parent in the same commit, and that parent survives the act and need not " +
+    "even have been requested; and archiving or unarchiving a skill moves its whole folder, " +
+    "carrying every file under it — including the `SKILL.md` of a nested skill, which the move " +
+    "disables (§7: what disables a skill is where its folder lives) without the act ever naming " +
+    "it. The commit message names the action and the documents in `changed`. It is its own " +
+    "entry in the history: it never folds into a preceding editing " +
     "session's squashed commit, and no later save folds into it (§4's squashing is about " +
     "repeated saves of *one* document, never about one act across many). An implementation that " +
     "loops the single-document write path is therefore wrong rather than merely slower — it " +

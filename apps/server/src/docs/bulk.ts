@@ -17,21 +17,35 @@
 // which is what makes the commit stand alone in both directions §4 names: it
 // never folds into a preceding editing session, and no later save folds into it.
 //
-// **The act's report and the commit are one computation.** Only a document whose
-// write actually landed enters `changed`, and only `changed`'s paths are staged,
-// so `changed` and `git show --name-only <commit>` name the same documents. A
-// document that was refused, or that was already in the requested state, wrote
-// nothing and therefore contributes nothing — `git log` never records an effect
-// the caller was told did not happen. When nothing changed there is no commit
-// object at all, not an empty one.
+// **The act's report and the commit are one computation — containment, in one
+// direction.** Only a write that landed puts an id in `changed`, and only those
+// writes are staged, so **every document `changed` names has a file in that
+// commit** and `git show --name-only` lists it, while a document that was
+// refused or was already in the target state wrote nothing and appears nowhere
+// in it — `git log` never records an effect the caller was told did not happen.
+// When nothing changed there is no commit object at all, not an empty one.
 //
-// **The one file in the commit that names no `changed` document** is §6's anchor
-// cascade: deleting an anchored thread rewrites its parent's `anchors` map "in
-// the same commit", exactly as `DELETE /api/docs/{id}` does. The parent is not in
-// `changed` and must not be — the act did not delete it, and the contract
-// requires the three parts to partition the *requested* ids, which the parent
-// need not even be among. So the invariant is stated over documents the act
-// acted on, and the cascade is bookkeeping §6 requires to travel with them.
+// It is **not** set equality, and the reason is structural rather than a defect
+// to be tidied away: the result's three parts partition the **requested** ids and
+// nothing else, so a file for a document the act did not name has no part to go
+// in. Two things do that today, both required by the spec and both shared with
+// the single-document routes — reached here through *their* planners rather than
+// re-derived:
+//
+//   1. §6's **anchor cascade** — deleting an anchored thread rewrites its
+//      parent's `anchors` map "in the same commit", exactly as
+//      `DELETE /api/docs/{id}` does. That parent survives the act, need not even
+//      have been requested, and must not be in `changed`: the act did not delete
+//      it.
+//   2. §7's **skill folder move** — archiving or unarchiving a skill moves its
+//      whole folder, carrying every file under it, because what disables a skill
+//      is where its folder lives. A skill folder may nest another skill (see
+//      `skillDocumentsUnder`), and the move disables that nested `SKILL.md`
+//      without the act ever naming it. `POST /api/docs/{id}/archive` moves
+//      exactly the same folder; this is that verb's shape, not a bulk-only one.
+//
+// Both are pinned by tests, so the exceptions are documented by something that
+// fails when they change rather than by this sentence.
 //
 // **Per-document outcomes stay per-document** (§11: a bulk action "applies to
 // what it can and reports what it could not", and "never refuses the whole set
@@ -73,6 +87,7 @@ import { AGENT_DELETE_MESSAGE, anchoredThreadParent, planDelete } from "./delete
 import { assertMovable, planMove } from "./move.js";
 import { loadDocument, type LoadedDocument } from "./read.js";
 import {
+  DestinationOccupiedError,
   applyOperations,
   commitWarnings,
   finishMutation,
@@ -82,6 +97,7 @@ import {
   type DocsWorkspace,
   type DocumentMutex,
   type FileOperation,
+  type WriteGuard,
 } from "./write.js";
 
 /**
@@ -99,6 +115,12 @@ type DocumentPlan = {
   readonly keys: readonly QueryKey[];
   /** `null` when nothing new is written — a skill folder that only moved. */
   readonly validate: { readonly path: string; readonly text: string } | null;
+  /**
+   * Threads left behind by this document's deletion, **as the projection saw
+   * them when the plan was made** — which is one write behind by construction
+   * inside an act, and is why {@link runBulk} filters the union rather than
+   * trusting it. See the note there.
+   */
   readonly orphanedThreadIds?: readonly string[];
   /** Set for a deleted thread, whose attachment directory is swept after the commit. */
   readonly deletedThreadId?: string | undefined;
@@ -252,6 +274,67 @@ function refusalFor(
     message: error instanceof Error ? error.message : String(error),
     lock: null,
   };
+}
+
+/**
+ * A destination path that is already taken, as this act's third part.
+ *
+ * `write-failed` is the one published reason both of whose clauses are true here
+ * — "the file could not be written; nothing about this document reached the
+ * commit" — where `not-applicable` would tell the user to refresh the board and
+ * `invalid` would claim the document fails §14 validation, which it does not.
+ *
+ * The path itself lives in the error's `issues`, and a refusal row has no
+ * `issues` field to carry it, so it is folded into the message: §11 requires
+ * every entry in this part to carry its reason, and "the destination is already
+ * occupied" without the destination is not one a person can act on.
+ */
+function occupiedRefusal(id: string, error: DestinationOccupiedError): BulkActionRefusal {
+  const detail = "issues" in error.body ? error.body.issues[0]?.message : undefined;
+  return {
+    id,
+    reason: "write-failed",
+    message: detail === undefined ? error.message : `${error.message}: ${detail}`,
+    lock: null,
+  };
+}
+
+/**
+ * The lock guard on the §6 cascade's **parent**, reported so the row says which
+ * document is actually locked.
+ *
+ * The refusal stays filed under the *thread's* id — the three parts partition
+ * the requested ids, and the parent need not even be among them — but everything
+ * in that row that names a document has to name the parent, or a person reads
+ * "locked" beside the thread and clears the thread's lock, which changes
+ * nothing. `lock` already does (`Lock` carries its own `docId`, and this is the
+ * lease whose clearing unblocks the deletion); the message now says so in words
+ * instead of leaving a reader to notice that the id in the sentence is not the
+ * id in the row (SERVER-077 review, finding 5).
+ */
+async function guardCascadeParent(
+  guard: WriteGuard,
+  id: string,
+  parentId: string,
+  actor: Actor,
+): Promise<void> {
+  try {
+    await guard(parentId, actor);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 423 && "lock" in error.body) {
+      const lock = error.body.lock;
+      if (lock !== undefined) {
+        throw new Refusal(
+          "locked",
+          `deleting ${id} rewrites its parent ${parentId}'s anchors in the same commit ` +
+            `(SPEC.md §6), and ${parentId} is being edited by ${lock.holder}; the lock to clear ` +
+            `is ${parentId}'s, not ${id}'s`,
+          lock,
+        );
+      }
+    }
+    throw error;
+  }
 }
 
 /** The one act, as it applies to one document. */
@@ -412,7 +495,7 @@ async function runBulk(
       await guard(id, actor);
       const parentId = parents.get(id);
       // The lock that refuses a cascade is the one on the file being rewritten.
-      if (parentId !== undefined) await guard(parentId, actor);
+      if (parentId !== undefined) await guardCascadeParent(guard, id, parentId, actor);
       loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
     } catch (error) {
       refused.push(refusalFor(workspace, id, error, "invalid"));
@@ -422,7 +505,15 @@ async function runBulk(
     try {
       plan = planFor(workspace, loaded, action, destination);
     } catch (error) {
-      refused.push(refusalFor(workspace, id, error, "not-applicable"));
+      // Everything else `planFor` raises means "this act does not apply to this
+      // document". A destination that is already taken means the write could not
+      // happen — a different sentence and a different remedy (rename something,
+      // rather than refresh a board that is perfectly current).
+      refused.push(
+        error instanceof DestinationOccupiedError
+          ? occupiedRefusal(id, error)
+          : refusalFor(workspace, id, error, "not-applicable"),
+      );
       continue;
     }
     if (plan === null) {
@@ -460,12 +551,28 @@ async function runBulk(
     if (plan.deletedThreadId !== undefined) deletedThreadIds.push(plan.deletedThreadId);
   }
 
+  // **A thread this act deleted is not a surviving orphan.** `planDelete` answers
+  // "what threads hang from this document" from the projection, and the
+  // projection only moves in `finishMutation` — after the whole loop, because the
+  // act is one commit and one re-projection. So a plan made for a parent still
+  // sees the row of a thread an earlier plan in the same act already unlinked,
+  // and the act would report an id in both `changed` and `orphanedThreadIds`:
+  // deleted and, in the same breath, "still readable, drop its caches". §11's
+  // bulk-delete confirm counts exactly this number, so it would over-count.
+  //
+  // Filtered here rather than inside `planDelete`, which is shared with
+  // `DELETE /api/docs/{id}` where the projection is never behind, and filtered
+  // after the loop rather than during it so the answer does not depend on the
+  // order the ids arrived in. A thread whose own deletion was *refused* is
+  // absent from `deletedThreadIds` and stays reported, which is correct: it did
+  // survive.
+  const deleted = new Set(deletedThreadIds);
   const result = {
     action: action.action,
     changed,
     alreadyInState,
     refused,
-    orphanedThreadIds: [...new Set(orphanedThreadIds)],
+    orphanedThreadIds: [...new Set(orphanedThreadIds)].filter((id) => !deleted.has(id)),
   };
 
   // "An act that changes nothing makes no commit at all": no files moved, so

@@ -53,7 +53,7 @@ import {
 } from "../core/index.js";
 import { resolveAnchorExact } from "../anchors/index.js";
 import type { EditSessionTracker } from "../edit/index.js";
-import { badRequest } from "../errors.js";
+import { HttpError, badRequest } from "../errors.js";
 import type { InvalidationBus } from "../events/index.js";
 import { TREE_KEY, dedupeKeys } from "../events/index.js";
 import type { AnchorChange, AutoCommitter, CommitOutcome } from "../git/index.js";
@@ -334,6 +334,35 @@ export interface DocsWorkspace {
 /** A 400 always carries `issues` — `ApiErrorSchema`'s `bad_request` variant requires it. */
 export function validationError(message: string, issues: readonly ValidationIssue[]): never {
   throw badRequest(message, issues.length > 0 ? [...issues] : [{ path: "", message }]);
+}
+
+/**
+ * The refusal raised when the **destination path** is already taken — a move
+ * onto an existing filename, a skill archived into a folder that already exists.
+ * Byte-for-byte the `400` {@link validationError} raises; the type is the only
+ * thing added.
+ *
+ * It exists because the two planners that raise it (`planMove`,
+ * `planSetArchived`) are shared between a single-document route and the bulk act
+ * (SERVER-077), and the two need different things from the same condition. On
+ * its own route it is a `400` and nothing more. Inside a bulk act the *class* of
+ * refusal is decided by which step failed, and everything `planFor` raises would
+ * otherwise be reported as `not-applicable` — whose published meaning is "the
+ * act does not apply to this document … the corpus changed between selecting and
+ * acting", i.e. *refresh the board*, when the remedy for a filename collision is
+ * to rename something (SERVER-077 review, finding 4). Nothing about the error
+ * message could tell them apart, so the type carries it: this was refused by the
+ * path, not by the act.
+ */
+export class DestinationOccupiedError extends HttpError {}
+
+/** {@link validationError}, for a destination that is already taken. */
+export function destinationOccupied(message: string, issues: readonly ValidationIssue[]): never {
+  throw new DestinationOccupiedError(400, {
+    code: "bad_request",
+    message,
+    issues: issues.length > 0 ? [...issues] : [{ path: "", message }],
+  });
 }
 
 /**

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_RECENT_JOBS,
   extractFormSource,
   formAnswerRecord,
   formatFormAnswerBody,
@@ -615,17 +616,32 @@ export async function stubCorpus(
      * `recent` the cap that makes an answer possibly short. Answering the whole
      * seed regardless of the query would make the shared-vs-exact distinction
      * `outstandingAgentRequest.ts` is built around untestable here.
+     *
+     * **`recent` bounds the console list only, and is ignored once `originId`
+     * is given** (SPEC.md §9.2, rider signed 2026-08-05) — which is exactly what
+     * `listJobRows` does: both filters are a `WHERE`, the `LIMIT ?` is appended
+     * only on the unfiltered path (`apps/server/src/jobs/project.ts`). A
+     * windowed predicate fails silently and in one direction — a job pushed out
+     * of the window is indistinguishable from no job — and §8's pending
+     * indicator *is* that predicate. A stub that capped the filtered answer too
+     * would let a spec assert a "working…" row the real server would place
+     * somewhere else, on the one point the rider exists to protect.
+     *
+     * Seeded order is taken as the server's order (most recently active first,
+     * `ORDER_JOBS`); these specs hand it a list, not timestamps to sort.
      */
     if (url.pathname === "/api/jobs") {
       const wanted = url.searchParams.get("status");
       const origin = url.searchParams.get("originId");
-      const recent = Number(url.searchParams.get("recent") ?? "50");
       const matching = jobs
         .filter((job) => wanted === null || wanted.split(",").includes(job.status))
-        .filter((job) => origin === null || (job.originId ?? null) === origin)
-        .slice(0, Number.isFinite(recent) ? recent : undefined)
-        .map(asJob);
-      return json(route, { jobs: matching });
+        .filter((job) => origin === null || (job.originId ?? null) === origin);
+      const recent = Number(url.searchParams.get("recent") ?? DEFAULT_RECENT_JOBS);
+      const answer =
+        origin === null
+          ? matching.slice(0, Number.isFinite(recent) && recent > 0 ? recent : DEFAULT_RECENT_JOBS)
+          : matching;
+      return json(route, { jobs: answer.map(asJob) });
     }
     if (url.pathname === "/api/tree") return json(route, { folders: [] });
     if (url.pathname === "/api/queue/status") {

@@ -406,6 +406,7 @@ belongs to the same fix wave.
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
 | UI-083 | Selecting rows and acting on the selection (SHARED-017) | todo | P2 | SHARED-017, SERVER-077 |
 | SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
+| SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | todo | P1 | — |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |

@@ -329,12 +329,31 @@ export const BulkActionRefusalSchema = z
  * §11's "if seventeen of twenty changed, the result says seventeen, names the
  * three, and the history agrees with it (§4)".
  *
- * **`changed` and the commit are the same set, computed once.** §4 requires the
- * commit to contain "exactly the documents the action changed", and §11 requires
- * the history to agree with the report; concretely, `changed` and
- * `git show --name-only <commit>` name the same documents. A document that was
- * already in the target state contributes nothing to the commit, and one that
- * was refused leaves nothing in it.
+ * **`changed` and the commit are one computation, and the containment runs one
+ * way.** §4 requires the commit to contain "exactly the documents the action
+ * changed", and §11 requires the history to agree with the report; concretely,
+ * every id in `changed` has a file in `git show --name-only <commit>`, because
+ * only a write that landed puts an id there and only those writes are staged. A
+ * document that was already in the target state contributes nothing to the
+ * commit, and one that was refused leaves nothing in it. That direction is the
+ * testable invariant, and it is the only one a report can be wrong in.
+ *
+ * **The converse is false**, and stating it as an equality was worth correcting
+ * rather than weakening quietly: a commit may legitimately carry files for
+ * documents the caller never named, because these three parts partition the
+ * **requested** ids and nothing else. Two cases do it today — both required by
+ * the spec rather than incidental, and both behaving exactly as the
+ * single-document routes do, since neither is peculiar to acting in bulk:
+ *
+ * - **§6's anchor cascade.** Deleting an anchored thread rewrites its parent's
+ *   `anchors` map in the same commit. The parent survives the act — it was not
+ *   deleted, and it need not even have been among `ids` — so it belongs in none
+ *   of the three parts while its file is in the commit.
+ * - **A skill folder move.** Archiving or unarchiving a skill moves its whole
+ *   folder, carrying every file under it, including the `SKILL.md` of a nested
+ *   skill (a supported shape). The move *disables* that nested document — §7:
+ *   what disables a skill is where its folder lives — but its id was never
+ *   requested, so it belongs in none of the three parts either.
  */
 export const BulkActionResultSchema = z
   .object({
@@ -342,9 +361,11 @@ export const BulkActionResultSchema = z
     changed: z
       .array(DocumentIdSchema)
       .describe(
-        "Documents the act changed — §11's first part, and exactly the files in `commit` (§4). " +
-          "Empty is a legal outcome: every document was already in the target state, or every " +
-          "one was refused.",
+        "Documents the act changed — §11's first part. Every one of them has a file in `commit` " +
+          "(§4); the containment runs this way only, since a commit may also carry files for " +
+          "documents the act did not name (§6's anchor cascade reaching a surviving parent, a " +
+          "skill folder move carrying a nested skill). Empty is a legal outcome: every document " +
+          "was already in the target state, or every one was refused.",
       ),
     alreadyInState: z
       .array(DocumentIdSchema)
@@ -355,7 +376,7 @@ export const BulkActionResultSchema = z
           "`review` act populates it only when the instant it would write is the one already " +
           "there: instants are second-precision, so repeating `review` on the same document " +
           "inside one second genuinely moves no bytes. Reporting it as changed would put an id " +
-          "in `changed` that `git show --name-only` does not list, and that equality is the " +
+          "in `changed` that `git show --name-only` does not list, and that containment is the " +
           "stronger, testable invariant (SERVER-077).",
       ),
     refused: z

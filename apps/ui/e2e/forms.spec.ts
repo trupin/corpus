@@ -1,3 +1,4 @@
+import { DEFAULT_RECENT_JOBS, MAX_RECENT_JOBS } from "@corpus/contract";
 import { expect, test } from "./coverage";
 import { stubEventStream } from "./eventStream";
 import { stubCorpus } from "./stubCorpus";
@@ -402,6 +403,67 @@ test.describe("the Attention row a form leaves behind", () => {
     await expect(column(page).locator(".form-submit")).toHaveCount(0);
     await expect(working).toBeVisible();
     expect((await corpus.of("POST")).some((call) => call.path.endsWith("/form"))).toBe(true);
+  });
+
+  /**
+   * The same indicator, asked the hard way: **the answer to `?originId=` is
+   * complete**, so the wait is counted from the ask that has been outstanding
+   * longest even when the queue has buried it (SPEC.md §9.2 — `recent` bounds
+   * the console list and is *ignored* once `originId` is given, rider signed
+   * 2026-08-05; `listJobRows` appends its `LIMIT` only on the unfiltered path).
+   *
+   * The seed is the shape that distinguishes the two readings. `MAX_RECENT_JOBS`
+   * unrelated events saturate the shared outstanding query, which is what makes
+   * `useOutstandingAgentJob` escalate to the exact question at all — and none of
+   * them is this thread's, so until that question is answered the card says
+   * nothing. This thread's own jobs sit behind them: `DEFAULT_RECENT_JOBS` asks
+   * from 10:30 onwards, and behind *those* the oldest, enqueued at 10:06 by the
+   * user's 10:05 turn.
+   *
+   * That last one is the assertion. A windowed answer would stop one row short
+   * of it and the row would count from the agent's 10:07 form turn instead — a
+   * wait that started twenty-five minutes late, and the exact silent
+   * one-directional failure the rider names. `10:05` on the wire is the buried
+   * job having been found.
+   */
+  test("counts the wait from the buried ask a windowed answer would miss", async ({ page }) => {
+    /** Enough unrelated unfinished work to saturate the shared query. */
+    const elsewhere = Array.from({ length: MAX_RECENT_JOBS }, (_, index) => ({
+      eventId: `evt_elsewhere${String(index)}`,
+      type: "doc.edited",
+      status: "pending",
+      started: "2026-07-19T12:00:00Z",
+      originId: "doc_elsewhere",
+    }));
+    /** This thread's later asks — a full console window of them, newest first. */
+    const laterAsks = Array.from({ length: DEFAULT_RECENT_JOBS }, (_, index) => ({
+      eventId: `evt_later${String(index)}`,
+      type: "comment.created",
+      status: "in-progress",
+      started: `2026-07-19T11:${String(59 - index).padStart(2, "0")}:00Z`,
+      originId: "th_form",
+    }));
+    const buried = {
+      eventId: "evt_buried",
+      type: "comment.created",
+      status: "deferred",
+      started: "2026-07-19T10:06:00Z",
+      originId: "th_form",
+    };
+
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, FORM_THREAD], {
+      jobs: [...elsewhere, ...laterAsks, buried],
+    });
+    await page.goto("/");
+
+    await row(page, "th_form").click();
+    const working = column(page).locator(".thread-card .working");
+    await expect(working).toBeVisible();
+    await expect(working).toHaveAttribute("data-working-since", "2026-07-19T10:05:00Z");
+
+    // …and it got there by asking the exact question, not by scanning a list.
+    const asked = await corpus.of("GET", "/api/jobs");
+    expect(asked.some((call) => call.search.includes("originId=th_form"))).toBe(true);
   });
 
   test("clears when the thread is resolved instead of answered", async ({ page }) => {

@@ -457,6 +457,54 @@ locked, one commit, seventeen files in `git show --name-only` — belongs to the
 server issue and to UI-083; there is no handler to exercise yet. No server was
 started and no port was bound.
 
+### PR #37 review follow-up — 2026-08-08 (contract half)
+
+**Model: Opus 5 (1M context)** (`claude-opus-5[1m]`), `contract-dev`, main working
+tree on `phase-24-resolve-forms-bulk`. No git command run by this agent.
+
+**[MAJOR] The published invariant was false.** The route description and
+`BulkActionResultSchema`'s docblock claimed `changed` and `git show --name-only`
+were *the same set*. The reviewer's counter-example (verified against the real
+route): archiving a skill folder that nests another skill moves the nested
+`SKILL.md` too, so the commit carries a file for a document that appears in none
+of the three parts — the nested skill was never a requested id, and the three
+parts partition the **requested** ids. That is the same rule §6's anchor cascade
+already exercised, and neither is peculiar to acting in bulk: the
+single-document archive route behaves identically. The behaviour is correct, so
+the description was the defect. It now states the containment in the one
+direction that holds (`changed` ⊆ the commit's files), names both exceptions to
+the converse with the one rule they follow from, and makes no uniqueness claim.
+`openapi.test.ts` pins both directions and both exceptions, including a negative
+pin on `"are the same set"`, so restoring the tidier claim fails a test.
+
+**[MINOR] The inventory docblock cited a precedent that had closed.** `GET
+/api/upgrade/check` and `POST /api/upgrade` are in §9.2 now (verified in
+`SPEC.md`), so `POST /api/docs/bulk` no longer inherits a pending-amendment
+sentence by analogy — its bullet is genuinely still held for sign-off in this
+file, and the docblock now says so directly, naming the three §9.2 amendments
+signed 2026-08-08 (re-attach route, acting-party clause, weight bullet) as *not*
+including it. Two further stalenesses found in the same docblock and fixed: the
+`SPEC.md:323-325` line citation for the check/rollback bullets (those bullets
+have moved; line numbers are no longer cited, since they go stale silently while
+still reading as checkable), and "immediately after the resolve/reopen/seen
+group" for the re-attach bullet (the weight bullet, signed the same day, now
+sits between them).
+
+```
+$ npm run build                                          → exit 0
+$ npm run generate -w packages/contract                  → exit 0
+$ npm run generate -w packages/contract  (second run)    → exit 0
+  cmp openapi.json / schema.generated.ts vs. pre-run copies → identical (idempotent)
+$ ./node_modules/.bin/eslint packages/contract           → exit 0
+$ ./node_modules/.bin/prettier --check "packages/contract/**/*.{ts,json}" → exit 0
+$ cd packages/contract && tsc --noEmit                   → exit 0
+$ VITEST_MAX_THREADS=4 ./node_modules/.bin/vitest run packages/contract
+  Test Files 59 passed (59) · Tests 2267 passed (2267)   → exit 0
+```
+
+No server started, no port bound. `apps/server`'s matching code comment and the
+nested-skill test are server-dev's half of this finding.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

@@ -20,6 +20,7 @@ import { DOCS_KEY, docKey } from "../events/index.js";
 import { DOCUMENT_ROOTS, SKILL_FILENAME } from "../projection/index.js";
 import { loadDocument, toWireDoc, type LoadedDocument } from "./read.js";
 import {
+  destinationOccupied,
   runMutation,
   validateBeforeWrite,
   validationError,
@@ -126,8 +127,10 @@ export function planSetArchived(
   if (move !== null && existsInWorkspace(workspace.workspaceRoot, move.to)) {
     // Merging two skill folders would silently overwrite files; refusing
     // leaves both exactly as they are (sprint-005 Open Conflict 4: 400, since
-    // this route declares no 409).
-    validationError("the archive destination already exists", [
+    // this route declares no 409). {@link destinationOccupied}, not
+    // {@link validationError}: inside a bulk act the difference is whether the
+    // report says "refresh the board" or "this folder name is taken".
+    destinationOccupied("the archive destination already exists", [
       { path: "id", message: `${move.to} already exists; move or remove it first` },
     ]);
   }

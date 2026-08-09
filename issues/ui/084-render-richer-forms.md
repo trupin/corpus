@@ -634,6 +634,58 @@ user's own `corpus` server (pid 1715) was serving there for the whole session
 Scratch teardown: server stopped (pid 45267), Vite on 5273 killed, `/tmp/ui084b-ws`
 removed, 5273 and 8899 confirmed free, 8765 left alone.
 
+### PR #37 review follow-up — the jobs stub's `recent`
+
+Run on **opus** (`claude-opus-5[1m]`), 2026-08-08. Reviewer finding [MINOR]: the
+stub applied `recent` unconditionally, where SPEC.md §9.2 (rider signed
+2026-08-05) says it is **ignored once `originId` is given**.
+
+**Read from the server, not from the rider's summary.**
+`apps/server/src/jobs/project.ts`'s `listJobRows` builds both filters as a
+`WHERE` and appends `LIMIT ?` **only when `filter.originId === undefined`** —
+`const limit = filter.originId === undefined ? " LIMIT ?" : ""`. So the cap
+applies after the `WHERE` on the console path (status-only filtering stays
+windowed, per `project.test.ts` *"filters by status alone without dropping the
+console's window"*) and not at all on the origin path. The stub now does exactly
+that: filter, then window **only** when no `originId` was asked for, with
+`DEFAULT_RECENT_JOBS` as the default rather than a hard-coded `50`.
+
+**Made observable**, because a fidelity nothing tests drifts again. New spec,
+`forms.spec.ts` › *"counts the wait from the buried ask a windowed answer would
+miss"*: `MAX_RECENT_JOBS` (200) unrelated unfinished jobs saturate the shared
+`useOutstandingJobs` query — which is what makes `useOutstandingAgentJob`
+escalate to `?originId=` at all, and none of them is this thread's — then
+`DEFAULT_RECENT_JOBS` (50) later asks on `th_form` at 11:10–11:59, and behind
+those the oldest at 10:06. `pickOutstandingJob` takes the oldest, and
+`agentWaitSince` bounds it by the newest turn not newer than it, so the card must
+count from the user's **10:05** turn.
+
+Both directions run, on the real Vite dev server in a real Chromium
+(`CORPUS_UI_PORT=5399`, never 5173/8765):
+
+```
+faithful stub    → data-working-since="2026-07-19T10:05:00Z"   (14/14 forms.spec.ts)
+recent applied unconditionally (temporarily restored to prove the spec bites):
+  Expected: "2026-07-19T10:05:00Z"
+  Received: "2026-07-19T10:07:00Z"   ← 14 × resolved, the agent's form turn
+```
+
+The windowed answer stops one row short of the buried job and the wait starts
+twenty-five minutes late — the silent, one-directional failure the rider names.
+The spec also asserts the escalation actually happened
+(`GET /api/jobs?…originId=th_form…` present in the recorded requests), so it
+cannot pass by scanning the shared list instead.
+
+**Checks.** `npm run build` clean. `CORPUS_UI_PORT=5399 playwright test
+e2e/forms.spec.ts e2e/console.spec.ts` → **27 passed, 1 failed**; that one is
+`console.spec.ts:62`, the known environmental case, re-diagnosed rather than
+chased: it requires **nothing** on 8765 and `curl 127.0.0.1:8765/api/health`
+answered **200** (the user's live server). `forms.spec.ts` alone → **14/14**.
+`npx eslint` and `npx prettier --check` clean on both touched files;
+`tsc --noEmit -p apps/ui` clean (its `include` covers `e2e`). Playwright's own
+Vite on 5399 exited with the run; 5399 free, no stray vite/chromium/vitest
+processes, `test-results/` from the deliberate failure removed.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

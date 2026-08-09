@@ -7,8 +7,10 @@
  * behavioural sections before §9.2 listed them (§14's "`corpus doc check`
  * exposes the same validator on demand", §7's "`corpus skill rollback <name>` —
  * a targeted git revert, performed by the server"); the amendment CONTRACT-008
- * drafted for them is signed off and applied — §9.2 now names both in its own
- * bullets (SPEC.md:323-325, SHARED-002).
+ * drafted for them is signed off and applied — §9.2 now names both in their own
+ * bullets (SHARED-002). Bullets are cited by the route they name, never by line
+ * number: §9.2 has been amended repeatedly since, and a line reference here goes
+ * stale silently while still reading as a checkable citation.
  *
  * `POST /api/skills` (CONTRACT-020) was derived the same way, from §7's skill
  * genesis: the agent creates a skill, and it can only reach the workspace
@@ -76,11 +78,11 @@
  * endpoints rather than one because §2.4 describes two acts and keeps them
  * apart — `corpus upgrade --check` "queries … compares … and reports", while
  * `corpus upgrade` installs — and the whole point of an on-demand posture is
- * being able to look without committing. §9.2 does not yet list them: unlike the
- * entries above, whose bullets were drafted here and applied to SPEC.md by the
- * orchestrator, this pair's bullet is drafted in CONTRACT-027's report and
- * awaits the same sign-off. The derivation is recorded here so the gap is a
- * pending amendment rather than an undocumented route.
+ * being able to look without committing. §9.2 now lists both, in a bullet each,
+ * in the order this inventory uses; the `POST /api/upgrade` bullet carries the
+ * §2.4 rider's own sign-off date. The derivation stays recorded here because it
+ * is why two routes exist where §2.4 describes one flow, not because either is
+ * undocumented.
  *
  * `POST /api/threads/{id}/reattach` (CONTRACT-041) is derived from SPEC.md §6
  * rather than from §9.2, and the derivation is the whole issue. §6 guarantees
@@ -92,12 +94,14 @@
  * leave, which is a gap in the guarantee rather than a feature request — and the
  * only party holding the evidence is the person who wrote the comment, who can
  * reach the workspace only through the server (Architecture Decision 2). It sits
- * immediately after the resolve/reopen/seen group, which is where §9.2's bullet
- * for it now sits: CONTRACT-041's drafted amendment was signed by the user on
- * 2026-08-08 and applied, together with the widening of §9.2's acting-party
- * clause to read "the user-only endpoints (deletion, and re-attaching a thread)
- * reject agent actors" — so the `403` is a spec rule rather than a contract
- * opinion. The derivation stays recorded here because it is why the route
+ * immediately after the resolve/reopen/seen group, which is where §9.2 puts its
+ * bullet too — after the resolve/reopen/seen bullet, with the weight bullet
+ * (signed the same day) between them, since that one is a clause about several
+ * routes rather than an endpoint of its own. CONTRACT-041's drafted amendment
+ * was signed by the user on 2026-08-08 and applied, together with the widening
+ * of §9.2's acting-party clause to read "the user-only endpoints (deletion, and
+ * re-attaching a thread) reject agent actors" — so the `403` is a spec rule
+ * rather than a contract opinion. The derivation stays recorded here because it is why the route
  * exists, not because the route is undocumented.
  *
  * `POST /api/docs/bulk` (CONTRACT-037) is derived from SPEC.md §4 rather than
@@ -114,11 +118,13 @@
  * for exactly that reason. It sits immediately after `POST /api/docs` because it
  * is the collection's other mutation, and before the parameterised routes
  * because a static segment must be registered ahead of the parameter it shares a
- * position with. §9.2 does not yet list it: like `GET /api/upgrade/check` and
- * `POST /api/upgrade` above, its bullet is drafted in CONTRACT-037's issue file
- * under "Held for sign-off" and awaits the user's sign-off, and the derivation
- * is recorded here so the gap is a pending amendment rather than an undocumented
- * route.
+ * position with. **This is the one entry §9.2 does not yet list**, and the only
+ * one: its bullet is drafted in CONTRACT-037's issue file under "Held for
+ * sign-off" and awaits the user's, so the derivation is recorded here to make
+ * the gap a pending amendment rather than an undocumented route. Three §9.2
+ * amendments were signed and applied on 2026-08-08 — the re-attach route, the
+ * widening of the acting-party clause, and the weight bullet — and this one was
+ * not among them.
  *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so

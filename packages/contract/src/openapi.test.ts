@@ -1381,10 +1381,33 @@ describe("one action, one commit (CONTRACT-037)", () => {
     expect(description).toContain("loops the single-document write path");
   });
 
-  it("says the commit contains exactly what changed", () => {
+  /**
+   * The invariant is directional, and the direction is the whole point: the only
+   * way the report can be wrong is by naming a document the commit does not
+   * carry. The converse — that the commit carries nothing else — is false, and
+   * the contract published it as an equality until PR #37's review found the
+   * second counter-example. Both are pinned here, so restoring the tidier claim
+   * fails a test rather than a reader.
+   */
+  it("states the commit containment in the one direction that holds", () => {
     const description = bulk().description ?? "";
     expect(description).toContain("git show --name-only");
-    expect(resultSchema()?.properties?.["changed"]?.description).toContain("exactly the files");
+    expect(description).toContain("has a file in that commit");
+    expect(description).toContain("in one direction only");
+    expect(description).not.toContain("are the same set");
+    expect(resultSchema()?.properties?.["changed"]?.description).toContain(
+      "has a file in `commit`",
+    );
+  });
+
+  /** Both exceptions, because they follow from one rule and neither is obvious at a call site. */
+  it("names both ways the commit carries a file the act did not name", () => {
+    const description = bulk().description ?? "";
+    expect(description).toContain("partition the **requested** ids");
+    expect(description).toContain("anchor cascade");
+    expect(description).toContain("nested skill");
+    const changed = resultSchema()?.properties?.["changed"]?.description ?? "";
+    expect(changed).toContain("did not name");
   });
 
   it("takes at least one id, and refuses an empty act", () => {
