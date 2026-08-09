@@ -427,8 +427,9 @@ const threadRowShape = {
 /**
  * A row of `GET /api/docs`: the projection's document columns plus what a list
  * needs and a document read does not — why the row wants attention, where the
- * query matched, how stale it is, how many of its threads are unread, and the
- * thread affordances §11's type-aware rows render.
+ * query matched, how stale it is, how many of its threads are unread, how many
+ * forms it is still waiting on, and the thread affordances §11's type-aware rows
+ * render.
  */
 export const DocRowSchema = z
   .object({
@@ -458,12 +459,70 @@ export const DocRowSchema = z
           "**and `0` on a document with no threads.** Never null and never absent, so `0` always " +
           'means "nothing unread" and never "unknown".',
       ),
+    /**
+     * The count behind §11's last Attention clause: "a thread holding **more
+     * than one** unanswered form says how many are still open."
+     *
+     * **Why a scalar on the row, and not something on `attention`.** The reason
+     * codes are a flat list a plugin may extend (SPEC.md §10); widening an entry
+     * into `{code, count}` would rewrite every consumer of every reason for one
+     * reason's sake. A sibling field is additive, and nothing that renders a
+     * reason chip today has to change to keep working.
+     *
+     * **Why not derived in the client.** A row carries no turns — `lastTurn` is
+     * a plain-text preview of the *last* turn, and the forms in question are
+     * typically above it — so the only client-side count is one
+     * `GET /api/threads/{id}` per row per render. `unreadThreads` is the
+     * precedent for the other choice: an aggregate the projection already knows,
+     * ridden on the row so no list ever issues a query per row. The server
+     * already computes this exact set (`turns.has_form` / `turns.form_answered`,
+     * the columns `needs=form` tests over), so exposing it is cheaper than any
+     * alternative *and* cannot drift from the reason.
+     *
+     * **Why `0` rather than `null` on a non-thread row**, breaking the
+     * {@link threadRowShape} convention deliberately. Those fields are rendered;
+     * "not a thread" is a distinct display state from "a thread with none", and
+     * `turnCount: null` is right for that reason. This field is *arithmetic*: it
+     * is read through a `> 1` threshold, and a nullable number forces every
+     * reader to coalesce before comparing — a coalesce that is invisible when
+     * omitted, since `null > 1` is merely `false`. It follows `unreadThreads`
+     * instead: a count is always a count, and `0` never means "unknown".
+     */
+    unansweredForms: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "How many **unanswered forms** this thread still holds (SPEC.md §6, §11) — the number " +
+          "behind Attention's \"how many are still open\". It counts the thread's agent turns " +
+          "carrying an answerable `form` block that no later turn has answered, which is exactly " +
+          "the set the `form` attention reason tests for the existence of, under the same " +
+          "open-thread guard. **The two agree in both directions**: this is non-zero **iff** " +
+          "`attention` contains `form`. Left to right, a form counted here is a form that " +
+          "existence test finds; right to left, the reason cannot hold with nothing to count — " +
+          "one derivation produces both, so neither can move without the other. The `needs=form` " +
+          "filter tests that same predicate, so a filtered list never disagrees with the rows " +
+          "in it about which threads are waiting (it filters, so the rest of the query — " +
+          "including the default archived exclusion — still applies to which rows are returned " +
+          "at all). **Resolving the thread takes it to `0`** along with the reason: a resolved " +
+          "conversation is not waiting for an answer (SPEC.md §6). **`POST /api/threads/{id}/seen` " +
+          "leaves it untouched** — an unanswered form's row is the one that survives being read " +
+          "(SPEC.md §11), the opposite of `unread` and `unreadThreads`, which being read is " +
+          "precisely what clears. It rides on every row so no list has to fetch each thread to " +
+          "count its forms. **`0` on a thread with no unanswered form, and `0` on every " +
+          'non-thread row** — never null and never absent, so `0` always means "none" and never ' +
+          '"unknown". Rendering is the consumer\'s: §11 asks for the number only when it is ' +
+          "greater than one.",
+      ),
     attention: z
       .array(NeedsReasonSchema)
       .describe(
         "Attention reasons for this row, populated on every response rather than only under " +
           "`needs=`, so any list can render reason chips. Empty when nothing applies; never " +
-          "contains `me`, which is the union filter and not a reason.",
+          "contains `me`, which is the union filter and not a reason. Entries stay bare codes: " +
+          "the one reason with a number to report carries it in the sibling `unansweredForms`, " +
+          "because plugins extend this list (SPEC.md §10) and a code is what every consumer of " +
+          "every reason already reads.",
       ),
     snippets: z
       .array(SnippetSchema)

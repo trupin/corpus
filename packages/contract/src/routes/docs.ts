@@ -195,7 +195,11 @@ export const archiveDoc = createRoute({
     "**The document id never changes** and nothing leaves git. Archived documents drop out of the " +
     "default result set of `GET /api/docs` and come back with `status=archived`. Archiving a " +
     "`type: skill` document additionally moves its folder to `.claude/skills-archived/`, which " +
-    "disables it without unindexing it. Refused with `423` when the other party holds the lock.",
+    "disables it without unindexing it — carrying every file under that folder, including a " +
+    "**nested skill** the request never named, whose id is stamped into it so the move does not " +
+    "change its identity (SERVER-078). Refused with `423` when the other party holds the lock on " +
+    "the named document **or on any document the folder move carries**, since the act writes " +
+    "those files too; the refusal names which document's lock is held.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(
@@ -215,8 +219,13 @@ export const unarchiveDoc = createRoute({
   tags: ["docs"],
   summary: "Restore an archived document",
   description:
-    "The inverse flip, back to `status: open`. **The document id never changes.** Refused with `423` " +
-    "when the other party holds the document's edit lock.",
+    "The inverse flip, back to `status: open`. **The document id never changes.** Unarchiving a " +
+    "`type: skill` document moves its folder back out of `.claude/skills-archived/`, carrying " +
+    "every file under it — including a **nested skill** the request never named, whose id is " +
+    "stamped into it so the move does not change its identity, and whose `status` is reconciled " +
+    "to the enabled root it now sits in (SERVER-078). Refused with `423` when the other party " +
+    "holds the edit lock on the named document **or on any document the folder move carries**, " +
+    "since the act writes those files too; the refusal names which document's lock is held.",
   request: { params: DocIdParamSchema, headers: ActorHeaderSchema },
   responses: {
     200: jsonContent(DocMutationResponseSchema, "The document, restored, and any §14 warnings."),

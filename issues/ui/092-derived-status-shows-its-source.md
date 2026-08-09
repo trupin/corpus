@@ -18,7 +18,7 @@ opus
 
 ## Dependencies
 
-- Depends on: SHARED-036 (rider must be signed first), SHARED-030 (rider must be signed first), PLUGINS-016, SERVER-077,
+- Depends on: SHARED-036 (rider must be signed first), SHARED-030 (rider must be signed first), PLUGINS-016, SERVER-085,
   UI-093
 - Blocks: —
 
@@ -77,7 +77,7 @@ is worth its own issue because it is the one place where "always editable" and
 
 The UI reads the declaration from the **client-side manifest** it already loads
 with `import.meta.glob`, so no contract change is needed and no API field has to
-carry "is this derived". The *value* comes from the server (SERVER-077 already
+carry "is this derived". The *value* comes from the server (SERVER-085 already
 puts the derived status on the resource); only the "is it editable" question is
 answered locally.
 

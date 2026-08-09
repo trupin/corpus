@@ -403,6 +403,36 @@ describe("the reason line", () => {
     ]);
   });
 
+  /*
+   * SPEC.md §11 — "a thread holding more than one unanswered form says how many
+   * are still open". The number comes off `DocRow.unansweredForms`, which the
+   * server derives from the same predicate as the `form` reason itself, so the
+   * row never counts anything for itself and never fetches a thread to do it.
+   */
+  it.each([
+    [1, "awaiting your answer"],
+    [2, "2 awaiting your answer"],
+    [5, "5 awaiting your answer"],
+  ])("says how many forms are open at %i", (unansweredForms, label) => {
+    const { container } = renderRow({
+      row: docRowFixture({ type: "thread", parent: "doc_a", attention: ["form"], unansweredForms }),
+    });
+    expect(container.querySelector(".reason .r-form")?.textContent).toBe(label);
+  });
+
+  it("keeps the needs-you pill bare while the reason line carries the number", () => {
+    const { container } = renderRow({
+      row: docRowFixture({
+        type: "thread",
+        parent: "doc_a",
+        attention: ["form"],
+        unansweredForms: 3,
+      }),
+    });
+    expect(container.querySelector(".needs-you")?.textContent).toBe("form");
+    expect(container.querySelector(".reason .r-form")?.textContent).toBe("3 awaiting your answer");
+  });
+
   it("picks the stale label from the row's tier", () => {
     const aging = renderRow({ row: docRowFixture({ attention: ["stale"], stale: "aging" }) });
     expect(aging.container.querySelector(".r-stale")?.textContent).toBe("getting stale");

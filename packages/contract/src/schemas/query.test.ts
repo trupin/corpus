@@ -48,6 +48,7 @@ const row = {
   unread: null,
   awaitingAgent: null,
   unreadThreads: 0,
+  unansweredForms: 0,
   attention: [],
   snippets: [],
 };
@@ -69,6 +70,8 @@ const threadRow = {
   lastTurn: "Rechecked against the October rate sheet.",
   unread: true,
   awaitingAgent: false,
+  unansweredForms: 2,
+  attention: ["form" as const],
 };
 
 describe("DocsQuery pagination", () => {
@@ -573,6 +576,80 @@ describe("DocRow.unreadThreads", () => {
     expect(description).toContain("`0` on a thread row");
     expect(description).toContain("no threads");
     expect(description).toContain('"unknown"');
+  });
+});
+
+/**
+ * CONTRACT-040. §11's Attention sentence ends "a thread holding **more than
+ * one** unanswered form says how many are still open", and `attention` is a list
+ * of bare codes carrying no number — so the count is a field of its own or the
+ * clause is unimplementable without an N+1 per row.
+ */
+describe("DocRow.unansweredForms", () => {
+  it("carries a thread's open-form count", () => {
+    expect(DocRowSchema.parse({ ...threadRow, unansweredForms: 3 }).unansweredForms).toBe(3);
+  });
+
+  /** `0` is a count, not a stand-in for "unknown" — hence required, not nullable. */
+  it("requires the count: absent and null are both invalid, 0 is the empty answer", () => {
+    const { unansweredForms: _dropped, ...without } = row;
+    expect(DocRowSchema.safeParse(without).success).toBe(false);
+    expect(DocRowSchema.safeParse({ ...row, unansweredForms: null }).success).toBe(false);
+    expect(DocRowSchema.parse({ ...row, unansweredForms: 0 }).unansweredForms).toBe(0);
+  });
+
+  /**
+   * The departure from `threadRowShape`'s nullable convention, pinned: the chip
+   * reads this through a `> 1` threshold, and `null > 1` is silently `false`.
+   */
+  it("is 0 rather than null on a non-thread row, which holds no forms", () => {
+    expect(DocRowSchema.parse(row).unansweredForms).toBe(0);
+    expect(DocRowSchema.safeParse({ ...row, unansweredForms: null }).success).toBe(false);
+  });
+
+  it.each([-1, 1.5, "2"])("rejects %s — it is a non-negative integer count", (value) => {
+    expect(DocRowSchema.safeParse({ ...row, unansweredForms: value }).success).toBe(false);
+  });
+
+  /**
+   * The invariant the field exists to keep, asserted **in both directions** on
+   * the two fixtures — a claim that holds one way is the review finding this
+   * package collected twice this week. The server derives both from one query;
+   * these two assertions are what a fixture that stopped agreeing would trip.
+   */
+  it("keeps count and reason in step both ways on the fixtures it publishes", () => {
+    const parsed = [row, threadRow].map((item) => DocRowSchema.parse(item));
+    for (const item of parsed) {
+      expect(item.unansweredForms > 0).toBe(item.attention.includes("form"));
+    }
+    expect(parsed.map((item) => item.unansweredForms > 0)).toEqual([false, true]);
+  });
+
+  /**
+   * The description IS the contract for the server half and for the kit's chip:
+   * a reader who only sees the generated document has to learn the equivalence,
+   * its direction, the resolve rule, the seen asymmetry and "0 is not unknown"
+   * from it.
+   */
+  it("publishes the semantics the server and the chip both depend on", () => {
+    const description = DocRowSchema.shape.unansweredForms.description ?? "";
+    expect(description).toContain("SPEC.md §6, §11");
+    expect(description).toContain("both directions");
+    expect(description).toContain("iff");
+    expect(description).toContain("`needs=form`");
+    expect(description).toContain("Resolving the thread takes it to `0`");
+    expect(description).toContain("seen");
+    expect(description).toContain("non-thread row");
+    expect(description).toContain('"unknown"');
+    expect(description).toContain("greater than one");
+  });
+
+  /** The count is a sibling of the reason list, never a widening of its entries. */
+  it("leaves `attention` a list of bare codes", () => {
+    expect(DocRowSchema.parse(threadRow).attention).toEqual(["form"]);
+    expect(
+      DocRowSchema.safeParse({ ...threadRow, attention: [{ code: "form", count: 2 }] }).success,
+    ).toBe(false);
   });
 });
 

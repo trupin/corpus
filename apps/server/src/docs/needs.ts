@@ -106,12 +106,32 @@ export const AWAITING_AGENT_SQL =
  * join) silently returns this fragment to fetching every turn row of every open
  * thread. `docs/performance.test.ts` asserts the plan, which is the check that
  * notices.
+ *
+ * **It counts rather than existence-tests, because the row reports the number**
+ * (SERVER-084). §11's Attention clause ends "a thread holding more than one
+ * unanswered form says how many are still open", so `DocRow.unansweredForms`
+ * carries the count — and CONTRACT-040 publishes the invariant with its
+ * direction: `unansweredForms > 0` **iff** `attention` contains `form`. Two
+ * independent derivations of one fact is exactly how an `iff` stops being true,
+ * so there is only this fragment: {@link NEEDS_REASON_SQL}`.form` is literally
+ * `(<this> > 0)`, spliced, and the row column is this same expression selected.
+ * Neither can move without the other, and the guards are shared rather than
+ * merely alike — `t.id IS NOT NULL` gives a document row `0` *and* no reason,
+ * and `t.status = 'open'` makes resolving clear the count *and* the reason.
+ *
+ * `CASE`, not `COALESCE` or a bare correlated `COUNT(*)`: a scalar subquery over
+ * no rows returns `0` rather than `NULL` (COUNT always counts), so a bare one
+ * would report `0` for a *resolved* thread's still-open forms only by accident
+ * of the join, and would report the count of a non-thread row's turns if the
+ * aliases ever changed. Spelling the guard as the `CASE`'s condition also keeps
+ * SQLite's short-circuit: the subquery is evaluated only for open threads,
+ * exactly as the `AND` chain it replaces evaluated its `EXISTS`.
  */
-const UNANSWERED_FORM_SQL = `(t.id IS NOT NULL AND t.status = 'open' AND EXISTS (
-  SELECT 1 FROM turns tu
+export const UNANSWERED_FORM_COUNT_SQL = `(CASE WHEN t.id IS NOT NULL AND t.status = 'open' THEN (
+  SELECT COUNT(*) FROM turns tu
    WHERE tu.thread_id = t.id AND tu.author = 'agent'
      AND tu.has_form = 1 AND tu.form_answered = 0
-))`;
+) ELSE 0 END)`;
 
 /**
  * Any failed queue event whose payload *names* this row. Matching every
@@ -126,7 +146,9 @@ const FAILED_JOB_SQL = `(EXISTS (
 
 export const NEEDS_REASON_SQL: Readonly<Record<NeedsReason, string>> = {
   "unread-reply": `(${UNREAD_SQL} AND t.last_author = 'agent')`,
-  form: UNANSWERED_FORM_SQL,
+  // Read off the count, never re-derived: `> 0` over the one expression is what
+  // makes CONTRACT-040's `iff` hold in both directions by construction.
+  form: `(${UNANSWERED_FORM_COUNT_SQL} > 0)`,
   due: "(d.due IS NOT NULL AND d.due <= @today)",
   stale: atOrBeyondSql("stale"),
   "failed-job": FAILED_JOB_SQL,

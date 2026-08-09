@@ -113,7 +113,7 @@ that hid one of them would be lying about the other.
       test that distinguishes this feature from every other Attention reason
 - [x] Answering clears the row **live** over SSE; resolving the thread also clears
       it
-- [ ] A thread holding **more than one** unanswered form says how many are still
+- [x] A thread holding **more than one** unanswered form says how many are still
       open
 - [x] A control case in the same test: a thread whose only signal is an unread
       agent reply **does** clear on open — otherwise the assertion above proves
@@ -123,9 +123,10 @@ that hid one of them would be lying about the other.
 
 #### The three left unticked after the first pass, and exactly why
 
-Two of the three are **closed by the finishing pass below** (2026-08-08); their
-original reasoning is kept verbatim rather than rewritten, since it is the record
-of what was and was not evidence at the time.
+All three are now closed — two by the finishing pass below (2026-08-08) and the
+last by the count pass (2026-08-09). Their original reasoning is kept verbatim
+rather than rewritten, since it is the record of what was and was not evidence at
+the time.
 
 - **"Answering clears the row live over SSE."** The *behaviour* is verified —
   `forms.spec.ts` answers the form and the Attention row is gone on the way back
@@ -142,7 +143,10 @@ of what was and was not evidence at the time.
   carries no number, and a row carries no turns, so counting in the UI would mean
   one `GET /api/threads/{id}` per row per render. Filed as
   `issues/contract/040-open-form-count-on-the-row.md` rather than approximated,
-  which is what this issue's own Technical Design asks for.
+  which is what this issue's own Technical Design asks for. — **Closed
+  2026-08-09**: CONTRACT-040 and SERVER-084 put `DocRow.unansweredForms` on the
+  wire, derived from the same expression as the `form` reason, and the chip now
+  reads it. Nothing is counted in the UI and no thread is fetched to do it.
 - **"An unanswered form and an outstanding agent reply show both signals at
   once."** Half done. Both *Attention reasons* coexisting is tested end to end
   (`unread-reply` + `form` on one row, and reading the thread takes the first and
@@ -577,7 +581,7 @@ frame and asserts both flip. **Negative control run**: with the `events.push(…
 line removed the spec fails on `toHaveCount(0)` — the row never clears on its
 own, so the frame is what clears it.
 
-#### 2. "More than one unanswered form says how many are still open" — **still not implemented**
+#### 2. "More than one unanswered form says how many are still open" — **still not implemented** _(closed 2026-08-09; see the count pass below)_
 
 Unchanged and still blocked, not deferred by preference. `DocRow.attention` is a
 list of reason codes and carries no number; a row carries no turns; so the count
@@ -685,6 +689,130 @@ answered **200** (the user's live server). `forms.spec.ts` alone → **14/14**.
 `tsc --noEmit -p apps/ui` clean (its `include` covers `e2e`). Playwright's own
 Vite on 5399 exited with the run; 5399 free, no stray vite/chromium/vitest
 processes, `test-results/` from the deliberate failure removed.
+
+### Count pass, 2026-08-09 — the last criterion
+
+Run on **opus** (`claude-opus-5[1m]`), in the main working tree on
+`phase-25-form-count-skill-ids`. No git command was run.
+
+The block is gone: `DocRow.unansweredForms` (CONTRACT-040) arrived required,
+integer, `minimum: 0`, never null and never absent, and SERVER-084 derives it and
+the `form` reason from **one** SQL expression. So the row is told how many, and
+the UI counts nothing.
+
+Files touched: `packages/kit/src/row/reasons.ts`, `packages/kit/src/row/Row.tsx`,
+`packages/kit/src/row/reasons.test.ts`, `packages/kit/src/row/Row.test.tsx`,
+`apps/ui/e2e/stubCorpus.ts`, `apps/ui/e2e/forms.spec.ts`.
+
+#### What shipped, and where it deliberately did not go
+
+`REASON_TABLE`'s label was already `string | ((tier) => string)` — the `stale`
+entry has read the row since UI-004 — so the count follows the idiom that was
+there rather than adding a second one: the label argument becomes a small context
+(`{ tier, unansweredForms }`) and `form` reads it. The chip element, its class and
+its `data-reason` are untouched; this is a number inside the chip that already
+existed, not a new affordance. `reasonChip`/`reasonChips` take the count as a
+third **optional** positional (default `0`), so no kit export changed shape and
+`plugins/todos` compiles and runs unmodified.
+
+The exact wording, which is the threshold and not a decoration:
+
+| `unansweredForms` | the row's `form` chip |
+| ----------------- | ------------------------ |
+| `0`               | no chip at all — the reason is absent, since the contract publishes `unansweredForms > 0` **iff** `attention` contains `form` |
+| `1`               | `awaiting your answer` |
+| `2`               | `2 awaiting your answer` |
+
+— exactly CONTRACT-040's worked example. §11 says *more than one* says how many,
+so one form reads as it always has; "1 awaiting your answer" would be a second
+wording for the ordinary case.
+
+**The `.needs-you` pill was left bare (`form`), on purpose.** `NeedsYouBadge`'s
+own contract is "short text only — the reason line carries the sentence", the
+mockup's form pill reads `form` with no number, and §11's "says how many" is one
+statement: two places carrying the same count is two things to keep in step for
+no second reader. Asserted rather than assumed, in both the component test and
+the e2e.
+
+#### The stub, and why the count could not be seeded
+
+`apps/ui/e2e/stubCorpus.ts` was omitting the field entirely (its row builder
+returns `unknown`, so nothing caught it, and the typed client validates nothing at
+runtime) — every stubbed row would have reached the board with
+`unansweredForms: undefined`. It now derives it from `openForms(...)`, the set the
+stub already had, and **`attentionOf` reads its `form` reason off that same
+function's result** instead of testing the set a second time. That keeps the
+published invariant structural in the stub rather than coincidental: the count and
+the reason cannot drift apart here any more than they can in the projection.
+
+#### The browser, and two negative controls
+
+New spec, `forms.spec.ts` › *"says how many asks are still open, and stops saying
+so at one"*: a thread with **two** agent turns each carrying its own form (two
+*asks* — a two-field form is one ask, answered once as a whole per §6) beside the
+existing single-form thread, in one board and one read, so the number and its
+absence are asserted against each other. Then the two-ask row is walked down by
+**answering**, which is the only thing that moves it: answer the first ask →
+back on the board the row is still there, now reading `awaiting your answer`;
+answer the second → the row goes. The two POSTs are asserted to be one per turn,
+by body, so nothing passes by answering one form twice.
+
+Both directions run, on the real Vite dev server in a real Chromium
+(`CORPUS_UI_PORT=5399`; 5173 and 8765 were never bound by me):
+
+```
+faithful                                     → forms.spec.ts 15/15
+control 1 — `unansweredForms` dropped from the stub row (the wire's half):
+  the two-ask row read "awaiting your answer"   ← undefined > 1 is merely false
+control 2 — threshold flipped to `> 0` (the spec's half):
+  14 × locator resolved to <span data-reason="form" class="r-chip r-form">1 awaiting your answer</span>
+  ← the *single*-ask control row failed, which is the "only above one" clause biting
+```
+
+Control 2 is the one worth keeping: it fails on the row that is **not** supposed
+to carry a number, so the spec cannot pass by rendering the count unconditionally.
+
+#### The real server, the real board, the whole sentence
+
+A scratch workspace on **8899** (`corpus init /tmp/ui084c-ws --port 8899`; the
+user's server held 8765 throughout and was never touched), a note, a thread, and
+two **agent** turns each carrying a one-field form. Vite on **5399**
+(`CORPUS_SERVER_ORIGIN=http://127.0.0.1:8899`), a real Chromium on the real
+seeded Attention column. Each answer was posted **from outside the browser**, so
+what repainted the board was the `invalidate` frame and nothing this page did:
+
+```
+two open  | chips: ["agent replied","2 awaiting your answer"] | needs-you: ["form"] | wire: unansweredForms=2 ["unread-reply","form"]
+  POST /api/threads/th_45ws6qcc/seen                     ← the asymmetry, again
+  POST …/turns/2026-08-09T07:15:49Z/form  (the first ask)
+one open  | chips: ["awaiting your answer"]               | needs-you: ["form"] | wire: unansweredForms=1 ["form"]
+  POST …/turns/2026-08-09T07:15:50Z/form  (the second ask)
+none open | rows in Attention: 0 | still listed in Open threads: 1, chips: [], needs-you: []
+          | wire: unansweredForms=0, attention: []
+```
+
+The count on the wire and the words on the row agree at 2, 1 and 0; the number
+appears only above one; and the row leaves Attention when — and only when — the
+last ask is answered, while the thread itself stays on the board like any other.
+
+#### Checks
+
+`npm run build` clean. `VITEST_MAX_THREADS=4 vitest run apps/ui packages/kit` →
+**3256 passed**. `CORPUS_UI_PORT=5399 playwright test` (full suite) → **354
+passed, 2 failed**; `forms.spec.ts` alone → **15/15**. `npx eslint` and
+`npx prettier --check` clean on all six touched files; `tsc --noEmit` clean for
+both `apps/ui` and `packages/kit`.
+
+**The two failures are the known environmental pair, diagnosed not chased**:
+`console.spec.ts:62` and `smoke.spec.ts:241` both assert the console strip reads
+`server unreachable`, which requires **nothing** listening on 8765 — and
+`curl 127.0.0.1:8765/api/health` answered **200** (the user's live server, pid
+1715) for the whole session. Neither touches forms, rows or reasons.
+
+Teardown: server stopped (pid 89362), Vite on 5399 killed, `/tmp/ui084c-ws` and
+the drive scripts removed, `test-results/` from the deliberate failures removed;
+5399 and 8899 confirmed free, no stray vite/chromium/vitest processes, 8765 and
+5173 left alone.
 
 ## Completion Checklist (domain agent)
 

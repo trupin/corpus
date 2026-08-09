@@ -1,4 +1,4 @@
-# [SERVER-077] The board, queries and the file all agree on a derived status
+# [SERVER-085] The board, queries and the file all agree on a derived status
 
 ## Domain
 
@@ -153,4 +153,4 @@ _[Agent fills: model run on, commands, observed output.]_
 
 - [ ] `/audit` run (cross-domain, touches the write path and projection)
 - [ ] `/evaluate` passes
-- [ ] Committed with `[SERVER-077]` prefix
+- [ ] Committed with `[SERVER-085]` prefix

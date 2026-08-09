@@ -166,6 +166,7 @@ function createServer() {
             unread: null,
             awaitingAgent: null,
             unreadThreads: 0,
+            unansweredForms: 0,
             attention: ["unread-reply" as const, "stale" as const],
             snippets:
               q === undefined
@@ -538,6 +539,19 @@ describe("the typed collection query", () => {
     });
     const count: number | undefined = data?.items[0]?.unreadThreads;
     expect(count).toBe(0);
+  });
+
+  /**
+   * CONTRACT-040, the same shape check for the open-form count: the chip reads
+   * it through a `> 1` threshold, so `number | null` would compile a missing
+   * coalesce into a silently-false comparison rather than a type error.
+   */
+  it("types the open-form count as a required number, so the chip needs no fallback", async () => {
+    const { data } = await createTestClient().api.GET("/api/docs", {
+      params: { query: { folder: "finance" } },
+    });
+    const open: number | undefined = data?.items[0]?.unansweredForms;
+    expect(open).toBe(0);
   });
 
   /** The rider's parameter has to exist on the generated client, not only in the schema. */

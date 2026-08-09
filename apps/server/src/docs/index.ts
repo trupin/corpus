@@ -103,6 +103,7 @@ export type { Compiled, FilterQuery } from "./filters.js";
 export {
   AWAITING_AGENT_SQL,
   NEEDS_REASON_SQL,
+  UNANSWERED_FORM_COUNT_SQL,
   UNREAD_SQL,
   isThreadUnread,
   rowAttention,

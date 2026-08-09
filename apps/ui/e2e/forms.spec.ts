@@ -111,6 +111,45 @@ const WRITE_FIELDS_THREAD = {
   ]),
 };
 
+/** A form of a single required `choose one` field — the smallest whole ask. */
+const oneChoice = (question: string, options: readonly string[]): string =>
+  [
+    "```form",
+    "fields:",
+    `  - question: ${question}`,
+    "    kind: choose one",
+    "    options:",
+    ...options.map((option) => `      - ${option}`),
+    "```",
+  ].join("\n");
+
+/**
+ * A thread the agent asked **twice** in: two agent turns, each carrying its own
+ * form, neither answered.
+ *
+ * Two *forms*, not one form of two fields — §11 counts asks, and a form is
+ * answered once as a whole (§6), so a two-field form is one thing still open and
+ * not two. Their questions differ because that is how an answer turn is matched
+ * back to the form it answers, on the stub and in the projection alike.
+ */
+const TWO_FORM_THREAD = {
+  id: "th_two",
+  type: "thread",
+  title: "Two open asks",
+  path: "data/threads/th_two.md",
+  parent: null,
+  unread: false,
+  body: threadBody([
+    ["user", "2026-07-19T10:05:00Z", "Sort the renewal out for me."],
+    [
+      "agent",
+      "2026-07-19T10:07:00Z",
+      oneChoice("Which quote should I file?", ["Lemonade — $1,840/yr", "State Farm — $1,975/yr"]),
+    ],
+    ["agent", "2026-07-19T10:09:00Z", oneChoice("Which deductible?", ["$1,000", "$2,500"])],
+  ]),
+};
+
 /** The control: a thread whose only signal is an unread agent reply. */
 const REPLY_THREAD = {
   id: "th_reply",
@@ -216,6 +255,73 @@ test.describe("the Attention row a form leaves behind", () => {
     // And the Attention row clears — the action, not the reading, is what did it.
     await column(page).getByRole("button", { name: "‹ Attention" }).click();
     await expect(row(page, "th_form")).toHaveCount(0);
+  });
+
+  /**
+   * SPEC.md §11's last clause: "a thread holding **more than one** unanswered
+   * form says how many are still open".
+   *
+   * The threshold is the behaviour, so the number and its absence are asserted
+   * against each other in one read of one board — a two-ask row beside a
+   * one-ask row — and then the two-ask row is walked down through both states by
+   * answering, which is the only thing that moves it.
+   *
+   * The count is `DocRow.unansweredForms`, derived by the stub from the same
+   * open-form set as the `form` reason itself (CONTRACT-040's published
+   * invariant, in both directions), so nothing here can show a number the row's
+   * own reason disagrees with — and the board issues no per-row thread read to
+   * get it.
+   */
+  test("says how many asks are still open, and stops saying so at one", async ({ page }) => {
+    const corpus = await stubCorpus(page, [ATTENTION_VIEW, TWO_FORM_THREAD, FORM_THREAD]);
+    await page.goto("/");
+
+    // Two asks: the reason chip carries the number…
+    await expect(row(page, "th_two").locator('[data-reason="form"]')).toHaveText(
+      "2 awaiting your answer",
+    );
+    // …and the needs-you pill stays the bare kind, so the row says it once.
+    await expect(row(page, "th_two").locator(".needs-you")).toHaveText("form");
+
+    // The control, in the same board and in the same read: one ask says nothing
+    // about how many. Without it, "2 …" could be the only wording there is.
+    await expect(row(page, "th_form").locator('[data-reason="form"]')).toHaveText(
+      "awaiting your answer",
+    );
+
+    // Answer the first ask, and only the first.
+    await row(page, "th_two").click();
+    const open = column(page).locator(".form-comment:not(.form-answered)");
+    await expect(open).toHaveCount(2);
+    await open.first().locator('input[type="radio"]').first().focus();
+    await page.keyboard.press("Space");
+    await open.first().locator(".form-submit").click();
+    await expect(column(page).locator(".form-comment.form-answered")).toHaveCount(1);
+    await expect(open).toHaveCount(1);
+
+    // Still on the board — one ask is still open — and now saying so with no
+    // number, which is the same row reading the ordinary way.
+    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await expect(row(page, "th_two").locator('[data-reason="form"]')).toHaveText(
+      "awaiting your answer",
+    );
+
+    // Answering the second is what takes the row away.
+    await row(page, "th_two").click();
+    const last = column(page).locator(".form-comment:not(.form-answered)");
+    await expect(last).toHaveCount(1);
+    await last.locator('input[type="radio"]').first().focus();
+    await page.keyboard.press("Space");
+    await last.locator(".form-submit").click();
+    await column(page).getByRole("button", { name: "‹ Attention" }).click();
+    await expect(row(page, "th_two")).toHaveCount(0);
+
+    // Two answers, each to its own ask — never one form answered twice.
+    const answers = (await corpus.of("POST")).filter((call) => call.path.endsWith("/form"));
+    expect(answers.map((call) => call.body)).toEqual([
+      { answers: [{ question: "Which quote should I file?", option: "Lemonade — $1,840/yr" }] },
+      { answers: [{ question: "Which deductible?", option: "$1,000" }] },
+    ]);
   });
 
   /**

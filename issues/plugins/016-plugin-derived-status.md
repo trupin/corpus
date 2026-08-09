@@ -19,7 +19,7 @@ fable
 ## Dependencies
 
 - Depends on: SHARED-036 (rider must be signed first)
-- Blocks: SERVER-077, UI-092
+- Blocks: SERVER-085, UI-092
 
 ## Spec References
 
@@ -115,9 +115,9 @@ discovery test that a malformed declaration is contained rather than fatal.
 
 ## E2E Verification Plan
 
-This issue lands the mechanism; SERVER-077 makes it observable end to end. Verify
+This issue lands the mechanism; SERVER-085 makes it observable end to end. Verify
 here at the unit boundary and through `corpus todos list` if the CLI can already
-show a document's status; leave the board-level proof to SERVER-077 and UI-092.
+show a document's status; leave the board-level proof to SERVER-085 and UI-092.
 
 ### Verification Steps
 

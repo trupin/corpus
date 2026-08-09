@@ -21,7 +21,7 @@ opus
 - Depends on: SHARED-036 part 2 (the column showing completed items is a §12
   change, and it is what makes unchecking reachable at all)
 - Blocks: —
-- Related: SERVER-077 (checking the last item from here must resolve its
+- Related: SERVER-085 (checking the last item from here must resolve its
   document the same way checking it in the body does)
 
 ## Spec References
@@ -135,7 +135,7 @@ checkbox.
 4. Click the item's **text** — confirm the document opens at that item, revealed
    and flashed as before
 5. Check the **last open item** of a document and confirm that document's status
-   goes `resolved` (SERVER-077) — the two must agree from this surface too
+   goes `resolved` (SERVER-085) — the two must agree from this surface too
 6. Tab to a checkbox and activate it from the keyboard
 7. Take the lock as the agent and confirm the checkbox is refused with the holder
    named

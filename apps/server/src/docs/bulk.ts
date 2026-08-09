@@ -86,7 +86,7 @@ import { removeThreadAttachments } from "../attachments/index.js";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
 import { DOCS_KEY, dedupeKeys, docKey, threadKey } from "../events/index.js";
 import { HttpError, forbidden } from "../errors.js";
-import { planSetArchived } from "./archive.js";
+import { carriedDocumentIds, planSetArchived } from "./archive.js";
 import { AGENT_DELETE_MESSAGE, anchoredThreadParent, planDelete } from "./delete.js";
 import { assertMovable, planMove } from "./move.js";
 import { loadDocument, type LoadedDocument } from "./read.js";
@@ -304,40 +304,72 @@ function occupiedRefusal(id: string, error: DestinationOccupiedError): BulkActio
 }
 
 /**
- * The lock guard on the §6 cascade's **parent**, reported so the row says which
- * document is actually locked.
+ * The lock guard on a document this act writes **without having been asked
+ * about it** — §6's cascade parent, §7's carried skill — reported so the row
+ * says which document is actually locked.
  *
- * The refusal stays filed under the *thread's* id — the three parts partition
- * the requested ids, and the parent need not even be among them — but everything
- * in that row that names a document has to name the parent, or a person reads
- * "locked" beside the thread and clears the thread's lock, which changes
- * nothing. `lock` already does (`Lock` carries its own `docId`, and this is the
- * lease whose clearing unblocks the deletion); the message now says so in words
- * instead of leaving a reader to notice that the id in the sentence is not the
- * id in the row (SERVER-077 review, finding 5).
+ * The refusal stays filed under the *requested* id: the three parts partition
+ * the requested ids, and neither the parent nor a carried skill need even be
+ * among them. But everything in that row that names a document has to name the
+ * locked one, or a person reads "locked" beside the document they acted on and
+ * clears *its* lease, which changes nothing. `lock` already does (`Lock` carries
+ * its own `docId`, and this is the lease whose clearing unblocks the act); the
+ * message says so in words instead of leaving a reader to notice that the id in
+ * the sentence is not the id in the row (SERVER-077 review, finding 5).
  */
-async function guardCascadeParent(
+async function guardRelated(
   guard: WriteGuard,
-  id: string,
-  parentId: string,
+  relatedId: string,
   actor: Actor,
+  explain: (holder: Actor) => string,
 ): Promise<void> {
   try {
-    await guard(parentId, actor);
+    await guard(relatedId, actor);
   } catch (error) {
     if (error instanceof HttpError && error.status === 423 && "lock" in error.body) {
       const lock = error.body.lock;
-      if (lock !== undefined) {
-        throw new Refusal(
-          "locked",
-          `deleting ${id} rewrites its parent ${parentId}'s anchors in the same commit ` +
-            `(SPEC.md §6), and ${parentId} is being edited by ${lock.holder}; the lock to clear ` +
-            `is ${parentId}'s, not ${id}'s`,
-          lock,
-        );
-      }
+      if (lock !== undefined) throw new Refusal("locked", explain(lock.holder), lock);
     }
     throw error;
+  }
+}
+
+const cascadeParentLocked =
+  (id: string, parentId: string) =>
+  (holder: Actor): string =>
+    `deleting ${id} rewrites its parent ${parentId}'s anchors in the same commit ` +
+    `(SPEC.md §6), and ${parentId} is being edited by ${holder}; the lock to clear ` +
+    `is ${parentId}'s, not ${id}'s`;
+
+const carriedSkillLocked =
+  (verb: string, id: string, carriedId: string) =>
+  (holder: Actor): string =>
+    `to ${verb} ${id} its whole skill folder moves (SPEC.md §7), which rewrites ` +
+    `${carriedId}'s file in the same commit, and ${carriedId} is being edited by ${holder}; ` +
+    `the lock to clear is ${carriedId}'s, not ${id}'s`;
+
+/**
+ * Note where a plan just moved documents that are not its own, so a later id in
+ * the same act finds its file.
+ *
+ * Read off the operations that landed rather than tracked by the planner: the
+ * operation is the thing that actually moved the bytes, so the map cannot drift
+ * from the disk the way a second bookkeeping list would. Only `renameDir`
+ * carries other documents — `renameFile` moves the requested document itself,
+ * whose row is corrected by the re-projection like every other.
+ */
+function recordRelocations(
+  relocated: Map<string, string>,
+  operations: readonly FileOperation[],
+): void {
+  for (const operation of operations) {
+    if (operation.kind !== "renameDir") continue;
+    const prefix = `${operation.from}/`;
+    for (const path of operation.documents) {
+      if (path.startsWith(prefix)) {
+        relocated.set(path, `${operation.to}/${path.slice(prefix.length)}`);
+      }
+    }
   }
 }
 
@@ -347,11 +379,12 @@ function planFor(
   loaded: LoadedDocument,
   action: BulkAction,
   destination: string | null,
+  held: ReadonlySet<string>,
 ): DocumentPlan | null {
   switch (action.action) {
     case "archive":
     case "unarchive": {
-      const plan = planSetArchived(workspace, loaded, action.action === "archive");
+      const plan = planSetArchived(workspace, loaded, action.action === "archive", held);
       if (plan === null) return null;
       return {
         operations: plan.operations,
@@ -466,8 +499,32 @@ export async function applyBulkAction(
     }
   }
 
-  return runInLanes(mutex, [...ids, ...parents.values()], () =>
-    runBulk(workspace, actor, ids, action, destination, parents),
+  // §7's skill folder move *writes* every other `SKILL.md` under the folder — it
+  // stamps the id the move would otherwise re-mint (SERVER-078) — so those
+  // documents' lanes are held too, on the same reasoning as a cascaded parent's
+  // and by the same pre-lane read (PR #38, finding 3).
+  const carried = new Set<string>();
+  if (action.action === "archive" || action.action === "unarchive") {
+    for (const id of ids) {
+      try {
+        const loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
+        for (const carriedId of carriedDocumentIds(
+          workspace,
+          loaded,
+          action.action === "archive",
+        )) {
+          carried.add(carriedId);
+        }
+      } catch {
+        // Unreadable now is unreadable inside the lanes too, where it is
+        // reported as this document's own refusal.
+      }
+    }
+  }
+
+  const held = new Set([...ids, ...carried, ...parents.values()]);
+  return runInLanes(mutex, [...held], () =>
+    runBulk(workspace, actor, ids, action, destination, parents, held),
   );
 }
 
@@ -478,6 +535,7 @@ async function runBulk(
   action: BulkAction,
   destination: string | null,
   parents: ReadonlyMap<string, string>,
+  held: ReadonlySet<string>,
 ): Promise<BulkActionResult> {
   const guard = workspace.assertWritable ?? ((): void => undefined);
 
@@ -491,6 +549,12 @@ async function runBulk(
   const unproject: string[] = [];
   const keys: QueryKey[] = [];
   const warnings: Warning[] = [];
+  // Where this act has already moved a document's file, old path to new. §7's
+  // skill folder move relocates every `SKILL.md` under it, including ones the
+  // act names later — and the projection does not move until `finishMutation`,
+  // so without this the later id loads a path the act itself emptied and is
+  // refused `not-found` while its file rides in the commit (SERVER-078).
+  const relocated = new Map<string, string>();
 
   for (const id of ids) {
     let loaded: LoadedDocument;
@@ -499,15 +563,35 @@ async function runBulk(
       await guard(id, actor);
       const parentId = parents.get(id);
       // The lock that refuses a cascade is the one on the file being rewritten.
-      if (parentId !== undefined) await guardCascadeParent(guard, id, parentId, actor);
-      loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
+      if (parentId !== undefined) {
+        await guardRelated(guard, parentId, actor, cascadeParentLocked(id, parentId));
+      }
+      loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id, relocated);
+      // The same rule one lane deeper: a folder move rewrites the files of the
+      // skills it carries, so a lease on one of them refuses this document's
+      // share of the act (the refusal names the locked document, and `lock`
+      // carries its id).
+      if (action.action === "archive" || action.action === "unarchive") {
+        for (const carriedId of carriedDocumentIds(
+          workspace,
+          loaded,
+          action.action === "archive",
+        )) {
+          await guardRelated(
+            guard,
+            carriedId,
+            actor,
+            carriedSkillLocked(action.action, id, carriedId),
+          );
+        }
+      }
     } catch (error) {
       refused.push(refusalFor(workspace, id, error, "invalid"));
       continue;
     }
 
     try {
-      plan = planFor(workspace, loaded, action, destination);
+      plan = planFor(workspace, loaded, action, destination, held);
     } catch (error) {
       // Everything else `planFor` raises means "this act does not apply to this
       // document". A destination that is already taken means the write could not
@@ -547,6 +631,7 @@ async function runBulk(
     }
 
     changed.push(id);
+    recordRelocations(relocated, plan.operations);
     stage.push(...plan.stage);
     project.push(...plan.project);
     unproject.push(...plan.unproject);

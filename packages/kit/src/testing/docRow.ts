@@ -35,6 +35,9 @@ export function docRowFixture(overrides: Partial<DocRow> = {}): DocRow {
     unread: null,
     awaitingAgent: null,
     unreadThreads: 0,
+    // `0`, not null: a count is always a count (CONTRACT-040). A row with no
+    // unanswered form and a row that is not a thread are the same `0` here.
+    unansweredForms: 0,
     attention: [],
     snippets: [],
     parentTitle: null,

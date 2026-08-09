@@ -47,6 +47,46 @@ describe("the reason vocabulary", () => {
   });
 });
 
+/**
+ * SPEC.md §11: "a thread holding **more than one** unanswered form says how many
+ * are still open". The threshold is the behaviour — one form reads exactly as it
+ * always has — so every case around it is pinned, not just the plural one.
+ */
+describe("how many unanswered forms are still open", () => {
+  it("says nothing extra at one, which is the ordinary case", () => {
+    expect(reasonChip("form", null, 1).label).toBe("awaiting your answer");
+  });
+
+  it("says how many above one", () => {
+    expect(reasonChip("form", null, 2).label).toBe("2 awaiting your answer");
+    expect(reasonChip("form", null, 3).label).toBe("3 awaiting your answer");
+    expect(reasonChip("form", null, 11).label).toBe("11 awaiting your answer");
+  });
+
+  it("keeps the signal chip whatever the count", () => {
+    expect(reasonChip("form", null, 4).chipClass).toBe(REASON_CHIP_CLASSES.form);
+  });
+
+  /*
+   * `0` with a `form` reason cannot come off the wire — the contract publishes
+   * `unansweredForms > 0` **iff** `attention` contains `form` — but the default
+   * is `0`, and a caller that has only a code must still get a chip rather than
+   * "0 awaiting your answer".
+   */
+  it("falls back to the bare wording when no count was supplied", () => {
+    expect(reasonChip("form").label).toBe("awaiting your answer");
+    expect(reasonChip("form", null, 0).label).toBe("awaiting your answer");
+  });
+
+  it("is the form reason's alone — no other code borrows the number", () => {
+    expect(reasonChip("due", null, 3).label).toBe("due today");
+    expect(reasonChip("unread-reply", null, 3).label).toBe("agent replied");
+    expect(reasonChip("failed-job", null, 3).label).toBe("failed job");
+    expect(reasonChip("stale", "very-stale", 3).label).toBe("review: archive or act");
+    expect(reasonChip("todos/overdue", null, 3).label).toBe("todos/overdue");
+  });
+});
+
 describe("reasonChips", () => {
   it("keeps the server's order and length", () => {
     const chips = reasonChips(["stale", "unread-reply", "x/unknown"], "very-stale");
@@ -56,5 +96,10 @@ describe("reasonChips", () => {
 
   it("is empty for a row with nothing to report", () => {
     expect(reasonChips([])).toEqual([]);
+  });
+
+  it("carries the count through to the one chip that reads it", () => {
+    const chips = reasonChips(["unread-reply", "form"], null, 2);
+    expect(chips.map((chip) => chip.label)).toEqual(["agent replied", "2 awaiting your answer"]);
   });
 });
