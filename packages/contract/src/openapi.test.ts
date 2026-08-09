@@ -1705,6 +1705,58 @@ describe("DocRow.unreadThreads (CONTRACT-012)", () => {
   });
 });
 
+/**
+ * CONTRACT-040. The count that lets a reason chip say "2 still open" (SPEC.md
+ * §11) from the collection response alone. Like `unreadThreads`, its description
+ * is the whole contract the server half implements against, so it is pinned in
+ * the published document rather than only inferred from the type.
+ */
+describe("DocRow.unansweredForms (CONTRACT-040)", () => {
+  const property = () => componentSchemas?.["DocRow"]?.properties?.["unansweredForms"];
+
+  it("is a required, non-negative integer — never nullable, never absent", () => {
+    expect(componentSchemas?.["DocRow"]?.required).toContain("unansweredForms");
+    expect(property()?.type).toBe("integer");
+    expect(property()?.minimum).toBe(0);
+    expect(JSON.stringify(property())).not.toContain('"null"');
+  });
+
+  /**
+   * The equivalence with the `form` reason is the field's reason to exist, and
+   * an equivalence published without its direction is what two review rounds
+   * caught this week — so the published prose has to state both halves.
+   */
+  it("publishes the equivalence with the `form` reason in both directions", () => {
+    const description = JSON.stringify(property());
+    expect(description).toContain("both directions");
+    expect(description).toContain("iff");
+    expect(description).toContain("Left to right");
+    expect(description).toContain("right to left");
+  });
+
+  it("publishes the resolve rule, the seen asymmetry, and that 0 is not `unknown`", () => {
+    const description = JSON.stringify(property());
+    expect(description).toContain("SPEC.md §6, §11");
+    expect(description).toContain("Resolving the thread takes it to `0`");
+    expect(description).toContain("/seen");
+    expect(description).toContain("non-thread row");
+    expect(description).toContain("unknown");
+  });
+
+  /**
+   * The alternative this field was chosen over: widening `attention`'s entries
+   * into objects. A published `attention` whose items stopped being the reason
+   * enum would break every consumer of every reason for one reason's sake.
+   */
+  it("leaves `attention` an array of bare reason codes", () => {
+    const attention = componentSchemas?.["DocRow"]?.properties?.["attention"];
+    expect(attention?.type).toBe("array");
+    expect(attention?.items?.type).toBe("string");
+    expect(attention?.items?.enum).toContain("form");
+    expect(attention?.items?.properties).toBeUndefined();
+  });
+});
+
 describe("author attribution", () => {
   /**
    * The `POST`s with no git author to attribute, and they are unattributed for

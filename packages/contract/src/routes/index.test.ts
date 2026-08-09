@@ -67,6 +67,7 @@ const row = {
   unread: null,
   awaitingAgent: null,
   unreadThreads: 2,
+  unansweredForms: 0,
   attention: ["unread-reply" as const, "due" as const],
   snippets: [
     {

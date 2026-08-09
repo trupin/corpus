@@ -370,6 +370,11 @@
             "minimum": 0,
             "description": "How many of **this document's own threads** are currently unread for the user (SPEC.md §7) — the aggregate behind a document row's unread pill. It counts child threads whose last turn is newer than your last-seen mark, which is exactly the comparison the per-thread `unread` flag makes, so the two agree by construction: this equals the item count of `?parent=<id>&type=thread&unread=true`, and a thread marked seen at a `lastSeenTs` before its last turn (a partial read) still counts as unread in both. It rides on every row so a list never issues one such query per row. **`0` on a thread row** — a thread does not aggregate its own child threads here — **and `0` on a document with no threads.** Never null and never absent, so `0` always means \"nothing unread\" and never \"unknown\"."
           },
+          "unansweredForms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many **unanswered forms** this thread still holds (SPEC.md §6, §11) — the number behind Attention's \"how many are still open\". It counts the thread's agent turns carrying an answerable `form` block that no later turn has answered, which is exactly the set the `form` attention reason tests for the existence of, under the same open-thread guard. **The two agree in both directions**: this is non-zero **iff** `attention` contains `form`. Left to right, a form counted here is a form that existence test finds; right to left, the reason cannot hold with nothing to count — one derivation produces both, so neither can move without the other. The `needs=form` filter tests that same predicate, so a filtered list never disagrees with the rows in it about which threads are waiting (it filters, so the rest of the query — including the default archived exclusion — still applies to which rows are returned at all). **Resolving the thread takes it to `0`** along with the reason: a resolved conversation is not waiting for an answer (SPEC.md §6). **`POST /api/threads/{id}/seen` leaves it untouched** — an unanswered form's row is the one that survives being read (SPEC.md §11), the opposite of `unread` and `unreadThreads`, which being read is precisely what clears. It rides on every row so no list has to fetch each thread to count its forms. **`0` on a thread with no unanswered form, and `0` on every non-thread row** — never null and never absent, so `0` always means \"none\" and never \"unknown\". Rendering is the consumer's: §11 asks for the number only when it is greater than one."
+          },
           "attention": {
             "type": "array",
             "items": {
@@ -383,7 +388,7 @@
               ],
               "description": "Why a row needs attention (SPEC.md §11)."
             },
-            "description": "Attention reasons for this row, populated on every response rather than only under `needs=`, so any list can render reason chips. Empty when nothing applies; never contains `me`, which is the union filter and not a reason."
+            "description": "Attention reasons for this row, populated on every response rather than only under `needs=`, so any list can render reason chips. Empty when nothing applies; never contains `me`, which is the union filter and not a reason. Entries stay bare codes: the one reason with a number to report carries it in the sibling `unansweredForms`, because plugins extend this list (SPEC.md §10) and a code is what every consumer of every reason already reads."
           },
           "snippets": {
             "type": "array",
@@ -422,6 +427,7 @@
           "unread",
           "awaitingAgent",
           "unreadThreads",
+          "unansweredForms",
           "attention",
           "snippets"
         ]
