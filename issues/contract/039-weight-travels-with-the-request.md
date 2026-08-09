@@ -188,8 +188,11 @@ the following:
 >   reads and what the job log names (§7). _(Rider signed 2026-08-06; route line
 >   added <DATE>.)_
 
-_Held: not applied to SPEC.md. Requires user sign-off; replace `<DATE>` with the
-sign-off date._
+**SIGNED by the user 2026-08-08 and APPLIED to SPEC.md §9.2.** One wording
+correction was made on the way in: the draft said the routes take "an optional
+level name", written before AGENT-015 declared a Key column. The applied text
+says the level is named by its **key**, because the label is prose a person may
+reword and a choice made yesterday must still resolve afterwards.
 
 ## Testing Strategy
 

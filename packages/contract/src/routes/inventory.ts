@@ -92,14 +92,13 @@
  * leave, which is a gap in the guarantee rather than a feature request — and the
  * only party holding the evidence is the person who wrote the comment, who can
  * reach the workspace only through the server (Architecture Decision 2). It sits
- * immediately after the resolve/reopen/seen group, where a §9.2 bullet for it
- * would go. **§9.2 does not list it yet**: like the upgrade pair above, the
- * bullet is drafted in CONTRACT-041's issue file and awaits user sign-off, so
- * the gap here is a pending amendment rather than an undocumented route. The
- * same is true of its user-only rule, which §9.2's "the user-only endpoints
- * (deletion) reject agent actors" clause does not yet cover; the route declares
- * and documents it regardless, because leaving it to an actor check nobody wrote
- * down is how it would quietly stop being true.
+ * immediately after the resolve/reopen/seen group, which is where §9.2's bullet
+ * for it now sits: CONTRACT-041's drafted amendment was signed by the user on
+ * 2026-08-08 and applied, together with the widening of §9.2's acting-party
+ * clause to read "the user-only endpoints (deletion, and re-attaching a thread)
+ * reject agent actors" — so the `403` is a spec rule rather than a contract
+ * opinion. The derivation stays recorded here because it is why the route
+ * exists, not because the route is undocumented.
  *
  * This list is the contract's own spec-compliance test: `openapi.test.ts`
  * asserts the generated document's paths × methods set equals it exactly, so

@@ -162,9 +162,11 @@ that **already resolves** may be re-attached, which moves it: a misattached
 anchor is exactly as wrong as a detached one, and refusing would leave
 delete-and-recreate — losing the conversation — as the only correction.
 
-## SPEC amendments drafted and HELD (not applied)
+## SPEC amendments — SIGNED 2026-08-08 and APPLIED
 
-Two, both for §9.2, awaiting user sign-off. This package never edits SPEC.md.
+Two, both for §9.2. Signed by the user on 2026-08-08 and applied to SPEC.md by
+the orchestrator, verbatim as drafted below; `routes/inventory.ts`'s docblock was
+updated to stop describing them as pending. This package never edits SPEC.md.
 
 **Amendment 1 — a new bullet, placed immediately after the
 `resolve` · `reopen` · `seen` · `DELETE …/turns/:ts` bullet:**

@@ -195,6 +195,14 @@ typed. Nothing is ever edited inside a box nobody can see. This is flagged for
 the record rather than waived quietly: if the user wants the literal reading, it
 needs a different presentation than a clip and therefore a spec change.
 
+**Resolved 2026-08-08, by user sign-off.** §11 was amended rather than the
+presentation changed: the sentence no longer promises clipped entries stay
+*selectable*, which no clip in any CSS can deliver, and states instead what a
+clip can keep — commentable, searchable, anchors resolving — plus the guarantee
+this issue added on top, that **a selection reaching into the clipped range opens
+the clip first**. The amendment carries the measurement, so the next reader gets
+the reason and not just the rule.
+
 ### The anchor case, driven in a real browser
 
 `apps/ui/e2e/changelog.spec.ts` seeds a document whose changelog has 12 entries
