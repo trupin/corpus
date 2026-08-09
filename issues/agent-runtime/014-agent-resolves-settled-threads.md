@@ -6,7 +6,7 @@ agent-runtime
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -109,28 +109,28 @@ the conversation around it.
 
 ## Acceptance Criteria
 
-- [ ] `assets/workspace/claude/skills/comment/SKILL.md`'s "Do not resolve on the
+- [x] `assets/workspace/claude/skills/comment/SKILL.md`'s "Do not resolve on the
       person's behalf" bullet is **replaced** — it does not survive this issue
       in any form, including a softened one
-- [ ] The replacement states the **trigger** (all four conditions) and **all four
+- [x] The replacement states the **trigger** (all four conditions) and **all four
       exclusions** by name, so the skill is readable without SPEC beside it
-- [ ] The skill states that resolution **rides on the reply turn** — one
+- [x] The skill states that resolution **rides on the reply turn** — one
       `corpus thread reply` and one `corpus thread resolve` for the same act,
       never a resolve with no readable turn attached
-- [ ] The skill states that the closing turn **says in words** that the matter is
+- [x] The skill states that the closing turn **says in words** that the matter is
       being closed, per §7 ("always stating in that turn that it is closing the
       matter")
-- [ ] The skill's stale hazard sentence ("A thread you resolved unilaterally
+- [x] The skill's stale hazard sentence ("A thread you resolved unilaterally
       stops waking you") is removed or corrected — SERVER-062 made it false
-- [ ] The skill's **Engagement and closure** section states the reopen rule: a
+- [x] The skill's **Engagement and closure** section states the reopen rule: a
       person's reply to a resolved thread reopens it and reaches the agent again;
       an agent turn never reopens. Today it states neither, so the agent has no
       account of what resolving costs
-- [ ] The skill states that resolving **never cascades** to parent or children
-- [ ] The exact CLI invocation is named and correct: `corpus thread resolve <id> --from agent`
-- [ ] `assets/workspace/claude/skills/orchestrate/SKILL.md` is checked for a
+- [x] The skill states that resolving **never cascades** to parent or children
+- [x] The exact CLI invocation is named and correct: `corpus thread resolve <id> --from agent`
+- [x] `assets/workspace/claude/skills/orchestrate/SKILL.md` is checked for a
       contradicting statement and corrected if one exists
-- [ ] No new state, no timers, no sweeps — see Non-goals
+- [x] No new state, no timers, no sweeps — see Non-goals
 
 ## Technical Design
 
@@ -261,13 +261,116 @@ unit test. Verify against a real workspace.
 
 ## E2E Verification Log
 
-_Filled in by the implementing agent as proof-of-work. State which model the
-implementing agent ran on ("implemented on: opus | fable")._
+implemented on: **opus** (Opus 5, 1M context).
 
 ### Post-Implementation Verification
 
-_[Agent fills: workspace path, port, exact commands, observed output, thread
-status transitions, git authors, confirmation of each exclusion.]_
+**Rig.** Scratch workspace `/tmp/agent014-ws` on port **8891** (never 8765/5173),
+created with the built CLI from this branch
+(`node apps/cli/dist/bin/corpus.js init /tmp/agent014-ws --port 8891` after
+`npm run build`), server started with `corpus server start` (pid 39870), stopped at
+the end. Behaviour was driven by **four real headless `claude` sessions** in that
+workspace (`claude -p … --model opus --output-format stream-json`), each given only
+the event payload and told to apply `.claude/skills/comment/SKILL.md`; queue verbs
+were withheld from them, as in the real dispatch. Tools were allowlisted to
+`Bash(corpus:*)`, `Read`, `Glob`, `Grep` — **no `Write`/`Edit` and no permission
+bypass** — so the CLI-only invariant is enforced by the harness, not merely asserted.
+All four transcripts report `"permission_denials":[]` and no `is_error`.
+
+Retained transcripts (stream-json, per the sprint-012 evidence rule):
+`/tmp/agent014-run1.jsonl` (8 turns), `/tmp/agent014-run2.jsonl` (9),
+`/tmp/agent014-run3.jsonl` (11), `/tmp/agent014-run4.jsonl` (10); prompts alongside
+as `/tmp/agent014-runN.txt`. The workspace and its git history are left in place.
+
+**1 — Packaging path.** `corpus init` reported `installed 8 template files`; the
+installed `/tmp/agent014-ws/.claude/skills/comment/SKILL.md` carries the new
+**Engagement and closure** section byte-for-byte (verified by `sed -n '437,510p'`),
+including the worked reply-then-resolve pair. The old prohibition is absent from the
+installed copy.
+
+**2 — The permission fires, live** (run 1, `evt_eiexpspt5jkk` on `th_qgzonswn`).
+Setup: person opened an anchored thread on `doc_giroqag4` ("is 6.1% still the right
+rate?"); the agent's first turn asked which lender's sheet to use; the person
+answered "the credit union's" (that turn alone re-triggered the agent with **no
+`@agent`** — `corpus queue claim-all` returned `evt_eiexpspt5jkk`, thread
+`agent: engaged`). The live session, reading only the shipped skill, ran — in **one**
+Bash invocation — `corpus thread reply th_qgzonswn --from agent --model claude-opus-5
+<<'EOF' … EOF` followed by `corpus thread resolve th_qgzonswn --from agent`. Its turn
+ends:
+
+> That's the whole change — nothing else in the document referenced the old rate, so
+> I'm closing this; reply here if the broker's sheet turns out to be the one you use.
+> ↳ updated the rate assumption in [[doc_giroqag4]] from 6.1% to 6.4%; resolved this thread
+
+So: closure stated **in words**, the resolve named on the **trace line**, and the
+resolve riding the reply. `corpus thread show` → `th_qgzonswn · resolved · agent
+engaged`. `git log`: `78ae4c8 agent <agent@corpus.local> thread resolve: Rate
+assumption (th_qgzonswn) by agent`, preceded by the `doc edit` commit, also authored
+`agent`.
+
+**3 — The exclusion holds, live** (run 2, `evt_sscnocrxpvw7` on `th_uexcwyew`).
+Person: "@agent draft the renewal plan for these three", against a document naming no
+vendors and a corpus holding nothing else. The session searched (`corpus search` ×2,
+`corpus doc related`), found nothing, replied with a **5-field form** (2 required, 3
+optional) and issued **no `corpus thread resolve`** — the transcript contains none.
+Thread after the run: `th_uexcwyew · open · agent engaged`. Its own job log line reads
+`… asked with a 5-field form (2 required) on th_uexcwyew and changed nothing; thread
+left open on the unanswered form`. This is the exclusion that matters most (a thread
+the person has not answered / holding an unanswered form), and it was reached by the
+skill's own reasoning, not by instruction.
+
+**4 — Reopen semantics (SERVER-062), mechanically.** On the resolved `th_qgzonswn`:
+
+| act                                         | resulting `status` | `eventId`        |
+| ------------------------------------------- | ------------------ | ---------------- |
+| `thread reply --from agent` (note in prose)  | `resolved`         | `null`           |
+| `thread reply --from user`                   | `open`             | `evt_m2qvou7zgv7l` |
+| `thread reply --from user` (second round)    | `open`             | `evt_7xetnjqaudvi` |
+
+The reopening commit says so itself: `e9b3917 user comment: turn on th_qgzonswn by
+user (reopened)`. An agent turn reopened nothing, exactly as the skill now states.
+
+**5 — The recovery path end-to-end, live** (run 4, `evt_7xetnjqaudvi`). Person
+reopened with "Credit union after all — they matched at 6.35%". The session re-did the
+work, replied ("I'm marking this resolved since the rate question is answered — reply
+here if it moves again and this reopens") and resolved again, once more as one
+`thread reply … <<'EOF' … EOF` + `thread resolve` pair. Final: `resolved`, 9 turns,
+`6423cce agent thread resolve: Rate assumption (th_qgzonswn) by agent`. Unprompted, it
+also recorded the four rate moves in the document's `## Changelog` — AGENT-020's rule
+composing with this one.
+
+**6 — Idempotence.** `corpus thread resolve th_qgzonswn --from agent` twice in a row:
+`resolved th_qgzonswn`, then `th_qgzonswn is already resolved` (exit 0, nothing
+committed) — matching what the skill now tells the agent to expect.
+
+**7 — No cascade, both directions.** Child `th_haflm6kj` under thread `th_uexcwyew`:
+resolving the child left `th_uexcwyew` **open** and `doc_4ip6f2j5` **open**. Fresh
+probe pair `th_sazn5qhd` (parent) / `th_or4t7kws` (child): resolving the parent left
+the child **open**.
+
+**8 — Orchestrate skill checked, not edited.** Its only statements near this are
+"A report after resolution … never reopen the thread unilaterally" (Routing) and
+`corpus thread resolve` appearing nowhere in the file. Neither contradicts the
+permission — SHARED-019 and §8 both say an agent turn never reopens — so the file is
+left alone.
+
+**Tests.** `VITEST_MAX_THREADS=4 npx vitest run scripts/workspace-template.test.ts`
+→ 196 passed (the six new `closing a settled thread` cases included; section counts
+still 13/16). `npx vitest run apps/cli/src/template` → 48 passed. `eslint` clean and
+`prettier --write` applied on `scripts/workspace-template.test.ts`
+(`assets/workspace/` is prettier-ignored by design).
+
+**Not verified.** Step 10 of the plan — the UI showing an agent-resolved thread
+expanded until read, then collapsing — was **not** exercised. It needs the Vite dev
+server, and 5173 is an ssh tunnel on this machine; the interlock is UI-077's shipped
+behaviour and this issue changes nothing about it. Nothing else in the plan was
+skipped.
+
+**One observation for the record, not a defect.** In run 4 the closing turn ends with
+an offer ("say the word and I'll add [a review date]") and still resolves. That is
+consistent with the rules as written — an outstanding *ask* is a form, and §7's
+exclusions are about asks, not offers — and the recovery path makes it cheap. Flagging
+it because it is the nearest thing to a boundary case any of the four runs produced.
 
 ## Non-goals
 
@@ -288,11 +391,11 @@ Carried from SHARED-019 so the implementation cannot drift into them:
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled in with concrete evidence
-- [ ] Self-review: spec compliance, code quality
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled in with concrete evidence
+- [x] Self-review: spec compliance, code quality
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

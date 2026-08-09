@@ -441,14 +441,71 @@ turn in it. There is no CLI verb that sets it and you never attempt to: the flag
 
 The consequence is the part that matters. Once a thread is `engaged`, **every later user turn
 re-triggers you** — no `@agent` needed — unless the thread is `resolved` or the turn was posted
-with the "note only" toggle. So end turns like someone who will be asked again:
+with the "note only" toggle. So end turns like someone who will be asked again, and say when
+you consider a matter closed, in words: "that's the whole change — nothing else in the document
+referenced the old figure."
 
-- Say when you consider a matter closed, in words: "that's the whole change — nothing else in
-  the document referenced the old figure."
-- **Suggest resolving** when the exchange has run its course.
-- **Do not resolve on the person's behalf.** Run `corpus thread resolve <id> --from agent`
-  only when they asked for the matter to be closed. A thread you resolved unilaterally stops
-  waking you, which is exactly the failure they cannot see.
+**Resolved is a closed door, not a locked one.** A turn a **person** writes on a resolved
+thread sets it back to `open` in the same write that appends it, and the rule above then
+applies to it unchanged: on a thread you are engaged in, that reply reaches you again with no
+`@agent` needed, and one posted "note only" reopens the conversation without waking you. A turn
+**you** write reopens nothing, so a thread you closed stays closed until a person writes in it.
+That is the whole cost of resolving — one reply restores the conversation — and knowing it is
+what lets you close a settled matter instead of leaving it open in case.
+
+**Close what you asked for and got.** You resolve the thread yourself when all four of these
+hold at once:
+
+1. you asked the person for feedback or information,
+2. they **provided it** — a turn of their own in the thread is the evidence,
+3. you have **used** it, and
+4. nothing in the thread is still waiting on anyone.
+
+Who opened the thread is irrelevant. The commonest shape is one the person started: they ask,
+you need one clarification, they clarify, you finish and close. A settled sub-question inside a
+still-live conversation is closed the same way, on its own.
+
+**Four threads you never close**, each a rule rather than a call:
+
+- **A thread the person never replied to.** An unanswered ask is exactly what the open state is
+  for, and no amount of elapsed time turns silence into an answer.
+- **A thread holding an unanswered form.** It stands in Attention as *awaiting your answer* —
+  an outstanding ask by definition, whatever else in the thread has settled and however many of
+  its other forms came back.
+- **An unfinished piece of your own work.** The thread is open because you owe something, and
+  closing it would be marking your own homework done.
+- **A question the person put to you that you have not yet answered.** Answer it first: a turn
+  that closes without answering is not a closing turn, it is the question going quiet.
+
+Where none of the four applies but you still may not close — the person asked, you answered,
+you needed nothing from them — **suggest resolving** and leave the control with them.
+
+**The resolve rides on the reply that reports the work.** One reply and one resolve for the
+same act, never a resolve with no readable turn attached:
+
+```bash
+corpus thread reply th_4b8e2c --from agent --model claude-sonnet-4-5 <<'EOF'
+6.4% it is — applied to the projection in [[doc_a1b2c3]] and to the two figures
+downstream of it. That settles the rate question, so I'm closing this thread;
+reply here if it turns out not to be settled.
+↳ updated the rate assumption in [[doc_a1b2c3]] to 6.4%; resolved this thread
+EOF
+corpus thread resolve th_4b8e2c --from agent
+```
+
+Which of the two commands runs first changes nothing — your own turn never reopens what you
+just closed — but that there **is** a turn changes everything. A bare
+`corpus thread resolve <id> --from agent` adds nothing anyone can read, and the board collapses
+a resolved thread holding nothing unseen: the conversation would fold away without the person
+ever seeing it end. So state the closing in the prose, in words, and name the resolve in the
+trace line as the change to a document that it is. Resolving writes the thread, not the parent,
+so a lock on the parent document does not stand in its way; a refused write is reported, never
+retried blind.
+
+**Resolving cascades nowhere.** A child thread is its own document with its own status: closing
+a subthread leaves its parent open, and closing a parent leaves its children open. Resolve
+exactly the thread whose matter is settled. Resolving one that is already resolved prints
+"already resolved" and changes nothing — not an error, and not worth a second attempt.
 
 ## Forms
 
