@@ -565,6 +565,16 @@ resolution of the new module in the test environment — type-aware eslint repor
 `editorBody` as "a type that could not be resolved" at the second call site,
 which may be the same fact from another angle.
 
+**Closed by UI-103, 2026-08-09.** The swap now works: both call sites use
+`editorBody`, and `useAnchorLayer.test.tsx` is 36/36 green. It was the same
+underlying fact after all — the one test it broke was "refuses a selection across
+the respelt seam", whose entire premise was the serializer's non-idempotence, and
+that premise is gone now the printer is a fixed point for the construct (the
+describe is renamed and asserts the acceptance instead of the refusal). The
+eslint resolution note has a separate and mundane explanation: `useAnchorLayer.ts`
+imported `editorBody` **without** the `.js` extension, alone among that file's
+relative imports; it now carries one like its neighbours.
+
 ## Completion Checklist (domain agent)
 
 - [x] Pre-fix reproduction logged, naming the failing stage

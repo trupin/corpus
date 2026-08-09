@@ -1030,13 +1030,21 @@ describe("ending the document's edit session", () => {
  *
  * `editorBody` makes it one named expression; this makes it a checked one. A
  * `DocEditor` that parsed anything else would have to change this test to pass.
+ *
+ * **UI-103 made the two traces agree by construction**, by making the printer a
+ * fixed point for the construct below — so `editorBody` is now provably a no-op
+ * and no behaviour can tell the two call sites apart. That is the intended
+ * outcome, not a reason to delete either. What this test asserts today is the
+ * fact underneath both of them: a real mounted editor over this body prints the
+ * file back **byte for byte**, so opening the document and typing writes what
+ * was already there.
  */
 describe("the text the editor parses", () => {
   /**
-   * The construct where `canonicalizeMarkdown` is not a fixed point (UI-103): a
-   * further paragraph of an outer list item after a nested sublist. Printing
-   * drops its preceding blank line; printing *that* re-reads the paragraph as a
-   * continuation of the nested item and indents it 2 → 4 spaces.
+   * The construct where `canonicalizeMarkdown` used not to be a fixed point
+   * (UI-103): a further paragraph of an outer list item after a nested sublist.
+   * Printing dropped its preceding blank line; printing *that* re-read the
+   * paragraph as a continuation of the nested item and indented it 2 → 4 spaces.
    */
   const RESTRUCTURED =
     "- Outer bullet leads in.\n" +
@@ -1046,13 +1054,11 @@ describe("the text the editor parses", () => {
     "  A trailing paragraph of the outer item.\n" +
     "- Second outer bullet.\n";
 
-  it("prints what the anchor layer traces, on a body where that is not the body", async () => {
-    // The premise that makes the assertion below load-bearing rather than a
-    // tautology: on this body the two candidate traces genuinely differ, so a
-    // layer tracing the raw body would be holding another document's offsets.
-    expect(traceOfBody(RESTRUCTURED).markdown).not.toBe(
-      traceOfBody(editorBody(RESTRUCTURED)).markdown,
-    );
+  it("prints what the anchor layer traces, and on this body that is the body", async () => {
+    // What UI-103 bought, stated where UI-099's premise used to be: the two
+    // candidate traces are the same text, and both are the file.
+    expect(traceOfBody(RESTRUCTURED).markdown).toBe(traceOfBody(editorBody(RESTRUCTURED)).markdown);
+    expect(editorBody(RESTRUCTURED)).toBe(RESTRUCTURED);
 
     const transport = wire();
     let editor: Editor | null = null;
@@ -1073,5 +1079,8 @@ describe("the text the editor parses", () => {
     expect(serializeDoc(live.getJSON() as unknown as PmNode)).toBe(
       traceOfBody(editorBody(RESTRUCTURED)).markdown,
     );
+    // And that text is the file itself — the paragraph is still the outer
+    // item's, at the outer item's indent, exactly as it was on disk.
+    expect(serializeDoc(live.getJSON() as unknown as PmNode)).toBe(RESTRUCTURED);
   });
 });

@@ -4,7 +4,7 @@ import type { Editor, EditorEvents } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { expandClipAround } from "../editor/changelogClip";
 import { useIsEditing } from "../editor/editingRegistry";
-import { editorBody } from "../editor/editorBody";
+import { editorBody } from "../editor/editorBody.js";
 import { rangeStillReads, STALE_SELECTION_NOTICE, type EditorSelection } from "../editor/selection";
 import type { AnchorReport } from "../editor/useAutosave";
 import { useThreadCollapse } from "../thread/ThreadCollapseContext";
