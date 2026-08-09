@@ -244,6 +244,16 @@ What is and is not at risk:
 Nothing shipped is wrong today. This note exists so the re-check is a scheduled
 step rather than a discovery.
 
+**Resolved 2026-08-09 by CONTRACT-048.** SHARED-032 was signed and the risk
+landed exactly as anticipated: `{ids, action}` was replaced by
+`{entries: {id, action}[], wholeResultSet?: {query, action}}`. The machinery half
+— several document mutations as one act, one commit containing exactly what
+changed — is untouched, as predicted. The result kept its three parts and its
+partition of the requested ids; what changed there is that the single top-level
+`action` echo moved onto each named document, because a mixed Save makes one verb
+for the whole result a lie. The §9.2 bullet drafted below is void; see the
+heading above it.
+
 ## Testing Strategy
 
 Unit tests in `packages/contract`:
@@ -303,10 +313,19 @@ express it and cannot express the wrong thing.
    §9.2's list, so `routes/inventory.ts` carries the derivation the way the
    pending `POST /api/upgrade` pair does. SPEC.md was **not** edited.
 
-## Held for sign-off — proposed SPEC.md §9.2 addition
+## Held for sign-off — proposed SPEC.md §9.2 addition — **VOID (2026-08-09)**
 
-**Not applied.** This package never edits SPEC.md; the orchestrator applies it
-after the user signs it off. Insert as a new bullet in §9.2 immediately after the
+> **Do not sign this draft.** It describes the `{ids, action}` request shape —
+> one verb over many ids — which SHARED-032 (signed 2026-08-09) made unable to
+> express a Save. §4 now says plainly that "a Save carrying a mix of verbs is
+> still one act and still one commit", and CONTRACT-048 replaced the request with
+> a staged set of `{id, action}` pairs plus §11's single whole-result-set entry.
+> The live draft, redrafted against the shipped shape, is in
+> `issues/contract/048-bulk-carries-per-row-actions.md` under "Held for sign-off".
+> The text below is kept only as the record of what was proposed on 2026-08-08.
+
+**Not applied, and now superseded.** This package never edits SPEC.md; the
+orchestrator applies it after the user signs it off. Insert as a new bullet in §9.2 immediately after the
 `POST /api/docs` / `PUT /api/docs/:id` / move-and-archive bullet (SPEC.md:384),
 before `GET /api/threads/:id`:
 

@@ -94,29 +94,46 @@ function createServer() {
     );
   });
 
-  // CONTRACT-037. The handler echoes the act it parsed and splits the ids across
-  // §11's three parts, so the typed call proves both directions: the
-  // discriminated act reaches the wire, and the three-part result comes back
-  // narrowed rather than as an opaque blob.
+  // CONTRACT-037, restaged for SHARED-032 by CONTRACT-048. The handler echoes
+  // every row with the verb it carried and splits them across §11's three parts,
+  // so the typed call proves both directions: the per-row discriminated act
+  // reaches the wire, and the three-part result comes back narrowed rather than
+  // as an opaque blob. A `wholeResultSet` entry resolves to one synthetic id.
   app.openapi(contractRoutes.applyBulkAction, (c) => {
-    const { ids, action } = c.req.valid("json");
+    const { entries, wholeResultSet } = c.req.valid("json");
     const actor = c.req.valid("header")[ACTOR_HEADER];
-    if (action.action === "delete" && actor === "agent") {
+    if (entries.some((row) => row.action.action === "delete") && actor === "agent") {
       return c.json({ code: "forbidden" as const, message: "the agent archives" }, 403);
     }
-    const refused = ids.filter((id) => id.startsWith("th_"));
-    const changed = ids.filter((id) => !refused.includes(id));
+    const staged = [
+      ...entries.map((row) => ({
+        id: row.id,
+        action: row.action.action,
+        detail: row.action.action === "move" ? row.action.folder : row.action.action,
+      })),
+      ...(wholeResultSet === undefined
+        ? []
+        : [
+            {
+              id: "doc_fromquery",
+              action: wholeResultSet.action.action,
+              detail: Object.keys(wholeResultSet.query).join(","),
+            },
+          ]),
+    ];
+    const refused = staged.filter((row) => row.id.startsWith("th_"));
+    const changed = staged.filter((row) => !row.id.startsWith("th_"));
     return c.json(
       {
-        action: action.action,
-        changed,
+        changed: changed.map(({ id, action }) => ({ id, action })),
         alreadyInState: [],
-        refused: refused.map((id) => ({
-          id,
+        refused: refused.map((row) => ({
+          id: row.id,
+          action: row.action,
           reason: "locked" as const,
-          message: `${action.action === "move" ? action.folder : action.action} · actor=${actor}`,
+          message: `${row.detail} · actor=${actor}`,
           lock: {
-            docId: id,
+            docId: row.id,
             holder: "agent" as const,
             acquired: frontmatter.created,
             ttl: 300,
@@ -619,24 +636,74 @@ describe("the typed collection query", () => {
  * have to infer from.
  */
 describe("the typed bulk act", () => {
-  it("sends one act for several documents and gets §11's three parts back", async () => {
+  it("sends a staged set and gets §11's three parts back", async () => {
     const { data, error } = await createTestClient().api.POST("/api/docs/bulk", {
-      body: { ids: ["doc_a1b2c3", "th_x9y8"], action: { action: "archive" } },
+      body: {
+        entries: [
+          { id: "doc_a1b2c3", action: { action: "archive" } },
+          { id: "th_x9y8", action: { action: "resolve" } },
+        ],
+      },
     });
     expect(error).toBeUndefined();
-    expect(data?.action).toBe("archive");
-    expect(data?.changed).toEqual(["doc_a1b2c3"]);
+    expect(data?.changed).toEqual([{ id: "doc_a1b2c3", action: "archive" }]);
     expect(data?.alreadyInState).toEqual([]);
     expect(data?.refused[0]?.id).toBe("th_x9y8");
+    // The verb that applied travels with the document, so a mixed report reads
+    // without pairing itself back against the request.
+    expect(data?.refused[0]?.action).toBe("resolve");
     // The holder is typed, so the board can name it without a cast.
     expect(data?.refused[0]?.lock?.holder).toBe("agent");
     // One act, one commit.
     expect(data?.commit).toBe("9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456");
   });
 
+  /**
+   * SHARED-032's case, and the one `{ids, action}` could not express: three
+   * archives and two resolves in one call, and one sha for all of them (§4).
+   */
+  it("sends a mix of verbs as one call and gets one commit", async () => {
+    const { data } = await createTestClient().api.POST("/api/docs/bulk", {
+      body: {
+        entries: [
+          { id: "doc_a1b2c3", action: { action: "archive" } },
+          { id: "doc_b2c3d4", action: { action: "archive" } },
+          { id: "doc_c3d4e5", action: { action: "archive" } },
+          { id: "doc_d4e5f6", action: { action: "resolve" } },
+          { id: "doc_e5f6a7", action: { action: "resolve" } },
+        ],
+      },
+    });
+    expect(data?.changed.map((row) => row.action)).toEqual([
+      "archive",
+      "archive",
+      "archive",
+      "resolve",
+      "resolve",
+    ]);
+    expect(data?.commit).toBe("9f1c2ab3d4e5f60718293a4b5c6d7e8f90123456");
+  });
+
+  /** §11's whole-result-set selection: one entry carrying a query, no ids. */
+  it("stages a whole result set as one entry beside the enumerated rows", async () => {
+    const { data } = await createTestClient().api.POST("/api/docs/bulk", {
+      body: {
+        entries: [{ id: "doc_a1b2c3", action: { action: "review" } }],
+        wholeResultSet: {
+          query: { type: ["note", "view"], tag: "finance" },
+          action: { action: "archive" },
+        },
+      },
+    });
+    expect(data?.changed).toEqual([
+      { id: "doc_a1b2c3", action: "review" },
+      { id: "doc_fromquery", action: "archive" },
+    ]);
+  });
+
   it("carries each act's own parameters, typed", async () => {
     const { data } = await createTestClient("agent").api.POST("/api/docs/bulk", {
-      body: { ids: ["th_x9y8"], action: { action: "move", folder: "finance" } },
+      body: { entries: [{ id: "th_x9y8", action: { action: "move", folder: "finance" } }] },
     });
     expect(data?.refused[0]?.message).toBe("finance · actor=agent");
     // Nothing changed, so there is no commit at all.
@@ -646,12 +713,16 @@ describe("the typed bulk act", () => {
 
   /**
    * Compile-time assertions, checked by `tsc --noEmit` rather than by a run:
-   * the tag act carries a delta and no replacement, and a `move` without a
-   * folder is not a call anyone can write.
+   * the tag act carries a delta and no replacement, a `move` without a folder is
+   * not a call anyone can write, each staged row carries its own verb, and §11's
+   * "a whole-result-set selection cannot be deleted" is a *type* error rather
+   * than something discovered at runtime on 412 documents.
    */
-  type BulkAct = NonNullable<
+  type BulkBody = NonNullable<
     paths["/api/docs/bulk"]["post"]["requestBody"]
-  >["content"]["application/json"]["action"];
+  >["content"]["application/json"];
+  type BulkAct = BulkBody["entries"][number]["action"];
+  type WholeResultSetAct = NonNullable<BulkBody["wholeResultSet"]>["action"];
   type TagAct = Extract<BulkAct, { action: "tag" }>;
   type MoveAct = Extract<BulkAct, { action: "move" }>;
   type TagIsADelta = "add" extends keyof TagAct
@@ -660,28 +731,57 @@ describe("the typed bulk act", () => {
       : true
     : never;
   type MoveNeedsAFolder = MoveAct extends { folder: string } ? true : never;
+  type EveryRowCarriesAVerb = "action" extends keyof BulkBody["entries"][number] ? true : never;
+  type EnumeratedRowMayDelete = Extract<BulkAct, { action: "delete" }> extends never ? never : true;
+  type WholeResultSetMayNotDelete =
+    Extract<WholeResultSetAct, { action: "delete" }> extends never ? true : never;
 
-  it("types tagging as a delta with no way to spell a replacement", () => {
+  it("types the staged set, the tag delta, and §11's delete restriction", () => {
     const delta: TagIsADelta = true;
     const folder: MoveNeedsAFolder = true;
-    expect([delta, folder]).toEqual([true, true]);
+    const perRow: EveryRowCarriesAVerb = true;
+    const enumeratedDelete: EnumeratedRowMayDelete = true;
+    const noQueryDelete: WholeResultSetMayNotDelete = true;
+    expect([delta, folder, perRow, enumeratedDelete, noQueryDelete]).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it("expresses a tag delta over the wire", async () => {
     const { data } = await createTestClient().api.POST("/api/docs/bulk", {
-      body: { ids: ["doc_a1b2c3"], action: { action: "tag", add: ["q3"], remove: ["inbox"] } },
+      body: {
+        entries: [{ id: "doc_a1b2c3", action: { action: "tag", add: ["q3"], remove: ["inbox"] } }],
+      },
     });
-    expect(data?.action).toBe("tag");
+    expect(data?.changed[0]?.action).toBe("tag");
   });
 
-  it("refuses a bulk delete from the agent as a typed 403", async () => {
+  it("refuses a staged set holding a delete from the agent as a typed 403", async () => {
     const { data, error, response } = await createTestClient("agent").api.POST("/api/docs/bulk", {
-      body: { ids: ["doc_a1b2c3"], action: { action: "delete" } },
+      body: { entries: [{ id: "doc_a1b2c3", action: { action: "delete" } }] },
     });
     expect(data).toBeUndefined();
     expect(response.status).toBe(403);
     expect(error?.code).toBe("forbidden");
     expect(isApiError(error)).toBe(true);
+  });
+
+  /** An id staged twice is the request's error, not a resolution rule. */
+  it("refuses a repeated id with a 400 that names it", async () => {
+    const { error, response } = await createTestClient().api.POST("/api/docs/bulk", {
+      body: {
+        entries: [
+          { id: "doc_a1b2c3", action: { action: "archive" } },
+          { id: "doc_a1b2c3", action: { action: "review" } },
+        ],
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(error)).toContain("staged twice with different actions");
   });
 });
 
