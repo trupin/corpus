@@ -542,6 +542,29 @@ answer so the check cannot degrade into a tautology. Verified it bites: making
 - `npm run build`, `npm run typecheck`, `npm run lint`, `npx prettier --check` —
   all clean.
 
+
+## Follow-up left open: the harness still spells the expression out (PR #39 re-review, NEW-2)
+
+`useAnchorLayer.test.tsx` calls `canonicalizeMarkdown` inline in two places
+(`editorDocument()` and `selection()`) rather than importing `editorBody` — the
+function that exists to be the one named expression. The harness that models
+`DocEditor` is exactly where the last drift hid, so closing the shape is worth
+doing.
+
+**Attempted and reverted, 2026-08-09.** Swapping both call sites to `editorBody`
+— which is defined as `canonicalizeMarkdown(body)` and nothing else — made
+`"refuses a selection across the respelt seam instead of quoting the printer"`
+fail, and only that test. A substitution that should be an identity is not one
+here, and the reason was not established. Reverted rather than shipped red or
+guessed at.
+
+That is worth knowing before someone tries the same edit and assumes it is
+trivial: **find out why first.** Candidates worth ruling out are the trace cache
+(`resetTraceCache`, module-scoped) interacting with import order, and the
+resolution of the new module in the test environment — type-aware eslint reported
+`editorBody` as "a type that could not be resolved" at the second call site,
+which may be the same fact from another angle.
+
 ## Completion Checklist (domain agent)
 
 - [x] Pre-fix reproduction logged, naming the failing stage
