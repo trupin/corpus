@@ -33,9 +33,12 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   renameSync,
   rmSync,
+  rmdirSync,
+  statSync,
   writeSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -198,6 +201,11 @@ export type FileOperation =
    * together with every sibling (references, scripts). `documents` names the
    * projectable files inside it, whose old paths must be registered as
    * self-writes before the directory moves out from under the watcher.
+   *
+   * A destination that already exists is **merged into**, file by file, rather
+   * than refused (see {@link mergeDirectory}); the caller is responsible for
+   * having established that no file collides — `docs/archive.ts` does that at
+   * plan time so the refusal happens before anything is written.
    */
   | {
       readonly kind: "renameDir";
@@ -697,6 +705,7 @@ function applyOperation(workspace: DocsWorkspace, operation: FileOperation): Und
     }
     case "renameDir": {
       const target = abs(workspace, operation.to);
+      if (existsSync(target)) return mergeDirectory(abs(workspace, operation.from), target);
       mkdirSync(dirname(target), { recursive: true });
       renameSync(abs(workspace, operation.from), target);
       return () => {
@@ -704,6 +713,109 @@ function applyOperation(workspace: DocsWorkspace, operation: FileOperation): Und
       };
     }
   }
+}
+
+/**
+ * Everything under `absDir`, as paths relative to it — directories shallow-first
+ * (so recreating them in order needs no `recursive`), files in walk order.
+ *
+ * `Dirent.isDirectory()` reflects `lstat`, so a symlink to a directory counts as
+ * a file and is moved whole rather than descended into.
+ */
+function directoryContents(absDir: string): {
+  readonly directories: readonly string[];
+  readonly files: readonly string[];
+} {
+  const directories: string[] = [];
+  const files: string[] = [];
+  const walk = (relative: string): void => {
+    for (const entry of readdirSync(join(absDir, relative), { withFileTypes: true })) {
+      const child = relative === "" ? entry.name : `${relative}/${entry.name}`;
+      if (entry.isDirectory()) {
+        directories.push(child);
+        walk(child);
+      } else files.push(child);
+    }
+  };
+  walk("");
+  return { directories, files };
+}
+
+/**
+ * The first path under `fromAbs` whose counterpart under `toAbs` is in the way,
+ * relative to the two roots — or `null` when the two trees can be merged.
+ *
+ * Two directories of the same name are not in the way: merging descends into
+ * them. Anything else that already exists at the destination is, because moving
+ * onto it would overwrite or fail — and refusing before a single byte is written
+ * is what keeps `docs/archive.ts`'s refusal the one it advertises.
+ */
+export function mergeCollision(fromAbs: string, toAbs: string): string | null {
+  if (!existsSync(toAbs)) return null;
+  const { directories, files } = directoryContents(fromAbs);
+  for (const relative of files) {
+    if (existsSync(join(toAbs, relative))) return relative;
+  }
+  for (const relative of directories) {
+    const target = join(toAbs, relative);
+    if (existsSync(target) && !statSync(target).isDirectory()) return relative;
+  }
+  return null;
+}
+
+/**
+ * Move everything under `fromAbs` into an **existing** `toAbs`, file by file.
+ *
+ * `renameSync` cannot put a directory on top of a non-empty one, and refusing
+ * outright is what made SERVER-078's wedge permanent: archiving a nested skill
+ * on its own creates `.claude/skills-archived/<outer>/`, after which the outer
+ * skill's archive could never be applied again and the only recovery was moving
+ * a directory by hand. A merge is not a weaker guarantee — the caller has
+ * already established that no file at the destination would be overwritten, so
+ * the union is exactly the two disjoint trees, which for the case that produces
+ * the wedge is the folder's own original shape reunited.
+ *
+ * Undone the same way it is done: the files go back, the directories this call
+ * created at the destination are removed if they are still empty, and a failure
+ * part-way through unwinds itself before re-throwing so a half-merged folder is
+ * never left behind.
+ */
+function mergeDirectory(fromAbs: string, toAbs: string): Undo {
+  const { directories, files } = directoryContents(fromAbs);
+  const created: string[] = [];
+  const moved: string[] = [];
+
+  const undo = (): void => {
+    mkdirSync(fromAbs, { recursive: true });
+    for (const relative of directories) mkdirSync(join(fromAbs, relative), { recursive: true });
+    for (const relative of moved) renameSync(join(toAbs, relative), join(fromAbs, relative));
+    for (const relative of [...created].reverse()) {
+      try {
+        rmdirSync(join(toAbs, relative));
+      } catch {
+        // Something else put content there; leaving it is the safe direction.
+      }
+    }
+  };
+
+  try {
+    for (const relative of directories) {
+      const target = join(toAbs, relative);
+      if (existsSync(target)) continue;
+      mkdirSync(target);
+      created.push(relative);
+    }
+    for (const relative of files) {
+      renameSync(join(fromAbs, relative), join(toAbs, relative));
+      moved.push(relative);
+    }
+    // Only the now-empty skeleton is left; the files all moved above.
+    rmSync(fromAbs, { recursive: true, force: true });
+  } catch (error) {
+    undo();
+    throw error;
+  }
+  return undo;
 }
 
 /** First lines of a hook's output — enough to recognise which hook refused. */

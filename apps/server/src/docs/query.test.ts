@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { formatInstant } from "../core/time.js";
 import { EXCERPT_LENGTH } from "../projection/index.js";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
+import { UNANSWERED_FORM_COUNT_SQL } from "./needs.js";
 import { UNREAD_THREADS_SQL, folderPathPrefix, queryDocs } from "./query.js";
 
 const NOW = Date.parse("2026-07-26T12:00:00Z");
@@ -192,6 +193,7 @@ describe("the envelope", () => {
       "title",
       "turnCount",
       "type",
+      "unansweredForms",
       "unread",
       "unreadThreads",
       "updated",
@@ -778,6 +780,11 @@ describe("needs — the Attention union", () => {
     );
     expect(attention.get("th_engaged")).toEqual(["unread-reply"]);
     expect(attention.get("th_form")).toEqual(["form"]);
+    // The reason and the count are one derivation (CONTRACT-040): the row that
+    // carries the reason carries the number behind it.
+    expect(run({ needs: "me", limit: "200" }).items.find((i) => i.id === "th_form")).toMatchObject({
+      unansweredForms: 1,
+    });
     expect(attention.get("doc_dueyesterday")).toEqual(["due"]);
     expect(attention.get("doc_stale")).toEqual(["stale"]);
     expect(attention.get("doc_failed")).toEqual(["failed-job"]);
@@ -1646,6 +1653,346 @@ describe("unreadThreads", () => {
     const details = plan.map((step) => step.detail).join("\n");
     expect(details).toContain("threads_parent_id");
     expect(details).not.toMatch(/SCAN t\b/);
+  });
+});
+
+// The count behind §11's last Attention clause — "a thread holding more than
+// one unanswered form says how many are still open" (CONTRACT-040, SERVER-084).
+// Its own workspace because the interesting cases are *how many* forms are open
+// at once, and the shared corpus deliberately has exactly one such thread.
+//
+// The published invariant is an `iff` with a stated direction — `unansweredForms
+// > 0` **iff** `attention` contains `form` — so it is asserted here as two
+// implications with witnesses for each, never as one direction plus a hope.
+describe("unansweredForms", () => {
+  let open: Workspace;
+
+  /** An agent turn carrying one answerable form (SPEC.md §6). */
+  const formFence = (label: string): string =>
+    `Question ${label}\n\n\`\`\`form\nprompt: Pick ${label}\noptions:\n  - "${label}-yes"\n  - "${label}-no"\n\`\`\`\n`;
+
+  const answering = (option: string): TurnStep => ({
+    author: "user",
+    body: `${FORM_ANSWER_LABEL} ${option}`,
+  });
+
+  interface TurnStep {
+    readonly author: "user" | "agent";
+    readonly body: string;
+  }
+
+  const ASK: TurnStep = { author: "user", body: "Which option?" };
+  const form = (label: string): TurnStep => ({ author: "agent", body: formFence(label) });
+
+  /** Turn timestamps are a turn's identity (§6): one per index, in order. */
+  const at = (index: number): string => daysAgo(30 - index);
+
+  /**
+   * The fixture rewrites `seen.json` wholesale, so the marks accumulate here
+   * rather than each seed silently un-reading every thread before it.
+   */
+  const marks = new Map<string, string>();
+
+  const seed = (
+    id: string,
+    steps: readonly TurnStep[],
+    { status = "open", read = true }: { status?: string; read?: boolean } = {},
+  ): void => {
+    open.thread({
+      id,
+      parent: "doc_host",
+      agent: "requested",
+      status,
+      updated: at(steps.length - 1),
+      turns: steps.map((step, index) => ({ author: step.author, ts: at(index), body: step.body })),
+    });
+    // Read through to the last turn by default, so `form` is the only Attention
+    // reason these rows can carry and `unread` cannot stand in for it.
+    if (read) marks.set(id, at(steps.length - 1));
+    else marks.delete(id);
+    open.seen(Object.fromEntries(marks));
+  };
+
+  const rows = (params: Record<string, string> = {}): DocRow[] =>
+    queryDocs(open.db, DocsQuerySchema.parse({ limit: "200", ...params }), NOW).items;
+
+  const row = (id: string, params: Record<string, string> = {}): DocRow => {
+    const found = rows(params).find((item) => item.id === id);
+    expect(found, `no row for ${id}`).toBeDefined();
+    return found as DocRow;
+  };
+
+  const counted = (id: string, params: Record<string, string> = {}): number =>
+    row(id, params).unansweredForms;
+
+  beforeAll(() => {
+    open = createWorkspace("unanswered-forms");
+    open.doc({ id: "doc_host", title: "The commented document" });
+    open.doc({ id: "doc_quiet", title: "No threads at all" });
+
+    // 0, 1, 2 and 3 open questions — the numbers §11's clause reads.
+    seed("th_zero", [ASK, { author: "agent", body: "Ordinary prose, no question." }]);
+    seed("th_one", [ASK, form("F1")]);
+    seed("th_two", [ASK, form("F1"), form("F2")]);
+    seed("th_three", [ASK, form("F1"), form("F2"), form("F3")]);
+    // Three asked, one answered: the count is what is *left*.
+    seed("th_partly", [ASK, form("F1"), form("F2"), form("F3"), answering("F2-no")]);
+    // Asked and answered: back to zero without the thread being settled.
+    seed("th_answered", [ASK, form("F1"), answering("F1-yes")]);
+    // A settled conversation is not waiting for an answer (SPEC.md §6, §11).
+    seed("th_resolved", [ASK, form("F1"), form("F2")], { status: "resolved" });
+    // Same two forms, archived rather than resolved.
+    seed("th_archived", [ASK, form("F1"), form("F2")], { status: "archived" });
+    // A form fence a *user* turn quotes is not the agent's question, and a fence
+    // nobody can answer is not a form at all — neither is countable.
+    seed("th_userfence", [ASK, { author: "user", body: formFence("F9") }]);
+    seed("th_unanswerable", [
+      ASK,
+      { author: "agent", body: "Here you go.\n\n```form\nprompt: Pick\n" },
+    ]);
+    // A thread hanging off a thread, so "the parent is a thread" is covered too.
+    open.thread({
+      id: "th_child",
+      parent: "th_two",
+      agent: "none",
+      updated: at(1),
+      turns: [{ author: "user", ts: at(1), body: "About that thread." }],
+    });
+    open.reproject();
+  });
+
+  afterAll(() => {
+    open.close();
+  });
+
+  it("counts the forms still open, one row per number", () => {
+    expect(counted("th_zero")).toBe(0);
+    expect(counted("th_one")).toBe(1);
+    expect(counted("th_two")).toBe(2);
+    expect(counted("th_three")).toBe(3);
+  });
+
+  it("counts what is left, not what was asked", () => {
+    // Three forms, one answered — §6 identifies a form by the turn carrying it,
+    // so answering one addresses one.
+    expect(counted("th_partly")).toBe(2);
+    expect(counted("th_answered")).toBe(0);
+  });
+
+  it("counts only an agent turn carrying a form somebody can answer", () => {
+    expect(counted("th_userfence")).toBe(0);
+    expect(counted("th_unanswerable")).toBe(0);
+  });
+
+  it("reports 0 and no `form` reason on a document row — one guard settles both", () => {
+    // `t.id IS NOT NULL` is the same term for the count and for the reason, so a
+    // document row cannot report one without the other. `doc_host` is the parent
+    // of six threads holding open forms between them and still counts none.
+    for (const id of ["doc_host", "doc_quiet"]) {
+      expect(row(id).unansweredForms).toBe(0);
+      expect(row(id).attention).not.toContain("form");
+      expect(row(id).turnCount).toBeNull();
+    }
+    // Not vacuous: `doc_host` is the parent of threads that do count.
+    expect(rows().filter((item) => item.unansweredForms > 0).length).toBeGreaterThan(0);
+  });
+
+  it("treats an archived thread exactly as it treats a resolved one", () => {
+    // `threads.status` is the document's own `status` column, so `t.status =
+    // 'open'` — the one term both the count and the reason hang off — excludes
+    // archived as it excludes resolved. The row is still *visible* under an
+    // explicit `status=archived`; what it reports there is 0 and no reason.
+    expect(row("th_resolved", { status: "resolved" })).toMatchObject({
+      unansweredForms: 0,
+      attention: [],
+    });
+    expect(row("th_archived", { status: "archived" })).toMatchObject({
+      unansweredForms: 0,
+      attention: [],
+    });
+  });
+
+  it("is never null or absent — `0` means none, never unknown", () => {
+    const all = rows({ includeArchived: "true" });
+    expect(all.length).toBeGreaterThan(0);
+    for (const item of all) {
+      expect(Number.isInteger(item.unansweredForms), `unansweredForms for ${item.id}`).toBe(true);
+      expect(item.unansweredForms).toBeGreaterThanOrEqual(0);
+    }
+    // And the whole page still parses as the declared shape.
+    const list = queryDocs(open.db, DocsQuerySchema.parse({ limit: "200" }), NOW);
+    expect(DocListSchema.parse(list)).toEqual(list);
+  });
+
+  // CONTRACT-040's invariant, asserted as the two implications it is made of.
+  // A single-direction test is what lets a count drift above a reason that
+  // stopped holding, or a reason survive a count that went to zero.
+  it("keeps the count and the `form` reason in step — left to right", () => {
+    const all = rows({ includeArchived: "true" });
+    const witnesses = all.filter((item) => item.unansweredForms > 0);
+    // Not vacuous: the corpus really does hold rows with open forms.
+    expect(witnesses.map((item) => item.id).sort()).toEqual([
+      "th_one",
+      "th_partly",
+      "th_three",
+      "th_two",
+    ]);
+    for (const item of witnesses) {
+      expect(item.attention, `counted ${String(item.unansweredForms)} on ${item.id}`).toContain(
+        "form",
+      );
+    }
+  });
+
+  it("keeps the count and the `form` reason in step — right to left", () => {
+    const all = rows({ includeArchived: "true" });
+    const flagged = all.filter((item) => item.attention.includes("form"));
+    // Not vacuous in the other direction either: rows carry the reason, and
+    // rows exist that carry neither.
+    expect(flagged.length).toBeGreaterThan(0);
+    expect(all.some((item) => item.unansweredForms === 0 && !item.attention.includes("form"))).toBe(
+      true,
+    );
+    for (const item of flagged) {
+      expect(item.unansweredForms, `reason without a count on ${item.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("holds the invariant on every row of every listing, not only the default one", () => {
+    for (const params of [
+      {},
+      { includeArchived: "true" },
+      { status: "archived" },
+      { status: "resolved" },
+      { type: "thread" },
+      { needs: "me" },
+      { needs: "form" },
+      { parent: "doc_host" },
+    ]) {
+      for (const item of rows(params)) {
+        expect(
+          item.unansweredForms > 0,
+          `${JSON.stringify(params)} → ${item.id} counts ${String(item.unansweredForms)} with [${item.attention.join(",")}]`,
+        ).toBe(item.attention.includes("form"));
+      }
+    }
+  });
+
+  // The filter compiles from the same fragment the reason column does, so a
+  // filtered list and the rows in it cannot disagree about which threads are
+  // waiting — *within* that list.
+  it("agrees with `needs=form` on every row the filter returns", () => {
+    const filtered = rows({ needs: "form" });
+    expect(filtered.map((item) => item.id).sort()).toEqual([
+      "th_one",
+      "th_partly",
+      "th_three",
+      "th_two",
+    ]);
+    for (const item of filtered) expect(item.unansweredForms).toBeGreaterThan(0);
+    // And within one result set the two are the same rows.
+    expect(
+      rows()
+        .filter((item) => item.unansweredForms > 0)
+        .map((item) => item.id)
+        .sort(),
+    ).toEqual(filtered.map((item) => item.id).sort());
+  });
+
+  // What the contract deliberately does NOT publish: that `needs=form`'s item
+  // set equals the non-zero rows *globally*. It filters — the rest of the query
+  // still decides which rows come back at all — so a composed listing returns
+  // fewer rows than there are non-zero ones, and that is not a disagreement.
+  it("is a filter, not a promise about which rows a listing returns", () => {
+    const everywhere = rows({ includeArchived: "true" }).filter((item) => item.unansweredForms > 0);
+    const narrowed = rows({ needs: "form", parent: "th_two" });
+    expect(narrowed).toHaveLength(0);
+    expect(everywhere.length).toBeGreaterThan(0);
+    // Same predicate, fewer rows — a `type` the forms are not on returns none.
+    expect(rows({ needs: "form", type: "note" })).toHaveLength(0);
+  });
+
+  // The transitions, in a workspace of their own: they rewrite thread files, and
+  // the assertions above pin the corpus by name.
+  describe("as the thread changes", () => {
+    let moving: Workspace;
+
+    const movingRow = (id: string): DocRow => {
+      const found = queryDocs(
+        moving.db,
+        DocsQuerySchema.parse({ limit: "200", includeArchived: "true" }),
+        NOW,
+      ).items.find((item) => item.id === id);
+      expect(found, `no row for ${id}`).toBeDefined();
+      return found as DocRow;
+    };
+
+    const put = (id: string, status: string, read: boolean): void => {
+      const steps = [ASK, form("F1"), form("F2")];
+      moving.thread({
+        id,
+        parent: "doc_host",
+        agent: "requested",
+        status,
+        updated: at(steps.length - 1),
+        turns: steps.map((step, index) => ({
+          author: step.author,
+          ts: at(index),
+          body: step.body,
+        })),
+      });
+      moving.seen(read ? { [id]: at(steps.length - 1) } : {});
+      moving.reproject();
+    };
+
+    beforeAll(() => {
+      moving = createWorkspace("unanswered-forms-moving");
+      moving.doc({ id: "doc_host", title: "The commented document" });
+    });
+
+    afterAll(() => {
+      moving.close();
+    });
+
+    it("clears the count and the reason together when the thread is resolved", () => {
+      put("th_settling", "open", true);
+      expect(movingRow("th_settling")).toMatchObject({ unansweredForms: 2, status: "open" });
+      expect(movingRow("th_settling").attention).toContain("form");
+
+      // Same file, same turns, the same two unanswered forms — only its status
+      // changed, and `t.status = 'open'` is the one term both hang off.
+      put("th_settling", "resolved", true);
+      expect(movingRow("th_settling")).toMatchObject({ unansweredForms: 0, status: "resolved" });
+      expect(movingRow("th_settling").attention).not.toContain("form");
+    });
+
+    // §11: "an unanswered form's row is the one that survives being read" — the
+    // opposite of `unread`/`unreadThreads`, which being read is what clears.
+    it("survives being read, while `unread` does not", () => {
+      put("th_reading", "open", false);
+      expect(movingRow("th_reading")).toMatchObject({ unread: true, unansweredForms: 2 });
+
+      put("th_reading", "open", true);
+      expect(movingRow("th_reading")).toMatchObject({ unread: false, unansweredForms: 2 });
+      expect(movingRow("th_reading").attention).toContain("form");
+    });
+  });
+
+  it("seeks the open questions rather than scanning a thread's turns", () => {
+    // The partial index `turns_unanswered_form` is what keeps the correlated
+    // COUNT bounded by how many questions are open rather than by how long the
+    // conversation is. `docs/performance.test.ts` asserts the same fragment in
+    // the WHERE clause; this asserts it in the SELECT list, which is where the
+    // row's count is computed.
+    const plan = open.db
+      .prepare(
+        `EXPLAIN QUERY PLAN SELECT ${UNANSWERED_FORM_COUNT_SQL}
+           FROM documents d LEFT JOIN threads t ON t.id = d.id`,
+      )
+      .all() as { detail: string }[];
+    const details = plan.map((step) => step.detail).join("\n");
+    expect(details).toContain("turns_unanswered_form");
+    expect(details).not.toMatch(/SCAN tu\b/);
   });
 });
 

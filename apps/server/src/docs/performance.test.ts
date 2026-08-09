@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { DocsQuerySchema } from "@corpus/contract";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createWorkspace, type Workspace } from "./corpus-fixture.js";
-import { NEEDS_REASON_SQL } from "./needs.js";
+import { NEEDS_REASON_SQL, UNANSWERED_FORM_COUNT_SQL } from "./needs.js";
 import { queryDocs } from "./query.js";
 
 /** Target: < 100 ms warm for a filtered search over 2000 documents. */
@@ -162,6 +162,24 @@ describe("collection query performance", () => {
         .all() as { detail: string }[];
       const detail = plan.map((row) => row.detail).join(" | ");
       console.log(`needs=form plan: ${detail}`);
+      expect(detail).toContain("turns_unanswered_form");
+      expect(detail).not.toContain("SCAN tu");
+    });
+
+    // SERVER-084: the fragment is now a `COUNT(*)` the `form` reason reads
+    // through `> 0`, and the row selects the count itself. The partial index has
+    // to cover it in *that* position too — a row query that scanned every turn
+    // of every thread would cost the board what the filter no longer costs.
+    it("seeks the same index when the count rides on the row", () => {
+      const plan = deep.db.sqlite
+        .prepare(
+          `EXPLAIN QUERY PLAN
+           SELECT ${UNANSWERED_FORM_COUNT_SQL} AS unanswered_forms
+             FROM documents d LEFT JOIN threads t ON t.id = d.id`,
+        )
+        .all() as { detail: string }[];
+      const detail = plan.map((row) => row.detail).join(" | ");
+      console.log(`unansweredForms plan: ${detail}`);
       expect(detail).toContain("turns_unanswered_form");
       expect(detail).not.toContain("SCAN tu");
     });

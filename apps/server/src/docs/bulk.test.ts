@@ -468,8 +468,14 @@ describe("the eight acts", () => {
     expect(ws.exists(".claude/skills/demo/nested/SKILL.md")).toBe(false);
     expect(statusAt(".claude/skills-archived/demo/nested/SKILL.md")).toBe("archived");
 
-    // And the three parts name it nowhere, under either id it has held — they
-    // partition the **requested** ids, and it was never among them.
+    // Its id came through the move: the act stamps the id of every document it
+    // carries, not only the one it was asked about (SERVER-078, SPEC.md §5).
+    expect(idAt(".claude/skills-archived/demo/nested/SKILL.md")).toBe(nested);
+
+    // And the three parts name it nowhere — they partition the **requested**
+    // ids, and it was never among them. That the file it wrote is in the commit
+    // changes nothing about the partition: the file was already there, carried
+    // by the move, which is the exception this test exists to pin.
     const named = [
       ...result.changed,
       ...result.alreadyInState,
@@ -477,7 +483,36 @@ describe("the eight acts", () => {
     ];
     expect(named).toEqual([outer]);
     expect(named).not.toContain(nested);
-    expect(named).not.toContain(idAt(".claude/skills-archived/demo/nested/SKILL.md"));
+  });
+
+  it("archives an outer skill and the nested one it carries, in either order", async () => {
+    // Both halves of SERVER-078's order dependence, on the route that made it
+    // visible. Naming the outer one first used to refuse the nested one
+    // `not-found` — a document whose file was moved, and thereby disabled, in
+    // the very commit the caller was told did not touch it. Naming the nested
+    // one first used to wedge the outer one out of ever being archived again.
+    for (const order of ["outer-first", "nested-first"] as const) {
+      const { outer, nested } = seedSkills();
+      const ids = order === "outer-first" ? [outer, nested] : [nested, outer];
+
+      const { result } = await bulk({ ids, action: { action: "archive" } });
+
+      expect(result.refused).toEqual([]);
+      expect(result.changed).toEqual(ids);
+      expect(pathOf(outer)).toBe(".claude/skills-archived/demo/SKILL.md");
+      expect(pathOf(nested)).toBe(".claude/skills-archived/demo/nested/SKILL.md");
+      expect(ws.exists(".claude/skills/demo")).toBe(false);
+
+      // Everything `changed` names has a file in the one commit — the invariant
+      // this suite is about — including the nested skill, now that the act can
+      // find it.
+      const files = filesIn(result.commit ?? "");
+      for (const id of result.changed) expect(files).toContain(pathOf(id));
+
+      ws.advance(60_000);
+      await bulk({ ids: [outer, nested], action: { action: "unarchive" } });
+      ws.advance(60_000);
+    }
   });
 
   it("cascades two threads of one parent into one rewrite of that parent", async () => {

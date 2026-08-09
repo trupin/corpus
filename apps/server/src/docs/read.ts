@@ -105,14 +105,27 @@ export function anchorClaimantIds(
  * Read the document `id` names, or throw the contract's 404. A row whose file
  * vanished under it is a 404 as well: the projection is derived state and racing
  * an external `rm` is normal, not a server fault.
+ *
+ * `relocated` maps a workspace-relative path this **caller has already moved**
+ * to where it moved it. Only the bulk act passes one, and it has to: the act is
+ * one commit and therefore one re-projection, so between two documents of the
+ * same act the rows are a write behind by construction. Archiving a skill
+ * relocates every `SKILL.md` under its folder (§7), so a nested skill named
+ * later in the same act has a row pointing at a file the act itself moved —
+ * and, without this, would be refused `not-found` while its file sat in the
+ * commit. The row is returned with the path corrected, because a `row.path`
+ * nobody can read is a trap for everything downstream (SERVER-078).
  */
 export function loadDocument(
   workspaceRoot: string,
   projection: ProjectionDb,
   id: string,
+  relocated?: ReadonlyMap<string, string>,
 ): LoadedDocument {
-  const row = findDocumentRow(projection, id);
-  if (row === null) throw notFound(`no document with id ${id}`);
+  const found = findDocumentRow(projection, id);
+  if (found === null) throw notFound(`no document with id ${id}`);
+  const moved = relocated?.get(found.path);
+  const row = moved === undefined ? found : { ...found, path: moved };
   const absPath = resolve(workspaceRoot, row.path);
   let text: string;
   try {

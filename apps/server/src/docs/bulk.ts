@@ -341,6 +341,31 @@ async function guardCascadeParent(
   }
 }
 
+/**
+ * Note where a plan just moved documents that are not its own, so a later id in
+ * the same act finds its file.
+ *
+ * Read off the operations that landed rather than tracked by the planner: the
+ * operation is the thing that actually moved the bytes, so the map cannot drift
+ * from the disk the way a second bookkeeping list would. Only `renameDir`
+ * carries other documents — `renameFile` moves the requested document itself,
+ * whose row is corrected by the re-projection like every other.
+ */
+function recordRelocations(
+  relocated: Map<string, string>,
+  operations: readonly FileOperation[],
+): void {
+  for (const operation of operations) {
+    if (operation.kind !== "renameDir") continue;
+    const prefix = `${operation.from}/`;
+    for (const path of operation.documents) {
+      if (path.startsWith(prefix)) {
+        relocated.set(path, `${operation.to}/${path.slice(prefix.length)}`);
+      }
+    }
+  }
+}
+
 /** The one act, as it applies to one document. */
 function planFor(
   workspace: DocsWorkspace,
@@ -491,6 +516,12 @@ async function runBulk(
   const unproject: string[] = [];
   const keys: QueryKey[] = [];
   const warnings: Warning[] = [];
+  // Where this act has already moved a document's file, old path to new. §7's
+  // skill folder move relocates every `SKILL.md` under it, including ones the
+  // act names later — and the projection does not move until `finishMutation`,
+  // so without this the later id loads a path the act itself emptied and is
+  // refused `not-found` while its file rides in the commit (SERVER-078).
+  const relocated = new Map<string, string>();
 
   for (const id of ids) {
     let loaded: LoadedDocument;
@@ -500,7 +531,7 @@ async function runBulk(
       const parentId = parents.get(id);
       // The lock that refuses a cascade is the one on the file being rewritten.
       if (parentId !== undefined) await guardCascadeParent(guard, id, parentId, actor);
-      loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id);
+      loaded = loadDocument(workspace.workspaceRoot, workspace.projection, id, relocated);
     } catch (error) {
       refused.push(refusalFor(workspace, id, error, "invalid"));
       continue;
@@ -547,6 +578,7 @@ async function runBulk(
     }
 
     changed.push(id);
+    recordRelocations(relocated, plan.operations);
     stage.push(...plan.stage);
     project.push(...plan.project);
     unproject.push(...plan.unproject);

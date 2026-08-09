@@ -46,6 +46,7 @@ import {
   NEEDS_REASON_SQL,
   reasonColumn,
   rowAttention,
+  UNANSWERED_FORM_COUNT_SQL,
   UNREAD_SQL,
 } from "./needs.js";
 import { STALE_TIER_SQL } from "./staleness.js";
@@ -151,14 +152,36 @@ export const UNREAD_THREADS_SQL = `CASE WHEN t.id IS NOT NULL THEN 0 ELSE (
             WHERE t.parent_id = d.id AND ${notArchivedSql("td")} AND ${UNREAD_SQL}
          ) END`;
 
-/** The §11 thread affordances and the staleness tier, as columns of the page query. */
+/**
+ * The §11 thread affordances and the staleness tier, as columns of the page
+ * query.
+ *
+ * `unanswered_forms` (CONTRACT-040) is §11's "a thread holding more than one
+ * unanswered form says how many are still open", carried on the row so no list
+ * has to fetch each thread to count its forms — a row holds no turns, so a
+ * client-side count is one `GET /api/threads/{id}` per row per render.
+ *
+ * It is {@link UNANSWERED_FORM_COUNT_SQL} **spliced, not restated**, and the
+ * `form` entry of {@link NEEDS_REASON_SQL} is `(<that same expression> > 0)`.
+ * So this column and the `reason_form` column beside it are one derivation
+ * appearing twice in one SELECT, which is what makes the published invariant —
+ * non-zero **iff** `attention` contains `form` — true in both directions rather
+ * than by two implementations agreeing. The WHERE clause `needs=form` compiles
+ * to is that same text again, so a filtered list cannot disagree with the rows
+ * in it either.
+ *
+ * `0` on a document row and on a resolved thread comes from that expression's
+ * own `CASE` guard rather than from anything here, and COUNT is never NULL — so
+ * the column is a count and never "unknown".
+ */
 const ROW_COLUMNS = `${STALE_TIER_SQL} AS stale,
          t.parent_id AS parent, pd.title AS parent_title, t.agent AS agent,
          an.exact_text AS anchor_quote,
          t.turn_count AS turn_count, t.last_author AS last_author, lt.body_md AS last_turn,
          ${threadOnly(UNREAD_SQL)} AS unread,
          ${threadOnly(AWAITING_AGENT_SQL)} AS awaiting_agent,
-         ${UNREAD_THREADS_SQL} AS unread_threads`;
+         ${UNREAD_THREADS_SQL} AS unread_threads,
+         ${UNANSWERED_FORM_COUNT_SQL} AS unanswered_forms`;
 
 /**
  * The list's aggregate over {@link FTS_HITS_CTE}: one row per document, ranked
@@ -210,6 +233,7 @@ interface RawRow {
   readonly unread: number | null;
   readonly awaiting_agent: number | null;
   readonly unread_threads: number;
+  readonly unanswered_forms: number;
 }
 
 /**
@@ -300,6 +324,10 @@ function toDocRow(row: RawRow & Record<string, unknown>): DocRow {
     // A COUNT, so already a non-negative integer — and `0` on a thread row and
     // on a childless document by the same CASE, never null (CONTRACT-012).
     unreadThreads: row.unread_threads,
+    // The count and the `form` reason below it are the same SQL expression, one
+    // read through `> 0` (CONTRACT-040): non-zero here iff `attention` carries
+    // `form`, in both directions, because there is only one derivation.
+    unansweredForms: row.unanswered_forms,
     attention: rowAttention(row),
     snippets: parseSnippets(row.snippets_json),
   };

@@ -12,15 +12,21 @@
 // `.claude/skills-archived/` is itself a projection root, the document stays
 // indexed on both sides.
 
-import { existsSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type { Actor, Doc } from "@corpus/contract";
-import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
+import {
+  formatInstant,
+  parseDocument,
+  serializeDocument,
+  setFrontmatterFields,
+} from "../core/index.js";
 import { DOCS_KEY, docKey } from "../events/index.js";
 import { DOCUMENT_ROOTS, SKILL_FILENAME } from "../projection/index.js";
-import { loadDocument, toWireDoc, type LoadedDocument } from "./read.js";
+import { findDocumentRowByPath, loadDocument, toWireDoc, type LoadedDocument } from "./read.js";
 import {
   destinationOccupied,
+  mergeCollision,
   runMutation,
   validateBeforeWrite,
   validationError,
@@ -102,6 +108,105 @@ function planFolderMove(loaded: LoadedDocument, archived: boolean): FolderMove |
 }
 
 /**
+ * Refuse a folder move that would overwrite a file already at the destination —
+ * before anything is written, so both sides stay byte-for-byte as they were.
+ *
+ * **A destination folder that merely exists is no longer the refusal**
+ * (SERVER-078). It used to be, on the grounds that "merging two skill folders
+ * would silently overwrite files" — but the overwriting is what the refusal is
+ * about, and a name is not an overwrite. The old rule turned an ordinary
+ * sequence into a permanent wedge: archiving a nested skill on its own creates
+ * `.claude/skills-archived/<outer>/`, after which the outer skill could never be
+ * archived and the only recovery was moving a directory by hand. Worse, which of
+ * the two outcomes a select-all archive produced depended on the order the ids
+ * arrived in.
+ *
+ * So the question asked is the one that was always meant: would any file at the
+ * destination be lost? Two directories of the same name merge; a file that
+ * already exists refuses, naming itself. A genuinely unrelated archived skill of
+ * the same name still refuses, because its own `SKILL.md` is exactly such a file.
+ *
+ * {@link destinationOccupied}, not {@link validationError}: inside a bulk act the
+ * difference is whether the report says "refresh the board" or "this name is
+ * taken" (sprint-005 Open Conflict 4: a 400, since this route declares no 409).
+ */
+function assertMergeable(workspaceRoot: string, move: FolderMove): void {
+  const collision = mergeCollision(
+    resolve(workspaceRoot, move.from),
+    resolve(workspaceRoot, move.to),
+  );
+  if (collision === null) return;
+  destinationOccupied("the destination already holds a file this move would overwrite", [
+    { path: "id", message: `${move.to}/${collision} already exists; move or remove it first` },
+  ]);
+}
+
+/**
+ * The identity-preserving writes a folder move owes the documents it **carries**.
+ *
+ * A skill with no `id:` of its own is projected under an id derived from its
+ * path (§7), so every document under a moved folder — not only the one the
+ * caller named — changes identity when the folder moves. §5 makes an id
+ * identity: `[[refs]]`, the `links` graph, an anchor entry and a thread's
+ * `parent` all point by it, and nothing reports the breakage, because from the
+ * projection's side an id vanishing while another appears is indistinguishable
+ * from a delete plus a create. Stamping the id the document already has is what
+ * makes it survive, and it is a write, so it belongs here and never to the
+ * projection.
+ *
+ * The id comes from the projection row — the authority on what this file's id
+ * *is*, including the case where the frontmatter declares one the contract
+ * cannot accept and the row therefore carries the synthesized one instead.
+ *
+ * Two things are deliberately not done to a carried document. Its `updated` is
+ * not stamped: nothing about its content changed, and §5's staleness clock must
+ * not be reset by a neighbour's archiving. Its `status` is not touched either:
+ * for a skill the *root* decides status (§7), so writing one would be dead
+ * metadata that lies after the reverse move.
+ *
+ * Nor is a carried write put through §14 validation. The file's content is the
+ * author's, unchanged but for one key the system owns, so a finding would be
+ * about a document this act never asked to edit.
+ */
+function planCarriedIdStamps(
+  workspace: DocsWorkspace,
+  move: FolderMove,
+  movedDocuments: readonly string[],
+  requestedPath: string,
+): FileOperation[] {
+  const operations: FileOperation[] = [];
+  for (const oldPath of movedDocuments) {
+    if (oldPath === requestedPath) continue;
+    const row = findDocumentRowByPath(workspace.projection, oldPath);
+    // Not indexed — an unparseable file or one that lost an id race — so there
+    // is no identity to preserve and nothing this act could honestly stamp.
+    if (row === null) continue;
+
+    let content: string;
+    try {
+      const parsed = parseDocument(
+        readFileSync(resolve(workspace.workspaceRoot, oldPath), "utf8"),
+        oldPath,
+      );
+      // Already says so — a skill that carries a real `id:` keeps it across any
+      // number of moves, and there is nothing to write.
+      const stamped = setFrontmatterFields(parsed, { id: row.id });
+      if (stamped === parsed) continue;
+      content = serializeDocument(stamped);
+      /* c8 ignore start -- the projection racing an out-of-band edit to a file this act is only carrying */
+    } catch {
+      // A row said this file was readable and it no longer is. Skipping loses
+      // the id; failing the archive loses the archive, and the caller asked for
+      // a different document entirely.
+      continue;
+    }
+    /* c8 ignore stop */
+    operations.push({ kind: "write", path: rebase(oldPath, move.from, move.to), content });
+  }
+  return operations;
+}
+
+/**
  * Everything archiving one document does to the filesystem, decided but not yet
  * done — `null` when the document is already on the requested side, which is a
  * no-op and never an error (§7).
@@ -124,16 +229,7 @@ export function planSetArchived(
   const id = loaded.row.id;
   const move = loaded.row.type === "skill" ? planFolderMove(loaded, archived) : null;
 
-  if (move !== null && existsInWorkspace(workspace.workspaceRoot, move.to)) {
-    // Merging two skill folders would silently overwrite files; refusing
-    // leaves both exactly as they are (sprint-005 Open Conflict 4: 400, since
-    // this route declares no 409). {@link destinationOccupied}, not
-    // {@link validationError}: inside a bulk act the difference is whether the
-    // report says "refresh the board" or "this folder name is taken".
-    destinationOccupied("the archive destination already exists", [
-      { path: "id", message: `${move.to} already exists; move or remove it first` },
-    ]);
-  }
+  if (move !== null) assertMergeable(workspace.workspaceRoot, move);
 
   const patch: Record<string, unknown> = { status: archived ? "archived" : "open" };
   // A hand-written `SKILL.md` carries no `id`, so the projection derives one
@@ -161,6 +257,8 @@ export function planSetArchived(
   const operations: FileOperation[] = [];
   if (move !== null) {
     operations.push({ kind: "renameDir", from: move.from, to: move.to, documents: movedDocuments });
+    // After the move, never before: the stamps are written at the destination.
+    operations.push(...planCarriedIdStamps(workspace, move, movedDocuments, loaded.path));
   }
   if (contentChanged) operations.push({ kind: "write", path, content: text });
 
@@ -233,8 +331,5 @@ export async function setArchived(
 
 const rebase = (path: string, from: string, to: string): string =>
   path.startsWith(`${from}/`) ? `${to}/${path.slice(from.length + 1)}` : path;
-
-const existsInWorkspace = (workspaceRoot: string, path: string): boolean =>
-  existsSync(resolve(workspaceRoot, path));
 
 const emptyResult = (): MutationResult => ({ changed: false, warnings: [], commit: null });

@@ -1,6 +1,8 @@
 import { DocMutationResponseSchema } from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "../core/index.js";
+import { DOCUMENT_ROOTS } from "../projection/index.js";
+import { assertMovable } from "./move.js";
 import { createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 
 let ws: WriteWorkspace;
@@ -179,5 +181,32 @@ describe("POST /api/docs/{id}/move", () => {
     const after = ws.read("data/docs/archive-shelf/contentful.md");
     expect(after).toBe(before);
     expect(parseDocument(after).body).toContain("unique marker body");
+  });
+});
+
+// SERVER-078's last acceptance criterion: the defect is the *pattern* — a
+// document whose id is synthesized from its path, moved without the id being
+// stamped into the file first — not the one caller that had it. Archiving is
+// where that pattern lives, and it now stamps; this is the guard on the only
+// other route that moves a document's file at all.
+describe("nothing else can move a document whose id is derived from its path", () => {
+  it("refuses every root that synthesizes ids, root list and all", () => {
+    const synthesizing = DOCUMENT_ROOTS.filter((root) => root.synthesizeId);
+    // A root added later with `synthesizeId: true` and a movable shape fails
+    // here rather than silently re-minting ids in production.
+    expect(synthesizing.map((root) => root.key)).not.toEqual([]);
+
+    for (const root of synthesizing) {
+      const path = `${root.path}/${root.shape === "skill-tree" ? "demo/SKILL.md" : "demo.md"}`;
+      expect(() =>
+        assertMovable({
+          row: { id: "doc_x", type: "skill", path, status: "open", title: "Demo" },
+          path,
+          absPath: path,
+          text: "",
+          parsed: parseDocument("---\nname: demo\n---\n\nBody.\n", path),
+        }),
+      ).toThrow(/this document's location is fixed/);
+    }
   });
 });
