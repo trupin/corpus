@@ -6,7 +6,7 @@ shared (orchestrator-handled — SPEC.md rider, needs user sign-off)
 
 ## Status
 
-todo — **DRAFTED, awaiting sign-off**
+done — **SIGNED 2026-08-09 and applied to SPEC.md §11 and §4**
 
 ## Priority
 
@@ -92,7 +92,40 @@ signed text and is not re-litigated here; only the interaction model changes.
 > documents; Delete keeps its §9 restrictions and is offered only on an
 > enumerated selection; and the list of what clears a selection is unchanged.
 
-## Open questions for the sign-off conversation
+## Answered at sign-off (2026-08-09), and applied
+
+The three open questions below were put to the user individually, with the
+drafted text read out first, and answered:
+
+1. **Select-everything-the-query-matches survives, staged as a single entry.**
+   Not a uniform second mode and not dropped: one line saying what it covers and
+   how many, carrying one action for all of them, sitting in the staged set
+   beside individually staged rows and discarded, saved and reported exactly as
+   they are. That keeps one mental model — everything is staged, one Save writes
+   — at the cost of a staged entry that is not a row, which is a real UI question
+   the implementing issue must answer rather than invent.
+2. **Bulk mode is per column**, scoped like the selection it carries, so what a
+   Save will write is always one visible list.
+3. **A staged row whose document changes under it stays staged and says it is
+   already done.** Not silently unstaged: nothing a person put there disappears
+   without their act, and the Save reports it as already-in-state, which is what
+   the three-part result already exists to say.
+
+A fourth question was raised at sign-off and answered, because the rider reaches
+shipped code: **`POST /api/docs/bulk` shipped as `{ids, action}`** — one verb over
+many ids — which cannot express a staged set. The user chose **a list of
+`{id, action}` pairs in one request, landing as one commit**, over grouping
+client-side into one request per verb (which would be several commits, exactly
+what §4 forbids and that route was built to prevent) and over deferring it to
+UI-083 (which risks discovering the shape is wrong with the UI already written
+against it). §4 now states that a Save carrying a mix of verbs is still one act
+and still one commit.
+
+**Chain this implies**: CONTRACT-037 (request shape → pairs), a server issue to
+apply a mixed staged set as one commit, the §9.2 bullet for the route redrafted
+before it is ever signed, and UI-083 rewritten rather than patched.
+
+## Open questions as drafted (kept for the record)
 
 1. **Does select-everything-the-query-matches survive per-row staging?** Staging
    an action against 412 rows nobody enumerated has no per-row gesture. Either

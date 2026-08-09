@@ -404,7 +404,9 @@ belongs to the same fix wave.
 | SERVER-062 | A person's reply reopens a resolved thread (SHARED-019 Amendment 1; fixes UI-078) | done | P1 | SHARED-019 |
 | SHARED-017 | Multi-select + bulk actions (SIGNED, applied) | done | P2 | — |
 | SHARED-023 | Model choice by consequence; splitting with context isolation (SIGNED, applied) | done | P1 | SHARED-022 |
-| UI-083 | Selecting rows and acting on the selection — held: rewrite against SHARED-032 (Phase 14) | blocked | P2 | SHARED-032, SERVER-077 |
+| UI-083 | Selecting rows and acting on the selection — **rewrite** against SHARED-032, not patch | todo | P2 | SHARED-032, SERVER-087 |
+| CONTRACT-048 | The bulk request cannot express a staged set (SHARED-032) | todo | P1 | SHARED-032 |
+| SERVER-087 | Apply a mixed staged Save as one act, and one commit (SHARED-032) | todo | P1 | CONTRACT-048 |
 | SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
 | SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | done | P1 | — |
 | CONTRACT-047 | An archive can rewrite a document it never named, and say nothing (PR #38 review) | todo | P2 | SERVER-078 |
@@ -500,7 +502,7 @@ cheapest moment for that to happen.
 | SHARED-031 | `status` is one vocabulary, not per-type (DRAFTED — sign-off) | todo | P1 | — |
 | SHARED-036 | A todo list says `open` after its last item is checked (DRAFTED — sign-off) | todo | P1 | SHARED-031 |
 | SHARED-030 | Frontmatter hides behind an edit mode the reader abolished (DRAFTED — sign-off) | todo | P1 | — |
-| SHARED-032 | Bulk actions are a mode, staged per row, the one edit/save left (DRAFTED — sign-off) | todo | P1 | SHARED-030 |
+| SHARED-032 | Bulk actions are a mode, staged per row, the one edit/save left (SIGNED 2026-08-09, applied) | done | P1 | SHARED-030 |
 | UI-093 | Frontmatter controls are always live and save on change | todo | P1 | SHARED-030 |
 | PLUGINS-016 | A plugin doc type can derive its own status | todo | P1 | SHARED-036 |
 | SERVER-085 | The board, queries and the file all agree on a derived status | todo | P1 | SHARED-036, PLUGINS-016 |
