@@ -221,6 +221,29 @@ say which, and why, in the description.
   confirm has to say "how many threads will be left as orphaned records" *before*
   the act.
 
+## Open risk — SHARED-032 may change the request shape (2026-08-08)
+
+Filed after this issue was implemented. **SHARED-032** (Phase 14, DRAFTED and
+awaiting the user's sign-off) revises the bulk-selection rider this issue was
+built from, and its own acceptance criteria say: *"CONTRACT-037 (UI-083's
+dependency) is re-checked — a per-row staged set may need a different request
+shape than a uniform bulk action."*
+
+What is and is not at risk:
+
+- **The machinery half is safe.** SHARED-032 preserves it verbatim, and it is
+  what this issue and SERVER-077 actually built: several document mutations as
+  one act, landing as one commit containing exactly what changed (§4).
+- **`{ids, action}` is the part at risk.** It expresses *one* act over *many*
+  ids. If a staged mode lets each row carry a **different** act, that shape
+  cannot express it — and the obvious workaround, one call per act, is several
+  commits, which is the thing §4 forbids and this route exists to prevent. The
+  likely answer is a list of `{id, action}` pairs sharing one commit, but that
+  is a decision for whoever signs SHARED-032, not one to pre-empt here.
+
+Nothing shipped is wrong today. This note exists so the re-check is a scheduled
+step rather than a discovery.
+
 ## Testing Strategy
 
 Unit tests in `packages/contract`:
