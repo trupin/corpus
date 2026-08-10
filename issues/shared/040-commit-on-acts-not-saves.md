@@ -449,6 +449,38 @@ After "so `git log` is a complete audit trail", add:
 > after an unclean stop claims no party, because which party was writing is what
 > the unclean stop destroyed)
 
+**(c) §4's first closer — does "an agent turn" mean the agent's turns, or any
+turn?** Raised by SERVER-092 during implementation, 2026-08-10. §4's list of what
+closes a window opens with:
+
+> - an agent turn posted to a thread;
+
+Every other entry names an act without a party: "a thread resolved or reopened",
+"a document archived, restored, moved, renamed". Only this one carries a
+qualifier, and it is load-bearing either way.
+
+**Implemented as literally written** — `threads/turns.ts` sets the act only for
+`actor === "agent"`, with a named test for a person's reply staying one of the
+changes a window gathers. That is the conservative reading of signed text and it
+is what shipped; nothing below is waiting on an answer.
+
+But the qualifier sits badly against §4's own definition two lines above it — "an
+act being a change someone else can act on, as against a body edit that is merely
+underway". A person's comment is unambiguously the former: it is addressed to the
+agent, and under §8 it is what wakes the agent. Under the current reading, a
+person who comments and then keeps editing gets that comment folded into
+`editing session: 3 documents by user` rather than a commit that says a comment
+was posted.
+
+The practical difference is narrower than it looks — when the agent answers, the
+party-change flush closes the user's window anyway — so this only bites where the
+agent never picks the comment up. Two ways to settle it, both one word:
+
+> - a turn posted to a thread;
+
+or leave it as it stands, in which case the asymmetry deserves a clause saying
+why a person's turn is deliberately not an act.
+
 ## Completion Checklist (orchestrator)
 
 - [ ] Read aloud verbatim, on its own, separately from the other held riders
