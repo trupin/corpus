@@ -90,7 +90,17 @@ the second list as a spec of what your diff must **not** touch.
       commits the deletion by itself. A document created and deleted inside one
       window leaves two commits and a recoverable git object for the create.
       Test exactly that sequence — it is the case §7's "git preserves history"
-      depends on
+      depends on.
+
+      **This is a live regression right now and you are the fix.** SERVER-091
+      escalated it: before party-scoped windows, `amendWouldEmptyHead` caught the
+      create-then-delete case, because HEAD's entire content was that one file.
+      With a neighbour document in the same window HEAD is no longer empty, so
+      the guard correctly answers "no" and the create is amended away. A document
+      created and deleted inside one window currently leaves **nothing** in git.
+      `threads/cascade.test.ts` carries a note at the site. Nothing reaches `main`
+      — 091 and 092 land in one PR — but this criterion is the one that must not
+      be deferred, and it is why deletion's flush is not merely tidiness
 - [ ] A **staged bulk Save** flushes first and then lands as one commit, opening
       no window. `docIds` already gives the second half; only the flush is new
 - [ ] A **force unlock** (§7) flushes whatever the agent wrote under the lock

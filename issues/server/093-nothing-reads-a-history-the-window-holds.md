@@ -45,6 +45,43 @@ The last of those is already solved — `edit/sessions.ts` calls
 statement of the hazard in the codebase. This issue generalises that one call
 into the rule §4 now states, and applies it to the readers that never had it.
 
+## Orchestrator ruling, 2026-08-10 — the close's amend moves the sha
+
+SERVER-091 escalated this rather than deciding it, correctly. The facts:
+`closeWindow` relabels the window's commit, which **moves its sha**.
+`edit/sessions.ts` observes commits but not closes, so when the agent writes
+mid-session the user's window closes and is relabelled — and the `doc.edited`
+event's `to` then names a commit no longer reachable from the branch. The content
+is identical (only the message changed) and the object still resolves, but "never
+publish a sha no branch holds" is PR #22's rule reached by a different door.
+
+Three options were offered. **The ruling is (a): the tracker follows the
+rewrite.** This issue owns it.
+
+Why not **(b), write the editing-session subject eagerly** so nothing is ever
+relabelled — the tempting option, because it deletes the hazard class outright
+and would make `closeWindow` forget-only and synchronous, collapsing it and
+`endSquashSession` into one primitive. It was rejected on a cost that is
+permanent rather than transitional: under (b) an ordinary user editing commit
+**never** carries a verb subject. `doc edit:`, `doc create:` and the rest vanish
+from a user's history, and `git log --oneline` becomes a wall of
+`editing session: 1 document by user`. The document ids survive only in trailers,
+which `--oneline` does not show. §4 requires the editing-session subject for a
+window **that closes with no act to name** — it says nothing about an open one —
+so (b) is spec-legal, and still the wrong trade: it pays in every day's history
+legibility to avoid one observer callback.
+
+Why not **(c), accept it**: the object resolves for git's two-week unreachable
+grace (CLI-037 confirmed `gc` does not prune recent unreachable objects), so the
+harm is bounded. But an event that names a sha `git log` cannot find is exactly
+the kind of thing that gets diagnosed twice, years apart, by people who did not
+read this paragraph.
+
+Why (a) is cheap here and not fragile: `observeCommit` **already exists** on the
+tracker and the commit path already calls it. `observeRewrite(from, to)` is its
+symmetric twin, one call at one site. This is not new machinery threaded through
+a stack — it is a second message on a seam the codebase already has.
+
 ## Acceptance Criteria
 
 - [ ] `GET /api/docs/:id/diff` closes the open window **before** it reads. A diff
@@ -79,6 +116,13 @@ into the rule §4 now states, and applies it to the readers that never had it.
 - [ ] `git log` run by hand in a terminal outside Corpus is the one reader that
       cannot be flushed. It lags by at most one open window. Nothing to
       implement; do not try
+- [ ] **The escalated sha-rewrite is closed** (see the ruling above): the commit
+      path tells `edit/sessions.ts` when a close moves a sha, and the tracker
+      follows it, so a `doc.edited` event never names a commit outside the branch.
+      Add the observer as the symmetric twin of `observeCommit`, at the one site
+      that does the relabel. `edit/acknowledgment.test.ts` currently **documents
+      the defect at the assertion** — SERVER-091 put it there deliberately rather
+      than hiding it; turn that assertion around, do not delete it
 
 ## Technical Design
 
