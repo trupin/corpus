@@ -14,7 +14,7 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import type { Actor, Doc } from "@corpus/contract";
+import type { Actor, Doc, Warning } from "@corpus/contract";
 import {
   formatInstant,
   parseDocument,
@@ -62,6 +62,30 @@ export type ArchivePlan = {
   readonly path: string;
   /** The bytes to validate and write, or `null` when only the folder moved. */
   readonly text: string | null;
+  /**
+   * The other skill documents this act's folder move takes with it — what
+   * {@link carriedWarnings} reports. Empty for everything but a skill folder
+   * move, and independent of {@link ArchivePlan.text}: a folder move that
+   * rewrites not one byte of the requested document still enables or disables
+   * every skill under it.
+   */
+  readonly carried: readonly CarriedDocument[];
+};
+
+/**
+ * One document a folder move carried, as the plan that moved it saw it. Facts
+ * rather than prose, because the two callers report the same facts to different
+ * audiences: a single-document route has one requested id to exclude, and the
+ * bulk act has the whole staged set (see {@link carriedWarnings}).
+ */
+export type CarriedDocument = {
+  readonly id: string;
+  /** Where the move puts it — the path a reader will find it at. */
+  readonly path: string;
+  /** Whether it lands under the enabled skills root, which under §7 is its enablement. */
+  readonly enabled: boolean;
+  /** Whether this act rewrote its stale `status: archived` to `open`. */
+  readonly reconciled: boolean;
 };
 
 /** Every `SKILL.md` under `dir`, workspace-relative — a folder may nest skills. */
@@ -258,10 +282,74 @@ function ownedFields(
   destinationPath: string,
 ): Record<string, unknown> {
   const fields: Record<string, unknown> = { id: rowId };
-  if (destinationPath.startsWith(`${SKILLS_ROOT}/`) && parsed.data["status"] === "archived") {
+  if (underEnabledRoot(destinationPath) && parsed.data["status"] === "archived") {
     fields["status"] = "open";
   }
   return fields;
+}
+
+/**
+ * §7's enablement, read off a path: under `.claude/skills/` a skill is enabled
+ * and its frontmatter `status` is what status is read from; under
+ * `.claude/skills-archived/` it is disabled and the key is never consulted.
+ *
+ * One predicate, because {@link ownedFields}' decision to reconcile and the
+ * warning that reports the reconciliation must not be able to disagree about
+ * which side of the move they are on. The trailing slash matters:
+ * `.claude/skills-archived/…` must not match the enabled root's prefix, and it
+ * does not, because the character after `.claude/skills` is `-`, not `/`.
+ */
+const underEnabledRoot = (path: string): boolean => path.startsWith(`${SKILLS_ROOT}/`);
+
+/**
+ * What a caller is owed about the documents this act carried (CONTRACT-047,
+ * SPEC.md §4): the act moved a `SKILL.md` nobody asked about, and §7 makes that
+ * move its enablement — so a skill the request never named is now on or off, and
+ * may have had its own frontmatter corrected on the way.
+ *
+ * `carried_skill` is emitted for **every** carried document with a projection
+ * row, in both directions, and whether or not its bytes were rewritten: one that
+ * appeared under the folder after the lanes were chosen is moved but not stamped
+ * ({@link planCarriedWrites}), and it is the move, not the stamp, that changed
+ * its enablement. `carried_reconciliation` joins it only where the `status` was
+ * actually rewritten. **The id stamp is reported by neither** (CONTRACT-047,
+ * decision 1): it preserves an identity rather than changing one, and it fires
+ * on nearly every carry, which is how the reconciliation beside it would come to
+ * be ignored. `emits nothing for the id stamp` in `archive.test.ts` pins that,
+ * so restoring the symmetry fails a test rather than a reader.
+ *
+ * `named` is the set of ids **the request itself named**, which is never
+ * reported: the contract's own words are that neither code "ever describes the
+ * document the caller named — that document is the response's own subject, or a
+ * `changed` entry in a bulk result". For a single-document route that is one id;
+ * for the bulk act it is the whole staged set, which is why the plan carries
+ * facts and this function turns them into prose.
+ *
+ * The path quoted is the one **after** the move, because that is where a reader
+ * will find the document and, under §7, what its state now is.
+ */
+export function carriedWarnings(
+  carried: readonly CarriedDocument[],
+  named: ReadonlySet<string>,
+): Warning[] {
+  const warnings: Warning[] = [];
+  for (const document of carried) {
+    if (named.has(document.id)) continue;
+    warnings.push({
+      code: "carried_skill",
+      detail:
+        `${document.id} (${document.path}) was carried by this skill folder move and is now ` +
+        `${document.enabled ? "enabled" : "disabled"}; the request never named it (SPEC.md §7)`,
+    });
+    if (!document.reconciled) continue;
+    warnings.push({
+      code: "carried_reconciliation",
+      detail:
+        `${document.id} (${document.path}) still said \`status: archived\` under the enabled ` +
+        `skills root, so its status was reconciled to \`open\``,
+    });
+  }
+  return warnings;
 }
 
 /**
@@ -274,6 +362,11 @@ function ownedFields(
  * never rewritten: writing another document's bytes without holding its lane is
  * exactly the defect this parameter exists to prevent, and the fallback — an id
  * re-minted by the move — is the pre-existing behaviour rather than a loss.
+ *
+ * It also produces the act's list of **carried documents**, because this is the
+ * one loop that knows both facts a report needs: which documents the move takes,
+ * and which of them {@link ownedFields} actually reconciled. Deriving them
+ * anywhere else would mean a second walk that could disagree with this one.
  */
 function planCarriedWrites(
   workspace: DocsWorkspace,
@@ -281,45 +374,70 @@ function planCarriedWrites(
   movedDocuments: readonly string[],
   requestedPath: string,
   held: ReadonlySet<string>,
-): FileOperation[] {
+): { operations: FileOperation[]; carried: CarriedDocument[] } {
   const operations: FileOperation[] = [];
+  const carried: CarriedDocument[] = [];
+  const enabled = underEnabledRoot(move.to);
   for (const oldPath of movedDocuments) {
     if (oldPath === requestedPath) continue;
     const row = findDocumentRowByPath(workspace.projection, oldPath);
     // Not indexed — an unparseable file or one that lost an id race — so there
-    // is no identity to preserve and nothing this act could honestly stamp.
+    // is no identity to preserve and nothing this act could honestly stamp, nor
+    // any document a report could honestly name.
     if (row === null) continue;
+    const newPath = rebase(oldPath, move.from, move.to);
+    // Recorded before anything below decides whether to *write* to it: the
+    // folder move takes this file either way, and under §7 the move is the
+    // enablement change. A carried document that needs no stamp, or whose lane
+    // this act does not hold, is still a skill that just went on or off.
+    const record = (reconciled: boolean): void => {
+      carried.push({ id: row.id, path: newPath, enabled, reconciled });
+    };
     if (!held.has(row.id)) {
       workspace.logger.info("a carried document was moved but not stamped", {
         docId: row.id,
         path: oldPath,
         note: "it appeared under the folder after this act chose its write lanes",
       });
+      record(false);
       continue;
     }
 
     let content: string;
+    let reconciled: boolean;
     try {
       const parsed = parseDocument(
         readFileSync(resolve(workspace.workspaceRoot, oldPath), "utf8"),
         oldPath,
       );
+      const fields = ownedFields(parsed, row.id, move.to);
       // Already says all of it — a skill that carries a real `id:` and no stale
       // status keeps its bytes across any number of moves.
-      const stamped = setFrontmatterFields(parsed, ownedFields(parsed, row.id, move.to));
-      if (stamped === parsed) continue;
+      const stamped = setFrontmatterFields(parsed, fields);
+      if (stamped === parsed) {
+        record(false);
+        continue;
+      }
       content = serializeDocument(stamped);
+      // Both halves, exactly as CONTRACT-047 specifies: the key was in the patch
+      // *and* the document changed. Either alone would report a write that did
+      // not happen — a file already saying `open` never gets the key, and one
+      // whose only change is the id stamp is not a reconciliation.
+      reconciled = fields["status"] === "open";
       /* c8 ignore start -- the projection racing an out-of-band edit to a file this act is only carrying */
     } catch {
       // A row said this file was readable and it no longer is. Skipping loses
       // the id; failing the archive loses the archive, and the caller asked for
-      // a different document entirely.
+      // a different document entirely. The move still happened, so it is still
+      // reported — as a carry, which is all this act can honestly claim.
+      record(false);
       continue;
     }
     /* c8 ignore stop */
-    operations.push({ kind: "write", path: rebase(oldPath, move.from, move.to), content });
+    operations.push({ kind: "write", path: newPath, content });
+    record(reconciled);
   }
-  return operations;
+  return { operations, carried };
 }
 
 /**
@@ -380,10 +498,13 @@ export function planSetArchived(
   const movedDocuments =
     move === null ? [] : skillDocumentsUnder(workspace.workspaceRoot, move.from);
   const operations: FileOperation[] = [];
+  const carried: CarriedDocument[] = [];
   if (move !== null) {
     operations.push({ kind: "renameDir", from: move.from, to: move.to, documents: movedDocuments });
     // After the move, never before: the stamps are written at the destination.
-    operations.push(...planCarriedWrites(workspace, move, movedDocuments, loaded.path, held));
+    const writes = planCarriedWrites(workspace, move, movedDocuments, loaded.path, held);
+    operations.push(...writes.operations);
+    carried.push(...writes.carried);
   }
   if (contentChanged) operations.push({ kind: "write", path, content: text });
 
@@ -397,6 +518,7 @@ export function planSetArchived(
     unproject: move === null ? [] : movedDocuments,
     path,
     text: contentChanged ? text : null,
+    carried,
   };
 }
 
@@ -467,7 +589,15 @@ export async function setArchived(
       return { doc: toWireDoc(workspace.projection, loaded), result: emptyResult() };
     }
 
-    const warnings = plan.text === null ? [] : validateBeforeWrite(workspace, plan.path, plan.text);
+    // §14's findings about the bytes being written, then §7's about the
+    // documents this act carried. The two are independent: `plan.text === null`
+    // is a folder move that rewrote nothing of the requested document, which is
+    // exactly the case where the carried warnings matter most — every skill
+    // under the folder changed state and not one of them was asked about.
+    const warnings = [
+      ...(plan.text === null ? [] : validateBeforeWrite(workspace, plan.path, plan.text)),
+      ...carriedWarnings(plan.carried, new Set([id])),
+    ];
 
     const result = await runMutation(workspace, {
       docId: id,

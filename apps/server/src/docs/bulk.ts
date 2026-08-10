@@ -109,7 +109,12 @@ import { removeThreadAttachments } from "../attachments/index.js";
 import { formatInstant, serializeDocument, setFrontmatterFields } from "../core/index.js";
 import { DOCS_KEY, dedupeKeys, docKey, threadKey } from "../events/index.js";
 import { HttpError, forbidden } from "../errors.js";
-import { carriedDocumentIds, planSetArchived } from "./archive.js";
+import {
+  carriedDocumentIds,
+  carriedWarnings,
+  planSetArchived,
+  type CarriedDocument,
+} from "./archive.js";
 import { AGENT_DELETE_MESSAGE, anchoredThreadParent, planDelete } from "./delete.js";
 import { assertMovable, planMove } from "./move.js";
 import { loadDocument, type LoadedDocument } from "./read.js";
@@ -143,6 +148,14 @@ type DocumentPlan = {
   readonly keys: readonly QueryKey[];
   /** `null` when nothing new is written — a skill folder that only moved. */
   readonly validate: { readonly path: string; readonly text: string } | null;
+  /**
+   * The documents this row's share of the act carried — §7's skill folder move
+   * taking a nested `SKILL.md` with it (CONTRACT-047). Turned into warnings by
+   * {@link carriedWarnings} once the write has landed, and never into a fourth
+   * part of the result: the three parts partition the ids the request named, and
+   * a carried document was not one of them (PR #37).
+   */
+  readonly carried?: readonly CarriedDocument[];
   /**
    * Threads left behind by this document's deletion, **as the projection saw
    * them when the plan was made** — which is one write behind by construction
@@ -444,6 +457,7 @@ function planFor(
         unproject: plan.unproject,
         keys: docKeys(loaded),
         validate: plan.text === null ? null : { path: plan.path, text: plan.text },
+        carried: plan.carried,
       };
     }
     case "resolve":
@@ -645,6 +659,8 @@ async function runBulk(
   const unproject: string[] = [];
   const keys: QueryKey[] = [];
   const warnings: Warning[] = [];
+  // The ids the caller named — what a carried warning is never about.
+  const requested = new Set(rows.map((row) => row.id));
   // Where this act has already moved a document's file, old path to new. §7's
   // skill folder move relocates every `SKILL.md` under it, including ones the
   // act names later — and the projection does not move until `finishMutation`,
@@ -732,6 +748,19 @@ async function runBulk(
     }
 
     changed.push({ id, action: action.action });
+    // After `applyOperations`, never before: a carried warning describes an
+    // effect the act *had*, and a row whose operations threw rolled itself back
+    // — nothing of it reached the commit, so the folder never moved and no
+    // skill's enablement changed. Reporting it there would be §4's rule run
+    // backwards, telling the caller about an effect `git log` never records.
+    //
+    // `requested`, not `held`: the excluded set is the ids the **caller named**,
+    // and `held` also contains the lanes this act took *because* of the carry,
+    // which would suppress exactly the warnings this exists to emit. A staged
+    // set naming both an outer skill and the nested one it carries reports the
+    // nested one as a `changed` entry, which is where the contract says a
+    // requested document is answered for.
+    warnings.push(...carriedWarnings(plan.carried ?? [], requested));
     if (TREE_MOVING_ACTIONS.has(action.action)) mayChangeTree = true;
     recordRelocations(relocated, plan.operations);
     stage.push(...plan.stage);

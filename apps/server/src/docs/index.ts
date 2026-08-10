@@ -15,7 +15,7 @@ export {
   setArchived,
   skillDocumentsUnder,
 } from "./archive.js";
-export type { ArchivePlan } from "./archive.js";
+export type { ArchivePlan, CarriedDocument } from "./archive.js";
 export { applyBulkAction, commitSubject } from "./bulk.js";
 export { MAX_SLUG_ATTEMPTS, allocatePath, createDocument } from "./create.js";
 export {

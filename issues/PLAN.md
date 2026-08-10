@@ -409,12 +409,14 @@ belongs to the same fix wave.
 | SERVER-087 | Apply a mixed staged Save as one act, and one commit (SHARED-032) | todo | P1 | CONTRACT-048 |
 | SERVER-077 | Apply a bulk action as one act, and one commit (SHARED-017) | done | P2 | CONTRACT-037 |
 | SERVER-078 | A nested skill's id changes when the skill above it is archived (PR #37 review) | done | P1 | — |
-| CONTRACT-047 | An archive can rewrite a document it never named, and say nothing (PR #38 review) | todo | P2 | SERVER-078 |
+| CONTRACT-047 | An archive can rewrite a document it never named, and say nothing (PR #38 review) | done | P2 | SERVER-078 |
+| SERVER-088 | Emit the carried-skill warnings the contract now publishes (CONTRACT-047) | done | P1 | CONTRACT-047 |
+| UI-106 | A carried effect is not an error, and the UI renders every warning as one | todo | P2 | SERVER-088 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
 | SERVER-068 | Parse and answer the richer form grammar (SHARED-021) | done | P1 | CONTRACT-038 |
 | UI-084 | Render choose-any and write fields; the attention row that survives being read (SHARED-021) | done | P1 | CONTRACT-038, CONTRACT-040 |
-| UI-102 | The e2e stub's row builder returns `unknown`, so field drift is silent (UI-084 finding) | todo | P1 | — |
+| UI-102 | The e2e stub's row builder returns `unknown`, so field drift is silent (UI-084 finding) | done | P1 | — |
 | AGENT-017 | Ask with a form: batch the questions into one form, in one turn (SHARED-021) | done | P1 | SERVER-068 |
 | AGENT-018 | Weigh consequence before difficulty; split stages, withhold the gathering context (SHARED-023) | done | P1 | SHARED-023 |
 | CONTRACT-039 | A chosen weight has no way to reach the work it governs (SHARED-022) | done | P2 | SHARED-022 |
@@ -521,7 +523,7 @@ cheapest moment for that to happen.
 | UI-098 | The console says `agent: idle` when no agent exists | todo | P1 | CONTRACT-045, SERVER-086 |
 | UI-099 | Commenting on a document selection leaves no visible anchor | done | P0 | — |
 | UI-103 | Opening a document and typing one character can silently restructure a list (UI-099 finding) | done | P0 | — |
-| UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | todo | P1 | UI-103 |
+| UI-104 | The first save still rewrites 68 of 618 documents, and one changes meaning (UI-103 sweep) | done | P1 | UI-103 |
 | UI-105 | `soft-wrap.spec.ts` places the caret at the end of a visual line, and flakes | todo | P2 | — |
 | UI-100 | Focus mode shows two controls that read as the same exit | todo | P2 | — |
 | SHARED-035 | Styled text: in the body, stripped for retrieval, themed by a style doc (DRAFTED — sign-off) | todo | P1 | — |

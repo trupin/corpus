@@ -1,12 +1,18 @@
 import { chmodSync, mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { ACTOR_HEADER, DocListSchema, DocMutationResponseSchema } from "@corpus/contract";
+import {
+  ACTOR_HEADER,
+  DocListSchema,
+  DocMutationResponseSchema,
+  type Warning,
+} from "@corpus/contract";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "../core/index.js";
 import { createAutoCommitter, createGit } from "../git/index.js";
 import { silentLogger } from "../logger.js";
 import { createThread } from "../threads/thread-fixture.js";
-import { setArchived } from "./archive.js";
+import { carriedWarnings, planSetArchived, setArchived } from "./archive.js";
+import { loadDocument } from "./read.js";
 import { AUTH, createDoc, createWriteWorkspace, type WriteWorkspace } from "./write-fixture.js";
 import { allowAllWrites, createDocumentMutex, type DocsWorkspace } from "./write.js";
 
@@ -691,5 +697,217 @@ describe("a destination that is not a real directory is never merged through", (
 
     expect(response.status).toBe(400);
     expect(ws.exists(".claude/skills/demo/SKILL.md")).toBe(true);
+  });
+});
+
+// CONTRACT-047 / SERVER-088. Everything above this line was already true and
+// entirely silent: a person who archived one skill had another skill disabled,
+// and sometimes its frontmatter rewritten, and learned it from `git log`.
+describe("the response says which documents the move carried", () => {
+  /** Every warning on an archive/unarchive response, through the contract's schema. */
+  const warningsOf = async (id: string, verb: "archive" | "unarchive"): Promise<Warning[]> => {
+    const response = await ws.post(`/api/docs/${id}/${verb}`, {});
+    expect(response.status).toBe(200);
+    return DocMutationResponseSchema.parse(await response.json()).warnings;
+  };
+
+  const codes = (warnings: readonly Warning[]): string[] => warnings.map((warning) => warning.code);
+
+  const detailOf = (warnings: readonly Warning[], code: string): string =>
+    warnings.find((warning) => warning.code === code)?.detail ?? "";
+
+  it("names a carried skill in both directions", async () => {
+    const { outer, nested } = withNestedSkill("archive-warn-round-trip");
+
+    const archived = await warningsOf(outer, "archive");
+
+    // One code, not two: nothing of the carried document's frontmatter needed
+    // correcting, and the id stamp beside it is deliberately unreported.
+    expect(codes(archived)).toEqual(["carried_skill"]);
+    expect(detailOf(archived, "carried_skill")).toBe(
+      `${nested} (.claude/skills-archived/demo/nested/SKILL.md) was carried by this skill ` +
+        `folder move and is now disabled; the request never named it (SPEC.md §7)`,
+    );
+
+    ws.advance(60_000);
+    const restored = await warningsOf(outer, "unarchive");
+
+    // The same document, the other way, and the path is the one it is at now.
+    expect(codes(restored)).toEqual(["carried_skill"]);
+    expect(detailOf(restored, "carried_skill")).toBe(
+      `${nested} (.claude/skills/demo/nested/SKILL.md) was carried by this skill folder move ` +
+        `and is now enabled; the request never named it (SPEC.md §7)`,
+    );
+  });
+
+  it("names the reconciliation an unarchive performed on a carried skill", async () => {
+    const { outer, nested } = withNestedSkill("archive-warn-reconciliation");
+
+    // The nested skill archived on its own is what writes `status: archived`
+    // into its file — the state the outer unarchive later has to reconcile. It
+    // carries nothing itself, so it says nothing; and the outer archive that
+    // follows carries nothing either, because that folder is already empty of
+    // skills. Both silences are the point: the report arrives with the effect.
+    expect(await warningsOf(nested, "archive")).toEqual([]);
+    ws.advance(60_000);
+    expect(await warningsOf(outer, "archive")).toEqual([]);
+
+    ws.advance(60_000);
+    const restored = await warningsOf(outer, "unarchive");
+
+    expect(codes(restored)).toEqual(["carried_skill", "carried_reconciliation"]);
+    expect(detailOf(restored, "carried_reconciliation")).toBe(
+      `${nested} (.claude/skills/demo/nested/SKILL.md) still said \`status: archived\` under ` +
+        `the enabled skills root, so its status was reconciled to \`open\``,
+    );
+    // The report and the write are one story (§4): the key really did change.
+    expect(parseDocument(ws.read(".claude/skills/demo/nested/SKILL.md")).data["status"]).toBe(
+      "open",
+    );
+  });
+
+  it("says nothing when the folder carried no other skill document", async () => {
+    // A folder full of files — `reference.md`, `run.sh` — none of which is a
+    // skill document. Silence means "carried no other skill document at all",
+    // so a skill archived alone must be silent or the channel is noise.
+    const { skillId } = withSkill("archive-warn-solitary");
+
+    expect(await warningsOf(skillId, "archive")).toEqual([]);
+    ws.advance(60_000);
+    expect(await warningsOf(skillId, "unarchive")).toEqual([]);
+  });
+
+  it("reports the carry but no reconciliation for a carried file already saying `open`", async () => {
+    ws = createWriteWorkspace("archive-warn-already-open");
+    ws.write(".claude/skills/demo/SKILL.md", SKILL);
+    ws.write(
+      ".claude/skills/demo/nested/SKILL.md",
+      ["---", "id: doc_nestedopen", "name: nested", "status: open", "---", "", "Body.", ""].join(
+        "\n",
+      ),
+    );
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the skills");
+    ws.reproject();
+    const outer = idAt(".claude/skills/demo/SKILL.md");
+
+    expect(codes(await warningsOf(outer, "archive"))).toEqual(["carried_skill"]);
+    ws.advance(60_000);
+    const restored = await warningsOf(outer, "unarchive");
+
+    // Back under the enabled root, already saying what it should say: nothing
+    // is written, so nothing is reconciled and nothing is claimed. It carries
+    // its own id too, so this act writes not one byte of that file.
+    expect(codes(restored)).toEqual(["carried_skill"]);
+    expect(ws.read(".claude/skills/demo/nested/SKILL.md")).toContain("status: open");
+  });
+
+  // The asymmetry CONTRACT-047 decided deliberately (decision 1). Restoring the
+  // symmetry — "both are writes, report both" — fails here rather than teaching
+  // a reader to skip a warning that fires on nearly every carry.
+  it("emits nothing for the id stamp, which fires on nearly every carry", async () => {
+    const { outer, nested } = withNestedSkill("archive-warn-id-stamp-silent");
+
+    const archived = await warningsOf(outer, "archive");
+
+    // The stamp really happened — this is a write, and it is still not reported.
+    expect(parseDocument(ws.read(".claude/skills-archived/demo/nested/SKILL.md")).data["id"]).toBe(
+      nested,
+    );
+    expect(codes(archived)).toEqual(["carried_skill"]);
+    expect(archived.map((warning) => warning.detail).join(" ")).not.toContain("id");
+  });
+
+  it("does not name a moved file the projection never indexed", async () => {
+    ws = createWriteWorkspace("archive-warn-unindexed");
+    ws.write(".claude/skills/demo/SKILL.md", SKILL);
+    // No row, so there is no document to name — `planCarriedWrites`'s stance,
+    // and a warning quoting a path with no id would name nothing a caller can
+    // open.
+    ws.write(".claude/skills/demo/nested/SKILL.md", "---\nname: [unclosed\n---\n\nBody.\n");
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the skills");
+    ws.reproject();
+
+    const archived = await warningsOf(idAt(".claude/skills/demo/SKILL.md"), "archive");
+
+    expect(archived).toEqual([]);
+    expect(ws.exists(".claude/skills-archived/demo/nested/SKILL.md")).toBe(true);
+  });
+
+  it("reports the carry of a move that rewrites not one byte of the requested skill", () => {
+    // `plan.text === null` — the folder moved and the requested document's own
+    // bytes are unchanged, which is exactly the case where the carried report
+    // matters most and exactly the case a `plan.text`-gated report would lose.
+    ws = createWriteWorkspace("archive-warn-no-own-write");
+    // Already says `archived` while sitting in the *enabled* root, so this
+    // archive has nothing of its own to write.
+    ws.write(
+      ".claude/skills/demo/SKILL.md",
+      // Its own id declared, so even the stamp is a no-op.
+      [
+        "---",
+        "id: doc_demoskill",
+        "name: demo",
+        "status: archived",
+        "---",
+        "",
+        "# Demo skill",
+        "",
+      ].join("\n"),
+    );
+    ws.write(".claude/skills/demo/nested/SKILL.md", NESTED_SKILL);
+    ws.git("add", "-A", "--", ".claude");
+    ws.git("commit", "-m", "seed the skills");
+    ws.reproject();
+    const outer = idAt(".claude/skills/demo/SKILL.md");
+    const nested = idAt(".claude/skills/demo/nested/SKILL.md");
+
+    const plan = planSetArchived(
+      docsWorkspace(),
+      loadDocument(ws.root, ws.db, outer),
+      true,
+      new Set([outer, nested]),
+    );
+
+    expect(plan?.text).toBeNull();
+    expect(codes(carriedWarnings(plan?.carried ?? [], new Set([outer])))).toEqual([
+      "carried_skill",
+    ]);
+  });
+
+  it("names a carried document that moved but was never stamped", () => {
+    // A `SKILL.md` that appeared under the folder *after* the lanes were chosen:
+    // its lane is not held, so the act moves its file and deliberately writes
+    // nothing into it. The move is still the enablement change (§7), so it is
+    // still reported — the warning follows the plan, not the stamp.
+    const { outer } = withNestedSkill("archive-warn-unheld");
+    const plan = planSetArchived(
+      docsWorkspace(),
+      loadDocument(ws.root, ws.db, outer),
+      true,
+      new Set([outer]),
+    );
+
+    const nested = idAt(".claude/skills/demo/nested/SKILL.md");
+    expect(plan?.carried).toEqual([
+      {
+        id: nested,
+        path: ".claude/skills-archived/demo/nested/SKILL.md",
+        enabled: false,
+        reconciled: false,
+      },
+    ]);
+    expect(codes(carriedWarnings(plan?.carried ?? [], new Set([outer])))).toEqual([
+      "carried_skill",
+    ]);
+    // Moved, never written: no `write` operation names its destination.
+    expect(
+      plan?.operations.some(
+        (operation) =>
+          operation.kind === "write" &&
+          operation.path === ".claude/skills-archived/demo/nested/SKILL.md",
+      ),
+    ).toBe(false);
   });
 });
