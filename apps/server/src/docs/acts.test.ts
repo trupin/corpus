@@ -150,7 +150,7 @@ describe("each act closes the window and names its commit (§4)", () => {
     return before;
   }
 
-  it("an agent turn posted to a thread", async () => {
+  it("a turn posted to a thread, by the agent", async () => {
     const doc = await settledDoc("Pricing", "one");
     const thread = await createThread(ws, { parent: doc.id, body: "?" });
     ws.advance(QUIET);
@@ -167,10 +167,12 @@ describe("each act closes the window and names its commit (§4)", () => {
     expect(filesIn("HEAD")).toEqual([doc.path, threadPath(thread.id)].sort());
   });
 
-  it("a person's turn is not an act — it is one of the changes a window gathers", async () => {
-    // §4 names the party: "an agent turn posted to a thread". A person's reply
-    // is part of the editing they are doing, and the agent's answer to it — or
-    // any other write by the other party — closes their window anyway.
+  it("a person's turn is an act too, and closes the window it lands in", async () => {
+    // §4 said "an agent turn posted to a thread" until the user struck the word
+    // on 2026-08-10 (SHARED-040 held item (c)): every other entry in that list
+    // names an act without a party, and a person's comment is the clearest case
+    // of §4's own definition — "a change someone else can act on" — since under
+    // §8 it is what wakes the agent.
     const doc = await settledDoc("Pricing", "one");
     const thread = await createThread(ws, { parent: doc.id, body: "?" });
     ws.advance(QUIET);
@@ -182,11 +184,15 @@ describe("each act closes the window and names its commit (§4)", () => {
     const turn = await ws.post(`/api/threads/${thread.id}/turns`, { body: "mine" }, asUser);
     expect(turn.status).toBe(201);
 
+    // The turn folded into the open window and named it.
     expect(commitCount()).toBe(before + 1);
-    // The window is still open: a later save by the same party still folds in.
+    expect(subjectOf("HEAD")).toBe(`comment: turn on ${thread.id} by user`);
+
+    // And closed it: the next save by the same party opens a fresh commit
+    // rather than folding into the one the turn named.
     const later = await ws.put(`/api/docs/${doc.id}`, { body: "still typing" }, asUser);
     expect(later.status).toBe(200);
-    expect(commitCount()).toBe(before + 1);
+    expect(commitCount()).toBe(before + 2);
   });
 
   it.each([

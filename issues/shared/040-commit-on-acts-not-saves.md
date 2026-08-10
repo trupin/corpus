@@ -428,7 +428,14 @@ from scratch.
    rather than a spec question — if the upgrade does not in fact commit, recovery
    would paper over it under no author, which is worse than the gap.
 
-## Held for sign-off — two one-clause corrections the sweep surfaced
+## SIGNED 2026-08-10 — corrections (a), (b) and (c) applied; (d) still held
+
+The user signed (a) and (b) as drafted, and on (c) chose **any turn** — the word
+`agent` struck from §4's first closer, and `threads/turns.ts` now sets the act
+for either party. (d) was raised after the others and is still awaiting a
+signature; nothing waits on it.
+
+### The corrections, as read aloud
 
 Neither changes behaviour. Both are consequences of this rider that live in
 *other* paragraphs, which is exactly what a sweep is for.

@@ -6,8 +6,8 @@ cli
 
 ## Status
 
-done — code complete; **four SPEC.md riders drafted and held for the user's
-signature** (see "Drafted SPEC.md text")
+done — code complete, and all four SPEC.md riders **signed 2026-08-10 and
+applied**
 
 ## Priority
 
@@ -230,7 +230,7 @@ workspace permanently unmaintainable. `lifecycle.test.ts` gains the two start
 paths against a real detached daemon; `init/index.test.ts` and `upgrade.test.ts`
 gain their own.
 
-## Drafted SPEC.md text — NOT APPLIED, held for the user's signature
+## SPEC.md text — **SIGNED 2026-08-10, all four applied as drafted**
 
 Four riders. Each is quoted verbatim as it would appear in `SPEC.md`, so it can
 be read aloud without paraphrase.
