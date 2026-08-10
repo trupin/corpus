@@ -564,7 +564,9 @@ over the merged map so adding spellings cannot weaken it.
 
 **Negative control, at three levels.** With the fix removed:
 
-- the pair probe: **60 of 169** variant pairs fail round-trip *and* fixed-point
+- the pair probe: **60 of 196** variant pairs fail round-trip *and* fixed-point
+  (corrected on re-review: the count was written as 169; the matrix is 196 pairs
+  and exactly 60 fail, which is the 120 pair failures inside "123 of 471")
   (0 with it);
 - `serialize.test.ts`: **123 of 471 tests fail** (120 pairs + the 3 named
   regressions);

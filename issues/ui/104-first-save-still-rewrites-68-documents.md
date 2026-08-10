@@ -99,6 +99,23 @@ unwanted the answer is to make the printer emit loose items consistently, not to
 narrow the join rule — a separate decision, and one for this issue rather than
 UI-103.
 
+## Also classify: an empty-only task list loses its task-ness
+
+Found by the pr-reviewer on PR #40 and confirmed pre-existing — it reproduces at
+`0b3ed418` and **at top level**, where UI-103's join rule never runs, so it is
+not caused by that fix.
+
+A task list whose **only** item is empty round-trips as a plain bullet list:
+`doc(taskList(taskItem(emptyParagraph())))` prints `"-\n"`, which reads back as a
+`bulletList`. The task-ness is gone. UI-103 strictly improved the nested case —
+that shape used to turn the paragraph above it into an H2 — but the type loss
+survives.
+
+`SPELLINGS.taskListEmptyLead` uses two items, so the pair probe does not see it.
+Whatever this issue decides about the other categories, decide this one too:
+either the printer must spell an empty task item in a way that survives a read,
+or losing task-ness on an empty-only list is accepted on the record.
+
 ## Acceptance Criteria
 
 - [ ] The `|` case is fixed: a table cell containing a literal `|` round-trips
