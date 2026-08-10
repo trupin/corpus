@@ -726,7 +726,8 @@ describe("the response says which documents the move carried", () => {
     expect(codes(archived)).toEqual(["carried_skill"]);
     expect(detailOf(archived, "carried_skill")).toBe(
       `${nested} (.claude/skills-archived/demo/nested/SKILL.md) was carried by this skill ` +
-        `folder move and is now disabled; the request never named it (SPEC.md §7)`,
+        `folder move and is now disabled; this act did not archive it in its own right ` +
+        `(SPEC.md §7)`,
     );
 
     ws.advance(60_000);
@@ -736,7 +737,7 @@ describe("the response says which documents the move carried", () => {
     expect(codes(restored)).toEqual(["carried_skill"]);
     expect(detailOf(restored, "carried_skill")).toBe(
       `${nested} (.claude/skills/demo/nested/SKILL.md) was carried by this skill folder move ` +
-        `and is now enabled; the request never named it (SPEC.md §7)`,
+        `and is now enabled; this act did not unarchive it in its own right (SPEC.md §7)`,
     );
   });
 
@@ -815,7 +816,10 @@ describe("the response says which documents the move carried", () => {
       nested,
     );
     expect(codes(archived)).toEqual(["carried_skill"]);
-    expect(archived.map((warning) => warning.detail).join(" ")).not.toContain("id");
+    // The word, not the letters: `id` bare or any talk of stamping. A plain
+    // substring test also matches the `id` inside `did`, which made this assert
+    // something about English rather than about the report (PR #41).
+    expect(archived.map((warning) => warning.detail).join(" ")).not.toMatch(/\bid\b|stamp/i);
   });
 
   it("does not name a moved file the projection never indexed", async () => {

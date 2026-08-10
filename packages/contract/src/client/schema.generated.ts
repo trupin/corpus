@@ -4285,7 +4285,7 @@ export interface components {
         };
         DocMutationResponse: {
             doc: components["schemas"]["Doc"];
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         Doc: {
@@ -4402,7 +4402,7 @@ export interface components {
         };
         Warning: {
             /**
-             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the request never named** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `open` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. One warning per document reconciled, naming its id and the key. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. Both are silent when there is nothing to say — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes the document the caller named: that document is the response's own subject, or a `changed` entry in a bulk result.
+             * @description `commit_failed`: the workspace's git hooks rejected the auto-commit, or git itself failed — the write is on disk and uncommitted. `commit_skipped`: no commit was attempted, because the workspace is not a git repository or no `git` is on the server's PATH. `orphaned_anchor`: an anchor entry is well-formed but its quote no longer resolves in the body, so its thread is detached (SPEC.md §6). `unresolved_ref`: a `[[ref]]` in the body names no document. `carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's location its enablement, so a nested `SKILL.md` carried along by the folder changes state without being asked. One warning per carried document, naming its id, its path after the move, and which way its enablement went. `carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree with where it now sits — a stale `status: archived`, left by a previous independent archive of that nested skill, corrected to `open` because the folder move landed it back under the enabled root, where frontmatter is what status is read from. One warning per document reconciled, naming its id and the key. It arises on unarchive only: the archived root reads status from the root itself and never consults the key, so a move in that direction leaves the key exactly as its author wrote it. Both are silent when there is nothing to say — an act that carried no other skill document emits neither, and a carried document whose frontmatter needed no correction emits `carried_skill` alone. Neither ever describes a document whose **own archive or unarchive landed in this act**: that document is the response's own subject on the single-document routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly what it asked for. **Being named is not enough** — a staged row that was refused, that was already in the state it asked for, or that carried some other verb (a `tag` on the skill an `archive` in the same Save disabled) is still described here, because nothing in the answer it did get says the act moved its folder.
              * @enum {string}
              */
             code: "commit_failed" | "commit_skipped" | "orphaned_anchor" | "unresolved_ref" | "carried_skill" | "carried_reconciliation";
@@ -4461,7 +4461,7 @@ export interface components {
             orphanedThreadIds: string[];
             /** @description The **single** auto-commit this act landed as (SPEC.md §4), authored by the acting party. One sha, never a list, **whatever mix of verbs the act carried**: §4 is explicit that "a Save carrying a mix of verbs is still one act and still one commit", so a server that grouped by verb would have no honest value to put here. Null in three cases, none of them an error — `changed` is empty, so there was nothing to commit and a commit containing nothing is not one; the workspace is not a git repository (`commit_skipped` in `warnings`); or the workspace's hooks rejected the commit, leaving the writes on disk and uncommitted (`commit_failed` in `warnings`, §14). */
             commit: string | null;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         /** @description One document the act reached, and what was done to it. Carried in `changed` and in `alreadyInState`; `BulkActionRefusal` is the same pair plus why it did not change. */
@@ -4675,7 +4675,7 @@ export interface components {
         UpdateDocResponse: {
             doc: components["schemas"]["Doc"];
             anchors: components["schemas"]["AnchorReconciliation"];
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         AnchorReconciliation: {
@@ -4731,7 +4731,7 @@ export interface components {
             deletedId: string;
             /** @description Threads that named the deleted document as `parent`. They keep that id and remain readable; their anchors no longer resolve. Drop their caches. */
             orphanedThreadIds: string[];
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         MoveDocRequest: {
@@ -4790,7 +4790,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         CaptureRequest: {
@@ -4815,7 +4815,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         Thread: {
@@ -5089,7 +5089,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         ThreadSummary: {
@@ -5175,7 +5175,7 @@ export interface components {
              * @example doc_a1b2c3
              */
             parentId: string | null;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         FormAnswerResponse: {
@@ -5186,7 +5186,7 @@ export interface components {
              * @example evt_7c1d
              */
             eventId: string | null;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         ConflictError: {
@@ -5213,7 +5213,7 @@ export interface components {
         };
         ThreadMutationResponse: {
             thread: components["schemas"]["ThreadSummary"];
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         MarkSeenResult: {
@@ -5242,7 +5242,7 @@ export interface components {
         ReattachThreadResponse: {
             thread: components["schemas"]["ThreadSummary"];
             anchor: components["schemas"]["ResolvedAnchor"];
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         ReattachConflictError: {
@@ -5625,7 +5625,7 @@ export interface components {
             commit: string | null;
             /** @description Workspace-relative path of the restored file, e.g. `.claude/skills/orchestrate/SKILL.md`. */
             path: string;
-            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents the request never named** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and nothing outside the request was touched. */
+            /** @description Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The mutation succeeded regardless — files are the source of truth and the server never rolls a write back because a commit or a check failed, and a carried effect is not a failure at all but a consequence the caller is owed. Empty when nothing went wrong and the act touched nothing beyond what it was asked to do. */
             warnings: components["schemas"]["Warning"][];
         };
         SkillRollbackRequest: {

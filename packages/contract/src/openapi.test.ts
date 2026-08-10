@@ -2878,11 +2878,29 @@ describe("a folder move reports the documents it carried (CONTRACT-047)", () => 
 
   it("says in the vocabulary itself what each carried code means and when it is silent", () => {
     const description = codeSchema()?.description ?? "";
-    expect(description).toContain("the request never named");
+    expect(description).toContain("did not itself archive or unarchive");
     expect(description).toContain("SPEC.md §7");
     // The direction rule, published rather than left for a reader to infer.
     expect(description).toContain("arises on unarchive only");
     expect(description).toContain("silent when there is nothing to say");
+  });
+
+  /**
+   * PR #41. The published exclusion used to be "the document the caller named",
+   * whose premise — "that document is the response's own subject, or a `changed`
+   * entry in a bulk result" — is false for a bulk row that was refused, was
+   * already in the state it asked for, or carried a different verb than the one
+   * that moved the folder. It is prose a reader reasons from, so both halves of
+   * the corrected rule are pinned: what is left out, and what being *named* does
+   * not buy.
+   */
+  it("excludes only the document whose own archive or unarchive landed, and says so", () => {
+    const description = codeSchema()?.description ?? "";
+    expect(description).toContain("own archive or unarchive");
+    expect(description).toContain("Being named is not enough");
+    expect(description).toContain("refused");
+    expect(description).toContain("already in the state it asked for");
+    expect(description).not.toContain("Neither ever describes the document the caller named");
   });
 
   it.each([

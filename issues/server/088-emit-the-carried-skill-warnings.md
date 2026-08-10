@@ -265,6 +265,160 @@ render warnings with `tone: "error"`, which a carried effect is not — that is 
 UI issue for the orchestrator to file, and it is now reachable in the product
 rather than hypothetical.
 
+---
+
+## E2E Verification Log — PR #41 review round (exclusion rule corrected)
+
+**Model: Opus 5 (1M context)** — `claude-opus-5[1m]`. Date: 2026-08-09. Branch
+`phase-28-serializer-sweep-stub-typing`, main working tree, no git commands run
+in this repo.
+
+**The finding.** The pr-reviewer's MAJOR against `bulk.ts:663,763`: the exclusion
+set was `requested` — every id the request **named** — while the contract sentence
+it was implementing (`warning.ts:88`) justified itself with "that document is the
+response's own subject, or a `changed` entry in a bulk result". That premise only
+holds for a row that lands in `changed` **carrying the verb that moved the
+folder**. Item 3 above reasoned from it and inherited its error.
+
+**Pre-fix reproduction, on the real server** (`corpus init /tmp/pr41-e2e`, port
+moved to a scratch **8793** — never 8765 or 5173 — seeded
+`.claude/skills/demo/{SKILL.md,reference.md,nested/SKILL.md}`, `corpus server
+start`, torn down at the end: `stopped (pid 44738)`, `lsof -nP -iTCP:8793` → no
+listener). `outer = doc_skillfb157be1`, `nested = doc_skill78aafb0e`. The three
+shapes below all answered `"warnings": []` under the old rule; each has a new
+test that fails against it (verified by reverting `explainedByOwnRow` to
+`new Set(rows.map((row) => row.id))` and re-running:
+`Tests 3 failed | 52 skipped`).
+
+_A refused row_ — `entries: [{outer, archive}, {nested, resolve}]`, post-fix:
+
+```
+POST /api/docs/bulk -> 200
+{
+  "changed": [{ "id": "doc_skillfb157be1", "action": "archive" }],
+  "alreadyInState": [],
+  "refused": [
+    {
+      "id": "doc_skill78aafb0e", "action": "resolve", "reason": "not-applicable",
+      "message": "doc_skill78aafb0e is a skill, not a thread; only threads are resolved (SPEC.md §6)",
+      "lock": null
+    }
+  ],
+  "orphanedThreadIds": [],
+  "commit": "b99428342d3ddc774480d647b7d3a9e7db10c141",
+  "warnings": [
+    {
+      "code": "carried_skill",
+      "detail": "doc_skill78aafb0e (.claude/skills-archived/demo/nested/SKILL.md) was carried by this skill folder move and is now disabled; this act did not archive it in its own right (SPEC.md §7)"
+    }
+  ]
+}
+```
+
+and the commit that response is one story with (§4) really did disable it:
+
+```
+$ git show --stat --format='%h %an %s' b994283
+b994283 user bulk archive: 1 document by user
+ .claude/skills-archived/demo/SKILL.md                    | 9 +++++++++
+ .claude/{skills => skills-archived}/demo/nested/SKILL.md | 1 +
+ .claude/{skills => skills-archived}/demo/reference.md    | 0
+ .claude/skills/demo/SKILL.md                             | 6 ------
+```
+
+_An already-in-state row_ — `entries: [{nested, unarchive}, {outer, archive}]`
+after one standalone `unarchive` of `nested` had written `status: open` and its
+id into the file:
+
+```
+"changed": [{ "id": "doc_skillfb157be1", "action": "archive" }],
+"alreadyInState": [{ "id": "doc_skill78aafb0e", "action": "unarchive" }],
+"warnings": [{ "code": "carried_skill", "detail": "doc_skill78aafb0e (.claude/skills-archived/demo/nested/SKILL.md) was carried by this skill folder move and is now disabled; this act did not archive it in its own right (SPEC.md §7)" }]
+```
+
+The response says, in as many words, that the nested skill is already enabled —
+and the act it is reporting turned it off. (The same shape arises without any
+setup: in `[{outer, unarchive}, {nested, unarchive}]` the outer row relocates
+`nested` first, so `nested`'s own row is a genuine no-op and lands in
+`alreadyInState` — observed live, `warnings` now carries the enabled-direction
+carry.)
+
+_A different verb_ — `entries: [{outer, archive}, {nested, tag add:["reference"]}]`,
+the weaker variant the reviewer raised for decision and the user ruled in:
+
+```
+"changed": [
+  { "id": "doc_skillfb157be1", "action": "archive" },
+  { "id": "doc_skill78aafb0e", "action": "tag" }
+],
+"warnings": [{ "code": "carried_skill", "detail": "doc_skill78aafb0e (.claude/skills-archived/demo/nested/SKILL.md) was carried by this skill folder move and is now disabled; this act did not archive it in its own right (SPEC.md §7)" }]
+```
+
+The letter of the old rule was satisfied — it *is* a `changed` entry — and being
+in `changed` for `tag` explains no folder move.
+
+**Silence, checked in the other direction** (the widening the user ruled out —
+"do not report every carried document unconditionally"):
+
+```
+POST /api/docs/bulk  [{outer, archive}, {nested, archive}] -> 200
+"changed": [{outer, "archive"}, {nested, "archive"}]   "warnings": []
+
+POST /api/docs/doc_skill61c2325d/archive -> 200        (todos: a solitary skill)
+"warnings": []
+```
+
+and the single-document route still reports both codes for a genuine carry:
+
+```
+POST /api/docs/doc_skillfb157be1/unarchive -> 200
+[
+  { "code": "carried_skill", "detail": "doc_skill78aafb0e (.claude/skills/demo/nested/SKILL.md) was carried by this skill folder move and is now enabled; this act did not unarchive it in its own right (SPEC.md §7)" },
+  { "code": "carried_reconciliation", "detail": "doc_skill78aafb0e (.claude/skills/demo/nested/SKILL.md) still said `status: archived` under the enabled skills root, so its status was reconciled to `open`" }
+]
+```
+
+**The rule now.** A carried document is excluded **only when its own archive or
+unarchive landed in this act** — for `POST /api/docs/{id}/archive|unarchive` that
+is the one id the route acted on; for the bulk act it is
+`changed.filter(archive | unarchive)`, computed **after** the loop rather than per
+row, because a document can be carried by an earlier row and answer for itself in
+a later one (`archives an outer skill and the nested one it carries, in either
+order`) and the answer must not depend on arrival order. The **verb** is asked
+about, not its direction, and that is deliberate: in
+`[{outer, unarchive}, {nested, archive}]` the carry enables `nested` for a moment
+and its own row disables it, so a direction-matched rule would emit "is now
+enabled" — false by the time the response is written.
+
+**Prose corrected with it.** The warning `detail` said "the request never named
+it", which is untrue in exactly the three shapes above; it now restates the rule
+("this act did not archive/unarchive it in its own right"). In
+`packages/contract/src/schemas/warning.ts`: `WarningCodeSchema`'s closing sentence
+now names the real exclusion and adds "**Being named is not enough**" with the
+three cases; `carried_skill`'s own line says "a skill document the act did not
+itself archive or unarchive"; `warningsField` says "effects it had on documents it
+was not asked to act on" and "the act touched nothing beyond what it was asked to
+do". The two route descriptions were left alone — a single-document route names
+one id, and their prose ("a document the request never named never becomes a
+changed document") remains true. `npm run generate -w packages/contract`
+regenerated `openapi.json` and `src/client/schema.generated.ts`; neither was
+hand-edited.
+
+**Tests.** Three new ones in `bulk.test.ts` under
+`a named row that does not explain the move is still owed the warning` (refused,
+already-in-state, different-verb), each driven through the real route and each
+failing against the old rule. One shipped assertion was corrected rather than
+worked around: `emits nothing for the id stamp` asserted
+`detail).not.toContain("id")`, which the new wording trips on the `id` inside
+`did` — it now asserts `not.toMatch(/\bid\b|stamp/i)`, which is what it was always
+trying to say.
+
+**Checks.** `npm run build` → exit 0. `vitest run apps/server` → **178 files, 3699
+tests, all passing** (`VITEST_MAX_THREADS=4`). `vitest run packages/contract` →
+59 files, 2331 tests, passing. `eslint` over the seven touched sources → exit 0.
+`prettier --check` → clean (one file reformatted with `--write`).
+`tsc --noEmit` in `apps/server` and `packages/contract` → exit 0.
+
 ## Completion Checklist (domain agent)
 
 - [x] Tests written and passing

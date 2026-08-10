@@ -19,8 +19,8 @@ import { z } from "@hono/zod-openapi";
  * A third family joins them with CONTRACT-047, and it widens what the channel
  * carries, so it is stated rather than smuggled in:
  *
- * - **The carried half.** Effects the act had on documents the request **never
- *   named**. Nothing went wrong; the act was correct and so were the effects.
+ * - **The carried half.** Effects the act had on documents **it was not asked to
+ *   act on**. Nothing went wrong; the act was correct and so were the effects.
  *   But §4's reporting rule — the report and the commit are one story — is
  *   argued from the inverse case (never record an effect the user was told did
  *   not happen), and an effect the user was told *nothing* about fails it for
@@ -72,10 +72,10 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     "body, so its thread is detached (SPEC.md §6). " +
     "`unresolved_ref`: a `[[ref]]` in the body names no document. " +
     "`carried_skill`: this act moved a skill folder, and the move **enabled or disabled a skill " +
-    "document the request never named** — SPEC.md §7 makes a skill's location its enablement, so " +
-    "a nested `SKILL.md` carried along by the folder changes state without being asked. One " +
-    "warning per carried document, naming its id, its path after the move, and which way its " +
-    "enablement went. " +
+    "document the act did not itself archive or unarchive** — SPEC.md §7 makes a skill's " +
+    "location its enablement, so a nested `SKILL.md` carried along by the folder changes state " +
+    "without being asked. One warning per carried document, naming its id, its path after the " +
+    "move, and which way its enablement went. " +
     "`carried_reconciliation`: a carried document's **own frontmatter was rewritten** to agree " +
     "with where it now sits — a stale `status: archived`, left by a previous independent archive " +
     "of that nested skill, corrected to `open` because the folder move landed it back under the " +
@@ -85,8 +85,13 @@ export const WarningCodeSchema = z.enum(WARNING_CODES).openapi({
     "the key exactly as its author wrote it. " +
     "Both are silent when there is nothing to say — an act that carried no other skill document " +
     "emits neither, and a carried document whose frontmatter needed no correction emits " +
-    "`carried_skill` alone. Neither ever describes the document the caller named: that document " +
-    "is the response's own subject, or a `changed` entry in a bulk result.",
+    "`carried_skill` alone. Neither ever describes a document whose **own archive or unarchive " +
+    "landed in this act**: that document is the response's own subject on the single-document " +
+    "routes, or a `changed` entry carrying that verb in a bulk result, and the move is exactly " +
+    "what it asked for. **Being named is not enough** — a staged row that was refused, that was " +
+    "already in the state it asked for, or that carried some other verb (a `tag` on the skill an " +
+    "`archive` in the same Save disabled) is still described here, because nothing in the answer " +
+    "it did get says the act moved its folder.",
 });
 
 export const WarningSchema = z
@@ -112,11 +117,11 @@ export const warningsField = z
   .array(WarningSchema)
   .describe(
     "Non-fatal problems noticed while performing this mutation (SPEC.md §14), **and effects it " +
-      "had on documents the request never named** (§7's skill folder move; CONTRACT-047). The " +
+      "had on documents it was not asked to act on** (§7's skill folder move; CONTRACT-047). The " +
       "mutation succeeded regardless — files are the source of truth and the server never rolls " +
       "a write back because a commit or a check failed, and a carried effect is not a failure at " +
-      "all but a consequence the caller is owed. Empty when nothing went wrong and nothing " +
-      "outside the request was touched.",
+      "all but a consequence the caller is owed. Empty when nothing went wrong and the act " +
+      "touched nothing beyond what it was asked to do.",
   );
 
 export type WarningCode = z.infer<typeof WarningCodeSchema>;

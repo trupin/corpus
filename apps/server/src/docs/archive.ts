@@ -318,28 +318,41 @@ const underEnabledRoot = (path: string): boolean => path.startsWith(`${SKILLS_RO
  * be ignored. `emits nothing for the id stamp` in `archive.test.ts` pins that,
  * so restoring the symmetry fails a test rather than a reader.
  *
- * `named` is the set of ids **the request itself named**, which is never
- * reported: the contract's own words are that neither code "ever describes the
- * document the caller named — that document is the response's own subject, or a
- * `changed` entry in a bulk result". For a single-document route that is one id;
- * for the bulk act it is the whole staged set, which is why the plan carries
- * facts and this function turns them into prose.
+ * `explained` is the set of ids whose **own** archive or unarchive landed in
+ * this act — the only documents left out, and deliberately not "the ids the
+ * request named" (PR #41). Being named is not being told: a staged row that was
+ * refused, that was already in the state it asked for, or that carried a
+ * different verb entirely — a `tag` on the skill an archive in the same Save
+ * disabled — is answered for in the result, but nothing in that answer says the
+ * act moved its folder. Only a document whose own archive or unarchive landed is
+ * genuinely the subject of its own entry, and warning about that one would be
+ * the noise CONTRACT-047 warned against. For a single-document route the set is
+ * the one id the route acted on; for the bulk act it is the archive and
+ * unarchive rows that reached `changed`, which is why the plan carries facts and
+ * this function turns them into prose.
+ *
+ * The verb is asked about, not its direction: a Save that unarchives an outer
+ * skill and archives the nested one it thereby carried leaves the nested one
+ * exactly where its own row asked for, so the carry is a moment inside the act
+ * rather than an effect that outlives it — and a warning saying "is now enabled"
+ * would be false by the time the response is written.
  *
  * The path quoted is the one **after** the move, because that is where a reader
  * will find the document and, under §7, what its state now is.
  */
 export function carriedWarnings(
   carried: readonly CarriedDocument[],
-  named: ReadonlySet<string>,
+  explained: ReadonlySet<string>,
 ): Warning[] {
   const warnings: Warning[] = [];
   for (const document of carried) {
-    if (named.has(document.id)) continue;
+    if (explained.has(document.id)) continue;
     warnings.push({
       code: "carried_skill",
       detail:
         `${document.id} (${document.path}) was carried by this skill folder move and is now ` +
-        `${document.enabled ? "enabled" : "disabled"}; the request never named it (SPEC.md §7)`,
+        `${document.enabled ? "enabled" : "disabled"}; this act did not ` +
+        `${document.enabled ? "unarchive" : "archive"} it in its own right (SPEC.md §7)`,
     });
     if (!document.reconciled) continue;
     warnings.push({
@@ -596,6 +609,9 @@ export async function setArchived(
     // under the folder changed state and not one of them was asked about.
     const warnings = [
       ...(plan.text === null ? [] : validateBeforeWrite(workspace, plan.path, plan.text)),
+      // The one id left out is this route's own subject: its archive or
+      // unarchive is what moved the folder, and it is reported as the response's
+      // own document. Everything else the move touched is reported.
       ...carriedWarnings(plan.carried, new Set([id])),
     ];
 

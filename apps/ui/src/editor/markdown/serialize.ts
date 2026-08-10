@@ -977,6 +977,26 @@ const BARE_PIPE = /(\\*)\|/g;
  * all: `<kbd>\|</kbd>` in a cell is already correct, and blindly doubling the
  * backslash would turn it into a literal backslash followed by a delimiter —
  * the very bug, introduced by its own fix.
+ *
+ * **What the conditional does not cover, on the record** (PR #41, MINOR 3). The
+ * escape is applied to the construct's whole text, and a raw inline is opaque:
+ * for a `|` inside an HTML *tag* rather than beside one —
+ * `<span title="a|b">` moved into a cell — the output is
+ * `<span title="a\|b">`, micromark keeps the backslash inside the tag, and the
+ * rendered `title` attribute permanently gains a character the author never
+ * typed. An HTML comment behaves the same way. It converges after one step, so
+ * it is a single silent rewrite rather than a runaway, and it is unreachable
+ * from a file: *parsing* a cell can never produce such a node, because GFM
+ * splits the row on the bare pipe before any inline parsing — it needs the
+ * editor to move raw HTML carrying a pipe into a cell.
+ *
+ * The trade-off is still this way round. Not escaping is strictly worse: the
+ * row splits, the table gains a column, and every row after it shifts — on
+ * every save, for a construct whose ordinary spelling (`[[id|alias]]`) contains
+ * a pipe. A per-construct escape that knew where a tag's text ends would be a
+ * second HTML parser living in the serializer, which is the proof obligation
+ * this module keeps declining. What is not acceptable is claiming the case is
+ * handled, which is what this docstring used to do.
  */
 function safeInCell(value: string, state: PrintState): string {
   if (!state.stack.includes("tableCell")) return value;

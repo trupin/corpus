@@ -281,6 +281,21 @@ describe("nodes", () => {
       expect(parseMarkdown(printed)).toEqual(source);
     });
 
+    /**
+     * The one pipe test that deliberately does **not** assert
+     * `parseMarkdown(printed)` equals its source, where the reference case
+     * above does (PR #41, MINOR 3).
+     *
+     * The escape lands *inside* the construct, and a raw inline is opaque to
+     * the parser: `<kbd>\|</kbd>` reads back as three nodes — `<kbd>`, the text
+     * `|`, `</kbd>` — which is exactly what a file containing that cell parses
+     * to, so nothing is lost and the output is a fixed point, but the tree is
+     * not the hand-built one. The assertion is therefore about the row and the
+     * bytes, which is what a file can actually say. Where the escaped pipe sits
+     * inside a *tag* rather than between two, the backslash is kept by
+     * micromark and becomes part of the attribute — see `safeInCell`, which now
+     * records that case instead of claiming to cover it.
+     */
     it("escapes a pipe carried by a raw inline", () => {
       const source = table(
         [{ type: NODE.rawInline, attrs: { text: "<kbd>|</kbd>" } }],
@@ -291,6 +306,17 @@ describe("nodes", () => {
 
       expect(printed).toContain("<kbd>\\|</kbd>");
       expect(rowWidths(printed)).toEqual([[2, 2]]);
+      expect(canonicalizeMarkdown(printed)).toBe(printed);
+      expect(parseMarkdown(printed).content?.[0]?.content?.[1]?.content?.[0]?.content?.[0]).toEqual(
+        {
+          type: NODE.paragraph,
+          content: [
+            { type: NODE.rawInline, attrs: { text: "<kbd>" } },
+            { type: NODE.text, text: "|" },
+            { type: NODE.rawInline, attrs: { text: "</kbd>" } },
+          ],
+        },
+      );
     });
 
     /**
@@ -423,21 +449,32 @@ describe("nodes", () => {
    *
    * GFM defines a task list item as one whose first block is a paragraph
    * beginning with `[ ]` **followed by whitespace and then content**
-   * (GFM §5.3, "Task list items"). An item with nothing after the marker fails
-   * that test in every spelling, so `- [ ]` alone is a bullet item holding the
-   * literal text `[ ]` — which is why the printer writes a bare `-`: there is
-   * no markdown that says "an empty task item" for it to write.
+   * (GFM §5.3, "Task list items"). Nothing after the marker fails that test, so
+   * `- [ ]` alone is a bullet item holding the literal text `[ ]`.
    *
-   * The consequence is bounded and it is the *only* consequence: nothing but
-   * the list's own type is lost, no text moves, the output is a fixed point,
+   * **What UI-104 originally recorded — "there is no spelling of an empty task
+   * item that survives a round trip" — is false against this repo's own
+   * parser**, and PR #41's review is right to call it (MINOR 4).
+   * `- [ ] <!-- -->` round-trips byte for byte, reads back as
+   * `taskList(taskItem(paragraph(rawInline)))` and renders as an empty task
+   * item; so does `- [ ] <span></span>`. The content GFM demands can be an HTML
+   * comment, which renders as nothing at all.
+   *
+   * So the bare `-` is not the only honest output — it is a **choice not to
+   * write something into the user's file that the user did not write**. §5
+   * makes the file the source of truth and §1 makes it theirs; an editor that
+   * silently plants `<!-- -->` in a document because its own model needs a
+   * marker to survive is exactly the class of act this issue exists to stop,
+   * and the comment would then be permanent, visible in every diff, and
+   * impossible to remove through the editor that added it. Losing the list's
+   * type is the smaller intrusion: no text moves, the output is a fixed point,
    * and the moment any item in the list has content the whole list is a task
-   * list again, empty items included. The alternative would be emitting a
-   * spelling that no GFM reader — GitHub's, `MarkdownView`'s, or this module's
-   * own parser — reads as a task list, which trades a type nobody can see for a
-   * file that lies.
+   * list again, empty items included.
    *
-   * Asserted rather than described because the acceptance rests on the claim
-   * that no spelling survives: if one ever does, this test is what fails.
+   * The residual cost, recorded rather than hidden: `- [ ] &#32;` — a task item
+   * whose only content is a space — loses **both** its task-ness *and* that
+   * space, because trailing whitespace is dropped before the item is written.
+   * Pinned below.
    */
   describe("a task list with nothing in it", () => {
     const emptyTaskList = (checked: boolean): PmNode =>
@@ -447,11 +484,36 @@ describe("nodes", () => {
       });
 
     it.each(["- [ ]\n", "- [ ] \n", "- [x]\n", "- [ ]\n- [x]\n"])(
-      "has no surviving spelling: %j reads back as a bullet list",
+      "%j is a bullet list before anything is printed",
       (markdown) => {
         expect(parseMarkdown(markdown).content?.[0]?.type).toBe(NODE.bulletList);
       },
     );
+
+    /**
+     * The counterexample the acceptance argument has to answer, rather than the
+     * claim it used to rest on. If this ever stops round-tripping, the reason
+     * the printer writes a bare `-` changes from "we decline to add a comment"
+     * back to "nothing survives", and the docstring above is wrong.
+     */
+    it("survives as an HTML comment, which is why the bare marker is a choice", () => {
+      const source = "- [ ] <!-- -->\n";
+      const parsed = parseMarkdown(source);
+
+      expect(parsed.content?.[0]?.type).toBe(NODE.taskList);
+      expect(parsed.content?.[0]?.content?.[0]?.content?.[0]?.content?.[0]?.type).toBe(
+        NODE.rawInline,
+      );
+      expect(serializeDoc(parsed)).toBe(source);
+    });
+
+    it("loses the space as well, when the space is all there was", () => {
+      const printed = serializeDoc(parseMarkdown("- [ ] &#32;\n"));
+
+      expect(printed).toBe("-\n");
+      expect(parseMarkdown(printed).content?.[0]?.type).toBe(NODE.bulletList);
+      expect(canonicalizeMarkdown(printed)).toBe(printed);
+    });
 
     it.each([true, false])("prints as a bare marker when checked is %s", (checked) => {
       expect(serializeDoc(emptyTaskList(checked))).toBe("-\n");

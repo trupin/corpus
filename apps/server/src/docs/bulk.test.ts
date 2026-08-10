@@ -524,10 +524,10 @@ describe("the eight acts", () => {
   });
 
   // CONTRACT-047 / SERVER-088: the same planners, so the same report. What the
-  // bulk act adds is the exclusion — a carried document that the staged set
-  // *also* named is answered for as a `changed` entry, never as a warning about
-  // a document "the request never named".
-  it("names a carried skill in warnings, and drops the name once the set claims it", async () => {
+  // bulk act adds is the exclusion — a carried document whose **own** archive or
+  // unarchive landed in the same act is answered for by that `changed` entry,
+  // and the entry says the folder moved.
+  it("names a carried skill in warnings, and drops the name once its own row moves it", async () => {
     const { outer, nested } = seedSkills();
 
     const archived = await bulk(staged([outer], { action: "archive" }));
@@ -535,7 +535,8 @@ describe("the eight acts", () => {
     expect(archived.result.warnings.map((warning) => warning.code)).toEqual(["carried_skill"]);
     expect(archived.result.warnings[0]?.detail).toBe(
       `${nested} (.claude/skills-archived/demo/nested/SKILL.md) was carried by this skill ` +
-        `folder move and is now disabled; the request never named it (SPEC.md §7)`,
+        `folder move and is now disabled; this act did not archive it in its own right ` +
+        `(SPEC.md §7)`,
     );
     // Still not a fourth part of the result (PR #37): the three parts partition
     // the requested ids, and the warning is a report *about* the act.
@@ -544,11 +545,104 @@ describe("the eight acts", () => {
     ws.advance(60_000);
     const restored = await bulk(staged([outer, nested], { action: "unarchive" }));
 
-    // The move carried it exactly as before — and the caller named it, so it is
-    // answered for in `changed` instead of being described as unnamed.
+    // The move carried it exactly as before — and its own `unarchive` landed, so
+    // `changed` already says it is enabled and there is nothing left to warn
+    // about.
     expect(restored.result.warnings).toEqual([]);
-    expect(idsOf(restored.result.changed)).toEqual([outer, nested]);
+    expect(pairsOf(restored.result.changed)).toEqual([
+      [outer, "unarchive"],
+      [nested, "unarchive"],
+    ]);
     expect(pathOf(nested)).toBe(".claude/skills/demo/nested/SKILL.md");
+  });
+
+  /**
+   * PR #41. **Being named is not being told.** The exclusion is not "the ids the
+   * request named" — that premise only holds for a row that lands in `changed`
+   * carrying the very verb that moved the folder. Each row below is answered
+   * for in the result, and not one of those answers says the act disabled the
+   * skill; the previous rule made all three silent.
+   *
+   * Driven through the real route, so the fix has to be in the act rather than
+   * in whatever a unit call to `carriedWarnings` is handed.
+   */
+  describe("a named row that does not explain the move is still owed the warning", () => {
+    const carriedDetail = (nested: string): string =>
+      `${nested} (.claude/skills-archived/demo/nested/SKILL.md) was carried by this skill ` +
+      `folder move and is now disabled; this act did not archive it in its own right ` +
+      `(SPEC.md §7)`;
+
+    it("warns about a carried skill whose own row was refused", async () => {
+      const { outer, nested } = seedSkills();
+
+      const { result } = await bulk({
+        entries: [
+          { id: outer, action: { action: "archive" } },
+          { id: nested, action: { action: "resolve" } },
+        ],
+      });
+
+      expect(pairsOf(result.changed)).toEqual([[outer, "archive"]]);
+      expect(result.refused.map((entry) => [entry.id, entry.reason])).toEqual([
+        [nested, "not-applicable"],
+      ]);
+      // The commit moved its file, so §7 disabled it — while the only thing the
+      // result says about it is that `resolve` does not apply to a skill.
+      expect(filesIn(result.commit ?? "")).toContain(
+        ".claude/skills-archived/demo/nested/SKILL.md",
+      );
+      expect(pathOf(nested)).toBe(".claude/skills-archived/demo/nested/SKILL.md");
+      expect(result.warnings.map((warning) => warning.code)).toEqual(["carried_skill"]);
+      expect(result.warnings[0]?.detail).toBe(carriedDetail(nested));
+    });
+
+    it("warns about a carried skill whose own row was already in the state it asked for", async () => {
+      const { outer, nested } = seedSkills();
+      // One unarchive of the already-enabled nested skill writes `status: open`
+      // and its id into the file — which is what makes the identical row below a
+      // genuine no-op rather than a write.
+      expect(idsOf((await bulk(staged([nested], { action: "unarchive" }))).result.changed)).toEqual(
+        [nested],
+      );
+      ws.advance(60_000);
+
+      const { result } = await bulk({
+        entries: [
+          { id: nested, action: { action: "unarchive" } },
+          { id: outer, action: { action: "archive" } },
+        ],
+      });
+
+      // The response says, in as many words, that the nested skill is already
+      // enabled — and the act it is reporting turned it off.
+      expect(result.alreadyInState).toEqual([{ id: nested, action: "unarchive" }]);
+      expect(pairsOf(result.changed)).toEqual([[outer, "archive"]]);
+      expect(pathOf(nested)).toBe(".claude/skills-archived/demo/nested/SKILL.md");
+      expect(result.warnings.map((warning) => warning.code)).toEqual(["carried_skill"]);
+      expect(result.warnings[0]?.detail).toBe(carriedDetail(nested));
+    });
+
+    it("warns about a carried skill answered for under a different verb", async () => {
+      const { outer, nested } = seedSkills();
+
+      const { result } = await bulk({
+        entries: [
+          { id: outer, action: { action: "archive" } },
+          { id: nested, action: { action: "tag", add: ["reference"] } },
+        ],
+      });
+
+      // A `changed` entry, and the letter of the old rule was satisfied by it —
+      // but `tag` is not what moved the folder, so nothing here explains the
+      // document being disabled.
+      expect(pairsOf(result.changed)).toEqual([
+        [outer, "archive"],
+        [nested, "tag"],
+      ]);
+      expect(pathOf(nested)).toBe(".claude/skills-archived/demo/nested/SKILL.md");
+      expect(result.warnings.map((warning) => warning.code)).toEqual(["carried_skill"]);
+      expect(result.warnings[0]?.detail).toBe(carriedDetail(nested));
+    });
   });
 
   it("reports the reconciliation an unarchive performed on a carried skill", async () => {

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CHARACTER_REFERENCE } from "./escape.js";
 import { parseMarkdown } from "./parse.js";
-import { NODE, type PmNode } from "./schema.js";
+import { MARK, NODE, type PmMark, type PmNode } from "./schema.js";
 import { serializeDoc } from "./serialize.js";
 
 /**
@@ -32,17 +32,27 @@ import { serializeDoc } from "./serialize.js";
  *
  * A pinned list of changed files would be wrong twice over: it goes stale on
  * every documentation edit, and it says nothing about *what* changed. So the
- * assertion is a **projection** — {@link project} reduces a document to
- * everything no normalisation may touch — and the invariant is that the
- * projection survives the round trip for every document. Anything a
- * normalisation is allowed to change is outside the projection by construction;
- * anything else fails, naming the file.
+ * assertion is an **explanation**: {@link explain} walks the two parses in
+ * lockstep and every difference it meets must be one of the named, written-down
+ * normalisations in {@link CATEGORIES}. A difference none of them describes is
+ * reported by file name, with the two spellings that differ.
  *
- * That is also the growth guard. A new *defect* fails the projection. A new
- * *accepted* normalisation fails {@link CATEGORIES}, because every document
- * whose parse changes must classify into a named category and the set of names
- * is pinned. A category nobody classified is how this gets closed with a file
- * still moving.
+ * That is the growth guard, and the reason it is character-exact. **PR #41's
+ * review found the earlier classifier absolving documents by what they
+ * *contained* rather than by what *changed*** — 235 documents held a multi-line
+ * code span, so 235 documents were pre-absolved of anything a future printer
+ * might do to them, and 52 of the 68 documents that actually change were
+ * classified by that predicate alone. The negative control is in this issue's
+ * log: replacing the fold's `|` with a space — silently deleting a character
+ * from twelve of the user's files — passed all eight of the assertions this
+ * file used to make. It fails here now, by name.
+ *
+ * {@link project} survives as the *readable* form of the same guarantee: a
+ * failure of "keeps every word, and the marks over it" says which word moved,
+ * where {@link explain} says which two characters disagree. It is redundant by
+ * construction — anything it catches is an unexplained difference — and it is
+ * kept because the first question a human asks about a serializer regression is
+ * whether it changed the text.
  *
  * ## Cost
  *
@@ -105,19 +115,23 @@ function markdownFiles(directory: string, out: string[] = []): string[] {
 /* ── The projection ─────────────────────────────────────────────────── */
 
 /**
- * Characters the projection ignores, and why each one is out.
+ * Characters the *projection* ignores, and why each one is out.
  *
  * **Whitespace**, because moving it is what several of the accepted
  * normalisations *are*: a space at the inside edge of an emphasis marker is
- * hoisted out of it (`** **` closes nothing), a space at a line edge is dropped
- * because markdown drops it, and a line break inside a code span becomes the
- * space CommonMark says a code span renders it as. None of them changes a word.
+ * hoisted out of it (`** **` closes nothing) and a line break inside a code
+ * span becomes the space CommonMark says a code span renders it as. None of
+ * them changes a word.
  *
  * **The pipe**, because whether one is content or a delimiter is exactly the
- * question this issue settles: a row the file wrote wider than its header has
- * its surplus folded back behind the `|` it came from, which turns that
- * character from structure into a cell's text. Outside a table a pipe is
- * ordinary text and nothing here touches it.
+ * question UI-104 settles: a row the file wrote wider than its header has its
+ * surplus folded back behind the `|` it came from, which turns that character
+ * from structure into a cell's text.
+ *
+ * These are blind spots, and they are the projection's alone. {@link explain}
+ * compares whitespace and pipes character for character like everything else —
+ * it models the fold rather than ignoring it, and it has no whitespace
+ * allowance at all. Nothing this list skips is unguarded.
  */
 const IGNORED_CHARACTERS = /[\s|]/;
 
@@ -137,7 +151,7 @@ function projectText(node: PmNode): string {
   const marks = markKey(node);
   let out = "";
   for (const character of node.text ?? "") {
-    if (!IGNORED_CHARACTERS.test(character)) out += `${character}${marks};`;
+    if (!IGNORED_CHARACTERS.test(character)) out += `${character}${marks};`;
   }
   return out;
 }
@@ -202,17 +216,18 @@ function project(node: PmNode): string {
   return `<${node.type} ${attributeKey(node)}>${children.map(project).join("")}</${node.type}>`;
 }
 
-/* ── Classification ─────────────────────────────────────────────────── */
+/* ── The named normalisations ───────────────────────────────────────── */
 
 /**
- * Every way a repository document is allowed to change on its first save, each
- * with the reason it is a normalisation rather than a rewrite.
+ * Every way a document is allowed to differ from its own round trip, each with
+ * the reason it is a normalisation rather than a rewrite.
  *
- * Measured over the 596 documents present when this was written: 554 change
- * byte-for-byte on the first save, 67 of them structurally. The counts below
+ * Measured over the 598 documents present when this was written: 556 change
+ * byte-for-byte on the first save, 68 of them structurally. The counts below
  * are recorded for the reader and deliberately not asserted — they move
  * whenever a document is edited, and they overlap, because a document may hit
- * more than one. What must not move is the *set of names*.
+ * more than one. What must not move is the *set of names*: a difference none of
+ * them describes fails {@link explain}, by file name.
  *
  * Two further normalisations are invisible here and belong in the same list:
  * **a loose list is tightened**, and **an item's blocks are separated by a
@@ -223,16 +238,24 @@ function project(node: PmNode): string {
  */
 const CATEGORIES = {
   /**
-   * 58 documents. `` `corpus init\n--port 8791` `` → `` `corpus init --port 8791` ``.
+   * 54 documents. `` `49419de [SHARED-003] Ledger PR\n#14 review findings` ``
+   * → the break becomes a space.
    *
-   * CommonMark §6.1 makes a code span's line endings spaces, so this is already
-   * what every reader shows: `MarkdownView`'s inline `code` inherits
-   * `white-space: normal`, and the rendered page is character-for-character the
-   * same before and after. Preserving the break would mean hand-rolling
-   * `inlineCode`, which then owns backtick-fence widening, space padding, GFM's
-   * table-cell escaping *and* a proof, for every line following a break, that
-   * it cannot be read as a block — a `- `, `> `, `# `, `---` or blank line
-   * there ends the paragraph and destroys the span. That is the proof
+   * It is **not** every line break in a code span, which is what UI-104 first
+   * recorded: 235 documents hold one and 54 change. `mdast-util-to-markdown`'s
+   * `inlineCode` handler walks the printer's `atBreak` unsafe patterns and
+   * replaces the line ending only where the next line would otherwise be read
+   * as a block — a `#`, `-`, `>`, `---` or a blank line there ends the
+   * paragraph and destroys the span. A break followed by an ordinary word is
+   * left exactly where the author put it.
+   *
+   * Accepted because CommonMark §6.1 makes a code span's line endings spaces,
+   * so this is already what every reader shows: `MarkdownView`'s inline `code`
+   * inherits `white-space: normal`, and the rendered page is
+   * character-for-character the same before and after. Preserving the break
+   * would mean hand-rolling `inlineCode`, which then owns backtick-fence
+   * widening, space padding, GFM's table-cell escaping *and* the very
+   * block-interruption proof the printer is discharging here. That is the proof
    * obligation UI-103 was, taken on for no rendered difference.
    */
   inlineCodeLineBreak: "a line break inside a code span becomes the space it renders as",
@@ -243,10 +266,16 @@ const CATEGORIES = {
    * The surplus is folded back into the last column behind an escaped pipe.
    * This is the *fix*, not the defect: before it, the printer laid the table
    * out as a matrix as wide as its widest row, so the header gained a column
-   * the author never wrote and every row in the table shifted. The residual
-   * cost is that the padding around the fold is gone — GFM trims a cell's
-   * edges, so no writer working from the parsed document can know whether the
-   * author wrote `a | b` or `a|b`.
+   * the author never wrote and every row in the table shifted.
+   *
+   * Two residual costs, both on the record. The padding around the fold is
+   * gone — GFM trims a cell's edges, so no writer working from the parsed
+   * document can know whether the author wrote `a | b` or `a|b`. And the fold
+   * is *visible*: `| 1 | 2 | 3 |` under a two-column header renders in GFM as
+   * `1 | 2`, because the surplus is ignored, and after the first save it
+   * renders as `1 | 2|3`. Text the reader could not see becomes text it can.
+   * That is the point — the alternative is deleting it — but it is a rendered
+   * change and not only a byte one.
    */
   tableSurplusFolded: "a row wider than its header is folded back into the last column",
   /**
@@ -258,68 +287,338 @@ const CATEGORIES = {
    */
   markNestingOrder: "marks are re-nested into the canonical order",
   /**
-   * 15 documents. `**Stale **and** unread**` → `**Stale and unread**`, plus any
-   * run an edit split across two nodes.
+   * 2 documents. Two adjacent text nodes carrying the same marks come back as
+   * one — `**Stale **and** unread**` parses as three nodes under one nested
+   * strong and prints as `**Stale and unread**`.
+   *
+   * Detected as what it is: a text-node boundary that fell *between two
+   * characters carrying identical marks*, present before and gone after.
+   * Markdown cannot spell such a boundary, so nothing in the file changed;
+   * ProseMirror splits a run wherever an edit landed and re-merges on the way
+   * out.
    *
    * The issue that raised this suspected the healing of malformed emphasis of
    * **extending the bold run**. It does not, and that is the finding rather
-   * than an assumption: over the whole corpus and over the hand-built spellings
-   * in `serialize.test.ts`, the characters carrying each mark are identical
-   * before and after — which is what the projection asserts. Redundant markers
-   * are dropped and adjacent runs merge into one node; no word changes weight.
+   * than an assumption: the characters carrying each mark are compared one at a
+   * time, and a boundary that merges a run of *different* marks is not this
+   * category — it is an unexplained difference.
    */
   inlineRunsMerged: "adjacent text carrying the same marks becomes one run",
+  /**
+   * 1 document. `**DEFERRED → CONTRACT-005** — CLEARED` written as
+   * `**DEFERRED → CONTRACT-005**` + `** — CLEARED**`: the space at the inside
+   * edge of the second run is hoisted out of the emphasis.
+   *
+   * A markdown emphasis marker cannot flank whitespace — `** **` opens nothing
+   * and closes nothing — so an emphasised space is not a document a file can
+   * spell. The printer moves the space outside the markers, which is the only
+   * output that reads back as the same emphasis. The character stays, in the
+   * same place, in the same order; it loses a mark that no reader was rendering
+   * (there is nothing to embolden in a space).
+   *
+   * Narrow on purpose: it applies to a **whitespace** character, it may only
+   * *lose* emphasis (`bold`, `italic`, `strike`), and every other mark on it —
+   * `code`, `link` — must be untouched. A space that gains emphasis, or a
+   * non-space that loses it, is not this.
+   */
+  emphasisEdgeSpace: "a space at the inside edge of an emphasis marker is hoisted out of it",
 } as const;
 
 type Category = keyof typeof CATEGORIES;
 
-function collect(node: PmNode, into: PmNode[] = []): PmNode[] {
-  into.push(node);
-  for (const child of node.content ?? []) collect(child, into);
-  return into;
+/* ── Explaining a difference ────────────────────────────────────────── */
+
+/** What one document's round trip changed, and anything it could not account for. */
+interface Explanation {
+  readonly categories: readonly Category[];
+  /** One line per difference no category describes; empty is the passing state. */
+  readonly unexplained: readonly string[];
+}
+
+interface Ledger {
+  readonly categories: Set<Category>;
+  readonly unexplained: string[];
+}
+
+function cellInline(cell: PmNode): PmNode[] {
+  const out: PmNode[] = [];
+  for (const child of cell.content ?? []) {
+    if (child.type === NODE.paragraph) out.push(...(child.content ?? []));
+    else out.push(child);
+  }
+  return out;
 }
 
 /**
- * Every significant character's marks **in the order the tree nests them**.
+ * One row, with anything past the last column folded into it — the serializer's
+ * `foldSurplusCells`, re-stated over the parsed document.
  *
- * Per character rather than per node so that it says nothing about where the
- * runs were split — merging two nodes leaves each character's mark list exactly
- * as it was, and only a re-nesting changes one.
+ * Modelled rather than ignored. The fold is the one accepted normalisation that
+ * *moves characters*, so the comparison below can only be character-exact if it
+ * knows where they went: the surplus cells' content lands at the end of the
+ * last column with a literal `|` in front of each, which is what the file will
+ * say once the printer has escaped it. A fold that lost the pipe, or dropped a
+ * cell, or joined them in the wrong order then fails as an ordinary content
+ * difference — which is exactly what PR #41's negative control does.
  */
-function markOrderPerCharacter(nodes: readonly PmNode[]): string {
-  let out = "";
+function foldRow(row: PmNode, columns: number, ledger: Ledger): PmNode {
+  const cells = row.content ?? [];
+  if (columns <= 0 || cells.length <= columns) return row;
+  const last = cells[columns - 1];
+  if (last === undefined) return row;
+  ledger.categories.add("tableSurplusFolded");
+  const inline = [...cellInline(last)];
+  for (const surplus of cells.slice(columns)) {
+    inline.push({ type: NODE.text, text: "|" }, ...cellInline(surplus));
+  }
+  const kept = [
+    ...cells.slice(0, columns - 1),
+    { ...last, content: [{ type: NODE.paragraph, content: mergeAdjacentText(inline) }] },
+  ];
+  return { ...row, content: kept };
+}
+
+/**
+ * Text nodes the fold made adjacent, joined where their marks agree.
+ *
+ * The fold writes one cell, and a cell is one run of markdown: two nodes
+ * carrying the same marks are two nodes only until the printer emits them, and
+ * they come back as one. Leaving them split would make every folded document
+ * also report {@link CATEGORIES.inlineRunsMerged}, which would be this test
+ * describing its own bookkeeping rather than the printer's behaviour.
+ */
+function mergeAdjacentText(nodes: readonly PmNode[]): PmNode[] {
+  const out: PmNode[] = [];
   for (const node of nodes) {
-    if (node.type !== NODE.text) continue;
-    const order = (node.marks ?? []).map((mark) => mark.type).join("+");
+    const previous = out[out.length - 1];
+    if (
+      previous !== undefined &&
+      previous.type === NODE.text &&
+      node.type === NODE.text &&
+      sameOrder(markNames(previous.marks), markNames(node.marks))
+    ) {
+      out[out.length - 1] = { ...previous, text: `${previous.text ?? ""}${node.text ?? ""}` };
+      continue;
+    }
+    out.push(node);
+  }
+  return out;
+}
+
+function foldSurplus(node: PmNode, ledger: Ledger): PmNode {
+  const children = node.content;
+  if (children === undefined) return node;
+  if (node.type === NODE.table) {
+    const columns = children[0]?.content?.length ?? 0;
+    return { ...node, content: children.map((row) => foldRow(row, columns, ledger)) };
+  }
+  return { ...node, content: children.map((child) => foldSurplus(child, ledger)) };
+}
+
+/**
+ * One position in a block's inline content: a character with the marks over it,
+ * or a leaf node that has no characters of its own.
+ *
+ * Per character rather than per node because a text node's *boundaries* are not
+ * something markdown can spell — see {@link CATEGORIES.inlineRunsMerged} — and
+ * because the comparison has to line the two documents up position by position
+ * to say which two characters disagree.
+ */
+interface Position {
+  readonly character: string | undefined;
+  /** A leaf's identity — its type and attributes — for the nodes that carry no text. */
+  readonly leaf: string | undefined;
+  /** Mark types **in the order the tree nests them**; order is a category of its own. */
+  readonly marks: readonly string[];
+  /** This position begins a text node whose predecessor carried identical marks. */
+  readonly redundantBoundary: boolean;
+}
+
+const INLINE_LEAVES: ReadonlySet<string> = new Set([
+  NODE.text,
+  NODE.docRef,
+  NODE.rawInline,
+  NODE.image,
+  NODE.hardBreak,
+]);
+
+function markNames(marks: readonly PmMark[] | undefined): string[] {
+  return (marks ?? []).map((mark) => `${mark.type}${JSON.stringify(mark.attrs ?? {})}`);
+}
+
+function positions(nodes: readonly PmNode[]): Position[] {
+  const out: Position[] = [];
+  for (const node of nodes) {
+    const marks = markNames(node.marks);
+    if (node.type !== NODE.text) {
+      out.push({
+        character: undefined,
+        leaf: `${node.type} ${JSON.stringify(node.attrs ?? {})}`,
+        marks,
+        redundantBoundary: false,
+      });
+      continue;
+    }
+    let first = true;
     for (const character of node.text ?? "") {
-      if (!IGNORED_CHARACTERS.test(character)) out += `${order};`;
+      const previous = out[out.length - 1];
+      out.push({
+        character,
+        leaf: undefined,
+        marks,
+        redundantBoundary:
+          first && previous?.character !== undefined && sameOrder(previous.marks, marks),
+      });
+      first = false;
     }
   }
   return out;
 }
 
-function textNodeCount(nodes: readonly PmNode[]): number {
-  return nodes.filter((node) => node.type === NODE.text).length;
+const EMPHASIS: ReadonlySet<string> = new Set(["bold", "italic", "strike"]);
+
+function isEmphasis(mark: string): boolean {
+  return EMPHASIS.has(mark.replace(/\{.*$/, ""));
 }
 
-/** Why one document's parse changed, read off the features of the two trees. */
-function classify(before: readonly PmNode[], after: readonly PmNode[]): Category[] {
-  const found: Category[] = [];
-  const codeRuns = before.filter(
-    (node) => node.type === NODE.text && (node.marks ?? []).some((mark) => mark.type === "code"),
-  );
-  if (codeRuns.some((node) => /\r?\n/.test(node.text ?? ""))) found.push("inlineCodeLineBreak");
-  const ragged = before
-    .filter((node) => node.type === NODE.table)
-    .some((table) => {
-      const columns = table.content?.[0]?.content?.length ?? 0;
-      return (table.content ?? []).some((row) => (row.content ?? []).length > columns);
-    });
-  if (ragged) found.push("tableSurplusFolded");
-  if (markOrderPerCharacter(before) !== markOrderPerCharacter(after))
-    found.push("markNestingOrder");
-  if (textNodeCount(before) !== textNodeCount(after)) found.push("inlineRunsMerged");
-  return found;
+function sameOrder(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((mark, index) => mark === right[index]);
+}
+
+function sameSet(left: readonly string[], right: readonly string[]): boolean {
+  return sameOrder([...left].sort(), [...right].sort());
+}
+
+/** A few positions either side, so a failure reads as text rather than as an index. */
+function excerpt(stream: readonly Position[], at: number): string {
+  return stream
+    .slice(Math.max(0, at - 30), at + 30)
+    .map((position) => position.character ?? `<${position.leaf ?? ""}>`)
+    .join("");
+}
+
+/**
+ * Two blocks' inline content, position by position.
+ *
+ * Every transition below consumes one position from each side, so the two
+ * streams stay index-aligned and a difference in *length* is itself a
+ * difference in content. There is deliberately no whitespace allowance: over
+ * the whole corpus nothing is inserted or deleted, so a printer that started
+ * dropping a space would be a new normalisation somebody has to name.
+ */
+function compareInline(
+  before: readonly Position[],
+  after: readonly Position[],
+  path: string,
+  ledger: Ledger,
+): void {
+  const shared = Math.min(before.length, after.length);
+  for (let at = 0; at < shared; at += 1) {
+    const left = before[at];
+    const right = after[at];
+    if (left === undefined || right === undefined) continue;
+    if (left.redundantBoundary && !right.redundantBoundary)
+      ledger.categories.add("inlineRunsMerged");
+    if (left.character !== undefined && left.character === right.character) {
+      if (sameOrder(left.marks, right.marks)) continue;
+      if (sameSet(left.marks, right.marks)) {
+        ledger.categories.add("markNestingOrder");
+        continue;
+      }
+      const lost = left.marks.filter((mark) => !right.marks.includes(mark));
+      if (
+        /\s/.test(left.character) &&
+        lost.every(isEmphasis) &&
+        sameSet(
+          left.marks.filter((mark) => !isEmphasis(mark)),
+          right.marks.filter((mark) => !isEmphasis(mark)),
+        ) &&
+        right.marks.every((mark) => left.marks.includes(mark))
+      ) {
+        ledger.categories.add("emphasisEdgeSpace");
+        continue;
+      }
+      ledger.unexplained.push(
+        `${path}: ${JSON.stringify(left.character)} carried ${left.marks.join("+") || "no marks"} and now carries ${right.marks.join("+") || "no marks"}`,
+      );
+      return;
+    }
+    if (
+      left.character !== undefined &&
+      /\r?\n/.test(left.character) &&
+      right.character === " " &&
+      sameOrder(left.marks, right.marks) &&
+      left.marks.some((mark) => mark.startsWith(MARK.code))
+    ) {
+      ledger.categories.add("inlineCodeLineBreak");
+      continue;
+    }
+    if (left.leaf !== undefined && left.leaf === right.leaf) {
+      if (sameSet(left.marks, right.marks)) {
+        if (!sameOrder(left.marks, right.marks)) ledger.categories.add("markNestingOrder");
+        continue;
+      }
+    }
+    ledger.unexplained.push(`${path}: "…${excerpt(before, at)}…" became "…${excerpt(after, at)}…"`);
+    return;
+  }
+  if (before.length !== after.length) {
+    ledger.unexplained.push(
+      `${path}: "…${excerpt(before, shared)}" became "…${excerpt(after, shared)}"`,
+    );
+  }
+}
+
+function isInline(children: readonly PmNode[]): boolean {
+  return children.some((child) => INLINE_LEAVES.has(child.type));
+}
+
+function compareNode(before: PmNode, after: PmNode, path: string, ledger: Ledger): void {
+  if (ledger.unexplained.length > 0) return;
+  if (before.type !== after.type) {
+    ledger.unexplained.push(`${path}: a ${before.type} became a ${after.type}`);
+    return;
+  }
+  const at = `${path}/${before.type}`;
+  if (JSON.stringify(before.attrs ?? {}) !== JSON.stringify(after.attrs ?? {})) {
+    ledger.unexplained.push(
+      `${at}: attributes ${JSON.stringify(before.attrs)} became ${JSON.stringify(after.attrs)}`,
+    );
+    return;
+  }
+  const left = before.content ?? [];
+  const right = after.content ?? [];
+  if (isInline(left) || isInline(right)) {
+    compareInline(positions(left), positions(right), at, ledger);
+    return;
+  }
+  if (left.length !== right.length) {
+    ledger.unexplained.push(
+      `${at}: [${left.map((child) => child.type).join(", ")}] became [${right.map((child) => child.type).join(", ")}]`,
+    );
+    return;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const x = left[index];
+    const y = right[index];
+    if (x !== undefined && y !== undefined) compareNode(x, y, `${at}[${index}]`, ledger);
+  }
+}
+
+/**
+ * Why one document's parse changed — read off the difference between the two
+ * trees, never off the features of either one.
+ *
+ * The distinction is the whole point (PR #41, MAJOR 1). "This document contains
+ * a multi-line code span" absolves it of everything a future printer might do
+ * to it; "this document's fourth paragraph now says a space where it said a
+ * line break, inside a code span" absolves exactly that. The first is what this
+ * file used to do, and 235 of ~597 documents were pre-absolved by it.
+ */
+function explain(before: PmNode, after: PmNode): Explanation {
+  const ledger: Ledger = { categories: new Set(), unexplained: [] };
+  compareNode(foldSurplus(before, ledger), after, "", ledger);
+  return { categories: [...ledger.categories].sort(), unexplained: ledger.unexplained };
 }
 
 /* ── The sweep ──────────────────────────────────────────────────────── */
@@ -328,18 +627,52 @@ interface Result {
   readonly name: string;
   readonly settles: boolean;
   readonly projectionHeld: boolean;
-  readonly columnCountHeld: boolean;
+  readonly rowWidths: string | null;
   readonly newEntity: boolean;
   readonly changed: boolean;
-  readonly categories: readonly Category[];
+  readonly explanation: Explanation;
 }
 
-/** Every table's column count, in document order — its header row's width. */
-function columnCounts(nodes: readonly PmNode[]): string {
-  return nodes
-    .filter((node) => node.type === NODE.table)
-    .map((table) => (table.content?.[0]?.content ?? []).length)
-    .join(",");
+/**
+ * Whether every table kept its shape, and how it did not.
+ *
+ * The header's width is the headline case — a table that gains a column is a
+ * table the author did not write — but reading only the header was PR #41's
+ * MINOR 1: **a body row splitting is invisible to it**, and a body row
+ * splitting is the exact defect UI-104 exists to fix. So every row is compared
+ * against its own width, with one asymmetry: a row may *lose* cells, because
+ * that is the fold putting a ragged row back inside its header, and it may
+ * never gain one, because nothing in the round trip is allowed to split a row.
+ */
+function rowWidths(before: PmNode, after: PmNode): string | null {
+  const tablesBefore = collect(before).filter((node) => node.type === NODE.table);
+  const tablesAfter = collect(after).filter((node) => node.type === NODE.table);
+  if (tablesBefore.length !== tablesAfter.length)
+    return `${tablesBefore.length} tables became ${tablesAfter.length}`;
+  for (const [index, table] of tablesBefore.entries()) {
+    const other = tablesAfter[index];
+    if (other === undefined) continue;
+    const rows = table.content ?? [];
+    const otherRows = other.content ?? [];
+    if (rows.length !== otherRows.length)
+      return `table ${index}: ${rows.length} rows became ${otherRows.length}`;
+    const header = rows[0]?.content?.length ?? 0;
+    const otherHeader = otherRows[0]?.content?.length ?? 0;
+    if (header !== otherHeader) return `table ${index}: ${header} columns became ${otherHeader}`;
+    for (const [row, cells] of rows.entries()) {
+      const width = cells.content?.length ?? 0;
+      const otherWidth = otherRows[row]?.content?.length ?? 0;
+      if (otherWidth > width)
+        return `table ${index} row ${row}: ${width} cells became ${otherWidth}`;
+    }
+  }
+  return null;
+}
+
+function collect(node: PmNode, into: PmNode[] = []): PmNode[] {
+  into.push(node);
+  for (const child of node.content ?? []) collect(child, into);
+  return into;
 }
 
 /** The same pattern as {@link CHARACTER_REFERENCE}, counting rather than testing. */
@@ -348,6 +681,8 @@ const EVERY_CHARACTER_REFERENCE = new RegExp(CHARACTER_REFERENCE.source, "gi");
 function entityCount(text: string): number {
   return text.match(EVERY_CHARACTER_REFERENCE)?.length ?? 0;
 }
+
+const NOTHING_CHANGED: Explanation = { categories: [], unexplained: [] };
 
 function sweep(): Result[] {
   const root = repositoryRoot();
@@ -359,18 +694,19 @@ function sweep(): Result[] {
     const before = parseMarkdown(source);
     const once = serializeDoc(before);
     const after = parseMarkdown(once);
-    const beforeNodes = collect(before);
-    const afterNodes = collect(after);
+    const changed = JSON.stringify(before) !== JSON.stringify(after);
     return {
       name: relative(root, path),
       settles: serializeDoc(after) === once,
       projectionHeld: project(before) === project(after),
-      columnCountHeld: columnCounts(beforeNodes) === columnCounts(afterNodes),
+      rowWidths: rowWidths(before, after),
       // Only an entity the source did not already have: several documents are
       // *about* character references and quote them verbatim.
       newEntity: entityCount(once) > entityCount(source),
-      changed: JSON.stringify(before) !== JSON.stringify(after),
-      categories: classify(beforeNodes, afterNodes),
+      changed,
+      // Only where something moved: the walk is per character, and 68 documents
+      // of ~600 are worth walking.
+      explanation: changed ? explain(before, after) : NOTHING_CHANGED,
     };
   });
 }
@@ -400,8 +736,12 @@ describe("the repository's own documents", () => {
    * a header that does not exist. Fourteen documents were being rewritten that
    * way, from one unescaped pipe apiece.
    */
-  it("never changes a table's column count", () => {
-    expect(failures((result) => !result.columnCountHeld)).toEqual([]);
+  it("never splits a row or changes a table's column count", () => {
+    expect(
+      RESULTS.filter((result) => result.rowWidths !== null).map(
+        (result) => `${result.name}: ${result.rowWidths ?? ""}`,
+      ),
+    ).toEqual([]);
   });
 
   it("keeps every word, and the marks over it", () => {
@@ -415,26 +755,161 @@ describe("the repository's own documents", () => {
   });
 
   /**
-   * The rule this issue exists to enforce: **a category nobody classified is
-   * how it gets closed while a file still moves.** Every document whose parse
-   * changes must be explained by a named entry in {@link CATEGORIES}, and one
-   * that changes for a reason none of them covers fails here, by name.
+   * The rule this issue exists to enforce: **a change nobody wrote down is how
+   * it gets closed while a file still moves.** Every difference between a
+   * document and its round trip must be one of the named normalisations, and
+   * one that is not fails here — by file name, and with the two spellings.
    */
-  it("classifies every document whose parse changes", () => {
-    expect(failures((result) => result.changed && result.categories.length === 0)).toEqual([]);
-  });
-
-  it("uses no category that is not written down", () => {
-    const seen = new Set(RESULTS.flatMap((result) => result.categories));
-    expect([...seen].sort()).toEqual(Object.keys(CATEGORIES).sort());
+  it("explains every difference between a document and its round trip", () => {
+    expect(
+      RESULTS.flatMap((result) =>
+        result.explanation.unexplained.map((line) => `${result.name} ${line}`),
+      ),
+    ).toEqual([]);
   });
 
   it("leaves most documents structurally untouched", () => {
     // A blunt bound rather than a pinned count, which would go stale on every
-    // documentation edit: the accepted normalisations reached 67 of 596
+    // documentation edit: the accepted normalisations reached 68 of 596
     // documents when this was written, and a change that suddenly touched a
     // third of the corpus would be a rewrite whatever it classified as.
     const changed = RESULTS.filter((result) => result.changed).length;
     expect(changed / RESULTS.length).toBeLessThan(0.2);
+  });
+});
+
+/* ── The guard's own tests ──────────────────────────────────────────── */
+
+/**
+ * The classifier, tested like anything else.
+ *
+ * A guard whose only exercise is the corpus is a guard nobody has seen fail,
+ * and PR #41's finding was precisely that: six assertions, all green, over a
+ * classifier that could not distinguish a document containing a pipe from a
+ * document whose pipe had been deleted. So each named category has a case that
+ * **provokes it through the real printer** — which is also what makes the set
+ * of names honest in the direction the corpus cannot check: a category the
+ * serializer stopped needing fails here rather than quietly describing nothing.
+ * And each blind spot the earlier version had has a case that must *not* be
+ * explained.
+ */
+describe("the guard itself", () => {
+  function roundTrip(source: string): Explanation {
+    const before = parseMarkdown(source);
+    return explain(before, parseMarkdown(serializeDoc(before)));
+  }
+
+  const cases: Readonly<Record<Category, string>> = {
+    // A break in front of a `#`, which the printer will not write at a line
+    // start whether or not this one would have been read as a heading.
+    inlineCodeLineBreak: "a `one\n#two` three\n",
+    tableSurplusFolded: "| a | b |\n| - | - |\n| x | y | z |\n",
+    markNestingOrder: "**[link](https://e.test/)**\n",
+    inlineRunsMerged: "**Stale **and** unread**\n",
+    // `strike` nests outside `bold`, so the two runs cannot share one `**`, and
+    // the space that starts the second one cannot sit inside a marker.
+    emphasisEdgeSpace: "**~~one~~ two**\n",
+  };
+
+  for (const [category, source] of Object.entries(cases)) {
+    it(`names the ${category} normalisation`, () => {
+      const explanation = roundTrip(source);
+      expect(explanation.unexplained).toEqual([]);
+      expect(explanation.categories).toContain(category);
+    });
+  }
+
+  /**
+   * The staleness half of the guard, and the one direction it can fail in.
+   *
+   * Its predecessor — "uses no category that is not written down", over the
+   * corpus — could not fail as its name claimed (PR #41, MINOR 2): `Category`
+   * is `keyof typeof CATEGORIES`, so the subset relation held by construction
+   * and only the reverse was ever in question. Over the *corpus* that reverse
+   * is worse than useless: `emphasisEdgeSpace` fires on one document, so the
+   * assertion would go red the day somebody edits it.
+   *
+   * Driven from the printer instead, the reverse is exactly the check worth
+   * making: **every name written down is still something this serializer
+   * does.** A category the printer stopped needing — because the behaviour was
+   * fixed, or moved, or narrowed — fails here, where the fix is to delete the
+   * entry rather than to leave a paragraph in {@link CATEGORIES} describing
+   * nothing. What can *not* fail here, and is not claimed to, is a category
+   * nobody wrote down: {@link explain} can only add the five literals, and the
+   * document-level guard against a *sixth* kind of change is
+   * `unexplained`, which names the file.
+   */
+  it("still needs every category that is written down", () => {
+    const named = new Set(Object.values(cases).flatMap((source) => roundTrip(source).categories));
+    expect([...named].sort()).toEqual(Object.keys(CATEGORIES).sort());
+  });
+
+  /* The blind spots, as documents the classifier must refuse to explain. */
+
+  const cell = (text: string): PmNode => ({
+    type: NODE.tableCell,
+    attrs: { colspan: 1, rowspan: 1, colwidth: null },
+    content: [{ type: NODE.paragraph, content: [{ type: NODE.text, text }] }],
+  });
+
+  const row = (...cells: readonly PmNode[]): PmNode => ({ type: NODE.tableRow, content: cells });
+
+  const tableOf = (...rows: readonly PmNode[]): PmNode => ({
+    type: NODE.doc,
+    content: [{ type: NODE.table, attrs: { align: [null, null] }, content: rows }],
+  });
+
+  /**
+   * The negative control from PR #41's review, as a unit test: the fold joining
+   * the surplus with a space instead of the `|` it came from silently deletes a
+   * character from the user's file, and every assertion in the earlier version
+   * of this file passed while it did.
+   */
+  it("refuses a fold that loses the pipe it folded on", () => {
+    const before = tableOf(row(cell("a"), cell("b")), row(cell("x"), cell("y"), cell("z")));
+    const lost = tableOf(row(cell("a"), cell("b")), row(cell("x"), cell("y z")));
+
+    expect(explain(before, lost).unexplained).not.toEqual([]);
+    expect(
+      explain(before, tableOf(row(cell("a"), cell("b")), row(cell("x"), cell("y|z")))),
+    ).toEqual({ categories: ["tableSurplusFolded"], unexplained: [] });
+  });
+
+  it("refuses a row that gained a cell, whatever the header did", () => {
+    const before = tableOf(row(cell("a"), cell("b")), row(cell("x"), cell("y|z")));
+    const split = tableOf(row(cell("a"), cell("b")), row(cell("x"), cell("y"), cell("z")));
+
+    expect(explain(before, split).unexplained).not.toEqual([]);
+    expect(rowWidths(before, split)).toBe("table 0 row 1: 2 cells became 3");
+    expect(rowWidths(before, before)).toBeNull();
+  });
+
+  it("refuses a word that changed weight", () => {
+    const text = (value: string, marks?: readonly PmMark[]): PmNode => ({
+      type: NODE.text,
+      text: value,
+      ...(marks === undefined ? {} : { marks }),
+    });
+    const paragraph = (...content: readonly PmNode[]): PmNode => ({
+      type: NODE.doc,
+      content: [{ type: NODE.paragraph, content }],
+    });
+
+    expect(
+      explain(paragraph(text("one "), text("two", [{ type: "bold" }])), paragraph(text("one two")))
+        .unexplained,
+    ).not.toEqual([]);
+  });
+
+  /**
+   * Whitespace is the projection's blind spot and must not be the classifier's:
+   * a trailing space dropped from a cell is a byte the file no longer has, and
+   * nothing in {@link CATEGORIES} says a printer may drop one.
+   */
+  it("refuses whitespace that went missing", () => {
+    const before = tableOf(row(cell("a"), cell("b")), row(cell("x "), cell("y")));
+    const trimmed = tableOf(row(cell("a"), cell("b")), row(cell("x"), cell("y")));
+
+    expect(explain(before, trimmed).unexplained).not.toEqual([]);
   });
 });

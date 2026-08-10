@@ -82,7 +82,8 @@ describe("the warnings carrier", () => {
         code: "carried_skill" as const,
         detail:
           "doc_skill9f2a1c (.claude/skills/demo/helper/SKILL.md) was carried by this skill " +
-          "folder move and is now enabled; the request never named it (SPEC.md §7)",
+          "folder move and is now enabled; this act did not unarchive it in its own right " +
+          "(SPEC.md §7)",
       },
       {
         code: "carried_reconciliation" as const,

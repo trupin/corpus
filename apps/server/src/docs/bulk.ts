@@ -659,8 +659,12 @@ async function runBulk(
   const unproject: string[] = [];
   const keys: QueryKey[] = [];
   const warnings: Warning[] = [];
-  // The ids the caller named — what a carried warning is never about.
-  const requested = new Set(rows.map((row) => row.id));
+  // Every document this act's folder moves carried, as the plans that moved them
+  // saw them. Accumulated here and turned into warnings **after the loop**,
+  // because whether a carried document is owed one is a question about the whole
+  // act: the row that explains its move may be a later row than the one that
+  // carried it (`carriedWarnings`, and `explainedByOwnRow` below).
+  const carriedByAct: CarriedDocument[] = [];
   // Where this act has already moved a document's file, old path to new. §7's
   // skill folder move relocates every `SKILL.md` under it, including ones the
   // act names later — and the projection does not move until `finishMutation`,
@@ -753,14 +757,7 @@ async function runBulk(
     // — nothing of it reached the commit, so the folder never moved and no
     // skill's enablement changed. Reporting it there would be §4's rule run
     // backwards, telling the caller about an effect `git log` never records.
-    //
-    // `requested`, not `held`: the excluded set is the ids the **caller named**,
-    // and `held` also contains the lanes this act took *because* of the carry,
-    // which would suppress exactly the warnings this exists to emit. A staged
-    // set naming both an outer skill and the nested one it carries reports the
-    // nested one as a `changed` entry, which is where the contract says a
-    // requested document is answered for.
-    warnings.push(...carriedWarnings(plan.carried ?? [], requested));
+    carriedByAct.push(...(plan.carried ?? []));
     if (TREE_MOVING_ACTIONS.has(action.action)) mayChangeTree = true;
     recordRelocations(relocated, plan.operations);
     stage.push(...plan.stage);
@@ -770,6 +767,29 @@ async function runBulk(
     orphanedThreadIds.push(...(plan.orphanedThreadIds ?? []));
     if (plan.deletedThreadId !== undefined) deletedThreadIds.push(plan.deletedThreadId);
   }
+
+  // **A carried document is excluded only when its own archive or unarchive
+  // landed** — not when the request merely named it (PR #41). The three parts
+  // answer for a named id, but only a landed `archive`/`unarchive` row answers
+  // for a *folder move*: a row that was refused, that was already in the state it
+  // asked for, or that carried some other verb is told nothing about having been
+  // disabled by the act, which is exactly the silence CONTRACT-047 exists to
+  // close. Neither the staged ids nor `held` can spell that — and `held` is worse
+  // than merely wrong, since it also holds the lanes this act took *because* of
+  // the carry, which would suppress every warning this emits.
+  //
+  // Asked of `changed` after the loop rather than of `row` inside it, because a
+  // document can be carried by an earlier row and answer for itself in a later
+  // one: naming the outer skill first and the nested one second is the ordinary
+  // way to archive both (`archives an outer skill and the nested one it carries,
+  // in either order`), and the answer must not depend on which order they arrived
+  // in.
+  const explainedByOwnRow = new Set(
+    changed
+      .filter((outcome) => outcome.action === "archive" || outcome.action === "unarchive")
+      .map((outcome) => outcome.id),
+  );
+  warnings.push(...carriedWarnings(carriedByAct, explainedByOwnRow));
 
   // **A thread this act deleted is not a surviving orphan.** `planDelete` answers
   // "what threads hang from this document" from the projection, and the
