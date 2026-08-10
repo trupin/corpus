@@ -6,7 +6,7 @@ ui
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -118,19 +118,19 @@ or losing task-ness on an empty-only list is accepted on the record.
 
 ## Acceptance Criteria
 
-- [ ] The `|` case is fixed: a table cell containing a literal `|` round-trips
+- [x] The `|` case is fixed: a table cell containing a literal `|` round-trips
       with the same number of columns. This one is not a judgment call
-- [ ] Every remaining category is **classified on the record** as either
+- [x] Every remaining category is **classified on the record** as either
       intended normalisation or a defect, with the reason. A category nobody
       classified is how this issue gets closed while a file still moves
       (the blank-line-in-a-list-item category is classified above; the rest are
       still open)
-- [ ] The emphasis-healing case is decided explicitly: healing is fine, changing
+- [x] The emphasis-healing case is decided explicitly: healing is fine, changing
       the bold run is a different act
-- [ ] The sweep is a **test**, not a one-off script — round-tripping the repo's
+- [x] The sweep is a **test**, not a one-off script — round-tripping the repo's
       own documents and asserting the count of structurally-changed files does
       not grow. UI-103 ran it by hand; that is why 72 was never noticed
-- [ ] Reproduce each fixed case before fixing, per the SDLC's rule for bugs
+- [x] Reproduce each fixed case before fixing, per the SDLC's rule for bugs
 
 ## Technical Design
 
@@ -153,15 +153,248 @@ pinned, commented list for the accepted ones.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model run on:** Opus 5 (1M context).
+
+### The classification, measured — every category, with its verdict
+
+Swept over the 596 `.md` files this branch tracks (the corpus has moved since
+UI-103 measured 610/618). **554 change byte-for-byte on the first save; 67 change
+structurally.** Categories overlap — a document may hit more than one.
+
+| # | category | documents | verdict |
+| - | -------- | --------: | ------- |
+| 1 | a bare `\|` in a cell splits the row and the table gains a column | 12 + every aliased `[[ref]]` in a cell | **DEFECT — fixed** |
+| 2 | a line break inside a code span becomes a space | 58 | **intended normalisation — accepted** |
+| 3 | marks re-nested into the canonical order | 2 | **intended normalisation — accepted** |
+| 4 | adjacent same-mark runs merged; redundant emphasis markers dropped | 15 | **intended normalisation — accepted; and the issue's premise is wrong** |
+| 5 | a loose list is tightened | invisible to a parse comparison | **intended normalisation — accepted** |
+| 6 | a blank line between an item's blocks makes its list loose | 98 adjacencies | **intended normalisation — decided in UI-103, not reopened** |
+| 7 | an empty-only task list loses its task-ness | 0 in the corpus | **accepted — GFM has no spelling that survives** |
+| — | unclassified | **0** | — |
+
+**1 — the table pipe. Defect, and worse than reported.** Two distinct mechanisms,
+reproduced separately before either was touched.
+
+- *The writer emits a bare pipe.* `refSource` spells a reference with an alias as
+  `[[id|alias]]`, and the printer writes the four constructs this module invented
+  (`corpusRef`, `corpusRawInline`, `corpusRawBlock`, `corpusAutolink`) **verbatim**
+  — `remark-stringify` escapes `|` inside a cell for everything it knows about,
+  and `mdast-util-gfm-table` patches even `inlineCode`, but neither can do it for
+  a construct it has never heard of. So a *correctly written* file was destroyed
+  on the first save. It was not even a fixed point: the split row then widened the
+  table on the save after that.
+- *The printer widens a ragged table.* Where the **file** already wrote a row
+  wider than its header — one bare `|` inside `` `jq '.events|length'` ``,
+  `string | null`, `2 failed | 8 passed` — `markdown-table` lays every row into a
+  matrix as wide as the *widest* row, so the header gained a column, the delimiter
+  row gained a `---`, and every row in the table shifted.
+
+  GFM's own answer is to *ignore* the surplus, which deletes the user's text, so
+  the fix is neither the printer's nor GFM's: the surplus is **folded back into
+  the last column** behind the `|` it came from, which the printer then escapes.
+  Column count preserved, every character kept, idempotent from there. Residual
+  cost, on the record: the padding around the fold is gone, because GFM trims a
+  cell's edges before any writer sees it — `SHOPPING | 2` comes back
+  `SHOPPING\|2`. That is strictly better than the whole table gaining a column,
+  and it is the only information the reader has already thrown away.
+
+  Width is read off the **header row**, not `attrs.align`: a column added through
+  the editor's table commands extends every row, while `align` is parse-time data
+  those commands do not maintain, and reading it would fold the new column away.
+
+**2 — a line break in a code span. Accepted.** CommonMark §6.1 makes a code
+span's line endings spaces, and that is already what every reader shows —
+`.doc-body`'s inline `code` inherits `white-space: normal`, so the rendered page
+is character-for-character identical before and after. Preserving the break means
+hand-rolling `inlineCode`, which then owns backtick-fence widening, space padding,
+GFM's table-cell escaping **and** a proof, for every line following a break, that
+it cannot be read as a block: a `- `, `> `, `# `, `---` or a blank line there ends
+the paragraph and destroys the span. That is exactly the proof obligation UI-103
+was, taken on for no rendered difference. **Acknowledged asymmetry:** unlike list
+looseness, ProseMirror *does* hold this — which is why it is recorded as a
+decision rather than a non-event.
+
+**3 — mark order. Accepted.** `**[link](u)**` → `[**link**](u)`. ProseMirror holds
+marks as a set per text node, so nesting order is not information the document
+carries; `MARK_ORDER` picks one and the same characters are bold either way.
+
+**4 — emphasis healing. Accepted, and the issue's premise is wrong.** The issue
+says the healing of `**a **b** c**` "extends the bold run", and that is a content
+change. **It does not.** Measured, not assumed: over all 596 documents and over
+seven hand-built malformed spellings (`**a **b** c**`, `*a *b* c*`, `**a *b** c*`,
+`*a **b* c**`, `~~a ~~b~~ c~~`, …), the characters carrying each mark are
+identical before and after. `**Stale **and** unread**` already parses as *nested*
+strong over the whole phrase; the healing drops the redundant inner markers and
+merges three nodes into one. No word changes weight. This is now the corpus test's
+central assertion (`keeps every word, and the marks over it`), so a printer that
+ever did extend a run fails by name.
+
+**6 — the blank line in a list item.** Classified in this issue's own brief and in
+UI-103's log; not reopened, and the alternative it names (make the printer emit
+loose items consistently) is deliberately declined for the same reason UI-103
+gave: looseness is not information ProseMirror holds, so this is spelling, and
+narrowing the join rule is a proof obligation per exception.
+
+**7 — the empty-only task list. Accepted, because no spelling survives.** GFM
+§5.3 defines a task item as one whose first block is a paragraph beginning with
+`[ ]` **followed by whitespace and then content**. Verified against the real
+parser: `- [ ]`, `- [ ] `, `- [x]` and `- [ ]\n- [x]` **all** read back as a
+`bulletList`. So there is no markdown that says "an empty task item", and the
+printer's bare `-` is not a shortcut — it is the only honest output. The loss is
+bounded to the list's own type: no text moves, the output is a fixed point, and
+the moment any item in the list has content the whole list is a task list again,
+empty items included (`serializeDoc` → `"-\n- [x] Bee two.\n"`, reads back as
+`taskList`). Pinned in `serialize.test.ts` → "a task list with nothing in it",
+including the no-surviving-spelling claim the acceptance rests on.
+
+### Pre-fix reproduction — the real app, on disk, in git
+
+Real workspace, real server, real Chromium. `corpus init /tmp/ui104ws --port
+8794`, `corpus server start`, the HEAD UI built by `npm run build -w apps/ui` and
+served by that server. Nothing bound 8765 (the user's live server, pid 1715),
+5173 (an ssh tunnel) or 5273 at any point; 5473 was used for Playwright.
+
+The document, created through the CLI so the server owned every byte
+(`corpus doc create --type note --title "Eval report before the fix" --file …`),
+at commit `doc create: Eval report before the fix (doc_7apbuq6r) by user`:
+
+```markdown
+The eval table, as an agent wrote it:
+
+| Test | Result | Notes |
+| ---- | ------ | ----- |
+| 94   | PASS   | 3 pending, 200 | 0 skipped |
+| 95   | PASS   | see [[doc_wybdqllv\|the earlier draft]] |
+```
+
+Row 94 is what an agent writes and GFM reads as ragged. Row 95 is **correctly
+written** — the alias's pipe is escaped exactly as it must be.
+
+**Before a single character was typed, the editor already showed the damage**: the
+`[[…]]` row rendered as two cells, `see [[doc_wybdqllv` and `the earlier draft]]`
+— because `DocEditor` parses `editorBody(body)`, so the document it holds is
+already the round trip's output.
+
+The edit: select the closing paragraph, type over it. Nothing near the table. The
+file the server wrote:
+
+```markdown
+| Test | Result | Notes                 |                     |   |
+| ---- | ------ | --------------------- | ------------------- | - |
+| 94   | PASS   | 3 pending, 200        | 0 skipped           |   |
+| 95   | PASS   | see \[\[doc\_wybdqllv | the earlier draft]] |   |
+```
+
+Three columns became **five**, and the reference was **destroyed** — split across
+two cells with its brackets and underscore permanently escaped. That is not a
+formatting diff: a link is gone from the corpus, irreversibly, and the file
+records it as the user's own edit
+(`e5c706d doc edit: Eval report before the fix (doc_7apbuq6r) by user`).
+
+### Post-fix — the same document, the same edit
+
+Fix applied, `npm run build -w apps/ui`, server restarted, a fresh document
+`doc_jthisbfn` created from the same file. Same edit:
+
+```markdown
+| Test | Result | Notes                                   |
+| ---- | ------ | --------------------------------------- |
+| 94   | PASS   | 3 pending, 200\|0 skipped               |
+| 95   | PASS   | see [[doc_wybdqllv\|the earlier draft]] |
+```
+
+Three columns. The reference row is a **context line in the git diff** — byte
+identical — and the editor renders it as the resolved title, `see the earlier
+draft`, so it is a reference again and not text. The only changes in the diff are
+the paragraph the user typed, the padding on row 94, and `updated`.
+
+**Second session.** Reloaded (so the editor now reads back its own output) and
+edited again: `git diff 7b97b64..286c67f` shows the paragraph and `updated`, and
+nothing else. No page errors in any of the three runs. Workspace and server torn
+down; 8794 free.
+
+### The sweep, as a test
+
+`apps/ui/src/editor/markdown/corpus.test.ts` — new, and the acceptance criterion
+that matters most. It walks every `.md` in the repository (~600, 10 MB), parses
+and prints each twice, and asserts:
+
+- **settles on the first printing** — `print(parse(print(x))) === print(x)`;
+- **never changes a table's column count** — the fixed category, pinned at zero;
+- **keeps every word, and the marks over it** — a *projection* of the document
+  down to block structure, attributes, and every significant character paired
+  with its sorted mark set. Anything a normalisation may change is outside it by
+  construction; anything else fails, naming the file;
+- **writes no character reference a document did not already carry** (seven
+  documents quote entities verbatim, which is why the existing corpus-wide rule
+  had to be stated as a delta);
+- **classifies every document whose parse changes**, and **uses no category that
+  is not written down** — the rule from this issue's brief, mechanised. A new
+  defect fails the projection; a new *accepted* normalisation fails the pinned
+  category set, so nobody can close this with a file still moving for a reason
+  nobody wrote down.
+
+Deliberately **not** a pinned list of file names or a pinned count: both go stale
+on every documentation edit and say nothing about *what* changed. Cost is ~60–80 s
+— by some distance the slowest file in the suite, stated in its docstring, and
+absorbed by vitest's parallelism (the whole `apps/ui` + `packages/kit` run is 85 s
+with it in).
+
+### Fixture coverage the corpus did not have
+
+Per the issue's warning that UI-103 shipped because the fixtures had zero coverage
+of the failing shape: `fixtures/tables.md` gains a table whose cells carry a pipe
+in **each construct that can hold one** — plain text, a code span, a raw inline,
+and a reference with an alias — so all four are now in the byte-for-byte corpus.
+
+### Negative control — both fixes removed
+
+Both fixes disabled in place and every layer re-run:
+
+- `serialize.test.ts` — 4 of the 6 new pipe tests fail (the ref alias, the raw
+  inline, and both folds). The code-span and autolink cases still pass, correctly:
+  those are the printer's own escaping and were never broken;
+- `roundtrip.test.ts` — the new `tables.md` fixture fails **both** byte-for-byte
+  *and* idempotence, which is the evidence that the ref-in-a-cell case was a
+  fixed-point failure and not merely a byte change;
+- `corpus.test.ts` — "never changes a table's column count" fails with 12 files,
+  "keeps every word, and the marks over it" with 13, "settles on the first
+  printing" with the new fixture;
+- `table-pipes.spec.ts` — both specs fail, on the row width.
+
+Fix restored; everything green again.
+
+### Tests
+
+- `apps/ui/src` + `packages/kit/src` — **3,722 pass, 193 files, 0 fail** (85 s).
+  New: `corpus.test.ts` (8), a `pipe inside a table cell` describe and a
+  `row with more cells than its header` describe in `serialize.test.ts`, a
+  `task list with nothing in it` describe, and the extended `tables.md` fixture.
+- Playwright — `apps/ui/e2e/table-pipes.spec.ts`, new: the ragged row and the
+  aliased reference through a real editor with real autosave, asserted against the
+  bytes on the wire, plus a second save. Run with the serializer-adjacent specs
+  (`table-pipes`, `list-blocks`, `editor`, `fences`, `anchors`, `anchor-layer`,
+  `render-fixes`, `clipboard`): **68 passed**. `stubCorpus.ts` untouched (UI-102 is
+  in it).
+- `npm run build`, `tsc --noEmit` (apps/ui, packages/kit), `eslint`, `prettier`
+  — all clean.
+
+### Not done, and why
+
+**The 58 code-span line breaks still rewrite 58 files.** That is the accepted
+category and it is the largest one; if it is ever judged unacceptable, the work is
+a hand-rolled `inlineCode` handler installed *after* `remarkGfm` (extensions are
+configured in array order, so a `handlers` entry alone loses to
+`inlineCodeWithTable`), carrying the block-interruption proof described above.
+Filing that is a decision for the orchestrator, not a defect left open here.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

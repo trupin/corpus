@@ -324,23 +324,72 @@ function breaksAsTokens(nodes: MdNode[]): MdNode[] {
   return nodes;
 }
 
+/**
+ * A cell's inline content. A cell is phrasing in markdown but `block+` in
+ * ProseMirror; flatten its paragraphs rather than emitting a table GFM cannot
+ * express.
+ */
+function cellChildren(cell: PmNode): MdNode[] {
+  return breaksAsTokens(
+    (cell.content ?? []).flatMap((block) => inlineChildren(block.content ?? [])),
+  );
+}
+
+/**
+ * A row's cells, none of them beyond the table's last column (UI-104).
+ *
+ * A GFM table has exactly as many columns as its delimiter row, and a row is
+ * allowed to carry more cells than that — the surplus is the reader's problem,
+ * and CommonMark's GFM extension says it is ignored. Ours keeps it, because
+ * dropping it would delete the user's text; the ProseMirror table therefore has
+ * rows wider than its header whenever a document contains a bare `|` inside a
+ * cell (`` `jq '.events|length'` ``, `string | null`, `2 failed | 8 passed` —
+ * twelve documents in this repo when this was measured, fourteen when UI-104
+ * was filed against a slightly older corpus).
+ *
+ * The printer's answer to such a table is `markdown-table`, which lays every
+ * row into a matrix as wide as the **widest** row: the header gains a column,
+ * the delimiter row gains a `---`, and every row in the table shifts. A table
+ * the author wrote with three columns comes back with four, on the first save,
+ * because of one pipe on one line.
+ *
+ * So the surplus is folded back into the last column instead, separated by the
+ * literal `|` it came from — which the printer then escapes as `\|`, the only
+ * spelling that makes a pipe content rather than a delimiter. The table keeps
+ * its column count, every character survives, and the next read gets the cell
+ * the author meant. It is idempotent from there: an escaped pipe never splits a
+ * row again.
+ *
+ * The width is the **first row's**, not `attrs.align`'s: a column added through
+ * the editor's table commands extends every row including the header, while
+ * `align` is parse-time data that those commands do not maintain. Reading the
+ * width off `align` would fold a newly added column away.
+ */
+function foldSurplusCells(cells: readonly PmNode[], columns: number): MdNode[][] {
+  const mapped = cells.map(cellChildren);
+  if (columns <= 0 || mapped.length <= columns) return mapped;
+  const kept = mapped.slice(0, columns);
+  const last = kept[columns - 1];
+  if (last === undefined) return mapped;
+  for (const surplus of mapped.slice(columns)) last.push({ type: "text", value: "|" }, ...surplus);
+  return kept;
+}
+
 function tableMdast(node: PmNode): MdNode {
   const rawAlign = attr(node, "align");
   const align = Array.isArray(rawAlign)
     ? rawAlign.map((entry) => (typeof entry === "string" ? entry : null))
     : null;
+  const rows = node.content ?? [];
+  const columns = rows[0]?.content?.length ?? 0;
   return {
     type: "table",
     align,
-    children: (node.content ?? []).map((row) => ({
+    children: rows.map((row) => ({
       type: "tableRow",
-      children: (row.content ?? []).map((cell) => ({
+      children: foldSurplusCells(row.content ?? [], columns).map((children) => ({
         type: "tableCell",
-        // A cell is phrasing in markdown but `block+` in ProseMirror; flatten
-        // its paragraphs rather than emitting a table GFM cannot express.
-        children: breaksAsTokens(
-          (cell.content ?? []).flatMap((block) => inlineChildren(block.content ?? [])),
-        ),
+        children,
       })),
     })),
   };
@@ -907,8 +956,37 @@ function printJoin(): PrintJoin[] {
   return [separateListItemBlocks];
 }
 
-function verbatim(node: MdNode): string {
-  return emit(node, node.value ?? "");
+/** A `|` not already escaped — an odd run of backslashes in front of it is one. */
+const BARE_PIPE = /(\\*)\|/g;
+
+/**
+ * A construct's own text, made safe to sit in a table cell (UI-104).
+ *
+ * The printer escapes `|` for everything it knows about — `state.safe` carries
+ * `{character: "|", inConstruct: "tableCell"}`, and `mdast-util-gfm-table`
+ * patches even `inlineCode`, which is a leaf it would otherwise write out
+ * whole. It cannot do the same for a construct it has never heard of, and this
+ * module has four: a `[[ref|alias]]`, a raw inline, a raw block and a bare
+ * autolink. All of them print **verbatim**, so an alias — which is the ordinary
+ * spelling of a reference, not a corner — puts a bare `|` in a cell, and the
+ * next read splits the row there. The table gains a column, the alias becomes
+ * its own cell, and the file has been rewritten by the tool.
+ *
+ * Escaping is conditional on the pipe not already being escaped, because a raw
+ * inline's value is the source text *as written* (`sourceOf`), backslashes and
+ * all: `<kbd>\|</kbd>` in a cell is already correct, and blindly doubling the
+ * backslash would turn it into a literal backslash followed by a delimiter —
+ * the very bug, introduced by its own fix.
+ */
+function safeInCell(value: string, state: PrintState): string {
+  if (!state.stack.includes("tableCell")) return value;
+  return value.replace(BARE_PIPE, (match, slashes: string) =>
+    slashes.length % 2 === 0 ? `${slashes}\\|` : match,
+  );
+}
+
+function verbatim(node: MdNode, _parent: unknown, state: PrintState): string {
+  return emit(node, safeInCell(node.value ?? "", state));
 }
 
 /**
@@ -921,17 +999,17 @@ function verbatim(node: MdNode): string {
 function autolinkHandler(
   node: MdNode,
   _parent: unknown,
-  _state: PrintState,
+  state: PrintState,
   info: PrintInfo,
 ): string {
   const before = info.before ?? "";
   const value = node.value ?? "";
-  if (before === "" || /[\s(>]$/.test(before)) return emit(node, value);
+  if (before === "" || /[\s(>]$/.test(before)) return emit(node, safeInCell(value, state));
   // Written as a link, so the run's text is no longer the run's markdown: the
   // trace records the whole thing as one address rather than a wrong one.
   const span = mdSpans.get(node);
   if (span !== undefined) mdSpans.set(node, { ...span, atomic: true });
-  return emit(node, `[${value}](${value})`);
+  return emit(node, safeInCell(`[${value}](${value})`, state));
 }
 
 function handlers(escapeText: boolean): Record<string, PrintHandler> {
