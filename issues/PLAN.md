@@ -569,4 +569,5 @@ changes behaviour and nothing below waits on them.
 | SERVER-092 | Every act closes the window it ends, and names it | done | P1 | SERVER-091 |
 | SERVER-093 | Nothing reads a history the open window is still holding | done | P1 | SERVER-091 |
 | SERVER-094 | A window never outlives the server silently | done | P1 | SERVER-091 |
+| SERVER-095 | Resizing a board column wakes the agent to reflect on it (user report) | done | P0 | — |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |

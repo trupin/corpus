@@ -592,7 +592,14 @@ describe("git hygiene", () => {
     expect(readFileSync(attachmentsDir(first.thread, first.ts, "canary.txt"), "utf8")).toBe(canary);
   });
 
-  it("still squashes two turns by one actor inside the idle window", async () => {
+  it("gives two turns inside the idle window a commit each, and neither one the bytes", async () => {
+    // This asserted that two turns squash into one commit, which was true while
+    // §4's first closer read "an **agent** turn posted to a thread". The user
+    // struck the word on 2026-08-10 (SHARED-040 held item (c)): a turn by either
+    // party is an act, and an act closes the window it lands in. So two turns are
+    // two acts and two commits — the expectation is rewritten rather than
+    // relaxed, and what this file is actually about (attachment bytes never
+    // reaching git) is asserted at both.
     const first = await uploadTurn([
       ["text", "one"],
       ["files", png("a.png")],
@@ -607,10 +614,11 @@ describe("git hygiene", () => {
       first.thread,
     );
 
-    expect(ws.log("%H")).toHaveLength(before);
+    expect(ws.log("%H")).toHaveLength(before + 1);
     const text = ws.git("show", "HEAD:" + threadPath(first.thread));
     expect(text).toContain("a.png](attachments/");
     expect(text).toContain("b.png](attachments/");
+    expect(ws.git("log", "-p", "--all")).not.toContain("png-bytes");
     expect(second.status).toBe(201);
   });
 });

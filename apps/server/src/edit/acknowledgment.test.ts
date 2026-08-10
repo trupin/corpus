@@ -522,3 +522,158 @@ describe("POST /api/docs/{id}/edit-session/flush", () => {
     expect((await flush(ws, doc.id, {})).status).toBe(401);
   });
 });
+
+// SPEC.md §4 asks the orchestrate skill to *reflect* on an acknowledged session
+// — "whether the change ripples into other documents" — so a session is a
+// sitting of somebody writing **prose**, not any write the board happens to
+// make (SERVER-095).
+//
+// The reported failure, from the user's own workspace: the entire diff of a
+// commit that woke the agent was a re-stamped `updated:` and `width: 444` →
+// `width: 725`. Somebody had dragged a board column, which the UI persists as a
+// `PUT /api/docs/{id}` carrying `{ extra: { width } }` and nothing else, and the
+// agent was asked whether a column width ripples into other documents.
+describe("only a content edit opens a session (SERVER-095)", () => {
+  /** Every field class a `PUT` can move without touching a word of the document. */
+  const frontmatterOnly: readonly (readonly [string, Record<string, unknown>])[] = [
+    ["a dragged column width", { extra: { width: 725 } }],
+    ["a tag", { tags: ["mortgage"] }],
+    ["a status", { status: "resolved" }],
+    ["a title", { title: "Renamed on the board" }],
+    ["a still-current mark", { reviewed: "2026-07-27T09:00:00Z" }],
+    ["a view query", { query: { type: "thread", status: "open" } }],
+    ["a board position", { order: 3, pinned: true, column: "todos/todo" }],
+    ["a due date", { due: "2026-09-01" }],
+    ["nothing at all — a save that names no change (§9.2)", {}],
+  ];
+
+  it.each(frontmatterOnly)("does not wake the agent for %s", async (_label, patch) => {
+    const ws = workspace("ack-fm-only", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "view", title: "Open threads", body: "Body.\n" });
+    pastTheSquashWindow(ws);
+    const before = ws.head();
+
+    expect((await ws.put(`/api/docs/${doc.id}`, patch)).status).toBe(200);
+
+    ws.advance(IDLE_MS * 4);
+    await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
+    expect(acknowledgments(ws)).toHaveLength(0);
+
+    // The write itself is untouched — this is a save that landed and simply
+    // did not open a session. (The empty patch is the one case with nothing
+    // to land: `updateDocumentLocked` short-circuits a save that names no
+    // change, which is a second, older reason the same event never appears.)
+    if (Object.keys(patch).length > 0) {
+      expect(ws.head()).not.toBe(before);
+      expect(ws.log("%s")[0]).toContain(doc.id);
+    }
+  });
+
+  it("does not wake the agent for a save that re-sends the stored body verbatim", async () => {
+    // The quiet form of the same bug. The reader autosaves on a timer, so a
+    // sitting where somebody only retagged a document sends the body it already
+    // has, over and over — and a save carrying a frontmatter change alongside it
+    // really does commit, so "no commit landed" cannot be what saves us here.
+    const ws = workspace("ack-same-body", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "note", title: "Unmoved prose", body: "one\ntwo\n" });
+    pastTheSquashWindow(ws);
+    const before = ws.head();
+
+    expect(
+      (await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n", tags: ["retagged"] })).status,
+    ).toBe(200);
+    expect(ws.head()).not.toBe(before);
+    expect(ws.read(doc.path)).toContain("retagged");
+
+    ws.advance(IDLE_MS * 4);
+    await new Promise((resolve) => setTimeout(resolve, IDLE_MS * 4));
+    expect(acknowledgments(ws)).toHaveLength(0);
+  });
+
+  it("wakes the agent for a body change carrying frontmatter along with it", async () => {
+    // The body is what decides — and what rides along does not disqualify it.
+    const ws = workspace("ack-mixed", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "note", title: "Mortgage options", body: "one\n" });
+    pastTheSquashWindow(ws);
+
+    expect(
+      (await ws.put(`/api/docs/${doc.id}`, { body: "one\ntwo\n", tags: ["mortgage"] })).status,
+    ).toBe(200);
+
+    ws.advance(IDLE_MS * 2);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+    const payload = acknowledgments(ws)[0];
+    expect(payload).toMatchObject({ docId: doc.id, actor: "user", endedBy: "idle" });
+    expect(payload?.to).toBe(ws.head());
+    expect(payload?.stats.commits).toBe(1);
+  });
+
+  it("keeps one session across the frontmatter writes a reader makes while editing", async () => {
+    // Dragging a column, pinning, retagging mid-sitting: none of them opens a
+    // second session, and none of them ends the one that is open. The person
+    // wrote once, so the agent is woken once.
+    const ws = workspace("ack-interleaved-fm", { editAckIdleMs: IDLE_MS });
+    const doc = await createDoc(ws, { type: "view", title: "Open threads", body: "one\n" });
+    pastTheSquashWindow(ws);
+
+    await edit(ws, doc.id, "one\ntwo\n");
+    expect((await ws.put(`/api/docs/${doc.id}`, { extra: { width: 444 } })).status).toBe(200);
+    expect((await ws.put(`/api/docs/${doc.id}`, { extra: { width: 725 } })).status).toBe(200);
+    expect((await ws.put(`/api/docs/${doc.id}`, { pinned: true })).status).toBe(200);
+
+    ws.advance(IDLE_MS * 2);
+    await vi.waitFor(() => {
+      expect(acknowledgments(ws)).toHaveLength(1);
+    });
+    const payload = acknowledgments(ws)[0];
+    // The frontmatter saves folded into the session's own commit (same party,
+    // same window), so the range still names a commit the branch holds.
+    expect(payload?.to).toBe(ws.head());
+    expect(ws.log("%H")).toContain(payload?.to);
+    expect(payload?.stats.commits).toBe(1);
+  });
+
+  it("still seals a user's session on an agent save that changed only frontmatter", async () => {
+    // The linchpin of the fix being conditional at all. `observeCommit` seals
+    // through `touches(commit, session)`, which compares the document id and the
+    // staged paths and never reads `editPath` — so withholding the path from a
+    // save that moved no prose costs sealing nothing, whichever party made it.
+    const ws = createWriteWorkspace("ack-seal-fm", { sprint: "s011" });
+    try {
+      const doc = await createDoc(ws, { type: "note", title: "Shared", body: "line one\n" });
+      pastTheSquashWindow(ws);
+
+      await edit(ws, doc.id, "line one\nuser line\n");
+      // The agent files the document — a status, no prose. Before SERVER-095
+      // this carried an `editPath` too; it never mattered, because the tracker
+      // discards a non-`user` actor's path before it looks at it.
+      expect(
+        (await ws.put(`/api/docs/${doc.id}`, { tags: ["filed"] }, { "x-corpus-author": "agent" }))
+          .status,
+      ).toBe(200);
+      await edit(ws, doc.id, "line one\nuser line\nuser again\n");
+
+      // Named by position: a window no act named is relabelled as it closes,
+      // which is an amend and so a new sha for the same tree (SERVER-091).
+      const userCommit = ws.git("rev-parse", "HEAD~2").trim();
+      const agentCommit = ws.git("rev-parse", "HEAD^").trim();
+      expect(ws.log("%an")[1]).toBe("agent");
+
+      await ws.server.close();
+
+      const payloads = acknowledgments(ws);
+      expect(payloads).toHaveLength(2);
+      // Two sessions, split at the agent's commit: neither range spans it.
+      expect(payloads.find((entry) => entry.to === userCommit)).toBeDefined();
+      expect(payloads.find((entry) => entry.from === agentCommit)).toBeDefined();
+      expect(new Set(payloads.map((entry) => entry.sessionId)).size).toBe(2);
+      // And the agent's own write is acknowledged by neither — the loop still
+      // cannot feed itself.
+      for (const payload of payloads) expect(payload.actor).toBe("user");
+    } finally {
+      ws.close();
+    }
+  });
+});

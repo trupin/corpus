@@ -381,11 +381,36 @@ export async function updateDocumentLocked(
       // route can write is invisible to `docs/tree.ts`, and a body edit is
       // the autosave path, which must not pay for a tree query.
       mayChangeTree: "status" in fields,
-      // §4's edit acknowledgment (SERVER-052): this verb *is* the edit session.
-      // Only a `user` save opens one — the tracker scopes that — but the path is
-      // carried unconditionally, because an agent save through the same verb
-      // still has to seal a session the user has open on this document.
-      editSession: loaded.path,
+      // §4's edit acknowledgment (SERVER-052): this verb *is* the edit session
+      // — but only when the save changes the **body**.
+      //
+      // §4 asks the orchestrate skill to *reflect* on an acknowledged session:
+      // to check "whether the change ripples into other documents". Only prose
+      // ripples. A save that moves `extra`, `tags`, `status`, `title`, `folder`,
+      // `reviewed` or `query` and leaves the body alone has produced nothing to
+      // reflect *on* — and the board writes exactly such saves constantly:
+      // dragging a column wider is a `PUT` carrying `{ extra: { width } }` and
+      // nothing else (`apps/ui/src/board/useColumnWidth.tsx`), which used to wake
+      // the agent to ask whether a column width rippled into other documents
+      // (SERVER-095). So the **body** is what decides, and frontmatter riding
+      // along with a real body change does not disqualify it.
+      //
+      // `bodyChanged` is the exact question, not an approximation of it:
+      // `setBody` stores the body verbatim and `serializeDocument` concatenates
+      // it verbatim, so the request's body differing from the one read off disk
+      // is precisely "these bytes will move". A `PUT` naming a body identical to
+      // the stored one is therefore not a content edit — which is what keeps the
+      // reader's periodic autosave of untouched text from reintroducing this in
+      // a quieter form — and a `PUT` naming no body at all (§9.2: a save that
+      // names no change) is not one either, both by the same comparison.
+      //
+      // **Sealing is unaffected**, which is why this can be conditional at all:
+      // `observeCommit` seals through `touches(commit, session)`, which compares
+      // `docId` and the staged `paths` and never reads `editPath` — and it nulls
+      // `editPath` for any non-`user` actor before it looks at it. An agent save
+      // through this verb still seals a session the user has open here, whatever
+      // the agent changed and whether or not it changed a body.
+      editSession: bodyChanged ? loaded.path : undefined,
     },
   });
 

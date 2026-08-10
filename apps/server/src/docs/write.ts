@@ -301,15 +301,19 @@ export type MutationPlan = {
   /**
    * The workspace-relative path of the document this plan is the **editor's
    * save** of (SPEC.md §4's edit acknowledgment; SERVER-052). Set by
-   * `PUT /api/docs/{id}` and by nothing else — a user save through that verb is
-   * what §4 means by an edit session, and it is where the reader's autosave and
-   * the plugin read-modify-write both land.
+   * `PUT /api/docs/{id}`, and only when that save changes the **body** — a user
+   * save of a document's prose is what §4 means by an edit session, and that
+   * verb is where the reader's autosave and the plugin read-modify-write both
+   * land.
    *
    * Left unset by every other verb on purpose. A create, a move, an archive, a
    * delete, a thread turn and a lock audit entry are all things that *happen to*
    * a document rather than sessions of somebody editing it; folding them in
    * would acknowledge a document the user only filed, and would double up with
-   * the `comment.created` a thread reply already enqueues.
+   * the `comment.created` a thread reply already enqueues. It is left unset for
+   * the same reason by a `PUT` that moves only frontmatter — a column width, a
+   * tag, a status — which is a thing that happens to a document too, and has no
+   * prose for §4's reflection to be about (SERVER-095).
    *
    * Carrying the path rather than a boolean is what lets the tracker report
    * stats path-scoped to this file and follow a document renamed between saves.
