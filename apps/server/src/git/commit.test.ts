@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAutoCommitter, SQUASH_IDLE_MS, type AutoCommitter } from "./commit.js";
 import { createGit } from "./git.js";
 import { sanitizeGitEnv } from "./env.js";
+import { disableAutoMaintenance } from "./maintenance.js";
 
 type Repo = {
   readonly root: string;
@@ -43,6 +44,7 @@ function makeRepo(
 
   if (options.init !== false) {
     git("init", "--initial-branch=main");
+    disableAutoMaintenance(git);
     if (options.identity !== false) {
       git("config", "user.name", "Workspace Owner");
       git("config", "user.email", "owner@example.test");

@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { computeContext } from "../anchors/index.js";
 import { parseDocument } from "../core/index.js";
+import { disableAutoMaintenance } from "../git/index.js";
 import { createLogger, silentLogger, type LogSink } from "../logger.js";
 import { reconcileOutOfBandEdit } from "./reconcile-out-of-band.js";
 import { createSelfWriteRegistry } from "./self-writes.js";
@@ -79,6 +80,7 @@ function git(...args: string[]): void {
 
 function initRepo(): void {
   git("init", "-q");
+  disableAutoMaintenance(git);
 }
 
 function commitAll(): void {

@@ -1,3 +1,4 @@
+import type { AppendTurnResponse, MarkSeenResult, Thread, Turn } from "@corpus/contract";
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus } from "./stubCorpus";
@@ -47,22 +48,61 @@ const REPLY_SECOND = "then rerun";
 
 /** `GET /api/threads/{id}`, the seen POST, and the reply the composer sends. */
 async function stubThread(page: Page): Promise<void> {
-  const appended: { author: "user"; ts: string; body: string }[] = [];
+  const appended: Turn[] = [];
   await page.route("**/api/threads/**", async (route: Route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/seen")) {
-      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      /*
+       * `POST /api/threads/{id}/seen` answers a `MarkSeenResult`, not `{}` — the
+       * shape it used to send here is one no server response has (UI-102).
+       */
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          threadId: "th_breaks",
+          lastSeenTs: "2026-07-01T09:05:00.000Z",
+          unread: false,
+        } satisfies MarkSeenResult),
+      });
     }
     if (url.pathname.endsWith("/turns")) {
       const sent: unknown = route.request().postDataJSON();
       const body =
         typeof sent === "object" && sent !== null ? String(Reflect.get(sent, "body")) : "";
-      const turn = { author: "user" as const, ts: "2026-07-01T09:10:00.000Z", body };
+      const turn: Turn = {
+        author: "user",
+        ts: "2026-07-01T09:10:00.000Z",
+        body,
+        model: null,
+      };
       appended.push(turn);
+      /*
+       * `AppendTurnResponse` is four fields, not two: the thread summary and the
+       * enqueue signal used to be missing here entirely (UI-102). The composer
+       * reads neither today, which is exactly why nothing complained.
+       */
       return route.fulfill({
         status: 201,
         contentType: "application/json",
-        body: JSON.stringify({ turn, warnings: [] }),
+        body: JSON.stringify({
+          thread: {
+            id: "th_breaks",
+            title: THREAD_DOC.title,
+            status: "open",
+            parent: null,
+            anchor: null,
+            agent: "engaged",
+            created: "2026-07-01T09:00:00.000Z",
+            updated: turn.ts,
+            turnCount: appended.length + 1,
+            lastAuthor: "user",
+            lastTs: turn.ts,
+          },
+          turn,
+          eventId: null,
+          warnings: [],
+        } satisfies AppendTurnResponse),
       });
     }
     return route.fulfill({
@@ -78,8 +118,11 @@ async function stubThread(page: Page): Promise<void> {
         parent: null,
         anchor: null,
         agent: "engaged",
-        turns: [{ author: "agent", ts: "2026-07-01T09:05:00.000Z", body: AGENT_TURN }, ...appended],
-      }),
+        turns: [
+          { author: "agent", ts: "2026-07-01T09:05:00.000Z", body: AGENT_TURN, model: null },
+          ...appended,
+        ],
+      } satisfies Thread),
     });
   });
 }

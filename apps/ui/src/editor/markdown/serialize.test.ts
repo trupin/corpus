@@ -221,8 +221,328 @@ describe("nodes", () => {
     });
   });
 
+  /**
+   * The character that decides where a row ends (UI-104).
+   *
+   * A `|` inside a cell is content only when it is escaped; bare, the next read
+   * takes it as a delimiter and the row gains a cell. The printer then lays the
+   * table out as a matrix as wide as its widest row, so **the header gains a
+   * column and every row in the table shifts** — on the first save, from one
+   * pipe on one line. Fourteen documents in this repo were being rewritten that
+   * way when this was measured.
+   *
+   * `remark-stringify` escapes the pipe for everything it knows about, and
+   * `mdast-util-gfm-table` patches even `inlineCode` for it. Neither can do it
+   * for the four constructs this module invented, all of which print verbatim —
+   * and one of them, `[[doc_x|alias]]`, has a pipe in its ordinary spelling.
+   */
+  describe("a pipe inside a table cell", () => {
+    const td = (type: string, content: readonly PmNode[]): PmNode => ({
+      type,
+      attrs: { colspan: 1, rowspan: 1, colwidth: null },
+      content: [{ type: NODE.paragraph, content }],
+    });
+
+    /** A two-column table whose one body row holds `cells`. */
+    function table(...cells: readonly (readonly PmNode[])[]): PmNode {
+      return doc({
+        type: NODE.table,
+        attrs: { align: [null, null] },
+        content: [
+          {
+            type: NODE.tableRow,
+            content: [td(NODE.tableHeader, [text("a")]), td(NODE.tableHeader, [text("b")])],
+          },
+          { type: NODE.tableRow, content: cells.map((cell) => td(NODE.tableCell, cell)) },
+        ],
+      });
+    }
+
+    /** The cell count of every row of every table in a body, in order. */
+    function rowWidths(markdown: string): number[][] {
+      return (parseMarkdown(markdown).content ?? [])
+        .filter((node) => node.type === NODE.table)
+        .map((node) => (node.content ?? []).map((row) => (row.content ?? []).length));
+    }
+
+    it("keeps a reference's alias inside its own cell", () => {
+      const source = table(
+        [{ type: NODE.docRef, attrs: { id: "doc_ab12cd34", alias: "the alias" } }],
+        [text("z")],
+      );
+
+      const printed = serializeDoc(source);
+
+      expect(printed).toContain("[[doc_ab12cd34\\|the alias]]");
+      expect(rowWidths(printed)).toEqual([[2, 2]]);
+      // The escape is GFM's, not ours to re-read: the row scanner unescapes
+      // `\|` before any inline parsing, so the ref grammar still sees a clean
+      // pipe and the node comes back whole.
+      expect(parseMarkdown(printed)).toEqual(source);
+    });
+
+    /**
+     * The one pipe test that deliberately does **not** assert
+     * `parseMarkdown(printed)` equals its source, where the reference case
+     * above does (PR #41, MINOR 3).
+     *
+     * The escape lands *inside* the construct, and a raw inline is opaque to
+     * the parser: `<kbd>\|</kbd>` reads back as three nodes — `<kbd>`, the text
+     * `|`, `</kbd>` — which is exactly what a file containing that cell parses
+     * to, so nothing is lost and the output is a fixed point, but the tree is
+     * not the hand-built one. The assertion is therefore about the row and the
+     * bytes, which is what a file can actually say. Where the escaped pipe sits
+     * inside a *tag* rather than between two, the backslash is kept by
+     * micromark and becomes part of the attribute — see `safeInCell`, which now
+     * records that case instead of claiming to cover it.
+     */
+    it("escapes a pipe carried by a raw inline", () => {
+      const source = table(
+        [{ type: NODE.rawInline, attrs: { text: "<kbd>|</kbd>" } }],
+        [text("z")],
+      );
+
+      const printed = serializeDoc(source);
+
+      expect(printed).toContain("<kbd>\\|</kbd>");
+      expect(rowWidths(printed)).toEqual([[2, 2]]);
+      expect(canonicalizeMarkdown(printed)).toBe(printed);
+      expect(parseMarkdown(printed).content?.[0]?.content?.[1]?.content?.[0]?.content?.[0]).toEqual(
+        {
+          type: NODE.paragraph,
+          content: [
+            { type: NODE.rawInline, attrs: { text: "<kbd>" } },
+            { type: NODE.text, text: "|" },
+            { type: NODE.rawInline, attrs: { text: "</kbd>" } },
+          ],
+        },
+      );
+    });
+
+    /**
+     * A raw inline's value is the source text *as written*, backslashes and
+     * all, so a document that already spells the pipe correctly must not have
+     * its backslash doubled — `\\|` is a literal backslash followed by a
+     * delimiter, which is the bug reintroduced by its own fix.
+     */
+    it("leaves a pipe a raw inline already escaped alone", () => {
+      const source = table(
+        [{ type: NODE.rawInline, attrs: { text: "<kbd>\\|</kbd>" } }],
+        [text("z")],
+      );
+
+      const printed = serializeDoc(source);
+
+      expect(printed).toContain("<kbd>\\|</kbd>");
+      expect(printed).not.toContain("\\\\|");
+      expect(rowWidths(printed)).toEqual([[2, 2]]);
+    });
+
+    it("escapes a pipe carried by a bare autolink", () => {
+      const markdown = "| a | b |\n| - | - |\n| https://e.test/?x=1\\|2 | z |\n";
+      expect(rowWidths(markdown)).toEqual([[2, 2]]);
+      expect(rowWidths(canonicalizeMarkdown(markdown))).toEqual([[2, 2]]);
+      expect(canonicalizeMarkdown(markdown)).toContain("https://e.test/?x=1\\|2");
+    });
+
+    /**
+     * `mdast-util-gfm-table` patches `inlineCode` for exactly this, and the
+     * module leans on that rather than re-doing it. Nothing would fail if the
+     * patch were lost to an upgrade — documents would simply start gaining
+     * columns again — so it is asserted here.
+     */
+    it("escapes a pipe inside a code span, which the printer does itself", () => {
+      const markdown = "| a | b |\n| - | - |\n| `x \\| y` | z |\n";
+      expect(canonicalizeMarkdown(markdown)).toContain("`x \\| y`");
+      expect(rowWidths(canonicalizeMarkdown(markdown))).toEqual([[2, 2]]);
+    });
+
+    it("leaves a pipe outside a table unescaped", () => {
+      expect(canonicalizeMarkdown("a | b\n")).toBe("a | b\n");
+      const printed = serializeDoc(
+        doc(paragraph({ type: NODE.docRef, attrs: { id: "doc_ab12cd34", alias: "the alias" } })),
+      );
+      expect(printed).toBe("[[doc_ab12cd34|the alias]]\n");
+    });
+  });
+
+  /**
+   * A row the file itself wrote wider than its header (UI-104).
+   *
+   * The pipe the author left bare is already a delimiter by the time this
+   * module sees the document — the reader split the row, exactly as GFM says to
+   * — so the ProseMirror table has a row wider than its header. GFM's own
+   * answer is to *ignore* the surplus, which would delete the user's text; the
+   * printer's is to widen the whole table to the widest row, which rewrites
+   * every other row in it.
+   *
+   * Neither is acceptable, so the surplus is folded back into the last column
+   * behind the `|` it came from — the table keeps its columns, every character
+   * survives, and the escaped pipe never splits a row again.
+   */
+  describe("a row with more cells than its header", () => {
+    function rowWidths(markdown: string): number[][] {
+      return (parseMarkdown(markdown).content ?? [])
+        .filter((node) => node.type === NODE.table)
+        .map((node) => (node.content ?? []).map((row) => (row.content ?? []).length));
+    }
+
+    it("folds the surplus into the last column rather than adding one", () => {
+      const markdown = "| a | b |\n| - | - |\n| x | y | z |\n";
+      expect(rowWidths(markdown)).toEqual([[2, 3]]);
+
+      const once = canonicalizeMarkdown(markdown);
+
+      expect(once).toBe("| a | b    |\n| - | ---- |\n| x | y\\|z |\n");
+      expect(rowWidths(once)).toEqual([[2, 2]]);
+    });
+
+    it("settles there — an escaped pipe never splits a row again", () => {
+      const once = canonicalizeMarkdown("| a | b |\n| - | - |\n| x | y | z |\n");
+      expect(canonicalizeMarkdown(once)).toBe(once);
+    });
+
+    it("folds every surplus cell of a row, in order", () => {
+      const once = canonicalizeMarkdown("| a | b |\n| - | - |\n| x | y | z | w |\n");
+      expect(once).toContain("| y\\|z\\|w |");
+      expect(rowWidths(once)).toEqual([[2, 2]]);
+    });
+
+    /**
+     * The width is the header's, so a table the editor grew a column on prints
+     * with that column — `attrs.align` is parse-time data the table commands do
+     * not maintain, and reading the width off it would fold the new column away.
+     */
+    it("takes its width from the header row, not from `align`", () => {
+      const td = (value: string): PmNode => ({
+        type: NODE.tableCell,
+        attrs: { colspan: 1, rowspan: 1, colwidth: null },
+        content: [paragraph(text(value))],
+      });
+      const source = doc({
+        type: NODE.table,
+        // Two columns' worth of alignment, three columns' worth of cells.
+        attrs: { align: [null, null] },
+        content: [
+          { type: NODE.tableRow, content: [td("a"), td("b"), td("c")] },
+          { type: NODE.tableRow, content: [td("x"), td("y"), td("z")] },
+        ],
+      });
+
+      expect(rowWidths(serializeDoc(source))).toEqual([[3, 3]]);
+    });
+
+    it("leaves a row shorter than its header to the printer", () => {
+      const once = canonicalizeMarkdown("| a | b |\n| - | - |\n| x |\n");
+      expect(once).toBe("| a | b |\n| - | - |\n| x |   |\n");
+      expect(canonicalizeMarkdown(once)).toBe(once);
+    });
+  });
+
   it("serialises a task list with its checked state", () => {
     expect(canonicalizeMarkdown("- [x] done\n- [ ] open\n")).toBe("- [x] done\n- [ ] open\n");
+  });
+
+  /**
+   * A task list all of whose items are empty comes back a bullet list, and that
+   * is **accepted on the record** (UI-104), not a defect left unfixed.
+   *
+   * GFM defines a task list item as one whose first block is a paragraph
+   * beginning with `[ ]` **followed by whitespace and then content**
+   * (GFM §5.3, "Task list items"). Nothing after the marker fails that test, so
+   * `- [ ]` alone is a bullet item holding the literal text `[ ]`.
+   *
+   * **What UI-104 originally recorded — "there is no spelling of an empty task
+   * item that survives a round trip" — is false against this repo's own
+   * parser**, and PR #41's review is right to call it (MINOR 4).
+   * `- [ ] <!-- -->` round-trips byte for byte, reads back as
+   * `taskList(taskItem(paragraph(rawInline)))` and renders as an empty task
+   * item; so does `- [ ] <span></span>`. The content GFM demands can be an HTML
+   * comment, which renders as nothing at all.
+   *
+   * So the bare `-` is not the only honest output — it is a **choice not to
+   * write something into the user's file that the user did not write**. §5
+   * makes the file the source of truth and §1 makes it theirs; an editor that
+   * silently plants `<!-- -->` in a document because its own model needs a
+   * marker to survive is exactly the class of act this issue exists to stop,
+   * and the comment would then be permanent, visible in every diff, and
+   * impossible to remove through the editor that added it. Losing the list's
+   * type is the smaller intrusion: no text moves, the output is a fixed point,
+   * and the moment any item in the list has content the whole list is a task
+   * list again, empty items included.
+   *
+   * The residual cost, recorded rather than hidden: `- [ ] &#32;` — a task item
+   * whose only content is a space — loses **both** its task-ness *and* that
+   * space, because trailing whitespace is dropped before the item is written.
+   * Pinned below.
+   */
+  describe("a task list with nothing in it", () => {
+    const emptyTaskList = (checked: boolean): PmNode =>
+      doc({
+        type: NODE.taskList,
+        content: [{ type: NODE.taskItem, attrs: { checked }, content: [{ type: NODE.paragraph }] }],
+      });
+
+    it.each(["- [ ]\n", "- [ ] \n", "- [x]\n", "- [ ]\n- [x]\n"])(
+      "%j is a bullet list before anything is printed",
+      (markdown) => {
+        expect(parseMarkdown(markdown).content?.[0]?.type).toBe(NODE.bulletList);
+      },
+    );
+
+    /**
+     * The counterexample the acceptance argument has to answer, rather than the
+     * claim it used to rest on. If this ever stops round-tripping, the reason
+     * the printer writes a bare `-` changes from "we decline to add a comment"
+     * back to "nothing survives", and the docstring above is wrong.
+     */
+    it("survives as an HTML comment, which is why the bare marker is a choice", () => {
+      const source = "- [ ] <!-- -->\n";
+      const parsed = parseMarkdown(source);
+
+      expect(parsed.content?.[0]?.type).toBe(NODE.taskList);
+      expect(parsed.content?.[0]?.content?.[0]?.content?.[0]?.content?.[0]?.type).toBe(
+        NODE.rawInline,
+      );
+      expect(serializeDoc(parsed)).toBe(source);
+    });
+
+    it("loses the space as well, when the space is all there was", () => {
+      const printed = serializeDoc(parseMarkdown("- [ ] &#32;\n"));
+
+      expect(printed).toBe("-\n");
+      expect(parseMarkdown(printed).content?.[0]?.type).toBe(NODE.bulletList);
+      expect(canonicalizeMarkdown(printed)).toBe(printed);
+    });
+
+    it.each([true, false])("prints as a bare marker when checked is %s", (checked) => {
+      expect(serializeDoc(emptyTaskList(checked))).toBe("-\n");
+    });
+
+    it("loses only its task-ness, and settles there", () => {
+      const printed = serializeDoc(emptyTaskList(false));
+      expect(parseMarkdown(printed).content?.[0]?.type).toBe(NODE.bulletList);
+      expect(canonicalizeMarkdown(printed)).toBe(printed);
+    });
+
+    it("stays a task list as soon as one item has content", () => {
+      const source = doc({
+        type: NODE.taskList,
+        content: [
+          { type: NODE.taskItem, attrs: { checked: false }, content: [{ type: NODE.paragraph }] },
+          {
+            type: NODE.taskItem,
+            attrs: { checked: true },
+            content: [paragraph(text("Bee two."))],
+          },
+        ],
+      });
+
+      const printed = serializeDoc(source);
+
+      expect(printed).toBe("-\n- [x] Bee two.\n");
+      expect(parseMarkdown(printed).content?.[0]?.type).toBe(NODE.taskList);
+    });
   });
 
   it("keeps an unmodelled construct verbatim", () => {

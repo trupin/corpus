@@ -1,6 +1,7 @@
+import type { ViewQuery } from "@corpus/contract";
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./coverage";
-import { stubCorpus } from "./stubCorpus";
+import { stubCorpus, type StubRow } from "./stubCorpus";
 
 /**
  * UI-038 in a real browser: the column header's chips and its sort label share
@@ -22,7 +23,7 @@ import { stubCorpus } from "./stubCorpus";
 
 const VIEW_ID = "doc_view_threads";
 
-function view(width: number, query: Readonly<Record<string, unknown>> = {}) {
+function view(width: number, query: ViewQuery = {}): StubRow {
   return {
     id: VIEW_ID,
     type: "view",

@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { createServer, type CorpusServer } from "../app.js";
 import { DEFAULT_ATTACHMENT_LIMITS, type AttachmentLimits } from "../attachments/index.js";
 import type { ServerConfig } from "../config.js";
-import { sanitizeGitEnv } from "../git/index.js";
+import { disableAutoMaintenance, sanitizeGitEnv } from "../git/index.js";
 import {
   createProjectionQueueMirror,
   openProjection,
@@ -122,6 +122,7 @@ export function createWriteWorkspace(
 
   if (options.git !== false) {
     git("init", "--initial-branch=main");
+    disableAutoMaintenance(git);
     if (options.identity !== false) {
       git("config", "user.name", "Workspace Owner");
       git("config", "user.email", "owner@example.test");

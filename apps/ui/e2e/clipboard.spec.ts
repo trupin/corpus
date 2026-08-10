@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { MarkSeenResult, Thread } from "@corpus/contract";
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus, type StubCorpus, type StubRow } from "./stubCorpus";
@@ -100,23 +101,46 @@ const THREAD: StubRow = {
 async function stubThreadTurns(page: Page): Promise<void> {
   await page.route("**/api/threads/**", async (route: Route) => {
     if (new URL(route.request().url()).pathname.endsWith("/seen")) {
-      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      /*
+       * `POST /api/threads/{id}/seen` answers a `MarkSeenResult`, not `{}` — the
+       * shape it used to send here is one no server response has (UI-102).
+       */
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          threadId: THREAD.id,
+          lastSeenTs: "2026-07-01T09:05:00.000Z",
+          unread: false,
+        } satisfies MarkSeenResult),
+      });
     }
     return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         id: THREAD.id,
-        title: THREAD.title,
+        title: THREAD.title ?? "Untitled",
         created: "2026-07-01T09:00:00.000Z",
         updated: "2026-07-01T09:05:00.000Z",
         status: "open",
         tags: [],
-        parent: THREAD.parent,
+        parent: THREAD.parent ?? null,
         anchor: null,
-        agent: null,
-        turns: [{ author: "user", ts: "2026-07-01T09:05:00.000Z", body: THREAD.body }],
-      }),
+        // `none`, never `null`: `Thread.agent` is the three-state SPEC.md §8
+        // vocabulary and has no absent value (UI-102).
+        agent: "none",
+        turns: [
+          {
+            author: "user",
+            ts: "2026-07-01T09:05:00.000Z",
+            body: THREAD.body ?? "",
+            // Required since CONTRACT-043, and `null` is its answer for a turn
+            // nobody recorded a model for — not an omitted field.
+            model: null,
+          },
+        ],
+      } satisfies Thread),
     });
   });
 }

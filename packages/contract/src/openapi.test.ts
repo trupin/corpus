@@ -28,6 +28,7 @@ import {
 } from "./schemas/retrieval.js";
 import { SKILL_NAME_MAX_LENGTH, SKILL_NAME_PATTERN } from "./schemas/skill.js";
 import { EXTRA_MAX_BYTES, EXTRA_MAX_DEPTH, RESERVED_FRONTMATTER_KEYS } from "./schemas/extra.js";
+import { WARNING_CODES } from "./schemas/warning.js";
 import { REQUESTED_WEIGHT_MAX_LENGTH } from "./schemas/weight.js";
 import { ENDPOINT_INVENTORY, endpointSignature } from "./routes/inventory.js";
 import { ALL_CONTRACT_ROUTES } from "./routes/index.js";
@@ -2832,6 +2833,136 @@ describe("§14 warnings reach every mutation response", () => {
     ]);
     expect(componentSchemas?.["DoctorWarning"]?.properties?.["code"]).toBeUndefined();
     expect(componentSchemas?.["Warning"]?.properties?.["kind"]).toBeUndefined();
+  });
+});
+
+/**
+ * CONTRACT-047. A skill folder move carries every `SKILL.md` under the folder,
+ * so an act on one skill enables or disables another the request never named
+ * (§7) and may correct a stale `status` in its frontmatter (SERVER-078). Both
+ * were visible only in the commit and the server log. §4's reporting rule is
+ * argued from the inverse case — never record an effect the user was told did
+ * not happen — and an effect the user was told *nothing* about fails it for the
+ * same reason, so the response now says it.
+ *
+ * Pinned on the published document rather than on the schema module, because
+ * what a client author reads is this document.
+ */
+describe("a folder move reports the documents it carried (CONTRACT-047)", () => {
+  const ARCHIVE = "/api/docs/{id}/archive";
+  const UNARCHIVE = "/api/docs/{id}/unarchive";
+  const codeSchema = (): SchemaNode | undefined =>
+    componentSchemas?.["Warning"]?.properties?.["code"];
+  const resultProperties = (): string[] =>
+    Object.keys(componentSchemas?.["BulkActionResult"]?.properties ?? {});
+
+  it("publishes the two carried codes in the shared warning vocabulary", () => {
+    expect(codeSchema()?.enum).toEqual([...WARNING_CODES]);
+    expect(codeSchema()?.enum).toContain("carried_skill");
+    expect(codeSchema()?.enum).toContain("carried_reconciliation");
+  });
+
+  /**
+   * `detail` is prose the contract forbids parsing, so every distinction a
+   * client acts on has to be in `code`. A routine carry (§7 working as
+   * specified, on every nested skill) and the server rewriting a file the
+   * caller never named are different in kind and in rarity; one code for both
+   * would leave a console unable to tell them apart.
+   */
+  it("keeps the carry and the frontmatter rewrite separately addressable", () => {
+    const codes: string[] = codeSchema()?.enum ?? [];
+    expect(new Set(codes).size).toBe(codes.length);
+    const description = codeSchema()?.description ?? "";
+    for (const code of WARNING_CODES) expect(description, code).toContain(code);
+  });
+
+  it("says in the vocabulary itself what each carried code means and when it is silent", () => {
+    const description = codeSchema()?.description ?? "";
+    expect(description).toContain("did not itself archive or unarchive");
+    expect(description).toContain("SPEC.md §7");
+    // The direction rule, published rather than left for a reader to infer.
+    expect(description).toContain("arises on unarchive only");
+    expect(description).toContain("silent when there is nothing to say");
+  });
+
+  /**
+   * PR #41. The published exclusion used to be "the document the caller named",
+   * whose premise — "that document is the response's own subject, or a `changed`
+   * entry in a bulk result" — is false for a bulk row that was refused, was
+   * already in the state it asked for, or carried a different verb than the one
+   * that moved the folder. It is prose a reader reasons from, so both halves of
+   * the corrected rule are pinned: what is left out, and what being *named* does
+   * not buy.
+   */
+  it("excludes only the document whose own archive or unarchive landed, and says so", () => {
+    const description = codeSchema()?.description ?? "";
+    expect(description).toContain("own archive or unarchive");
+    expect(description).toContain("Being named is not enough");
+    expect(description).toContain("refused");
+    expect(description).toContain("already in the state it asked for");
+    expect(description).not.toContain("Neither ever describes the document the caller named");
+  });
+
+  it.each([
+    [ARCHIVE, "disabled"],
+    [UNARCHIVE, "enabled"],
+  ])("has %s report every carried document and the enablement it gained or lost", (path, word) => {
+    const description = operation(path, "post").description ?? "";
+    expect(description).toContain("carried_skill");
+    expect(description).toContain(word);
+    expect(description).toContain("never named");
+    expect(description).toContain("carries no other skill document warns nothing");
+  });
+
+  /**
+   * Checked in both directions, since the asymmetry is the fact: the archived
+   * root reads status from the root itself and never consults the key, so only
+   * a move back to the enabled root can reconcile anything. An archive route
+   * that advertised a reconciliation would be promising a warning the server
+   * can never emit.
+   */
+  it("advertises the reconciliation on unarchive and, deliberately, nowhere else", () => {
+    expect(operation(UNARCHIVE, "post").description).toContain("carried_reconciliation");
+    expect(operation(ARCHIVE, "post").description).not.toContain("carried_reconciliation");
+  });
+
+  /**
+   * PR #37 pinned that the three parts partition the **requested** ids, and a
+   * carried document was never requested. The report is *about* the act; making
+   * it a fourth part would break the total a caller compares against what it
+   * selected.
+   */
+  it("keeps the carried document out of the result's parts, in both routes' prose", () => {
+    for (const path of [ARCHIVE, UNARCHIVE]) {
+      expect(operation(path, "post").description, path).toContain(
+        "never becomes a changed document",
+      );
+    }
+    expect(resultProperties()).toEqual([
+      "changed",
+      "alreadyInState",
+      "refused",
+      "orphanedThreadIds",
+      "commit",
+      "warnings",
+    ]);
+    expect(componentSchemas?.["BulkActionResult"]?.properties?.["changed"]?.description).toContain(
+      "reported in `warnings`, never as an entry here",
+    );
+  });
+
+  /**
+   * The deliberate omission, pinned from the side that would erase it: the same
+   * move stamps the projection's id into a carried file so the move cannot
+   * re-mint it, and that write is not warned about — it keeps an identity
+   * rather than changing one, and it fires on nearly every carry, which is how
+   * the reconciliation beside it would come to be ignored.
+   */
+  it("says the id stamp is not reported, rather than leaving its absence to be noticed", () => {
+    for (const path of [ARCHIVE, UNARCHIVE]) {
+      expect(operation(path, "post").description, path).toContain("not reported");
+      expect(operation(path, "post").description, path).toContain("identity");
+    }
   });
 });
 

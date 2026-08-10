@@ -1,3 +1,4 @@
+import type { InternalError } from "@corpus/contract";
 import type { Route } from "@playwright/test";
 import { expect, test } from "./coverage";
 import { stubCorpus } from "./stubCorpus";
@@ -66,7 +67,15 @@ async function wire(page: import("@playwright/test").Page): Promise<Wire> {
         await route.fulfill({
           status: 500,
           contentType: "application/json",
-          body: JSON.stringify({ code: "internal", message: "the server refused the save" }),
+          /*
+           * `internal_error` — the contract's code. `internal` is not one of
+           * `ERROR_CODES`, so this body failed `isApiError` and the client threw
+           * its fallback message instead of the server's sentence (UI-102).
+           */
+          body: JSON.stringify({
+            code: "internal_error",
+            message: "the server refused the save",
+          } satisfies InternalError),
         });
         return;
       }

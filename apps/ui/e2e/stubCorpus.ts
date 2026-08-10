@@ -10,8 +10,41 @@ import {
   unreadableAnswer,
   unterminatedFence,
   validateFormAnswer,
+  type ConflictError,
+  type CreateThreadResponse,
+  type DeleteDocResult,
+  type Doc,
+  type DocList,
+  type DocMutationResponse,
+  type DocRow,
+  type DocStatus,
+  type FolderTree,
   type Form,
   type FormAnswerRequest,
+  type FormAnswerResponse,
+  type Job,
+  type JobList,
+  type LockList,
+  type MarkSeenResult,
+  type NeedsReason,
+  type NotFoundError,
+  type QueueEventStatus,
+  type QueueStatus,
+  type ReattachConflictError,
+  type ReattachThreadResponse,
+  type Relation,
+  type RelatedDocs,
+  type ResolvedAnchor,
+  type SearchResults,
+  type StaleTier,
+  type TextQuoteSelector,
+  type TextQuoteSelectorRequest,
+  type Thread,
+  type ThreadMutationResponse,
+  type ThreadStatus,
+  type UpdateDocResponse,
+  type ValidationError,
+  type ViewQuery,
 } from "@corpus/contract";
 import type { Page, Route } from "@playwright/test";
 import * as YAML from "yaml";
@@ -39,6 +72,57 @@ import {
  * projection half comes from each issue's real-app drill against a real
  * `corpus` server, and neither half is acceptance on its own.
  */
+
+/**
+ * Every JSON body this stub is allowed to put on the wire: a contract response
+ * shape, or one of the contract's error shapes.
+ *
+ * **Why the transport is typed at all.** The generated client validates nothing
+ * at runtime, so a field the stub omits arrives at the board as `undefined` and
+ * nothing complains — and `undefined` is not loud. `unansweredForms` landed on
+ * `DocRow` (CONTRACT-040), the stub did not carry it, and every stubbed row said
+ * `undefined`; the threshold reading it is `> 1`, which against `undefined` is
+ * merely *false*, so the spec asserting it would have **passed** against a row
+ * the server never sends (UI-102). A spec that fails confusingly costs an hour;
+ * a spec that passes dishonestly costs whatever it was guarding.
+ *
+ * So every payload below is either produced by a builder with a contract return
+ * type, or is an object literal carrying `satisfies <ContractType>`. Both make a
+ * missing field a **compile** error, which is the only kind of error a stub's
+ * omission can be — there is no runtime check to fail.
+ *
+ * This union is the backstop for the third case: a route added later whose
+ * author forgets the `satisfies`. It cannot catch a payload sent on the wrong
+ * route (any member satisfies it), which is exactly what the per-call-site
+ * `satisfies` is for.
+ *
+ * A spec that genuinely wants bytes the contract forbids stays possible — the
+ * stub answers at the transport boundary and always will — but it now costs an
+ * explicit cast, which is a place to write down *why*. See the two in this file:
+ * the unhandled-route fallback (UI-085) is the only one shipped.
+ */
+type StubPayload =
+  | ConflictError
+  | CreateThreadResponse
+  | DeleteDocResult
+  | Doc
+  | DocList
+  | DocMutationResponse
+  | FolderTree
+  | FormAnswerResponse
+  | JobList
+  | LockList
+  | MarkSeenResult
+  | NotFoundError
+  | QueueStatus
+  | ReattachConflictError
+  | ReattachThreadResponse
+  | RelatedDocs
+  | SearchResults
+  | Thread
+  | ThreadMutationResponse
+  | UpdateDocResponse
+  | ValidationError;
 
 export interface StubRow {
   readonly id: string;
@@ -68,14 +152,22 @@ export interface StubRow {
    * reports `null`, exactly as the server reports a turn nobody recorded one for.
    */
   readonly turnModels?: Readonly<Record<string, string>>;
-  readonly status?: string;
+  /**
+   * The contract's three statuses and no others. A seed of `"draft"` would have
+   * produced a row whose `status` no `DocRow` the server sends can hold, and
+   * every consumer branching on it would have been asserted against a value that
+   * cannot occur (UI-102).
+   */
+  readonly status?: DocStatus;
   readonly pinned?: boolean;
   readonly order?: number | null;
-  readonly query?: Readonly<Record<string, unknown>> | null;
+  /** A view document's query — the contract's `ViewQuery`, not free-form JSON. */
+  readonly query?: ViewQuery | null;
   readonly column?: string | null;
   readonly parent?: string | null;
   readonly extra?: Readonly<Record<string, unknown>>;
-  readonly stale?: unknown;
+  /** A staleness tier, or `null` for fresh — SPEC.md §5's ramp, never a string. */
+  readonly stale?: StaleTier | null;
   /**
    * Anchors the document already carries, as a workspace that has been
    * commented on before this page loaded (UI-027).
@@ -114,7 +206,7 @@ export interface StubRow {
 export interface SeedRelated {
   readonly id: string;
   /** `linked`, `similar` or `both` — the wire's vocabulary, unabridged. */
-  readonly relation: string;
+  readonly relation: Relation;
 }
 
 /** A seeded anchor: the selector, and the thread it belongs to. */
@@ -124,7 +216,8 @@ export interface SeedAnchor {
   readonly exact: string;
   readonly prefix?: string;
   readonly suffix?: string;
-  readonly threadStatus?: string;
+  /** A thread is `open` or `resolved`; an anchor never points at an archived one. */
+  readonly threadStatus?: ThreadStatus;
 }
 
 interface StoredDoc {
@@ -135,14 +228,14 @@ interface StoredDoc {
   body: string;
   /** The frontmatter record of which model wrote which turn, keyed by `ts`. */
   turnModels: Record<string, string>;
-  status: string;
+  status: DocStatus;
   pinned: boolean;
   order: number | null;
-  query: Readonly<Record<string, unknown>> | null;
+  query: ViewQuery | null;
   column: string | null;
   parent: string | null;
   extra: Record<string, unknown>;
-  stale: unknown;
+  stale: StaleTier | null;
   /**
    * Stamped on every write, exactly as the server stamps it. Kept per document
    * rather than as one frozen constant because a surface may legitimately key
@@ -172,8 +265,14 @@ interface StoredDoc {
 interface StoredAnchor {
   readonly anchorId: string;
   readonly threadId: string;
-  selector: { readonly exact: string; readonly prefix?: string; readonly suffix?: string };
-  threadStatus: string;
+  /**
+   * The contract's selector, with `prefix` and `suffix` **present** — the read
+   * side defaults both to `""`, so a resolved anchor always carries all three
+   * strings. Storing them optional let a thread created without context report a
+   * selector missing two of its fields, which no server response ever is.
+   */
+  selector: TextQuoteSelector;
+  threadStatus: ThreadStatus;
 }
 
 /** The seeded instant every document starts at, and the clock a write advances. */
@@ -207,7 +306,7 @@ export interface StubJob {
   /** `comment.created`, `form.respond`, `doc.edited`, or a plugin's own. */
   readonly type: string;
   /** One of `QUEUE_EVENT_STATUSES`; the queue's three non-terminal ones are what §8 reads. */
-  readonly status: string;
+  readonly status: QueueEventStatus;
   /** When the event was enqueued — what the pending indicator counts from. */
   readonly started: string;
   readonly updated?: string;
@@ -288,7 +387,7 @@ function seeded(row: StubRow): StoredDoc {
  * **persistent** fact about the document rather than the optimistic decoration a
  * creation briefly shows.
  */
-function resolveAnchor(doc: StoredDoc, anchor: StoredAnchor): unknown {
+function resolveAnchor(doc: StoredDoc, anchor: StoredAnchor): ResolvedAnchor {
   const range = resolveAnchorExact(doc.body, anchor.selector);
   return {
     anchorId: anchor.anchorId,
@@ -387,14 +486,43 @@ function unansweredFormsOf(doc: StoredDoc): number {
  * form (which survives being read) and an unread agent reply (which does not).
  * Both are computed from the thread's own state, so `POST …/seen` clears one and
  * only answering clears the other — exactly the difference the spec asserts.
+ *
+ * **The other three are absent, and the guards here are tighter than the
+ * server's** (UI-102's sweep). `apps/server/src/docs/needs.ts` derives `stale`,
+ * `due` and `failed-job` with no thread guard at all, and its `unread-reply` has
+ * no open-status guard either — so a resolved thread holding an unseen agent
+ * turn carries the reason there and not here. Nothing shipped asserts over the
+ * difference; a spec that wants one of those three needs this function to grow,
+ * not a seeded `attention` array, for the reason the two reasons below are
+ * derived rather than seeded.
  */
-function attentionOf(doc: StoredDoc): readonly string[] {
+function attentionOf(doc: StoredDoc): NeedsReason[] {
   if (doc.type !== "thread" || doc.status !== "open") return [];
   const turns = parseThreadTurns(doc.body);
-  const reasons: string[] = [];
+  const reasons: NeedsReason[] = [];
   if (doc.unread && turns.at(-1)?.author === "agent") reasons.push("unread-reply");
   if (unansweredFormsOf(doc) > 0) reasons.push("form");
   return reasons;
+}
+
+/**
+ * A thread's status as the **thread** surfaces report it (SPEC.md §6): `open` or
+ * `resolved` and never `archived`.
+ *
+ * A document has three statuses and a `Thread`/`ThreadSummary` has two, so the
+ * narrowing has to happen somewhere. It happens here, once, rather than at each
+ * of the four responses that carry one — `GET /api/threads/{id}` already did it
+ * inline and the other three passed the document's status straight through, so
+ * an archived thread would have reported `status: "archived"` on three routes
+ * whose contract has no such value (UI-102).
+ */
+function threadStatusOf(doc: StoredDoc): ThreadStatus {
+  return doc.status === "resolved" ? "resolved" : "open";
+}
+
+/** Whether a `PUT` body's `status` is one the contract defines. */
+function isDocStatus(value: unknown): value is DocStatus {
+  return value === "open" || value === "resolved" || value === "archived";
 }
 
 /** The instant a write stamps: monotonic, so two saves never collide. */
@@ -417,7 +545,7 @@ export async function stubCorpus(
   const requests: StubRequest[] = [];
   let created = 0;
 
-  const json = async (route: Route, payload: unknown, status = 200): Promise<void> => {
+  const json = async (route: Route, payload: StubPayload, status = 200): Promise<void> => {
     await route.fulfill({
       status,
       contentType: "application/json",
@@ -450,7 +578,44 @@ export async function stubCorpus(
     return parent?.anchors.find((anchor) => anchor.threadId === doc.id)?.selector.exact ?? null;
   };
 
-  const asRow = (doc: StoredDoc): unknown => {
+  /**
+   * One row of `GET /api/docs`, as `DocRow` — **typed, so a field added to the
+   * contract stops this file compiling** rather than arriving at the board as
+   * `undefined` (UI-102). That is the whole of the protection: nothing
+   * runtime-validates a response, so the compiler is the only thing that can
+   * notice an omission.
+   *
+   * **It builds the row literally rather than on `docRowFixture`**
+   * (`@corpus/kit/testing`), which models a complete row for unit tests. The
+   * fixture is right there and wrong here: spreading over it would fill any
+   * field this function forgets with the fixture's "nothing to report" value, so
+   * the next `DocRow` field would compile clean and answer a plausible-looking
+   * default on every stubbed row — the same silence in a new costume. A test
+   * that does not care what a field says wants that default; a *stand-in for the
+   * server* has to be made to decide.
+   *
+   * **What it still does not know, named rather than left to be discovered.**
+   * These are type-legal and honest-looking, and each is a place a spec can
+   * assert less than the server would show it (no shipped spec does today —
+   * UI-102's sweep checked):
+   *
+   * - `unreadThreads` is always `0`. The server counts a document's child
+   *   threads whose last turn is newer than the seen mark, so a parent of an
+   *   unread conversation wears a pill here that this stub never lights.
+   * - `awaitingAgent` is always `false` on a thread. The server's rule is
+   *   `agent <> 'none' AND status = 'open' AND last_author = 'user'`, which a
+   *   thread created through this stub's own `POST /api/threads` with
+   *   `requestsAgent` satisfies — so the row's working dot is missing.
+   * - `attention` carries only `unread-reply` and `form` (see {@link attentionOf}).
+   *   The server also emits `stale`, `due` and `failed-job`, none of which are
+   *   thread-scoped, so `needs=stale` answers empty here on a corpus the server
+   *   would report rows for.
+   * - `tags`, `due`, `reviewed` and `evergreen` are fixed, so no spec can reach
+   *   the surfaces that read them.
+   * - `snippets` is always empty, including under `q` — the server returns the
+   *   matched passages.
+   */
+  const asRow = (doc: StoredDoc): DocRow => {
     const turns = turnsOf(doc);
     const last = turns.at(-1);
     return {
@@ -512,7 +677,7 @@ export async function stubCorpus(
    * they are denormalised copies resolved at response time — a renamed document
    * shows its new title on the next read.
    */
-  const asJob = (job: StubJob): unknown => ({
+  const asJob = (job: StubJob): Job => ({
     eventId: job.eventId,
     type: job.type,
     status: job.status,
@@ -548,7 +713,7 @@ export async function stubCorpus(
     return turn;
   };
 
-  const asDoc = (doc: StoredDoc): unknown => ({
+  const asDoc = (doc: StoredDoc): Doc => ({
     body: doc.body,
     path: doc.path,
     anchors: doc.anchors.map((anchor) => resolveAnchor(doc, anchor)),
@@ -560,7 +725,15 @@ export async function stubCorpus(
       updated: doc.updated,
       tags: [],
       status: doc.status,
-      anchors: {},
+      /*
+       * The frontmatter anchors map (SPEC.md §6) — the selectors as the *file*
+       * holds them, keyed by anchor id, beside the resolved `anchors` array
+       * above. It used to be flatly `{}` on every document, which the type
+       * permits (an empty record is a legal record) and no surface reads today,
+       * but a document carrying two highlights and an empty anchors map is not a
+       * document the server can produce.
+       */
+      anchors: Object.fromEntries(doc.anchors.map((anchor) => [anchor.anchorId, anchor.selector])),
       due: null,
       reviewed: null,
       evergreen: false,
@@ -609,7 +782,9 @@ export async function stubCorpus(
     const needs = params.get("needs");
     if (needs !== null) {
       const reasons = attentionOf(doc);
-      if (needs === "me" ? reasons.length === 0 : !reasons.includes(needs)) return false;
+      if (needs === "me" ? reasons.length === 0 : !reasons.some((reason) => reason === needs)) {
+        return false;
+      }
     }
     const status = params.get("status");
     if (status !== null) return status.split(",").includes(doc.status);
@@ -628,7 +803,7 @@ export async function stubCorpus(
       body: raw === null ? undefined : (JSON.parse(raw) as unknown),
     });
 
-    if (url.pathname === "/api/locks") return json(route, { locks: [] });
+    if (url.pathname === "/api/locks") return json(route, { locks: [] } satisfies LockList);
     /*
      * `GET /api/jobs` — the queue's own rows, filtered the way the server
      * filters them: `status` is the comma-separated set `useOutstandingJobs`
@@ -661,9 +836,19 @@ export async function stubCorpus(
         origin === null
           ? matching.slice(0, Number.isFinite(recent) && recent > 0 ? recent : DEFAULT_RECENT_JOBS)
           : matching;
-      return json(route, { jobs: answer.map(asJob) });
+      return json(route, { jobs: answer.map(asJob) } satisfies JobList);
     }
-    if (url.pathname === "/api/tree") return json(route, { folders: [] });
+    if (url.pathname === "/api/tree") return json(route, { folders: [] } satisfies FolderTree);
+    /*
+     * `GET /api/queue/status` — the console strip's counts (SPEC.md §7).
+     *
+     * It used to answer a shape that was wrong in both directions at once: it
+     * omitted `abandoned`, which `QueueStatus` requires, and carried an `agent`
+     * key the contract has never had (the agent pill derives its state from the
+     * counts — `consoleModel.agentState` — and no such field is on the wire).
+     * Neither was visible: the missing count is only read as a number nothing
+     * renders yet, and the extra key was silently ignored (UI-102).
+     */
     if (url.pathname === "/api/queue/status") {
       return json(route, {
         pending: 0,
@@ -671,9 +856,9 @@ export async function stubCorpus(
         deferred: 0,
         failed: 0,
         processed: 0,
+        abandoned: 0,
         halted: false,
-        agent: "idle",
-      });
+      } satisfies QueueStatus);
     }
 
     if (url.pathname === "/api/docs" && method === "GET") {
@@ -681,7 +866,10 @@ export async function stubCorpus(
         .filter((doc) => matches(doc, url.searchParams))
         .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
         .map(asRow);
-      return json(route, { items, page: { total: items.length, limit: 50, offset: 0 } });
+      return json(route, {
+        items,
+        page: { total: items.length, limit: 50, offset: 0 },
+      } satisfies DocList);
     }
 
     if (url.pathname === "/api/docs" && method === "POST") {
@@ -694,7 +882,7 @@ export async function stubCorpus(
         path: `data/docs/${typeof input["folder"] === "string" ? input["folder"] : "inbox"}/new${String(created)}.md`,
       });
       store.set(doc.id, doc);
-      return json(route, { doc: asDoc(doc), warnings: [] }, 201);
+      return json(route, { doc: asDoc(doc), warnings: [] } satisfies DocMutationResponse, 201);
     }
 
     /**
@@ -734,7 +922,24 @@ export async function stubCorpus(
       thread.agent = input["requestsAgent"] === true ? "requested" : "none";
       store.set(thread.id, thread);
 
-      const selector = input["selector"] as StoredAnchor["selector"] | undefined;
+      /*
+       * The **request-side** selector, whose context strings are optional
+       * (`TextQuoteSelectorRequest`), normalised to the parse-side shape before
+       * it is stored. The server defaults both to `""` on the way in, so every
+       * selector it reports back carries all three strings; storing the request
+       * shape verbatim made an uncontextualised comment produce a resolved
+       * anchor missing two fields no server response omits (UI-102).
+       *
+       * **`null` is the composer's word for "no selection", not `undefined`** —
+       * the global *Ask* sends `selector: null`. Read as `undefined` only, a null
+       * selector fell past the `=== undefined` guard and the response claimed
+       * `anchorId: "anc_newN"` for a thread anchored to nothing (UI-102).
+       */
+      const asked = input["selector"] as TextQuoteSelectorRequest | null | undefined;
+      const selector: TextQuoteSelector | undefined =
+        asked === undefined || asked === null
+          ? undefined
+          : { exact: asked.exact, prefix: asked.prefix ?? "", suffix: asked.suffix ?? "" };
       const parent = store.get(parentId);
       const anchorId = `anc_new${String(created)}`;
       if (parent !== undefined && selector !== undefined) {
@@ -770,7 +975,7 @@ export async function stubCorpus(
            */
           eventId: input["requestsAgent"] === true ? `evt_new${String(created)}` : null,
           warnings: [],
-        },
+        } satisfies CreateThreadResponse,
         201,
       );
     }
@@ -822,16 +1027,20 @@ export async function stubCorpus(
       const ts = canonicalInstant(decodeURIComponent(formAnswer[2] ?? ""));
       const doc = store.get(id);
       if (doc === undefined || doc.type !== "thread") {
-        return json(route, { code: "not_found", message: id }, 404);
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
       }
       const turns = parseThreadTurns(doc.body);
       const target = turns.find((turn) => canonicalInstant(turn.ts) === ts);
       const form = target === undefined ? undefined : formIn(target);
       if (target === undefined || form === undefined) {
-        return json(route, { code: "not_found", message: ts }, 404);
+        return json(route, { code: "not_found", message: ts } satisfies NotFoundError, 404);
       }
       if (!openForms(turns).some((turn) => canonicalInstant(turn.ts) === ts)) {
-        return json(route, { code: "conflict", message: "form already answered" }, 409);
+        return json(
+          route,
+          { code: "conflict", message: "form already answered" } satisfies ConflictError,
+          409,
+        );
       }
       const answer = (requests.at(-1)?.body ?? { answers: [] }) as FormAnswerRequest;
       const invalid = validateFormAnswer(form, answer);
@@ -862,7 +1071,7 @@ export async function stubCorpus(
                 message: `unterminated ${fence.marker} code fence opened on line ${fence.line}`,
               },
             ],
-          },
+          } satisfies ValidationError,
           400,
         );
       }
@@ -884,7 +1093,7 @@ export async function stubCorpus(
                 message: `line ${fabricated.line} reads as a turn heading`,
               },
             ],
-          },
+          } satisfies ValidationError,
           400,
         );
       }
@@ -899,7 +1108,7 @@ export async function stubCorpus(
             issues: [
               { path: "body", message: "the answer turn would not read back as this answer" },
             ],
-          },
+          } satisfies ValidationError,
           400,
         );
       }
@@ -913,7 +1122,7 @@ export async function stubCorpus(
           thread: {
             id,
             title: doc.title,
-            status: doc.status,
+            status: threadStatusOf(doc),
             parent: doc.parent,
             anchor: null,
             agent: doc.agent,
@@ -926,7 +1135,7 @@ export async function stubCorpus(
           turn,
           eventId: "evt_stub",
           warnings: [],
-        },
+        } satisfies FormAnswerResponse,
         201,
       );
     }
@@ -944,7 +1153,7 @@ export async function stubCorpus(
       const verb = threadVerb[2];
       const doc = store.get(id);
       if (doc === undefined || doc.type !== "thread") {
-        return json(route, { code: "not_found", message: id }, 404);
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
       }
       if (verb === "seen") {
         doc.unread = false;
@@ -953,7 +1162,7 @@ export async function stubCorpus(
           threadId: id,
           lastSeenTs: turns.at(-1)?.ts ?? SEEDED_AT,
           unread: false,
-        });
+        } satisfies MarkSeenResult);
       }
       doc.status = verb === "resolve" ? "resolved" : "open";
       stampUpdated(doc);
@@ -965,7 +1174,7 @@ export async function stubCorpus(
         thread: {
           id,
           title: doc.title,
-          status: doc.status,
+          status: threadStatusOf(doc),
           parent: doc.parent,
           anchor: anchor?.anchorId ?? null,
           agent: doc.agent,
@@ -976,7 +1185,7 @@ export async function stubCorpus(
           lastTs: turns.at(-1)?.ts ?? SEEDED_AT,
         },
         warnings: [],
-      });
+      } satisfies ThreadMutationResponse);
     }
 
     /*
@@ -997,14 +1206,18 @@ export async function stubCorpus(
       const id = decodeURIComponent(reattach[1] ?? "");
       const thread = store.get(id);
       if (thread === undefined || thread.type !== "thread") {
-        return json(route, { code: "not_found", message: id }, 404);
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
       }
       const parent = thread.parent === null ? undefined : store.get(thread.parent);
       const anchor = parent?.anchors.find((entry) => entry.threadId === id);
       if (parent === undefined || anchor === undefined) {
         return json(
           route,
-          { code: "conflict", message: "nothing to repair", reason: "not-anchored" },
+          {
+            code: "conflict",
+            message: "nothing to repair",
+            reason: "not-anchored",
+          } satisfies ReattachConflictError,
           409,
         );
       }
@@ -1017,7 +1230,11 @@ export async function stubCorpus(
       if (parent.body.slice(start, end) !== asked.expectedText) {
         return json(
           route,
-          { code: "conflict", message: "the range changed", reason: "range-changed" },
+          {
+            code: "conflict",
+            message: "the range changed",
+            reason: "range-changed",
+          } satisfies ReattachConflictError,
           409,
         );
       }
@@ -1031,7 +1248,7 @@ export async function stubCorpus(
               code: "conflict",
               message: `overlaps ${other.threadId}`,
               reason: "range-overlaps",
-            },
+            } satisfies ReattachConflictError,
             409,
           );
         }
@@ -1046,7 +1263,7 @@ export async function stubCorpus(
         thread: {
           id,
           title: thread.title,
-          status: thread.status,
+          status: threadStatusOf(thread),
           parent: thread.parent,
           anchor: anchor.anchorId,
           agent: thread.agent,
@@ -1058,7 +1275,7 @@ export async function stubCorpus(
         },
         anchor: resolveAnchor(parent, anchor),
         warnings: [],
-      });
+      } satisfies ReattachThreadResponse);
     }
 
     const threadRead = /^\/api\/threads\/([^/]+)$/.exec(url.pathname);
@@ -1066,7 +1283,7 @@ export async function stubCorpus(
       const id = decodeURIComponent(threadRead[1] ?? "");
       const doc = store.get(id);
       if (doc === undefined || doc.type !== "thread") {
-        return json(route, { code: "not_found", message: id }, 404);
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
       }
       const parent = doc.parent === null ? undefined : store.get(doc.parent);
       return json(route, {
@@ -1074,7 +1291,7 @@ export async function stubCorpus(
         title: doc.title,
         created: SEEDED_AT,
         updated: doc.updated,
-        status: doc.status === "resolved" ? "resolved" : "open",
+        status: threadStatusOf(doc),
         tags: [],
         parent: doc.parent,
         // The anchor entry lives on the **parent**, and the thread names it.
@@ -1083,8 +1300,8 @@ export async function stubCorpus(
         // `turnsOf`, not the bare body parser: this is the read every thread
         // surface goes through, and it is where a turn learns which model wrote
         // it (SPEC.md §11).
-        turns: turnsOf(doc),
-      });
+        turns: [...turnsOf(doc)],
+      } satisfies Thread);
     }
 
     /*
@@ -1100,7 +1317,11 @@ export async function stubCorpus(
     if (url.pathname === "/api/search" && method === "GET") {
       const q = url.searchParams.get("q") ?? "";
       if (q === "") {
-        return json(route, { code: "bad_request", message: "q is required", issues: [] }, 400);
+        return json(
+          route,
+          { code: "bad_request", message: "q is required", issues: [] } satisfies ValidationError,
+          400,
+        );
       }
       const limit = Number(url.searchParams.get("limit") ?? "10");
       const hits = [...store.values()]
@@ -1112,7 +1333,7 @@ export async function stubCorpus(
           headingPath: /^#{1,6} (.+)$/m.exec(doc.body)?.[1] ?? doc.title,
           snippet: (doc.body.split("\n").find((line) => line.trim() !== "") ?? "").slice(0, 120),
         }));
-      return json(route, { hits, semanticIndex: "current" });
+      return json(route, { hits, semanticIndex: "current" } satisfies SearchResults);
     }
 
     /*
@@ -1124,7 +1345,11 @@ export async function stubCorpus(
     if (related !== null && method === "GET") {
       const subject = store.get(decodeURIComponent(related[1] ?? ""));
       if (subject === undefined) {
-        return json(route, { code: "not_found", message: url.pathname }, 404);
+        return json(
+          route,
+          { code: "not_found", message: url.pathname } satisfies NotFoundError,
+          404,
+        );
       }
       /*
        * Seeded when a spec needs a `similar` or `both` row (no browser stub
@@ -1166,7 +1391,7 @@ export async function stubCorpus(
           ];
         }),
         semanticIndex: "current",
-      });
+      } satisfies RelatedDocs);
     }
 
     if (url.pathname.startsWith("/api/docs/")) {
@@ -1181,22 +1406,33 @@ export async function stubCorpus(
       const [rawDocId = "", verb] = rest.split("/");
       if (verb === "archive" || verb === "unarchive") {
         const subject = store.get(decodeURIComponent(rawDocId));
-        if (subject === undefined) return json(route, { code: "not_found", message: rest }, 404);
+        if (subject === undefined) {
+          return json(route, { code: "not_found", message: rest } satisfies NotFoundError, 404);
+        }
         subject.status = verb === "archive" ? "archived" : "open";
         stampUpdated(subject);
-        return json(route, { doc: asDoc(subject), warnings: [] });
+        return json(route, { doc: asDoc(subject), warnings: [] } satisfies DocMutationResponse);
       }
       const id = decodeURIComponent(rest);
       if (method === "DELETE") {
         store.delete(id);
-        return json(route, { deletedId: id, orphanedThreadIds: [], warnings: [] });
+        return json(route, {
+          deletedId: id,
+          orphanedThreadIds: [],
+          warnings: [],
+        } satisfies DeleteDocResult);
       }
       const doc = store.get(id);
-      if (doc === undefined) return json(route, { code: "not_found", message: id }, 404);
+      if (doc === undefined) {
+        return json(route, { code: "not_found", message: id } satisfies NotFoundError, 404);
+      }
       if (method === "PUT") {
         const changes = (requests.at(-1)?.body ?? {}) as Record<string, unknown>;
         if (typeof changes["title"] === "string") doc.title = changes["title"];
-        if (typeof changes["status"] === "string") doc.status = changes["status"];
+        // A status the contract does not define is not a status the server would
+        // ever store, so an unrecognised one is ignored rather than written
+        // through — the same refusal `UpdateDocRequest`'s enum makes (UI-102).
+        if (isDocStatus(changes["status"])) doc.status = changes["status"];
         if (typeof changes["body"] === "string") doc.body = changes["body"];
         if (changes["extra"] !== undefined && changes["extra"] !== null) {
           // RFC 7386 shallow merge, exactly as the server applies it.
@@ -1208,12 +1444,25 @@ export async function stubCorpus(
           doc: asDoc(doc),
           anchors: { remapped: [], orphaned: [] },
           warnings: [],
-        });
+        } satisfies UpdateDocResponse);
       }
       return json(route, asDoc(doc));
     }
 
-    return json(route, {});
+    /*
+     * The unhandled-route fallback, and **the one cast in this file** — the
+     * single place the stub deliberately puts bytes on the wire that no contract
+     * response describes.
+     *
+     * `{}` is not any response shape, which is precisely UI-085's complaint: a
+     * route nobody taught the stub answers `200 {}`, and the caller fails
+     * somewhere downstream reading a field off an empty object rather than at
+     * the request that was never handled. Fixing that is UI-085's; what this
+     * cast does is stop it hiding among twenty untyped payloads. Everything
+     * above is checked, so this is the whole of the stub's dishonesty and it is
+     * written down.
+     */
+    return json(route, {} as StubPayload);
   });
 
   return {

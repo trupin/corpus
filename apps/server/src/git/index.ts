@@ -19,6 +19,7 @@ export type {
 } from "./commit.js";
 export { sanitizeGitEnv } from "./env.js";
 export type { ChildEnv } from "./env.js";
+export { disableAutoMaintenance } from "./maintenance.js";
 export {
   createGit,
   gitOutput,

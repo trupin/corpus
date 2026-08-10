@@ -1,3 +1,4 @@
+import type { ConflictError, Health, Job, JobLog, JobList, QueueStatus } from "@corpus/contract";
 import type { Page } from "@playwright/test";
 // `test` comes from the coverage fixture, not from `@playwright/test`: it is the
 // same runner plus the browser-side V8 collection the merged gate needs.
@@ -264,7 +265,7 @@ test.describe("the master-detail body", () => {
    * above `fetch` is the real application.
    */
   test("a refused retry says so, though the menu that asked has closed", async ({ page }) => {
-    const failedJob = {
+    const failedJob: Job = {
       eventId: "evt_e2e",
       type: "comment.created",
       status: "failed",
@@ -280,15 +281,29 @@ test.describe("the master-detail body", () => {
       const url = new URL(route.request().url());
       const body = (payload: unknown, status = 200): Promise<void> =>
         route.fulfill({ status, contentType: "application/json", body: JSON.stringify(payload) });
-      if (url.pathname === "/api/jobs") return body({ jobs: [failedJob] });
+      if (url.pathname === "/api/jobs") return body({ jobs: [failedJob] } satisfies JobList);
       if (url.pathname.endsWith("/retry")) {
         // Still on the wire when the menu goes: the teardown this pins.
         await new Promise((resolve) => setTimeout(resolve, 300));
-        return body({ error: "queue is halted" }, 409);
+        /*
+         * The **contract's** refusal, `{code, message}` — this used to send
+         * `{error: "queue is halted"}`, which `isApiError` rejects, so
+         * `CorpusRequestError` fell back to its developer string and the toast
+         * read `POST /api/jobs/{id}/retry failed (HTTP 409): {"error":…}`. The
+         * assertion below only looked for the "Could not retry" prefix, so the
+         * spec passed while exercising the branch PR #28's re-review exists to
+         * keep off the screen (UI-102).
+         */
+        return body({ code: "conflict", message: "queue is halted" } satisfies ConflictError, 409);
       }
-      if (url.pathname.endsWith("/log")) return body({ lines: [], nextCursor: 0 });
+      if (url.pathname.endsWith("/log")) return body({ lines: [], nextCursor: 0 } satisfies JobLog);
       if (url.pathname === "/api/health") {
-        return body({ status: "ok", version: "1.2.3", uptimeSeconds: 4, workspace: "/tmp/ws" });
+        return body({
+          status: "ok",
+          version: "1.2.3",
+          uptimeSeconds: 4,
+          workspace: "/tmp/ws",
+        } satisfies Health);
       }
       if (url.pathname === "/api/queue/status") {
         return body({
@@ -299,7 +314,7 @@ test.describe("the master-detail body", () => {
           processed: 0,
           failed: 1,
           abandoned: 0,
-        });
+        } satisfies QueueStatus);
       }
       return body({});
     });
@@ -312,7 +327,9 @@ test.describe("the master-detail body", () => {
     // The surface that carried the observer is gone before the answer arrives.
     await expect(menu).toBeHidden();
 
-    await expect(page.locator(".toast")).toContainText("Could not retry evt_e2e");
+    // The **server's own sentence**, not a route template and a status code:
+    // what a person reads in a 360px toast (UI-102).
+    await expect(page.locator(".toast")).toContainText("Could not retry evt_e2e: queue is halted");
     await expect(page.locator(".toast")).toHaveAttribute("data-tone", "error");
   });
 });
