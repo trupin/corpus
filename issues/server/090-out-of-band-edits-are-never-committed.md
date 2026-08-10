@@ -20,8 +20,11 @@ opus
 
 - Depends on: —
 - Blocks: —
-- Related: SHARED-040 (found it; explicitly **not** justified by it), SERVER-007
-  (specified the commit that was never built), SERVER-005
+- Related: SHARED-040 (found it; explicitly **not** justified by it),
+  SERVER-091–094 (the rider's implementation — this issue is independent of all
+  four and may land before or after any of them), SERVER-007 (specified the
+  commit that was never built), SERVER-005, SERVER-094 (boot recovery, the other
+  thing that will pick these edits up if this is not fixed)
 
 ## Spec References
 

@@ -19,8 +19,9 @@ fable
 ## Dependencies
 
 - Depends on: —
-- Blocks: (a SERVER-\* issue to be filed once the text is signed — the change is
-  entirely in `apps/server/src/git/commit.ts` and its callers)
+- Blocks: SERVER-091 (the window itself), SERVER-092 (acts close it),
+  SERVER-093 (nothing reads a history it holds), SERVER-094 (clean stop and boot
+  recovery) — filed 2026-08-10 against the signed text
 
 ## Spec References
 
@@ -228,16 +229,16 @@ Folded In" below) and are already folded into the text; it is final as written.
 
 ## Acceptance Criteria
 
-- [ ] Read aloud to the user on its own, verbatim, separately from SHARED-024 …
+- [x] Read aloud to the user on its own, verbatim, separately from SHARED-024 …
       SHARED-038
 - [x] The six questions the draft raised answered and folded into the text
       (2026-08-09) — see "Decisions Folded In"
-- [ ] User signs off, or amends
-- [ ] Applied to §4 with the `_(Rider signed YYYY-MM-DD.)_` marker, replacing the
+- [x] User signs off, or amends — **signed 2026-08-10, as drafted**
+- [x] Applied to §4 with the `_(Rider signed YYYY-MM-DD.)_` marker, replacing the
       "Autosave and commit granularity" paragraph and leaving "One action, one
       commit" intact
-- [ ] Contradiction sweep recorded (below)
-- [ ] Follow-on SERVER issue filed against the signed text
+- [x] Contradiction sweep recorded (below)
+- [x] Follow-on SERVER issues filed against the signed text — SERVER-091 … 094
 
 ## Decisions Folded In (do not reopen)
 
@@ -349,38 +350,104 @@ N/A.
 
 _N/A — spec rider, no code._
 
-## Contradiction Sweep (to record at sign-off)
+## Contradiction Sweep — run 2026-08-10, after applying
 
-- §4 line 135 — "**Every mutation** the server performs auto-commits the affected
-  files": still true (every mutation reaches git), but "auto-commits" now means
-  "enters the open window". Confirm the sentence does not need "each on its own"
-  struck out explicitly.
-- §4 line 139 — "One action, one commit": unaffected; "Three acts commit alone"
-  restates its guarantee. Confirm the older sentence "A bulk commit … never folds
-  into a preceding editing session's squashed commit, and no later save folds
-  into it" reads correctly against windows (it does: the bulk act flushes the
-  window and opens none).
-- §4 line 141 — edit acknowledgment: the `doc.edited` range is now always
-  flushed-then-named; confirm `endedBy: "close" | "idle"` still describes the two
-  paths, and that several documents sharing one commit is acceptable in the
-  event payload's `stats`.
-- §7 line 308 — "Every change leaves a visible trace … auto-commits with the
-  acting party as git author": the recovery commit is the one commit with no
-  acting party. **Recorded as a deliberate exception, decided by the user
-  2026-08-09** — not a contradiction to resolve later. The rider names it as
-  §7's sole exception in its own text; the sweep's only job here is to confirm
-  §7's sentence is not additionally reworded, since the exception is already
-  declared where it is made.
-- §7 line 330 — `corpus skill rollback`: now flushes before reverting. Confirm.
-- §9.2 line 383 — the diff route: now flushes before reading. Confirm a read
-  endpoint being allowed to cause a commit is acceptable (it is the crux of the
-  read-back rule).
-- §14 — "the file mutation stands" when a commit fails: confirm the drafted
-  "gathered into the next window that closes" does not contradict it.
-- §2.2 rule 1 (files are the source of truth) and rule 4 (bootstrap-class
-  operations write directly with the server stopped — `corpus init`,
-  `corpus workspace upgrade`): confirm boot recovery does not surprise an
-  upgrade that deliberately wrote files with the server down.
+Line numbers are post-application. **One live contradiction found** (item 2);
+everything else confirmed clear, with the reasoning recorded so it is not re-run
+from scratch.
+
+1. **§4 line 135 — "Every mutation the server performs auto-commits the affected
+   files … with the acting party as git author."** _Clear._ Still true in both
+   halves: every mutation still reaches git, and still under its party. What
+   changed is only what "auto-commits" does next — the mutation enters the open
+   window rather than standing alone. The sentence never said "each on its own",
+   so nothing needs striking, and line 137 opens by saying exactly that ("Every
+   mutation still auto-commits, but no longer each one on its own"), which is the
+   bridge between the two.
+
+2. **§4 line 179 — "One action, one commit."** ❌ **Live contradiction.** The rule
+   survives, as the rider says. But its justification clause does not:
+
+   > "A bulk commit is its own entry in the history: it never folds into a
+   > preceding editing session's squashed commit, and no later save folds into it
+   > — **the squashing above is about repeated saves of one document, never about
+   > one act across many.**"
+
+   "The squashing above" is now line 137's commit window, which is scoped to a
+   **party** and spans documents by design. So the clause states as fact the very
+   mechanism this rider replaced. The *rule* is untouched and "Three acts commit
+   alone" restates it; only the em-dash clause is stale. **Held for sign-off as a
+   one-clause corrective amendment** — see below. Not applied unilaterally: it is
+   SPEC.md text and the rider explicitly promised line 179 would stay as it is.
+
+3. **§4 line 181 — edit acknowledgment.** _Clear._ "A distinct and longer window
+   than the commit-squash idle above" still reads correctly against the window's
+   idle. `endedBy: "close" | "idle"` is code, not spec, and edit sessions remain a
+   separate concept from commit windows — a window closing does not end an edit
+   session. Several documents sharing one commit is handled in the rider's own
+   text ("each document's acknowledgment names that same commit and each diff is
+   path-scoped"); SERVER-093 carries it as an acceptance criterion, including the
+   `stats` computation, which was correct only by accident while one commit meant
+   one document.
+
+4. **§7 line 348 — "auto-commits with the acting party as git author, so `git log`
+   is a complete audit trail."** _Recorded as a deliberate exception_, decided by
+   the user 2026-08-09, and declared in §4's own text rather than resolved here.
+   §7 is **not** reworded. The residual cost, stated plainly: a reader of §7 alone
+   meets an absolute that has one exception three sections earlier. A one-clause
+   cross-reference would fix that and is offered alongside item 2 — it changes no
+   behaviour and is purely a reader's-path repair.
+
+5. **§7 line 370 — `corpus skill rollback` ("a targeted git revert").** _Clear._
+   The spec sentence is about what rollback does, not about when the history it
+   reads is settled. The flush is an implementation obligation, and it is
+   SERVER-093's first-class acceptance criterion.
+
+6. **§9.2 line 423 — the diff route, "Read-only; no acting party."** _Clear, and
+   this is the one a reviewer may push back on, so the reasoning is recorded._
+   Under the read-back rule this `GET` can cause a commit — it closes the open
+   window before reading. "Read-only" is a claim about the **document surface**:
+   the route changes no document, creates none, and takes no `x-corpus-author`.
+   Closing a window amends the message of a commit the server itself just made
+   and has not published. §4 declares the effect explicitly at line 161 ("Any
+   operation that names, reads or reverts a commit closes the open window before
+   it runs"), so it is stated where it is caused. No §9.2 change.
+
+7. **§14 — "the file mutation stands" when a commit fails.** _Clear._ The rider's
+   "A window commit git itself refuses discards no work either: the changes stay
+   on disk and are gathered into the next window that closes" is §14's rule
+   applied to windows, not an exception to it.
+
+8. **§2.2 rule 4 — bootstrap-class operations write with the server stopped.**
+   _Clear, and better than expected._ The concern was that boot recovery would
+   sweep up `corpus workspace upgrade`'s deliberate writes under no author. It
+   will not: §2.4 line 35 and §2.4 line 86 **both** require that everything the
+   upgrade wrote "lands as a single attributed git commit", so the tree is clean
+   before the server boots. `corpus init` likewise ends on its own bootstrap
+   commit (CLI-002). SERVER-094 carries this as a verify-against-the-code item
+   rather than a spec question — if the upgrade does not in fact commit, recovery
+   would paper over it under no author, which is worse than the gap.
+
+## Held for sign-off — two one-clause corrections the sweep surfaced
+
+Neither changes behaviour. Both are consequences of this rider that live in
+*other* paragraphs, which is exactly what a sweep is for.
+
+**(a) §4 line 179 — strike the stale justification.** Replace:
+
+> — the squashing above is about repeated saves of **one** document, never about
+> one act across many.
+
+with:
+
+> — the window above gathers a party's ordinary saves, and an act is not a save.
+
+**(b) §7 line 348 — one cross-reference, so the absolute is not read alone.**
+After "so `git log` is a complete audit trail", add:
+
+> (with one deliberate exception, named in §4: the recovery commit a server makes
+> after an unclean stop claims no party, because which party was writing is what
+> the unclean stop destroyed)
 
 ## Completion Checklist (orchestrator)
 

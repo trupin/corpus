@@ -413,8 +413,6 @@ belongs to the same fix wave.
 | SERVER-088 | Emit the carried-skill warnings the contract now publishes (CONTRACT-047) | done | P1 | CONTRACT-047 |
 | SERVER-089 | `rollback.test.ts` fails in CI at a git object the fixture should have — **blocks PR #41** | done | P0 | — |
 | CLI-037 | A workspace's git repairs itself in the background, and can corrupt itself doing it (SERVER-089) | todo | P0 | SERVER-089 |
-| SHARED-040 | Commit on acts, not saves — commit windows (SIGNED 2026-08-10, applied) | done | P1 | — |
-| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |
 | UI-106 | A carried effect is not an error, and the UI renders every warning as one | todo | P2 | SERVER-088 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
@@ -537,3 +535,38 @@ cheapest moment for that to happen.
 | SERVER-079 | Apply an anchored string patch through the ordinary write path | todo | P1 | SHARED-037, CONTRACT-046 |
 | CLI-035 | `corpus doc patch` — edit a line without shipping the document | todo | P1 | SHARED-037, CONTRACT-046, SERVER-079 |
 | UI-101 | Build the persistent formatting toolbar for focus mode | todo | P1 | SHARED-034 |
+
+## Phase 29 — Commit windows: a commit per act, not per save (2026-08-10)
+
+SHARED-040, signed 2026-08-10 and applied to §4, replaced "Autosave and commit
+granularity" with **commit windows**. Today the write path folds saves along two
+axes — same document *and* same actor. §4 now scopes the window to the **party
+alone**, so the agent's stewardship for one queue event is one commit that names
+the thread it answered, rather than one commit per document it touched.
+
+SERVER-091 is the mechanism and everything else waits on it; 092, 093 and 094 are
+independent of each other and run in parallel behind it. **SERVER-091 carries one
+adjudication the implementer must not re-litigate**: keep the eager-commit-then-
+amend mechanism, do not build a deferred commit buffer — the rider's "holds work
+outside git" is a stated worst-case bound, not an instruction, and a buffer
+contradicts §5 and §14 harder than the amend model does.
+
+SERVER-090 is not part of the rider and is deliberately filed apart from it: an
+external editor's change is committed under the *next* mutation's author, or not
+at all. It is a defect on its own terms and must not be recorded as a consequence
+of a design change.
+
+The sweep found one live contradiction the rider leaves behind — §4 line 179's
+"the squashing above is about repeated saves of **one** document" is now false of
+the mechanism above it — plus a §7 absolute worth one cross-reference. Both are
+one-clause corrections **held for user sign-off** in `issues/shared/040`; neither
+changes behaviour and nothing below waits on them.
+
+| ID | Title | Status | Priority | Depends on |
+| --- | --- | --- | --- | --- |
+| SHARED-040 | Commit on acts, not saves — commit windows (SIGNED 2026-08-10, applied) | done | P1 | — |
+| SERVER-091 | A commit window belongs to a party, not to a document | todo | P1 | SHARED-040 |
+| SERVER-092 | Every act closes the window it ends, and names it | todo | P1 | SERVER-091 |
+| SERVER-093 | Nothing reads a history the open window is still holding | todo | P1 | SERVER-091 |
+| SERVER-094 | A window never outlives the server silently | todo | P1 | SERVER-091 |
+| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |
