@@ -17,14 +17,24 @@
 //
 // Two structural notes on git:
 //
-// - **The reads take the git lock; the commit takes it again.** `.git/index` is
-//   one shared file, so ref resolution and blob reads must not race a concurrent
-//   auto-commit. They therefore run inside `AutoCommitter.withGitLock`. The
-//   commit that follows takes the lock for itself, from inside `runMutation` —
-//   nesting the two would deadlock, because the lock is a promise chain and the
-//   outer holder would be waiting on a link queued behind its own completion.
-//   Correctness does not depend on holding one lock across both: the revision is
-//   resolved to an immutable sha before anything is read from it.
+// - **The reads close §4's commit window and take the git lock; the commit takes
+//   it again.** A rollback is the operation §4's read-back rule was written for
+//   — it both *names* a revision and *reverts* to it — so the reads run inside
+//   `AutoCommitter.withClosedWindow`, which closes the open window and holds the
+//   git lock across the whole search. Closing first is what makes the candidate
+//   list honest: an open window is a commit the server intends to keep amending,
+//   so a sha chosen off it moves under the operator, and the sha this verb
+//   prints in its own commit subject would name an object no branch holds. It is
+//   also why the close must be inside the same critical section as the search
+//   rather than a call before it — released in between, an autosave opens a
+//   fresh window under the read. `.git/index` being one shared file is the
+//   second reason for the lock: ref resolution and blob reads must not race a
+//   concurrent auto-commit. The commit that follows takes the lock for itself,
+//   from inside `runMutation` — nesting the two would deadlock, because the lock
+//   is a promise chain and the outer holder would be waiting on a link queued
+//   behind its own completion. Correctness does not depend on holding one lock
+//   across both: the revision is resolved to an immutable sha before anything is
+//   read from it, and by then no window is open to move it.
 // - **The rollback never folds into a previous auto-commit** (`squash: false`).
 //   It is the answer to the edit that made it necessary, not a continuation of
 //   it, and folding would amend that edit's commit away — deleting the history
@@ -249,7 +259,11 @@ export async function rollbackSkill(
     // restoration will overwrite.
     const current = readFileSync(absPath, "utf8");
 
-    const search: Search = await workspace.git.withGitLock(async () => {
+    // §4's read-back rule, in the same critical section as the read it protects
+    // (see the module note). `read-back` and not `commits-alone`: the window
+    // ends because its content is about to be *named*, which is true whichever
+    // party owned it and true even if the restoration below never commits.
+    const search: Search = await workspace.git.withClosedWindow("read-back", async () => {
       if (to === null) return findLastKnownGood(workspace, path, current);
       const sha = await resolveRevision(workspace.gitCommands, to);
       if (sha === null) {

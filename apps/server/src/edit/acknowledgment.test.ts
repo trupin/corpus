@@ -200,15 +200,13 @@ describe("doc.edited over the real write path", () => {
       pastTheSquashWindow(ws);
 
       await edit(ws, doc.id, "line one\nuser line\n");
-      // The sha the tracker records for the user's first session, taken at the
-      // instant it records it.
-      const beforeAgent = ws.head();
       await edit(ws, doc.id, "line one\nuser line\nagent line\n", "agent");
       await edit(ws, doc.id, "line one\nuser line\nagent line\nuser again\n");
-      // Named by position, not by the sha it had when it landed: the user's
-      // third save closed the agent's window, and a window no act named is
-      // relabelled as it closes (SERVER-091), which is an amend and so a new
-      // sha for the same tree.
+      // Both named by position, not by the sha each had when it landed: a window
+      // no act named is relabelled as it closes (SERVER-091), which is an amend
+      // and so a new sha for the same tree. The user's first save was closed by
+      // the agent's write; the agent's was closed by the user's third.
+      const userCommit = ws.git("rev-parse", "HEAD~2").trim();
       const agentCommit = ws.git("rev-parse", "HEAD^").trim();
 
       await ws.server.close();
@@ -218,17 +216,22 @@ describe("doc.edited over the real write path", () => {
       // The first session ends at the commit before the agent's; the second
       // starts *from* the agent's commit. Neither range spans it.
       //
-      // ESCALATED (SERVER-091): the first session's `to` is the sha its commit
-      // had *before* the agent's write closed — and so relabelled, and so
-      // re-sha'd — the user's window. The range's content is unaffected (the
-      // rewrite changed only the message), but the commit it names is no longer
-      // reachable from the branch, which is the rule PR #22 established for a
-      // sha the server publishes. Recorded here rather than hidden; the
-      // orchestrator rules on the fix (see the SERVER-091 report).
-      const first = payloads.find((entry) => entry.to === beforeAgent);
+      // CLOSED (SERVER-091 escalated it, SERVER-093 fixed it): the agent's write
+      // closed the user's window, which relabelled its commit — an amend, so a
+      // new sha for the same tree. The first session's `to` is that *new* sha,
+      // because the commit path now tells the tracker when a close moves one and
+      // the tracker follows it. Before the fix this named the sha the commit had
+      // beforehand: identical content, but an object no branch reaches, which is
+      // exactly what PR #22 forbade for any sha the server publishes.
+      const first = payloads.find((entry) => entry.to === userCommit);
       const second = payloads.find((entry) => entry.from === agentCommit);
       expect(first).toBeDefined();
       expect(second).toBeDefined();
+      // The published guarantee itself, stated as such: every sha either event
+      // names is one `git log` finds.
+      const branch = ws.log("%H");
+      for (const payload of payloads) expect(branch).toContain(payload.to);
+      expect(branch).toContain(second?.from);
       expect(second?.to).toBe(ws.head());
       expect(new Set(payloads.map((entry) => entry.sessionId)).size).toBe(2);
 

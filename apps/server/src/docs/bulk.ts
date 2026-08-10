@@ -831,7 +831,16 @@ async function runBulk(
       stage: [...new Set(stage)],
       project: [...new Set(project)],
       unproject: [...new Set(unproject)],
-      commit: { subject: commitSubject(changed, actor) },
+      commit: {
+        subject: commitSubject(changed, actor),
+        // SPEC.md §4's second act that commits alone: a bulk Save "likewise
+        // flushes first and then lands as the single commit 'One action, one
+        // commit' requires, so reverting it still undoes that action and nothing
+        // else". `docIds` above already gives the second half — the act folds in
+        // neither direction — and this gives the first: the editing session that
+        // was open lands as its own commit before the act's (SERVER-092).
+        act: "commits-alone",
+      },
       // One frame for the act, carrying every affected key once (§9.2) — never
       // one frame per document.
       keys: dedupeKeys(keys),

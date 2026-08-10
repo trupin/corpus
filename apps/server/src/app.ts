@@ -44,7 +44,12 @@ import {
   mountEventStream,
   type InvalidationBus,
 } from "./events/index.js";
-import { createAutoCommitter, createGit, type AutoCommitter } from "./git/index.js";
+import {
+  createAutoCommitter,
+  createGit,
+  recoverUncommittedChanges,
+  type AutoCommitter,
+} from "./git/index.js";
 import { createJobService, createStatedWeightRecorder, mountJobRoutes } from "./jobs/index.js";
 import {
   createLockGuard,
@@ -346,11 +351,26 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     bus.invalidate(keys);
   };
 
+  // Declared here rather than below the routes because the git writer built
+  // inside the block that follows registers §4's shutdown close on it.
+  const disposers: Disposer[] = [];
+  const registerDisposer = (dispose: Disposer): void => {
+    disposers.push(dispose);
+  };
+
   let locks: LockService | undefined;
   let lockGuard: LockGuard | undefined;
   let editSessions: EditSessionTracker | undefined;
   let semantic: SemanticRetrieval | undefined;
   let indexMaintenance: IndexMaintenance | undefined;
+  /**
+   * SPEC.md §4's boot half (SERVER-094), bound only when the server has a
+   * workspace to recover — i.e. when it has a projection, which is the same
+   * condition every other filesystem-backed subsystem is built under.
+   */
+  let recoverAtBoot: (() => Promise<void>) | undefined;
+  /** §4's clean-stop half — the same close, reached from the two points below. */
+  let closeCommitWindow: (() => Promise<void>) | undefined;
   if (deps.projection !== undefined) {
     // Everything the write path needs is already reachable here (sprint-005
     // Open Conflict 12: "no new deps"): the workspace root is on the config, the
@@ -364,7 +384,60 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     // only its lock. A test that injects `deps.git` replaces the writer; the
     // reader still addresses the workspace the config names.
     const gitCommands = createGit(config.workspaceRoot);
-    const git = deps.git ?? createAutoCommitter({ git: gitCommands, logger, now });
+    const git =
+      deps.git ??
+      createAutoCommitter({
+        git: gitCommands,
+        logger,
+        now,
+        // Closing a window relabels its commit, which moves its sha. The edit
+        // acknowledgment is the one thing that writes a sha down and publishes
+        // it outside the repository, so it is the one thing that has to follow
+        // the rewrite (SERVER-093). Read through the `let` above rather than
+        // captured: the tracker is built below, because it needs this committer.
+        onWindowRewritten: (from, to) => {
+          editSessions?.observeRewrite(from, to);
+        },
+      });
+
+    // SPEC.md §4: "a queue event finished, however it finished" closes the open
+    // commit window (SERVER-092). Late-bound because the queue is built above,
+    // before the git writer exists — and the closer is the whole of what the
+    // queue needs from git, so binding it here keeps the queue ignorant of the
+    // committer rather than handing it one.
+    queue.attachWindowCloser(() => git.closeWindow("act"));
+
+    // SPEC.md §4: "A clean stop commits the open window."
+    closeCommitWindow = async () => {
+      await git.closeWindow("shutdown");
+    };
+    // Registered first, so — disposers run in reverse — this is the *last* thing
+    // a shutdown does. `close()` calls the same close once at its top as well,
+    // and the two are not redundant: the early one runs while the edit-session
+    // tracker can still follow the rewrite (see `close()`), and this one runs
+    // after the socket is shut, catching a window opened by a request that was
+    // still in flight when the early close went through. A close that finds no
+    // window open is a no-op, so the ordinary shutdown pays nothing for it.
+    // `close()` awaits each disposer, which is the whole point: one that fired
+    // and returned before git finished would be the same as not having one.
+    registerDisposer(async () => {
+      await git.closeWindow("shutdown");
+    });
+
+    // §4's other end. Bound rather than run here — `createServer` is a pure,
+    // synchronous function of its config — and called from `start()`, before the
+    // socket exists, so no request can add to what is being recovered.
+    recoverAtBoot = async () => {
+      await recoverUncommittedChanges({
+        // The command builder, not the committer: a recovery claims no acting
+        // party and so cannot go through `AutoCommitter.commit`, whose request
+        // requires one. It takes the committer's lock all the same, which is
+        // what keeps it from interleaving with a mutation.
+        git: gitCommands,
+        withGitLock: (run) => git.withGitLock(run),
+        logger,
+      });
+    };
 
     // Locks are built *before* the document routes, because the write pipeline
     // takes the guard as a constructor argument: `assertWritable` is the seam
@@ -416,7 +489,10 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
 
     // The other half of the same feature: the bounded diff an agent fetches once
     // a `doc.edited` has convinced it the change is worth reading (CLI-026).
-    mountDocDiffRoutes(app, { projection: deps.projection, git: gitCommands });
+    // The committer travels with it for one reason only: §4's read-back rule
+    // makes closing the open commit window part of answering the read
+    // (SERVER-093). The route still writes nothing.
+    mountDocDiffRoutes(app, { projection: deps.projection, git: gitCommands, committer: git });
 
     const docsWorkspace: DocsWorkspace = {
       workspaceRoot: config.workspaceRoot,
@@ -558,21 +634,11 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     return errorResponse(c, httpError);
   });
 
-  const disposers: Disposer[] = [];
   let httpServer: ServerType | undefined;
   let closePromise: Promise<void> | undefined;
 
-  const start = (): Promise<BoundAddress> =>
+  const bind = (): Promise<BoundAddress> =>
     new Promise<BoundAddress>((resolvePromise, rejectPromise) => {
-      // Loopback-only is enforced here, at the bind, and not in the config
-      // schema (Sprint-002 Adjudication 6): the file parses — the CLI reads the
-      // same one and only needs a dial target — but *this* process refuses to
-      // put an unencrypted, single-token API on a routable interface.
-      if (!isLoopbackHost(config.host)) {
-        rejectPromise(nonLoopbackBindError(config.host, config.configPath));
-        return;
-      }
-
       let settled = false;
 
       const onStartupError = (error: Error): void => {
@@ -602,9 +668,41 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
       server.on("error", onStartupError);
     });
 
+  const start = async (): Promise<BoundAddress> => {
+    // Loopback-only is enforced here, before the bind, and not in the config
+    // schema (Sprint-002 Adjudication 6): the file parses — the CLI reads the
+    // same one and only needs a dial target — but *this* process refuses to
+    // put an unencrypted, single-token API on a routable interface. It is asked
+    // ahead of the recovery below, so a server that will refuse to start writes
+    // nothing to the operator's repository on its way out.
+    if (!isLoopbackHost(config.host)) {
+      throw nonLoopbackBindError(config.host, config.configPath);
+    }
+    // SPEC.md §4: what a previous run left uncommitted is committed *before*
+    // anything can add to it. Awaited here rather than registered, because the
+    // guarantee is about ordering: no request can be served until it is done —
+    // the socket does not exist yet — so a recovery commit is never half of one.
+    // A recovery that git refuses is logged and returned, never thrown: a
+    // workspace that cannot commit is still a workspace you can read.
+    await recoverAtBoot?.();
+    return await bind();
+  };
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
-      // First, and before `queue.close()` releases the parked long-polls: a
+      // §4's clean stop, and it has to come *before* the acknowledgments below.
+      // Closing the window relabels its commit, which moves its sha; the
+      // committer announces that move and the tracker follows it
+      // (`onWindowRewritten` → `observeRewrite`), so an acknowledgment enqueued
+      // after this names the commit the history actually ends at. The other
+      // order silently loses the relabel: sealing a session calls
+      // `endSquashSession` — the published sha may no longer be amended — which
+      // forgets the window, and the close that follows has nothing left to name.
+      // Measured before this line existed: a shutdown after two user saves left
+      // `doc edit: …` as the subject and enqueued a range naming the pre-rewrite
+      // sha.
+      await closeCommitWindow?.();
+      // Then, and before `queue.close()` releases the parked long-polls: a
       // reader's edit session cannot outlive this process, so §4's close path
       // fires for every session still open and the acknowledgments go into the
       // queue while there is still a parked `corpus queue idle` to wake
@@ -654,9 +752,7 @@ export function createServer(config: ServerConfig, deps: CreateServerDeps = {}):
     semantic,
     indexMaintenance,
     editSessions,
-    registerDisposer(dispose) {
-      disposers.push(dispose);
-    },
+    registerDisposer,
     start,
     close,
   };

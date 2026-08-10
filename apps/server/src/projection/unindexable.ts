@@ -81,6 +81,15 @@ export type ReadCreatingCommit = (
  * per finding: a healthy workspace spawns nothing at all. `--diff-filter=A -n1`
  * is the newest commit that *added* the path, which is what "where did this come
  * from" means for a file that was deleted and later restored.
+ *
+ * **This one names a sha and still does not close §4's commit window**
+ * (SERVER-093's sweep — the exception worth writing down, because the rule reads
+ * as if it should). The window can only ever hold paths the server itself wrote,
+ * and the finding this answers about is *by definition* a path the server can
+ * never write: `classifyPath` refuses it, which is the whole predicate. Its
+ * creating commit is therefore always someone else's — the operator's `git add`,
+ * a merge, a checkout — and the server never amends those. The synchrony above
+ * would forbid the close anyway, but it is not the reason.
  */
 export const readCreatingCommit: ReadCreatingCommit = (workspaceRoot, relativePath) => {
   let stdout: string;

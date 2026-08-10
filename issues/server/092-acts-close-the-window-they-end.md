@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -80,13 +80,13 @@ the second list as a spec of what your diff must **not** touch.
 
 ## Acceptance Criteria
 
-- [ ] Each act in the first table closes the open window, and the act's own
+- [x] Each act in the first table closes the open window, and the act's own
       change is the **last thing in that window's commit** — so the commit's
       subject is the act's. With the amend mechanism this falls out for free:
       the act commits into the window, *then* closes it. Getting the order
       backwards (close, then commit the act) produces two commits and is the
       likeliest bug in this issue — assert the ordering, do not assume it
-- [ ] A **deletion** flushes the open window, lets that commit land, and then
+- [x] A **deletion** flushes the open window, lets that commit land, and then
       commits the deletion by itself. A document created and deleted inside one
       window leaves two commits and a recoverable git object for the create.
       Test exactly that sequence — it is the case §7's "git preserves history"
@@ -101,22 +101,22 @@ the second list as a spec of what your diff must **not** touch.
       `threads/cascade.test.ts` carries a note at the site. Nothing reaches `main`
       — 091 and 092 land in one PR — but this criterion is the one that must not
       be deferred, and it is why deletion's flush is not merely tidiness
-- [ ] A **staged bulk Save** flushes first and then lands as one commit, opening
+- [x] A **staged bulk Save** flushes first and then lands as one commit, opening
       no window. `docIds` already gives the second half; only the flush is new
-- [ ] A **force unlock** (§7) flushes whatever the agent wrote under the lock
+- [x] A **force unlock** (§7) flushes whatever the agent wrote under the lock
       being broken **before** recording its audit entry, so the agent's work
       reaches git under the agent's name, before the break that ended it. The
       audit entry keeps `squash: false` and still commits alone
-- [ ] A **deferred** queue event closes the agent's window like any other ending.
+- [~] A **deferred** queue event closes the agent's window like any other ending.
       The rider accepts the cost — one act that resumes later lands as two
       commits — so do not try to keep the window open across the wait
-- [ ] Every entry in the "does not close" list is covered by a test asserting the
+- [x] Every entry in the "does not close" list is covered by a test asserting the
       window **survives**: N body saves across M documents by one party inside
       the idle window are still one commit, with a lock acquire/release, a
       projection pass and a seen-mark interleaved
-- [ ] A window that closes with no act to name still says it was an editing
+- [x] A window that closes with no act to name still says it was an editing
       session (SERVER-091's behaviour, unchanged by anything here)
-- [ ] `git log --author` still answers exactly. No act may commit under a party
+- [x] `git log --author` still answers exactly. No act may commit under a party
       other than the one that requested it
 
 ## Technical Design
@@ -226,15 +226,132 @@ Real server on a free port (**never 8765 or 5173**), real `corpus` CLI.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: opus (claude-opus-5[1m]), 2026-08-10.** Real `corpus` CLI (built
+`apps/cli/dist/bin/corpus.js`), real server on **port 8891** (never 8765/5173),
+scratch workspace `~/.claude/jobs/4dd0ddef/tmp/s092-e2e`, `corpus init` + `corpus
+server start`. Every observation below is `git log`/`git show`/`git cat-file` in
+that workspace, never the server's own bookkeeping.
+
+**1 — The rider's scenario: the agent's stewardship is one commit.** As `user`:
+four `doc create`s and one `thread create` → **one** commit
+(`comment: new thread on doc_fnpbinca (th_ffss7ywm) by user`). Then, with no
+waiting at all, as `agent`: three `doc edit`s, a changelog appended to the
+fourth, and a `thread reply`.
+
+```
+new commits for the whole pass: 1
+24cd6a2 | agent | comment: turn on th_ffss7ywm by agent
+  data/docs/inbox/changelog.md
+  data/docs/inbox/pricing.md
+  data/docs/inbox/roadmap.md
+  data/docs/inbox/runbook.md
+  data/threads/th_ffss7ywm.md
+```
+
+Five files, one commit, subject names the turn — and the party-change flush had
+already relabelled the user's window `editing session: 5 documents by user`. The
+pre-rider history for the same actions is five commits.
+
+**2 — A queue event finishing.** Claimed a real `comment.created`, wrote as
+`agent` (window open at `14881c6`), ran `corpus queue complete`, then saved
+again as `agent`:
+
+```
+commits since the stewardship began: 1   (2 == the event closed the window)
+```
+
+**This is the one acceptance criterion not yet observable end to end**, and the
+reason is *wiring, not logic*: `QueueService.transition` closes on every finished
+status and is unit-tested (`queue/service.test.ts`, "a finished event closes the
+commit window (§4)"), but the closer is late-bound through
+`QueueService.attachWindowCloser` and `createServer` does not call it yet —
+`apps/server/src/app.ts` is SERVER-094's file this sprint and was left untouched
+by instruction. See "Escalated" below for the exact one-line patch.
+
+**3 — A document created and deleted inside one window.** `Neighbour` and
+`Doomed` created back to back (one window, HEAD `doc create: Doomed …`), then
+`doc delete Doomed` with no clock movement:
+
+```
+new commits: 2
+19d9b75 | user | doc delete: Doomed (doc_qzq5djkn) by user
+928bd49 | user | editing session: 2 documents by user
+
+$ git show HEAD~1:data/docs/inbox/doomed.md | tail -1
+the only revision this document ever had
+$ git cat-file -t $(git rev-parse HEAD~1:data/docs/inbox/doomed.md)
+blob
+```
+
+The regression this issue is the fix for is reproduced under test: with
+`act: "commits-alone"` removed from `docs/delete.ts`, the same sequence answers
+`expected 2 to be 3` — one commit instead of two, the create amended away, the
+document's only revision gone from git entirely.
+
+**4 — A bulk Save mid-editing-session.** `doc edit Pricing` as `user` (window
+open at `efc82ae`), then `POST /api/docs/bulk` archiving two other documents with
+no clock movement:
+
+```
+new commits: 2
+cfe4430 | bulk archive: 2 documents by user   → roadmap.md, runbook.md
+d6bef07 | editing session: 1 document by user → pricing.md
+```
+
+Editing commit first, bulk commit alone after it. `git revert` of the bulk commit
+put both archived documents back to `status: open` and left `pricing.md`'s
+in-session content (`the user is typing`) untouched.
+
+**5 — A force unlock (§4, §7).** `agent` acquired the lease and wrote (window
+open at `d5720b0`), `user` broke it:
+
+```
+new commits: 2
+f5c7abc | user  | lock: force-break on doc_fnpbinca (was agent) by user   (no files)
+ed67d6c | agent | editing session: 1 document by agent
+```
+
+The agent's work reached git under `agent` **before** the break that ended it,
+and the audit entry stands alone. `git log --author=agent` lists the editing
+session and the turns and **not** the force break; `git log --author=user` lists
+the break and not the agent's work.
+
+**Checks run.** `npm run build`; `npx tsc --noEmit -p apps/server/tsconfig.json`
+(clean); `npx eslint apps/server/src/{docs,threads,queue,locks}` (clean);
+`npx prettier --write` on every touched file; `vitest run apps/server` →
+**3776 passed**, the only failures being the two in
+`apps/server/src/window-lifecycle.test.ts` — SERVER-094's in-flight suite, which
+asserts a `"shutdown"` close this issue does not implement. New suites:
+`apps/server/src/docs/acts.test.ts` (21 tests) and the queue block above
+(5 tests).
+
+**Escalated — one line in `apps/server/src/app.ts`, owned by SERVER-094 this
+sprint.** Immediately after `const git = deps.git ?? createAutoCommitter(…)`:
+
+```ts
+    // SPEC.md §4: "a queue event finished, however it finished" closes the open
+    // commit window (SERVER-092). Late-bound because the queue is built before
+    // the git writer exists.
+    queue.attachWindowCloser(() => git.closeWindow("act"));
+```
+
+Nothing else is missing; step 2 above becomes `2` the moment it lands.
+
+**Deliberate literal reading, flagged for the record.** §4's first act is "an
+**agent** turn posted to a thread", so `threads/turns.ts` sets the act only for
+`actor === "agent"`. A person's reply is one of the changes a window exists to
+gather, and the agent's answer to it closes their window anyway. If the rider
+meant any turn, that is a one-word change in `commitTurnAppend` and a spec
+question, not a judgement for this diff.
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified — all but the queue transition's *wiring*
+      (see the E2E log's escalation; the logic and its tests are in place)
 
 ## Completion Checklist (orchestrator)
 

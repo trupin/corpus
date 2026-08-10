@@ -24,10 +24,10 @@
 // commit, the other whether the person has put the document down — and a shared
 // constant would make a change to either a change to both.
 //
-// **Nothing here runs on the write path.** `observeCommit` is synchronous,
-// does no I/O and issues no git command; every read the event needs happens on
-// the timer or flush side, in `emit`. §4's autosave fires on a timer, so the
-// acknowledgment must cost it nothing.
+// **Nothing here runs on the write path.** `observeCommit` and `observeRewrite`
+// are synchronous, do no I/O and issue no git command; every read the event
+// needs happens on the timer or flush side, in `emit`. §4's autosave fires on a
+// timer, so the acknowledgment must cost it nothing.
 
 import { randomBytes } from "node:crypto";
 import {
@@ -107,6 +107,28 @@ export interface EditSessionTracker {
    * and I/O-free by contract: it runs on the autosave path.
    */
   observeCommit(commit: ObservedCommit): void;
+  /**
+   * The twin of {@link observeCommit}: a window closing **relabelled** its
+   * commit, which is an amend and so moved its sha (`from` → `to`, same tree).
+   *
+   * A session records shas at the instant its saves land, and a save's commit is
+   * the open window's commit — so any later close (the other party wrote, a
+   * `corpus doc diff` read the history, the server stopped) rewrites a sha this
+   * module is holding. Following the rewrite is what keeps §4's promise that a
+   * `doc.edited` range is "already in git when the agent receives it": without
+   * it the event names an object no branch holds, which still resolves for git's
+   * unreachable grace and then does not.
+   *
+   * Note the *published* case never reaches here: {@link end} calls
+   * `endSquashSession(session.lastSha)` before it emits, which forgets the
+   * window, so a commit an event has already named is never relabelled at all.
+   * This handles the window still open under a session still open — the state
+   * SERVER-091 measured and escalated.
+   *
+   * Synchronous and I/O-free by contract, exactly like `observeCommit`: it is
+   * called from inside the git lock on the commit path.
+   */
+  observeRewrite(from: string, to: string): void;
   /**
    * §4's **close** path: the reader closed and the session is flushed. Ends and
    * emits every session open on this document.
@@ -421,6 +443,19 @@ export function createEditSessionTracker(options: EditSessionTrackerOptions): Ed
         own.lastWriteAt = now();
       }
       rearm();
+    },
+
+    observeRewrite(from, to) {
+      if (from === to) return;
+      for (const session of sessions.values()) {
+        // Both ends, and independently: a one-commit session has the same sha at
+        // both, and that is precisely the case §4's squash can rewrite (an amend
+        // only ever touches `HEAD`). Leaving `single` alone is deliberate — a
+        // relabel replaces the commit the session already had, it does not add
+        // one, so how many commits the session spans has not changed.
+        if (session.firstSha === from) session.firstSha = to;
+        if (session.lastSha === from) session.lastSha = to;
+      }
     },
 
     flush(docId) {

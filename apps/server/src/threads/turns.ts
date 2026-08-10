@@ -308,7 +308,21 @@ export async function commitTurnAppend(
       stage: [thread.loaded.path],
       project: [thread.loaded.path],
       unproject: [],
-      commit: { subject },
+      commit: {
+        subject,
+        // SPEC.md §4's first act, verbatim: "an agent turn posted to a thread".
+        // The agent's stewardship for one queue event is then one commit holding
+        // every document it touched and saying which thread it answered — which
+        // is the fragmentation the whole rider replaces (SERVER-092).
+        //
+        // **Agent turns only, deliberately.** §4 names the party, and a person's
+        // reply is part of the editing they are doing: it is one of the changes
+        // a window exists to gather, and the agent's answer to it — or any other
+        // write by the other party — closes their window anyway. A form answer
+        // reaches here through the same function (`forms.ts`) and is a person's
+        // turn, so it is not an act either.
+        ...(actor === "agent" ? { act: "names-the-window" as const } : {}),
+      },
       keys,
     },
   });

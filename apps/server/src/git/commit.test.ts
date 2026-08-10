@@ -23,6 +23,8 @@ type Repo = {
   readonly committer: AutoCommitter;
   /** Every git invocation the committer made, in order — so "made no call at all" is assertable. */
   readonly calls: string[][];
+  /** `[from, to]` for every close that moved a window's commit (SERVER-093). */
+  readonly rewrites: [string, string][];
   clock: number;
   git(...args: string[]): string;
   touch(path: string, content: string): void;
@@ -80,12 +82,17 @@ function makeRepo(
       return underlying.exec(args, execOptions);
     },
   };
+  const rewrites: [string, string][] = [];
   const made: Repo = {
     root,
     calls,
+    rewrites,
     committer: createAutoCommitter({
       git: recording,
       now: () => state.clock,
+      onWindowRewritten: (from, to) => {
+        rewrites.push([from, to]);
+      },
       ...(options.windowMaxMs === undefined ? {} : { windowMaxMs: options.windowMaxMs }),
     }),
     get clock() {
@@ -1287,6 +1294,120 @@ describe("a commit window belongs to a party", () => {
     expect(r.git("log", "--format=%H", `${base}..HEAD`).trim().split("\n")).toHaveLength(2);
     expect(r.git("rev-parse", "HEAD^").trim()).toBe(closedSha);
     expect(r.log("%s")[1]).toBe(editingSessionSubject(1, "user"));
+  });
+
+  // SPEC.md §4's read-back rule (SERVER-093): "Nothing reads a history the
+  // window is still holding."
+  it("announces the sha a relabel moved, so a published range can follow it", async () => {
+    const r = makeRepo("window-rewrite-observed");
+    r.touch(A, "one");
+    const first = await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+    const before = first.kind === "committed" ? first.sha : "";
+
+    await r.committer.closeWindow("read-back");
+    const after = r.git("rev-parse", "HEAD").trim();
+
+    // Same tree, new sha: the announcement is the only way anything holding the
+    // old one could know.
+    expect(after).not.toBe(before);
+    expect(r.rewrites).toEqual([[before, after]]);
+    expect(r.git("show", `HEAD:${A}`)).toBe("one");
+    expect(r.log("%s")[0]).toBe(editingSessionSubject(1, "user"));
+  });
+
+  it("announces nothing when the close left the commit where it was", async () => {
+    for (const scenario of ["act-named", "refused", "no-window"] as const) {
+      const r = makeRepo(`window-rewrite-silent-${scenario}`);
+      if (scenario !== "no-window") {
+        r.touch(A, "one");
+        await r.committer.commit({
+          docId: "doc_aaaa1111",
+          actor: "user",
+          subject: "doc edit: A by user",
+          paths: [A],
+          ...(scenario === "act-named" ? { act: true } : {}),
+        });
+        // A published commit is one §4 refuses to amend at all.
+        if (scenario === "refused") {
+          r.git("update-ref", "refs/remotes/origin/main", r.git("rev-parse", "HEAD").trim());
+        }
+      }
+      const before = scenario === "no-window" ? "" : r.git("rev-parse", "HEAD").trim();
+
+      await r.committer.closeWindow("read-back");
+
+      expect(r.rewrites, scenario).toEqual([]);
+      if (scenario !== "no-window")
+        expect(r.git("rev-parse", "HEAD").trim(), scenario).toBe(before);
+      r.close();
+      repo = undefined;
+    }
+  });
+
+  it("holds the git lock across the close and the read, so no save slips between them", async () => {
+    // The reason the close and the read are one primitive rather than two calls:
+    // released in between, an autosave lands and opens a *fresh* window under
+    // the read — which is the bug the rule exists to stop.
+    const r = makeRepo("window-read-back-atomic");
+    r.touch(A, "one");
+    await r.committer.commit({
+      docId: "doc_aaaa1111",
+      actor: "user",
+      subject: "doc edit: A by user",
+      paths: [A],
+    });
+
+    const order: string[] = [];
+    const read = r.committer.withClosedWindow("read-back", () => {
+      order.push("read");
+      // What the reader sees: the window is already closed, so this subject is
+      // final and this sha will not move.
+      return Promise.resolve({
+        sha: r.git("rev-parse", "HEAD").trim(),
+        subject: r.git("log", "-1", "--format=%s").trim(),
+      });
+    });
+    // Queued behind the read, not interleaved with it — the lock is one chain.
+    r.clock += 100;
+    r.touch(A, "two");
+    const save = r.committer
+      .commit({
+        docId: "doc_aaaa1111",
+        actor: "user",
+        subject: "doc edit: A by user",
+        paths: [A],
+      })
+      .then((outcome) => {
+        order.push("save");
+        return outcome;
+      });
+
+    const seen = await read;
+    const outcome = await save;
+
+    expect(order).toEqual(["read", "save"]);
+    expect(seen.subject).toBe(editingSessionSubject(1, "user"));
+    // The window really had closed before the read: the save that followed made
+    // a fresh commit rather than amending the one the reader named.
+    expect(outcome.kind).toBe("committed");
+    expect(r.git("rev-parse", "HEAD^").trim()).toBe(seen.sha);
+  });
+
+  it("costs no git invocation when there is no window to close", async () => {
+    // The common case — a diff of a document nobody is editing — must not spend
+    // a git process on the close.
+    const r = makeRepo("window-read-back-cheap");
+    r.calls.length = 0;
+    const answered = await r.committer.withClosedWindow("read-back", () =>
+      Promise.resolve("answered"),
+    );
+    expect(answered).toBe("answered");
+    expect(r.calls).toEqual([]);
   });
 
   it("preserves a neighbour's committed change when the amend names only one document's paths", () => {

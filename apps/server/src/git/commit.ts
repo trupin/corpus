@@ -30,6 +30,15 @@
 //   the truth and §14 says a mutation stands when its commit does not, so an
 //   in-memory buffer would lose a crash's worth of commits, where the amend
 //   model loses at worst a *boundary* — which is exactly the cost §4 states.
+//
+//   Because the window's commit is amendable while it is open, **a sha read off
+//   an open window is provisional**. §4's answer is that nothing reads a history
+//   the window is still holding: any operation that names, reads or reverts a
+//   commit closes the window first, in the same critical section as the read
+//   ({@link AutoCommitter.withClosedWindow}) — and the one close that *moves* a
+//   sha announces it ({@link AutoCommitterOptions.onWindowRewritten}), so a
+//   range already published outside the repository follows the rewrite instead
+//   of dangling.
 // - **One action, one commit** (§4's other half). A mutation that names several
 //   documents — a bulk archive, tag or move — passes them as `docIds`, and that
 //   is the whole signal: such a commit neither folds into a preceding editing
@@ -130,6 +139,27 @@ export const ACTOR_IDENTITIES: Readonly<Record<Actor, { name: string; email: str
 
 /** Used as the committer only when the workspace configures no `user.email` of its own. */
 export const FALLBACK_COMMITTER = { name: "Corpus", email: "corpus@corpus.local" } as const;
+
+/**
+ * The author of a **recovery commit** (SPEC.md §4, SERVER-094) — the one commit
+ * in a workspace that claims no acting party, and §7's single deliberate
+ * exception (SHARED-040 Decision 2, signed by the user 2026-08-09). Which
+ * party's window was open is precisely what an unclean stop destroyed, so the
+ * alternative is a commit naming a party the server is guessing at.
+ *
+ * It lives here, beside {@link ACTOR_IDENTITIES} and {@link FALLBACK_COMMITTER},
+ * because those three are the workspace's whole cast of git identities and
+ * reading them in one place is how one stays distinguishable from the others.
+ * It is deliberately **not** an `Actor`: that union is two-membered across the
+ * whole contract, and widening it to carry a git-authorship concept would leak
+ * "no party" into the API. `git/recovery.ts` therefore reaches git directly
+ * rather than through {@link AutoCommitter.commit}.
+ *
+ * Neither the name nor the email may contain `user` or `agent` as a substring:
+ * `git log --author=user` is a regex match over `name <email>`, and §4 requires
+ * that it never match this commit.
+ */
+export const RECOVERY_AUTHOR = { name: "recovery", email: "recovery@corpus.local" } as const;
 
 export const gitAuthorOf = (actor: Actor): string =>
   `${ACTOR_IDENTITIES[actor].name} <${ACTOR_IDENTITIES[actor].email}>`;
@@ -236,6 +266,23 @@ export interface AutoCommitter {
    */
   closeWindow(reason: WindowCloseReason): Promise<void>;
   /**
+   * Close the open window and then run `read` **without releasing the git lock**
+   * (SPEC.md §4 — "Nothing reads a history the window is still holding").
+   *
+   * This is the whole of §4's read-back rule, and the reason it is one primitive
+   * rather than a `closeWindow` followed by a `withGitLock`: between those two
+   * calls the lock is free, so an autosave can open a *fresh* window and the read
+   * is once again looking at a commit the server intends to amend — the bug in
+   * miniature. The close and the read have to be one critical section.
+   *
+   * Only a reader that names, reads or reverts a **commit** needs it. A
+   * projection query, a document read, a tree read and a search touch no git
+   * history and must keep costing no git at all; §4's second list is explicit
+   * about that, and taking this lock on them would queue every board refresh
+   * behind an autosave.
+   */
+  withClosedWindow<T>(reason: WindowCloseReason, read: () => Promise<T>): Promise<T>;
+  /**
    * Forget the open window if it is sitting on `sha`, so the next save by the
    * same party makes a **fresh** commit instead of amending that one.
    *
@@ -268,6 +315,23 @@ export interface AutoCommitterOptions {
   readonly now?: (() => number) | undefined;
   readonly squashIdleMs?: number | undefined;
   readonly windowMaxMs?: number | undefined;
+  /**
+   * Told whenever closing a window **rewrote** its commit, so anything that had
+   * recorded the old sha can follow it (SERVER-093, ruling of 2026-08-10).
+   *
+   * A close relabels a window no act named, and a relabel is an amend: same
+   * tree, same content, **new sha**. Everything inside the server that had only
+   * to know "stop amending" is already served by the window being forgotten —
+   * this exists for the one thing that had written the sha down, `edit/sessions.ts`,
+   * whose `doc.edited` event publishes a commit range outside the repository. Its
+   * `observeCommit` is the twin of this: one hears about commits, the other about
+   * the rewrites of them.
+   *
+   * Called from inside the git lock on the commit path, so an implementation
+   * must be synchronous and do no I/O — the same contract `observeCommit` has,
+   * for the same reason.
+   */
+  readonly onWindowRewritten?: ((from: string, to: string) => void) | undefined;
 }
 
 /**
@@ -353,6 +417,7 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
   const now = options.now ?? Date.now;
   const squashIdleMs = options.squashIdleMs ?? SQUASH_IDLE_MS;
   const windowMaxMs = options.windowMaxMs ?? WINDOW_MAX_MS;
+  const onWindowRewritten = options.onWindowRewritten;
 
   /** The one open window, or `null`. §4 allows at most one at a time. */
   let openWindow: WindowRecord | null = null;
@@ -546,6 +611,17 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
         sha: record.sha,
         output: gitOutput(rewritten),
       });
+      return;
+    }
+
+    // The relabel is an amend, so the commit that carried this window now has a
+    // **different sha** for the same tree. This is the one site in the server
+    // that moves a commit out from under something that may have recorded it,
+    // so it is the one site that says so (SERVER-093's escalated item). Read
+    // back rather than predicted: only git knows what the rewrite produced.
+    const relabelled = await headSha();
+    if (relabelled !== null && relabelled !== record.sha) {
+      onWindowRewritten?.(record.sha, relabelled);
     }
   };
 
@@ -790,6 +866,11 @@ export function createAutoCommitter(options: AutoCommitterOptions): AutoCommitte
   return {
     withGitLock,
     closeWindow: (reason) => withGitLock(() => closeWindowLocked(reason)),
+    withClosedWindow: (reason, read) =>
+      withGitLock(async () => {
+        await closeWindowLocked(reason);
+        return read();
+      }),
     endSquashSession(sha) {
       if (openWindow !== null && openWindow.sha === sha) openWindow = null;
     },

@@ -51,6 +51,14 @@ export function createRecordingCommitter(): RecordingCommitter {
       closed.push(reason);
       return Promise.resolve();
     },
+    // §4's read-back rule, recorded the same way: the close is the caller's
+    // obligation, the read is the caller's own work, and the ordering between
+    // them is the property worth pinning — so the reason lands in `closed`
+    // before `read` runs, exactly as the real committer sequences them.
+    withClosedWindow(reason, read) {
+      closed.push(reason);
+      return withGitLock(read);
+    },
     endSquashSession(sha) {
       sealed.push(sha);
     },

@@ -234,6 +234,64 @@ describe("edit session tracker — the idle path (SPEC.md §4)", () => {
     expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffeea" });
   });
 
+  it("follows a window close that relabelled the session's only commit", async () => {
+    // SERVER-093's escalated item. Closing a window rewrites its subject where
+    // no act named it, which is an amend: same tree, new sha. Nothing about that
+    // reaches `observeCommit` — no save happened — so the commit path says it
+    // separately, and a session sitting on the old sha follows.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["relabe1", "ba5e001"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeRewrite("c0ffee1", "relabe1");
+
+    await h.advance(IDLE_MS);
+    // Both ends move: a one-commit session has the same sha at each, and the
+    // relabel replaced it.
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "relabe1" });
+    // And the sealed sha is the one that exists, so §4's squash is told about
+    // the commit the event actually published.
+    expect(h.sealed).toEqual(["relabe1"]);
+  });
+
+  it("moves only the head when a relabel rewrites a multi-commit session's last commit", async () => {
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+        ["c0ffee2", "c0ffee1"],
+        ["relabe2", "c0ffee1"],
+      ]),
+      counts: new Map([["ba5e001..relabe2", "2"]]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee2") }));
+    h.tracker.observeRewrite("c0ffee2", "relabe2");
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "relabe2" });
+  });
+
+  it("ignores a rewrite of a commit no session is holding", async () => {
+    // The ordinary case: a window closing under a document nobody is editing.
+    const h = harness({
+      parents: new Map([
+        ["ba5e001", null],
+        ["c0ffee1", "ba5e001"],
+      ]),
+    });
+    h.tracker.observeCommit(save({ outcome: committed("c0ffee1") }));
+    h.tracker.observeRewrite("deadbee", "f00d001");
+    h.tracker.observeRewrite("c0ffee1", "c0ffee1");
+
+    await h.advance(IDLE_MS);
+    expect(h.enqueued[0]?.payload).toMatchObject({ from: "ba5e001", to: "c0ffee1" });
+  });
+
   it("keeps the base fixed when an amend rewrites a later commit", async () => {
     const h = harness({
       parents: new Map([

@@ -1073,3 +1073,76 @@ describe("the projection mirror", () => {
     expect((await service.complete(event.id)).status).toBe("processed");
   });
 });
+
+// SPEC.md §4's commit-window closers (SERVER-092). "A queue event finished,
+// however it finished — completed, failed, deferred (§7) or abandoned" closes
+// the open window, so the agent's stewardship for one event is one commit
+// rather than one per document it touched. The queue writes only to
+// `.corpus/queue/`, which is gitignored: it commits nothing, opens no window,
+// and this is the whole of its involvement.
+describe("a finished event closes the commit window (§4)", () => {
+  /** The service, plus every close it asked for — the call is what this owes. */
+  const withCloser = (): { service: QueueService; closes: number[] } => {
+    const closes: number[] = [];
+    const service = makeService();
+    service.attachWindowCloser(() => {
+      closes.push(closes.length);
+      return Promise.resolve();
+    });
+    return { service, closes };
+  };
+
+  it.each([
+    ["completed", async (service: QueueService, id: string) => service.complete(id)],
+    ["failed", async (service: QueueService, id: string) => service.fail(id, "boom")],
+    ["abandoned", async (service: QueueService, id: string) => service.abandon(id)],
+  ])("closes it when an event is %s", async (_name, finish) => {
+    const { service, closes } = withCloser();
+    const [event] = await enqueueMany(service, 1);
+    await service.claimAll();
+    // Claiming begins the work; §4 closes on an *ending*, so nothing yet.
+    expect(closes).toHaveLength(0);
+
+    await finish(service, event?.id ?? "");
+    expect(closes).toHaveLength(1);
+  });
+
+  it("closes it on a deferral, and the rider accepts the two commits that costs", async () => {
+    // §4: "an event deferred on a lock ends the agent's window like any other
+    // ending, so one act that resumes later lands as two commits — accepted,
+    // rather than hold a window open across a wait of unknown length".
+    const { service, closes } = withCloser();
+    const [event] = await enqueueMany(service, 1);
+    await service.claimAll();
+    await service.defer(event?.id ?? "", { blockedOn: "doc_aaaa1111" });
+    expect(closes).toHaveLength(1);
+
+    // Re-entry is the *start* of the work again, not an ending.
+    await service.requeue(event?.id ?? "");
+    expect(closes).toHaveLength(1);
+    await service.claimAll();
+    expect(closes).toHaveLength(1);
+
+    await service.complete(event?.id ?? "");
+    expect(closes).toHaveLength(2);
+  });
+
+  it("closes nothing when a repeat of a terminal verb finishes nothing", async () => {
+    const { service, closes } = withCloser();
+    const [event] = await enqueueMany(service, 1);
+    await service.claimAll();
+    await service.fail(event?.id ?? "", "boom");
+    expect(closes).toHaveLength(1);
+
+    // Idempotent, and nothing ended: the event was already failed.
+    await service.fail(event?.id ?? "", "again");
+    expect(closes).toHaveLength(1);
+  });
+
+  it("runs with no closer bound at all", async () => {
+    const service = makeService();
+    const [event] = await enqueueMany(service, 1);
+    await service.claimAll();
+    expect((await service.complete(event?.id ?? "")).status).toBe("processed");
+  });
+});

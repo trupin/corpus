@@ -566,7 +566,7 @@ changes behaviour and nothing below waits on them.
 | --- | --- | --- | --- | --- |
 | SHARED-040 | Commit on acts, not saves — commit windows (SIGNED 2026-08-10, applied) | done | P1 | — |
 | SERVER-091 | A commit window belongs to a party, not to a document | done | P1 | SHARED-040 |
-| SERVER-092 | Every act closes the window it ends, and names it | todo | P1 | SERVER-091 |
-| SERVER-093 | Nothing reads a history the open window is still holding | todo | P1 | SERVER-091 |
-| SERVER-094 | A window never outlives the server silently | todo | P1 | SERVER-091 |
+| SERVER-092 | Every act closes the window it ends, and names it | done | P1 | SERVER-091 |
+| SERVER-093 | Nothing reads a history the open window is still holding | done | P1 | SERVER-091 |
+| SERVER-094 | A window never outlives the server silently | done | P1 | SERVER-091 |
 | SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |

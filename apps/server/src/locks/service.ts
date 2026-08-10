@@ -191,6 +191,16 @@ export class LockService {
       this.announce(docId);
 
       const requeuedEventIds = await this.requeueDeferred(docId);
+      // SPEC.md §4's third act that commits alone: the break "records its audit
+      // entry alone, **after** flushing whatever the agent wrote under the lock
+      // being broken — the agent's work reaches git under the agent's name,
+      // before the break that ended it". The entry's own `squash: false` says
+      // only that nothing folds into it and that it opens no window; flushing
+      // the window that was already open is this call, and it is deliberately
+      // not read out of `squash: false`, which `skills/rollback.ts` and
+      // `threads/reattach.ts` also pass and want different things from
+      // (SERVER-092).
+      await this.git.closeWindow("commits-alone");
       await this.recordBreak(docId, existing.holder);
       return { holder: existing.holder, requeuedEventIds };
     });

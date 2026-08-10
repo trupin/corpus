@@ -364,6 +364,15 @@ export async function updateDocumentLocked(
       commit: {
         subject: `doc edit: ${titleOf(nextParsed.data, loaded.row.title)} (${id}) by ${actor}`,
         anchors: report,
+        // SPEC.md §4 lists "a document ... marked still current (§5)" among the
+        // acts that close a window, and lists "an ordinary save of a document
+        // body — whichever document it is to" among the things that do not. The
+        // two meet on this one verb, and `reviewed` is what tells them apart: a
+        // review is a statement about the document that someone else can act on,
+        // where the edit around it is merely underway. `changedFields` has
+        // already dropped a `reviewed` equal to the file's, so the autosave that
+        // re-sends the stored value is not an act (SERVER-092).
+        act: Object.hasOwn(fields, "reviewed") ? "names-the-window" : undefined,
       },
       keys: [DOCS_KEY, docKey(id)],
       // `PUT` may set `status: archived`, and archived documents are counted

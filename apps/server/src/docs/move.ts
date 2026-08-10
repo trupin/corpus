@@ -131,6 +131,10 @@ export async function moveDocument(
         unproject: plan.unproject,
         commit: {
           subject: `doc move: ${loaded.path} → ${plan.nextPath} (${id}) by ${actor}`,
+          // SPEC.md §4: "a document ... moved, renamed" is a discrete act, so it
+          // closes the open window and names its commit (SERVER-092). A move
+          // that would change nothing returned above and is no act.
+          act: "names-the-window",
         },
         keys: [DOCS_KEY, docKey(id)],
         // Usually both badges move — but an archived document counts in no

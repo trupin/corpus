@@ -65,6 +65,7 @@ export {
   writeFileAtomically,
 } from "./write.js";
 export type {
+  ActCommit,
   DocsWorkspace,
   DocumentMutex,
   FileOperation,

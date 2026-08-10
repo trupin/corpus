@@ -6,7 +6,7 @@ server
 
 ## Status
 
-todo
+done
 
 ## Priority
 
@@ -71,31 +71,31 @@ is not, and a test that pretends otherwise will be built on a fake.
 
 ## Acceptance Criteria
 
-- [ ] A clean stop closes the open window through SERVER-091's `closeWindow`,
+- [x] A clean stop closes the open window through SERVER-091's `closeWindow`,
       registered on the existing disposer chain (`app.ts`, `registerDisposer`).
       The last editing session's commit carries the editing-session subject rather
       than the last save's
-- [ ] The stop path **awaits** the close. A disposer that fires and returns before
+- [x] The stop path **awaits** the close. A disposer that fires and returns before
       git finishes is the same as not having one
-- [ ] On boot, uncommitted changes under the workspace's document roots are
+- [x] On boot, uncommitted changes under the workspace's document roots are
       committed as a single recovery commit whose subject says it is recovering
       changes left uncommitted by a previous run **and how many documents it
       holds**
-- [ ] The recovery commit carries **no acting party**: no `Corpus-Actor` trailer,
+- [x] The recovery commit carries **no acting party**: no `Corpus-Actor` trailer,
       and an author that is neither `user` nor `agent`. `git log --author=user`
       and `--author=agent` must both fail to match it. Assert both directions
-- [ ] It is **scoped to the workspace's own document roots** and never sweeps up
+- [x] It is **scoped to the workspace's own document roots** and never sweeps up
       unrelated files an operator left dirty. Prove it: leave a dirty file outside
       the roots, boot, confirm it is untouched and unstaged
-- [ ] A boot with nothing to recover **commits nothing and says nothing** — no
+- [x] A boot with nothing to recover **commits nothing and says nothing** — no
       empty commit, no log line, no cost. This is every ordinary boot
-- [ ] The recovery commit opens no window: the first save after boot makes a
+- [x] The recovery commit opens no window: the first save after boot makes a
       fresh commit rather than amending the recovery
-- [ ] A recovery that git itself refuses leaves the changes on disk and logs
+- [x] A recovery that git itself refuses leaves the changes on disk and logs
       loudly (§14), exactly as a refused auto-commit does. It must not prevent the
       server from starting — a workspace that cannot commit is still a workspace
       you can read
-- [ ] The index is left clean on every path that does not land a commit, matching
+- [x] The index is left clean on every path that does not land a commit, matching
       the invariant `commit.ts` already documents ("no attempt ever leaves the
       index dirty")
 
@@ -201,15 +201,227 @@ working in.
 
 ## E2E Verification Log
 
-_Filled by the implementing agent; state the model._
+**Model: opus** (claude-opus-5[1m]). All git writing done in a scratch workspace at
+`/Users/theophanerupin/.claude/jobs/4dd0ddef/tmp/ws2`, port **8791** — never 8765
+or 5173. Tool driven from the built CLI (`apps/cli/dist/bin/corpus.js`) after
+`npm run build`.
+
+### 1. `corpus init` then first boot — no recovery commit, no log line
+
+```
+$ corpus init --port 8791
+$ corpus server start
+corpus 0.4.0 listening on http://127.0.0.1:8791 (pid 42651)
+$ git log --format='%h %an %s'
+89cea2a user workspace: initialize corpus workspace by user
+$ grep -ci recover .corpus/server.log
+0
+```
+
+The tree is clean after `init`, so recovery answered `clean` off one `git status`
+and said nothing. A fresh workspace's first boot is not marked by a recovery
+commit.
+
+### 2. Edit, clean stop — the editing-session subject, and the acknowledgment follows the rewrite
+
+```
+$ corpus doc create --type note --title "Recovery notes"   → doc_nowfbx2p
+$ corpus doc edit doc_nowfbx2p --file …   (twice)
+$ git log --format='%h %an %s' | head -1
+4df3b0b user doc edit: Recovery notes (doc_nowfbx2p) by user      ← the window's last save
+$ corpus server stop
+$ git log --format='%h %an %s' | head -1
+a1a9576 user editing session: 1 document by user                  ← relabelled by the clean stop
+$ git log -1 --format=%B
+editing session: 1 document by user
+
+Corpus-Doc: doc_nowfbx2p
+Corpus-Actor: user
+$ cat .corpus/queue/pending/evt_*.json | grep '"to"'
+    "to": "a1a957641830c1293851d8a2aa1cb45c9eb777e2"   ← the post-rewrite sha
+```
+
+**Pre-fix reproduction (first workspace, `ws-094`):** with the close registered
+*only* as a disposer, the same sequence left `doc edit: Recovery notes …` as the
+subject and enqueued `"to": "f73c6e1…"` — the pre-rewrite sha. Cause: `close()`
+runs `editSessions.close()` before the disposers, and sealing a session calls
+`endSquashSession`, which forgets the window; the disposer then had nothing left
+to name. Fixed by calling the same close once at the top of `close()`, ahead of
+the acknowledgments, so SERVER-093's `onWindowRewritten` → `observeRewrite` can
+carry the session onto the new sha. The disposer is kept as the backstop for a
+window opened by a request still in flight (it runs after the socket is shut).
+
+### 3. `kill -9`, out-of-band writes while down, restart — one recovery commit
+
+```
+$ corpus server start; corpus doc edit doc_nowfbx2p --file …
+$ kill -9 46322
+$ git status --porcelain     → (empty)
+$ git log --format='%h %an %s' | head -1
+6d8e940 user doc edit: Recovery notes (doc_nowfbx2p) by user
+```
+
+Confirms the issue's premise concretely: **an unclean stop stranded no work** —
+the window's content was already in git, only its boundary and subject were lost.
+Then, with the server down:
+
+```
+$ …write data/docs/inbox/written-while-down.md
+$ …append to data/docs/inbox/recovery-notes.md
+$ …write .claude/skills/scratch/{SKILL.md,helper.py}
+$ …write OPERATOR-NOTES.txt                      (outside the roots)
+$ corpus server start
+$ git log --format='%h | %an <%ae> | %s' | head -1
+4011d1e | recovery <recovery@corpus.local> | recovery: 3 documents left uncommitted by a previous run
+$ git log -1 --format=%B
+recovery: 3 documents left uncommitted by a previous run
+                                                  ← no Corpus-Actor trailer
+$ git show --name-only --format= HEAD
+.claude/skills/scratch/SKILL.md
+.claude/skills/scratch/helper.py
+data/docs/inbox/recovery-notes.md
+data/docs/inbox/written-while-down.md
+$ git log --author=user  --format=%H | grep -c 4011d1e…   → 0
+$ git log --author=agent --format=%H | grep -c 4011d1e…   → 0
+$ grep recover .corpus/server.log
+{"level":"info","msg":"recovered changes left uncommitted by a previous run",
+ "sha":"4011d1e…","documents":3,"files":4}
+```
+
+Four files, **three documents** — `helper.py` is part of the skill folder and not
+a document of its own. One commit, one log line, both parties' `--author` filters
+miss it.
+
+### 4. A dirty file outside the roots is untouched
+
+```
+$ git status --porcelain
+?? OPERATOR-NOTES.txt          ← still unstaged, still uncommitted
+```
+
+### 5. Recovery opens no window; the next save is a fresh commit
+
+```
+$ corpus doc edit doc_nowfbx2p --file …
+$ git log --format='%h | %an | %s' | head -3
+0acddd6 | user     | doc edit: Recovery notes (doc_nowfbx2p) by user
+4011d1e | recovery | recovery: 3 documents left uncommitted by a previous run
+6d8e940 | user     | doc edit: Recovery notes (doc_nowfbx2p) by user
+$ git diff --cached --name-only    → (empty)
+```
+
+### 6. Boot with a clean tree — nothing committed, nothing said
+
+```
+$ corpus server stop; git status --porcelain   → ?? OPERATOR-NOTES.txt   (outside the roots)
+$ corpus server start
+HEAD unchanged: YES
+recovery log lines before=1 after=1
+```
+
+### 7. §14 — a refused recovery does not prevent the start
+
+```
+$ echo 'exit 1' > .git/hooks/pre-commit   (with a message on stderr)
+$ …write data/docs/inbox/refused.md
+$ corpus server start
+$ curl -s -o /dev/null -w '%{http_code}' …/api/health   → 200
+HEAD unchanged: YES        file still on disk: YES
+$ git diff --cached --name-only   → (empty)          ← index clean
+$ grep 'could not commit changes' .corpus/server.log
+{"level":"error","msg":"could not commit changes left uncommitted by a previous run",
+ "reason":"the recovery commit failed","output":"workspace policy: no"}
+```
+
+### 8. Detached HEAD — skipped, logged once, the server starts
+
+```
+$ git checkout --detach --quiet HEAD; corpus server start
+HEAD unchanged: YES
+{"level":"info","msg":"skipped recovering changes left uncommitted by a previous run",
+ "reason":"HEAD is detached"}
+```
+
+### 9. `corpus workspace upgrade` — verified against the code, not the spec
+
+`apps/cli/src/commands/workspace/upgrade.ts` commits what it wrote:
+`commitUpgrade` → `commitPaths` (`apps/cli/src/commands/init/git.ts`), authored
+via `identityFor(actor)`, and the only path that makes no commit is the one with
+nothing staged (`staged.length === 0`). Exercised live with the server stopped:
+
+```
+$ rm .claude/skills/orchestrate/SKILL.md
+$ corpus workspace upgrade
+  deleted .claude/skills/orchestrate/SKILL.md — pass --restore to reinstall it
+  wrote 0 files in commit 23d241e…
+$ corpus workspace upgrade --restore
+  wrote 1 file in commit cb214b7…
+$ git status --porcelain   → (empty)
+$ git log --format='%h | %an | %s' | head -2
+cb214b7 | user | workspace: upgrade template files 0.4.0 → 0.4.0 by user
+23d241e | user | workspace: upgrade template files 0.4.0 → 0.4.0 by user
+```
+
+Everything the upgrade wrote landed in a single attributed commit, tree clean, so
+recovery finds nothing after an upgrade. Recovery is **not** the upgrade's commit
+mechanism. Two adjacent notes, neither a defect: (a) an *operator's* own deletion
+of a template file is deliberately left uncommitted by the upgrade — recovery
+commits it on the next boot, which is §5-correct and leaves `--restore` working;
+(b) `upgrade.ts:539` has a documented path where the commit fails and the files
+stay on disk — that is §14, source #1, exactly what recovery exists for.
+
+### 10. CLI-037 ordering — checked, no collision
+
+`apps/cli/src/commands/server/start.ts:104` **awaits** `maintainOrWarn` and
+spawns the daemon only afterwards, with an explicit comment that maintenance "is
+finished by the time the daemon is spawned". Boot recovery runs inside the
+daemon, in a different process, strictly after. The two cannot overlap.
+Empirically the maintenance never fired in this workspace (220 loose objects
+against git's `gc.auto` default of 6700), so the ordering rests on the awaited
+call rather than on an observed pack; a boot with 220 loose objects and a dirty
+document still produced a clean single recovery commit (`aa9cc0c`).
+
+### 11. Deviation from the design's boot ordering, and why it is safe
+
+The design says recovery must run "before the watcher starts and before the first
+request is served". The second half is met exactly: recovery is awaited inside
+`start()`, ahead of `serve()`, so no socket exists while it runs. The first half
+is **not** literally met — `lifecycle.ts` calls `attachWatcher(server)` before
+`server.start()`, and moving recovery earlier would mean either putting it in
+`lifecycle.ts` (against the issue's own "the boot call lives in `app.ts`") or
+making `createServer` async (it is deliberately a pure, synchronous function of
+its config).
+
+It is safe, on three grounds checked against the code: (a) chokidar runs with
+`ignoreInitial: true`, so it emits nothing for the files already on disk at boot
+— which is every file recovery is about; (b) nothing in `watcher/` commits —
+`grep` over `apps/server/src` finds `withGitLock`/`.commit(` only in
+`locks/service.ts`, `docs/write.ts` and `skills/rollback.ts`, and the watcher's
+only git use is the read `git show HEAD:<path>` in `watcher/git-head.ts`, which
+does not touch `.git/index`; (c) when SERVER-090 lands and the watcher does
+commit, it will do so through the same `AutoCommitter`, and recovery already runs
+inside `withGitLock` — so the two serialize rather than interleave, and whichever
+runs second finds nothing.
+
+### Checks run
+
+- `npm run build` — clean.
+- `npx vitest run apps/server/src` — **182 files, 3778 tests, all passing**
+  (`VITEST_MAX_THREADS=4`).
+- `npx vitest run apps/server/src/git/recovery.test.ts` — 19 tests.
+- `npx vitest run apps/server/src/window-lifecycle.test.ts` — 6 tests.
+- `npm run typecheck -w apps/server` — clean.
+- `eslint` + `prettier --check` on every touched file — clean. (One pre-existing
+  `no-unused-vars` warning on `commit.ts:420` `onWindowRewritten` belongs to
+  SERVER-093's in-flight work, not to this issue.)
 
 ## Completion Checklist (domain agent)
 
-- [ ] Tests written and passing
-- [ ] `/lint` passes
-- [ ] E2E verification log filled
-- [ ] Self-review
-- [ ] Acceptance criteria verified
+- [x] Tests written and passing
+- [x] `/lint` passes
+- [x] E2E verification log filled
+- [x] Self-review
+- [x] Acceptance criteria verified
 
 ## Completion Checklist (orchestrator)
 

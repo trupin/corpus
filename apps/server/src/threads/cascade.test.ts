@@ -183,10 +183,10 @@ describe("DELETE /api/threads/{id}/turns/{ts}", () => {
     const { id, stamps } = await anchoredThread(1);
     const text = ws.read(threadPath(id));
     // Past the auto-commit's window, so the thread's creation has landed as a
-    // commit before the deletion is asked for. §4's "three acts commit alone"
-    // is what guarantees this for a thread created and deleted *inside* one
-    // window — a deletion closes the window first — and wiring that closer is
-    // SERVER-092's; SERVER-091 builds only the window.
+    // commit before the deletion is asked for. A thread created and deleted
+    // *inside* one window is the same guarantee reached the other way — §4's
+    // "three acts commit alone", where the deletion closes the window first —
+    // and it is asserted directly in `docs/acts.test.ts` (SERVER-092).
     ws.advance(31_000);
     await del(`/api/threads/${id}/turns/${encoded(stamps[0] ?? "")}`);
     expect(ws.git("show", `HEAD~1:${threadPath(id)}`)).toBe(text);
