@@ -413,6 +413,8 @@ belongs to the same fix wave.
 | SERVER-088 | Emit the carried-skill warnings the contract now publishes (CONTRACT-047) | done | P1 | CONTRACT-047 |
 | SERVER-089 | `rollback.test.ts` fails in CI at a git object the fixture should have — **blocks PR #41** | done | P0 | — |
 | CLI-037 | A workspace's git repairs itself in the background, and can corrupt itself doing it (SERVER-089) | todo | P0 | SERVER-089 |
+| SHARED-040 | Commit on acts, not saves — commit windows (SIGNED 2026-08-10, applied) | done | P1 | — |
+| SERVER-090 | An external editor's change is committed under someone else's name, or not at all | todo | P1 | — |
 | UI-106 | A carried effect is not an error, and the UI renders every warning as one | todo | P2 | SERVER-088 |
 | CONTRACT-037 | One action, one commit: several document mutations as one act (SHARED-017) | done | P2 | SHARED-017 |
 | CONTRACT-038 | Form grammar: choose-any and write fields, and the richer answer (SHARED-021) | done | P1 | SHARED-021 |
