@@ -176,7 +176,14 @@ Where the server computes them, in `apps/server/src/docs/archive.ts`:
    rare. One code for both would leave the console unable to tell the routine one
    from the one worth stopping at.
 
-## Held for sign-off — proposed SPEC.md §14 bullet (CONTRACT-047: the warnings channel reports effects on documents the request never named)
+## SIGNED 2026-08-10 and applied — SPEC.md §14 bullet (the warnings channel reports effects on documents the request never named)
+
+**Signed by the user on 2026-08-10 and applied verbatim** to §14, after "Every
+server mutation validates before writing", carrying its own signed marker. The
+user weighed it against splitting the channel later (a purpose-built field beside
+`warnings`) and against declining the widening, and chose to sign as drafted —
+noting that UI-106 already exists to stop the new codes rendering as errors,
+which is the cost of one channel carrying two kinds of thing.
 
 **Distinct from the other held drafts**: CONTRACT-048's §9.2 bulk-result draft
 and CONTRACT-037's (now void) §9.2 draft are about the bulk act's shape; this one
